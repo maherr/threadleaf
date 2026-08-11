@@ -2,6 +2,17 @@
 
 Threadleaf advances through proof gates rather than dates.
 
+## Architecture gate: alternatives audit (complete)
+
+- [x] Inspect the projects listed by `awesome-obsidian-alternatives` at source level.
+- [x] Separate project age from structural adoption ceilings.
+- [x] Audit plugin continuity, repository concentration, release coverage, and licenses.
+- [x] Record reusable architecture, watcher, index, and sync ideas.
+- [x] Reject directory tiers and README claims as compatibility evidence.
+
+Exit gate passed: the findings and resulting decisions are recorded in the
+[alternatives landscape review](research/alternatives-landscape.md).
+
 ## Phase 0: Compatibility architecture proof (complete)
 
 - [x] Load a synthetic vault without writing to it.
@@ -16,15 +27,22 @@ changing any fixture byte.
 ## Phase 1: Safe vault kernel
 
 - Canonical path handling and symlink policy.
-- Incremental file watching.
+- Port-based filesystem and state-root adapters.
+- Sequenced, batched file watching with rename pairing.
+- Overflow, ambiguity, sequence-gap, subtree-scan, and full-rescan behavior.
 - Atomic write and crash-recovery journal.
-- External-edit detection and conflict copies.
+- Content revisions, external-edit detection, and conflict copies.
+- Recoverable rename and multi-file mutation transactions.
 - Rebuildable metadata and link index.
+- Incremental-versus-clean-rebuild equivalence tests.
 
 Exit gate: interruption, concurrent external-edit, rename, and recovery fixtures lose no bytes.
+Every watcher fallback converges, and every incremental index snapshot equals a clean rebuild.
 
 ## Phase 2: Knowledge workspace
 
+- One action registry for menus, hotkeys, commands, plugins, and visible controls.
+- Vertical feature slices with ports, services, side-effect-free stores, and reactors.
 - File navigation, tabs, panes, commands, and settings.
 - CodeMirror editor with source mode and live preview.
 - Search, links, backlinks, tags, properties, and embeds.
@@ -34,6 +52,8 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 
 ## Phase 3: Compatibility alpha
 
+- Build an executable same-vault behavior corpus for links, aliases, embeds, attachments,
+  frontmatter, rename semantics, JSON Canvas, and `.obsidian/` coexistence.
 - Broaden the public API based on measured plugin usage.
 - Add workspace views, Markdown processors, menus, settings, and editor extensions.
 - Publish a generated compatibility registry.
@@ -53,3 +73,12 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - Open synchronization adapters and conflict UI.
 - Reviewable agent operations with cited diffs.
 - Mobile clients after desktop data safety and compatibility stabilize.
+- Signed, updateable, rollback-tested Linux, macOS, and Windows releases.
+
+## Continuous project-health gates
+
+- Reproducible checks and platform packaging run without maintainer-only state.
+- Architecture and conformance docs remain short enough for a new contributor to follow.
+- Work is split into reviewable feature slices rather than one application-wide state layer.
+- Any copied open-source code is pinned to a source revision and recorded with its license and
+  retained notice.

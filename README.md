@@ -34,6 +34,7 @@ and implements no user-file writes.
 - [Architecture](docs/architecture.md)
 - [Compatibility contract](docs/compatibility/contract.md)
 - [Roadmap](docs/roadmap.md)
+- [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 

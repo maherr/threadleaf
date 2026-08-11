@@ -24,6 +24,8 @@ version instead of assigning an unexplained universal percentage.
 - User-submitted failure reports reduced to reproducible fixtures.
 
 Proprietary application code, copied assets, and decompiled bundled resources are out of scope.
+Third-party directories, feature tables, stars, and README claims are discovery inputs only. They
+do not raise a compatibility level without a production-path fixture.
 
 ## Phase 0 fixture
 
