@@ -44,3 +44,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Versioned, app-owned keyboard settings with portable Ctrl/Cmd bindings, collision validation,
   per-command recording and clearing, atomic private persistence, reset-to-default behavior, and
   visible recovery from malformed settings without touching the vault or `.obsidian/`.
+- Vault-wide saved-content search across paths, headings, tags, properties, fenced code, and body
+  text, with AND terms, quoted phrases, ranked contextual matches, bounded work, line navigation,
+  stale-response protection, and automatic convergence after saves and external filesystem edits.
+- Deterministic 10,000-note search microbenchmark and scale fixtures for rebuild, rare-query, and
+  broad-query behavior.

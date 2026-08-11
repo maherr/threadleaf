@@ -190,6 +190,45 @@ describe("MetadataIndex", () => {
 });
 
 describe("VaultIndexReactor", () => {
+  it("keeps full-text results aligned across edits, moves, deletes, and rebuilds", async () => {
+    const vault = new MemoryVault();
+    vault.set("A.md", "alpha before");
+    vault.set("Folder/B.md", "beta body");
+    const reactor = await VaultIndexReactor.open(vault);
+
+    expect(reactor.index.search("alpha").results[0]?.path).toBe("A.md");
+    vault.set("A.md", "gamma after");
+    await reactor.accept(batch(1, [{ kind: "upsert", state: vault.state("A.md") }]));
+    expect(reactor.index.search("alpha").total).toBe(0);
+    expect(reactor.index.search("gamma").results[0]?.path).toBe("A.md");
+
+    vault.move("Folder/B.md", "Renamed.md");
+    await reactor.accept(
+      batch(2, [
+        {
+          kind: "move",
+          from: "Folder/B.md",
+          to: "Renamed.md",
+          state: vault.state("Renamed.md", "b-inode"),
+        },
+      ]),
+    );
+    expect(reactor.index.search("folder").total).toBe(0);
+    expect(reactor.index.search("renamed").results[0]?.path).toBe("Renamed.md");
+
+    vault.remove("A.md");
+    await reactor.accept(batch(3, [{ kind: "delete", path: "A.md" }]));
+    expect(reactor.index.search("gamma").total).toBe(0);
+
+    vault.set("Unannounced.md", "delta rebuild");
+    await reactor.accept(batch(5, []));
+    const rebuilt = await MetadataIndex.build(vault);
+    const { generation: incrementalGeneration, ...incremental } = reactor.index.search("delta");
+    const { generation: rebuiltGeneration, ...clean } = rebuilt.search("delta");
+    expect(incrementalGeneration).toBeGreaterThan(rebuiltGeneration);
+    expect(incremental).toEqual(clean);
+  });
+
   it("keeps every incremental state byte-equivalent to a clean rebuild", async () => {
     const vault = new MemoryVault();
     vault.set("A.md", "[[B]] [[Missing]]");

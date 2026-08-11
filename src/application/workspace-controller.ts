@@ -1,5 +1,10 @@
 import type { StateRootPort } from "../kernel/ports";
-import type { NoteSaveResponse, RuntimeSnapshot, VaultSelectionSource } from "../shared/contracts";
+import type {
+  NoteSaveResponse,
+  RuntimeSnapshot,
+  VaultSearchResponse,
+  VaultSelectionSource,
+} from "../shared/contracts";
 import { WorkspaceRuntime, type WorkspaceRuntimeOptions } from "./workspace-runtime";
 
 export interface VaultSelectionStore {
@@ -11,6 +16,7 @@ export interface WorkspaceRuntimePort {
   readonly vaultId: string;
   readonly vaultPath: string;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  searchVault(query: string): Promise<VaultSearchResponse>;
   openNote(filePath: string): Promise<RuntimeSnapshot>;
   saveNote(
     filePath: string,
@@ -137,6 +143,10 @@ export class WorkspaceController {
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.#runtime.getSnapshot();
+  }
+
+  searchVault(query: string): Promise<VaultSearchResponse> {
+    return this.#runtime.searchVault(query);
   }
 
   openNote(filePath: string): Promise<RuntimeSnapshot> {

@@ -15,6 +15,7 @@
     "build:main": "tsup",
     "build:renderer": "vite build",
     "build:verify": "node scripts/check-built-app.mjs",
+    "benchmark:search": "vitest bench --run src/kernel/full-text-search.bench.ts",
     "check": "pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run build",
     "format": "biome check --write .",
     "format:check": "biome check .",

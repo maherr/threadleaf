@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
-import type { NoteSaveResponse, RuntimeSnapshot } from "../shared/contracts";
+import type { NoteSaveResponse, RuntimeSnapshot, VaultSearchResponse } from "../shared/contracts";
 import {
   type VaultSelectionStore,
   WorkspaceController,
@@ -74,6 +74,19 @@ class FakeRuntime implements WorkspaceRuntimePort {
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
     return this.#snapshot;
+  }
+
+  async searchVault(query: string): Promise<VaultSearchResponse> {
+    return {
+      vaultId: this.vaultId,
+      indexGeneration: 1,
+      error: null,
+      query,
+      terms: query ? [query] : [],
+      total: 0,
+      truncated: false,
+      results: [],
+    };
   }
 
   async openNote(): Promise<RuntimeSnapshot> {

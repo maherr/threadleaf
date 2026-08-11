@@ -24,13 +24,15 @@ fallbacks. Multi-file operations durably retain every proposal and resume safely
 Phase 2 is in progress. The production runtime now composes that kernel, watcher, index, one shared
 action registry, and the compatibility host. The Electron workspace can open an arbitrary local
 Markdown folder, restore the last successful selection, edit through CodeMirror, inspect headings,
-tags, links, and backlinks, filter notes from the keyboard, and reflect external changes without
-giving the renderer filesystem access. Revision-aware saves use the recoverable writer. If the
-file changed externally, the original is left untouched and the local edit becomes a clearly
-labeled conflict copy. Core actions and dynamically registered compatibility-plugin commands share
-a searchable, keyboard-navigable command palette. Versioned application settings now keep
-remappable keyboard shortcuts outside every vault, reject collisions, and persist changes before
-activating them. Compatibility plugins in selected and restored vaults stay off by default.
+tags, links, and backlinks, search saved Markdown with contextual line matches, and reflect external
+changes without giving the renderer filesystem access. Search results identify the vault and index
+generation that produced them, so a late response cannot cross a vault switch or overwrite newer
+derived state. Revision-aware saves use the recoverable writer. If the file changed externally, the
+original is left untouched and the local edit becomes a clearly labeled conflict copy. Core actions
+and dynamically registered compatibility-plugin commands share a searchable, keyboard-navigable
+command palette. Versioned application settings now keep remappable keyboard shortcuts outside
+every vault, reject collisions, and persist changes before activating them. Compatibility plugins
+in selected and restored vaults stay off by default.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no live preview or release-grade backup and
@@ -53,6 +55,7 @@ restore workflow.
 - [Architecture](docs/architecture.md)
 - [Compatibility contract](docs/compatibility/contract.md)
 - [Roadmap](docs/roadmap.md)
+- [Performance baselines](docs/performance.md)
 - [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
@@ -70,10 +73,11 @@ pnpm start
 On first launch, the executable build opens the bundled synthetic vault. Use the Open control or
 Ctrl/Cmd+O to select a Markdown folder. Threadleaf validates and persists a successful selection,
 restores it on the next launch, and does not automatically run its compatibility plugins.
-Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P focuses the note filter; Ctrl/Cmd+, opens keyboard
-settings. Every listed shortcut can be reassigned or cleared, and Reset defaults restores the
-portable built-in bindings. Threadleaf stores these preferences in private application data, not
-in the vault or `.obsidian/`.
+Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P searches saved content, paths, headings, tags, and
+properties; Ctrl/Cmd+, opens keyboard settings. Search terms use AND semantics and quoted text is
+matched as a phrase. Every listed shortcut can be reassigned or cleared, and Reset defaults
+restores the portable built-in bindings. Threadleaf stores these preferences in private
+application data, not in the vault or `.obsidian/`.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 
@@ -84,6 +88,9 @@ THREADLEAF_VAULT_PATH=/absolute/path/to/disposable-vault pnpm start
 This non-packaged development override is not persisted and is ignored by packaged builds. The
 `pnpm check` gate verifies the packaged Electron entry points and confirms that renderer assets
 remain loadable over `file://`.
+
+Run `pnpm benchmark:search` for the deterministic 10,000-note search microbenchmark. It reports
+measurements rather than enforcing machine-dependent timing thresholds.
 
 ## License
 

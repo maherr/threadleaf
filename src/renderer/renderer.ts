@@ -4,6 +4,8 @@ import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 import type {
   RuntimeSnapshot,
+  VaultSearchResponse,
+  VaultSearchResult,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
@@ -127,8 +129,8 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   },
   {
     id: "workspace.focus-note-filter",
-    label: "Focus note filter",
-    description: "Move keyboard focus to the indexed note filter.",
+    label: "Focus vault search",
+    description: "Search saved note content, paths, headings, tags, and properties.",
   },
   {
     id: "editor.save-note",
@@ -173,6 +175,25 @@ let settingsBusy = false;
 let settingsMessage = "Select a command, then press its new shortcut.";
 let settingsMessageKind: "info" | "saved" | "error" = "info";
 let lastSettingsWarning: string | null = null;
+type VaultSearchState =
+  | { status: "idle" }
+  | {
+      status: "loading";
+      query: string;
+      vaultId: string;
+      indexGeneration: number;
+    }
+  | {
+      status: "error";
+      query: string;
+      vaultId: string;
+      indexGeneration: number;
+      message: string;
+    }
+  | { status: "ready"; response: VaultSearchResponse };
+let vaultSearchState: VaultSearchState = { status: "idle" };
+let vaultSearchTimer: number | undefined;
+let vaultSearchRequest = 0;
 
 const editorStyleNonce = "threadleaf-codemirror";
 const sourceHighlight = HighlightStyle.define([
@@ -272,13 +293,13 @@ function commandCatalog(): RendererCommand[] {
     },
     {
       id: "workspace.focus-note-filter",
-      label: "Focus note filter",
+      label: "Focus vault search",
       category: "Workspace",
-      keywords: ["find", "files", "search", "quick switcher"],
+      keywords: ["find", "files", "content", "full text", "quick switcher"],
       shortcut: shortcutFor("workspace.focus-note-filter"),
       enabled: true,
       disabledReason: null,
-      run: focusNoteFilter,
+      run: focusVaultSearch,
     },
     {
       id: "editor.save-note",
@@ -373,7 +394,7 @@ function commandCatalog(): RendererCommand[] {
   return commands;
 }
 
-function focusNoteFilter(): void {
+function focusVaultSearch(): void {
   elements.fileSearch.focus();
   elements.fileSearch.select();
 }
@@ -744,6 +765,133 @@ function renderPaletteResults(): void {
   selectPaletteIndex(paletteSelection, false);
 }
 
+function currentVaultSearchIdentity(): { vaultId: string; indexGeneration: number } | null {
+  const vaultId = currentSnapshot?.vault.id;
+  const indexGeneration = currentSnapshot?.workspace?.indexGeneration;
+  return vaultId && indexGeneration !== undefined ? { vaultId, indexGeneration } : null;
+}
+
+function vaultSearchStateMatches(
+  query: string,
+  identity: { vaultId: string; indexGeneration: number },
+): boolean {
+  if (vaultSearchState.status === "idle") {
+    return false;
+  }
+  if (vaultSearchState.status === "ready") {
+    return (
+      vaultSearchState.response.query.trim() === query &&
+      vaultSearchState.response.vaultId === identity.vaultId &&
+      vaultSearchState.response.indexGeneration === identity.indexGeneration
+    );
+  }
+  return (
+    vaultSearchState.query === query &&
+    vaultSearchState.vaultId === identity.vaultId &&
+    vaultSearchState.indexGeneration === identity.indexGeneration
+  );
+}
+
+function scheduleVaultSearch(delay = 120, renderNow = true): void {
+  const query = elements.fileSearch.value.trim();
+  vaultSearchRequest += 1;
+  const request = vaultSearchRequest;
+  if (vaultSearchTimer !== undefined) {
+    window.clearTimeout(vaultSearchTimer);
+    vaultSearchTimer = undefined;
+  }
+  if (!query) {
+    vaultSearchState = { status: "idle" };
+    if (renderNow) {
+      renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+    }
+    return;
+  }
+  const identity = currentVaultSearchIdentity();
+  if (!identity) {
+    vaultSearchState = {
+      status: "error",
+      query,
+      vaultId: "",
+      indexGeneration: -1,
+      message: "The vault index is not ready yet.",
+    };
+    if (renderNow) {
+      renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+    }
+    return;
+  }
+  vaultSearchState = { status: "loading", query, ...identity };
+  if (renderNow) {
+    renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+  }
+  vaultSearchTimer = window.setTimeout(() => {
+    vaultSearchTimer = undefined;
+    void performVaultSearch(query, identity, request);
+  }, delay);
+}
+
+async function performVaultSearch(
+  query: string,
+  identity: { vaultId: string; indexGeneration: number },
+  request: number,
+): Promise<void> {
+  try {
+    const response = await window.threadleaf.searchVault(query);
+    if (request !== vaultSearchRequest || elements.fileSearch.value.trim() !== query) {
+      return;
+    }
+    const currentIdentity = currentVaultSearchIdentity();
+    if (
+      !currentIdentity ||
+      response.vaultId !== currentIdentity.vaultId ||
+      response.indexGeneration !== currentIdentity.indexGeneration ||
+      identity.vaultId !== currentIdentity.vaultId ||
+      identity.indexGeneration !== currentIdentity.indexGeneration
+    ) {
+      scheduleVaultSearch(0);
+      return;
+    }
+    vaultSearchState = response.error
+      ? { status: "error", query, ...identity, message: response.error }
+      : { status: "ready", response };
+  } catch (error) {
+    if (request !== vaultSearchRequest || elements.fileSearch.value.trim() !== query) {
+      return;
+    }
+    vaultSearchState = {
+      status: "error",
+      query,
+      ...identity,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+  renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+}
+
+function reconcileVaultSearch(snapshot: RuntimeSnapshot): void {
+  const query = elements.fileSearch.value.trim();
+  if (!query) {
+    if (vaultSearchTimer !== undefined) {
+      window.clearTimeout(vaultSearchTimer);
+      vaultSearchTimer = undefined;
+    }
+    if (vaultSearchState.status !== "idle") {
+      vaultSearchRequest += 1;
+      vaultSearchState = { status: "idle" };
+    }
+    return;
+  }
+  const vaultId = snapshot.vault.id;
+  const indexGeneration = snapshot.workspace?.indexGeneration;
+  if (!vaultId || indexGeneration === undefined) {
+    return;
+  }
+  if (!vaultSearchStateMatches(query, { vaultId, indexGeneration })) {
+    scheduleVaultSearch(0, false);
+  }
+}
+
 function render(snapshot: RuntimeSnapshot): void {
   currentSnapshot = snapshot;
   const workspace = snapshot.workspace;
@@ -781,6 +929,7 @@ function render(snapshot: RuntimeSnapshot): void {
   lastVaultWarning = snapshot.vault.warning;
 
   const displayedNote = reconcileEditor(workspace?.activeNote ?? null, snapshot.vault.id);
+  reconcileVaultSearch(snapshot);
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
   renderNote(displayedNote);
 
@@ -798,54 +947,137 @@ function render(snapshot: RuntimeSnapshot): void {
 }
 
 function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): void {
-  const query = elements.fileSearch.value.trim().toLocaleLowerCase("en-US");
-  const visible = files.filter((file) => {
-    const searchable = `${file.path} ${file.tags.join(" ")}`.toLocaleLowerCase("en-US");
-    return query === "" || searchable.includes(query);
-  });
-  elements.filterSummary.textContent = query
-    ? `${visible.length} of ${files.length} notes match`
-    : `${files.length} ${files.length === 1 ? "note" : "notes"} indexed`;
+  const query = elements.fileSearch.value.trim();
   elements.fileList.replaceChildren();
+  elements.fileList.setAttribute(
+    "aria-busy",
+    String(query !== "" && vaultSearchState.status === "loading"),
+  );
+  elements.fileList.setAttribute("aria-label", query ? "Vault search results" : "Markdown files");
 
-  for (const file of visible) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "file-item";
-    button.dataset.notePath = file.path;
-    button.ariaLabel = `Open ${file.path}`;
-    if (file.path === activePath) {
-      button.setAttribute("aria-current", "page");
+  if (query) {
+    renderVaultSearchResults(activePath, files.length);
+    return;
+  }
+
+  elements.filterSummary.textContent = `${files.length} ${files.length === 1 ? "note" : "notes"} indexed`;
+  for (const file of files) {
+    const button = createFileButton(file.path, file.title, activePath, "◇");
+    const copy = button.querySelector<HTMLElement>(".file-copy");
+    if (!copy) {
+      throw new Error("File buttons require a copy container.");
     }
-
-    const glyph = document.createElement("span");
-    glyph.className = "file-glyph";
-    glyph.ariaHidden = "true";
-    glyph.textContent = "◇";
-    const copy = document.createElement("span");
-    copy.className = "file-copy";
-    const title = document.createElement("strong");
-    title.textContent = file.title;
     const location = document.createElement("small");
     const slash = file.path.lastIndexOf("/");
     location.textContent = slash === -1 ? "Vault root" : file.path.slice(0, slash);
-    copy.append(title, location);
+    copy.append(location);
     const metrics = document.createElement("span");
     metrics.className = "file-metrics";
     metrics.textContent =
       file.unresolvedCount > 0
         ? `${file.unresolvedCount} unresolved`
         : `${file.backlinkCount} back · ${file.outgoingCount} out`;
-    button.append(glyph, copy, metrics);
+    button.append(metrics);
     button.addEventListener("click", () => void openNote(file.path));
     elements.fileList.append(button);
   }
 
-  if (visible.length === 0) {
-    renderEmpty(
-      elements.fileList,
-      query ? "No note matches this filter." : "No Markdown notes found.",
-    );
+  if (files.length === 0) {
+    renderEmpty(elements.fileList, "No Markdown notes found.");
+  }
+}
+
+function createFileButton(
+  filePath: string,
+  titleText: string,
+  activePath: string | null,
+  glyphText: string,
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "file-item";
+  button.dataset.notePath = filePath;
+  button.ariaLabel = `Open ${filePath}`;
+  if (filePath === activePath) {
+    button.setAttribute("aria-current", "page");
+  }
+
+  const glyph = document.createElement("span");
+  glyph.className = "file-glyph";
+  glyph.ariaHidden = "true";
+  glyph.textContent = glyphText;
+  const copy = document.createElement("span");
+  copy.className = "file-copy";
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  copy.append(title);
+  button.append(glyph, copy);
+  return button;
+}
+
+function searchContextLabel(result: VaultSearchResult): string {
+  const context = result.contexts[0];
+  if (!context) {
+    return "Match";
+  }
+  if (context.kind === "content") {
+    return context.line ? `Line ${context.line}` : "Text";
+  }
+  if (context.kind === "heading") {
+    return context.line ? `Heading ${context.line}` : "Heading";
+  }
+  return `${context.kind[0]?.toLocaleUpperCase("en-US") ?? ""}${context.kind.slice(1)}`;
+}
+
+function renderVaultSearchResults(activePath: string | null, indexedCount: number): void {
+  if (vaultSearchState.status === "loading" || vaultSearchState.status === "idle") {
+    elements.filterSummary.textContent = `Searching ${indexedCount} saved ${indexedCount === 1 ? "note" : "notes"}`;
+    renderEmpty(elements.fileList, "Searching saved Markdown…");
+    return;
+  }
+  if (vaultSearchState.status === "error") {
+    elements.filterSummary.textContent = "Search unavailable";
+    renderEmpty(elements.fileList, vaultSearchState.message ?? "Vault search failed.");
+    return;
+  }
+
+  const response = vaultSearchState.response;
+  elements.filterSummary.textContent = response.truncated
+    ? `${response.total} matching notes · first ${response.results.length} shown`
+    : `${response.total} ${response.total === 1 ? "note" : "notes"} match saved content`;
+
+  for (const result of response.results) {
+    const button = createFileButton(result.path, result.title, activePath, "⌕");
+    button.classList.add("search-result");
+    const context = result.contexts[0];
+    button.ariaLabel = `Open ${result.path}${context?.line ? ` at line ${context.line}` : ""}`;
+    const copy = button.querySelector<HTMLElement>(".file-copy");
+    if (!copy) {
+      throw new Error("Search result buttons require a copy container.");
+    }
+    const location = document.createElement("small");
+    location.textContent = result.path;
+    copy.append(location);
+    if (context) {
+      const contextRow = document.createElement("span");
+      contextRow.className = "search-context";
+      const contextKind = document.createElement("small");
+      contextKind.textContent = searchContextLabel(result);
+      const contextText = document.createElement("span");
+      contextText.textContent = context.text;
+      contextRow.append(contextKind, contextText);
+      copy.append(contextRow);
+    }
+    const metrics = document.createElement("span");
+    metrics.className = "file-metrics search-metrics";
+    metrics.textContent = `${result.matchCount} ${result.matchCount === 1 ? "match" : "matches"}`;
+    button.append(metrics);
+    button.addEventListener("click", () => void openNote(result.path, context?.line));
+    elements.fileList.append(button);
+  }
+
+  if (response.results.length === 0) {
+    renderEmpty(elements.fileList, "No saved note contains this search.");
   }
 }
 
@@ -1115,7 +1347,7 @@ function scrollToSourceLine(line: number): void {
   editor.focus();
 }
 
-async function openNote(filePath: string): Promise<void> {
+async function openNote(filePath: string, line?: number): Promise<void> {
   if (busy) {
     return;
   }
@@ -1125,6 +1357,9 @@ async function openNote(filePath: string): Promise<void> {
     return;
   }
   await runAction(() => window.threadleaf.openNote(filePath));
+  if (line && loadedNote?.path === filePath) {
+    scrollToSourceLine(line);
+  }
 }
 
 async function chooseVault(): Promise<void> {
@@ -1253,8 +1488,7 @@ function setTheme(theme: "light" | "dark"): void {
 }
 
 elements.fileSearch.addEventListener("input", () => {
-  const workspace = currentSnapshot?.workspace;
-  renderFiles(workspace?.files ?? [], loadedNote?.path ?? null);
+  scheduleVaultSearch();
 });
 
 elements.commandTrigger.addEventListener("click", openCommandPalette);
@@ -1398,6 +1632,9 @@ window.addEventListener("beforeunload", (event) => {
 window.addEventListener(
   "unload",
   () => {
+    if (vaultSearchTimer !== undefined) {
+      window.clearTimeout(vaultSearchTimer);
+    }
     unsubscribe();
     unsubscribeSettings();
     editor.destroy();

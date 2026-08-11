@@ -62,9 +62,12 @@ equivalence through the real writer-to-watcher seam.
       disabled-state explanations, and keyboard navigation.
 - [x] Versioned application settings and remappable hotkeys with collision validation, atomic
       private persistence, reset-to-default behavior, and no vault-owned state.
+- [x] Bounded vault-wide full-text search over saved paths, headings, tags, properties, fenced code,
+      and body text, with ranked context, line navigation, stale-response identity, watcher
+      convergence, and a reproducible 10,000-note microbenchmark.
 - [ ] Tabs, split panes, application menus, and broader workspace settings.
 - [ ] Live preview and source-to-preview position mapping.
-- [ ] Full-text search, properties, attachments, and embeds.
+- [ ] Rich property views and editing, attachments, and embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
 

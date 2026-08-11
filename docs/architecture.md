@@ -109,6 +109,26 @@ frontmatter scalars and lists, tags, wiki links, embeds, and local Markdown link
 is provisional. Obsidian-equivalent edge semantics remain gated on the executable behavior corpus
 in Phase 3 rather than being inferred from filenames or third-party compatibility claims.
 
+### Full-text search
+
+Full-text search is another disposable projection of saved vault bytes. It never writes a canonical
+database and intentionally excludes `.obsidian/`, `.git/`, and Threadleaf transaction artifacts
+from the note corpus. The same index reactor that maintains links updates search documents after
+internal saves, external edits, moves, deletes, subtree rescans, and full rebuilds. An unsaved editor
+draft does not appear until it crosses the recoverable save boundary, which the UI states plainly.
+
+Queries are bounded to 256 characters, 12 distinct AND terms, and at most 100 returned documents.
+Quoted text is one phrase. Ranking favors exact titles, then title, tag, heading, path, property, and
+body evidence; results retain bounded contextual lines and source line numbers. Every response
+carries the active vault ID and monotonic index generation. The renderer rejects a response that no
+longer matches its current vault, query, or generation and immediately requests the current result.
+
+The initial index is an in-memory normalized scan. That is the simplest correct implementation and
+already clears the current interactive scale baseline. `pnpm benchmark:search` measures rebuild,
+rare-query, and deliberately broad-query behavior over a deterministic 10,000-note corpus. A future
+inverted or SQLite FTS index must be earned by those measurements and preserve the same rebuildable
+contract, rather than adding canonical database state speculatively.
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable

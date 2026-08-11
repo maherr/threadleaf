@@ -55,6 +55,12 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
   ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
+  ipcMain.handle(ipcChannels.searchVault, (_event, query: unknown) => {
+    if (typeof query !== "string") {
+      throw new Error("Vault search requires a string query.");
+    }
+    return workspaceController.searchVault(query);
+  });
   ipcMain.handle(ipcChannels.setKeyBinding, (_event, targetId: unknown, binding: unknown) => {
     if (
       typeof targetId !== "string" ||

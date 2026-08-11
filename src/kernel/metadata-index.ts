@@ -1,4 +1,9 @@
 import path from "node:path";
+import {
+  type FullTextSearchDocument,
+  FullTextSearchIndex,
+  type FullTextSearchPage,
+} from "./full-text-search";
 import { normalizeVaultDirectoryPath } from "./path-policy";
 import type { VaultReadPort, VaultTextSnapshot } from "./ports";
 import { type RescanReason, type VaultChangeBatch, WatchSequenceGate } from "./watch-protocol";
@@ -242,6 +247,16 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
   };
 }
 
+function toSearchDocument(document: ParsedDocument, content: string): FullTextSearchDocument {
+  return {
+    path: document.path,
+    content,
+    headings: document.headings,
+    tags: document.tags,
+    properties: document.properties,
+  };
+}
+
 function safeCandidate(value: string): string | null {
   const normalized = path.posix.normalize(value).replace(/^\.\//, "");
   if (normalized === ".." || normalized.startsWith("../") || normalized.startsWith("/")) {
@@ -252,6 +267,12 @@ function safeCandidate(value: string): string | null {
 
 export class MetadataIndex {
   readonly #documents = new Map<string, ParsedDocument>();
+  readonly #searchIndex = new FullTextSearchIndex();
+  #generation = 0;
+
+  get generation(): number {
+    return this.#generation;
+  }
 
   static async build(source: VaultReadPort): Promise<MetadataIndex> {
     const index = new MetadataIndex();
@@ -261,40 +282,67 @@ export class MetadataIndex {
 
   async rebuild(source: VaultReadPort): Promise<void> {
     const documents = new Map<string, ParsedDocument>();
+    const searchDocuments: FullTextSearchDocument[] = [];
     const paths = await source.listMarkdownPaths();
     for (const filePath of paths) {
-      documents.set(filePath, parseDocument(await source.readText(filePath)));
+      const snapshot = await source.readText(filePath);
+      const document = parseDocument(snapshot);
+      documents.set(filePath, document);
+      searchDocuments.push(toSearchDocument(document, snapshot.content));
     }
-    this.#documents.clear();
-    for (const [filePath, document] of documents) {
-      this.#documents.set(filePath, document);
-    }
+    this.replaceDocuments(documents, searchDocuments);
   }
 
   async rebuildSubtree(source: VaultReadPort, relativeDirectory: string): Promise<void> {
     const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
     const prefix = normalizedDirectory ? `${normalizedDirectory}/` : "";
-    for (const filePath of this.#documents.keys()) {
-      if (!prefix || filePath.startsWith(prefix)) {
-        this.#documents.delete(filePath);
-      }
-    }
+    const replacements = new Map<
+      string,
+      { document: ParsedDocument; searchDocument: FullTextSearchDocument }
+    >();
     const paths = await source.listMarkdownPaths(normalizedDirectory);
     for (const filePath of paths) {
-      this.#documents.set(filePath, parseDocument(await source.readText(filePath)));
+      const snapshot = await source.readText(filePath);
+      const document = parseDocument(snapshot);
+      replacements.set(filePath, {
+        document,
+        searchDocument: toSearchDocument(document, snapshot.content),
+      });
     }
+    for (const filePath of [...this.#documents.keys()]) {
+      if (!prefix || filePath.startsWith(prefix)) {
+        this.#documents.delete(filePath);
+        this.#searchIndex.remove(filePath);
+      }
+    }
+    for (const [filePath, replacement] of replacements) {
+      this.#documents.set(filePath, replacement.document);
+      this.#searchIndex.upsert(replacement.searchDocument);
+    }
+    this.#generation += 1;
   }
 
   async refresh(source: VaultReadPort, filePath: string): Promise<void> {
     if (!filePath.toLowerCase().endsWith(".md")) {
-      this.#documents.delete(filePath);
+      this.remove(filePath);
       return;
     }
-    this.#documents.set(filePath, parseDocument(await source.readText(filePath)));
+    const snapshot = await source.readText(filePath);
+    const document = parseDocument(snapshot);
+    this.#documents.set(filePath, document);
+    this.#searchIndex.upsert(toSearchDocument(document, snapshot.content));
+    this.#generation += 1;
   }
 
   remove(filePath: string): void {
-    this.#documents.delete(filePath);
+    if (this.#documents.delete(filePath)) {
+      this.#searchIndex.remove(filePath);
+      this.#generation += 1;
+    }
+  }
+
+  search(query: string, limit = 50): FullTextSearchPage & { generation: number } {
+    return { ...this.#searchIndex.search(query, limit), generation: this.#generation };
   }
 
   snapshot(): MetadataIndexSnapshot {
@@ -386,6 +434,18 @@ export class MetadataIndex {
       return { status: "ambiguous", candidates };
     }
     return { status: "unresolved" };
+  }
+
+  private replaceDocuments(
+    documents: Map<string, ParsedDocument>,
+    searchDocuments: FullTextSearchDocument[],
+  ): void {
+    this.#documents.clear();
+    for (const [filePath, document] of documents) {
+      this.#documents.set(filePath, document);
+    }
+    this.#searchIndex.replace(searchDocuments);
+    this.#generation += 1;
   }
 }
 

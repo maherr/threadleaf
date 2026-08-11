@@ -4,6 +4,7 @@ import type {
   RuntimeSnapshot,
   ThreadleafBridge,
   VaultOpenResponse,
+  VaultSearchResponse,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
@@ -11,6 +12,8 @@ import type { AppSettingsSnapshot } from "../shared/key-bindings";
 const bridge: ThreadleafBridge = {
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
   getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
+  searchVault: (query) =>
+    ipcRenderer.invoke(ipcChannels.searchVault, query) as Promise<VaultSearchResponse>,
   setKeyBinding: (targetId, binding) =>
     ipcRenderer.invoke(
       ipcChannels.setKeyBinding,

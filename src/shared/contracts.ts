@@ -76,8 +76,36 @@ export interface WorkspaceNoteSnapshot {
   backlinks: string[];
 }
 
+export type VaultSearchContextKind = "content" | "heading" | "tag" | "property" | "path";
+
+export interface VaultSearchContext {
+  kind: VaultSearchContextKind;
+  text: string;
+  line?: number;
+}
+
+export interface VaultSearchResult {
+  path: string;
+  title: string;
+  score: number;
+  matchCount: number;
+  contexts: VaultSearchContext[];
+}
+
+export interface VaultSearchResponse {
+  vaultId: string;
+  indexGeneration: number;
+  error: string | null;
+  query: string;
+  terms: string[];
+  total: number;
+  truncated: boolean;
+  results: VaultSearchResult[];
+}
+
 export interface WorkspaceSnapshot {
   state: "ready" | "degraded";
+  indexGeneration: number;
   files: WorkspaceFileSummary[];
   activeNote: WorkspaceNoteSnapshot | null;
   recoveryActionCount: number;
@@ -116,6 +144,7 @@ export type VaultOpenResponse =
 export interface ThreadleafBridge {
   getSnapshot(): Promise<RuntimeSnapshot>;
   getSettings(): Promise<AppSettingsSnapshot>;
+  searchVault(query: string): Promise<VaultSearchResponse>;
   setKeyBinding(targetId: ShortcutTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
   resetKeyBindings(): Promise<AppSettingsSnapshot>;
   chooseVault(): Promise<VaultOpenResponse>;

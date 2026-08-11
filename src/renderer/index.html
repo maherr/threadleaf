@@ -75,8 +75,16 @@
 
           <label class="search-field" for="file-search">
             <span aria-hidden="true">⌕</span>
-            <span class="sr-only">Filter notes</span>
-            <input id="file-search" type="search" autocomplete="off" placeholder="Filter notes" />
+            <span class="sr-only">Search saved vault content</span>
+            <input
+              id="file-search"
+              type="search"
+              autocomplete="off"
+              placeholder="Search vault"
+              aria-describedby="filter-summary"
+              aria-controls="file-list"
+              title="Search saved content, paths, headings, tags, and properties"
+            />
             <kbd id="search-shortcut">⌘P</kbd>
           </label>
 

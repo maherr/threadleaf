@@ -92,11 +92,26 @@ describe("VaultKernel path policy", () => {
 
   it("lists a requested Markdown subtree and rejects directory traversal", async () => {
     await fs.mkdir(path.join(vaultPath, "Folder", "Nested"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, ".obsidian", "plugins", "fixture"), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(vaultPath, ".git", "notes"), { recursive: true });
     await fs.writeFile(path.join(vaultPath, "Root.md"), "root", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "A.md"), "a", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "B.md"), "b", "utf8");
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "plugins", "fixture", "README.md"),
+      "plugin metadata",
+      "utf8",
+    );
+    await fs.writeFile(path.join(vaultPath, ".git", "notes", "README.md"), "git metadata", "utf8");
     const kernel = await openKernel();
 
+    await expect(kernel.listMarkdownPaths()).resolves.toEqual([
+      "Folder/A.md",
+      "Folder/Nested/B.md",
+      "Root.md",
+    ]);
     await expect(kernel.listMarkdownPaths("Folder/")).resolves.toEqual([
       "Folder/A.md",
       "Folder/Nested/B.md",

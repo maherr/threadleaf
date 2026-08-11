@@ -1,4 +1,5 @@
 import path from "node:path";
+import { SearchQueryError } from "../kernel/full-text-search";
 import { VaultIndexReactor } from "../kernel/metadata-index";
 import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
 import { normalizeVaultPath } from "../kernel/path-policy";
@@ -10,6 +11,7 @@ import type {
   NoteSaveOutcome,
   NoteSaveResponse,
   RuntimeSnapshot,
+  VaultSearchResponse,
   VaultSelectionSource,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
@@ -179,6 +181,37 @@ export class WorkspaceRuntime {
   async openNote(filePath: string): Promise<RuntimeSnapshot> {
     await this.actions.dispatch("workspace.open-note", filePath);
     return this.publishSnapshot();
+  }
+
+  async searchVault(query: string): Promise<VaultSearchResponse> {
+    try {
+      const page = this.indexReactor.index.search(query);
+      const { generation: indexGeneration, ...search } = page;
+      return {
+        vaultId: this.kernel.vaultId,
+        indexGeneration,
+        error: null,
+        ...search,
+        results: search.results.map((result) => ({
+          ...result,
+          title: titleFromPath(result.path),
+        })),
+      };
+    } catch (error) {
+      if (!(error instanceof SearchQueryError)) {
+        throw error;
+      }
+      return {
+        vaultId: this.kernel.vaultId,
+        indexGeneration: this.indexReactor.index.generation,
+        error: error.message,
+        query,
+        terms: [],
+        total: 0,
+        truncated: false,
+        results: [],
+      };
+    }
   }
 
   async saveNote(
@@ -353,6 +386,7 @@ export class WorkspaceRuntime {
 
     return {
       state: this.#watcherError ? "degraded" : "ready",
+      indexGeneration: this.indexReactor.index.generation,
       files,
       activeNote,
       recoveryActionCount: this.kernel.startupRecoveryActions.length,

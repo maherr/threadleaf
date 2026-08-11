@@ -113,6 +113,58 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
+  it("searches current saved bytes with vault identity and contextual lines", async () => {
+    const workspace = await openRuntime();
+
+    const initial = await workspace.searchVault('"synthetic vault" proves');
+    expect(initial).toMatchObject({
+      vaultId: workspace.vaultId,
+      error: null,
+      query: '"synthetic vault" proves',
+      terms: ["synthetic vault", "proves"],
+      total: 1,
+      truncated: false,
+      results: [
+        {
+          path: "Welcome.md",
+          title: "Welcome",
+          contexts: [
+            {
+              kind: "content",
+              line: 7,
+              text: "This synthetic vault proves that the runtime can discover ordinary Markdown without changing it.",
+            },
+          ],
+        },
+      ],
+    });
+
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+    await workspace.saveNote(
+      note.path,
+      "# Search replacement\n\nnew-index-needle",
+      note.revision,
+      workspace.vaultId,
+    );
+
+    expect((await workspace.searchVault("synthetic vault")).total).toBe(0);
+    expect((await workspace.searchVault("new-index-needle")).results[0]).toMatchObject({
+      path: "Welcome.md",
+      contexts: [{ kind: "content", line: 3, text: "new-index-needle" }],
+    });
+
+    await expect(workspace.searchVault("x".repeat(257))).resolves.toMatchObject({
+      vaultId: workspace.vaultId,
+      error: "Search queries may contain at most 256 characters.",
+      total: 0,
+      results: [],
+    });
+  });
+
   it("preserves a stale edit as an indexed conflict copy", async () => {
     const workspace = await openRuntime();
     const opened = await workspace.openNote("Welcome.md");
