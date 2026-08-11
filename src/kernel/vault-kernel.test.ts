@@ -479,3 +479,267 @@ describe("VaultKernel renames", () => {
     expect(reopened.startupRecoveryActions).toEqual([]);
   });
 });
+
+describe("VaultKernel multi-write transactions", () => {
+  it("commits updates and creates as one journaled roll-forward operation", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    const kernel = await openKernel();
+    const beforeA = await kernel.readText("A.md");
+
+    const result = await kernel.writeMany([
+      { path: "A.md", content: "new a", expectedRevision: beforeA.revision },
+      { path: "Folder/B.md", content: "new b", expectedRevision: null },
+    ]);
+
+    expect(result).toMatchObject({
+      status: "committed",
+      entries: [
+        { status: "committed", path: "A.md" },
+        { status: "committed", path: "Folder/B.md" },
+      ],
+    });
+    await expect(kernel.readText("A.md")).resolves.toMatchObject({ content: "new a" });
+    await expect(kernel.readText("Folder/B.md")).resolves.toMatchObject({ content: "new b" });
+    await expect(
+      fs.readFile(
+        path.join(kernel.stateRoot, "transactions", result.transactionId, "0.next"),
+        "utf8",
+      ),
+    ).resolves.toBe("new a");
+  });
+
+  it("commits safe entries and preserves a stale proposal as a conflict copy", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "old b", "utf8");
+    const kernel = await openKernel();
+    const [beforeA, beforeB] = await Promise.all([
+      kernel.readText("A.md"),
+      kernel.readText("B.md"),
+    ]);
+    await fs.writeFile(path.join(vaultPath, "B.md"), "external b", "utf8");
+
+    const result = await kernel.writeMany([
+      { path: "A.md", content: "new a", expectedRevision: beforeA.revision },
+      { path: "B.md", content: "proposed b", expectedRevision: beforeB.revision },
+    ]);
+
+    expect(result.status).toBe("conflict");
+    await expect(kernel.readText("A.md")).resolves.toMatchObject({ content: "new a" });
+    await expect(kernel.readText("B.md")).resolves.toMatchObject({ content: "external b" });
+    const conflict = result.entries.find((entry) => entry.status === "conflict");
+    expect(conflict).toMatchObject({ status: "conflict", path: "B.md" });
+    if (conflict?.status === "conflict") {
+      await expect(kernel.readText(conflict.conflictPath)).resolves.toMatchObject({
+        content: "proposed b",
+      });
+    }
+  });
+
+  it("rolls forward every pending entry after interruption at transaction intent", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "old b", "utf8");
+    const kernel = await openKernel((point) => {
+      if (point === "multi-write:after-intent") {
+        throw new Error("simulated multi-write interruption");
+      }
+    });
+    const [beforeA, beforeB] = await Promise.all([
+      kernel.readText("A.md"),
+      kernel.readText("B.md"),
+    ]);
+    await expect(
+      kernel.writeMany([
+        { path: "A.md", content: "new a", expectedRevision: beforeA.revision },
+        { path: "B.md", content: "new b", expectedRevision: beforeB.revision },
+      ]),
+    ).rejects.toThrow("simulated multi-write interruption");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions).toMatchObject([
+      {
+        kind: "multi-write",
+        outcome: "committed",
+        paths: ["A.md", "B.md"],
+      },
+    ]);
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "new a" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({ content: "new b" });
+  });
+
+  it("resumes after one child committed but parent progress was interrupted", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "old b", "utf8");
+    let completedEntries = 0;
+    const kernel = await openKernel((point) => {
+      if (point === "multi-write:after-entry" && completedEntries++ === 0) {
+        throw new Error("simulated progress interruption");
+      }
+    });
+    const [beforeA, beforeB] = await Promise.all([
+      kernel.readText("A.md"),
+      kernel.readText("B.md"),
+    ]);
+    await expect(
+      kernel.writeMany([
+        { path: "A.md", content: "new a", expectedRevision: beforeA.revision },
+        { path: "B.md", content: "new b", expectedRevision: beforeB.revision },
+      ]),
+    ).rejects.toThrow("simulated progress interruption");
+    await expect(fs.readFile(path.join(vaultPath, "A.md"), "utf8")).resolves.toBe("new a");
+    await expect(fs.readFile(path.join(vaultPath, "B.md"), "utf8")).resolves.toBe("old b");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions).toMatchObject([
+      { kind: "multi-write", outcome: "committed", paths: ["A.md", "B.md"] },
+    ]);
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "new a" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({ content: "new b" });
+  });
+
+  it("finalizes a transaction interrupted after every entry committed", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    const kernel = await openKernel((point) => {
+      if (point === "multi-write:after-commit") {
+        throw new Error("simulated finalization interruption");
+      }
+    });
+    const before = await kernel.readText("A.md");
+    await expect(
+      kernel.writeMany([{ path: "A.md", content: "new a", expectedRevision: before.revision }]),
+    ).rejects.toThrow("simulated finalization interruption");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions).toMatchObject([
+      { kind: "multi-write", outcome: "committed", paths: ["A.md"] },
+    ]);
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "new a" });
+  });
+
+  it("preserves an external edit that arrives before roll-forward recovery", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "old b", "utf8");
+    const kernel = await openKernel((point) => {
+      if (point === "multi-write:after-intent") {
+        throw new Error("simulated multi-write interruption");
+      }
+    });
+    const [beforeA, beforeB] = await Promise.all([
+      kernel.readText("A.md"),
+      kernel.readText("B.md"),
+    ]);
+    await expect(
+      kernel.writeMany([
+        { path: "A.md", content: "new a", expectedRevision: beforeA.revision },
+        { path: "B.md", content: "proposed b", expectedRevision: beforeB.revision },
+      ]),
+    ).rejects.toThrow("simulated multi-write interruption");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "external b", "utf8");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions).toMatchObject([
+      {
+        kind: "multi-write",
+        outcome: "conflict-copy",
+        paths: ["A.md", "B.md"],
+      },
+    ]);
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "new a" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({ content: "external b" });
+    const conflictPath = recovered.startupRecoveryActions[0]?.conflictPath;
+    expect(conflictPath).toBeTypeOf("string");
+    await expect(recovered.readText(conflictPath ?? "missing")).resolves.toMatchObject({
+      content: "proposed b",
+    });
+  });
+
+  it("recovers child journals before resuming their parent transaction", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "old b", "utf8");
+    const kernel = await openKernel((point) => {
+      if (point === "write:after-stage") {
+        throw new Error("simulated child interruption");
+      }
+    });
+    const [beforeA, beforeB] = await Promise.all([
+      kernel.readText("A.md"),
+      kernel.readText("B.md"),
+    ]);
+    await expect(
+      kernel.writeMany([
+        { path: "A.md", content: "new a", expectedRevision: beforeA.revision },
+        { path: "B.md", content: "new b", expectedRevision: beforeB.revision },
+      ]),
+    ).rejects.toThrow("simulated child interruption");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.map((action) => action.kind)).toEqual([
+      "write",
+      "multi-write",
+    ]);
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "new a" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({ content: "new b" });
+  });
+
+  it("blocks recovery before applying anything when a pending proposal blob is missing", async () => {
+    await fs.writeFile(path.join(vaultPath, "A.md"), "old a", "utf8");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "old b", "utf8");
+    const kernel = await openKernel((point) => {
+      if (point === "write:after-stage") {
+        throw new Error("simulated child interruption");
+      }
+    });
+    const [beforeA, beforeB] = await Promise.all([
+      kernel.readText("A.md"),
+      kernel.readText("B.md"),
+    ]);
+    await expect(
+      kernel.writeMany([
+        { path: "A.md", content: "new a", expectedRevision: beforeA.revision },
+        { path: "B.md", content: "new b", expectedRevision: beforeB.revision },
+      ]),
+    ).rejects.toThrow("simulated child interruption");
+    const journalDirectory = path.join(kernel.stateRoot, "journal");
+    const journalNames = await fs.readdir(journalDirectory);
+    let transactionId: string | undefined;
+    for (const journalName of journalNames) {
+      const journal = JSON.parse(
+        await fs.readFile(path.join(journalDirectory, journalName), "utf8"),
+      ) as {
+        kind?: unknown;
+      };
+      if (journal.kind === "multi-write") {
+        transactionId = journalName.replace(/\.json$/, "");
+      }
+    }
+    expect(transactionId).toBeTypeOf("string");
+    await fs.unlink(
+      path.join(kernel.stateRoot, "transactions", transactionId ?? "missing", "1.next"),
+    );
+
+    await expect(openKernel()).rejects.toBeInstanceOf(VaultRecoveryError);
+    await expect(fs.readFile(path.join(vaultPath, "A.md"), "utf8")).resolves.toBe("old a");
+    await expect(fs.readFile(path.join(vaultPath, "B.md"), "utf8")).resolves.toBe("old b");
+    expect(await fs.readdir(path.join(kernel.stateRoot, "history"))).toEqual([]);
+  });
+
+  it("rejects empty, duplicate, and malformed requests before creating a journal", async () => {
+    const kernel = await openKernel();
+
+    await expect(kernel.writeMany([])).rejects.toThrow("at least one file");
+    await expect(
+      kernel.writeMany([
+        { path: "A.md", content: "one", expectedRevision: null },
+        { path: "./A.md", content: "two", expectedRevision: null },
+      ]),
+    ).rejects.toThrow("cannot target a path twice");
+    await expect(
+      kernel.writeMany([{ path: "A.md", content: "one", expectedRevision: "not-a-revision" }]),
+    ).rejects.toThrow("lowercase SHA-256");
+    expect(await fs.readdir(path.join(kernel.stateRoot, "journal"))).toEqual([]);
+  });
+});

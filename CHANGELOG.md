@@ -25,3 +25,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Rebuildable Markdown metadata index for headings, basic properties, tags, links, embeds,
   backlinks, duplicate names, and unresolved targets, with incremental-versus-clean equivalence
   tests across the real writer and watcher seam.
+- Mutation port and durable multi-file roll-forward transactions with prevalidated proposal blobs,
+  per-entry keep-both conflicts, nested journal recovery, and operation-wide watcher attribution.

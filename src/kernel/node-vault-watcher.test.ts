@@ -126,6 +126,28 @@ describe("watch protocol", () => {
     expect(own[0]).toMatchObject({ operationId: "write-1" });
     expect(ledger.size).toBe(0);
   });
+
+  it("attributes every exact result of a multi-file operation", () => {
+    const ledger = new WatchOperationLedger();
+    const firstRevision = revisionOf(Buffer.from("first"));
+    const secondRevision = revisionOf(Buffer.from("second"));
+    ledger.expect({
+      id: "multi-1",
+      kind: "multi-write",
+      writes: [
+        { path: "A.md", revision: firstRevision },
+        { path: "B.md", revision: secondRevision },
+      ],
+    });
+
+    const annotated = ledger.annotate([
+      { kind: "upsert", state: state("A.md", "1", firstRevision) },
+      { kind: "upsert", state: state("B.md", "2", secondRevision) },
+    ]);
+
+    expect(annotated).toMatchObject([{ operationId: "multi-1" }, { operationId: "multi-1" }]);
+    expect(ledger.size).toBe(0);
+  });
 });
 
 describe("NodeVaultWatcher", () => {

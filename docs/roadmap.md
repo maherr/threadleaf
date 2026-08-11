@@ -24,24 +24,28 @@ Exit gate passed: the findings and resulting decisions are recorded in the
 Exit gate passed: the fixture reaches compatibility level 4 through the production loader without
 changing any fixture byte.
 
-## Phase 1: Safe vault kernel
+## Phase 1: Safe vault kernel (complete)
 
 - [x] Canonical path handling and symlink policy.
 - [x] State-root port and fixed-path adapter.
 - [x] Read-only vault port with the Node vault kernel as its filesystem adapter.
-- [ ] Mutation port and adapter boundary.
+- [x] Mutation port and Node vault-kernel adapter.
 - [x] Sequenced, debounced file watching with inode-based rename pairing.
 - [x] Overflow, ambiguity, sequence-gap, stream-restart, and full-rescan behavior.
 - [x] Targeted subtree scan and index-rebuild behavior.
 - [x] Durable no-clobber writes and crash-recovery journal.
 - [x] Content revisions, external-edit detection, conflict copies, and writer serialization.
 - [x] Recoverable single-file rename.
-- [ ] Recoverable multi-file mutation transactions.
+- [x] Recoverable multi-file roll-forward transactions.
 - [x] Rebuildable metadata and link index foundation.
 - [x] Incremental-versus-clean-rebuild equivalence tests across the writer and watcher seam.
 
 Exit gate: interruption, concurrent external-edit, rename, and recovery fixtures lose no bytes.
 Every watcher fallback converges, and every incremental index snapshot equals a clean rebuild.
+
+Exit gate passed: 58 automated tests cover the interruption matrix, external races, single and
+multi-file recovery, live watcher delivery and fallbacks, operation attribution, and index
+equivalence through the real writer-to-watcher seam.
 
 ## Phase 2: Knowledge workspace
 

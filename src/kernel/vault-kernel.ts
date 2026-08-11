@@ -14,6 +14,8 @@ import {
   syncDirectory,
 } from "./durability";
 import {
+  type MultiWriteJournal,
+  type MultiWriteJournalEntry,
   parseTransactionJournal,
   type RenameJournal,
   type TransactionJournal,
@@ -25,7 +27,16 @@ import {
   normalizeVaultPath,
   VaultPathPolicy,
 } from "./path-policy";
-import type { StateRootPort, VaultReadPort, VaultTextSnapshot } from "./ports";
+import type {
+  MultiWriteEntryResult,
+  MultiWriteRequest,
+  MultiWriteResult,
+  StateRootPort,
+  VaultMutationPort,
+  VaultRenameResult,
+  VaultTextSnapshot,
+  VaultWriteResult,
+} from "./ports";
 
 export type KernelFaultPoint =
   | "write:after-intent"
@@ -38,7 +49,10 @@ export type KernelFaultPoint =
   | "write:after-commit"
   | "rename:after-intent"
   | "rename:after-link"
-  | "rename:after-commit";
+  | "rename:after-commit"
+  | "multi-write:after-intent"
+  | "multi-write:after-entry"
+  | "multi-write:after-commit";
 
 export type KernelFaultInjector = (point: KernelFaultPoint) => void | Promise<void>;
 
@@ -52,30 +66,16 @@ export interface VaultKernelOptions {
 
 export type TextFileSnapshot = VaultTextSnapshot;
 
-export type WriteResult =
-  | {
-      status: "committed";
-      path: string;
-      revision: string;
-      transactionId: string;
-    }
-  | {
-      status: "conflict";
-      path: string;
-      currentRevision: string | null;
-      conflictPath: string;
-      transactionId: string;
-    };
-
-export type RenameResult =
-  | { status: "committed"; from: string; to: string; transactionId: string }
-  | { status: "conflict"; from: string; to: string; reason: string };
+export type WriteResult = VaultWriteResult;
+export type RenameResult = VaultRenameResult;
+export type { MultiWriteEntryResult, MultiWriteRequest, MultiWriteResult } from "./ports";
 
 export interface RecoveryAction {
   transactionId: string;
-  kind: "write" | "rename";
+  kind: "write" | "rename" | "multi-write";
   outcome: "committed" | "conflict-copy" | "rolled-back" | "manual-conflict";
   path: string;
+  paths?: string[];
   conflictPath?: string;
 }
 
@@ -105,6 +105,7 @@ interface InternalWriteConflict {
 type InternalWriteResult = InternalWriteCommitted | InternalWriteConflict;
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const revisionPattern = /^[a-f0-9]{64}$/;
 
 function revisionsMatch(snapshot: FileSnapshot | null, expectedRevision: string | null): boolean {
   return (snapshot?.revision ?? null) === expectedRevision;
@@ -118,7 +119,13 @@ function sanitizeTimestamp(date: Date): string {
   return date.toISOString().replaceAll(/[-:.]/g, "");
 }
 
-export class VaultKernel implements VaultReadPort {
+function assertExpectedRevision(revision: string | null): void {
+  if (revision !== null && !revisionPattern.test(revision)) {
+    throw new Error("Expected revisions must be lowercase SHA-256 values or null.");
+  }
+}
+
+export class VaultKernel implements VaultMutationPort {
   readonly paths: VaultPathPolicy;
   readonly stateRoot: string;
   readonly vaultId: string;
@@ -130,6 +137,7 @@ export class VaultKernel implements VaultReadPort {
   private readonly journalDirectory: string;
   private readonly historyDirectory: string;
   private readonly recoveryDirectory: string;
+  private readonly transactionDirectory: string;
   private mutationTail: Promise<void> = Promise.resolve();
 
   private constructor(
@@ -147,6 +155,7 @@ export class VaultKernel implements VaultReadPort {
     this.journalDirectory = path.join(stateRoot, "journal");
     this.historyDirectory = path.join(stateRoot, "history");
     this.recoveryDirectory = path.join(stateRoot, "recovery");
+    this.transactionDirectory = path.join(stateRoot, "transactions");
   }
 
   static async open(options: VaultKernelOptions): Promise<VaultKernel> {
@@ -205,6 +214,7 @@ export class VaultKernel implements VaultReadPort {
     expectedRevision: string | null,
   ): Promise<WriteResult> {
     this.assertWritable();
+    assertExpectedRevision(expectedRevision);
     return this.withMutation(async () => {
       const normalized = normalizeVaultPath(relativePath);
       const bytes = Buffer.from(content, "utf8");
@@ -234,9 +244,18 @@ export class VaultKernel implements VaultReadPort {
     expectedSourceRevision: string,
   ): Promise<RenameResult> {
     this.assertWritable();
+    assertExpectedRevision(expectedSourceRevision);
     return this.withMutation(() =>
       this.performRename(sourcePath, targetPath, expectedSourceRevision),
     );
+  }
+
+  async writeMany(requests: readonly MultiWriteRequest[]): Promise<MultiWriteResult> {
+    this.assertWritable();
+    if (requests.length === 0) {
+      throw new Error("A multi-write transaction requires at least one file.");
+    }
+    return this.withMutation(() => this.performMultiWrite(requests));
   }
 
   private async performRename(
@@ -378,12 +397,46 @@ export class VaultKernel implements VaultReadPort {
       }
     }
 
+    const recoveryPriority: Record<TransactionJournal["kind"], number> = {
+      write: 0,
+      rename: 1,
+      "multi-write": 2,
+    };
+    journals.sort(
+      (left, right) =>
+        recoveryPriority[left.kind] - recoveryPriority[right.kind] ||
+        left.id.localeCompare(right.id),
+    );
+
+    const preparedMultiWriteBlobs = new Map<string, Map<number, Buffer>>();
     for (const journal of journals) {
-      actions.push(
-        journal.kind === "write"
-          ? await this.recoverWrite(journal)
-          : await this.recoverRename(journal),
-      );
+      if (journal.kind !== "multi-write") {
+        continue;
+      }
+      try {
+        preparedMultiWriteBlobs.set(journal.id, await this.loadPendingMultiWriteBlobs(journal));
+      } catch (error) {
+        throw new VaultRecoveryError(`${journal.id}.json`, error);
+      }
+    }
+
+    for (const journal of journals) {
+      try {
+        if (journal.kind === "write") {
+          actions.push(await this.recoverWrite(journal));
+        } else if (journal.kind === "rename") {
+          actions.push(await this.recoverRename(journal));
+        } else {
+          actions.push(
+            await this.recoverMultiWrite(
+              journal,
+              preparedMultiWriteBlobs.get(journal.id) ?? new Map(),
+            ),
+          );
+        }
+      } catch (error) {
+        throw new VaultRecoveryError(`${journal.id}.json`, error);
+      }
     }
     return actions;
   }
@@ -393,6 +446,7 @@ export class VaultKernel implements VaultReadPort {
       fs.mkdir(this.journalDirectory, { recursive: true }),
       fs.mkdir(this.historyDirectory, { recursive: true }),
       fs.mkdir(this.recoveryDirectory, { recursive: true }),
+      fs.mkdir(this.transactionDirectory, { recursive: true }),
     ]);
     const identityPath = path.join(this.stateRoot, "vault.json");
     const identity = {
@@ -426,6 +480,155 @@ export class VaultKernel implements VaultReadPort {
         throw new Error("Vault state identity does not match this vault.");
       }
     }
+  }
+
+  private async performMultiWrite(
+    requests: readonly MultiWriteRequest[],
+  ): Promise<MultiWriteResult> {
+    const id = randomUUID();
+    const seenPaths = new Set<string>();
+    const prepared = requests.map((request) => {
+      const targetPath = normalizeVaultPath(request.path);
+      if (seenPaths.has(targetPath)) {
+        throw new Error(`A multi-write transaction cannot target a path twice: ${targetPath}`);
+      }
+      seenPaths.add(targetPath);
+      assertExpectedRevision(request.expectedRevision);
+      const bytes = Buffer.from(request.content, "utf8");
+      return { targetPath, expectedRevision: request.expectedRevision, bytes };
+    });
+    const blobDirectory = this.getTransactionBlobDirectory(id);
+    await fs.mkdir(blobDirectory);
+    await syncDirectory(this.transactionDirectory);
+    try {
+      for (let index = 0; index < prepared.length; index += 1) {
+        const item = prepared[index];
+        if (!item) {
+          continue;
+        }
+        await durableCreate(this.getTransactionBlobPath(id, index), item.bytes);
+      }
+    } catch (error) {
+      await fs.rm(blobDirectory, { recursive: true, force: true });
+      await syncDirectory(this.transactionDirectory);
+      throw error;
+    }
+
+    const journal: MultiWriteJournal = {
+      version: 1,
+      id,
+      vaultId: this.vaultId,
+      kind: "multi-write",
+      phase: "intent",
+      createdAt: this.clock().toISOString(),
+      entries: prepared.map((item) => ({
+        targetPath: item.targetPath,
+        expectedRevision: item.expectedRevision,
+        nextRevision: revisionOf(item.bytes),
+        status: "pending",
+        currentRevision: null,
+        conflictPath: null,
+      })),
+    };
+    await this.writeJournal(journal);
+    await this.inject("multi-write:after-intent");
+    journal.phase = "applying";
+    await this.writeJournal(journal);
+    const blobs = await this.loadPendingMultiWriteBlobs(journal);
+    for (let index = 0; index < journal.entries.length; index += 1) {
+      const entry = journal.entries[index];
+      if (entry?.status !== "pending") {
+        continue;
+      }
+      const bytes = blobs.get(index);
+      if (!bytes) {
+        throw new Error(`Missing prepared bytes for multi-write entry ${index}.`);
+      }
+      await this.applyMultiWriteEntry(entry, bytes);
+      await this.writeJournal(journal);
+      await this.inject("multi-write:after-entry");
+    }
+    journal.phase = "committed";
+    await this.writeJournal(journal);
+    await this.inject("multi-write:after-commit");
+    const result = this.multiWriteResult(journal);
+    await this.archiveJournal(journal, result.status);
+    return result;
+  }
+
+  private async applyMultiWriteEntry(entry: MultiWriteJournalEntry, bytes: Buffer): Promise<void> {
+    const targetAbsolute = await this.paths.resolveForWrite(entry.targetPath, true);
+    const current = await readStableFile(targetAbsolute);
+    if (current?.revision === entry.nextRevision) {
+      entry.status = "committed";
+      entry.currentRevision = entry.nextRevision;
+      entry.conflictPath = null;
+      return;
+    }
+
+    const result = await this.performWrite(entry.targetPath, bytes, entry.expectedRevision);
+    if (result.status === "committed") {
+      entry.status = "committed";
+      entry.currentRevision = result.revision;
+      entry.conflictPath = null;
+    } else {
+      entry.status = "conflict";
+      entry.currentRevision = result.currentRevision;
+      entry.conflictPath = result.conflictPath;
+    }
+  }
+
+  private async loadPendingMultiWriteBlobs(
+    journal: MultiWriteJournal,
+  ): Promise<Map<number, Buffer>> {
+    const blobs = new Map<number, Buffer>();
+    for (let index = 0; index < journal.entries.length; index += 1) {
+      const entry = journal.entries[index];
+      if (entry?.status !== "pending") {
+        continue;
+      }
+      const blobPath = this.getTransactionBlobPath(journal.id, index);
+      const stat = await fs.lstat(blobPath);
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        throw new Error(`Multi-write blob is not a regular file: ${index}`);
+      }
+      const blob = await readStableFile(blobPath);
+      if (!blob || blob.revision !== entry.nextRevision) {
+        throw new Error(`Multi-write blob failed its revision check: ${index}`);
+      }
+      blobs.set(index, blob.bytes);
+    }
+    return blobs;
+  }
+
+  private multiWriteResult(journal: MultiWriteJournal): MultiWriteResult {
+    const entries: MultiWriteEntryResult[] = journal.entries.map((entry) => {
+      if (entry.status === "committed") {
+        return { status: "committed", path: entry.targetPath, revision: entry.nextRevision };
+      }
+      if (entry.status === "conflict" && entry.conflictPath) {
+        return {
+          status: "conflict",
+          path: entry.targetPath,
+          currentRevision: entry.currentRevision,
+          conflictPath: entry.conflictPath,
+        };
+      }
+      throw new Error(`Multi-write entry did not reach a terminal state: ${entry.targetPath}`);
+    });
+    return {
+      status: entries.some((entry) => entry.status === "conflict") ? "conflict" : "committed",
+      transactionId: journal.id,
+      entries,
+    };
+  }
+
+  private getTransactionBlobDirectory(transactionId: string): string {
+    return path.join(this.transactionDirectory, transactionId);
+  }
+
+  private getTransactionBlobPath(transactionId: string, index: number): string {
+    return path.join(this.getTransactionBlobDirectory(transactionId), `${index}.next`);
   }
 
   private async performWrite(
@@ -750,6 +953,39 @@ export class VaultKernel implements VaultReadPort {
       kind: "rename",
       outcome: "manual-conflict",
       path: journal.targetPath,
+    };
+  }
+
+  private async recoverMultiWrite(
+    journal: MultiWriteJournal,
+    blobs: Map<number, Buffer>,
+  ): Promise<RecoveryAction> {
+    journal.phase = "applying";
+    await this.writeJournal(journal);
+    for (let index = 0; index < journal.entries.length; index += 1) {
+      const entry = journal.entries[index];
+      if (entry?.status !== "pending") {
+        continue;
+      }
+      const bytes = blobs.get(index);
+      if (!bytes) {
+        throw new Error(`Missing prepared bytes for multi-write recovery entry ${index}.`);
+      }
+      await this.applyMultiWriteEntry(entry, bytes);
+      await this.writeJournal(journal);
+    }
+    journal.phase = "committed";
+    await this.writeJournal(journal);
+    const result = this.multiWriteResult(journal);
+    await this.archiveJournal(journal, result.status);
+    const firstConflict = result.entries.find((entry) => entry.status === "conflict");
+    return {
+      transactionId: journal.id,
+      kind: "multi-write",
+      outcome: result.status === "committed" ? "committed" : "conflict-copy",
+      path: journal.entries[0]?.targetPath ?? "",
+      paths: journal.entries.map((entry) => entry.targetPath),
+      ...(firstConflict ? { conflictPath: firstConflict.conflictPath } : {}),
     };
   }
 

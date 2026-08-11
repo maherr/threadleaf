@@ -91,6 +91,45 @@ describe("vault kernel integration", () => {
     await reactor.accept(renameBatch);
     await expectIndexEquivalent(reactor, kernel);
 
+    const [beforeA, beforeRenamed] = await Promise.all([
+      kernel.readText("A.md"),
+      kernel.readText("Renamed.md"),
+    ]);
+    const multiWrite = await kernel.writeMany([
+      {
+        path: "A.md",
+        content: "[[Renamed]] #multi",
+        expectedRevision: beforeA.revision,
+      },
+      {
+        path: "Renamed.md",
+        content: "# Renamed\n[[A]]",
+        expectedRevision: beforeRenamed.revision,
+      },
+    ]);
+    expect(multiWrite.status).toBe("committed");
+    const expectedWrites = multiWrite.entries.map((entry) => {
+      if (entry.status !== "committed") {
+        throw new Error("Expected every integration multi-write entry to commit.");
+      }
+      return { path: entry.path, revision: entry.revision };
+    });
+    watcher.operations.expect({
+      id: multiWrite.transactionId,
+      kind: "multi-write",
+      writes: expectedWrites,
+    });
+    const multiBatch = await watcher.scanNow();
+    expect(multiBatch?.changes).toHaveLength(2);
+    expect(
+      multiBatch?.changes.every((change) => change.operationId === multiWrite.transactionId),
+    ).toBe(true);
+    if (!multiBatch) {
+      throw new Error("Expected a watcher batch for the multi-write fixture.");
+    }
+    await reactor.accept(multiBatch);
+    await expectIndexEquivalent(reactor, kernel);
+
     await fs.writeFile(path.join(vaultPath, "A.md"), "[[Renamed]] #external", "utf8");
     const externalBatch = await watcher.scanNow();
     expect(externalBatch?.changes[0]).not.toHaveProperty("operationId");

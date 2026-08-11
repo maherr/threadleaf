@@ -15,6 +15,55 @@ export interface VaultReadPort {
   readText(relativePath: string): Promise<VaultTextSnapshot>;
 }
 
+export type VaultWriteResult =
+  | { status: "committed"; path: string; revision: string; transactionId: string }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+    };
+
+export type VaultRenameResult =
+  | { status: "committed"; from: string; to: string; transactionId: string }
+  | { status: "conflict"; from: string; to: string; reason: string };
+
+export interface MultiWriteRequest {
+  path: string;
+  content: string;
+  expectedRevision: string | null;
+}
+
+export type MultiWriteEntryResult =
+  | { status: "committed"; path: string; revision: string }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+    };
+
+export interface MultiWriteResult {
+  status: "committed" | "conflict";
+  transactionId: string;
+  entries: MultiWriteEntryResult[];
+}
+
+export interface VaultMutationPort extends VaultReadPort {
+  writeText(
+    relativePath: string,
+    content: string,
+    expectedRevision: string | null,
+  ): Promise<VaultWriteResult>;
+  renameFile(
+    sourcePath: string,
+    targetPath: string,
+    expectedSourceRevision: string,
+  ): Promise<VaultRenameResult>;
+  writeMany(requests: readonly MultiWriteRequest[]): Promise<MultiWriteResult>;
+}
+
 export class FixedStateRoot implements StateRootPort {
   readonly #path: string;
 

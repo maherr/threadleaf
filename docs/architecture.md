@@ -93,6 +93,13 @@ against a malicious process running as the same operating-system user, which can
 operations after validation. Symlink and canonical-path checks fail closed whenever such a change
 is observed.
 
+Multi-file edits are durable roll-forward transactions rather than a claim of cross-file atomicity
+that portable filesystems cannot provide. Threadleaf stores and verifies every proposed version in
+application state before applying the first entry. Progress is journaled after each child write.
+Restart completes pending entries, recognizes versions already installed, and turns stale entries
+into keep-both conflicts. Proposal blobs remain as recovery evidence until a later, explicit
+retention policy can remove them.
+
 ## Initial component model
 
 ```text

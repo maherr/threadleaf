@@ -112,7 +112,12 @@ export class WatchSequenceGate {
 
 export type ExpectedVaultOperation =
   | { id: string; kind: "write"; path: string; revision: string }
-  | { id: string; kind: "rename"; from: string; to: string; revision: string };
+  | { id: string; kind: "rename"; from: string; to: string; revision: string }
+  | {
+      id: string;
+      kind: "multi-write";
+      writes: Array<{ path: string; revision: string }>;
+    };
 
 export class WatchOperationLedger {
   readonly #operations = new Map<string, ExpectedVaultOperation>();
@@ -162,14 +167,33 @@ export class WatchOperationLedger {
       return index === -1 ? null : [index];
     }
 
-    const moveIndex = changes.findIndex(
-      (change) =>
-        change.kind === "move" &&
-        change.from === operation.from &&
-        change.to === operation.to &&
-        change.state.revision === operation.revision &&
-        change.operationId === undefined,
-    );
-    return moveIndex === -1 ? null : [moveIndex];
+    if (operation.kind === "rename") {
+      const moveIndex = changes.findIndex(
+        (change) =>
+          change.kind === "move" &&
+          change.from === operation.from &&
+          change.to === operation.to &&
+          change.state.revision === operation.revision &&
+          change.operationId === undefined,
+      );
+      return moveIndex === -1 ? null : [moveIndex];
+    }
+
+    const indexes: number[] = [];
+    for (const write of operation.writes) {
+      const index = changes.findIndex(
+        (change, candidateIndex) =>
+          !indexes.includes(candidateIndex) &&
+          change.kind === "upsert" &&
+          change.state.path === write.path &&
+          change.state.revision === write.revision &&
+          change.operationId === undefined,
+      );
+      if (index === -1) {
+        return null;
+      }
+      indexes.push(index);
+    }
+    return indexes;
   }
 }
