@@ -9,6 +9,14 @@ import type {
   WorkspaceNoteSnapshot,
 } from "../shared/contracts";
 import {
+  type AppSettingsSnapshot,
+  bindingFromKeyboardEvent,
+  createDefaultAppSettings,
+  displayKeyBinding,
+  type ShortcutTargetId,
+  shortcutTargetForEvent,
+} from "../shared/key-bindings";
+import {
   filterPaletteCommands,
   firstEnabledPaletteIndex,
   movePaletteSelection,
@@ -65,6 +73,8 @@ const elements = {
   watchMessage: getElement("watch-message"),
   commandTrigger: getButton("command-trigger"),
   commandShortcut: getElement("command-shortcut"),
+  settingsTrigger: getButton("settings-trigger"),
+  settingsShortcut: getElement("settings-shortcut"),
   themeToggle: getButton("theme-toggle"),
   themeLabel: getElement("theme-label"),
   commandPalette: getDialog("command-palette"),
@@ -73,6 +83,13 @@ const elements = {
   paletteCount: getElement("palette-count"),
   paletteResults: getElement("palette-results"),
   paletteHint: getElement("palette-hint"),
+  settingsDialog: getDialog("shortcut-settings"),
+  settingsClose: getButton("settings-close"),
+  settingsDone: getButton("settings-done"),
+  settingsReset: getButton("settings-reset"),
+  settingsWarning: getElement("settings-warning"),
+  settingsList: getElement("key-binding-list"),
+  settingsStatus: getElement("settings-status"),
   toast: getElement("toast"),
 };
 
@@ -85,6 +102,50 @@ interface EditNoticeState {
 interface RendererCommand extends PaletteCommandDescriptor {
   run: () => void | Promise<void>;
 }
+
+interface ShortcutTargetDefinition {
+  id: ShortcutTargetId;
+  label: string;
+  description: string;
+}
+
+const shortcutTargets: readonly ShortcutTargetDefinition[] = [
+  {
+    id: "ui.command-palette",
+    label: "Open command palette",
+    description: "Search every available core and compatibility-plugin action.",
+  },
+  {
+    id: "settings.open-keybindings",
+    label: "Open keyboard settings",
+    description: "Review and change Threadleaf keyboard shortcuts.",
+  },
+  {
+    id: "workspace.open-vault",
+    label: "Open another vault",
+    description: "Choose a local Markdown folder after any draft is saved or reverted.",
+  },
+  {
+    id: "workspace.focus-note-filter",
+    label: "Focus note filter",
+    description: "Move keyboard focus to the indexed note filter.",
+  },
+  {
+    id: "editor.save-note",
+    label: "Save current note",
+    description: "Save through the revision-aware recoverable writer.",
+  },
+  {
+    id: "editor.revert-note",
+    label: "Revert current note",
+    description: "Discard the current editor draft and accept the disk version.",
+  },
+  {
+    id: "appearance.toggle-theme",
+    label: "Toggle light or dark theme",
+    description: "Switch the current Threadleaf color scheme.",
+  },
+];
 
 const isMac = navigator.platform.toLocaleLowerCase("en-US").includes("mac");
 let currentSnapshot: RuntimeSnapshot | null = null;
@@ -102,6 +163,16 @@ let syncingEditor = false;
 let paletteMatches: RendererCommand[] = [];
 let paletteSelection = -1;
 let paletteRestoreFocus: HTMLElement | null = null;
+let settingsSnapshot: AppSettingsSnapshot = {
+  settings: createDefaultAppSettings(),
+  warning: null,
+};
+let settingsRestoreFocus: HTMLElement | null = null;
+let recordingShortcut: ShortcutTargetId | null = null;
+let settingsBusy = false;
+let settingsMessage = "Select a command, then press its new shortcut.";
+let settingsMessageKind: "info" | "saved" | "error" = "info";
+let lastSettingsWarning: string | null = null;
 
 const editorStyleNonce = "threadleaf-codemirror";
 const sourceHighlight = HighlightStyle.define([
@@ -173,8 +244,16 @@ function getDialog(id: string): HTMLDialogElement {
   return element;
 }
 
+function bindingFor(targetId: ShortcutTargetId): string | null {
+  return settingsSnapshot.settings.keyBindings[targetId] ?? null;
+}
+
+function shortcutFor(targetId: ShortcutTargetId): string | null {
+  const binding = bindingFor(targetId);
+  return binding === null ? null : displayKeyBinding(binding, isMac);
+}
+
 function commandCatalog(): RendererCommand[] {
-  const modifier = isMac ? "⌘" : "Ctrl";
   const plugin = currentSnapshot?.plugin ?? null;
   const commands: RendererCommand[] = [
     {
@@ -182,7 +261,7 @@ function commandCatalog(): RendererCommand[] {
       label: "Open another vault",
       category: "Workspace",
       keywords: ["folder", "switch", "choose"],
-      shortcut: `${modifier} O`,
+      shortcut: shortcutFor("workspace.open-vault"),
       enabled: !busy && !saving && !dirty,
       disabledReason: dirty
         ? "Save or revert the open note before switching vaults."
@@ -196,7 +275,7 @@ function commandCatalog(): RendererCommand[] {
       label: "Focus note filter",
       category: "Workspace",
       keywords: ["find", "files", "search", "quick switcher"],
-      shortcut: `${modifier} P`,
+      shortcut: shortcutFor("workspace.focus-note-filter"),
       enabled: true,
       disabledReason: null,
       run: focusNoteFilter,
@@ -206,7 +285,7 @@ function commandCatalog(): RendererCommand[] {
       label: "Save current note",
       category: "Editor",
       keywords: ["write", "commit"],
-      shortcut: `${modifier} S`,
+      shortcut: shortcutFor("editor.save-note"),
       enabled: Boolean(loadedNote && loadedVaultId && dirty && !busy && !saving),
       disabledReason: !loadedNote
         ? "No note is open."
@@ -220,7 +299,7 @@ function commandCatalog(): RendererCommand[] {
       label: "Revert current note",
       category: "Editor",
       keywords: ["discard", "reload", "undo changes"],
-      shortcut: null,
+      shortcut: shortcutFor("editor.revert-note"),
       enabled: Boolean(loadedNote && dirty && !busy && !saving),
       disabledReason: !loadedNote
         ? "No note is open."
@@ -234,10 +313,20 @@ function commandCatalog(): RendererCommand[] {
       label: `Switch to ${document.documentElement.dataset.theme === "dark" ? "light" : "dark"} theme`,
       category: "Appearance",
       keywords: ["color", "dark", "light"],
-      shortcut: `${modifier} Shift L`,
+      shortcut: shortcutFor("appearance.toggle-theme"),
       enabled: true,
       disabledReason: null,
       run: toggleTheme,
+    },
+    {
+      id: "settings.open-keybindings",
+      label: "Open keyboard settings",
+      category: "Settings",
+      keywords: ["shortcut", "hotkey", "key binding", "preferences"],
+      shortcut: shortcutFor("settings.open-keybindings"),
+      enabled: !settingsBusy,
+      disabledReason: settingsBusy ? "Threadleaf is saving keyboard settings." : null,
+      run: openSettings,
     },
   ];
 
@@ -345,6 +434,223 @@ function closeCommandPalette(restoreFocus = true): void {
   paletteRestoreFocus = null;
   if (restoreFocus && restoreTarget?.isConnected) {
     restoreTarget.focus();
+  }
+}
+
+function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
+  settingsSnapshot = snapshot;
+  updateShortcutLabels();
+  if (snapshot.warning && snapshot.warning !== lastSettingsWarning) {
+    showToast(snapshot.warning);
+  }
+  lastSettingsWarning = snapshot.warning;
+  renderSettings();
+  renderPaletteResults();
+}
+
+function updateShortcutLabels(): void {
+  elements.commandShortcut.textContent = shortcutFor("ui.command-palette") ?? "None";
+  elements.settingsShortcut.textContent = shortcutFor("settings.open-keybindings") ?? "None";
+  elements.searchShortcut.textContent = shortcutFor("workspace.focus-note-filter") ?? "None";
+  elements.saveShortcut.textContent = shortcutFor("editor.save-note") ?? "None";
+}
+
+function openSettings(): void {
+  if (elements.settingsDialog.open) {
+    elements.settingsClose.focus();
+    return;
+  }
+  if (elements.commandPalette.open) {
+    closeCommandPalette(false);
+  }
+  settingsRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  recordingShortcut = null;
+  settingsMessage = "Select a command, then press its new shortcut.";
+  settingsMessageKind = "info";
+  elements.settingsDialog.showModal();
+  renderSettings();
+  elements.settingsClose.focus();
+}
+
+function closeSettings(restoreFocus = true): void {
+  if (!elements.settingsDialog.open || settingsBusy) {
+    return;
+  }
+  recordingShortcut = null;
+  elements.settingsDialog.close();
+  const restoreTarget = settingsRestoreFocus;
+  settingsRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+function focusBindingButton(targetId: ShortcutTargetId): void {
+  elements.settingsList
+    .querySelector<HTMLButtonElement>(
+      `.binding-capture[data-shortcut-target="${CSS.escape(targetId)}"]`,
+    )
+    ?.focus();
+}
+
+function beginShortcutRecording(targetId: ShortcutTargetId): void {
+  if (settingsBusy) {
+    return;
+  }
+  recordingShortcut = targetId;
+  settingsMessage =
+    "Press Ctrl/Cmd or Alt with a letter, number, arrow, or supported symbol. Esc cancels.";
+  settingsMessageKind = "info";
+  renderSettings();
+  focusBindingButton(targetId);
+}
+
+function cancelShortcutRecording(targetId: ShortcutTargetId): void {
+  recordingShortcut = null;
+  settingsMessage = "Shortcut capture cancelled.";
+  settingsMessageKind = "info";
+  renderSettings();
+  focusBindingButton(targetId);
+}
+
+async function persistKeyBinding(
+  targetId: ShortcutTargetId,
+  binding: string | null,
+): Promise<void> {
+  if (settingsBusy) {
+    return;
+  }
+  settingsBusy = true;
+  settingsMessage = binding === null ? "Clearing shortcut…" : "Saving shortcut…";
+  settingsMessageKind = "info";
+  renderSettings();
+  try {
+    const snapshot = await window.threadleaf.setKeyBinding(targetId, binding);
+    recordingShortcut = null;
+    settingsMessage = binding === null ? "Shortcut cleared." : "Shortcut saved.";
+    settingsMessageKind = "saved";
+    applySettingsSnapshot(snapshot);
+  } catch (error) {
+    settingsMessage = error instanceof Error ? error.message : String(error);
+    settingsMessageKind = "error";
+  } finally {
+    settingsBusy = false;
+    renderSettings();
+    focusBindingButton(targetId);
+  }
+}
+
+async function resetKeyBindings(): Promise<void> {
+  if (settingsBusy) {
+    return;
+  }
+  settingsBusy = true;
+  recordingShortcut = null;
+  settingsMessage = "Restoring default shortcuts…";
+  settingsMessageKind = "info";
+  renderSettings();
+  try {
+    applySettingsSnapshot(await window.threadleaf.resetKeyBindings());
+    settingsMessage = "Default shortcuts restored.";
+    settingsMessageKind = "saved";
+  } catch (error) {
+    settingsMessage = error instanceof Error ? error.message : String(error);
+    settingsMessageKind = "error";
+  } finally {
+    settingsBusy = false;
+    renderSettings();
+    elements.settingsReset.focus();
+  }
+}
+
+function captureShortcut(event: KeyboardEvent, targetId: ShortcutTargetId): void {
+  if (recordingShortcut !== targetId) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === "Escape") {
+    cancelShortcutRecording(targetId);
+    return;
+  }
+  if (
+    (event.key === "Backspace" || event.key === "Delete") &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  ) {
+    void persistKeyBinding(targetId, null);
+    return;
+  }
+  const binding = bindingFromKeyboardEvent(event, isMac);
+  if (!binding) {
+    settingsMessage = "That key is not supported. Include Ctrl/Cmd or Alt and a non-modifier key.";
+    settingsMessageKind = "error";
+    renderSettings();
+    focusBindingButton(targetId);
+    return;
+  }
+  void persistKeyBinding(targetId, binding);
+}
+
+function renderSettings(): void {
+  elements.settingsWarning.hidden = settingsSnapshot.warning === null;
+  elements.settingsWarning.textContent = settingsSnapshot.warning ?? "";
+  elements.settingsStatus.textContent =
+    settingsMessageKind === "error" ? `Error: ${settingsMessage}` : settingsMessage;
+  elements.settingsStatus.dataset.kind = settingsMessageKind;
+  elements.settingsClose.disabled = settingsBusy;
+  elements.settingsDone.disabled = settingsBusy;
+  elements.settingsReset.disabled = settingsBusy;
+  if (!elements.settingsDialog.open) {
+    return;
+  }
+
+  elements.settingsList.replaceChildren();
+  for (const target of shortcutTargets) {
+    const binding = bindingFor(target.id);
+    const row = document.createElement("div");
+    row.className = "binding-row";
+    row.dataset.shortcutTarget = target.id;
+
+    const copy = document.createElement("span");
+    copy.className = "binding-copy";
+    const label = document.createElement("strong");
+    label.textContent = target.label;
+    const description = document.createElement("small");
+    description.textContent = target.description;
+    const identity = document.createElement("code");
+    identity.textContent = target.id;
+    copy.append(label, description, identity);
+
+    const capture = document.createElement("button");
+    capture.type = "button";
+    capture.className = "binding-capture";
+    capture.dataset.shortcutTarget = target.id;
+    capture.dataset.recording = String(recordingShortcut === target.id);
+    capture.disabled = settingsBusy;
+    capture.ariaLabel = `Change shortcut for ${target.label}`;
+    const key = document.createElement("kbd");
+    key.textContent =
+      recordingShortcut === target.id ? "Press shortcut" : displayKeyBinding(binding, isMac);
+    capture.append(key);
+    capture.addEventListener("click", () => beginShortcutRecording(target.id));
+    capture.addEventListener("keydown", (event) => captureShortcut(event, target.id));
+
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "binding-clear";
+    clear.disabled = settingsBusy || binding === null;
+    clear.ariaLabel = `Clear shortcut for ${target.label}`;
+    clear.textContent = "Clear";
+    clear.addEventListener("click", () => void persistKeyBinding(target.id, null));
+
+    const controls = document.createElement("span");
+    controls.className = "binding-controls";
+    controls.append(capture, clear);
+    row.append(copy, controls);
+    elements.settingsList.append(row);
   }
 }
 
@@ -952,6 +1258,10 @@ elements.fileSearch.addEventListener("input", () => {
 });
 
 elements.commandTrigger.addEventListener("click", openCommandPalette);
+elements.settingsTrigger.addEventListener(
+  "click",
+  () => void executeRendererCommand("settings.open-keybindings"),
+);
 elements.themeToggle.addEventListener(
   "click",
   () => void executeRendererCommand("appearance.toggle-theme"),
@@ -1011,10 +1321,32 @@ elements.commandPalette.addEventListener("click", (event) => {
   }
 });
 
+elements.settingsClose.addEventListener("click", () => closeSettings());
+elements.settingsDone.addEventListener("click", () => closeSettings());
+elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
+elements.settingsDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  if (recordingShortcut) {
+    cancelShortcutRecording(recordingShortcut);
+  } else {
+    closeSettings();
+  }
+});
+elements.settingsDialog.addEventListener("click", (event) => {
+  if (event.target === elements.settingsDialog) {
+    closeSettings();
+  }
+});
+
 document.addEventListener("keydown", (event) => {
-  const modifier = event.metaKey || event.ctrlKey;
-  const key = event.key.toLocaleLowerCase("en-US");
-  if (modifier && key === "k") {
+  if (event.repeat) {
+    return;
+  }
+  const targetId = shortcutTargetForEvent(settingsSnapshot.settings.keyBindings, event, isMac);
+  if (targetId === "ui.command-palette") {
+    if (elements.settingsDialog.open) {
+      return;
+    }
     event.preventDefault();
     if (elements.commandPalette.open) {
       closeCommandPalette();
@@ -1023,30 +1355,28 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
-  if (elements.commandPalette.open) {
+  if (targetId === "settings.open-keybindings") {
+    event.preventDefault();
+    if (elements.settingsDialog.open) {
+      closeSettings();
+    } else {
+      void executeRendererCommand(targetId);
+    }
     return;
   }
-  if (modifier && key === "s") {
+  if (elements.commandPalette.open || elements.settingsDialog.open) {
+    return;
+  }
+  if (targetId) {
     event.preventDefault();
-    void executeRendererCommand("editor.save-note");
-  } else if (modifier && key === "o") {
-    event.preventDefault();
-    void executeRendererCommand("workspace.open-vault");
-  } else if (modifier && key === "p") {
-    event.preventDefault();
-    void executeRendererCommand("workspace.focus-note-filter");
-  } else if (modifier && event.shiftKey && key === "l") {
-    event.preventDefault();
-    void executeRendererCommand("appearance.toggle-theme");
+    void executeRendererCommand(targetId);
   } else if (event.key === "Escape" && document.activeElement === elements.fileSearch) {
     elements.fileSearch.value = "";
     elements.fileSearch.dispatchEvent(new Event("input"));
   }
 });
 
-elements.searchShortcut.textContent = isMac ? "⌘P" : "Ctrl P";
-elements.saveShortcut.textContent = isMac ? "⌘S" : "Ctrl S";
-elements.commandShortcut.textContent = isMac ? "⌘K" : "Ctrl K";
+updateShortcutLabels();
 
 const storedTheme = localStorage.getItem("threadleaf-theme");
 const initialTheme =
@@ -1058,6 +1388,7 @@ const initialTheme =
 setTheme(initialTheme);
 
 const unsubscribe = window.threadleaf.onSnapshot(render);
+const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
 window.addEventListener("beforeunload", (event) => {
   if (dirty) {
     event.preventDefault();
@@ -1068,6 +1399,7 @@ window.addEventListener(
   "unload",
   () => {
     unsubscribe();
+    unsubscribeSettings();
     editor.destroy();
   },
   { once: true },
@@ -1075,4 +1407,8 @@ window.addEventListener(
 void window.threadleaf
   .getSnapshot()
   .then(render)
+  .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
+void window.threadleaf
+  .getSettings()
+  .then(applySettingsSnapshot)
   .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));

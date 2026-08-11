@@ -6,9 +6,19 @@ import type {
   VaultOpenResponse,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
+import type { AppSettingsSnapshot } from "../shared/key-bindings";
 
 const bridge: ThreadleafBridge = {
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
+  getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
+  setKeyBinding: (targetId, binding) =>
+    ipcRenderer.invoke(
+      ipcChannels.setKeyBinding,
+      targetId,
+      binding,
+    ) as Promise<AppSettingsSnapshot>,
+  resetKeyBindings: () =>
+    ipcRenderer.invoke(ipcChannels.resetKeyBindings) as Promise<AppSettingsSnapshot>,
   chooseVault: () => ipcRenderer.invoke(ipcChannels.chooseVault) as Promise<VaultOpenResponse>,
   openNote: (filePath) =>
     ipcRenderer.invoke(ipcChannels.openNote, filePath) as Promise<RuntimeSnapshot>,
@@ -30,6 +40,13 @@ const bridge: ThreadleafBridge = {
     };
     ipcRenderer.on(ipcChannels.snapshotChanged, subscription);
     return () => ipcRenderer.removeListener(ipcChannels.snapshotChanged, subscription);
+  },
+  onSettings: (listener) => {
+    const subscription = (_event: Electron.IpcRendererEvent, snapshot: AppSettingsSnapshot) => {
+      listener(snapshot);
+    };
+    ipcRenderer.on(ipcChannels.settingsChanged, subscription);
+    return () => ipcRenderer.removeListener(ipcChannels.settingsChanged, subscription);
   },
 };
 

@@ -1,3 +1,5 @@
+import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
+
 export type PluginRuntimeState = "empty" | "loaded" | "unloaded" | "failed";
 
 export type RuntimeEventKind = "runtime" | "plugin" | "command" | "notice" | "error";
@@ -113,6 +115,9 @@ export type VaultOpenResponse =
 
 export interface ThreadleafBridge {
   getSnapshot(): Promise<RuntimeSnapshot>;
+  getSettings(): Promise<AppSettingsSnapshot>;
+  setKeyBinding(targetId: ShortcutTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
+  resetKeyBindings(): Promise<AppSettingsSnapshot>;
   chooseVault(): Promise<VaultOpenResponse>;
   runCommand(commandId: string): Promise<RuntimeSnapshot>;
   reloadPlugin(): Promise<RuntimeSnapshot>;
@@ -125,4 +130,5 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
   ): Promise<NoteSaveResponse>;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
+  onSettings(listener: (snapshot: AppSettingsSnapshot) => void): () => void;
 }

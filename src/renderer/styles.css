@@ -329,12 +329,14 @@ button:disabled {
   min-width: 0;
 }
 
-.command-trigger {
+.command-trigger,
+.settings-trigger {
   font-family: var(--mono);
   font-size: 9px;
 }
 
-.command-trigger kbd {
+.command-trigger kbd,
+.settings-trigger kbd {
   padding: 2px 4px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -1596,6 +1598,274 @@ button.inspector-item:hover {
   }
 }
 
+.shortcut-settings {
+  width: min(760px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(660px, calc(100vh - 36px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px 15px 4px 15px;
+  color: var(--ink);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-large);
+}
+
+.shortcut-settings[open] {
+  animation: palette-arrive 120ms ease-out;
+}
+
+.shortcut-settings::backdrop {
+  background: color-mix(in srgb, var(--canvas) 72%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.shortcut-settings::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  content: "";
+  background: linear-gradient(90deg, var(--signal) 0 8%, var(--accent) 8% 78%, transparent 78%);
+}
+
+.settings-shell {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(120px, 1fr) auto;
+  max-height: min(658px, calc(100vh - 38px));
+  min-height: 0;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  padding: 22px 24px 10px;
+}
+
+.settings-header > span {
+  display: grid;
+  min-width: 0;
+}
+
+.settings-header small {
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.settings-header strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  line-height: 1.08;
+}
+
+.settings-header button {
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink-muted);
+  background: var(--surface-sunken);
+  cursor: pointer;
+}
+
+.settings-header button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.settings-header kbd {
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.settings-description {
+  max-width: 650px;
+  margin: 0;
+  padding: 0 24px 17px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.settings-description code {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.settings-warning {
+  margin: 0 24px 15px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--signal) 42%, var(--line));
+  border-left: 4px solid var(--signal);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--signal-soft);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.binding-column-labels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 8px 24px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-muted);
+  background: var(--surface-sunken);
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.key-binding-list {
+  min-height: 0;
+  padding: 4px 14px 10px;
+  overflow-y: auto;
+}
+
+.binding-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.binding-row:last-child {
+  border-bottom: 0;
+}
+
+.binding-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.binding-copy strong,
+.binding-copy small,
+.binding-copy code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.binding-copy strong {
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.binding-copy small {
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.binding-copy code {
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+.binding-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.binding-capture,
+.binding-clear {
+  min-height: 31px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-soft);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.binding-capture {
+  min-width: 128px;
+  padding: 5px 9px;
+}
+
+.binding-capture kbd {
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.binding-capture:hover:not(:disabled),
+.binding-clear:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.binding-capture[data-recording="true"] {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.binding-clear {
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.settings-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+#settings-status {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#settings-status[data-kind="saved"] {
+  color: var(--accent-strong);
+}
+
+#settings-status[data-kind="error"] {
+  color: var(--signal);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-actions .primary-button,
+.settings-actions .secondary-button {
+  min-height: 34px;
+  padding: 0 13px;
+  font-size: 9px;
+}
+
 .toast {
   position: fixed;
   right: 17px;
@@ -1689,8 +1959,28 @@ button.inspector-item:hover {
     padding: 0 9px;
   }
 
-  .command-trigger-copy {
+  .command-trigger-copy,
+  .settings-trigger-copy {
     display: none;
+  }
+
+  .shortcut-settings {
+    width: calc(100vw - 20px);
+  }
+
+  .settings-header {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .settings-description {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .binding-column-labels {
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
   .note-header {

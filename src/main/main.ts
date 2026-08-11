@@ -1,17 +1,21 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
+import { AppSettingsController } from "../application/app-settings-controller";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
 import { ipcChannels } from "../shared/ipc-channels";
+import { isShortcutTargetId } from "../shared/key-bindings";
 import {
   readDevelopmentPickerOverride,
   readDevelopmentVaultPath,
 } from "./development-picker-override";
+import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
+let settingsController: AppSettingsController;
 
 function fixturePluginDirectory(vaultPath: string): string | undefined {
   const pluginPath = join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture");
@@ -50,6 +54,18 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 
 function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
+  ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
+  ipcMain.handle(ipcChannels.setKeyBinding, (_event, targetId: unknown, binding: unknown) => {
+    if (
+      typeof targetId !== "string" ||
+      !isShortcutTargetId(targetId) ||
+      (binding !== null && typeof binding !== "string")
+    ) {
+      throw new Error("Set key binding requires a known target and a string or null binding.");
+    }
+    return settingsController.setKeyBinding(targetId, binding);
+  });
+  ipcMain.handle(ipcChannels.resetKeyBindings, () => settingsController.resetKeyBindings());
   ipcMain.handle(ipcChannels.chooseVault, async () => {
     const developmentOverride = readDevelopmentPickerOverride(app.isPackaged, process.env);
     if (developmentOverride?.status === "cancelled") {
@@ -123,6 +139,11 @@ function registerIpcHandlers(): void {
       window.webContents.send(ipcChannels.snapshotChanged, snapshot);
     }
   });
+  settingsController.onSnapshot((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(ipcChannels.settingsChanged, snapshot);
+    }
+  });
 }
 
 async function createWindow(): Promise<void> {
@@ -147,6 +168,9 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  settingsController = await AppSettingsController.open(
+    new FileAppSettingsStore(join(app.getPath("userData"), "settings.json")),
+  );
   workspaceController = await createWorkspaceController();
   registerIpcHandlers();
   await createWindow();

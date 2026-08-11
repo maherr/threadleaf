@@ -41,3 +41,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Searchable Ctrl/Cmd+K command palette that routes visible controls and hotkeys through shared
   core and compatibility-plugin actions, skips unavailable commands during keyboard navigation,
   and explains disabled states.
+- Versioned, app-owned keyboard settings with portable Ctrl/Cmd bindings, collision validation,
+  per-command recording and clearing, atomic private persistence, reset-to-default behavior, and
+  visible recovery from malformed settings without touching the vault or `.obsidian/`.

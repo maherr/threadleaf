@@ -72,6 +72,26 @@ both vaults. The renderer also blocks user-initiated switching while a note is u
 development overrides take precedence without changing the persisted user selection and are
 ignored by packaged builds.
 
+### Application settings and key bindings
+
+Threadleaf settings live in a versioned document under the operating system's application-data
+directory, never in the active vault or `.obsidian/`. The store validates and normalizes the whole
+document, writes it atomically with private file permissions, and only then lets the settings
+controller publish and adopt the new snapshot. A failed write therefore cannot create active state
+that disappears on restart.
+
+Malformed settings fail visibly to a complete default snapshot without rewriting the invalid file.
+This preserves the original bytes for diagnosis and lets a temporarily incompatible future file
+recover after the application is updated. Unknown future binding IDs survive normalization, while
+the narrow IPC mutation surface accepts only shortcut targets known by the running build.
+
+Portable bindings use `Mod` for Ctrl on Windows and Linux and Command on macOS. Shared parsing,
+normalization, event matching, display, and collision validation keep persistence and renderer
+behavior on one contract. The settings surface records or clears one binding at a time, rejects
+duplicates before persistence, and resets all bindings through the same durable path. Keyboard
+events resolve to action IDs. Workspace and editor targets then use the same renderer command
+catalog as visible controls and the command palette.
+
 ### Watcher and index model
 
 Filesystem notifications are hints, not truth. The watcher emits debounced batches with a stream

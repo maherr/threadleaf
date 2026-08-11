@@ -60,7 +60,9 @@ equivalence through the real writer-to-watcher seam.
 - [x] Arbitrary vault picker, validated runtime swaps, and persistent workspace restoration.
 - [x] Accessible command palette with shared core and compatibility-plugin actions, search,
       disabled-state explanations, and keyboard navigation.
-- [ ] Tabs, split panes, application menus, remappable hotkeys, and settings.
+- [x] Versioned application settings and remappable hotkeys with collision validation, atomic
+      private persistence, reset-to-default behavior, and no vault-owned state.
+- [ ] Tabs, split panes, application menus, and broader workspace settings.
 - [ ] Live preview and source-to-preview position mapping.
 - [ ] Full-text search, properties, attachments, and embeds.
 
@@ -71,7 +73,7 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - Build an executable same-vault behavior corpus for links, aliases, embeds, attachments,
   frontmatter, rename semantics, JSON Canvas, and `.obsidian/` coexistence.
 - Broaden the public API based on measured plugin usage.
-- Add workspace views, Markdown processors, menus, settings, and editor extensions.
+- Add workspace views, Markdown processors, menus, plugin settings views, and editor extensions.
 - Import behavior with an explicit preview: enabled-plugin inventory, compatible plugin settings,
   hotkeys, themes, CSS snippets, and workspace layout. Never require or mutate `.obsidian/`.
 - Publish a generated compatibility registry.

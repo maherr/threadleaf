@@ -28,8 +28,9 @@ tags, links, and backlinks, filter notes from the keyboard, and reflect external
 giving the renderer filesystem access. Revision-aware saves use the recoverable writer. If the
 file changed externally, the original is left untouched and the local edit becomes a clearly
 labeled conflict copy. Core actions and dynamically registered compatibility-plugin commands share
-a searchable, keyboard-navigable command palette. Compatibility plugins in selected and restored
-vaults stay off by default.
+a searchable, keyboard-navigable command palette. Versioned application settings now keep
+remappable keyboard shortcuts outside every vault, reject collisions, and persist changes before
+activating them. Compatibility plugins in selected and restored vaults stay off by default.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no live preview or release-grade backup and
@@ -69,7 +70,10 @@ pnpm start
 On first launch, the executable build opens the bundled synthetic vault. Use the Open control or
 Ctrl/Cmd+O to select a Markdown folder. Threadleaf validates and persists a successful selection,
 restores it on the next launch, and does not automatically run its compatibility plugins.
-Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P focuses the note filter.
+Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P focuses the note filter; Ctrl/Cmd+, opens keyboard
+settings. Every listed shortcut can be reassigned or cleared, and Reset defaults restores the
+portable built-in bindings. Threadleaf stores these preferences in private application data, not
+in the vault or `.obsidian/`.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

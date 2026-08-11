@@ -1,0 +1,72 @@
+import {
+  type AppSettings,
+  type AppSettingsSnapshot,
+  createDefaultAppSettings,
+  type ShortcutTargetId,
+  updateKeyBinding,
+} from "../shared/key-bindings";
+
+export interface AppSettingsStore {
+  load(): Promise<AppSettings | null>;
+  save(settings: AppSettings): Promise<AppSettings>;
+}
+
+type SettingsListener = (snapshot: AppSettingsSnapshot) => void;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export class AppSettingsController {
+  readonly #store: AppSettingsStore;
+  readonly #listeners = new Set<SettingsListener>();
+  #snapshot: AppSettingsSnapshot;
+
+  private constructor(store: AppSettingsStore, snapshot: AppSettingsSnapshot) {
+    this.#store = store;
+    this.#snapshot = snapshot;
+  }
+
+  static async open(store: AppSettingsStore): Promise<AppSettingsController> {
+    try {
+      const settings = (await store.load()) ?? createDefaultAppSettings();
+      return new AppSettingsController(store, { settings, warning: null });
+    } catch (error) {
+      return new AppSettingsController(store, {
+        settings: createDefaultAppSettings(),
+        warning: `Could not read saved settings: ${errorMessage(error)} Defaults are active; the file was not changed.`,
+      });
+    }
+  }
+
+  getSnapshot(): AppSettingsSnapshot {
+    return this.#snapshot;
+  }
+
+  async setKeyBinding(
+    targetId: ShortcutTargetId,
+    binding: string | null,
+  ): Promise<AppSettingsSnapshot> {
+    const candidate = updateKeyBinding(this.#snapshot.settings, targetId, binding);
+    const settings = await this.#store.save(candidate);
+    return this.adopt(settings);
+  }
+
+  async resetKeyBindings(): Promise<AppSettingsSnapshot> {
+    const settings = await this.#store.save(createDefaultAppSettings());
+    return this.adopt(settings);
+  }
+
+  onSnapshot(listener: SettingsListener): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  private adopt(settings: AppSettings): AppSettingsSnapshot {
+    this.#snapshot = { settings, warning: null };
+    for (const listener of this.#listeners) {
+      listener(this.#snapshot);
+    }
+    return this.#snapshot;
+  }
+}

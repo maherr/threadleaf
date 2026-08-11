@@ -46,6 +46,16 @@
             <span class="command-trigger-copy">Commands</span>
             <kbd id="command-shortcut">Ctrl K</kbd>
           </button>
+          <button
+            class="icon-button settings-trigger"
+            id="settings-trigger"
+            type="button"
+            aria-label="Open keyboard settings"
+          >
+            <span aria-hidden="true">⚙</span>
+            <span class="settings-trigger-copy">Settings</span>
+            <kbd id="settings-shortcut">Ctrl ,</kbd>
+          </button>
           <button class="icon-button" id="theme-toggle" type="button" aria-label="Switch to dark theme">
             <span aria-hidden="true">◐</span>
             <span id="theme-label">Dark</span>
@@ -222,6 +232,47 @@
           <span><kbd>↑↓</kbd> Navigate</span>
           <span><kbd>Enter</kbd> Run</span>
           <span id="palette-hint">Ready</span>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog
+      class="shortcut-settings"
+      id="shortcut-settings"
+      aria-labelledby="settings-title"
+      aria-describedby="settings-description"
+      aria-modal="true"
+    >
+      <div class="settings-shell">
+        <header class="settings-header">
+          <span>
+            <small>App-owned preferences</small>
+            <strong id="settings-title">Keyboard settings</strong>
+          </span>
+          <button id="settings-close" type="button" aria-label="Close keyboard settings">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="settings-description" class="settings-description">
+          Shortcuts are stored in Threadleaf's private application data, never in this vault or
+          <code>.obsidian/</code>. Select a binding to record a replacement.
+        </p>
+        <p class="settings-warning" id="settings-warning" role="alert" hidden></p>
+        <div class="binding-column-labels" aria-hidden="true">
+          <span>Command</span>
+          <span>Binding</span>
+        </div>
+        <div class="key-binding-list" id="key-binding-list"></div>
+        <footer class="settings-footer">
+          <p id="settings-status" data-kind="info" role="status" aria-live="polite">
+            Select a command, then press its new shortcut.
+          </p>
+          <span class="settings-actions">
+            <button class="secondary-button" id="settings-reset" type="button">
+              Reset defaults
+            </button>
+            <button class="primary-button" id="settings-done" type="button">Done</button>
+          </span>
         </footer>
       </div>
     </dialog>
