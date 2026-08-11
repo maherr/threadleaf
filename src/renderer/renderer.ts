@@ -1,7 +1,12 @@
+import { markdown } from "@codemirror/lang-markdown";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+import { basicSetup, EditorView } from "codemirror";
 import type {
   RuntimeSnapshot,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
+  WorkspaceNoteSnapshot,
 } from "../shared/contracts";
 import "./styles.css";
 
@@ -11,6 +16,7 @@ const elements = {
   statusShape: getElement("status-shape"),
   fileCount: getElement("file-count"),
   fileSearch: getInput("file-search"),
+  searchShortcut: getElement("search-shortcut"),
   filterSummary: getElement("filter-summary"),
   fileList: getElement("file-list"),
   indexStatus: getElement("index-status"),
@@ -21,7 +27,15 @@ const elements = {
   noteTitle: getElement("note-title"),
   noteStats: getElement("note-stats"),
   noteTags: getElement("note-tags"),
-  noteContent: getElement("note-content"),
+  noteEditor: getElement("note-editor"),
+  editState: getElement("edit-state"),
+  saveNote: getButton("save-note"),
+  saveShortcut: getElement("save-shortcut"),
+  revertNote: getButton("revert-note"),
+  editNotice: getElement("edit-notice"),
+  editNoticeTitle: getElement("edit-notice-title"),
+  editNoticeMessage: getElement("edit-notice-message"),
+  dismissEditNotice: getButton("dismiss-edit-notice"),
   outlineList: getElement("outline-list"),
   linkCount: getElement("link-count"),
   outgoingList: getElement("outgoing-list"),
@@ -43,9 +57,60 @@ const elements = {
   toast: getElement("toast"),
 };
 
+interface EditNoticeState {
+  kind: "external" | "conflict";
+  title: string;
+  message: string;
+}
+
 let currentSnapshot: RuntimeSnapshot | null = null;
+let loadedNote: WorkspaceNoteSnapshot | null = null;
+let pendingDiskNote: WorkspaceNoteSnapshot | null = null;
+let diskChanged = false;
+let editNoticeState: EditNoticeState | null = null;
 let toastTimer: number | undefined;
 let busy = false;
+let saving = false;
+let dirty = false;
+let syncingEditor = false;
+
+const editorStyleNonce = "threadleaf-codemirror";
+const sourceHighlight = HighlightStyle.define([
+  { tag: tags.heading, color: "var(--accent-strong)", fontWeight: "700" },
+  {
+    tag: [tags.link, tags.url],
+    color: "var(--accent-strong)",
+    textDecoration: "underline",
+  },
+  { tag: tags.strong, color: "var(--ink)", fontWeight: "750" },
+  { tag: tags.emphasis, color: "var(--ink-soft)", fontStyle: "italic" },
+  { tag: [tags.meta, tags.contentSeparator], color: "var(--signal)" },
+  { tag: [tags.monospace, tags.string], color: "var(--ink)" },
+  { tag: tags.comment, color: "var(--ink-muted)" },
+]);
+
+const editor = new EditorView({
+  doc: "",
+  parent: elements.noteEditor,
+  extensions: [
+    basicSetup,
+    markdown(),
+    EditorView.lineWrapping,
+    EditorView.cspNonce.of(editorStyleNonce),
+    syntaxHighlighting(sourceHighlight),
+    EditorView.contentAttributes.of({
+      "aria-label": "Markdown source editor",
+      "aria-multiline": "true",
+      spellcheck: "true",
+    }),
+    EditorView.updateListener.of((update) => {
+      if (!syncingEditor && update.docChanged) {
+        dirty = true;
+        renderEditControls();
+      }
+    }),
+  ],
+});
 
 function getElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -90,8 +155,9 @@ function render(snapshot: RuntimeSnapshot): void {
       ? `Recovered by ${workspace.watcher.lastRescanReason} rescan`
       : "Filesystem and index agree";
 
-  renderFiles(workspace?.files ?? [], workspace?.activeNote?.path ?? null);
-  renderNote(snapshot);
+  const displayedNote = reconcileEditor(workspace?.activeNote ?? null);
+  renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
+  renderNote(displayedNote);
 
   elements.pluginState.textContent = plugin?.state ?? "empty";
   elements.pluginState.dataset.state = plugin?.state ?? "empty";
@@ -155,22 +221,23 @@ function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): 
   }
 }
 
-function renderNote(snapshot: RuntimeSnapshot): void {
-  const note = snapshot.workspace?.activeNote;
-  elements.noteEmpty.hidden = note !== null && note !== undefined;
-  elements.noteView.hidden = !note;
+function renderNote(note: WorkspaceNoteSnapshot | null): void {
+  elements.noteEmpty.hidden = note !== null;
+  elements.noteView.hidden = note === null;
   if (!note) {
     elements.notePath.textContent = "No note selected";
+    elements.noteTags.replaceChildren();
+    elements.linkCount.textContent = "0";
     renderEmpty(elements.outlineList, "No outline yet.");
     renderEmpty(elements.outgoingList, "No outgoing links.");
     renderEmpty(elements.backlinkList, "No backlinks.");
+    renderEditControls();
     return;
   }
 
   elements.notePath.textContent = note.path;
   elements.noteTitle.textContent = note.title;
   elements.noteStats.textContent = `${note.headings.length} ${note.headings.length === 1 ? "heading" : "headings"} · ${note.outgoing.length} outgoing · ${note.backlinks.length} backlinks`;
-  elements.noteContent.textContent = note.content;
   elements.noteTags.replaceChildren();
   for (const tag of note.tags) {
     const badge = document.createElement("li");
@@ -208,6 +275,76 @@ function renderNote(snapshot: RuntimeSnapshot): void {
       path: filePath,
     })),
   );
+  renderEditControls();
+}
+
+function reconcileEditor(incomingNote: WorkspaceNoteSnapshot | null): WorkspaceNoteSnapshot | null {
+  if (!incomingNote) {
+    if (dirty && loadedNote) {
+      pendingDiskNote = null;
+      diskChanged = true;
+      setEditNotice({
+        kind: "external",
+        title: "The open note disappeared from the index",
+        message:
+          "Your unsaved text is still in the editor. Saving will preserve it through the conflict path instead of recreating or overwriting the missing note silently.",
+      });
+      return loadedNote;
+    }
+    replaceEditorDocument(null);
+    return null;
+  }
+
+  if (!loadedNote) {
+    replaceEditorDocument(incomingNote);
+    return incomingNote;
+  }
+
+  if (loadedNote.path === incomingNote.path && loadedNote.revision === incomingNote.revision) {
+    loadedNote = incomingNote;
+    return incomingNote;
+  }
+
+  const currentText = editor.state.doc.toString();
+  if (saving && currentText === incomingNote.content) {
+    replaceEditorDocument(incomingNote);
+    return incomingNote;
+  }
+
+  if (dirty) {
+    pendingDiskNote = incomingNote;
+    diskChanged = true;
+    const samePath = loadedNote.path === incomingNote.path;
+    setEditNotice({
+      kind: "external",
+      title: samePath ? "This note changed on disk" : "The active disk note changed",
+      message: samePath
+        ? "Threadleaf kept your unsaved editor text. Save to preserve it as a conflict copy, or Revert to load the current disk version."
+        : "Threadleaf kept your unsaved editor text instead of switching notes. Save to preserve it, or Revert to accept the current disk selection.",
+    });
+    return loadedNote;
+  }
+
+  replaceEditorDocument(incomingNote);
+  return incomingNote;
+}
+
+function replaceEditorDocument(note: WorkspaceNoteSnapshot | null): void {
+  const content = note?.content ?? "";
+  syncingEditor = true;
+  try {
+    editor.dispatch({
+      changes: { from: 0, to: editor.state.doc.length, insert: content },
+      selection: { anchor: 0 },
+    });
+  } finally {
+    syncingEditor = false;
+  }
+  loadedNote = note;
+  pendingDiskNote = null;
+  diskChanged = false;
+  dirty = false;
+  clearEditNotice();
 }
 
 function renderConnections(container: HTMLElement, links: WorkspaceLinkSummary[]): void {
@@ -284,18 +421,113 @@ function renderEmpty(container: HTMLElement, message: string): void {
   container.append(empty);
 }
 
+function renderEditControls(): void {
+  let state: "empty" | "saved" | "dirty" | "conflict" | "saving" = "empty";
+  let label = "No note";
+  if (saving) {
+    state = "saving";
+    label = "Saving";
+  } else if (dirty && diskChanged) {
+    state = "conflict";
+    label = "Unsaved, disk changed";
+  } else if (dirty) {
+    state = "dirty";
+    label = "Unsaved";
+  } else if (loadedNote) {
+    state = "saved";
+    label = "Saved";
+  }
+  elements.editState.dataset.state = state;
+  elements.editState.textContent = label;
+  elements.saveNote.disabled = busy || saving || !dirty || !loadedNote;
+  elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
+  renderEditNotice();
+}
+
+function setEditNotice(notice: EditNoticeState): void {
+  editNoticeState = notice;
+  renderEditNotice();
+}
+
+function clearEditNotice(): void {
+  editNoticeState = null;
+  renderEditNotice();
+}
+
+function renderEditNotice(): void {
+  elements.editNotice.hidden = editNoticeState === null;
+  elements.editNotice.dataset.kind = editNoticeState?.kind ?? "none";
+  elements.editNoticeTitle.textContent = editNoticeState?.title ?? "";
+  elements.editNoticeMessage.textContent = editNoticeState?.message ?? "";
+}
+
 function scrollToSourceLine(line: number): void {
-  const lineHeight = Number.parseFloat(getComputedStyle(elements.noteContent).lineHeight) || 24;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  elements.noteContent.scrollTo({
-    top: Math.max(0, line - 1) * lineHeight,
-    behavior: reducedMotion ? "auto" : "smooth",
+  const boundedLine = Math.max(1, Math.min(line, editor.state.doc.lines));
+  const offset = editor.state.doc.line(boundedLine).from;
+  editor.dispatch({
+    selection: { anchor: offset },
+    effects: EditorView.scrollIntoView(offset, { y: "start" }),
   });
-  elements.noteContent.focus({ preventScroll: true });
+  editor.focus();
 }
 
 async function openNote(filePath: string): Promise<void> {
+  if (dirty || saving) {
+    showToast("Save or revert the open note before navigating away.");
+    editor.focus();
+    return;
+  }
   await runAction(() => window.threadleaf.openNote(filePath));
+}
+
+async function saveActiveNote(): Promise<void> {
+  if (!loadedNote || !dirty || saving || busy) {
+    return;
+  }
+  const path = loadedNote.path;
+  const expectedRevision = loadedNote.revision;
+  const content = editor.state.doc.toString();
+  saving = true;
+  renderEditControls();
+  setActionState(busy);
+  try {
+    const response = await window.threadleaf.saveNote(path, content, expectedRevision);
+    render(response.snapshot);
+    if (response.outcome.status === "conflict") {
+      setEditNotice({
+        kind: "conflict",
+        title: "Your edit was preserved as a conflict note",
+        message: `The original changed on disk and was not overwritten. Your version is now ${response.outcome.conflictPath}.`,
+      });
+      showToast(`Preserved as ${response.outcome.conflictPath}`);
+    } else if (dirty) {
+      showToast("Saved, but the note changed again on disk.");
+    } else {
+      clearEditNotice();
+      showToast(`Saved ${response.outcome.path}`);
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    saving = false;
+    setActionState(busy);
+  }
+}
+
+function revertActiveNote(): void {
+  if (!dirty || saving || busy) {
+    return;
+  }
+  const diskNote = diskChanged
+    ? (pendingDiskNote ?? currentSnapshot?.workspace?.activeNote ?? null)
+    : loadedNote;
+  replaceEditorDocument(diskNote);
+  if (currentSnapshot) {
+    render(currentSnapshot);
+  } else {
+    renderEditControls();
+  }
+  showToast(diskNote ? "Reverted to the current disk version." : "Accepted the disk deletion.");
 }
 
 function showToast(message: string): void {
@@ -322,9 +554,10 @@ async function runAction(action: () => Promise<RuntimeSnapshot>): Promise<void> 
 
 function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
-  elements.reloadPlugin.disabled = busy;
-  elements.unloadPlugin.disabled = busy || currentSnapshot?.plugin?.state !== "loaded";
-  elements.runCommand.disabled = busy || (currentSnapshot?.commands.length ?? 0) === 0;
+  elements.reloadPlugin.disabled = busy || saving;
+  elements.unloadPlugin.disabled = busy || saving || currentSnapshot?.plugin?.state !== "loaded";
+  elements.runCommand.disabled = busy || saving || (currentSnapshot?.commands.length ?? 0) === 0;
+  renderEditControls();
 }
 
 function setTheme(theme: "light" | "dark"): void {
@@ -337,12 +570,16 @@ function setTheme(theme: "light" | "dark"): void {
 
 elements.fileSearch.addEventListener("input", () => {
   const workspace = currentSnapshot?.workspace;
-  renderFiles(workspace?.files ?? [], workspace?.activeNote?.path ?? null);
+  renderFiles(workspace?.files ?? [], loadedNote?.path ?? null);
 });
 
 elements.themeToggle.addEventListener("click", () => {
   setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 });
+
+elements.saveNote.addEventListener("click", () => void saveActiveNote());
+elements.revertNote.addEventListener("click", revertActiveNote);
+elements.dismissEditNotice.addEventListener("click", clearEditNotice);
 
 elements.runCommand.addEventListener("click", () => {
   const command = currentSnapshot?.commands[0];
@@ -365,7 +602,12 @@ elements.unloadPlugin.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase("en-US") === "p") {
+  const modifier = event.metaKey || event.ctrlKey;
+  const key = event.key.toLocaleLowerCase("en-US");
+  if (modifier && key === "s") {
+    event.preventDefault();
+    void saveActiveNote();
+  } else if (modifier && key === "p") {
     event.preventDefault();
     elements.fileSearch.focus();
     elements.fileSearch.select();
@@ -374,6 +616,10 @@ document.addEventListener("keydown", (event) => {
     elements.fileSearch.dispatchEvent(new Event("input"));
   }
 });
+
+const isMac = navigator.platform.toLocaleLowerCase("en-US").includes("mac");
+elements.searchShortcut.textContent = isMac ? "⌘P" : "Ctrl P";
+elements.saveShortcut.textContent = isMac ? "⌘S" : "Ctrl S";
 
 const storedTheme = localStorage.getItem("threadleaf-theme");
 const initialTheme =
@@ -385,7 +631,20 @@ const initialTheme =
 setTheme(initialTheme);
 
 const unsubscribe = window.threadleaf.onSnapshot(render);
-window.addEventListener("beforeunload", unsubscribe, { once: true });
+window.addEventListener("beforeunload", (event) => {
+  if (dirty) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
+window.addEventListener(
+  "unload",
+  () => {
+    unsubscribe();
+    editor.destroy();
+  },
+  { once: true },
+);
 void window.threadleaf
   .getSnapshot()
   .then(render)

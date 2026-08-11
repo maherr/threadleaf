@@ -100,6 +100,29 @@ Restart completes pending entries, recognizes versions already installed, and tu
 into keep-both conflicts. Proposal blobs remain as recovery evidence until a later, explicit
 retention policy can remove them.
 
+### Future encrypted sync boundary
+
+Encrypted sync is an optional transport around the local-first vault, not a replacement for it.
+Plain Markdown and attachments remain authoritative on each device, the desktop application stays
+complete offline, and no account is required for local use.
+
+The client will translate revisioned local changes into encrypted, versioned objects. A sync server
+may route and retain those objects but must not need plaintext note bodies, filenames, paths,
+attachments, or protected metadata. Account, billing, network, timing, and object-size metadata
+cannot all be hidden by an ordinary hosted service; the threat model must state those limits rather
+than treating "zero knowledge" as a slogan.
+
+Threadleaf will use established cryptographic primitives and independently reviewed libraries, with
+a versioned key hierarchy, authenticated device enrollment, recovery material, and explicit format
+migrations. Novel cryptography is out of scope. Revision and keep-both conflict sync comes before
+real-time collaboration or a CRDT.
+
+The protocol and server remain open and self-hostable. A paid official service can fund maintenance
+by offering reliable operation, encrypted history, backups, sharing, and later collaboration, but
+it receives no proprietary file format or privileged protocol capability. A browser client may
+offer reading and editing; arbitrary Node-capable compatibility plugins remain desktop-only unless
+a separately sandboxed web extension contract proves safe.
+
 ## Initial component model
 
 ```text
@@ -135,3 +158,4 @@ Capability host ---> native Threadleaf extension
 - Editor architecture and source-to-preview mapping.
 - Metadata schema and migration strategy.
 - Packaging, signing, and update channels.
+- Encrypted object format, key hierarchy, recovery model, and residual-metadata budget.

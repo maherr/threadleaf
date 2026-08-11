@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { WorkspaceRuntime } from "../application/workspace-runtime";
 import { FixedStateRoot } from "../kernel/ports";
@@ -8,12 +9,15 @@ let mainWindow: BrowserWindow | null = null;
 let workspaceRuntime: WorkspaceRuntime;
 
 async function createWorkspaceRuntime(): Promise<WorkspaceRuntime> {
-  const vaultPath = join(app.getAppPath(), "fixtures", "vaults", "basic");
+  const configuredVaultPath = process.env.THREADLEAF_VAULT_PATH?.trim();
+  const vaultPath = configuredVaultPath
+    ? resolve(configuredVaultPath)
+    : join(app.getAppPath(), "fixtures", "vaults", "basic");
   const pluginPath = join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture");
   return WorkspaceRuntime.open({
     vaultRoot: vaultPath,
     stateRoot: new FixedStateRoot(app.getPath("userData")),
-    pluginDirectory: pluginPath,
+    ...(existsSync(join(pluginPath, "manifest.json")) ? { pluginDirectory: pluginPath } : {}),
   });
 }
 
@@ -25,6 +29,19 @@ function registerIpcHandlers(): void {
     }
     return workspaceRuntime.openNote(filePath);
   });
+  ipcMain.handle(
+    ipcChannels.saveNote,
+    (_event, filePath: unknown, content: unknown, expectedRevision: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof content !== "string" ||
+        typeof expectedRevision !== "string"
+      ) {
+        throw new Error("Save note requires string path, content, and revision values.");
+      }
+      return workspaceRuntime.saveNote(filePath, content, expectedRevision);
+    },
+  );
   ipcMain.handle(ipcChannels.runCommand, (_event, commandId: unknown) => {
     if (typeof commandId !== "string") {
       throw new Error("Run command requires a string identifier.");

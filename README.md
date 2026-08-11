@@ -23,11 +23,14 @@ fallbacks. Multi-file operations durably retain every proposal and resume safely
 
 Phase 2 is in progress. The production runtime now composes that kernel, watcher, index, one shared
 action registry, and the compatibility host. The Electron workspace can navigate the bundled
-fixture, inspect Markdown source, headings, tags, links, and backlinks, filter notes from the
-keyboard, and reflect external changes without giving the renderer filesystem access.
+fixture, edit Markdown through CodeMirror, inspect headings, tags, links, and backlinks, filter
+notes from the keyboard, and reflect external changes without giving the renderer filesystem
+access. Revision-aware saves use the recoverable writer. If the file changed externally, the
+original is left untouched and the local edit becomes a clearly labeled conflict copy.
 
 Do not use the current build with an important vault. It still opens only a bundled synthetic
-fixture and exposes neither an arbitrary vault picker nor an editing control.
+fixture by default and exposes no user-facing vault picker, live preview, or release-grade backup
+and restore workflow.
 
 ## Product promises
 
@@ -38,6 +41,7 @@ fixture and exposes neither an arbitrary vault picker nor an editing control.
 - Make every future write atomic, recoverable, and visible.
 - Support existing trusted plugins while developing a safer capability-based native extension API.
 - Remain useful offline without an account, subscription, or hosted service.
+- Keep any future encrypted sync protocol and server open and self-hostable.
 
 ## Project map
 
@@ -59,9 +63,15 @@ pnpm check
 pnpm start
 ```
 
-The executable build opens the bundled synthetic vault. It does not yet expose a vault picker or
-accept an arbitrary filesystem path. `pnpm check` also verifies that the packaged Electron entry
-points exist and that renderer assets remain loadable over `file://`.
+The executable build opens the bundled synthetic vault. Development and verification runs can use
+an isolated vault copy without changing the fixture:
+
+```sh
+THREADLEAF_VAULT_PATH=/absolute/path/to/disposable-vault pnpm start
+```
+
+This environment override is not a user-facing vault picker. `pnpm check` also verifies that the
+packaged Electron entry points exist and that renderer assets remain loadable over `file://`.
 
 ## License
 

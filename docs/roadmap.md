@@ -55,9 +55,11 @@ equivalence through the real writer-to-watcher seam.
 - [x] File navigation, three-pane source workspace, indexed filtering, headings, tags, links, and
       backlinks.
 - [x] Keyboard-first filtering and accessible light and dark theme foundations.
+- [x] CodeMirror source editor with dirty state, explicit Revert, revision-aware recoverable save,
+      external-change detection, and keep-both conflict UI.
 - [ ] Arbitrary vault picker and persistent workspace restoration.
 - [ ] Tabs, split panes, command palette, menus, hotkeys, and settings.
-- [ ] CodeMirror editor with source mode, live preview, recoverable save, and conflict UI.
+- [ ] Live preview and source-to-preview position mapping.
 - [ ] Full-text search, properties, attachments, and embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
@@ -82,10 +84,31 @@ Exit gate: selected high-value plugins complete named workflows against public f
 
 ## Later phases
 
-- Open synchronization adapters and conflict UI.
 - Reviewable agent operations with cited diffs.
 - Mobile clients after desktop data safety and compatibility stabilize.
 - Signed, updateable, rollback-tested Linux, macOS, and Windows releases.
+
+## Future lane: encrypted sync service
+
+This lane does not gate the desktop alpha. The local application must remain complete without an
+account or network connection.
+
+- [ ] Publish a precise threat model and server-visible metadata disclosure.
+- [ ] Define a versioned encrypted object and device protocol around vault revisions and preserved
+      conflicts.
+- [ ] Implement multi-device enrollment, recovery keys, encrypted history, and attachment sync in
+      the desktop client.
+- [ ] Publish the protocol and self-hostable server under an open-source license.
+- [ ] Offer the same server as a paid, maintained Threadleaf-hosted service.
+- [ ] Add a browser reader/editor with a deliberately narrower extension model than the trusted
+      desktop compatibility host.
+- [ ] Complete independent cryptographic and application-security review before making a
+      zero-knowledge claim.
+
+Exit gate: a hostile or compromised sync server cannot read vault content, paths, filenames,
+attachments, or protected metadata; documented residual metadata is minimized; two devices
+converge without losing concurrent edits; export and self-host migration require no proprietary
+conversion.
 
 ## Continuous project-health gates
 

@@ -564,6 +564,112 @@ h2 {
   text-transform: uppercase;
 }
 
+.editor-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.edit-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 132px;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.035em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.edit-state::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  content: "";
+  background: var(--surface-sunken);
+}
+
+.edit-state[data-state="saved"]::before {
+  border-color: var(--accent-strong);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--surface-raised);
+}
+
+.edit-state[data-state="dirty"] {
+  color: var(--signal);
+}
+
+.edit-state[data-state="dirty"]::before {
+  border-color: var(--signal);
+  border-radius: 1px;
+  background: var(--signal);
+}
+
+.edit-state[data-state="conflict"] {
+  color: var(--signal);
+  text-decoration: underline;
+  text-decoration-style: double;
+}
+
+.edit-state[data-state="conflict"]::before {
+  border: 2px double var(--signal);
+  border-radius: 1px;
+  background: var(--signal-soft);
+  transform: rotate(45deg);
+}
+
+.edit-state[data-state="saving"]::before {
+  border: 2px dotted var(--accent);
+  background: transparent;
+}
+
+.toolbar-button {
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink-soft);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.toolbar-button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.toolbar-button kbd {
+  margin-left: 3px;
+  color: inherit;
+  font-family: inherit;
+  font-size: 7px;
+  opacity: 0.72;
+}
+
+.save-button:not(:disabled) {
+  border-color: var(--accent-strong);
+  color: #ffffff;
+  background: var(--accent-strong);
+}
+
+:root[data-theme="dark"] .save-button:not(:disabled) {
+  color: #101820;
+  background: var(--accent);
+}
+
 .note-empty {
   display: grid;
   align-content: center;
@@ -592,14 +698,15 @@ h2 {
 
 .note-view {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
 .note-empty[hidden],
-.note-view[hidden] {
+.note-view[hidden],
+.edit-notice[hidden] {
   display: none;
 }
 
@@ -647,20 +754,147 @@ h2 {
   background: var(--surface-sunken);
 }
 
-.note-content {
+.edit-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 12px 0 57px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--signal) 44%, var(--line));
+  border-left: 4px solid var(--signal);
+  border-radius: 6px;
+  color: var(--ink-soft);
+  background: var(--signal-soft);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.edit-notice[data-kind="conflict"] {
+  border-left-style: double;
+  border-left-width: 6px;
+}
+
+.notice-shape {
+  color: var(--signal);
+  font-size: 18px;
+}
+
+.edit-notice > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.edit-notice strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.notice-dismiss {
+  min-height: 25px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--signal) 36%, var(--line));
+  border-radius: 4px;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--surface-raised) 68%, transparent);
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.note-editor-shell {
   min-width: 0;
   min-height: 0;
-  margin: 0;
-  padding: 24px 48px 64px 70px;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.note-editor,
+.note-editor .cm-editor,
+.note-editor .cm-scroller {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.note-editor .cm-editor {
   color: var(--ink-soft);
   background: transparent;
+}
+
+.note-editor .cm-editor.cm-focused {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent);
+}
+
+.note-editor .cm-scroller {
+  overflow: auto;
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1.76;
-  overflow-wrap: anywhere;
   tab-size: 2;
-  white-space: pre-wrap;
+}
+
+.note-editor .cm-content {
+  min-height: 100%;
+  padding: 20px 32px 64px 20px;
+  caret-color: var(--signal);
+}
+
+.note-editor .cm-line {
+  padding: 0;
+}
+
+.note-editor .cm-gutters {
+  min-width: 49px;
+  border-right: 1px solid color-mix(in srgb, var(--signal) 14%, transparent);
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+.note-editor .cm-lineNumbers {
+  min-width: 48px;
+}
+
+.note-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 48px;
+  padding: 0 8px 0 4px;
+  font-size: 9px;
+}
+
+.note-editor .cm-foldGutter {
+  display: none;
+}
+
+.note-editor .cm-activeLine,
+.note-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--accent-soft) 48%, transparent);
+}
+
+.note-editor .cm-selectionBackground,
+.note-editor .cm-content ::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.note-editor .cm-cursor,
+.note-editor .cm-dropCursor {
+  border-left-color: var(--signal);
+}
+
+.note-editor .cm-panels {
+  border-color: var(--line);
+  color: var(--ink);
+  background: var(--surface-sunken);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.note-editor .cm-panel input,
+.note-editor .cm-panel button {
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: var(--surface-raised);
 }
 
 .inspector {
@@ -1092,9 +1326,8 @@ button.inspector-item:hover {
     padding-left: 62px;
   }
 
-  .note-content {
-    padding-right: 32px;
-    padding-left: 62px;
+  .note-editor .cm-content {
+    padding-right: 24px;
   }
 
   .button-row {
@@ -1135,9 +1368,17 @@ button.inspector-item:hover {
     padding: 25px 24px 15px 57px;
   }
 
-  .note-content {
-    padding: 20px 24px 54px 57px;
+  .note-editor .cm-content {
+    padding: 18px 20px 54px 16px;
     font-size: 12px;
+  }
+
+  .edit-state {
+    max-width: 112px;
+  }
+
+  .edit-notice {
+    margin-left: 49px;
   }
 
   .statusbar {

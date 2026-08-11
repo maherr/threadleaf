@@ -80,11 +80,32 @@ export interface WorkspaceSnapshot {
   };
 }
 
+export type NoteSaveOutcome =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+    }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+    };
+
+export interface NoteSaveResponse {
+  outcome: NoteSaveOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
 export interface ThreadleafBridge {
   getSnapshot(): Promise<RuntimeSnapshot>;
   runCommand(commandId: string): Promise<RuntimeSnapshot>;
   reloadPlugin(): Promise<RuntimeSnapshot>;
   unloadPlugin(): Promise<RuntimeSnapshot>;
   openNote(path: string): Promise<RuntimeSnapshot>;
+  saveNote(path: string, content: string, expectedRevision: string): Promise<NoteSaveResponse>;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
 }

@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'nonce-threadleaf-codemirror'; img-src 'self' data:; connect-src 'none'"
     />
     <title>Threadleaf</title>
   </head>
   <body>
     <div class="app-frame">
       <header class="topbar">
-        <a class="brand" href="#note-content" aria-label="Threadleaf workspace">
+        <a class="brand" href="#note-editor-shell" aria-label="Threadleaf workspace">
           <span class="brand-mark" aria-hidden="true"><span>T</span></span>
           <span class="brand-copy">
             <strong>Threadleaf</strong>
@@ -49,7 +49,7 @@
             <span aria-hidden="true">⌕</span>
             <span class="sr-only">Filter notes</span>
             <input id="file-search" type="search" autocomplete="off" placeholder="Filter notes" />
-            <kbd>⌘P</kbd>
+            <kbd id="search-shortcut">⌘P</kbd>
           </label>
 
           <p class="filter-summary" id="filter-summary" aria-live="polite">Loading vault index</p>
@@ -67,7 +67,14 @@
               <span class="thread-mark" aria-hidden="true"></span>
               <span id="note-path">No note selected</span>
             </div>
-            <span class="source-label">Markdown source</span>
+            <div class="editor-controls">
+              <span class="source-label">Markdown source</span>
+              <span class="edit-state" id="edit-state" data-state="empty">No note</span>
+              <button class="toolbar-button" id="revert-note" type="button" disabled>Revert</button>
+              <button class="toolbar-button save-button" id="save-note" type="button" disabled>
+                Save <kbd id="save-shortcut">⌘S</kbd>
+              </button>
+            </div>
           </div>
 
           <div class="note-empty" id="note-empty">
@@ -83,7 +90,17 @@
               <p class="note-stats" id="note-stats"></p>
               <ul class="tag-row" id="note-tags" aria-label="Note tags"></ul>
             </header>
-            <pre class="note-content" id="note-content" tabindex="-1"></pre>
+            <div class="edit-notice" id="edit-notice" role="status" aria-live="polite" hidden>
+              <span class="notice-shape" aria-hidden="true">◇</span>
+              <span>
+                <strong id="edit-notice-title">The note changed on disk</strong>
+                <span id="edit-notice-message"></span>
+              </span>
+              <button class="notice-dismiss" id="dismiss-edit-notice" type="button">Dismiss</button>
+            </div>
+            <div class="note-editor-shell" id="note-editor-shell">
+              <div class="note-editor" id="note-editor"></div>
+            </div>
           </article>
         </main>
 

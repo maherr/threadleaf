@@ -27,3 +27,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   tests across the real writer and watcher seam.
 - Mutation port and durable multi-file roll-forward transactions with prevalidated proposal blobs,
   per-entry keep-both conflicts, nested journal recovery, and operation-wide watcher attribution.
+- Production workspace runtime that composes the kernel, watcher, metadata index, action registry,
+  and compatibility host behind narrow Electron IPC.
+- Three-pane knowledge workspace with note filtering, navigation, headings, tags, outgoing links,
+  backlinks, external-change updates, and keyboard-first controls.
+- CodeMirror Markdown source editing with explicit dirty state, Revert, Ctrl/Cmd+S, revision-aware
+  recoverable saves, non-destructive external-edit warnings, and indexed conflict copies.
+- CSP-nonce integration for CodeMirror's generated styles and an isolated-vault development launch
+  override for live save and conflict verification.

@@ -1,11 +1,14 @@
 import path from "node:path";
 import { VaultIndexReactor } from "../kernel/metadata-index";
 import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
+import { normalizeVaultPath } from "../kernel/path-policy";
 import type { StateRootPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost } from "../runtime/plugin-host";
 import type {
+  NoteSaveOutcome,
+  NoteSaveResponse,
   RuntimeSnapshot,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
@@ -20,6 +23,39 @@ export interface WorkspaceRuntimeOptions {
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
+
+interface SaveNoteRequest {
+  path: string;
+  content: string;
+  expectedRevision: string;
+}
+
+function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("content" in payload) ||
+    typeof payload.content !== "string" ||
+    !("expectedRevision" in payload) ||
+    typeof payload.expectedRevision !== "string"
+  ) {
+    throw new Error("Save note requires string path, content, and revision values.");
+  }
+  return {
+    path: payload.path,
+    content: payload.content,
+    expectedRevision: payload.expectedRevision,
+  };
+}
+
+function titleFromPath(filePath: string): string {
+  const stem = path.posix.basename(filePath, path.posix.extname(filePath));
+  const conflictMarker = ".threadleaf-conflict-";
+  const conflictIndex = stem.lastIndexOf(conflictMarker);
+  return conflictIndex > 0 ? `${stem.slice(0, conflictIndex)} (conflict copy)` : stem;
+}
 
 export class WorkspaceRuntime {
   readonly actions: ActionRegistry;
@@ -58,6 +94,12 @@ export class WorkspaceRuntime {
           }
           await this.selectNote(payload);
         },
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.save-note",
+        name: "Save note",
+        source: "workspace",
+        execute: (payload) => this.saveNoteThroughKernel(parseSaveNoteRequest(payload)),
       }),
     );
   }
@@ -101,6 +143,19 @@ export class WorkspaceRuntime {
   async openNote(filePath: string): Promise<RuntimeSnapshot> {
     await this.actions.dispatch("workspace.open-note", filePath);
     return this.publishSnapshot();
+  }
+
+  async saveNote(
+    filePath: string,
+    content: string,
+    expectedRevision: string,
+  ): Promise<NoteSaveResponse> {
+    const outcome = await this.actions.dispatch<NoteSaveOutcome>("workspace.save-note", {
+      path: filePath,
+      content,
+      expectedRevision,
+    });
+    return { outcome, snapshot: await this.publishSnapshot() };
   }
 
   async runPluginCommand(commandId: string): Promise<RuntimeSnapshot> {
@@ -152,6 +207,49 @@ export class WorkspaceRuntime {
     this.#activePath = filePath;
   }
 
+  private async saveNoteThroughKernel(request: SaveNoteRequest): Promise<NoteSaveOutcome> {
+    const normalizedPath = normalizeVaultPath(request.path);
+    if (!normalizedPath.toLowerCase().endsWith(".md")) {
+      throw new Error("The workspace editor can save only Markdown notes.");
+    }
+    if (normalizedPath.toLowerCase().startsWith(".obsidian/")) {
+      throw new Error("The workspace editor never writes inside .obsidian.");
+    }
+
+    const outcome = await this.kernel.writeText(
+      normalizedPath,
+      request.content,
+      request.expectedRevision,
+    );
+    if (outcome.status === "committed") {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "write",
+        path: outcome.path,
+        revision: outcome.revision,
+      });
+      await this.indexReactor.index.refresh(this.kernel, outcome.path);
+      this.#activePath = outcome.path;
+      return outcome;
+    }
+
+    const conflictCopy = await this.kernel.readText(outcome.conflictPath);
+    this.watcher.operations.expect({
+      id: outcome.transactionId,
+      kind: "write",
+      path: conflictCopy.path,
+      revision: conflictCopy.revision,
+    });
+    if (outcome.currentRevision === null) {
+      this.indexReactor.index.remove(outcome.path);
+    } else {
+      await this.indexReactor.index.refresh(this.kernel, outcome.path);
+    }
+    await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
+    this.#activePath = conflictCopy.path;
+    return outcome;
+  }
+
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
     const result = await this.indexReactor.accept(batch);
     this.#lastWatchSequence = batch.sequence;
@@ -182,7 +280,7 @@ export class WorkspaceRuntime {
     const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
     const files: WorkspaceFileSummary[] = index.documents.map((document) => ({
       path: document.path,
-      title: path.posix.basename(document.path, path.posix.extname(document.path)),
+      title: titleFromPath(document.path),
       tags: document.tags,
       backlinkCount: backlinks.get(document.path)?.length ?? 0,
       outgoingCount: document.links.length,
@@ -196,7 +294,7 @@ export class WorkspaceRuntime {
       const note = await this.kernel.readText(this.#activePath);
       activeNote = {
         path: note.path,
-        title: path.posix.basename(note.path, path.posix.extname(note.path)),
+        title: titleFromPath(note.path),
         content: note.content,
         revision: note.revision,
         tags: activeMetadata.tags,
