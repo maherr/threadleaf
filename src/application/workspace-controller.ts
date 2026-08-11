@@ -34,6 +34,7 @@ export interface WorkspaceRuntimePort {
     targetPath: string,
     expectedRevision: string,
     expectedVaultId: string,
+    confirmationId?: string,
   ): Promise<NoteMoveResponse>;
   deleteNote(
     filePath: string,
@@ -218,8 +219,15 @@ export class WorkspaceController {
     targetPath: string,
     expectedRevision: string,
     expectedVaultId: string,
+    confirmationId?: string,
   ): Promise<NoteMoveResponse> {
-    return this.#runtime.moveNote(filePath, targetPath, expectedRevision, expectedVaultId);
+    return this.#runtime.moveNote(
+      filePath,
+      targetPath,
+      expectedRevision,
+      expectedVaultId,
+      confirmationId,
+    );
   }
 
   deleteNote(

@@ -47,14 +47,13 @@ ordinary existing paths fail without mutation, and a path claimed during the fin
 preserves the proposed bytes as a labeled conflict note. Headless append and prepend commands also
 use the recovery-backed writer. They require an existing note, preserve its line-ending convention,
 and keep a full proposed conflict copy if an external edit wins the revision race. Headless move
-and rename commands project the complete post-move index before writing. They proceed only when
-every wiki and Markdown link keeps the same resolution, and otherwise return exact blockers without
-changing the vault. The preflight also prepares source-range-preserving target rewrites for resolved
-links and proves them against a final rebuilt index. Commands still block instead of applying that
-plan until the compound move-and-rewrite journal is complete. The desktop Move action and
-Ctrl/Cmd+Shift+M use that same preflight, bind the request to the active vault and note revision,
-show exact link-resolution blockers, reject destination collisions, and remap open tabs after a
-successful move. Headless delete moves exact
+and rename commands project the complete post-move index before writing. They preview exact
+source-range-preserving target rewrites, refuse unresolved ambiguity, and prove the proposed bytes
+against a final rebuilt index. `--update-links` applies the current CLI plan explicitly. The desktop
+Move action and Ctrl/Cmd+Shift+M require a second confirmation bound to the exact preview. One parent
+recovery journal coordinates every revision-checked rewrite, the final rename, reverse-order
+rollback, and keep-both recovery when an external edit wins. Successful moves refresh affected
+index entries and remap open tabs. Headless delete moves exact
 bytes to the same path under vault-local `.trash/`; dedicated list and restore commands keep that
 recovery content outside the ordinary corpus and never overwrite either side of a collision. The
 desktop Trash action uses the same revision-bound service behind a confirmation that names both
@@ -127,7 +126,9 @@ to the exact source line. Relative and vault-rooted local raster images render w
 filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New note dialog and
 selects the resulting empty Markdown note for editing. Ctrl/Cmd+Shift+M opens Move for the active
 clean note. Threadleaf commits only when the projected whole-vault index preserves every internal
-link resolution; blocked moves stay reviewable in the dialog and write nothing. Trash has no
+link resolution. It presents the exact rewrite count before enabling confirmation; for unusually
+large moves, the dialog names the first 100 target updates and reports the full count. Unsafe
+ambiguous changes stay visibly blocked and write nothing. Trash has no
 default shortcut, but it is available from the note toolbar and command palette and can be assigned
 one in keyboard settings. Its confirmation moves the exact current revision to
 `.trash/<original-path>`, warns when indexed incoming links will become unresolved, and never
@@ -162,8 +163,8 @@ pnpm cli --vault /absolute/path/to/vault create "Inbox/New thought"
 pnpm cli --vault /absolute/path/to/vault create path="Projects/Brief" content="# Brief\n"
 pnpm cli --vault /absolute/path/to/vault append path="Daily/Today" content="- [ ] Follow up"
 pnpm cli --vault /absolute/path/to/vault prepend "Projects/Brief.md" --content="Draft context"
-pnpm cli --vault /absolute/path/to/vault move "Inbox/Thought.md" --to "Archive/Thought.md"
-pnpm cli --vault /absolute/path/to/vault rename path="Draft.md" name="Published"
+pnpm cli --vault /absolute/path/to/vault move "Inbox/Thought.md" --to "Archive/Thought.md" --update-links
+pnpm cli --vault /absolute/path/to/vault rename path="Draft.md" name="Published" --update-links
 pnpm cli --vault /absolute/path/to/vault delete path="Archive/Old thought.md"
 pnpm cli --vault /absolute/path/to/vault trash list
 pnpm cli --vault /absolute/path/to/vault restore path="Archive/Old thought.md"

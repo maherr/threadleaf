@@ -4,6 +4,7 @@ import { normalizeVaultPath } from "./path-policy";
 export type WritePhase = "intent" | "staged" | "backed-up" | "prepared" | "installed" | "committed";
 export type RenamePhase = "intent" | "linked" | "committed";
 export type MultiWritePhase = "intent" | "applying" | "committed";
+export type MoveWithWritesPhase = "intent" | "applying" | "renaming" | "rolling-back" | "committed";
 
 interface JournalBase {
   version: 1;
@@ -48,7 +49,33 @@ export interface MultiWriteJournal extends JournalBase {
   entries: MultiWriteJournalEntry[];
 }
 
-export type TransactionJournal = WriteJournal | RenameJournal | MultiWriteJournal;
+export type MoveWithWritesEntryStatus = "pending" | "applied" | "rolled-back" | "conflict";
+
+export interface MoveWithWritesJournalEntry {
+  targetPath: string;
+  beforeRevision: string;
+  nextRevision: string;
+  status: MoveWithWritesEntryStatus;
+  currentRevision: string | null;
+  conflictPath: string | null;
+}
+
+export interface MoveWithWritesJournal extends JournalBase {
+  kind: "move-with-writes";
+  phase: MoveWithWritesPhase;
+  sourcePath: string;
+  targetPath: string;
+  expectedSourceRevision: string;
+  renameRevision: string;
+  reason: string | null;
+  entries: MoveWithWritesJournalEntry[];
+}
+
+export type TransactionJournal =
+  | WriteJournal
+  | RenameJournal
+  | MultiWriteJournal
+  | MoveWithWritesJournal;
 
 const revisionPattern = /^[a-f0-9]{64}$/;
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -63,6 +90,19 @@ const writePhases = new Set<WritePhase>([
 const renamePhases = new Set<RenamePhase>(["intent", "linked", "committed"]);
 const multiWritePhases = new Set<MultiWritePhase>(["intent", "applying", "committed"]);
 const multiWriteStatuses = new Set<MultiWriteEntryStatus>(["pending", "committed", "conflict"]);
+const moveWithWritesPhases = new Set<MoveWithWritesPhase>([
+  "intent",
+  "applying",
+  "renaming",
+  "rolling-back",
+  "committed",
+]);
+const moveWithWritesStatuses = new Set<MoveWithWritesEntryStatus>([
+  "pending",
+  "applied",
+  "rolled-back",
+  "conflict",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -272,6 +312,107 @@ export function parseTransactionJournal(
       throw new Error("Multi-write journal phase is inconsistent with its entries.");
     }
     return input as unknown as MultiWriteJournal;
+  }
+
+  if (input.kind === "move-with-writes") {
+    const expectedKeys = [
+      "version",
+      "id",
+      "vaultId",
+      "createdAt",
+      "kind",
+      "phase",
+      "sourcePath",
+      "targetPath",
+      "expectedSourceRevision",
+      "renameRevision",
+      "reason",
+      "entries",
+    ] as const;
+    if (
+      !hasExactKeys(input, expectedKeys) ||
+      typeof input.phase !== "string" ||
+      !moveWithWritesPhases.has(input.phase as MoveWithWritesPhase) ||
+      typeof input.sourcePath !== "string" ||
+      typeof input.targetPath !== "string" ||
+      !isRevision(input.expectedSourceRevision) ||
+      !isRevision(input.renameRevision) ||
+      !(input.reason === null || typeof input.reason === "string") ||
+      !Array.isArray(input.entries) ||
+      input.entries.length === 0
+    ) {
+      throw new Error("Move-with-writes journal shape is invalid.");
+    }
+    const sourcePath = normalizeVaultPath(input.sourcePath);
+    const targetPath = normalizeVaultPath(input.targetPath);
+    if (
+      sourcePath !== input.sourcePath ||
+      targetPath !== input.targetPath ||
+      sourcePath === targetPath
+    ) {
+      throw new Error("Move-with-writes paths are inconsistent.");
+    }
+    const seenPaths = new Set<string>();
+    let sourceEntry: MoveWithWritesJournalEntry | undefined;
+    for (const entry of input.entries) {
+      if (
+        !isRecord(entry) ||
+        !hasExactKeys(entry, [
+          "targetPath",
+          "beforeRevision",
+          "nextRevision",
+          "status",
+          "currentRevision",
+          "conflictPath",
+        ]) ||
+        typeof entry.targetPath !== "string" ||
+        !isRevision(entry.beforeRevision) ||
+        !isRevision(entry.nextRevision) ||
+        typeof entry.status !== "string" ||
+        !moveWithWritesStatuses.has(entry.status as MoveWithWritesEntryStatus) ||
+        !isNullableRevision(entry.currentRevision) ||
+        !(entry.conflictPath === null || typeof entry.conflictPath === "string")
+      ) {
+        throw new Error("Move-with-writes journal entry is invalid.");
+      }
+      const entryPath = normalizeVaultPath(entry.targetPath);
+      if (entryPath !== entry.targetPath || entryPath === targetPath || seenPaths.has(entryPath)) {
+        throw new Error("Move-with-writes entry paths are invalid or duplicated.");
+      }
+      seenPaths.add(entryPath);
+      if (entryPath === sourcePath) {
+        sourceEntry = entry as unknown as MoveWithWritesJournalEntry;
+      }
+      if (entry.conflictPath !== null) {
+        const conflictPath = normalizeVaultPath(entry.conflictPath);
+        if (conflictPath !== entry.conflictPath) {
+          throw new Error("Move-with-writes conflict path is invalid.");
+        }
+      }
+      if (
+        (entry.status === "pending" &&
+          (entry.currentRevision !== null || entry.conflictPath !== null)) ||
+        (entry.status === "applied" &&
+          (entry.currentRevision !== entry.nextRevision || entry.conflictPath !== null)) ||
+        (entry.status === "rolled-back" &&
+          (entry.currentRevision !== entry.beforeRevision || entry.conflictPath !== null)) ||
+        (entry.status === "conflict" && entry.conflictPath === null)
+      ) {
+        throw new Error("Move-with-writes journal progress is inconsistent.");
+      }
+    }
+    const expectedRenameRevision = sourceEntry?.nextRevision ?? input.expectedSourceRevision;
+    if (
+      input.renameRevision !== expectedRenameRevision ||
+      (sourceEntry !== undefined && sourceEntry.beforeRevision !== input.expectedSourceRevision) ||
+      (input.phase === "intent" && input.entries.some((entry) => entry.status !== "pending")) ||
+      (input.phase === "committed" && input.entries.some((entry) => entry.status !== "applied")) ||
+      (input.phase === "rolling-back" && input.reason === null) ||
+      (input.phase === "committed" && input.reason !== null)
+    ) {
+      throw new Error("Move-with-writes journal state is inconsistent.");
+    }
+    return input as unknown as MoveWithWritesJournal;
   }
 
   throw new Error("Journal kind is invalid.");

@@ -79,6 +79,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
     targetPath: string;
     expectedRevision: string;
     expectedVaultId: string;
+    confirmationId?: string;
   } | null = null;
   deletedNote: {
     filePath: string;
@@ -140,14 +141,23 @@ class FakeRuntime implements WorkspaceRuntimePort {
     targetPath: string,
     expectedRevision: string,
     expectedVaultId: string,
+    confirmationId?: string,
   ): Promise<NoteMoveResponse> {
-    this.movedNote = { filePath, targetPath, expectedRevision, expectedVaultId };
+    this.movedNote = {
+      filePath,
+      targetPath,
+      expectedRevision,
+      expectedVaultId,
+      ...(confirmationId ? { confirmationId } : {}),
+    };
     return {
       outcome: {
         status: "committed",
         from: filePath,
         to: targetPath,
         transactionId: "move",
+        rewrites: [],
+        writes: [],
       },
       snapshot: this.#snapshot,
     };
@@ -449,12 +459,14 @@ describe("WorkspaceController", () => {
     });
     const expectedVaultId = controller.vaultId;
     const expectedRevision = "a".repeat(64);
+    const confirmationId = "b".repeat(64);
 
     await controller.moveNote(
       "Notes/Current.md",
       "Archive/Current.md",
       expectedRevision,
       expectedVaultId,
+      confirmationId,
     );
 
     expect(harness.runtimes[0]?.movedNote).toEqual({
@@ -462,6 +474,7 @@ describe("WorkspaceController", () => {
       targetPath: "Archive/Current.md",
       expectedRevision,
       expectedVaultId,
+      confirmationId,
     });
     await controller.close();
   });

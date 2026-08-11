@@ -81,12 +81,12 @@ equivalence through the real writer-to-watcher seam.
       and tested `path=`, `name=`, and `content=` compatibility spellings.
 - [x] Recovery-backed CLI append and prepend with required existing-note targets, frontmatter-aware
       prepend, LF/CRLF separators, inline mode, and full-proposal conflict preservation.
-- [x] Recovery-backed CLI move and rename with destination no-clobber behavior and a whole-vault
-      projected-index preflight that blocks every detected internal-link resolution change.
+- [x] Recovery-backed CLI move and rename with destination no-clobber behavior, whole-vault
+      projected-index proof, exact rewrite preview, and explicit `--update-links` confirmation.
 - [x] Recovery-backed CLI delete, trash inspection, and restore with exact-path `.trash/` mapping,
       revision checks, collision refusal, interruption recovery, and normal-corpus exclusion.
-- [x] Revision-bound desktop move and rename with exact blocker evidence, destination collision and
-      dirty-draft guards, and open-tab remapping after a successful link-safe move.
+- [x] Revision-bound desktop move and rename with exact rewrite preview, plan-bound confirmation,
+      blocker evidence, destination and dirty-draft guards, and open-tab remapping.
 - [x] Revision-bound desktop recoverable deletion with explicit confirmation, exact `.trash/`
       destination and link impact, collision and dirty-draft guards, operation attribution, and
       deterministic surviving-tab selection.
@@ -100,8 +100,8 @@ equivalence through the real writer-to-watcher seam.
       with conservative lossless frontmatter patching, mutation serialization, and conflict copies.
 - [x] Source-offset-preserving internal-link rewrite planning with code and comment exclusion,
       alias and anchor retention, relative Markdown paths, ambiguity refusal, and final-index proof.
-- [ ] Crash-recoverable compound note moves that apply the validated link rewrites and rename under
-      one parent journal, with explicit preview and conflict recovery in desktop and CLI surfaces.
+- [x] Crash-recoverable compound note moves that apply validated link rewrites and rename under one
+      parent journal, with reverse rollback, conflict copies, and desktop and CLI confirmation.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.

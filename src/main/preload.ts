@@ -42,13 +42,14 @@ const bridge: ThreadleafBridge = {
       filePath,
       expectedVaultId,
     ) as Promise<RuntimeSnapshot>,
-  moveNote: (filePath, targetPath, expectedRevision, expectedVaultId) =>
+  moveNote: (filePath, targetPath, expectedRevision, expectedVaultId, confirmationId) =>
     ipcRenderer.invoke(
       ipcChannels.moveNote,
       filePath,
       targetPath,
       expectedRevision,
       expectedVaultId,
+      confirmationId,
     ) as Promise<NoteMoveResponse>,
   deleteNote: (filePath, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(

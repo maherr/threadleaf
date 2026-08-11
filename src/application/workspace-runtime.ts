@@ -69,6 +69,7 @@ interface MoveNoteRequest {
   targetPath: string;
   expectedRevision: string;
   expectedVaultId: string;
+  confirmationId: string | null;
 }
 
 interface DeleteNoteRequest {
@@ -108,15 +109,23 @@ function parseMoveNoteRequest(payload: unknown): MoveNoteRequest {
     !("expectedRevision" in payload) ||
     typeof payload.expectedRevision !== "string" ||
     !("expectedVaultId" in payload) ||
-    typeof payload.expectedVaultId !== "string"
+    typeof payload.expectedVaultId !== "string" ||
+    ("confirmationId" in payload &&
+      !(payload.confirmationId === null || typeof payload.confirmationId === "string"))
   ) {
-    throw new Error("Move note requires string path, target, revision, and vault values.");
+    throw new Error(
+      "Move note requires string path, target, revision, and vault values with an optional confirmation.",
+    );
   }
   return {
     path: payload.path,
     targetPath: payload.targetPath,
     expectedRevision: payload.expectedRevision,
     expectedVaultId: payload.expectedVaultId,
+    confirmationId:
+      "confirmationId" in payload && typeof payload.confirmationId === "string"
+        ? payload.confirmationId
+        : null,
   };
 }
 
@@ -402,12 +411,14 @@ export class WorkspaceRuntime {
     targetPath: string,
     expectedRevision: string,
     expectedVaultId: string,
+    confirmationId?: string,
   ): Promise<NoteMoveResponse> {
     const outcome = await this.actions.dispatch<NoteMoveOutcome>("workspace.move-note", {
       path: filePath,
       targetPath,
       expectedRevision,
       expectedVaultId,
+      confirmationId: confirmationId ?? null,
     });
     return { outcome, snapshot: await this.publishSnapshot() };
   }
@@ -668,21 +679,40 @@ export class WorkspaceRuntime {
       sourcePath,
       targetPath,
       request.expectedRevision,
+      request.confirmationId ? { confirmationId: request.confirmationId } : undefined,
     );
     if (outcome.status !== "committed") {
       return outcome;
     }
 
     const target = await this.kernel.readText(outcome.to);
-    this.watcher.operations.expect({
-      id: outcome.transactionId,
-      kind: "rename",
-      from: outcome.from,
-      to: outcome.to,
-      revision: target.revision,
-    });
+    if (outcome.writes.length === 0) {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "rename",
+        from: outcome.from,
+        to: outcome.to,
+        revision: target.revision,
+      });
+    } else {
+      const sourceWrite = outcome.writes.find((write) => write.path === outcome.from);
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "move-with-writes",
+        from: outcome.from,
+        to: outcome.to,
+        targetRevision: target.revision,
+        sourceRewritten: sourceWrite !== undefined,
+        writes: outcome.writes
+          .filter((write) => write.path !== outcome.from)
+          .map((write) => ({ path: write.resultPath, revision: write.revision })),
+      });
+    }
     this.indexReactor.index.remove(outcome.from);
-    await this.indexReactor.index.refresh(this.kernel, outcome.to);
+    const refreshPaths = new Set([outcome.to, ...outcome.writes.map((write) => write.resultPath)]);
+    for (const refreshPath of refreshPaths) {
+      await this.indexReactor.index.refresh(this.kernel, refreshPath);
+    }
     if (this.moveOpenPath(outcome.from, outcome.to)) {
       await this.persistWorkspaceStateBestEffort();
     }

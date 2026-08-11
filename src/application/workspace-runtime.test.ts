@@ -319,7 +319,7 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
-  it("returns exact blockers without moving a linked note", async () => {
+  it("previews exact link rewrites and commits them only with the matching confirmation", async () => {
     const workspace = await openRuntime();
     const snapshot = await workspace.getSnapshot();
     const note = snapshot.workspace?.activeNote;
@@ -330,28 +330,29 @@ describe("WorkspaceRuntime", () => {
       workspace.moveNote(note.path, "Renamed", note.revision, "stale-vault"),
     ).rejects.toThrow("active vault changed");
 
-    const blocked = await workspace.moveNote(
+    const preview = await workspace.moveNote(
       note.path,
       "Renamed",
       note.revision,
       workspace.vaultId,
     );
 
-    expect(blocked.outcome).toMatchObject({
-      status: "blocked",
+    expect(preview.outcome).toMatchObject({
+      status: "requires-confirmation",
       from: "Linked Note.md",
       to: "Renamed.md",
-      blockers: [
+      confirmationId: expect.stringMatching(/^[a-f0-9]{64}$/),
+      rewrites: [
         {
           documentPath: "Welcome.md",
-          target: "Linked Note",
+          resultPath: "Welcome.md",
           syntax: "wiki",
-          before: { status: "resolved", path: "Linked Note.md" },
-          after: { status: "unresolved" },
+          beforeTarget: "Linked Note",
+          afterTarget: "Renamed",
         },
       ],
     });
-    expect(blocked.snapshot.workspace).toMatchObject({
+    expect(preview.snapshot.workspace).toMatchObject({
       tabs: [{ path: "Linked Note.md", active: true }],
       activeNote: { path: "Linked Note.md" },
     });
@@ -361,6 +362,32 @@ describe("WorkspaceRuntime", () => {
     await expect(fs.stat(path.join(vaultPath, "Renamed.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected a move confirmation preview.");
+    }
+    const moved = await workspace.moveNote(
+      note.path,
+      "Renamed",
+      note.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+    );
+
+    expect(moved.outcome).toMatchObject({
+      status: "committed",
+      from: "Linked Note.md",
+      to: "Renamed.md",
+      rewrites: preview.outcome.rewrites,
+      writes: [{ path: "Welcome.md", resultPath: "Welcome.md" }],
+    });
+    expect(moved.snapshot.workspace).toMatchObject({
+      tabs: [{ path: "Renamed.md", active: true }],
+      activeNote: { path: "Renamed.md" },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toContain(
+      "[[Renamed]]",
+    );
   });
 
   it("moves an exact note to recoverable trash and selects the right surviving tab", async () => {

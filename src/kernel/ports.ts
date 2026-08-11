@@ -50,6 +50,29 @@ export interface MultiWriteResult {
   entries: MultiWriteEntryResult[];
 }
 
+export interface MoveWithWritesRequest {
+  sourcePath: string;
+  targetPath: string;
+  expectedSourceRevision: string;
+  writes: readonly MultiWriteRequest[];
+}
+
+export type MoveWithWritesResult =
+  | {
+      status: "committed";
+      from: string;
+      to: string;
+      transactionId: string;
+      writes: Array<{ path: string; revision: string }>;
+    }
+  | {
+      status: "conflict";
+      from: string;
+      to: string;
+      reason: string;
+      conflictPaths: string[];
+    };
+
 export interface VaultMutationPort extends VaultReadPort {
   writeText(
     relativePath: string,
@@ -62,6 +85,7 @@ export interface VaultMutationPort extends VaultReadPort {
     expectedSourceRevision: string,
   ): Promise<VaultRenameResult>;
   writeMany(requests: readonly MultiWriteRequest[]): Promise<MultiWriteResult>;
+  moveWithWrites(request: MoveWithWritesRequest): Promise<MoveWithWritesResult>;
 }
 
 export class FixedStateRoot implements StateRootPort {

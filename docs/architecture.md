@@ -251,15 +251,26 @@ untouched. Replacements are applied from the end of each file, then the complete
 indexed again. A proposal is valid only when every occurrence resolves to its original logical
 target after remapping the moved note's identity. Unresolved or ambiguous links are never guessed.
 
-The current desktop and CLI mutation boundary still blocks whenever a rewrite is required and
-returns structured evidence without writing. Automatic application waits for one parent recovery
-journal that can coordinate the rewritten files and rename as a compound operation.
+When rewrites are safe and necessary, the service hashes the source and destination, source
+revision, exact rewrite preview, affected file revisions, and proposed content revisions into a
+confirmation identity. Desktop confirmation must return that exact identity; if any affected file
+changes, Threadleaf returns a refreshed preview instead of applying stale consent. The CLI changes
+nothing on its first preview and requires `--update-links` to accept the plan rebuilt in that run.
+
+The kernel stages both the before and proposed bytes for every rewrite before recording one parent
+move journal. Child write journals apply revision-bound changes, then a child rename journal moves
+the final source revision. Recovery validates every parent blob before touching any pending child,
+recovers children before parents, and recognizes an already completed rename. A rewrite or
+destination race rolls applied entries back in reverse order. An external winner is never
+overwritten: Threadleaf preserves the losing proposal or original bytes as a conflict copy and
+reports whether recovery committed, rolled back, or requires manual review.
 
 The desktop Move action dispatches through the same service. It carries the active vault identity
-and source revision across IPC, refuses dirty drafts, and keeps blocked or conflicting requests in
-a reviewable dialog. Each blocker names its document, syntax, target, and before/after resolution.
-After a committed move, the runtime refreshes the derived index and remaps every open tab from the
-old path to the new one before publishing its next snapshot.
+and source revision across IPC, refuses dirty drafts, and keeps previews, blockers, and conflicts in
+a reviewable dialog. Each rewrite names its document, source line, syntax, and exact target change;
+each blocker retains before and after resolution evidence. After a committed move, the runtime
+attributes the compound filesystem changes, refreshes every affected index entry, and remaps every
+open tab from the old path to the new one before publishing its next snapshot.
 
 The desktop Trash action calls the same recoverable deletion service as the CLI rather than a
 renderer-owned filesystem path. Its request carries the active vault identity and exact source

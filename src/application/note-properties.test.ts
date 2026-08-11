@@ -173,6 +173,7 @@ describe("recovery-backed note property mutation", () => {
       renameFile: (sourcePath, targetPath, expectedSourceRevision) =>
         kernel.renameFile(sourcePath, targetPath, expectedSourceRevision),
       writeMany: (requests) => kernel.writeMany(requests),
+      moveWithWrites: (request) => kernel.moveWithWrites(request),
     };
 
     const result = await setMarkdownNoteProperty(
@@ -216,6 +217,7 @@ describe("recovery-backed note property mutation", () => {
       renameFile: (sourcePath, targetPath, expectedSourceRevision) =>
         kernel.renameFile(sourcePath, targetPath, expectedSourceRevision),
       writeMany: (requests) => kernel.writeMany(requests),
+      moveWithWrites: (request) => kernel.moveWithWrites(request),
     };
 
     const result = await removeMarkdownNoteProperty(observingVault, "Note", "missing");

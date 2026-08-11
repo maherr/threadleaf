@@ -149,6 +149,62 @@ describe("watch protocol", () => {
     expect(ledger.size).toBe(0);
   });
 
+  it("attributes a move and its related rewrites as one compound operation", () => {
+    const ledger = new WatchOperationLedger();
+    const targetRevision = revisionOf(Buffer.from("target"));
+    const linkerRevision = revisionOf(Buffer.from("linker"));
+    ledger.expect({
+      id: "compound-1",
+      kind: "move-with-writes",
+      from: "Before.md",
+      to: "After.md",
+      targetRevision,
+      sourceRewritten: false,
+      writes: [{ path: "Linker.md", revision: linkerRevision }],
+    });
+
+    const annotated = ledger.annotate([
+      { kind: "upsert", state: state("Linker.md", "2", linkerRevision) },
+      {
+        kind: "move",
+        from: "Before.md",
+        to: "After.md",
+        state: state("After.md", "1", targetRevision),
+      },
+    ]);
+
+    expect(annotated).toMatchObject([{ operationId: "compound-1" }, { operationId: "compound-1" }]);
+    expect(ledger.size).toBe(0);
+  });
+
+  it("attributes a rewritten source as a delete plus destination upsert", () => {
+    const ledger = new WatchOperationLedger();
+    const targetRevision = revisionOf(Buffer.from("rewritten target"));
+    const linkerRevision = revisionOf(Buffer.from("linker"));
+    ledger.expect({
+      id: "compound-2",
+      kind: "move-with-writes",
+      from: "Before.md",
+      to: "After.md",
+      targetRevision,
+      sourceRewritten: true,
+      writes: [{ path: "Linker.md", revision: linkerRevision }],
+    });
+
+    const annotated = ledger.annotate([
+      { kind: "delete", path: "Before.md" },
+      { kind: "upsert", state: state("After.md", "3", targetRevision) },
+      { kind: "upsert", state: state("Linker.md", "2", linkerRevision) },
+    ]);
+
+    expect(annotated).toMatchObject([
+      { operationId: "compound-2" },
+      { operationId: "compound-2" },
+      { operationId: "compound-2" },
+    ]);
+    expect(ledger.size).toBe(0);
+  });
+
   it("attributes an exact delete without consuming an unrelated deletion", () => {
     const ledger = new WatchOperationLedger();
     ledger.expect({ id: "delete-1", kind: "delete", path: "Note.md" });

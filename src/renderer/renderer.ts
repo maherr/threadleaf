@@ -7,6 +7,7 @@ import type {
   NoteDeleteResponse,
   NoteMoveBlocker,
   NoteMoveResponse,
+  NoteMoveRewritePreview,
   RuntimeSnapshot,
   VaultSearchResponse,
   VaultSearchResult,
@@ -125,6 +126,7 @@ const elements = {
   moveNoteCancel: getButton("move-note-cancel"),
   moveNoteSubmit: getButton("move-note-submit"),
   moveNoteError: getElement("move-note-error"),
+  moveNotePreviewMessage: getElement("move-note-preview-message"),
   moveNoteCurrentPath: getElement("move-note-current-path"),
   moveNoteVault: getElement("move-note-vault"),
   moveNoteBlockers: getElement("move-note-blockers"),
@@ -275,6 +277,8 @@ let moveNoteVaultId: string | null = null;
 let moveNoteSourcePath: string | null = null;
 let moveNoteRevision: string | null = null;
 let moveNoteBlockers: NoteMoveBlocker[] = [];
+let moveNoteRewrites: NoteMoveRewritePreview[] = [];
+let moveNoteConfirmationId: string | null = null;
 let deleteNoteRestoreFocus: HTMLElement | null = null;
 let deleteNoteBusy = false;
 let deleteNoteVaultId: string | null = null;
@@ -1075,12 +1079,20 @@ function renderMoveNoteDialog(): void {
 
   const message = elements.moveNoteError.textContent ?? "";
   elements.moveNoteError.hidden = message.length === 0;
+  const previewMessage = elements.moveNotePreviewMessage.textContent ?? "";
+  elements.moveNotePreviewMessage.hidden = previewMessage.length === 0;
   elements.moveNoteCurrentPath.textContent = moveNoteSourcePath ?? "No note selected";
   elements.moveNoteTarget.disabled = moveNoteBusy;
   elements.moveNoteClose.disabled = moveNoteBusy;
   elements.moveNoteCancel.disabled = moveNoteBusy;
   elements.moveNoteSubmit.disabled = moveNoteBusy || staleVault || staleNote;
-  elements.moveNoteSubmit.textContent = moveNoteBusy ? "Checking…" : "Check and move";
+  elements.moveNoteSubmit.textContent = moveNoteBusy
+    ? moveNoteConfirmationId
+      ? "Applying…"
+      : "Checking…"
+    : moveNoteConfirmationId
+      ? `Update ${moveNoteRewrites.length} ${moveNoteRewrites.length === 1 ? "link" : "links"} and move`
+      : "Check and move";
   elements.moveNoteForm.setAttribute("aria-busy", String(moveNoteBusy));
   elements.moveNoteVault.textContent = staleVault
     ? "Vault changed"
@@ -1089,11 +1101,34 @@ function renderMoveNoteDialog(): void {
       : "Active vault";
 
   elements.moveNoteBlockerList.replaceChildren();
-  elements.moveNoteBlockers.hidden = moveNoteBlockers.length === 0;
-  elements.moveNoteBlockerSummary.textContent =
-    moveNoteBlockers.length === 1
-      ? "1 internal link resolution would change"
-      : `${moveNoteBlockers.length} internal link resolutions would change`;
+  const showingPreview = moveNoteRewrites.length > 0;
+  const visibleChanges = showingPreview ? moveNoteRewrites : moveNoteBlockers;
+  elements.moveNoteBlockers.hidden = visibleChanges.length === 0;
+  elements.moveNoteBlockers.dataset.mode = showingPreview ? "preview" : "blocked";
+  elements.moveNoteBlockerSummary.textContent = showingPreview
+    ? `Ready: ${moveNoteRewrites.length} link target ${moveNoteRewrites.length === 1 ? "update" : "updates"}`
+    : moveNoteBlockers.length === 1
+      ? "Blocked: 1 internal link resolution is unsafe"
+      : `Blocked: ${moveNoteBlockers.length} internal link resolutions are unsafe`;
+  for (const rewrite of moveNoteRewrites.slice(0, 100)) {
+    const item = document.createElement("li");
+    const origin = document.createElement("span");
+    origin.className = "move-note-blocker-origin";
+    origin.textContent = `${rewrite.documentPath}:${rewrite.line} · ${rewrite.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
+    const change = document.createElement("span");
+    change.className = "move-note-blocker-change";
+    const before = document.createElement("span");
+    before.textContent = rewrite.beforeTarget;
+    const arrow = document.createElement("span");
+    arrow.className = "move-note-blocker-arrow";
+    arrow.ariaHidden = "true";
+    arrow.textContent = "→";
+    const after = document.createElement("span");
+    after.textContent = rewrite.afterTarget;
+    change.append(before, arrow, after);
+    item.append(origin, change);
+    elements.moveNoteBlockerList.append(item);
+  }
   for (const blocker of moveNoteBlockers.slice(0, 100)) {
     const item = document.createElement("li");
     const origin = document.createElement("span");
@@ -1117,10 +1152,10 @@ function renderMoveNoteDialog(): void {
     item.append(origin, target, change);
     elements.moveNoteBlockerList.append(item);
   }
-  if (moveNoteBlockers.length > 100) {
+  if (visibleChanges.length > 100) {
     const remainder = document.createElement("li");
     remainder.className = "move-note-blocker-more";
-    remainder.textContent = `${moveNoteBlockers.length - 100} more blockers are not shown.`;
+    remainder.textContent = `${visibleChanges.length - 100} more ${showingPreview ? "updates" : "blockers"} are not shown.`;
     elements.moveNoteBlockerList.append(remainder);
   }
 }
@@ -1151,8 +1186,11 @@ function openMoveNoteDialog(): void {
   moveNoteSourcePath = loadedNote.path;
   moveNoteRevision = loadedNote.revision;
   moveNoteBlockers = [];
+  moveNoteRewrites = [];
+  moveNoteConfirmationId = null;
   elements.moveNoteTarget.value = loadedNote.path;
   elements.moveNoteError.textContent = "";
+  elements.moveNotePreviewMessage.textContent = "";
   elements.moveNoteDialog.showModal();
   renderMoveNoteDialog();
   window.requestAnimationFrame(() => {
@@ -1172,7 +1210,10 @@ function closeMoveNoteDialog(restoreFocus = true): void {
   moveNoteSourcePath = null;
   moveNoteRevision = null;
   moveNoteBlockers = [];
+  moveNoteRewrites = [];
+  moveNoteConfirmationId = null;
   elements.moveNoteError.textContent = "";
+  elements.moveNotePreviewMessage.textContent = "";
   const restoreTarget = moveNoteRestoreFocus;
   moveNoteRestoreFocus = null;
   if (restoreFocus && restoreTarget?.isConnected) {
@@ -1191,6 +1232,9 @@ async function moveCurrentNote(): Promise<void> {
   if (!requestedPath) {
     elements.moveNoteError.textContent = "Enter a new vault-relative path.";
     moveNoteBlockers = [];
+    moveNoteRewrites = [];
+    moveNoteConfirmationId = null;
+    elements.moveNotePreviewMessage.textContent = "";
     renderMoveNoteDialog();
     elements.moveNoteTarget.focus();
     return;
@@ -1203,14 +1247,23 @@ async function moveCurrentNote(): Promise<void> {
     elements.moveNoteError.textContent =
       "The vault or note changed. Cancel, review the current note, and reopen Move.";
     moveNoteBlockers = [];
+    moveNoteRewrites = [];
+    moveNoteConfirmationId = null;
+    elements.moveNotePreviewMessage.textContent = "";
     renderMoveNoteDialog();
     return;
   }
 
   let response: NoteMoveResponse | null = null;
   let committedPath: string | null = null;
+  let committedRewriteCount = 0;
+  const submittedConfirmationId = moveNoteConfirmationId;
   moveNoteBusy = true;
   moveNoteBlockers = [];
+  if (!submittedConfirmationId) {
+    moveNoteRewrites = [];
+    elements.moveNotePreviewMessage.textContent = "";
+  }
   elements.moveNoteError.textContent = "";
   renderMoveNoteDialog();
   setActionState(true);
@@ -1220,20 +1273,48 @@ async function moveCurrentNote(): Promise<void> {
       requestedPath,
       expectedRevision,
       expectedVaultId,
+      submittedConfirmationId ?? undefined,
     );
     render(response.snapshot);
     if (response.outcome.status === "committed") {
       committedPath = response.outcome.to;
+      committedRewriteCount = response.outcome.rewrites.length;
+    } else if (response.outcome.status === "requires-confirmation") {
+      moveNoteBlockers = [];
+      moveNoteRewrites = response.outcome.rewrites;
+      moveNoteConfirmationId = response.outcome.confirmationId;
+      const boundedPreviewNotice =
+        response.outcome.rewrites.length > 100
+          ? ` The list shows the first 100 of ${response.outcome.rewrites.length} exact updates.`
+          : "";
+      elements.moveNotePreviewMessage.textContent = submittedConfirmationId
+        ? `The link plan changed on disk. Review this refreshed preview, then confirm it again.${boundedPreviewNotice}`
+        : `Review the exact link target updates below. Submit again to apply them and move as one recoverable operation.${boundedPreviewNotice}`;
     } else if (response.outcome.status === "blocked") {
+      moveNoteConfirmationId = null;
+      moveNoteRewrites = [];
       moveNoteBlockers = response.outcome.blockers;
-      elements.moveNoteError.textContent = `Move blocked: ${response.outcome.blockers.length} internal link resolution${response.outcome.blockers.length === 1 ? "" : "s"} would change. No files were changed.`;
+      elements.moveNotePreviewMessage.textContent = "";
+      elements.moveNoteError.textContent = `Move blocked: ${response.outcome.blockers.length} internal link resolution${response.outcome.blockers.length === 1 ? " cannot" : "s cannot"} be rewritten safely. No files were changed.`;
     } else if (response.outcome.reason === "target-exists") {
+      moveNoteConfirmationId = null;
+      moveNoteRewrites = [];
+      elements.moveNotePreviewMessage.textContent = "";
       elements.moveNoteError.textContent = `${response.outcome.to} already exists. No files were changed.`;
     } else if (response.outcome.reason === "source-revision-changed") {
+      moveNoteConfirmationId = null;
+      moveNoteRewrites = [];
+      elements.moveNotePreviewMessage.textContent = "";
       elements.moveNoteError.textContent =
         "The note changed on disk while Threadleaf checked the move. No files were changed.";
     } else {
-      elements.moveNoteError.textContent = `The move could not commit (${response.outcome.reason}). No files were changed.`;
+      moveNoteConfirmationId = null;
+      moveNoteRewrites = [];
+      elements.moveNotePreviewMessage.textContent = "";
+      elements.moveNoteError.textContent =
+        response.outcome.conflictPaths && response.outcome.conflictPaths.length > 0
+          ? `The move did not commit (${response.outcome.reason}). Recovery copies were preserved at ${response.outcome.conflictPaths.join(", ")}.`
+          : `The move did not commit (${response.outcome.reason}). Threadleaf did not overwrite an external winner; review the current vault state.`;
     }
   } catch (error) {
     elements.moveNoteError.textContent = error instanceof Error ? error.message : String(error);
@@ -1248,8 +1329,14 @@ async function moveCurrentNote(): Promise<void> {
   if (committedPath) {
     closeMoveNoteDialog(false);
     setDocumentView("source", false);
-    showToast(`Moved note to ${committedPath}`);
+    showToast(
+      committedRewriteCount > 0
+        ? `Moved note to ${committedPath} and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
+        : `Moved note to ${committedPath}`,
+    );
     window.setTimeout(() => editor.focus(), 0);
+  } else if (response?.outcome.status === "requires-confirmation") {
+    elements.moveNoteSubmit.focus();
   } else if (response) {
     elements.moveNoteTarget.focus();
     elements.moveNoteTarget.select();
@@ -2711,7 +2798,10 @@ elements.newNoteDialog.addEventListener("click", (event) => {
 
 elements.moveNoteTarget.addEventListener("input", () => {
   moveNoteBlockers = [];
+  moveNoteRewrites = [];
+  moveNoteConfirmationId = null;
   elements.moveNoteError.textContent = "";
+  elements.moveNotePreviewMessage.textContent = "";
   renderMoveNoteDialog();
 });
 elements.moveNoteForm.addEventListener("submit", (event) => {

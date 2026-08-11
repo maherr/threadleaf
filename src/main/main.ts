@@ -141,16 +141,26 @@ function registerIpcHandlers(): void {
       targetPath: unknown,
       expectedRevision: unknown,
       expectedVaultId: unknown,
+      confirmationId: unknown,
     ) => {
       if (
         typeof filePath !== "string" ||
         typeof targetPath !== "string" ||
         typeof expectedRevision !== "string" ||
-        typeof expectedVaultId !== "string"
+        typeof expectedVaultId !== "string" ||
+        !(confirmationId === undefined || typeof confirmationId === "string")
       ) {
-        throw new Error("Move note requires string path, target, revision, and vault values.");
+        throw new Error(
+          "Move note requires string path, target, revision, and vault values with an optional confirmation.",
+        );
       }
-      return workspaceController.moveNote(filePath, targetPath, expectedRevision, expectedVaultId);
+      return workspaceController.moveNote(
+        filePath,
+        targetPath,
+        expectedRevision,
+        expectedVaultId,
+        confirmationId,
+      );
     },
   );
   ipcMain.handle(

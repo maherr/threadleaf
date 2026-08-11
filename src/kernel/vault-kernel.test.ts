@@ -816,3 +816,344 @@ describe("VaultKernel multi-write transactions", () => {
     expect(await fs.readdir(path.join(kernel.stateRoot, "journal"))).toEqual([]);
   });
 });
+
+describe("VaultKernel compound move transactions", () => {
+  async function prepareFixture(kernel: VaultKernel) {
+    const [source, linkerA, linkerB] = await Promise.all([
+      kernel.readText("Source.md"),
+      kernel.readText("A.md"),
+      kernel.readText("B.md"),
+    ]);
+    return {
+      sourcePath: "Source.md",
+      targetPath: "Renamed.md",
+      expectedSourceRevision: source.revision,
+      writes: [
+        { path: "A.md", content: "[[Renamed]]", expectedRevision: linkerA.revision },
+        { path: "B.md", content: "[renamed](./Renamed.md)", expectedRevision: linkerB.revision },
+      ],
+    };
+  }
+
+  async function seedFixture(): Promise<void> {
+    await fs.writeFile(path.join(vaultPath, "Source.md"), "# Source", "utf8");
+    await fs.writeFile(path.join(vaultPath, "A.md"), "[[Source]]", "utf8");
+    await fs.writeFile(path.join(vaultPath, "B.md"), "[source](./Source.md)", "utf8");
+  }
+
+  it("commits every validated rewrite and the rename under one parent transaction", async () => {
+    await seedFixture();
+    const kernel = await openKernel();
+    const result = await kernel.moveWithWrites(await prepareFixture(kernel));
+
+    expect(result).toMatchObject({
+      status: "committed",
+      from: "Source.md",
+      to: "Renamed.md",
+      writes: [
+        { path: "A.md", revision: expect.stringMatching(/^[a-f0-9]{64}$/) },
+        { path: "B.md", revision: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      ],
+    });
+    await expect(kernel.readText("A.md")).resolves.toMatchObject({ content: "[[Renamed]]" });
+    await expect(kernel.readText("B.md")).resolves.toMatchObject({
+      content: "[renamed](./Renamed.md)",
+    });
+    await expect(kernel.readText("Renamed.md")).resolves.toMatchObject({ content: "# Source" });
+    await expect(kernel.readText("Source.md")).rejects.toThrow();
+    if (result.status !== "committed") {
+      throw new Error("Expected the compound move fixture to commit.");
+    }
+    await expect(
+      fs.readFile(
+        path.join(kernel.stateRoot, "transactions", result.transactionId, "0.before"),
+        "utf8",
+      ),
+    ).resolves.toBe("[[Source]]");
+    await expect(
+      fs.readFile(
+        path.join(kernel.stateRoot, "transactions", result.transactionId, "0.next"),
+        "utf8",
+      ),
+    ).resolves.toBe("[[Renamed]]");
+  });
+
+  it.each([
+    "move-with-writes:after-intent",
+    "move-with-writes:after-entry",
+    "move-with-writes:before-rename",
+    "move-with-writes:after-rename",
+    "move-with-writes:after-commit",
+  ] as const)(
+    "recovers a coherent committed result after interruption at %s",
+    async (faultPoint) => {
+      await seedFixture();
+      let entryFaults = 0;
+      const kernel = await openKernel((point) => {
+        if (
+          point === faultPoint &&
+          (point !== "move-with-writes:after-entry" || entryFaults++ === 0)
+        ) {
+          throw new Error(`interrupted at ${faultPoint}`);
+        }
+      });
+      await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+        `interrupted at ${faultPoint}`,
+      );
+
+      const recovered = await openKernel();
+
+      expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+        kind: "move-with-writes",
+        outcome: "committed",
+        path: "Renamed.md",
+        paths: ["A.md", "B.md"],
+      });
+      await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "[[Renamed]]" });
+      await expect(recovered.readText("B.md")).resolves.toMatchObject({
+        content: "[renamed](./Renamed.md)",
+      });
+      await expect(recovered.readText("Renamed.md")).resolves.toMatchObject({
+        content: "# Source",
+      });
+      await expect(recovered.readText("Source.md")).rejects.toThrow();
+    },
+  );
+
+  it("recovers a child write journal before its compound parent", async () => {
+    await seedFixture();
+    const kernel = await openKernel((point) => {
+      if (point === "write:after-stage") {
+        throw new Error("interrupted child write");
+      }
+    });
+    await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+      "interrupted child write",
+    );
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.map((action) => action.kind)).toEqual([
+      "write",
+      "move-with-writes",
+    ]);
+    await expect(recovered.readText("Renamed.md")).resolves.toMatchObject({
+      content: "# Source",
+    });
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "[[Renamed]]" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({
+      content: "[renamed](./Renamed.md)",
+    });
+  });
+
+  it("recovers a child rename journal before its compound parent", async () => {
+    await seedFixture();
+    const kernel = await openKernel((point) => {
+      if (point === "rename:after-link") {
+        throw new Error("interrupted child rename");
+      }
+    });
+    await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+      "interrupted child rename",
+    );
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.map((action) => action.kind)).toEqual([
+      "rename",
+      "move-with-writes",
+    ]);
+    expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+      kind: "move-with-writes",
+      outcome: "committed",
+      path: "Renamed.md",
+    });
+    await expect(recovered.readText("Renamed.md")).resolves.toMatchObject({
+      content: "# Source",
+    });
+    await expect(recovered.readText("Source.md")).rejects.toThrow();
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "[[Renamed]]" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({
+      content: "[renamed](./Renamed.md)",
+    });
+  });
+
+  it("fails closed on a corrupt parent blob before recovering a pending child", async () => {
+    await seedFixture();
+    const kernel = await openKernel((point) => {
+      if (point === "write:after-stage") {
+        throw new Error("interrupted child write before parent validation");
+      }
+    });
+    await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+      "interrupted child write before parent validation",
+    );
+    const journalNames = await fs.readdir(path.join(kernel.stateRoot, "journal"));
+    let parentId: string | undefined;
+    for (const journalName of journalNames) {
+      const journal = JSON.parse(
+        await fs.readFile(path.join(kernel.stateRoot, "journal", journalName), "utf8"),
+      );
+      if (journal.kind === "move-with-writes") {
+        parentId = journal.id;
+      }
+    }
+    expect(parentId).toBeTypeOf("string");
+    await fs.writeFile(
+      path.join(kernel.stateRoot, "transactions", parentId ?? "missing", "0.before"),
+      "corrupt",
+      "utf8",
+    );
+
+    await expect(openKernel()).rejects.toBeInstanceOf(VaultRecoveryError);
+    await expect(fs.readFile(path.join(vaultPath, "A.md"), "utf8")).resolves.toBe("[[Source]]");
+    await expect(fs.readFile(path.join(vaultPath, "B.md"), "utf8")).resolves.toBe(
+      "[source](./Source.md)",
+    );
+  });
+
+  it("uses rewritten source bytes as the revision moved to the destination", async () => {
+    await seedFixture();
+    await fs.writeFile(path.join(vaultPath, "Source.md"), "# Source\n[[Source]]", "utf8");
+    const kernel = await openKernel();
+    const request = await prepareFixture(kernel);
+    request.writes.push({
+      path: "Source.md",
+      content: "# Source\n[[Renamed]]",
+      expectedRevision: request.expectedSourceRevision,
+    });
+
+    const result = await kernel.moveWithWrites(request);
+
+    expect(result).toMatchObject({ status: "committed", from: "Source.md", to: "Renamed.md" });
+    await expect(kernel.readText("Renamed.md")).resolves.toMatchObject({
+      content: "# Source\n[[Renamed]]",
+    });
+    await expect(kernel.readText("Source.md")).rejects.toThrow();
+  });
+
+  it("preserves an external pending edit, rolls back applied rewrites, and does not rename", async () => {
+    await seedFixture();
+    let completedEntries = 0;
+    const kernel = await openKernel((point) => {
+      if (point === "move-with-writes:after-entry" && completedEntries++ === 0) {
+        throw new Error("interrupted after first rewrite");
+      }
+    });
+    await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+      "interrupted after first rewrite",
+    );
+    await fs.writeFile(path.join(vaultPath, "B.md"), "external b", "utf8");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+      kind: "move-with-writes",
+      outcome: "conflict-copy",
+      path: "Source.md",
+    });
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "[[Source]]" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({ content: "external b" });
+    await expect(recovered.readText("Source.md")).resolves.toMatchObject({ content: "# Source" });
+    await expect(recovered.readText("Renamed.md")).rejects.toThrow();
+    const conflictPath = recovered.startupRecoveryActions.at(-1)?.conflictPath;
+    expect(conflictPath).toBeTypeOf("string");
+    await expect(recovered.readText(conflictPath ?? "missing")).resolves.toMatchObject({
+      content: "[renamed](./Renamed.md)",
+    });
+  });
+
+  it("rolls back every rewrite when the destination is claimed before recovery", async () => {
+    await seedFixture();
+    const kernel = await openKernel((point) => {
+      if (point === "move-with-writes:before-rename") {
+        throw new Error("interrupted before rename");
+      }
+    });
+    await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+      "interrupted before rename",
+    );
+    await fs.writeFile(path.join(vaultPath, "Renamed.md"), "external target", "utf8");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+      kind: "move-with-writes",
+      outcome: "rolled-back",
+      path: "Source.md",
+    });
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "[[Source]]" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({
+      content: "[source](./Source.md)",
+    });
+    await expect(recovered.readText("Source.md")).resolves.toMatchObject({ content: "# Source" });
+    await expect(recovered.readText("Renamed.md")).resolves.toMatchObject({
+      content: "external target",
+    });
+  });
+
+  it("finishes rolling back after an interruption between rollback entries", async () => {
+    await seedFixture();
+    let rollbackEntries = 0;
+    const kernel = await openKernel(async (point) => {
+      if (point === "move-with-writes:before-rename") {
+        await fs.writeFile(path.join(vaultPath, "Renamed.md"), "external target", "utf8");
+      }
+      if (point === "move-with-writes:after-rollback-entry" && rollbackEntries++ === 0) {
+        throw new Error("interrupted during rollback");
+      }
+    });
+    await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+      "interrupted during rollback",
+    );
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+      kind: "move-with-writes",
+      outcome: "rolled-back",
+      path: "Source.md",
+    });
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({ content: "[[Source]]" });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({
+      content: "[source](./Source.md)",
+    });
+    await expect(recovered.readText("Source.md")).resolves.toMatchObject({ content: "# Source" });
+    await expect(recovered.readText("Renamed.md")).resolves.toMatchObject({
+      content: "external target",
+    });
+  });
+
+  it("keeps an external edit and preserves the original bytes when rollback also conflicts", async () => {
+    await seedFixture();
+    const kernel = await openKernel((point) => {
+      if (point === "move-with-writes:before-rename") {
+        throw new Error("interrupted before contested rollback");
+      }
+    });
+    await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+      "interrupted before contested rollback",
+    );
+    await fs.writeFile(path.join(vaultPath, "A.md"), "external after rewrite", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Renamed.md"), "external target", "utf8");
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+      kind: "move-with-writes",
+      outcome: "manual-conflict",
+      path: "Source.md",
+    });
+    await expect(recovered.readText("A.md")).resolves.toMatchObject({
+      content: "external after rewrite",
+    });
+    await expect(recovered.readText("B.md")).resolves.toMatchObject({
+      content: "[source](./Source.md)",
+    });
+    const conflictPath = recovered.startupRecoveryActions.at(-1)?.conflictPath;
+    expect(conflictPath).toBeTypeOf("string");
+    await expect(recovered.readText(conflictPath ?? "missing")).resolves.toMatchObject({
+      content: "[[Source]]",
+    });
+  });
+});

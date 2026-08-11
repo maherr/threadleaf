@@ -128,6 +128,7 @@ interface CliMoveCommand extends CliVaultCommand {
   id: "move" | "rename";
   sourcePath: string;
   targetPath: string;
+  updateLinks: boolean;
 }
 
 interface CliTrashMutationCommand extends CliVaultCommand {
@@ -327,6 +328,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let inline = false;
   let destination: string | null = null;
   let renamedName: string | null = null;
+  let updateLinks = false;
   let help = false;
   const positional: string[] = [];
 
@@ -397,6 +399,13 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       inline = true;
       continue;
     }
+    if (token === "--update-links") {
+      if (updateLinks) {
+        usageFailure("--update-links may be supplied only once.");
+      }
+      updateLinks = true;
+      continue;
+    }
     if (token === "--permanent") {
       usageFailure(
         "Threadleaf does not expose permanent deletion; recoverable trash is mandatory.",
@@ -446,7 +455,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure("vault info received an option that it does not accept.");
     }
@@ -459,7 +469,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure("files accepts only the optional --directory value.");
     }
@@ -473,7 +484,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure("read requires exactly one vault-relative Markdown path.");
     }
@@ -493,7 +505,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure("trash list does not accept options.");
     }
@@ -512,7 +525,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure(`${name} requires exactly one vault-relative Markdown path.`);
     }
@@ -534,7 +548,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure(`${name} accepts parameter=value arguments only.`);
     }
@@ -584,7 +599,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure(`${name} requires exactly one vault-relative Markdown path.`);
     }
@@ -602,7 +618,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure(`${name} does not accept arguments yet.`);
     }
@@ -615,7 +632,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure("search requires a query and does not accept --directory.");
     }
@@ -637,7 +655,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       limit !== null ||
       inline ||
       destination !== null ||
-      renamedName !== null
+      renamedName !== null ||
+      updateLinks
     ) {
       usageFailure("create received an option that it does not accept.");
     }
@@ -675,7 +694,13 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     };
   }
   if (name === "append" || name === "prepend") {
-    if (directory !== null || limit !== null || destination !== null || renamedName !== null) {
+    if (
+      directory !== null ||
+      limit !== null ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
       usageFailure(`${name} received an option that it does not accept.`);
     }
     let filePath: string | null = null;
@@ -772,6 +797,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         vaultPath,
         sourcePath,
         targetPath: pathArgument(() => movedMarkdownPath(sourcePath, targetDestination)),
+        updateLinks,
       };
     }
     if (!targetName || targetDestination !== null) {
@@ -783,6 +809,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       vaultPath,
       sourcePath,
       targetPath: pathArgument(() => renamedMarkdownPath(sourcePath, targetName)),
+      updateLinks,
     };
   }
 
@@ -805,8 +832,8 @@ Usage:
   threadleaf --vault <path> [--json] create <note> [--content <text>]
   threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
-  threadleaf --vault <path> [--json] move <note> --to <path>
-  threadleaf --vault <path> [--json] rename <note> --name <filename>
+  threadleaf --vault <path> [--json] move <note> --to <path> [--update-links]
+  threadleaf --vault <path> [--json] rename <note> --name <filename> [--update-links]
   threadleaf --vault <path> [--json] delete <note>
   threadleaf --vault <path> [--json] trash list
   threadleaf --vault <path> [--json] restore <note>
@@ -1131,7 +1158,21 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "move" || command.id === "rename") {
-      const outcome = await moveMarkdownNote(kernel, command.sourcePath, command.targetPath);
+      const outcome = await moveMarkdownNote(
+        kernel,
+        command.sourcePath,
+        command.targetPath,
+        undefined,
+        command.updateLinks ? { acceptCurrentRewrites: true } : undefined,
+      );
+      if (outcome.status === "requires-confirmation") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The ${command.id} requires ${outcome.rewrites.length} link target ${outcome.rewrites.length === 1 ? "update" : "updates"}. Review this preview, then rerun with --update-links.`,
+          { details: outcome },
+        );
+      }
       if (outcome.status === "blocked") {
         throw new CliFailure(
           "CONFLICT",

@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { parseMarkdownLinks } from "../kernel/markdown-links";
 import { type LinkResolution, MetadataIndex } from "../kernel/metadata-index";
 import { normalizeMarkdownNotePath } from "../kernel/note-path";
 import type { VaultMutationPort, VaultReadPort, VaultTextSnapshot } from "../kernel/ports";
-import type { NoteMoveBlocker, NoteMoveOutcome } from "../shared/contracts";
+import type { NoteMoveBlocker, NoteMoveOutcome, NoteMoveRewritePreview } from "../shared/contracts";
 
 export interface NoteMoveRewrite {
   documentPath: string;
@@ -34,6 +35,11 @@ export type NoteMovePlan =
       rewrites: NoteMoveRewrite[];
       writes: NoteMoveWriteProposal[];
     };
+
+export interface NoteMoveOptions {
+  confirmationId?: string;
+  acceptCurrentRewrites?: boolean;
+}
 
 interface InternalRewrite {
   key: string;
@@ -142,6 +148,34 @@ function applyRewrites(content: string, rewrites: readonly InternalRewrite[]): s
     result = `${result.slice(0, candidate.start)}${candidate.rewrite.afterTarget}${result.slice(candidate.end)}`;
   }
   return result;
+}
+
+function rewritePreview(rewrite: NoteMoveRewrite): NoteMoveRewritePreview {
+  return {
+    documentPath: rewrite.documentPath,
+    resultPath: rewrite.resultPath,
+    line: rewrite.line,
+    syntax: rewrite.syntax,
+    beforeTarget: rewrite.beforeTarget,
+    afterTarget: rewrite.afterTarget,
+  };
+}
+
+function confirmationIdFor(plan: Extract<NoteMovePlan, { status: "planned" }>): string {
+  const payload = {
+    version: 1,
+    from: plan.from,
+    to: plan.to,
+    sourceRevision: plan.sourceRevision,
+    rewrites: plan.rewrites.map(rewritePreview),
+    writes: plan.writes.map((write) => ({
+      path: write.path,
+      resultPath: write.resultPath,
+      expectedRevision: write.expectedRevision,
+      contentRevision: createHash("sha256").update(write.content, "utf8").digest("hex"),
+    })),
+  };
+  return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
 }
 
 export async function planMarkdownNoteMove(
@@ -416,6 +450,7 @@ export async function moveMarkdownNote(
   requestedSourcePath: string,
   requestedTargetPath: string,
   expectedSourceRevision?: string,
+  options: NoteMoveOptions = {},
 ): Promise<NoteMoveOutcome> {
   const plan = await planMarkdownNoteMove(
     vault,
@@ -426,18 +461,63 @@ export async function moveMarkdownNote(
   if (plan.status === "conflict") {
     return plan;
   }
-  const rewriteBlockers = plan.rewrites.map((rewrite) =>
-    blockerFor(
-      rewrite.documentPath,
-      rewrite.beforeTarget,
-      rewrite.syntax,
-      rewrite.before,
-      rewrite.after,
-    ),
-  );
-  const blockers = [...plan.blockers, ...rewriteBlockers];
-  if (blockers.length > 0) {
-    return { status: "blocked", from: plan.from, to: plan.to, blockers };
+  if (plan.blockers.length > 0) {
+    return { status: "blocked", from: plan.from, to: plan.to, blockers: plan.blockers };
   }
-  return vault.renameFile(plan.from, plan.to, plan.sourceRevision);
+  const rewrites = plan.rewrites.map(rewritePreview);
+  if (plan.writes.length > 0) {
+    const confirmationId = confirmationIdFor(plan);
+    if (!options.acceptCurrentRewrites && options.confirmationId !== confirmationId) {
+      return {
+        status: "requires-confirmation",
+        from: plan.from,
+        to: plan.to,
+        confirmationId,
+        rewrites,
+      };
+    }
+    const result = await vault.moveWithWrites({
+      sourcePath: plan.from,
+      targetPath: plan.to,
+      expectedSourceRevision: plan.sourceRevision,
+      writes: plan.writes.map((write) => ({
+        path: write.path,
+        content: write.content,
+        expectedRevision: write.expectedRevision,
+      })),
+    });
+    if (result.status === "conflict") {
+      return {
+        status: "conflict",
+        from: result.from,
+        to: result.to,
+        reason: result.reason,
+        ...(result.conflictPaths.length > 0 ? { conflictPaths: result.conflictPaths } : {}),
+      };
+    }
+    const revisionByPath = new Map(result.writes.map((write) => [write.path, write.revision]));
+    return {
+      status: "committed",
+      from: result.from,
+      to: result.to,
+      transactionId: result.transactionId,
+      rewrites,
+      writes: plan.writes.map((write) => {
+        const revision = revisionByPath.get(write.path);
+        if (!revision) {
+          throw new Error(`Compound move result lost the revision for ${write.path}.`);
+        }
+        return {
+          path: write.path,
+          resultPath: write.resultPath,
+          revision,
+        };
+      }),
+    };
+  }
+  const result = await vault.renameFile(plan.from, plan.to, plan.sourceRevision);
+  if (result.status === "conflict") {
+    return result;
+  }
+  return { ...result, rewrites: [], writes: [] };
 }

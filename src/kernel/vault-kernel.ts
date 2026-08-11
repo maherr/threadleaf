@@ -15,6 +15,8 @@ import {
   syncDirectory,
 } from "./durability";
 import {
+  type MoveWithWritesJournal,
+  type MoveWithWritesJournalEntry,
   type MultiWriteJournal,
   type MultiWriteJournalEntry,
   parseTransactionJournal,
@@ -29,6 +31,8 @@ import {
   VaultPathPolicy,
 } from "./path-policy";
 import type {
+  MoveWithWritesRequest,
+  MoveWithWritesResult,
   MultiWriteEntryResult,
   MultiWriteRequest,
   MultiWriteResult,
@@ -53,7 +57,13 @@ export type KernelFaultPoint =
   | "rename:after-commit"
   | "multi-write:after-intent"
   | "multi-write:after-entry"
-  | "multi-write:after-commit";
+  | "multi-write:after-commit"
+  | "move-with-writes:after-intent"
+  | "move-with-writes:after-entry"
+  | "move-with-writes:before-rename"
+  | "move-with-writes:after-rename"
+  | "move-with-writes:after-rollback-entry"
+  | "move-with-writes:after-commit";
 
 export type KernelFaultInjector = (point: KernelFaultPoint) => void | Promise<void>;
 
@@ -80,11 +90,17 @@ export type BinaryReadResult =
 
 export type WriteResult = VaultWriteResult;
 export type RenameResult = VaultRenameResult;
-export type { MultiWriteEntryResult, MultiWriteRequest, MultiWriteResult } from "./ports";
+export type {
+  MoveWithWritesRequest,
+  MoveWithWritesResult,
+  MultiWriteEntryResult,
+  MultiWriteRequest,
+  MultiWriteResult,
+} from "./ports";
 
 export interface RecoveryAction {
   transactionId: string;
-  kind: "write" | "rename" | "multi-write";
+  kind: "write" | "rename" | "multi-write" | "move-with-writes";
   outcome: "committed" | "conflict-copy" | "rolled-back" | "manual-conflict";
   path: string;
   paths?: string[];
@@ -115,6 +131,11 @@ interface InternalWriteConflict {
 }
 
 type InternalWriteResult = InternalWriteCommitted | InternalWriteConflict;
+
+interface MoveWithWritesBlobs {
+  before: Buffer;
+  next: Buffer;
+}
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const revisionPattern = /^[a-f0-9]{64}$/;
@@ -298,6 +319,15 @@ export class VaultKernel implements VaultMutationPort {
     return this.withMutation(() => this.performMultiWrite(requests));
   }
 
+  async moveWithWrites(request: MoveWithWritesRequest): Promise<MoveWithWritesResult> {
+    this.assertWritable();
+    assertExpectedRevision(request.expectedSourceRevision);
+    if (request.writes.length === 0) {
+      throw new Error("A compound move requires at least one rewritten file.");
+    }
+    return this.withMutation(() => this.performMoveWithWrites(request));
+  }
+
   private async performRename(
     sourcePath: string,
     targetPath: string,
@@ -441,6 +471,7 @@ export class VaultKernel implements VaultMutationPort {
       write: 0,
       rename: 1,
       "multi-write": 2,
+      "move-with-writes": 3,
     };
     journals.sort(
       (left, right) =>
@@ -449,12 +480,14 @@ export class VaultKernel implements VaultMutationPort {
     );
 
     const preparedMultiWriteBlobs = new Map<string, Map<number, Buffer>>();
+    const preparedMoveWithWritesBlobs = new Map<string, Map<number, MoveWithWritesBlobs>>();
     for (const journal of journals) {
-      if (journal.kind !== "multi-write") {
-        continue;
-      }
       try {
-        preparedMultiWriteBlobs.set(journal.id, await this.loadPendingMultiWriteBlobs(journal));
+        if (journal.kind === "multi-write") {
+          preparedMultiWriteBlobs.set(journal.id, await this.loadPendingMultiWriteBlobs(journal));
+        } else if (journal.kind === "move-with-writes") {
+          preparedMoveWithWritesBlobs.set(journal.id, await this.loadMoveWithWritesBlobs(journal));
+        }
       } catch (error) {
         throw new VaultRecoveryError(`${journal.id}.json`, error);
       }
@@ -466,11 +499,18 @@ export class VaultKernel implements VaultMutationPort {
           actions.push(await this.recoverWrite(journal));
         } else if (journal.kind === "rename") {
           actions.push(await this.recoverRename(journal));
-        } else {
+        } else if (journal.kind === "multi-write") {
           actions.push(
             await this.recoverMultiWrite(
               journal,
               preparedMultiWriteBlobs.get(journal.id) ?? new Map(),
+            ),
+          );
+        } else {
+          actions.push(
+            await this.recoverMoveWithWrites(
+              journal,
+              preparedMoveWithWritesBlobs.get(journal.id) ?? new Map(),
             ),
           );
         }
@@ -520,6 +560,414 @@ export class VaultKernel implements VaultMutationPort {
         throw new Error("Vault state identity does not match this vault.");
       }
     }
+  }
+
+  private async performMoveWithWrites(
+    request: MoveWithWritesRequest,
+  ): Promise<MoveWithWritesResult> {
+    const sourcePath = normalizeVaultPath(request.sourcePath);
+    const targetPath = normalizeVaultPath(request.targetPath);
+    if (sourcePath === targetPath) {
+      throw new Error("A compound move requires different source and destination paths.");
+    }
+
+    const seenPaths = new Set<string>();
+    const prepared = request.writes.map((write) => {
+      const target = normalizeVaultPath(write.path);
+      if (target === targetPath) {
+        throw new Error("A compound move cannot rewrite its unoccupied destination path.");
+      }
+      if (seenPaths.has(target)) {
+        throw new Error(`A compound move cannot rewrite a path twice: ${target}`);
+      }
+      if (write.expectedRevision === null) {
+        throw new Error("A compound move can rewrite only existing revision-bound files.");
+      }
+      assertExpectedRevision(write.expectedRevision);
+      seenPaths.add(target);
+      return {
+        targetPath: target,
+        expectedRevision: write.expectedRevision,
+        nextBytes: Buffer.from(write.content, "utf8"),
+      };
+    });
+
+    const sourceAbsolute = await this.paths.resolveForWrite(sourcePath);
+    const targetAbsolute = await this.paths.resolveForWrite(targetPath, true);
+    const [source, target] = await Promise.all([
+      readStableFile(sourceAbsolute),
+      readStableFile(targetAbsolute),
+    ]);
+    if (!source || source.revision !== request.expectedSourceRevision) {
+      return {
+        status: "conflict",
+        from: sourcePath,
+        to: targetPath,
+        reason: "source-revision-changed",
+        conflictPaths: [],
+      };
+    }
+    if (target) {
+      return {
+        status: "conflict",
+        from: sourcePath,
+        to: targetPath,
+        reason: "target-exists",
+        conflictPaths: [],
+      };
+    }
+
+    const currentByPath = new Map<string, FileSnapshot>();
+    for (const item of prepared) {
+      const absolutePath = await this.paths.resolveForWrite(item.targetPath, true);
+      const current = await readStableFile(absolutePath);
+      if (!current || current.revision !== item.expectedRevision) {
+        return {
+          status: "conflict",
+          from: sourcePath,
+          to: targetPath,
+          reason: `write-revision-changed:${item.targetPath}`,
+          conflictPaths: [],
+        };
+      }
+      currentByPath.set(item.targetPath, current);
+    }
+    const sourceWrite = prepared.find((item) => item.targetPath === sourcePath);
+    if (sourceWrite && sourceWrite.expectedRevision !== request.expectedSourceRevision) {
+      throw new Error("The source rewrite revision must match the compound move revision.");
+    }
+
+    const id = randomUUID();
+    const blobDirectory = this.getTransactionBlobDirectory(id);
+    await fs.mkdir(blobDirectory);
+    await syncDirectory(this.transactionDirectory);
+    try {
+      for (let index = 0; index < prepared.length; index += 1) {
+        const item = prepared[index];
+        if (!item) {
+          continue;
+        }
+        const current = currentByPath.get(item.targetPath);
+        if (!current) {
+          throw new Error(`Compound move lost prepared bytes for ${item.targetPath}.`);
+        }
+        await durableCreate(this.getTransactionBlobPath(id, index, "before"), current.bytes);
+        await durableCreate(this.getTransactionBlobPath(id, index, "next"), item.nextBytes);
+      }
+    } catch (error) {
+      await fs.rm(blobDirectory, { recursive: true, force: true });
+      await syncDirectory(this.transactionDirectory);
+      throw error;
+    }
+
+    const journal: MoveWithWritesJournal = {
+      version: 1,
+      id,
+      vaultId: this.vaultId,
+      kind: "move-with-writes",
+      phase: "intent",
+      sourcePath,
+      targetPath,
+      expectedSourceRevision: request.expectedSourceRevision,
+      renameRevision: sourceWrite
+        ? revisionOf(sourceWrite.nextBytes)
+        : request.expectedSourceRevision,
+      reason: null,
+      createdAt: this.clock().toISOString(),
+      entries: prepared.map((item) => ({
+        targetPath: item.targetPath,
+        beforeRevision: item.expectedRevision,
+        nextRevision: revisionOf(item.nextBytes),
+        status: "pending",
+        currentRevision: null,
+        conflictPath: null,
+      })),
+    };
+    await this.writeJournal(journal);
+    await this.inject("move-with-writes:after-intent");
+    return this.continueMoveWithWrites(journal, await this.loadMoveWithWritesBlobs(journal));
+  }
+
+  private async continueMoveWithWrites(
+    journal: MoveWithWritesJournal,
+    blobs: Map<number, MoveWithWritesBlobs>,
+  ): Promise<MoveWithWritesResult> {
+    if (journal.phase === "committed") {
+      const result = this.committedMoveWithWritesResult(journal);
+      await this.archiveJournal(journal, "committed");
+      return result;
+    }
+    if (journal.phase === "rolling-back") {
+      return this.rollbackMoveWithWrites(journal, blobs);
+    }
+    if (journal.phase === "renaming") {
+      const resumed = await this.resumeMoveWithWritesRename(journal, blobs);
+      if (resumed) {
+        return resumed;
+      }
+    }
+
+    journal.phase = "applying";
+    await this.writeJournal(journal);
+    for (let index = 0; index < journal.entries.length; index += 1) {
+      const entry = journal.entries[index];
+      const entryBlobs = blobs.get(index);
+      if (!entry || !entryBlobs) {
+        throw new Error(`Missing compound move entry ${index}.`);
+      }
+      if (entry.status === "conflict") {
+        return this.beginMoveWithWritesRollback(
+          journal,
+          blobs,
+          journal.reason ?? `write-conflict:${entry.targetPath}`,
+        );
+      }
+      if (entry.status === "rolled-back") {
+        return this.beginMoveWithWritesRollback(
+          journal,
+          blobs,
+          journal.reason ?? `write-diverged:${entry.targetPath}`,
+        );
+      }
+
+      const current = await this.readMoveWithWritesTarget(entry.targetPath);
+      if (entry.status === "applied") {
+        if (current?.revision !== entry.nextRevision) {
+          await this.recordMoveWithWritesConflict(
+            journal,
+            entry,
+            entryBlobs.next,
+            entry.nextRevision,
+            `write-diverged:${entry.targetPath}`,
+          );
+          await this.writeJournal(journal);
+          return this.beginMoveWithWritesRollback(
+            journal,
+            blobs,
+            journal.reason ?? `write-diverged:${entry.targetPath}`,
+          );
+        }
+        continue;
+      }
+
+      if (current?.revision === entry.nextRevision) {
+        entry.status = "applied";
+        entry.currentRevision = entry.nextRevision;
+      } else {
+        const result = await this.performWrite(
+          entry.targetPath,
+          entryBlobs.next,
+          entry.beforeRevision,
+        );
+        if (result.status === "committed") {
+          entry.status = "applied";
+          entry.currentRevision = result.revision;
+        } else {
+          entry.status = "conflict";
+          entry.currentRevision = result.currentRevision;
+          entry.conflictPath = result.conflictPath;
+          journal.reason = `write-conflict:${entry.targetPath}`;
+        }
+      }
+      await this.writeJournal(journal);
+      await this.inject("move-with-writes:after-entry");
+      if (entry.status === "conflict") {
+        return this.beginMoveWithWritesRollback(
+          journal,
+          blobs,
+          journal.reason ?? `write-conflict:${entry.targetPath}`,
+        );
+      }
+    }
+
+    for (let index = 0; index < journal.entries.length; index += 1) {
+      const entry = journal.entries[index];
+      const entryBlobs = blobs.get(index);
+      if (!entry || !entryBlobs) {
+        throw new Error(`Missing compound move verification entry ${index}.`);
+      }
+      const current = await this.readMoveWithWritesTarget(entry.targetPath);
+      if (current?.revision === entry.nextRevision) {
+        continue;
+      }
+      await this.recordMoveWithWritesConflict(
+        journal,
+        entry,
+        entryBlobs.next,
+        entry.nextRevision,
+        `write-diverged:${entry.targetPath}`,
+      );
+      await this.writeJournal(journal);
+      return this.beginMoveWithWritesRollback(
+        journal,
+        blobs,
+        journal.reason ?? `write-diverged:${entry.targetPath}`,
+      );
+    }
+
+    journal.phase = "renaming";
+    journal.reason = null;
+    await this.writeJournal(journal);
+    await this.inject("move-with-writes:before-rename");
+    const rename = await this.performRename(
+      journal.sourcePath,
+      journal.targetPath,
+      journal.renameRevision,
+    );
+    if (rename.status === "conflict") {
+      return this.beginMoveWithWritesRollback(journal, blobs, `rename-${rename.reason}`);
+    }
+    await this.inject("move-with-writes:after-rename");
+    return this.commitMoveWithWrites(journal);
+  }
+
+  private async resumeMoveWithWritesRename(
+    journal: MoveWithWritesJournal,
+    blobs: Map<number, MoveWithWritesBlobs>,
+  ): Promise<MoveWithWritesResult | null> {
+    const sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
+    const targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+    const [source, target] = await Promise.all([
+      readStableFile(sourceAbsolute),
+      readStableFile(targetAbsolute),
+    ]);
+    if (!source && target?.revision === journal.renameRevision) {
+      return this.commitMoveWithWrites(journal);
+    }
+    if (!source) {
+      journal.reason = target ? "rename-state-diverged" : "source-missing";
+      await this.writeJournal(journal);
+      const conflictPaths = journal.entries
+        .map((entry) => entry.conflictPath)
+        .filter((entry): entry is string => entry !== null);
+      await this.archiveJournal(journal, "manual-conflict");
+      return {
+        status: "conflict",
+        from: journal.sourcePath,
+        to: journal.targetPath,
+        reason: journal.reason,
+        conflictPaths,
+      };
+    }
+    if (target) {
+      return this.beginMoveWithWritesRollback(journal, blobs, "rename-target-exists");
+    }
+    return null;
+  }
+
+  private async commitMoveWithWrites(
+    journal: MoveWithWritesJournal,
+  ): Promise<MoveWithWritesResult> {
+    journal.phase = "committed";
+    journal.reason = null;
+    await this.writeJournal(journal);
+    await this.inject("move-with-writes:after-commit");
+    const result = this.committedMoveWithWritesResult(journal);
+    await this.archiveJournal(journal, "committed");
+    return result;
+  }
+
+  private committedMoveWithWritesResult(journal: MoveWithWritesJournal): MoveWithWritesResult {
+    return {
+      status: "committed",
+      from: journal.sourcePath,
+      to: journal.targetPath,
+      transactionId: journal.id,
+      writes: journal.entries.map((entry) => ({
+        path: entry.targetPath,
+        revision: entry.nextRevision,
+      })),
+    };
+  }
+
+  private async beginMoveWithWritesRollback(
+    journal: MoveWithWritesJournal,
+    blobs: Map<number, MoveWithWritesBlobs>,
+    reason: string,
+  ): Promise<MoveWithWritesResult> {
+    journal.phase = "rolling-back";
+    journal.reason = reason;
+    await this.writeJournal(journal);
+    return this.rollbackMoveWithWrites(journal, blobs);
+  }
+
+  private async rollbackMoveWithWrites(
+    journal: MoveWithWritesJournal,
+    blobs: Map<number, MoveWithWritesBlobs>,
+  ): Promise<MoveWithWritesResult> {
+    for (let index = journal.entries.length - 1; index >= 0; index -= 1) {
+      const entry = journal.entries[index];
+      const entryBlobs = blobs.get(index);
+      if (!entry || !entryBlobs || entry.status === "rolled-back" || entry.status === "conflict") {
+        continue;
+      }
+      const current = await this.readMoveWithWritesTarget(entry.targetPath);
+      if (current?.revision === entry.beforeRevision) {
+        entry.status = "rolled-back";
+        entry.currentRevision = entry.beforeRevision;
+      } else {
+        const result = await this.performWrite(
+          entry.targetPath,
+          entryBlobs.before,
+          entry.nextRevision,
+        );
+        if (result.status === "committed") {
+          entry.status = "rolled-back";
+          entry.currentRevision = result.revision;
+          entry.conflictPath = null;
+        } else {
+          entry.status = "conflict";
+          entry.currentRevision = result.currentRevision;
+          entry.conflictPath = result.conflictPath;
+          journal.reason = `rollback-conflict:${entry.targetPath}`;
+        }
+      }
+      await this.writeJournal(journal);
+      await this.inject("move-with-writes:after-rollback-entry");
+    }
+
+    const conflictPaths = journal.entries
+      .map((entry) => entry.conflictPath)
+      .filter((entry): entry is string => entry !== null);
+    const reason = journal.reason ?? "compound-move-conflict";
+    const outcome = reason.startsWith("rollback-conflict:")
+      ? "manual-conflict"
+      : conflictPaths.length > 0
+        ? "conflict-copy"
+        : "rolled-back";
+    await this.archiveJournal(journal, outcome);
+    return {
+      status: "conflict",
+      from: journal.sourcePath,
+      to: journal.targetPath,
+      reason,
+      conflictPaths,
+    };
+  }
+
+  private async recordMoveWithWritesConflict(
+    journal: MoveWithWritesJournal,
+    entry: MoveWithWritesJournalEntry,
+    bytes: Buffer,
+    expectedRevision: string,
+    reason: string,
+  ): Promise<void> {
+    const result = await this.performWrite(entry.targetPath, bytes, expectedRevision);
+    if (result.status === "committed") {
+      entry.status = "applied";
+      entry.currentRevision = result.revision;
+      entry.conflictPath = null;
+      return;
+    }
+    entry.status = "conflict";
+    entry.currentRevision = result.currentRevision;
+    entry.conflictPath = result.conflictPath;
+    journal.reason = reason;
+  }
+
+  private async readMoveWithWritesTarget(targetPath: string): Promise<FileSnapshot | null> {
+    const absolutePath = await this.paths.resolveForWrite(targetPath, true);
+    return readStableFile(absolutePath);
   }
 
   private async performMultiWrite(
@@ -641,6 +1089,41 @@ export class VaultKernel implements VaultMutationPort {
     return blobs;
   }
 
+  private async loadMoveWithWritesBlobs(
+    journal: MoveWithWritesJournal,
+  ): Promise<Map<number, MoveWithWritesBlobs>> {
+    const blobs = new Map<number, MoveWithWritesBlobs>();
+    for (let index = 0; index < journal.entries.length; index += 1) {
+      const entry = journal.entries[index];
+      if (!entry) {
+        throw new Error(`Missing compound move journal entry ${index}.`);
+      }
+      const beforePath = this.getTransactionBlobPath(journal.id, index, "before");
+      const nextPath = this.getTransactionBlobPath(journal.id, index, "next");
+      const [beforeStat, nextStat] = await Promise.all([fs.lstat(beforePath), fs.lstat(nextPath)]);
+      if (
+        !beforeStat.isFile() ||
+        beforeStat.isSymbolicLink() ||
+        !nextStat.isFile() ||
+        nextStat.isSymbolicLink()
+      ) {
+        throw new Error(`Compound move blobs are not regular files: ${index}`);
+      }
+      const [before, next] = await Promise.all([
+        readStableFile(beforePath),
+        readStableFile(nextPath),
+      ]);
+      if (!before || before.revision !== entry.beforeRevision) {
+        throw new Error(`Compound move before blob failed its revision check: ${index}`);
+      }
+      if (!next || next.revision !== entry.nextRevision) {
+        throw new Error(`Compound move next blob failed its revision check: ${index}`);
+      }
+      blobs.set(index, { before: before.bytes, next: next.bytes });
+    }
+    return blobs;
+  }
+
   private multiWriteResult(journal: MultiWriteJournal): MultiWriteResult {
     const entries: MultiWriteEntryResult[] = journal.entries.map((entry) => {
       if (entry.status === "committed") {
@@ -667,8 +1150,12 @@ export class VaultKernel implements VaultMutationPort {
     return path.join(this.transactionDirectory, transactionId);
   }
 
-  private getTransactionBlobPath(transactionId: string, index: number): string {
-    return path.join(this.getTransactionBlobDirectory(transactionId), `${index}.next`);
+  private getTransactionBlobPath(
+    transactionId: string,
+    index: number,
+    version: "before" | "next" = "next",
+  ): string {
+    return path.join(this.getTransactionBlobDirectory(transactionId), `${index}.${version}`);
   }
 
   private async performWrite(
@@ -1044,6 +1531,38 @@ export class VaultKernel implements VaultMutationPort {
       path: journal.entries[0]?.targetPath ?? "",
       paths: journal.entries.map((entry) => entry.targetPath),
       ...(firstConflict ? { conflictPath: firstConflict.conflictPath } : {}),
+    };
+  }
+
+  private async recoverMoveWithWrites(
+    journal: MoveWithWritesJournal,
+    blobs: Map<number, MoveWithWritesBlobs>,
+  ): Promise<RecoveryAction> {
+    const result = await this.continueMoveWithWrites(journal, blobs);
+    if (result.status === "committed") {
+      return {
+        transactionId: journal.id,
+        kind: "move-with-writes",
+        outcome: "committed",
+        path: journal.targetPath,
+        paths: journal.entries.map((entry) => entry.targetPath),
+      };
+    }
+    const manual =
+      result.reason.startsWith("rollback-conflict:") ||
+      result.reason === "rename-state-diverged" ||
+      result.reason === "source-missing";
+    return {
+      transactionId: journal.id,
+      kind: "move-with-writes",
+      outcome: manual
+        ? "manual-conflict"
+        : result.conflictPaths.length > 0
+          ? "conflict-copy"
+          : "rolled-back",
+      path: journal.sourcePath,
+      paths: journal.entries.map((entry) => entry.targetPath),
+      ...(result.conflictPaths[0] ? { conflictPath: result.conflictPaths[0] } : {}),
     };
   }
 

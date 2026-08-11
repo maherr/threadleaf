@@ -84,6 +84,7 @@ describe("recovery-backed note text mutation", () => {
       renameFile: (sourcePath, targetPath, expectedSourceRevision) =>
         kernel.renameFile(sourcePath, targetPath, expectedSourceRevision),
       writeMany: (requests) => kernel.writeMany(requests),
+      moveWithWrites: (request) => kernel.moveWithWrites(request),
     };
 
     const result = await mutateMarkdownNoteText(

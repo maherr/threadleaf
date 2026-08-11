@@ -23,8 +23,8 @@ threadleaf --vault /path/to/vault outline "Folder/Note.md"
 threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n"]
 threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text" [--inline]
 threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
-threadleaf --vault /path/to/vault move "Folder/Note.md" --to "Archive/Note.md"
-threadleaf --vault /path/to/vault rename "Folder/Note.md" --name "New name"
+threadleaf --vault /path/to/vault move "Folder/Note.md" --to "Archive/Note.md" [--update-links]
+threadleaf --vault /path/to/vault rename "Folder/Note.md" --name "New name" [--update-links]
 threadleaf --vault /path/to/vault delete "Folder/Note.md"
 threadleaf --vault /path/to/vault trash list
 threadleaf --vault /path/to/vault restore "Folder/Note.md"
@@ -51,8 +51,8 @@ During development, prefix the same arguments with `pnpm cli`.
 | `create` | Created Markdown path and revision | Recoverable no-clobber writer |
 | `append` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
-| `move` | Source and destination paths | Link-integrity preflight plus recoverable rename |
-| `rename` | Source and same-folder destination | Link-integrity preflight plus recoverable rename |
+| `move` | Preview or committed source, destination, rewrites, and written revisions | Whole-vault proof plus compound recovery journal |
+| `rename` | Preview or committed same-folder destination, rewrites, and written revisions | Whole-vault proof plus compound recovery journal |
 | `delete` | Source and recoverable trash paths | Revision-checked recoverable rename |
 | `trash list` or `trash:list` | Original path, trash path, revision, and byte size | Dedicated read-only trash inspection |
 | `restore` | Trash and restored paths | Revision-checked recoverable rename |
@@ -99,11 +99,17 @@ the command returns exit 5.
 
 `move` and `rename` never overwrite a destination. Before mutation, Threadleaf snapshots the
 Markdown corpus and compares every parsed link against a projected index containing the proposed
-path. A move proceeds only when every link keeps the same resolution after the moved note's identity
-is remapped. A resolved link becoming unresolved, a changed ambiguity set, or a relative outgoing
-link changing meaning blocks the operation with exit 5 and structured blocker details. No file is
-changed on a blocked preflight. This initial boundary preserves link integrity by refusing moves
-that require textual rewriting; automatic link rewriting is not yet claimed.
+path. Resolved targets that need new text become exact source-offset rewrite proposals; aliases,
+anchors, titles, whitespace, BOM, line endings, and unrelated bytes stay untouched. Ambiguous or
+unresolved cases that cannot be proved safe remain blockers.
+
+When safe rewrites are required, the first invocation exits 5 with a structured
+`requires-confirmation` preview and changes nothing. Rerun with `--update-links` to accept the
+current plan. Add `--json` to the preview invocation to inspect every entry under
+`error.details.rewrites`. Threadleaf re-plans from current bytes, revision-checks every affected
+note, and uses one parent journal to coordinate the rewrites and rename. A collision or external
+edit triggers reverse-order rollback; any losing proposal or rollback version is preserved as an
+explicit conflict copy. A move with no required rewrite commits without the flag.
 
 For `move`, `to=` is an exact note path unless it ends in `/` or `\`, in which case Threadleaf keeps
 the source filename inside that explicit destination folder. `rename` accepts one filename without
@@ -165,7 +171,7 @@ shape with `ok: false` and a stable error code. Without it, standard error recei
 | 2 | `USAGE` | Invalid command, option, or argument |
 | 3 | `VAULT` | Vault, path, UTF-8, or indexed-note failure |
 | 4 | `QUERY` | Search query exceeds the documented bounds |
-| 5 | `CONFLICT` | A target exists, a write race was preserved, link integrity blocks a move, trash recovery collides, or another CLI mutation is active |
+| 5 | `CONFLICT` | A target exists, a write race was preserved, link updates need confirmation, link integrity blocks a move, trash recovery collides, or another CLI mutation is active |
 
 ## Compatibility spellings
 
@@ -204,8 +210,9 @@ resolution are not claimed.
 ## Current compatibility boundary
 
 Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberately omits its
-`permanent` flag. Atomic automatic link rewriting for move and rename also remains open. Threadleaf
-accepts the public property command names and parameter spellings, but its lossless frontmatter
+`permanent` flag. Move and rename support explicit compound link rewriting through Threadleaf's
+native `--update-links` confirmation flag. Threadleaf accepts the public property command names and
+parameter spellings, but its lossless frontmatter
 subset and native JSON contract are narrower than a complete compatibility claim. Threadleaf does
 not yet accept Obsidian's `open`, `overwrite`, or template parameters, active-file defaults,
 basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags. `trash list`,

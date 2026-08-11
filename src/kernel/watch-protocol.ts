@@ -118,6 +118,15 @@ export type ExpectedVaultOperation =
       id: string;
       kind: "multi-write";
       writes: Array<{ path: string; revision: string }>;
+    }
+  | {
+      id: string;
+      kind: "move-with-writes";
+      from: string;
+      to: string;
+      targetRevision: string;
+      sourceRewritten: boolean;
+      writes: Array<{ path: string; revision: string }>;
     };
 
 export class WatchOperationLedger {
@@ -191,6 +200,40 @@ export class WatchOperationLedger {
     }
 
     const indexes: number[] = [];
+    if (operation.kind === "move-with-writes") {
+      if (operation.sourceRewritten) {
+        const deleteIndex = changes.findIndex(
+          (change) =>
+            change.kind === "delete" &&
+            change.path === operation.from &&
+            change.operationId === undefined,
+        );
+        const targetIndex = changes.findIndex(
+          (change) =>
+            change.kind === "upsert" &&
+            change.state.path === operation.to &&
+            change.state.revision === operation.targetRevision &&
+            change.operationId === undefined,
+        );
+        if (deleteIndex === -1 || targetIndex === -1) {
+          return null;
+        }
+        indexes.push(deleteIndex, targetIndex);
+      } else {
+        const moveIndex = changes.findIndex(
+          (change) =>
+            change.kind === "move" &&
+            change.from === operation.from &&
+            change.to === operation.to &&
+            change.state.revision === operation.targetRevision &&
+            change.operationId === undefined,
+        );
+        if (moveIndex === -1) {
+          return null;
+        }
+        indexes.push(moveIndex);
+      }
+    }
     for (const write of operation.writes) {
       const index = changes.findIndex(
         (change, candidateIndex) =>

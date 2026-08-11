@@ -48,6 +48,7 @@ function withRenameRace(
       return kernel.renameFile(sourcePath, targetPath, expectedRevision);
     },
     writeMany: (requests) => kernel.writeMany(requests),
+    moveWithWrites: (request) => kernel.moveWithWrites(request),
   };
 }
 

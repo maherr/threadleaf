@@ -101,6 +101,18 @@ describe("Threadleaf CLI arguments", () => {
     expect(
       parseCliArguments([
         "--vault=/vault",
+        "rename",
+        "Folder/Old.md",
+        "--name=New",
+        "--update-links",
+      ]),
+    ).toMatchObject({ id: "rename", updateLinks: true });
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "read", "Note.md", "--update-links"]),
+    ).toThrow("read requires");
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
         "append",
         "path=Folder/Note",
         "content=Next\\nline",
@@ -593,7 +605,7 @@ describe("Threadleaf CLI move and rename workflows", () => {
     await expect(fs.readFile(path.join(vaultPath, "Renamed.md"), "utf8")).resolves.toBe("solo");
   });
 
-  it("blocks a rename that would change a resolved link and reports the exact blocker", async () => {
+  it("previews required link updates and applies them only with --update-links", async () => {
     const alphaBefore = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
     const betaBefore = await fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8");
     const result = await invoke([
@@ -614,15 +626,18 @@ describe("Threadleaf CLI move and rename workflows", () => {
       error: {
         code: "CONFLICT",
         details: {
-          status: "blocked",
+          status: "requires-confirmation",
           from: "Folder/Beta.md",
           to: "Folder/Gamma.md",
-          blockers: [
+          confirmationId: expect.stringMatching(/^[a-f0-9]{64}$/),
+          rewrites: [
             {
               documentPath: "Alpha.md",
-              target: "Folder/Beta",
-              before: { status: "resolved", path: "Folder/Beta.md" },
-              after: { status: "unresolved" },
+              resultPath: "Alpha.md",
+              line: 7,
+              syntax: "wiki",
+              beforeTarget: "Folder/Beta",
+              afterTarget: "Folder/Gamma",
             },
           ],
         },
@@ -632,6 +647,45 @@ describe("Threadleaf CLI move and rename workflows", () => {
     await expect(fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8")).resolves.toBe(
       betaBefore,
     );
+
+    const applied = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "rename",
+      "file=Folder/Beta.md",
+      "name=Gamma",
+      "--update-links",
+    ]);
+
+    expect(applied.exitCode).toBe(cliExitCodes.success);
+    expect(applied.stderr).toBe("");
+    expect(JSON.parse(applied.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "rename",
+      data: {
+        status: "committed",
+        from: "Folder/Beta.md",
+        to: "Folder/Gamma.md",
+        rewrites: [
+          {
+            documentPath: "Alpha.md",
+            beforeTarget: "Folder/Beta",
+            afterTarget: "Folder/Gamma",
+          },
+        ],
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(
+      alphaBefore.replace("[[Folder/Beta]]", "[[Folder/Gamma]]"),
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Folder", "Gamma.md"), "utf8")).resolves.toBe(
+      betaBefore,
+    );
+    await expect(fs.stat(path.join(vaultPath, "Folder", "Beta.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("rejects a destination collision without overwriting either note", async () => {

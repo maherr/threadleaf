@@ -380,8 +380,8 @@
           </button>
         </header>
         <p id="move-note-description" class="new-note-description">
-          Enter a new vault-relative path. Threadleaf moves the note only when every indexed wiki
-          and Markdown link keeps the same meaning. This build does not rewrite links.
+          Enter a new vault-relative path. Threadleaf previews exact wiki and Markdown link updates,
+          then applies the confirmed edits and move as one recoverable operation.
         </p>
         <div class="move-note-current">
           <span>Current path</span>
@@ -400,6 +400,7 @@
           />
         </label>
         <p class="new-note-error" id="move-note-error" role="alert" hidden></p>
+        <p class="move-note-preview-message" id="move-note-preview-message" role="status" hidden></p>
         <section
           class="move-note-blockers"
           id="move-note-blockers"

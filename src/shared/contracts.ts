@@ -186,9 +186,44 @@ export interface NoteMoveBlocker {
   after: NoteMoveLinkResolution;
 }
 
+export interface NoteMoveRewritePreview {
+  documentPath: string;
+  resultPath: string;
+  line: number;
+  syntax: "wiki" | "markdown";
+  beforeTarget: string;
+  afterTarget: string;
+}
+
+export interface NoteMoveCommittedWrite {
+  path: string;
+  resultPath: string;
+  revision: string;
+}
+
 export type NoteMoveOutcome =
-  | { status: "committed"; from: string; to: string; transactionId: string }
-  | { status: "conflict"; from: string; to: string; reason: string }
+  | {
+      status: "committed";
+      from: string;
+      to: string;
+      transactionId: string;
+      rewrites: NoteMoveRewritePreview[];
+      writes: NoteMoveCommittedWrite[];
+    }
+  | {
+      status: "requires-confirmation";
+      from: string;
+      to: string;
+      confirmationId: string;
+      rewrites: NoteMoveRewritePreview[];
+    }
+  | {
+      status: "conflict";
+      from: string;
+      to: string;
+      reason: string;
+      conflictPaths?: string[];
+    }
   | {
       status: "blocked";
       from: string;
@@ -270,6 +305,7 @@ export interface ThreadleafBridge {
     targetPath: string,
     expectedRevision: string,
     expectedVaultId: string,
+    confirmationId?: string,
   ): Promise<NoteMoveResponse>;
   deleteNote(
     path: string,

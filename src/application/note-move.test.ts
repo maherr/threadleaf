@@ -256,24 +256,26 @@ describe("link-safe note moves", () => {
     );
   });
 
-  it("blocks a rename that would break a resolved backlink", async () => {
+  it("previews and then atomically applies a backlink rewrite with an exact confirmation", async () => {
     await fs.writeFile(path.join(vaultPath, "Target.md"), "# Target\n", "utf8");
     await fs.writeFile(path.join(vaultPath, "Linker.md"), "[[Target#Heading|label]]\n", "utf8");
     const kernel = await openKernel();
 
-    const result = await moveMarkdownNote(kernel, "Target.md", "Renamed.md");
+    const preview = await moveMarkdownNote(kernel, "Target.md", "Renamed.md");
 
-    expect(result).toMatchObject({
-      status: "blocked",
+    expect(preview).toMatchObject({
+      status: "requires-confirmation",
       from: "Target.md",
       to: "Renamed.md",
-      blockers: [
+      confirmationId: expect.stringMatching(/^[a-f0-9]{64}$/),
+      rewrites: [
         {
           documentPath: "Linker.md",
-          target: "Target",
+          resultPath: "Linker.md",
+          line: 1,
           syntax: "wiki",
-          before: { status: "resolved", path: "Target.md" },
-          after: { status: "unresolved" },
+          beforeTarget: "Target",
+          afterTarget: "Renamed",
         },
       ],
     });
@@ -283,9 +285,36 @@ describe("link-safe note moves", () => {
     await expect(fs.stat(path.join(vaultPath, "Renamed.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+
+    if (preview.status !== "requires-confirmation") {
+      throw new Error("Expected an exact move preview.");
+    }
+    const result = await moveMarkdownNote(kernel, "Target.md", "Renamed.md", undefined, {
+      confirmationId: preview.confirmationId,
+    });
+
+    expect(result).toMatchObject({
+      status: "committed",
+      from: "Target.md",
+      to: "Renamed.md",
+      rewrites: preview.rewrites,
+      writes: [
+        {
+          path: "Linker.md",
+          resultPath: "Linker.md",
+          revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      ],
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Linker.md"), "utf8")).resolves.toBe(
+      "[[Renamed#Heading|label]]\n",
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Renamed.md"), "utf8")).resolves.toBe(
+      "# Target\n",
+    );
   });
 
-  it("blocks a folder move that would change a relative Markdown target", async () => {
+  it("requires a new preview when a linking file changes after confirmation", async () => {
     await fs.mkdir(path.join(vaultPath, "Folder"));
     await fs.writeFile(
       path.join(vaultPath, "Folder", "Source.md"),
@@ -295,19 +324,42 @@ describe("link-safe note moves", () => {
     await fs.writeFile(path.join(vaultPath, "Folder", "Target.md"), "# Target\n", "utf8");
     const kernel = await openKernel();
 
-    const result = await moveMarkdownNote(kernel, "Folder/Source.md", "Archive/Source.md");
+    const preview = await moveMarkdownNote(kernel, "Folder/Source.md", "Archive/Source.md");
+    if (preview.status !== "requires-confirmation") {
+      throw new Error("Expected the folder move to require confirmation.");
+    }
+    await fs.writeFile(
+      path.join(vaultPath, "Folder", "Source.md"),
+      "prefix [local](./Target.md)\n",
+      "utf8",
+    );
+
+    const result = await moveMarkdownNote(
+      kernel,
+      "Folder/Source.md",
+      "Archive/Source.md",
+      undefined,
+      { confirmationId: preview.confirmationId },
+    );
 
     expect(result).toMatchObject({
-      status: "blocked",
-      blockers: [
+      status: "requires-confirmation",
+      confirmationId: expect.not.stringMatching(preview.confirmationId),
+      rewrites: [
         {
           documentPath: "Folder/Source.md",
-          target: "./Target.md",
+          resultPath: "Archive/Source.md",
           syntax: "markdown",
-          before: { status: "resolved", path: "Folder/Target.md" },
-          after: { status: "unresolved" },
+          beforeTarget: "./Target.md",
+          afterTarget: "../Folder/Target.md",
         },
       ],
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Folder", "Source.md"), "utf8")).resolves.toBe(
+      "prefix [local](./Target.md)\n",
+    );
+    await expect(fs.stat(path.join(vaultPath, "Archive", "Source.md"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
   });
 
@@ -363,6 +415,7 @@ describe("link-safe note moves", () => {
         return kernel.renameFile(sourcePath, targetPath, expectedSourceRevision);
       },
       writeMany: (requests) => kernel.writeMany(requests),
+      moveWithWrites: (request) => kernel.moveWithWrites(request),
     };
 
     const result = await moveMarkdownNote(racingVault, "Old.md", "Archive/New.md");

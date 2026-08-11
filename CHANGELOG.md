@@ -82,3 +82,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   relative-path regeneration, ambiguity refusal, and final projected-index validation.
 - UTF-8 BOM retention at the vault read boundary so revision-aware rewrites preserve BOM and CRLF
   bytes instead of silently normalizing them.
+- Crash-recoverable compound note moves with exact rewrite previews, SHA-256-bound desktop
+  confirmation, explicit CLI `--update-links`, child-first recovery, reverse rollback, conflict
+  copies, affected-index refresh, and compound watcher attribution.

@@ -2621,6 +2621,23 @@ button.inspector-item:hover {
   background: color-mix(in srgb, var(--signal-soft) 72%, var(--surface-raised));
 }
 
+.move-note-preview-message {
+  margin: -7px 22px 15px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--line));
+  border-left: 4px double var(--accent-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-soft) 68%, var(--surface-raised));
+  font-size: 10px;
+}
+
+.move-note-blockers[data-mode="preview"] {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-left-color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-raised));
+}
+
 .move-note-blockers > strong {
   display: block;
   color: var(--ink);
@@ -2700,6 +2717,10 @@ button.inspector-item:hover {
   color: var(--signal);
   font-size: 12px;
   font-weight: 850;
+}
+
+.move-note-blockers[data-mode="preview"] .move-note-blocker-arrow {
+  color: var(--accent-strong);
 }
 
 .move-note-blocker-more {
