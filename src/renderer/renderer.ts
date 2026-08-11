@@ -4,6 +4,7 @@ import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 import type {
   NoteCreateResponse,
+  NoteDeleteResponse,
   NoteMoveBlocker,
   NoteMoveResponse,
   RuntimeSnapshot,
@@ -65,6 +66,7 @@ const elements = {
   notePreview: getElement("note-preview"),
   editState: getElement("edit-state"),
   moveNote: getButton("move-note"),
+  deleteNote: getButton("delete-note"),
   saveNote: getButton("save-note"),
   saveShortcut: getElement("save-shortcut"),
   revertNote: getButton("revert-note"),
@@ -128,6 +130,16 @@ const elements = {
   moveNoteBlockers: getElement("move-note-blockers"),
   moveNoteBlockerSummary: getElement("move-note-blocker-summary"),
   moveNoteBlockerList: getElement("move-note-blocker-list"),
+  deleteNoteDialog: getDialog("delete-note-dialog"),
+  deleteNoteForm: getForm("delete-note-form"),
+  deleteNoteClose: getButton("delete-note-close"),
+  deleteNoteCancel: getButton("delete-note-cancel"),
+  deleteNoteSubmit: getButton("delete-note-submit"),
+  deleteNoteError: getElement("delete-note-error"),
+  deleteNoteCurrentPath: getElement("delete-note-current-path"),
+  deleteNoteTrashPath: getElement("delete-note-trash-path"),
+  deleteNoteImpactCopy: getElement("delete-note-impact-copy"),
+  deleteNoteVault: getElement("delete-note-vault"),
   toast: getElement("toast"),
 };
 
@@ -174,6 +186,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.move-note",
     label: "Move or rename current note",
     description: "Move only when every indexed internal link keeps the same meaning.",
+  },
+  {
+    id: "workspace.delete-note",
+    label: "Move current note to trash",
+    description: "Move the note to recoverable vault trash without erasing its bytes.",
   },
   {
     id: "workspace.close-tab",
@@ -258,6 +275,12 @@ let moveNoteVaultId: string | null = null;
 let moveNoteSourcePath: string | null = null;
 let moveNoteRevision: string | null = null;
 let moveNoteBlockers: NoteMoveBlocker[] = [];
+let deleteNoteRestoreFocus: HTMLElement | null = null;
+let deleteNoteBusy = false;
+let deleteNoteVaultId: string | null = null;
+let deleteNoteSourcePath: string | null = null;
+let deleteNoteRevision: string | null = null;
+let deleteNoteBacklinkCount = 0;
 type VaultSearchState =
   | { status: "idle" }
   | {
@@ -396,6 +419,20 @@ function commandCatalog(): RendererCommand[] {
           ? "Save or revert the current note before moving it."
           : "Threadleaf is finishing another action.",
       run: openMoveNoteDialog,
+    },
+    {
+      id: "workspace.delete-note",
+      label: "Move current note to trash",
+      category: "Workspace",
+      keywords: ["delete", "remove", "trash", "recover", "file"],
+      shortcut: shortcutFor("workspace.delete-note"),
+      enabled: Boolean(loadedNote && loadedVaultId && !busy && !saving && !dirty),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : dirty
+          ? "Save or revert the current note before moving it to trash."
+          : "Threadleaf is finishing another action.",
+      run: openDeleteNoteDialog,
     },
     {
       id: "workspace.close-tab",
@@ -880,6 +917,10 @@ function updateShortcutLabels(): void {
   elements.moveNote.title = moveNoteShortcut
     ? `Move or rename current note (${moveNoteShortcut})`
     : "Move or rename current note";
+  const deleteNoteShortcut = shortcutFor("workspace.delete-note");
+  elements.deleteNote.title = deleteNoteShortcut
+    ? `Move current note to recoverable trash (${deleteNoteShortcut})`
+    : "Move current note to recoverable trash";
 }
 
 function renderNewNoteDialog(): void {
@@ -1212,6 +1253,155 @@ async function moveCurrentNote(): Promise<void> {
   } else if (response) {
     elements.moveNoteTarget.focus();
     elements.moveNoteTarget.select();
+  }
+}
+
+function renderDeleteNoteDialog(): void {
+  const staleVault = Boolean(
+    deleteNoteVaultId && deleteNoteVaultId !== (currentSnapshot?.vault.id ?? null),
+  );
+  const staleNote = Boolean(
+    deleteNoteSourcePath &&
+      deleteNoteRevision &&
+      (!loadedNote ||
+        loadedNote.path !== deleteNoteSourcePath ||
+        loadedNote.revision !== deleteNoteRevision),
+  );
+  if ((staleVault || staleNote) && !elements.deleteNoteError.textContent) {
+    elements.deleteNoteError.textContent = staleVault
+      ? "The active vault changed. Cancel and reopen Trash."
+      : "The note changed on disk. Cancel, review it, and reopen Trash.";
+  }
+
+  const sourcePath = deleteNoteSourcePath ?? "No note selected";
+  const message = elements.deleteNoteError.textContent ?? "";
+  elements.deleteNoteError.hidden = message.length === 0;
+  elements.deleteNoteCurrentPath.textContent = sourcePath;
+  elements.deleteNoteTrashPath.textContent = deleteNoteSourcePath
+    ? `.trash/${deleteNoteSourcePath}`
+    : ".trash/";
+  elements.deleteNoteImpactCopy.textContent =
+    deleteNoteBacklinkCount === 0
+      ? "No indexed note currently links here. Restore this file later from .trash/."
+      : `${deleteNoteBacklinkCount} indexed incoming link${deleteNoteBacklinkCount === 1 ? "" : "s"} will become unresolved. Restore this file later from .trash/.`;
+  elements.deleteNoteClose.disabled = deleteNoteBusy;
+  elements.deleteNoteCancel.disabled = deleteNoteBusy;
+  elements.deleteNoteSubmit.disabled = deleteNoteBusy || staleVault || staleNote;
+  elements.deleteNoteSubmit.textContent = deleteNoteBusy ? "Moving…" : "Move to trash";
+  elements.deleteNoteForm.setAttribute("aria-busy", String(deleteNoteBusy));
+  elements.deleteNoteVault.textContent = staleVault
+    ? "Vault changed"
+    : currentSnapshot
+      ? `In ${currentSnapshot.vault.name}`
+      : "Active vault";
+}
+
+function openDeleteNoteDialog(): void {
+  if (elements.deleteNoteDialog.open) {
+    elements.deleteNoteCancel.focus();
+    return;
+  }
+  if (!loadedNote || !loadedVaultId || busy || saving || dirty) {
+    showToast(
+      dirty
+        ? "Save or revert the current note before moving it to trash."
+        : loadedNote
+          ? "Threadleaf is finishing another action."
+          : "Open a note before moving it to trash.",
+    );
+    return;
+  }
+  if (elements.commandPalette.open) {
+    closeCommandPalette(false);
+  }
+  deleteNoteRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  deleteNoteBusy = false;
+  deleteNoteVaultId = loadedVaultId;
+  deleteNoteSourcePath = loadedNote.path;
+  deleteNoteRevision = loadedNote.revision;
+  deleteNoteBacklinkCount = loadedNote.backlinks.length;
+  elements.deleteNoteError.textContent = "";
+  elements.deleteNoteDialog.showModal();
+  renderDeleteNoteDialog();
+  window.requestAnimationFrame(() => elements.deleteNoteCancel.focus());
+}
+
+function closeDeleteNoteDialog(restoreFocus = true): void {
+  if (!elements.deleteNoteDialog.open || deleteNoteBusy) {
+    return;
+  }
+  elements.deleteNoteDialog.close();
+  deleteNoteVaultId = null;
+  deleteNoteSourcePath = null;
+  deleteNoteRevision = null;
+  deleteNoteBacklinkCount = 0;
+  elements.deleteNoteError.textContent = "";
+  const restoreTarget = deleteNoteRestoreFocus;
+  deleteNoteRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function deleteCurrentNote(): Promise<void> {
+  const expectedVaultId = deleteNoteVaultId;
+  const sourcePath = deleteNoteSourcePath;
+  const expectedRevision = deleteNoteRevision;
+  if (!expectedVaultId || !sourcePath || !expectedRevision || deleteNoteBusy) {
+    return;
+  }
+  if (
+    currentSnapshot?.vault.id !== expectedVaultId ||
+    loadedNote?.path !== sourcePath ||
+    loadedNote.revision !== expectedRevision
+  ) {
+    elements.deleteNoteError.textContent =
+      "The vault or note changed. Cancel, review the current note, and reopen Trash.";
+    renderDeleteNoteDialog();
+    return;
+  }
+
+  let response: NoteDeleteResponse | null = null;
+  let committed = false;
+  deleteNoteBusy = true;
+  elements.deleteNoteError.textContent = "";
+  renderDeleteNoteDialog();
+  setActionState(true);
+  try {
+    response = await window.threadleaf.deleteNote(sourcePath, expectedRevision, expectedVaultId);
+    render(response.snapshot);
+    if (response.outcome.status === "committed") {
+      committed = true;
+    } else if (response.outcome.reason === "target-exists") {
+      elements.deleteNoteError.textContent = `${response.outcome.to} already contains an earlier deletion. Restore or move that file first. No files were changed.`;
+    } else if (response.outcome.reason === "source-revision-changed") {
+      elements.deleteNoteError.textContent =
+        "The note changed on disk before it could be moved. Review the current version and try again. No files were changed.";
+    } else {
+      elements.deleteNoteError.textContent = `The note could not be moved to trash (${response.outcome.reason}). No files were changed.`;
+    }
+  } catch (error) {
+    elements.deleteNoteError.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    deleteNoteBusy = false;
+    setActionState(false);
+    if (elements.deleteNoteDialog.open) {
+      renderDeleteNoteDialog();
+    }
+  }
+
+  if (committed) {
+    closeDeleteNoteDialog(false);
+    setDocumentView("source", false);
+    showToast(`Moved ${sourcePath} to recoverable trash.`);
+    window.setTimeout(() => {
+      if (loadedNote) {
+        editor.focus();
+      } else {
+        elements.fileSearch.focus();
+      }
+    }, 0);
   }
 }
 
@@ -1689,6 +1879,9 @@ function render(snapshot: RuntimeSnapshot): void {
   if (elements.moveNoteDialog.open) {
     renderMoveNoteDialog();
   }
+  if (elements.deleteNoteDialog.open) {
+    renderDeleteNoteDialog();
+  }
 }
 
 function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): void {
@@ -2141,6 +2334,7 @@ function renderEditControls(): void {
   elements.editState.textContent = label;
   elements.newNote.disabled = busy || saving || dirty;
   elements.moveNote.disabled = busy || saving || dirty || !loadedNote || !loadedVaultId;
+  elements.deleteNote.disabled = busy || saving || dirty || !loadedNote || !loadedVaultId;
   elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
   renderTabs(currentSnapshot?.workspace?.tabs ?? [], loadedNote?.path ?? null);
@@ -2427,6 +2621,10 @@ elements.moveNote.addEventListener(
   "click",
   () => void executeRendererCommand("workspace.move-note"),
 );
+elements.deleteNote.addEventListener(
+  "click",
+  () => void executeRendererCommand("workspace.delete-note"),
+);
 elements.saveNote.addEventListener("click", () => void executeRendererCommand("editor.save-note"));
 elements.revertNote.addEventListener(
   "click",
@@ -2532,6 +2730,22 @@ elements.moveNoteDialog.addEventListener("click", (event) => {
   }
 });
 
+elements.deleteNoteForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void deleteCurrentNote();
+});
+elements.deleteNoteClose.addEventListener("click", () => closeDeleteNoteDialog());
+elements.deleteNoteCancel.addEventListener("click", () => closeDeleteNoteDialog());
+elements.deleteNoteDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeDeleteNoteDialog();
+});
+elements.deleteNoteDialog.addEventListener("click", (event) => {
+  if (event.target === elements.deleteNoteDialog) {
+    closeDeleteNoteDialog();
+  }
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.repeat) {
     return;
@@ -2544,7 +2758,8 @@ document.addEventListener("keydown", (event) => {
     if (
       elements.settingsDialog.open ||
       elements.newNoteDialog.open ||
-      elements.moveNoteDialog.open
+      elements.moveNoteDialog.open ||
+      elements.deleteNoteDialog.open
     ) {
       return;
     }
@@ -2557,7 +2772,11 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (targetId === "settings.open-keybindings") {
-    if (elements.newNoteDialog.open || elements.moveNoteDialog.open) {
+    if (
+      elements.newNoteDialog.open ||
+      elements.moveNoteDialog.open ||
+      elements.deleteNoteDialog.open
+    ) {
       return;
     }
     event.preventDefault();
@@ -2572,7 +2791,8 @@ document.addEventListener("keydown", (event) => {
     elements.commandPalette.open ||
     elements.settingsDialog.open ||
     elements.newNoteDialog.open ||
-    elements.moveNoteDialog.open
+    elements.moveNoteDialog.open ||
+    elements.deleteNoteDialog.open
   ) {
     return;
   }

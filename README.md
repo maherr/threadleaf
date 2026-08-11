@@ -53,7 +53,10 @@ changing the vault. The desktop Move action and Ctrl/Cmd+Shift+M use that same p
 request to the active vault and note revision, show exact link-resolution blockers, reject
 destination collisions, and remap open tabs after a successful move. Headless delete moves exact
 bytes to the same path under vault-local `.trash/`; dedicated list and restore commands keep that
-recovery content outside the ordinary corpus and never overwrite either side of a collision.
+recovery content outside the ordinary corpus and never overwrite either side of a collision. The
+desktop Trash action uses the same revision-bound service behind a confirmation that names both
+paths and the indexed-link impact. A committed move closes the note tab and selects its surviving
+neighbor; a stale revision or occupied trash path remains reviewable and changes nothing.
 Runtime-owned tabs keep one
 ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
 externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
@@ -117,7 +120,12 @@ to the exact source line. Relative and vault-rooted local raster images render w
 filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New note dialog and
 selects the resulting empty Markdown note for editing. Ctrl/Cmd+Shift+M opens Move for the active
 clean note. Threadleaf commits only when the projected whole-vault index preserves every internal
-link resolution; blocked moves stay reviewable in the dialog and write nothing.
+link resolution; blocked moves stay reviewable in the dialog and write nothing. Trash has no
+default shortcut, but it is available from the note toolbar and command palette and can be assigned
+one in keyboard settings. Its confirmation moves the exact current revision to
+`.trash/<original-path>`, warns when indexed incoming links will become unresolved, and never
+overwrites an earlier deletion. Restore through the native CLI or move the file back with another
+filesystem tool.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

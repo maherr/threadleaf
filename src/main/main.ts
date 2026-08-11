@@ -154,6 +154,19 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.deleteNote,
+    (_event, filePath: unknown, expectedRevision: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Delete note requires string path, revision, and vault values.");
+      }
+      return workspaceController.deleteNote(filePath, expectedRevision, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
     ipcChannels.createNote,
     (_event, filePath: unknown, content: unknown, expectedVaultId: unknown) => {
       if (

@@ -1,6 +1,7 @@
 import type { StateRootPort } from "../kernel/ports";
 import type {
   NoteCreateResponse,
+  NoteDeleteResponse,
   NoteMoveResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
@@ -34,6 +35,11 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteMoveResponse>;
+  deleteNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteDeleteResponse>;
   createNote(
     filePath: string,
     content: string,
@@ -214,6 +220,14 @@ export class WorkspaceController {
     expectedVaultId: string,
   ): Promise<NoteMoveResponse> {
     return this.#runtime.moveNote(filePath, targetPath, expectedRevision, expectedVaultId);
+  }
+
+  deleteNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteDeleteResponse> {
+    return this.#runtime.deleteNote(filePath, expectedRevision, expectedVaultId);
   }
 
   createNote(

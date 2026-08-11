@@ -10,6 +10,8 @@ import { PluginHost } from "../runtime/plugin-host";
 import type {
   NoteCreateOutcome,
   NoteCreateResponse,
+  NoteDeleteOutcome,
+  NoteDeleteResponse,
   NoteMoveOutcome,
   NoteMoveResponse,
   NoteSaveOutcome,
@@ -25,6 +27,7 @@ import type {
 import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
 import { movedMarkdownPath, moveMarkdownNote } from "./note-move";
+import { trashMarkdownNote } from "./note-trash";
 import { loadVaultImage } from "./vault-image-service";
 import {
   createWorkspaceState,
@@ -66,6 +69,32 @@ interface MoveNoteRequest {
   targetPath: string;
   expectedRevision: string;
   expectedVaultId: string;
+}
+
+interface DeleteNoteRequest {
+  path: string;
+  expectedRevision: string;
+  expectedVaultId: string;
+}
+
+function parseDeleteNoteRequest(payload: unknown): DeleteNoteRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("expectedRevision" in payload) ||
+    typeof payload.expectedRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Delete note requires string path, revision, and vault values.");
+  }
+  return {
+    path: payload.path,
+    expectedRevision: payload.expectedRevision,
+    expectedVaultId: payload.expectedVaultId,
+  };
 }
 
 function parseMoveNoteRequest(payload: unknown): MoveNoteRequest {
@@ -254,6 +283,12 @@ export class WorkspaceRuntime {
         execute: (payload) => this.moveNoteThroughKernel(parseMoveNoteRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
+        id: "workspace.delete-note",
+        name: "Move note to trash",
+        source: "workspace",
+        execute: (payload) => this.deleteNoteThroughKernel(parseDeleteNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
         id: "workspace.save-note",
         name: "Save note",
         source: "workspace",
@@ -371,6 +406,19 @@ export class WorkspaceRuntime {
     const outcome = await this.actions.dispatch<NoteMoveOutcome>("workspace.move-note", {
       path: filePath,
       targetPath,
+      expectedRevision,
+      expectedVaultId,
+    });
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async deleteNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteDeleteResponse> {
+    const outcome = await this.actions.dispatch<NoteDeleteOutcome>("workspace.delete-note", {
+      path: filePath,
       expectedRevision,
       expectedVaultId,
     });
@@ -636,6 +684,27 @@ export class WorkspaceRuntime {
     this.indexReactor.index.remove(outcome.from);
     await this.indexReactor.index.refresh(this.kernel, outcome.to);
     if (this.moveOpenPath(outcome.from, outcome.to)) {
+      await this.persistWorkspaceStateBestEffort();
+    }
+    return outcome;
+  }
+
+  private async deleteNoteThroughKernel(request: DeleteNoteRequest): Promise<NoteDeleteOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this note could be moved to trash.");
+    }
+    const outcome = await trashMarkdownNote(this.kernel, request.path, request.expectedRevision);
+    if (outcome.status !== "committed") {
+      return outcome;
+    }
+
+    this.watcher.operations.expect({
+      id: outcome.transactionId,
+      kind: "delete",
+      path: outcome.from,
+    });
+    this.indexReactor.index.remove(outcome.from);
+    if (this.removeOpenPath(outcome.from)) {
       await this.persistWorkspaceStateBestEffort();
     }
     return outcome;

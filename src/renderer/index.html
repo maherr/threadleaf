@@ -120,6 +120,16 @@
               </fieldset>
               <span class="edit-state" id="edit-state" data-state="empty">No note</span>
               <button class="toolbar-button" id="move-note" type="button" disabled>Move</button>
+              <button
+                class="toolbar-button trash-toolbar-button"
+                id="delete-note"
+                type="button"
+                aria-label="Move current note to recoverable trash"
+                disabled
+              >
+                <span aria-hidden="true">⌫</span>
+                <span class="toolbar-action-label">Trash</span>
+              </button>
               <button class="toolbar-button" id="revert-note" type="button" disabled>Revert</button>
               <button class="toolbar-button save-button" id="save-note" type="button" disabled>
                 Save <kbd id="save-shortcut">⌘S</kbd>
@@ -405,6 +415,58 @@
             <button class="secondary-button" id="move-note-cancel" type="button">Cancel</button>
             <button class="primary-button" id="move-note-submit" type="submit">
               Check and move
+            </button>
+          </span>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog delete-note-dialog"
+      id="delete-note-dialog"
+      aria-labelledby="delete-note-title"
+      aria-describedby="delete-note-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="delete-note-form">
+        <header class="new-note-header delete-note-header">
+          <span class="new-note-mark delete-note-mark" aria-hidden="true">⌫</span>
+          <span>
+            <small>Recoverable vault operation</small>
+            <strong id="delete-note-title">Move this note to trash?</strong>
+          </span>
+          <button id="delete-note-close" type="button" aria-label="Cancel move to trash">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="delete-note-description" class="new-note-description">
+          Threadleaf moves the file out of the note corpus without erasing its bytes. Indexed
+          incoming links may become unresolved until the note is restored.
+        </p>
+        <div class="delete-note-paths">
+          <div class="move-note-current">
+            <span>Current path</span>
+            <code id="delete-note-current-path">No note selected</code>
+          </div>
+          <div class="move-note-current">
+            <span>Recovery path</span>
+            <code id="delete-note-trash-path">.trash/</code>
+          </div>
+        </div>
+        <div class="delete-note-impact" id="delete-note-impact">
+          <span class="delete-note-impact-mark" aria-hidden="true">◇</span>
+          <span>
+            <strong>Recovery stays local</strong>
+            <span id="delete-note-impact-copy">Restore the file later from <code>.trash/</code>.</span>
+          </span>
+        </div>
+        <p class="new-note-error" id="delete-note-error" role="alert" hidden></p>
+        <footer class="new-note-footer">
+          <span id="delete-note-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="delete-note-cancel" type="button">Cancel</button>
+            <button class="primary-button trash-confirm-button" id="delete-note-submit" type="submit">
+              Move to trash
             </button>
           </span>
         </footer>

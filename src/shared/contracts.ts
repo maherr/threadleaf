@@ -201,6 +201,15 @@ export interface NoteMoveResponse {
   snapshot: RuntimeSnapshot;
 }
 
+export type NoteDeleteOutcome =
+  | { status: "committed"; from: string; to: string; transactionId: string }
+  | { status: "conflict"; from: string; to: string; reason: string };
+
+export interface NoteDeleteResponse {
+  outcome: NoteDeleteOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
 export type VaultImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 export type VaultImageUnavailableReason =
@@ -262,6 +271,11 @@ export interface ThreadleafBridge {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteMoveResponse>;
+  deleteNote(
+    path: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteDeleteResponse>;
   createNote(path: string, content: string, expectedVaultId: string): Promise<NoteCreateResponse>;
   saveNote(
     path: string,

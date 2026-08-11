@@ -104,6 +104,7 @@ describe("WorkspaceRuntime", () => {
         source: "plugin",
       },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
+      { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
@@ -360,6 +361,106 @@ describe("WorkspaceRuntime", () => {
     await expect(fs.stat(path.join(vaultPath, "Renamed.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("moves an exact note to recoverable trash and selects the right surviving tab", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    const opened = await workspace.openNote("Linked Note.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+
+    const deleted = await workspace.deleteNote(note.path, note.revision, workspace.vaultId);
+
+    expect(deleted.outcome).toMatchObject({
+      status: "committed",
+      from: "Linked Note.md",
+      to: ".trash/Linked Note.md",
+    });
+    expect(deleted.snapshot.workspace).toMatchObject({
+      files: [{ path: "Welcome.md", unresolvedCount: 1 }],
+      tabs: [{ path: "Welcome.md", active: true }],
+      activeNote: {
+        path: "Welcome.md",
+        outgoing: [{ target: "Linked Note", status: "unresolved" }],
+      },
+    });
+    expect(store.saved.at(-1)).toMatchObject({
+      openPaths: ["Welcome.md"],
+      activePath: "Welcome.md",
+    });
+    await expect(fs.stat(path.join(vaultPath, "Linked Note.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      fs.readFile(path.join(vaultPath, ".trash", "Linked Note.md"), "utf8"),
+    ).resolves.toBe(note.content);
+    expect((await workspace.searchVault("linked note")).results).toEqual([
+      expect.objectContaining({ path: "Welcome.md" }),
+    ]);
+  });
+
+  it("rejects stale vaults, stale revisions, and occupied trash paths without changing tabs", async () => {
+    const workspace = await openRuntime();
+    const initial = await workspace.getSnapshot();
+    const note = initial.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+
+    await expect(workspace.deleteNote(note.path, note.revision, "stale-vault")).rejects.toThrow(
+      "active vault changed",
+    );
+    await fs.writeFile(path.join(vaultPath, note.path), "external edit", "utf8");
+    const stale = await workspace.deleteNote(note.path, note.revision, workspace.vaultId);
+    expect(stale.outcome).toMatchObject({
+      status: "conflict",
+      reason: "source-revision-changed",
+    });
+    expect(stale.snapshot.workspace).toMatchObject({
+      tabs: [{ path: note.path, active: true }],
+      activeNote: { path: note.path, content: "external edit" },
+    });
+    await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(
+      "external edit",
+    );
+
+    await fs.mkdir(path.join(vaultPath, ".trash"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, ".trash", note.path), "earlier deletion", "utf8");
+    const current = await workspace.kernel.readText(note.path);
+    const occupied = await workspace.deleteNote(note.path, current.revision, workspace.vaultId);
+    expect(occupied.outcome).toMatchObject({ status: "conflict", reason: "target-exists" });
+    expect(occupied.snapshot.workspace?.tabs).toEqual([
+      expect.objectContaining({ path: note.path, active: true }),
+    ]);
+    await expect(fs.readFile(path.join(vaultPath, ".trash", note.path), "utf8")).resolves.toBe(
+      "earlier deletion",
+    );
+  });
+
+  it("does not report a committed trash move as failed when workspace persistence is unavailable", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    const note = (await workspace.getSnapshot()).workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+    store.saveError = new Error("workspace disk unavailable");
+
+    const deleted = await workspace.deleteNote(note.path, note.revision, workspace.vaultId);
+
+    expect(deleted.outcome.status).toBe("committed");
+    expect(deleted.snapshot.workspace).toMatchObject({
+      tabs: [],
+      activeNote: null,
+    });
+    expect(deleted.snapshot.vault.warning).toContain("workspace disk unavailable");
+    await expect(fs.readFile(path.join(vaultPath, ".trash", note.path), "utf8")).resolves.toBe(
+      note.content,
+    );
   });
 
   it("creates a nested Markdown note through the recoverable writer and selects it", async () => {
@@ -701,6 +802,7 @@ describe("WorkspaceRuntime", () => {
     expect(unloaded.actions).toEqual([
       { id: "workspace.close-note", name: "Close note", source: "workspace" },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
+      { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },

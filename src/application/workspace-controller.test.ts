@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type {
   NoteCreateResponse,
+  NoteDeleteResponse,
   NoteMoveResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
@@ -79,6 +80,11 @@ class FakeRuntime implements WorkspaceRuntimePort {
     expectedRevision: string;
     expectedVaultId: string;
   } | null = null;
+  deletedNote: {
+    filePath: string;
+    expectedRevision: string;
+    expectedVaultId: string;
+  } | null = null;
   closed = false;
 
   constructor(options: WorkspaceRuntimeOptions) {
@@ -142,6 +148,23 @@ class FakeRuntime implements WorkspaceRuntimePort {
         from: filePath,
         to: targetPath,
         transactionId: "move",
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async deleteNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteDeleteResponse> {
+    this.deletedNote = { filePath, expectedRevision, expectedVaultId };
+    return {
+      outcome: {
+        status: "committed",
+        from: filePath,
+        to: `.trash/${filePath}`,
+        transactionId: "delete",
       },
       snapshot: this.#snapshot,
     };
@@ -437,6 +460,28 @@ describe("WorkspaceController", () => {
     expect(harness.runtimes[0]?.movedNote).toEqual({
       filePath: "Notes/Current.md",
       targetPath: "Archive/Current.md",
+      expectedRevision,
+      expectedVaultId,
+    });
+    await controller.close();
+  });
+
+  it("forwards a recoverable note deletion with its revision and active vault identity", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+    const expectedRevision = "a".repeat(64);
+
+    await controller.deleteNote("Notes/Current.md", expectedRevision, expectedVaultId);
+
+    expect(harness.runtimes[0]?.deletedNote).toEqual({
+      filePath: "Notes/Current.md",
       expectedRevision,
       expectedVaultId,
     });

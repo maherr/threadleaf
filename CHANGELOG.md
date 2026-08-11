@@ -70,3 +70,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Recoverable CLI delete, trash inspection, and restore with exact-path vault-local `.trash/`
   storage, revision and collision checks, crash recovery, exact-byte build smoke coverage, and
   exclusion from ordinary note, watcher, workspace, search, and image surfaces.
+- Confirmation-gated desktop Trash action over the shared recoverable deletion service, with vault
+  and revision binding, exact source and recovery paths, indexed-link impact, explicit collision
+  errors, dirty-draft protection, command-palette and remappable-keyboard access, operation-aware
+  watcher attribution, and deterministic neighbor selection after commit.

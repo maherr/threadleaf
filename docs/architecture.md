@@ -242,6 +242,15 @@ a reviewable dialog. Each blocker names its document, syntax, target, and before
 After a committed move, the runtime refreshes the derived index and remaps every open tab from the
 old path to the new one before publishing its next snapshot.
 
+The desktop Trash action calls the same recoverable deletion service as the CLI rather than a
+renderer-owned filesystem path. Its request carries the active vault identity and exact source
+revision. The confirmation names the source, canonical `.trash/` destination, and current indexed
+backlink count; dirty drafts cannot open or submit it. A stale revision or occupied trash path is an
+explicit no-write conflict. On commit, the runtime attributes the resulting corpus deletion to the
+transaction, removes the note from the derived index, closes its tab, selects the entry to its right
+then left, and persists that workspace state best effort. Failure to persist workspace metadata
+cannot retroactively turn an already committed vault move into a failed deletion.
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable

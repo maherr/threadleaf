@@ -87,6 +87,9 @@ equivalence through the real writer-to-watcher seam.
       revision checks, collision refusal, interruption recovery, and normal-corpus exclusion.
 - [x] Revision-bound desktop move and rename with exact blocker evidence, destination collision and
       dirty-draft guards, and open-tab remapping after a successful link-safe move.
+- [x] Revision-bound desktop recoverable deletion with explicit confirmation, exact `.trash/`
+      destination and link impact, collision and dirty-draft guards, operation attribution, and
+      deterministic surviving-tab selection.
 - [x] Ordered session tabs with path deduplication, dirty-draft guards, neighbor selection on close,
       watcher rename and delete reconciliation, remappable close and cycle shortcuts, and bounded
       horizontal overflow at the minimum desktop viewport.

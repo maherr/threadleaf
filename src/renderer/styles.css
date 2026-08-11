@@ -932,6 +932,18 @@ h2 {
   transform: translateY(-1px);
 }
 
+.trash-toolbar-button:not(:disabled) {
+  border-color: color-mix(in srgb, var(--signal) 48%, var(--line));
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal-soft) 58%, var(--surface-raised));
+}
+
+.trash-toolbar-button > span:first-child {
+  margin-right: 2px;
+  font-size: 11px;
+  line-height: 1;
+}
+
 .toolbar-button kbd {
   margin-left: 3px;
   color: inherit;
@@ -2356,6 +2368,10 @@ button.inspector-item:hover {
   max-height: calc(100vh - 24px);
 }
 
+.delete-note-dialog {
+  width: min(570px, calc(100vw - 32px));
+}
+
 .new-note-dialog[open] {
   animation: palette-arrive 120ms ease-out;
 }
@@ -2476,6 +2492,75 @@ button.inspector-item:hover {
   text-overflow: ellipsis;
   text-transform: none;
   white-space: nowrap;
+}
+
+.delete-note-paths {
+  border-bottom: 1px solid var(--line);
+}
+
+.delete-note-paths .move-note-current + .move-note-current {
+  border-top-style: dashed;
+}
+
+.delete-note-impact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin: 16px 22px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--signal) 38%, var(--line));
+  border-left: 4px solid var(--signal);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--signal-soft) 68%, var(--surface-raised));
+}
+
+.delete-note-impact-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--signal);
+  border-radius: 50%;
+  color: var(--signal);
+  font-size: 11px;
+}
+
+.delete-note-impact > span:last-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.delete-note-impact strong {
+  font-size: 10px;
+}
+
+#delete-note-impact-copy {
+  color: var(--ink-soft);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.delete-note-header small,
+.delete-note-mark {
+  color: var(--signal);
+}
+
+.delete-note-mark {
+  border-color: var(--signal);
+  background: var(--signal-soft);
+}
+
+.trash-confirm-button:not(:disabled) {
+  border-color: var(--signal);
+  color: #ffffff;
+  background: var(--signal);
+}
+
+:root[data-theme="dark"] .trash-confirm-button:not(:disabled) {
+  color: #101820;
+  background: var(--signal);
 }
 
 .new-note-field {
@@ -2787,6 +2872,19 @@ button.inspector-item:hover {
 
   .edit-state {
     max-width: 112px;
+  }
+
+  .trash-toolbar-button {
+    width: 28px;
+    padding: 0;
+  }
+
+  .trash-toolbar-button > span:first-child {
+    margin-right: 0;
+  }
+
+  .trash-toolbar-button .toolbar-action-label {
+    display: none;
   }
 
   .edit-notice {

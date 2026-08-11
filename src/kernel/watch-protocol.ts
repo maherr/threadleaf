@@ -112,6 +112,7 @@ export class WatchSequenceGate {
 
 export type ExpectedVaultOperation =
   | { id: string; kind: "write"; path: string; revision: string }
+  | { id: string; kind: "delete"; path: string }
   | { id: string; kind: "rename"; from: string; to: string; revision: string }
   | {
       id: string;
@@ -177,6 +178,16 @@ export class WatchOperationLedger {
           change.operationId === undefined,
       );
       return moveIndex === -1 ? null : [moveIndex];
+    }
+
+    if (operation.kind === "delete") {
+      const deleteIndex = changes.findIndex(
+        (change) =>
+          change.kind === "delete" &&
+          change.path === operation.path &&
+          change.operationId === undefined,
+      );
+      return deleteIndex === -1 ? null : [deleteIndex];
     }
 
     const indexes: number[] = [];

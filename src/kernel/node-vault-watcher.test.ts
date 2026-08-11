@@ -148,6 +148,19 @@ describe("watch protocol", () => {
     expect(annotated).toMatchObject([{ operationId: "multi-1" }, { operationId: "multi-1" }]);
     expect(ledger.size).toBe(0);
   });
+
+  it("attributes an exact delete without consuming an unrelated deletion", () => {
+    const ledger = new WatchOperationLedger();
+    ledger.expect({ id: "delete-1", kind: "delete", path: "Note.md" });
+
+    const unrelated = ledger.annotate([{ kind: "delete", path: "Other.md" }]);
+    expect(unrelated[0]).not.toHaveProperty("operationId");
+    expect(ledger.size).toBe(1);
+
+    const own = ledger.annotate([{ kind: "delete", path: "Note.md" }]);
+    expect(own[0]).toMatchObject({ operationId: "delete-1" });
+    expect(ledger.size).toBe(0);
+  });
 });
 
 describe("NodeVaultWatcher", () => {
@@ -206,6 +219,25 @@ describe("NodeVaultWatcher", () => {
       ],
     });
     expect(await watcher.scanNow()).toBeNull();
+    await watcher.close();
+  });
+
+  it("reports a move into private trash as an attributed corpus deletion", async () => {
+    const sourcePath = path.join(vaultPath, "Deleted.md");
+    const trashPath = path.join(vaultPath, ".trash", "Deleted.md");
+    await fs.writeFile(sourcePath, "recoverable", "utf8");
+    const watcher = await NodeVaultWatcher.open(vaultPath, { streamId: "trash-stream" });
+    watcher.operations.expect({ id: "trash-1", kind: "delete", path: "Deleted.md" });
+
+    await fs.mkdir(path.dirname(trashPath), { recursive: true });
+    await fs.rename(sourcePath, trashPath);
+    const batch = await watcher.scanNow();
+
+    expect(batch).toMatchObject({
+      streamId: "trash-stream",
+      sequence: 1,
+      changes: [{ kind: "delete", path: "Deleted.md", operationId: "trash-1" }],
+    });
     await watcher.close();
   });
 

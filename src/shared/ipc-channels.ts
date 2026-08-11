@@ -11,6 +11,7 @@ export const ipcChannels = {
   openNote: "threadleaf:open-note",
   closeNote: "threadleaf:close-note",
   moveNote: "threadleaf:move-note",
+  deleteNote: "threadleaf:delete-note",
   createNote: "threadleaf:create-note",
   saveNote: "threadleaf:save-note",
   runCommand: "threadleaf:run-command",

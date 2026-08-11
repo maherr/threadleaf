@@ -42,6 +42,7 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.open-vault"]).toBe("Mod+O");
     expect(parsed.keyBindings["workspace.create-note"]).toBe("Mod+N");
     expect(parsed.keyBindings["workspace.move-note"]).toBe("Mod+Shift+M");
+    expect(parsed.keyBindings["workspace.delete-note"]).toBeNull();
     expect(parsed.keyBindings["workspace.close-tab"]).toBe("Mod+W");
     expect(parsed.keyBindings["workspace.next-tab"]).toBe("Alt+ArrowRight");
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
