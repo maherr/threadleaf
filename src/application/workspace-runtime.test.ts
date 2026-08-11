@@ -41,8 +41,11 @@ describe("WorkspaceRuntime", () => {
 
     expect(initial.vault).toMatchObject({
       name: "vault",
+      path: vaultPath,
       markdownFileCount: 2,
-      mode: "kernel-backed-fixture",
+      mode: "kernel-backed",
+      source: "direct",
+      warning: null,
     });
     expect(initial.workspace).toMatchObject({
       state: "ready",
@@ -94,6 +97,7 @@ describe("WorkspaceRuntime", () => {
       "Welcome.md",
       "# Saved in Threadleaf\n\n#edited and [[Linked Note]]",
       revision,
+      workspace.vaultId,
     );
 
     expect(saved.outcome).toMatchObject({ status: "committed", path: "Welcome.md" });
@@ -118,7 +122,12 @@ describe("WorkspaceRuntime", () => {
     }
     await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Changed elsewhere", "utf8");
 
-    const saved = await workspace.saveNote("Welcome.md", "# My preserved edit", revision);
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# My preserved edit",
+      revision,
+      workspace.vaultId,
+    );
 
     expect(saved.outcome).toMatchObject({
       status: "conflict",
@@ -144,6 +153,22 @@ describe("WorkspaceRuntime", () => {
         path: saved.outcome.conflictPath,
         title: "Welcome (conflict copy)",
       }),
+    );
+  });
+
+  it("rejects a save prepared for a different active vault", async () => {
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+
+    await expect(
+      workspace.saveNote("Welcome.md", "# Wrong vault", note.revision, "stale-vault-id"),
+    ).rejects.toThrow("active vault changed");
+    await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(
+      note.content,
     );
   });
 

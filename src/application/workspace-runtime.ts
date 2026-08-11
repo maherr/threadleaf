@@ -10,6 +10,7 @@ import type {
   NoteSaveOutcome,
   NoteSaveResponse,
   RuntimeSnapshot,
+  VaultSelectionSource,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
@@ -20,6 +21,8 @@ export interface WorkspaceRuntimeOptions {
   vaultRoot: string;
   stateRoot: StateRootPort;
   pluginDirectory?: string;
+  selectionSource?: VaultSelectionSource;
+  warning?: string | null;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -28,6 +31,7 @@ interface SaveNoteRequest {
   path: string;
   content: string;
   expectedRevision: string;
+  expectedVaultId: string;
 }
 
 function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
@@ -39,14 +43,17 @@ function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
     !("content" in payload) ||
     typeof payload.content !== "string" ||
     !("expectedRevision" in payload) ||
-    typeof payload.expectedRevision !== "string"
+    typeof payload.expectedRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
   ) {
-    throw new Error("Save note requires string path, content, and revision values.");
+    throw new Error("Save note requires string path, content, revision, and vault values.");
   }
   return {
     path: payload.path,
     content: payload.content,
     expectedRevision: payload.expectedRevision,
+    expectedVaultId: payload.expectedVaultId,
   };
 }
 
@@ -63,6 +70,8 @@ export class WorkspaceRuntime {
   readonly watcher: NodeVaultWatcher;
   readonly indexReactor: VaultIndexReactor;
   readonly pluginHost: PluginHost;
+  readonly selectionSource: VaultSelectionSource;
+  readonly warning: string | null;
 
   #activePath: string | null = null;
   #watcherError: string | null = null;
@@ -71,18 +80,30 @@ export class WorkspaceRuntime {
   readonly #listeners = new Set<SnapshotListener>();
   readonly #releaseActions: Array<() => void> = [];
 
+  get vaultId(): string {
+    return this.kernel.vaultId;
+  }
+
+  get vaultPath(): string {
+    return this.kernel.paths.rootPath;
+  }
+
   private constructor(
     actions: ActionRegistry,
     kernel: VaultKernel,
     watcher: NodeVaultWatcher,
     indexReactor: VaultIndexReactor,
     pluginHost: PluginHost,
+    selectionSource: VaultSelectionSource,
+    warning: string | null,
   ) {
     this.actions = actions;
     this.kernel = kernel;
     this.watcher = watcher;
     this.indexReactor = indexReactor;
     this.pluginHost = pluginHost;
+    this.selectionSource = selectionSource;
+    this.warning = warning;
     this.#releaseActions.push(
       this.actions.register("threadleaf-workspace", {
         id: "workspace.open-note",
@@ -116,7 +137,15 @@ export class WorkspaceRuntime {
     });
     const indexReactor = await VaultIndexReactor.open(kernel);
     const pluginHost = new PluginHost(kernel.paths.rootPath, kernel, actions);
-    runtime = new WorkspaceRuntime(actions, kernel, watcher, indexReactor, pluginHost);
+    runtime = new WorkspaceRuntime(
+      actions,
+      kernel,
+      watcher,
+      indexReactor,
+      pluginHost,
+      options.selectionSource ?? "direct",
+      options.warning ?? null,
+    );
 
     const firstPath = indexReactor.index.snapshot().documents[0]?.path;
     runtime.#activePath = firstPath ?? null;
@@ -134,7 +163,14 @@ export class WorkspaceRuntime {
     ]);
     return {
       ...pluginSnapshot,
-      vault: { ...pluginSnapshot.vault, mode: "kernel-backed-fixture" },
+      vault: {
+        ...pluginSnapshot.vault,
+        id: this.kernel.vaultId,
+        path: this.kernel.paths.rootPath,
+        mode: "kernel-backed",
+        source: this.selectionSource,
+        warning: this.warning,
+      },
       actions: this.actions.list(),
       workspace,
     };
@@ -149,11 +185,13 @@ export class WorkspaceRuntime {
     filePath: string,
     content: string,
     expectedRevision: string,
+    expectedVaultId: string,
   ): Promise<NoteSaveResponse> {
     const outcome = await this.actions.dispatch<NoteSaveOutcome>("workspace.save-note", {
       path: filePath,
       content,
       expectedRevision,
+      expectedVaultId,
     });
     return { outcome, snapshot: await this.publishSnapshot() };
   }
@@ -208,6 +246,9 @@ export class WorkspaceRuntime {
   }
 
   private async saveNoteThroughKernel(request: SaveNoteRequest): Promise<NoteSaveOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this edit could be saved.");
+    }
     const normalizedPath = normalizeVaultPath(request.path);
     if (!normalizedPath.toLowerCase().endsWith(".md")) {
       throw new Error("The workspace editor can save only Markdown notes.");

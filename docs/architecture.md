@@ -53,6 +53,25 @@ UI -> action registry -> application service -> domain/kernel port -> adapter
 
 The renderer may observe state and dispatch actions. It does not write vault files directly.
 
+### Vault selection and runtime swaps
+
+The main process owns vault selection. A native folder picker returns one absolute path through a
+narrow preload contract. The candidate runtime must open successfully, produce a snapshot, and
+persist its canonical path before the workspace controller adopts it. If validation or persistence
+fails, Threadleaf closes the candidate and leaves the current runtime active.
+
+The selection document lives in the operating system's application-data directory, outside every
+vault. It is written atomically with private file permissions and a versioned shape. On startup,
+Threadleaf restores that path without automatically loading compatibility plugins. An unavailable
+or malformed saved selection falls back to the bundled fixture with a visible warning and does not
+erase the saved path, so a temporarily unmounted vault can recover on a later launch.
+
+Every editor draft carries the identity of the vault that produced its revision. The save boundary
+rejects a draft after the active vault changes, even if a relative note path happens to exist in
+both vaults. The renderer also blocks user-initiated switching while a note is unsaved. Explicit
+development overrides take precedence without changing the persisted user selection and are
+ignored by packaged builds.
+
 ### Watcher and index model
 
 Filesystem notifications are hints, not truth. The watcher emits debounced batches with a stream

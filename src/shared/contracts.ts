@@ -28,11 +28,17 @@ export interface PluginSummary {
   stylesheetDiscovered: boolean;
 }
 
+export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
+
 export interface RuntimeSnapshot {
   vault: {
+    id: string | null;
     name: string;
+    path: string;
     markdownFileCount: number;
-    mode: "synthetic-read-only" | "kernel-backed-fixture";
+    mode: "synthetic-read-only" | "kernel-backed";
+    source: VaultSelectionSource;
+    warning: string | null;
   };
   plugin: PluginSummary | null;
   commands: CommandSummary[];
@@ -100,12 +106,23 @@ export interface NoteSaveResponse {
   snapshot: RuntimeSnapshot;
 }
 
+export type VaultOpenResponse =
+  | { status: "cancelled"; snapshot: RuntimeSnapshot }
+  | { status: "opened"; snapshot: RuntimeSnapshot }
+  | { status: "failed"; message: string; snapshot: RuntimeSnapshot };
+
 export interface ThreadleafBridge {
   getSnapshot(): Promise<RuntimeSnapshot>;
+  chooseVault(): Promise<VaultOpenResponse>;
   runCommand(commandId: string): Promise<RuntimeSnapshot>;
   reloadPlugin(): Promise<RuntimeSnapshot>;
   unloadPlugin(): Promise<RuntimeSnapshot>;
   openNote(path: string): Promise<RuntimeSnapshot>;
-  saveNote(path: string, content: string, expectedRevision: string): Promise<NoteSaveResponse>;
+  saveNote(
+    path: string,
+    content: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteSaveResponse>;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
 }

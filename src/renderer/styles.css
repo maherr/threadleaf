@@ -221,6 +221,42 @@ button:disabled {
   background: var(--surface-sunken);
 }
 
+.vault-switcher {
+  display: flex;
+  align-items: stretch;
+  justify-self: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vault-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink-soft);
+  background: var(--surface-sunken);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.vault-open:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.vault-open > span:first-child {
+  color: var(--accent-strong);
+  font-size: 14px;
+  line-height: 1;
+}
+
 .vault-identity > span:nth-child(2) {
   display: grid;
   min-width: 0;
@@ -1358,6 +1394,16 @@ button.inspector-item:hover {
 
   .vault-identity strong {
     max-width: 130px;
+  }
+
+  .vault-open {
+    width: 31px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .vault-open > span:last-child {
+    display: none;
   }
 
   .icon-button {

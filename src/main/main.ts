@@ -1,56 +1,124 @@
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { app, BrowserWindow, ipcMain } from "electron";
-import { WorkspaceRuntime } from "../application/workspace-runtime";
+import { join } from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
+import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
 import { ipcChannels } from "../shared/ipc-channels";
+import {
+  readDevelopmentPickerOverride,
+  readDevelopmentVaultPath,
+} from "./development-picker-override";
+import { FileVaultSelectionStore } from "./file-vault-selection-store";
 
 let mainWindow: BrowserWindow | null = null;
-let workspaceRuntime: WorkspaceRuntime;
+let workspaceController: WorkspaceController;
 
-async function createWorkspaceRuntime(): Promise<WorkspaceRuntime> {
-  const configuredVaultPath = process.env.THREADLEAF_VAULT_PATH?.trim();
-  const vaultPath = configuredVaultPath
-    ? resolve(configuredVaultPath)
-    : join(app.getAppPath(), "fixtures", "vaults", "basic");
+function fixturePluginDirectory(vaultPath: string): string | undefined {
   const pluginPath = join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture");
-  return WorkspaceRuntime.open({
-    vaultRoot: vaultPath,
-    stateRoot: new FixedStateRoot(app.getPath("userData")),
-    ...(existsSync(join(pluginPath, "manifest.json")) ? { pluginDirectory: pluginPath } : {}),
+  return existsSync(join(pluginPath, "manifest.json")) ? pluginPath : undefined;
+}
+
+function describeVaultOpenFailure(error: unknown): string {
+  const code =
+    typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+  if (code === "ENOENT") {
+    return "Could not open that folder because it is no longer available.";
+  }
+  const detail = error instanceof Error ? error.message : String(error);
+  return `Could not open that folder: ${detail}`;
+}
+
+async function createWorkspaceController(): Promise<WorkspaceController> {
+  const configuredPath = readDevelopmentVaultPath(app.isPackaged, process.env);
+  const fixtureVaultPath = join(app.getAppPath(), "fixtures", "vaults", "basic");
+  const fixturePlugin = fixturePluginDirectory(fixtureVaultPath);
+  const configuredPlugin = configuredPath ? fixturePluginDirectory(configuredPath) : undefined;
+  const userDataPath = app.getPath("userData");
+  return WorkspaceController.open({
+    fixtureVaultPath,
+    ...(fixturePlugin ? { fixturePluginDirectory: fixturePlugin } : {}),
+    stateRoot: new FixedStateRoot(userDataPath),
+    selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
+    ...(configuredPath
+      ? {
+          configuredVaultPath: configuredPath,
+          ...(configuredPlugin ? { configuredPluginDirectory: configuredPlugin } : {}),
+        }
+      : {}),
   });
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle(ipcChannels.snapshot, () => workspaceRuntime.getSnapshot());
+  ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
+  ipcMain.handle(ipcChannels.chooseVault, async () => {
+    const developmentOverride = readDevelopmentPickerOverride(app.isPackaged, process.env);
+    if (developmentOverride?.status === "cancelled") {
+      return { status: "cancelled", snapshot: await workspaceController.getSnapshot() } as const;
+    }
+    let selectedPath =
+      developmentOverride?.status === "selected" ? developmentOverride.path : undefined;
+    if (!selectedPath) {
+      const options: OpenDialogOptions = {
+        title: "Open a Markdown vault",
+        buttonLabel: "Open vault",
+        properties: ["openDirectory", "createDirectory", "dontAddToRecent"],
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      selectedPath = result.filePaths[0];
+      if (result.canceled || !selectedPath) {
+        return { status: "cancelled", snapshot: await workspaceController.getSnapshot() } as const;
+      }
+    }
+    try {
+      return {
+        status: "opened",
+        snapshot: await workspaceController.switchVault(selectedPath),
+      } as const;
+    } catch (error) {
+      return {
+        status: "failed",
+        message: describeVaultOpenFailure(error),
+        snapshot: await workspaceController.getSnapshot(),
+      } as const;
+    }
+  });
   ipcMain.handle(ipcChannels.openNote, (_event, filePath: unknown) => {
     if (typeof filePath !== "string") {
       throw new Error("Open note requires a string path.");
     }
-    return workspaceRuntime.openNote(filePath);
+    return workspaceController.openNote(filePath);
   });
   ipcMain.handle(
     ipcChannels.saveNote,
-    (_event, filePath: unknown, content: unknown, expectedRevision: unknown) => {
+    (
+      _event,
+      filePath: unknown,
+      content: unknown,
+      expectedRevision: unknown,
+      expectedVaultId: unknown,
+    ) => {
       if (
         typeof filePath !== "string" ||
         typeof content !== "string" ||
-        typeof expectedRevision !== "string"
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string"
       ) {
-        throw new Error("Save note requires string path, content, and revision values.");
+        throw new Error("Save note requires string path, content, revision, and vault values.");
       }
-      return workspaceRuntime.saveNote(filePath, content, expectedRevision);
+      return workspaceController.saveNote(filePath, content, expectedRevision, expectedVaultId);
     },
   );
   ipcMain.handle(ipcChannels.runCommand, (_event, commandId: unknown) => {
     if (typeof commandId !== "string") {
       throw new Error("Run command requires a string identifier.");
     }
-    return workspaceRuntime.runPluginCommand(commandId);
+    return workspaceController.runPluginCommand(commandId);
   });
-  ipcMain.handle(ipcChannels.reloadPlugin, () => workspaceRuntime.reloadPlugin());
-  ipcMain.handle(ipcChannels.unloadPlugin, () => workspaceRuntime.unloadPlugin());
-  workspaceRuntime.onSnapshot((snapshot) => {
+  ipcMain.handle(ipcChannels.reloadPlugin, () => workspaceController.reloadPlugin());
+  ipcMain.handle(ipcChannels.unloadPlugin, () => workspaceController.unloadPlugin());
+  workspaceController.onSnapshot((snapshot) => {
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(ipcChannels.snapshotChanged, snapshot);
     }
@@ -79,7 +147,7 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  workspaceRuntime = await createWorkspaceRuntime();
+  workspaceController = await createWorkspaceController();
   registerIpcHandlers();
   await createWindow();
 
@@ -91,7 +159,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("will-quit", () => {
-  void workspaceRuntime?.close();
+  void workspaceController?.close();
 });
 
 app.on("window-all-closed", () => {

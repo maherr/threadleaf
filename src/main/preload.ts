@@ -1,17 +1,24 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { NoteSaveResponse, RuntimeSnapshot, ThreadleafBridge } from "../shared/contracts";
+import type {
+  NoteSaveResponse,
+  RuntimeSnapshot,
+  ThreadleafBridge,
+  VaultOpenResponse,
+} from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 
 const bridge: ThreadleafBridge = {
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
+  chooseVault: () => ipcRenderer.invoke(ipcChannels.chooseVault) as Promise<VaultOpenResponse>,
   openNote: (filePath) =>
     ipcRenderer.invoke(ipcChannels.openNote, filePath) as Promise<RuntimeSnapshot>,
-  saveNote: (filePath, content, expectedRevision) =>
+  saveNote: (filePath, content, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.saveNote,
       filePath,
       content,
       expectedRevision,
+      expectedVaultId,
     ) as Promise<NoteSaveResponse>,
   runCommand: (commandId) =>
     ipcRenderer.invoke(ipcChannels.runCommand, commandId) as Promise<RuntimeSnapshot>,

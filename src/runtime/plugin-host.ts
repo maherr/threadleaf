@@ -141,9 +141,13 @@ export class PluginHost {
   async getSnapshot(): Promise<RuntimeSnapshot> {
     return {
       vault: {
+        id: null,
         name: this.vault.getName(),
+        path: this.vault.rootPath,
         markdownFileCount: (await this.vault.getMarkdownFiles()).length,
         mode: "synthetic-read-only",
+        source: "direct",
+        warning: null,
       },
       plugin: this.pluginSummary ? { ...this.pluginSummary } : null,
       commands: this.app.commands.list(),

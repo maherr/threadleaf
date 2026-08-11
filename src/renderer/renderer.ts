@@ -12,6 +12,10 @@ import "./styles.css";
 
 const elements = {
   vaultName: getElement("vault-name"),
+  vaultIdentity: getElement("vault-identity"),
+  openVault: getButton("open-vault"),
+  vaultMode: getElement("vault-mode"),
+  vaultSource: getElement("vault-source"),
   runtimeState: getElement("runtime-state"),
   statusShape: getElement("status-shape"),
   fileCount: getElement("file-count"),
@@ -42,6 +46,7 @@ const elements = {
   backlinkList: getElement("backlink-list"),
   pluginState: getElement("plugin-state"),
   pluginName: getElement("plugin-name"),
+  pluginTrustLabel: getElement("plugin-trust-label"),
   compatibilityLevel: getElement("compatibility-level"),
   commandCount: getElement("command-count"),
   commandList: getElement("command-list"),
@@ -65,9 +70,11 @@ interface EditNoticeState {
 
 let currentSnapshot: RuntimeSnapshot | null = null;
 let loadedNote: WorkspaceNoteSnapshot | null = null;
+let loadedVaultId: string | null = null;
 let pendingDiskNote: WorkspaceNoteSnapshot | null = null;
 let diskChanged = false;
 let editNoticeState: EditNoticeState | null = null;
+let lastVaultWarning: string | null = null;
 let toastTimer: number | undefined;
 let busy = false;
 let saving = false;
@@ -141,27 +148,47 @@ function render(snapshot: RuntimeSnapshot): void {
   const workspace = snapshot.workspace;
   const plugin = snapshot.plugin;
   elements.vaultName.textContent = snapshot.vault.name;
+  elements.vaultIdentity.title = snapshot.vault.path;
+  elements.vaultMode.title = snapshot.vault.path;
+  elements.vaultSource.textContent =
+    snapshot.vault.source === "bundled"
+      ? "Bundled vault"
+      : snapshot.vault.source === "environment"
+        ? "Development vault"
+        : snapshot.vault.source === "restored"
+          ? "Restored vault"
+          : "Local vault";
   elements.fileCount.textContent = String(
     workspace?.files.length ?? snapshot.vault.markdownFileCount,
   );
-  elements.runtimeState.textContent = workspace?.state === "degraded" ? "Needs attention" : "Ready";
-  elements.statusShape.dataset.state = workspace?.state ?? "ready";
+  const needsAttention = workspace?.state === "degraded" || snapshot.vault.warning !== null;
+  elements.runtimeState.textContent = needsAttention ? "Needs attention" : "Ready";
+  elements.statusShape.dataset.state = needsAttention ? "degraded" : "ready";
   elements.indexStatus.textContent = workspace ? "Current" : "Unavailable";
   elements.recoveryCount.textContent = String(workspace?.recoveryActionCount ?? 0);
   elements.watchSequence.textContent = String(workspace?.watcher.lastSequence ?? 0);
-  elements.watchMessage.textContent = workspace?.watcher.error
-    ? `Watcher error: ${workspace.watcher.error}`
-    : workspace?.watcher.lastRescanReason
-      ? `Recovered by ${workspace.watcher.lastRescanReason} rescan`
-      : "Filesystem and index agree";
+  elements.watchMessage.textContent = snapshot.vault.warning
+    ? snapshot.vault.warning
+    : workspace?.watcher.error
+      ? `Watcher error: ${workspace.watcher.error}`
+      : workspace?.watcher.lastRescanReason
+        ? `Recovered by ${workspace.watcher.lastRescanReason} rescan`
+        : "Filesystem and index agree";
+  if (snapshot.vault.warning && snapshot.vault.warning !== lastVaultWarning) {
+    showToast(snapshot.vault.warning);
+  }
+  lastVaultWarning = snapshot.vault.warning;
 
-  const displayedNote = reconcileEditor(workspace?.activeNote ?? null);
+  const displayedNote = reconcileEditor(workspace?.activeNote ?? null, snapshot.vault.id);
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
   renderNote(displayedNote);
 
   elements.pluginState.textContent = plugin?.state ?? "empty";
   elements.pluginState.dataset.state = plugin?.state ?? "empty";
   elements.pluginName.textContent = plugin?.name ?? "Not loaded";
+  elements.pluginTrustLabel.textContent = plugin
+    ? "Trusted compatibility plugin"
+    : "Plugins stay off by default";
   elements.compatibilityLevel.textContent = `Level ${plugin?.compatibilityLevel ?? 0}`;
   elements.commandCount.textContent = String(snapshot.commands.length);
   renderCommands(snapshot);
@@ -278,7 +305,10 @@ function renderNote(note: WorkspaceNoteSnapshot | null): void {
   renderEditControls();
 }
 
-function reconcileEditor(incomingNote: WorkspaceNoteSnapshot | null): WorkspaceNoteSnapshot | null {
+function reconcileEditor(
+  incomingNote: WorkspaceNoteSnapshot | null,
+  incomingVaultId: string | null,
+): WorkspaceNoteSnapshot | null {
   if (!incomingNote) {
     if (dirty && loadedNote) {
       pendingDiskNote = null;
@@ -291,45 +321,56 @@ function reconcileEditor(incomingNote: WorkspaceNoteSnapshot | null): WorkspaceN
       });
       return loadedNote;
     }
-    replaceEditorDocument(null);
+    replaceEditorDocument(null, null);
     return null;
   }
 
   if (!loadedNote) {
-    replaceEditorDocument(incomingNote);
+    replaceEditorDocument(incomingNote, incomingVaultId);
     return incomingNote;
   }
 
-  if (loadedNote.path === incomingNote.path && loadedNote.revision === incomingNote.revision) {
+  if (
+    loadedVaultId === incomingVaultId &&
+    loadedNote.path === incomingNote.path &&
+    loadedNote.revision === incomingNote.revision
+  ) {
     loadedNote = incomingNote;
     return incomingNote;
   }
 
   const currentText = editor.state.doc.toString();
   if (saving && currentText === incomingNote.content) {
-    replaceEditorDocument(incomingNote);
+    replaceEditorDocument(incomingNote, incomingVaultId);
     return incomingNote;
   }
 
   if (dirty) {
     pendingDiskNote = incomingNote;
     diskChanged = true;
+    const sameVault = loadedVaultId === incomingVaultId;
     const samePath = loadedNote.path === incomingNote.path;
     setEditNotice({
       kind: "external",
-      title: samePath ? "This note changed on disk" : "The active disk note changed",
-      message: samePath
-        ? "Threadleaf kept your unsaved editor text. Save to preserve it as a conflict copy, or Revert to load the current disk version."
-        : "Threadleaf kept your unsaved editor text instead of switching notes. Save to preserve it, or Revert to accept the current disk selection.",
+      title: !sameVault
+        ? "The active vault changed"
+        : samePath
+          ? "This note changed on disk"
+          : "The active disk note changed",
+      message: !sameVault
+        ? "Threadleaf kept your unsaved editor text. It cannot be saved into the newly active vault; Revert to accept the new vault, or copy the text before switching back."
+        : samePath
+          ? "Threadleaf kept your unsaved editor text. Save to preserve it as a conflict copy, or Revert to load the current disk version."
+          : "Threadleaf kept your unsaved editor text instead of switching notes. Save to preserve it, or Revert to accept the current disk selection.",
     });
     return loadedNote;
   }
 
-  replaceEditorDocument(incomingNote);
+  replaceEditorDocument(incomingNote, incomingVaultId);
   return incomingNote;
 }
 
-function replaceEditorDocument(note: WorkspaceNoteSnapshot | null): void {
+function replaceEditorDocument(note: WorkspaceNoteSnapshot | null, vaultId: string | null): void {
   const content = note?.content ?? "";
   syncingEditor = true;
   try {
@@ -341,6 +382,7 @@ function replaceEditorDocument(note: WorkspaceNoteSnapshot | null): void {
     syncingEditor = false;
   }
   loadedNote = note;
+  loadedVaultId = note ? vaultId : null;
   pendingDiskNote = null;
   diskChanged = false;
   dirty = false;
@@ -439,7 +481,7 @@ function renderEditControls(): void {
   }
   elements.editState.dataset.state = state;
   elements.editState.textContent = label;
-  elements.saveNote.disabled = busy || saving || !dirty || !loadedNote;
+  elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
   renderEditNotice();
 }
@@ -472,6 +514,9 @@ function scrollToSourceLine(line: number): void {
 }
 
 async function openNote(filePath: string): Promise<void> {
+  if (busy) {
+    return;
+  }
   if (dirty || saving) {
     showToast("Save or revert the open note before navigating away.");
     editor.focus();
@@ -480,18 +525,50 @@ async function openNote(filePath: string): Promise<void> {
   await runAction(() => window.threadleaf.openNote(filePath));
 }
 
+async function chooseVault(): Promise<void> {
+  if (busy) {
+    return;
+  }
+  if (dirty || saving) {
+    showToast("Save or revert the open note before switching vaults.");
+    editor.focus();
+    return;
+  }
+  try {
+    setActionState(true);
+    const response = await window.threadleaf.chooseVault();
+    if (response.status === "opened") {
+      render(response.snapshot);
+      showToast(`Opened ${response.snapshot.vault.name}.`);
+    } else if (response.status === "failed") {
+      render(response.snapshot);
+      showToast(response.message);
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    setActionState(false);
+  }
+}
+
 async function saveActiveNote(): Promise<void> {
-  if (!loadedNote || !dirty || saving || busy) {
+  if (!loadedNote || !loadedVaultId || !dirty || saving || busy) {
     return;
   }
   const path = loadedNote.path;
   const expectedRevision = loadedNote.revision;
+  const expectedVaultId = loadedVaultId;
   const content = editor.state.doc.toString();
   saving = true;
   renderEditControls();
   setActionState(busy);
   try {
-    const response = await window.threadleaf.saveNote(path, content, expectedRevision);
+    const response = await window.threadleaf.saveNote(
+      path,
+      content,
+      expectedRevision,
+      expectedVaultId,
+    );
     render(response.snapshot);
     if (response.outcome.status === "conflict") {
       setEditNotice({
@@ -521,7 +598,10 @@ function revertActiveNote(): void {
   const diskNote = diskChanged
     ? (pendingDiskNote ?? currentSnapshot?.workspace?.activeNote ?? null)
     : loadedNote;
-  replaceEditorDocument(diskNote);
+  replaceEditorDocument(
+    diskNote,
+    diskChanged ? (currentSnapshot?.vault.id ?? null) : loadedVaultId,
+  );
   if (currentSnapshot) {
     render(currentSnapshot);
   } else {
@@ -554,7 +634,8 @@ async function runAction(action: () => Promise<RuntimeSnapshot>): Promise<void> 
 
 function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
-  elements.reloadPlugin.disabled = busy || saving;
+  elements.openVault.disabled = busy || saving;
+  elements.reloadPlugin.disabled = busy || saving || !currentSnapshot?.plugin;
   elements.unloadPlugin.disabled = busy || saving || currentSnapshot?.plugin?.state !== "loaded";
   elements.runCommand.disabled = busy || saving || (currentSnapshot?.commands.length ?? 0) === 0;
   renderEditControls();
@@ -577,6 +658,7 @@ elements.themeToggle.addEventListener("click", () => {
   setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 });
 
+elements.openVault.addEventListener("click", () => void chooseVault());
 elements.saveNote.addEventListener("click", () => void saveActiveNote());
 elements.revertNote.addEventListener("click", revertActiveNote);
 elements.dismissEditNotice.addEventListener("click", clearEditNotice);
@@ -607,6 +689,9 @@ document.addEventListener("keydown", (event) => {
   if (modifier && key === "s") {
     event.preventDefault();
     void saveActiveNote();
+  } else if (modifier && key === "o") {
+    event.preventDefault();
+    void chooseVault();
   } else if (modifier && key === "p") {
     event.preventDefault();
     elements.fileSearch.focus();

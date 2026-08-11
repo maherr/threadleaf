@@ -35,3 +35,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   recoverable saves, non-destructive external-edit warnings, and indexed conflict copies.
 - CSP-nonce integration for CodeMirror's generated styles and an isolated-vault development launch
   override for live save and conflict verification.
+- Native local-folder picker with Ctrl/Cmd+O, private persisted selection, validated runtime swaps,
+  startup restoration and fallback warnings, vault-bound save protection, and plugins kept off by
+  default for selected vaults.

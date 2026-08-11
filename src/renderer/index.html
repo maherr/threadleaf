@@ -20,13 +20,19 @@
           </span>
         </a>
 
-        <div class="vault-identity" aria-live="polite">
-          <span class="status-shape" id="status-shape" aria-hidden="true"></span>
-          <span>
-            <small>Active vault</small>
-            <strong id="vault-name">Connecting</strong>
-          </span>
-          <span class="state-word" id="runtime-state">Starting</span>
+        <div class="vault-switcher">
+          <div class="vault-identity" id="vault-identity" aria-live="polite">
+            <span class="status-shape" id="status-shape" aria-hidden="true"></span>
+            <span>
+              <small>Active vault</small>
+              <strong id="vault-name">Connecting</strong>
+            </span>
+            <span class="state-word" id="runtime-state">Starting</span>
+          </div>
+          <button class="vault-open" id="open-vault" type="button" aria-label="Open another vault">
+            <span aria-hidden="true">＋</span>
+            <span>Open</span>
+          </button>
         </div>
 
         <button class="icon-button" id="theme-toggle" type="button" aria-label="Switch to dark theme">
@@ -139,7 +145,7 @@
             </div>
             <div class="console-body">
               <div>
-                <p class="eyebrow">Trusted fixture plugin</p>
+                <p class="eyebrow" id="plugin-trust-label">Trusted compatibility plugin</p>
                 <h2 id="plugin-heading"><span id="plugin-name">Not loaded</span></h2>
                 <p><span id="compatibility-level">Level 0</span> · <span id="command-count">0</span> commands</p>
               </div>
@@ -159,7 +165,7 @@
       </div>
 
       <footer class="statusbar">
-        <span><span aria-hidden="true">◆</span> Kernel-backed fixture</span>
+        <span id="vault-mode"><span aria-hidden="true">◆</span> <span id="vault-source">Bundled vault</span></span>
         <span>Watcher sequence <strong id="watch-sequence">0</strong></span>
         <span id="watch-message">Filesystem and index agree</span>
         <span class="statusbar-end">AGPL-3.0-or-later</span>

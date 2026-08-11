@@ -57,7 +57,7 @@ equivalence through the real writer-to-watcher seam.
 - [x] Keyboard-first filtering and accessible light and dark theme foundations.
 - [x] CodeMirror source editor with dirty state, explicit Revert, revision-aware recoverable save,
       external-change detection, and keep-both conflict UI.
-- [ ] Arbitrary vault picker and persistent workspace restoration.
+- [x] Arbitrary vault picker, validated runtime swaps, and persistent workspace restoration.
 - [ ] Tabs, split panes, command palette, menus, hotkeys, and settings.
 - [ ] Live preview and source-to-preview position mapping.
 - [ ] Full-text search, properties, attachments, and embeds.
