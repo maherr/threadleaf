@@ -4,12 +4,51 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import { WorkspaceRuntime } from "./workspace-runtime";
+import {
+  createWorkspaceState,
+  type PersistedWorkspaceState,
+  type WorkspaceStateStore,
+} from "./workspace-state";
 
 const fixtureVault = path.resolve("fixtures/vaults/basic");
 let sandboxPath: string;
 let vaultPath: string;
 let statePath: string;
 let runtime: WorkspaceRuntime | undefined;
+
+class MemoryWorkspaceStateStore implements WorkspaceStateStore {
+  value: PersistedWorkspaceState | null = null;
+  readonly saved: PersistedWorkspaceState[] = [];
+  loadError: Error | null = null;
+  saveError: Error | null = null;
+  readonly #initial: Pick<PersistedWorkspaceState, "openPaths" | "activePath"> | null;
+
+  constructor(initial: Pick<PersistedWorkspaceState, "openPaths" | "activePath"> | null = null) {
+    this.#initial = initial;
+  }
+
+  async load(vaultId: string): Promise<PersistedWorkspaceState | null> {
+    if (this.loadError) {
+      throw this.loadError;
+    }
+    if (this.value) {
+      return createWorkspaceState(vaultId, this.value.openPaths, this.value.activePath);
+    }
+    return this.#initial
+      ? createWorkspaceState(vaultId, this.#initial.openPaths, this.#initial.activePath)
+      : null;
+  }
+
+  async save(state: PersistedWorkspaceState): Promise<PersistedWorkspaceState> {
+    if (this.saveError) {
+      throw this.saveError;
+    }
+    const normalized = createWorkspaceState(state.vaultId, state.openPaths, state.activePath);
+    this.value = normalized;
+    this.saved.push(normalized);
+    return normalized;
+  }
+}
 
 beforeEach(async () => {
   sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-workspace-"));
@@ -24,11 +63,12 @@ afterEach(async () => {
   await fs.rm(sandboxPath, { recursive: true, force: true });
 });
 
-async function openRuntime(): Promise<WorkspaceRuntime> {
+async function openRuntime(workspaceStateStore?: WorkspaceStateStore): Promise<WorkspaceRuntime> {
   runtime = await WorkspaceRuntime.open({
     vaultRoot: vaultPath,
     stateRoot: new FixedStateRoot(statePath),
     pluginDirectory: path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"),
+    ...(workspaceStateStore ? { workspaceStateStore } : {}),
   });
   return runtime;
 }
@@ -119,6 +159,105 @@ describe("WorkspaceRuntime", () => {
     expect(closedLast.workspace?.files).toHaveLength(2);
     await expect(workspace.closeNote("Welcome.md", "stale-vault")).rejects.toThrow(
       "active vault changed",
+    );
+  });
+
+  it("restores ordered tabs, chooses a surviving active note, and prunes stale paths", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Missing.md", "Linked Note.md"],
+      activePath: "Missing.md",
+    });
+    const workspace = await openRuntime(store);
+
+    const snapshot = await workspace.getSnapshot();
+
+    expect(snapshot.workspace).toMatchObject({
+      tabs: [
+        { path: "Welcome.md", active: false },
+        { path: "Linked Note.md", active: true },
+      ],
+      activeNote: { path: "Linked Note.md" },
+    });
+    expect(store.saved.at(-1)).toMatchObject({
+      openPaths: ["Welcome.md", "Linked Note.md"],
+      activePath: "Linked Note.md",
+    });
+    expect(snapshot.vault.warning).toBeNull();
+  });
+
+  it("persists tab order, active note, and an explicitly empty workspace across restarts", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.close();
+    runtime = undefined;
+
+    workspace = await openRuntime(store);
+    expect((await workspace.getSnapshot()).workspace).toMatchObject({
+      tabs: [
+        { path: "Linked Note.md", active: true },
+        { path: "Welcome.md", active: false },
+      ],
+      activeNote: { path: "Linked Note.md" },
+    });
+    await workspace.closeNote("Linked Note.md", workspace.vaultId);
+    await workspace.closeNote("Welcome.md", workspace.vaultId);
+    await workspace.close();
+    runtime = undefined;
+
+    workspace = await openRuntime(store);
+    expect((await workspace.getSnapshot()).workspace).toMatchObject({
+      tabs: [],
+      activeNote: null,
+    });
+  });
+
+  it("falls back visibly without overwriting malformed workspace state", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    store.loadError = new Error("invalid workspace document");
+    const workspace = await openRuntime(store);
+
+    const fallback = await workspace.getSnapshot();
+
+    expect(fallback.workspace).toMatchObject({
+      tabs: [{ path: "Linked Note.md", active: true }],
+      activeNote: { path: "Linked Note.md" },
+    });
+    expect(fallback.vault.warning).toContain("invalid workspace document");
+    expect(store.saved).toEqual([]);
+  });
+
+  it("keeps the current tabs when required workspace persistence fails", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    store.saveError = new Error("workspace disk unavailable");
+
+    await expect(workspace.openNote("Welcome.md")).rejects.toThrow(
+      "Could not save workspace state: workspace disk unavailable",
+    );
+    const snapshot = await workspace.getSnapshot();
+    expect(snapshot.workspace).toMatchObject({
+      tabs: [{ path: "Linked Note.md", active: true }],
+      activeNote: { path: "Linked Note.md" },
+    });
+    expect(snapshot.vault.warning).toContain("workspace disk unavailable");
+  });
+
+  it("does not report a committed vault write as failed when workspace persistence is unavailable", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    store.saveError = new Error("workspace disk unavailable");
+
+    const created = await workspace.createNote("Created.md", "# Created\n", workspace.vaultId);
+
+    expect(created.outcome).toMatchObject({ status: "committed", path: "Created.md" });
+    expect(created.snapshot.workspace).toMatchObject({
+      activeNote: { path: "Created.md" },
+    });
+    expect(created.snapshot.vault.warning).toContain("workspace disk unavailable");
+    await expect(fs.readFile(path.join(vaultPath, "Created.md"), "utf8")).resolves.toBe(
+      "# Created\n",
     );
   });
 

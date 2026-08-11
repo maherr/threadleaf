@@ -81,11 +81,22 @@ deletions remove them, while every published snapshot filters the list against t
 index. Each close request carries the expected vault identity, so a delayed renderer action cannot
 close a similarly named note after a vault switch.
 
-Tabs are session-local derived workspace state. They do not write layout files into the vault or
-`.obsidian/`, and they are not restored after an application restart yet. The renderer owns one
-CodeMirror draft rather than a hidden unsaved draft per tab. A dirty active draft therefore blocks
-tab activation, active-tab closure, and vault switching until it is saved or reverted. Closing an
-inactive tab remains safe because it cannot discard the current draft.
+Tabs are derived workspace state stored per vault in a versioned document under the operating
+system's application-data directory. The store keys documents by vault identity, validates and
+normalizes every path, writes atomically with private file permissions, and never writes layout
+files into the vault or `.obsidian/`. A valid document restores exact tab order and its active
+path. Missing notes are pruned and the repaired state is persisted. An explicit empty document
+restores an empty workspace instead of falling back to the first note. Malformed state fails
+visibly without rewriting the invalid bytes.
+
+Pure navigation changes persist before the runtime adopts them, so a failed write cannot create
+tab state that silently disappears after restart. A vault mutation that already committed remains
+committed even if the following workspace-state update fails; the runtime adopts the real vault
+result and reports the persistence warning instead of falsely reporting that the vault write
+failed. The renderer owns one CodeMirror draft rather than a hidden unsaved draft per tab. A dirty
+active draft therefore blocks tab activation, active-tab closure, and vault switching until it is
+saved or reverted. Closing an inactive tab remains safe because it cannot discard the current
+draft.
 
 ### Application settings and key bindings
 

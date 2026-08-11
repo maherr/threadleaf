@@ -16,6 +16,7 @@ import {
   type WorkspaceRuntimePort,
 } from "./workspace-controller";
 import type { WorkspaceRuntimeOptions } from "./workspace-runtime";
+import type { WorkspaceStateStore } from "./workspace-state";
 
 class MemorySelectionStore implements VaultSelectionStore {
   value: string | null;
@@ -323,10 +324,15 @@ describe("WorkspaceController", () => {
   it("validates and persists a picked vault before adopting it", async () => {
     const store = new MemorySelectionStore();
     const harness = runtimeHarness();
+    const workspaceStateStore: WorkspaceStateStore = {
+      load: async () => null,
+      save: async (state) => state,
+    };
     const controller = await WorkspaceController.open({
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
+      workspaceStateStore,
       runtimeFactory: harness.runtimeFactory,
     });
     const previous = harness.runtimes[0];
@@ -341,6 +347,8 @@ describe("WorkspaceController", () => {
       warning: null,
     });
     expect(store.saved).toEqual(["/picked/vault"]);
+    expect(harness.optionsSeen[0]?.workspaceStateStore).toBe(workspaceStateStore);
+    expect(harness.optionsSeen[1]?.workspaceStateStore).toBe(workspaceStateStore);
     expect(previous?.closed).toBe(true);
     expect(observed).toEqual(["/picked/vault"]);
     harness.runtimes[1]?.emit();

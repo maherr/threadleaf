@@ -26,6 +26,11 @@ import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
 import { movedMarkdownPath, moveMarkdownNote } from "./note-move";
 import { loadVaultImage } from "./vault-image-service";
+import {
+  createWorkspaceState,
+  type PersistedWorkspaceState,
+  type WorkspaceStateStore,
+} from "./workspace-state";
 
 export interface WorkspaceRuntimeOptions {
   vaultRoot: string;
@@ -33,6 +38,7 @@ export interface WorkspaceRuntimeOptions {
   pluginDirectory?: string;
   selectionSource?: VaultSelectionSource;
   warning?: string | null;
+  workspaceStateStore?: WorkspaceStateStore;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -146,6 +152,22 @@ function isWorkspaceNoteLink(link: { syntax: "wiki" | "markdown"; embed: boolean
   return link.syntax !== "markdown" || !link.embed;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function workspaceStatesEqual(
+  left: PersistedWorkspaceState,
+  right: PersistedWorkspaceState,
+): boolean {
+  return (
+    left.vaultId === right.vaultId &&
+    left.activePath === right.activePath &&
+    left.openPaths.length === right.openPaths.length &&
+    left.openPaths.every((filePath, index) => filePath === right.openPaths[index])
+  );
+}
+
 export class WorkspaceRuntime {
   readonly actions: ActionRegistry;
   readonly kernel: VaultKernel;
@@ -153,10 +175,13 @@ export class WorkspaceRuntime {
   readonly indexReactor: VaultIndexReactor;
   readonly pluginHost: PluginHost;
   readonly selectionSource: VaultSelectionSource;
-  readonly warning: string | null;
+  readonly #baseWarning: string | null;
+  readonly #workspaceStateStore: WorkspaceStateStore | undefined;
 
   #activePath: string | null = null;
   #openPaths: string[] = [];
+  #workspaceLoadWarning: string | null;
+  #workspaceSaveWarning: string | null = null;
   #watcherError: string | null = null;
   #lastWatchSequence = 0;
   #lastRescanReason: string | null = null;
@@ -171,6 +196,13 @@ export class WorkspaceRuntime {
     return this.kernel.paths.rootPath;
   }
 
+  get warning(): string | null {
+    const warnings = [this.#baseWarning, this.#workspaceLoadWarning, this.#workspaceSaveWarning]
+      .filter((warning): warning is string => Boolean(warning))
+      .join(" ");
+    return warnings || null;
+  }
+
   private constructor(
     actions: ActionRegistry,
     kernel: VaultKernel,
@@ -179,6 +211,8 @@ export class WorkspaceRuntime {
     pluginHost: PluginHost,
     selectionSource: VaultSelectionSource,
     warning: string | null,
+    workspaceStateStore: WorkspaceStateStore | undefined,
+    workspaceLoadWarning: string | null,
   ) {
     this.actions = actions;
     this.kernel = kernel;
@@ -186,7 +220,9 @@ export class WorkspaceRuntime {
     this.indexReactor = indexReactor;
     this.pluginHost = pluginHost;
     this.selectionSource = selectionSource;
-    this.warning = warning;
+    this.#baseWarning = warning;
+    this.#workspaceStateStore = workspaceStateStore;
+    this.#workspaceLoadWarning = workspaceLoadWarning;
     this.#releaseActions.push(
       this.actions.register("threadleaf-workspace", {
         id: "workspace.create-note",
@@ -238,6 +274,17 @@ export class WorkspaceRuntime {
     });
     const indexReactor = await VaultIndexReactor.open(kernel);
     const pluginHost = new PluginHost(kernel.paths.rootPath, kernel, actions);
+    let restoredWorkspace: PersistedWorkspaceState | null = null;
+    let workspaceLoadWarning: string | null = null;
+    let workspaceStateReadable = true;
+    if (options.workspaceStateStore) {
+      try {
+        restoredWorkspace = await options.workspaceStateStore.load(kernel.vaultId);
+      } catch (error) {
+        workspaceStateReadable = false;
+        workspaceLoadWarning = `Could not read saved workspace state: ${errorMessage(error)} The file was not changed.`;
+      }
+    }
     runtime = new WorkspaceRuntime(
       actions,
       kernel,
@@ -246,11 +293,34 @@ export class WorkspaceRuntime {
       pluginHost,
       options.selectionSource ?? "direct",
       options.warning ?? null,
+      options.workspaceStateStore,
+      workspaceLoadWarning,
     );
 
-    const firstPath = indexReactor.index.snapshot().documents[0]?.path;
-    if (firstPath) {
-      runtime.activatePath(firstPath);
+    if (restoredWorkspace) {
+      const availablePaths = new Set(
+        indexReactor.index.snapshot().documents.map((document) => document.path),
+      );
+      const openPaths = restoredWorkspace.openPaths.filter((filePath) =>
+        availablePaths.has(filePath),
+      );
+      const activePath =
+        restoredWorkspace.activePath && openPaths.includes(restoredWorkspace.activePath)
+          ? restoredWorkspace.activePath
+          : (openPaths.at(-1) ?? null);
+      const restored = createWorkspaceState(kernel.vaultId, openPaths, activePath);
+      runtime.applyWorkspaceState(restored);
+      if (!workspaceStatesEqual(restoredWorkspace, restored)) {
+        await runtime.persistWorkspaceStateBestEffort();
+      }
+    } else {
+      const firstPath = indexReactor.index.snapshot().documents[0]?.path;
+      if (firstPath) {
+        runtime.activatePath(firstPath);
+      }
+      if (options.workspaceStateStore && workspaceStateReadable) {
+        await runtime.persistWorkspaceStateBestEffort();
+      }
     }
     if (options.pluginDirectory) {
       await pluginHost.loadPlugin(options.pluginDirectory);
@@ -412,6 +482,56 @@ export class WorkspaceRuntime {
     this.#listeners.clear();
   }
 
+  private currentWorkspaceState(): PersistedWorkspaceState {
+    return createWorkspaceState(this.kernel.vaultId, this.#openPaths, this.#activePath);
+  }
+
+  private applyWorkspaceState(state: PersistedWorkspaceState): void {
+    this.#openPaths = [...state.openPaths];
+    this.#activePath = state.activePath;
+  }
+
+  private async adoptWorkspaceState(
+    state: PersistedWorkspaceState,
+    persistBeforeAdopting: boolean,
+  ): Promise<void> {
+    if (workspaceStatesEqual(this.currentWorkspaceState(), state)) {
+      return;
+    }
+    if (!this.#workspaceStateStore) {
+      this.applyWorkspaceState(state);
+      return;
+    }
+    if (!persistBeforeAdopting) {
+      this.applyWorkspaceState(state);
+      await this.persistWorkspaceStateBestEffort();
+      return;
+    }
+    try {
+      const persisted = await this.#workspaceStateStore.save(state);
+      this.#workspaceLoadWarning = null;
+      this.#workspaceSaveWarning = null;
+      this.applyWorkspaceState(persisted);
+    } catch (error) {
+      const message = `Could not save workspace state: ${errorMessage(error)}`;
+      this.#workspaceSaveWarning = message;
+      throw new Error(message, { cause: error });
+    }
+  }
+
+  private async persistWorkspaceStateBestEffort(): Promise<void> {
+    if (!this.#workspaceStateStore) {
+      return;
+    }
+    try {
+      await this.#workspaceStateStore.save(this.currentWorkspaceState());
+      this.#workspaceLoadWarning = null;
+      this.#workspaceSaveWarning = null;
+    } catch (error) {
+      this.#workspaceSaveWarning = `Could not save workspace state: ${errorMessage(error)}`;
+    }
+  }
+
   private async selectNote(filePath: string): Promise<void> {
     const exists = this.indexReactor.index
       .snapshot()
@@ -420,31 +540,42 @@ export class WorkspaceRuntime {
       throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
     }
     await this.kernel.readText(filePath);
-    this.activatePath(filePath);
+    const openPaths = this.#openPaths.includes(filePath)
+      ? [...this.#openPaths]
+      : [...this.#openPaths, filePath];
+    await this.adoptWorkspaceState(
+      createWorkspaceState(this.kernel.vaultId, openPaths, filePath),
+      true,
+    );
   }
 
-  private activatePath(filePath: string): void {
+  private activatePath(filePath: string): boolean {
+    const wasActive = this.#activePath === filePath;
+    let changed = !wasActive;
     if (!this.#openPaths.includes(filePath)) {
       this.#openPaths.push(filePath);
+      changed = true;
     }
     this.#activePath = filePath;
+    return changed;
   }
 
-  private removeOpenPath(filePath: string): void {
+  private removeOpenPath(filePath: string): boolean {
     const index = this.#openPaths.indexOf(filePath);
     if (index === -1) {
-      return;
+      return false;
     }
     this.#openPaths.splice(index, 1);
     if (this.#activePath === filePath) {
       this.#activePath = this.#openPaths[index] ?? this.#openPaths[index - 1] ?? null;
     }
+    return true;
   }
 
-  private moveOpenPath(from: string, to: string): void {
+  private moveOpenPath(from: string, to: string): boolean {
     const sourceIndex = this.#openPaths.indexOf(from);
     if (sourceIndex === -1) {
-      return;
+      return false;
     }
     const targetIndex = this.#openPaths.indexOf(to);
     if (targetIndex === -1) {
@@ -455,13 +586,27 @@ export class WorkspaceRuntime {
     if (this.#activePath === from) {
       this.#activePath = to;
     }
+    return true;
   }
 
-  private closeNoteThroughWorkspace(request: CloseNoteRequest): void {
+  private async closeNoteThroughWorkspace(request: CloseNoteRequest): Promise<void> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this tab could be closed.");
     }
-    this.removeOpenPath(normalizeVaultPath(request.path));
+    const normalizedPath = normalizeVaultPath(request.path);
+    const index = this.#openPaths.indexOf(normalizedPath);
+    if (index === -1) {
+      return;
+    }
+    const openPaths = this.#openPaths.filter((filePath) => filePath !== normalizedPath);
+    const activePath =
+      this.#activePath === normalizedPath
+        ? (openPaths[index] ?? openPaths[index - 1] ?? null)
+        : this.#activePath;
+    await this.adoptWorkspaceState(
+      createWorkspaceState(this.kernel.vaultId, openPaths, activePath),
+      true,
+    );
   }
 
   private async moveNoteThroughKernel(request: MoveNoteRequest): Promise<NoteMoveOutcome> {
@@ -490,7 +635,9 @@ export class WorkspaceRuntime {
     });
     this.indexReactor.index.remove(outcome.from);
     await this.indexReactor.index.refresh(this.kernel, outcome.to);
-    this.moveOpenPath(outcome.from, outcome.to);
+    if (this.moveOpenPath(outcome.from, outcome.to)) {
+      await this.persistWorkspaceStateBestEffort();
+    }
     return outcome;
   }
 
@@ -519,7 +666,9 @@ export class WorkspaceRuntime {
         revision: outcome.revision,
       });
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
-      this.activatePath(outcome.path);
+      if (this.activatePath(outcome.path)) {
+        await this.persistWorkspaceStateBestEffort();
+      }
       return outcome;
     }
 
@@ -536,7 +685,9 @@ export class WorkspaceRuntime {
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
     }
     await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
-    this.activatePath(conflictCopy.path);
+    if (this.activatePath(conflictCopy.path)) {
+      await this.persistWorkspaceStateBestEffort();
+    }
     return outcome;
   }
 
@@ -556,7 +707,9 @@ export class WorkspaceRuntime {
         revision: outcome.revision,
       });
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
-      this.activatePath(outcome.path);
+      if (this.activatePath(outcome.path)) {
+        await this.persistWorkspaceStateBestEffort();
+      }
       return outcome;
     }
 
@@ -571,20 +724,26 @@ export class WorkspaceRuntime {
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
     }
     await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
-    this.activatePath(conflictCopy.path);
+    if (this.activatePath(conflictCopy.path)) {
+      await this.persistWorkspaceStateBestEffort();
+    }
     return outcome;
   }
 
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
     const result = await this.indexReactor.accept(batch);
+    let workspaceChanged = false;
     if (result.mode === "incremental") {
       for (const change of batch.changes) {
         if (change.kind === "move") {
-          this.moveOpenPath(change.from, change.to);
+          workspaceChanged = this.moveOpenPath(change.from, change.to) || workspaceChanged;
         } else if (change.kind === "delete") {
-          this.removeOpenPath(change.path);
+          workspaceChanged = this.removeOpenPath(change.path) || workspaceChanged;
         }
       }
+    }
+    if (workspaceChanged) {
+      await this.persistWorkspaceStateBestEffort();
     }
     this.#lastWatchSequence = batch.sequence;
     this.#lastRescanReason = result.mode === "rebuild" ? (result.reason ?? "unknown") : null;
@@ -608,9 +767,15 @@ export class WorkspaceRuntime {
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const index = this.indexReactor.index.snapshot();
     const documents = new Map(index.documents.map((document) => [document.path, document]));
-    this.#openPaths = this.#openPaths.filter((filePath) => documents.has(filePath));
-    if (!this.#activePath || !this.#openPaths.includes(this.#activePath)) {
-      this.#activePath = this.#openPaths.at(-1) ?? null;
+    const openPaths = this.#openPaths.filter((filePath) => documents.has(filePath));
+    const activePath =
+      this.#activePath && openPaths.includes(this.#activePath)
+        ? this.#activePath
+        : (openPaths.at(-1) ?? null);
+    const reconciledState = createWorkspaceState(this.kernel.vaultId, openPaths, activePath);
+    if (!workspaceStatesEqual(this.currentWorkspaceState(), reconciledState)) {
+      this.applyWorkspaceState(reconciledState);
+      await this.persistWorkspaceStateBestEffort();
     }
     const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
     const files: WorkspaceFileSummary[] = index.documents.map((document) => {

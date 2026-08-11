@@ -86,9 +86,12 @@ equivalence through the real writer-to-watcher seam.
 - [x] Ordered session tabs with path deduplication, dirty-draft guards, neighbor selection on close,
       watcher rename and delete reconciliation, remappable close and cycle shortcuts, and bounded
       horizontal overflow at the minimum desktop viewport.
+- [x] Versioned per-vault tab restoration in private application state, including exact order and
+      active-note restoration, explicit empty workspaces, stale-path pruning, and visible malformed
+      state recovery without vault-owned metadata.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
-- [ ] Split panes, application menus, tab restoration, and broader workspace settings.
+- [ ] Split panes, application menus, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
 - [ ] Rich property views and editing, broader attachment types, and wiki embeds.
 

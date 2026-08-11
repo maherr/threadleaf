@@ -12,6 +12,7 @@ import {
 } from "./development-picker-override";
 import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
+import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
@@ -43,6 +44,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     ...(fixturePlugin ? { fixturePluginDirectory: fixturePlugin } : {}),
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
+    workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
     ...(configuredPath
       ? {
           configuredVaultPath: configuredPath,

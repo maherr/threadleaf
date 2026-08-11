@@ -52,8 +52,10 @@ request to the active vault and note revision, show exact link-resolution blocke
 destination collisions, and remap open tabs after a successful move. Runtime-owned tabs keep one
 ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
 externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
-right neighbor, then its left neighbor. Tab state is session-local and does not write workspace
-metadata into the vault.
+right neighbor, then its left neighbor. Their order and active note restore per vault from
+versioned private application data. An intentionally empty workspace stays empty, missing notes
+are pruned on restore, and malformed state remains available for diagnosis behind a visible
+warning. No workspace metadata is written into the vault or `.obsidian/`.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
@@ -102,6 +104,9 @@ matched as a phrase. Every listed shortcut can be reassigned or cleared, and Res
 restores the portable built-in bindings. Threadleaf stores these preferences in private
 application data, not in the vault or `.obsidian/`. Ctrl/Cmd+E switches between Markdown source and
 reading view. Ctrl/Cmd+W closes the active clean tab; Alt+Left and Alt+Right move through open tabs.
+Open-tab order and the active note restore separately for each vault. Closing every tab is also a
+persisted choice, while paths that no longer exist are removed from the saved workspace on the
+next successful launch.
 Reading view previews the current draft without saving it; clicking a source-line control returns
 to the exact source line. Relative and vault-rooted local raster images render without exposing
 filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New note dialog and
