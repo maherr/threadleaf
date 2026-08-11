@@ -14,6 +14,12 @@ threadleaf --vault /path/to/vault vault info
 threadleaf --vault /path/to/vault files [--directory Folder]
 threadleaf --vault /path/to/vault read "Folder/Note.md"
 threadleaf --vault /path/to/vault search "quoted phrase" [--limit 20]
+threadleaf --vault /path/to/vault links "Folder/Note.md"
+threadleaf --vault /path/to/vault backlinks "Folder/Note.md"
+threadleaf --vault /path/to/vault unresolved
+threadleaf --vault /path/to/vault orphans
+threadleaf --vault /path/to/vault deadends
+threadleaf --vault /path/to/vault outline "Folder/Note.md"
 threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n"]
 threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text" [--inline]
 threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
@@ -29,6 +35,12 @@ During development, prefix the same arguments with `pnpm cli`.
 | `files` | Sorted Markdown paths, optionally filtered to a directory | Read-only kernel |
 | `read` | Exact UTF-8 note content | Read-only kernel |
 | `search` | Ranked paths and best context, with a bounded result count | Derived metadata and full-text index |
+| `links` | Ordered outgoing internal-link occurrences and resolution states | Derived metadata index |
+| `backlinks` | Resolved source notes and occurrence counts for one note | Derived metadata index |
+| `unresolved` | Every unresolved or ambiguous link occurrence with its source | Derived metadata index |
+| `orphans` | Notes with no resolved incoming source | Derived metadata index |
+| `deadends` | Notes with no parsed outgoing internal-link occurrence | Derived metadata index |
+| `outline` | Ordered headings with levels and source lines | Derived metadata index |
 | `create` | Created Markdown path and revision | Recoverable no-clobber writer |
 | `append` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
@@ -38,6 +50,16 @@ During development, prefix the same arguments with `pnpm cli`.
 The note corpus excludes `.obsidian/`, `.git/`, and Threadleaf transaction artifacts. Read-only
 kernel opening performs path validation but creates no state directory, vault identity, recovery
 journal, or watcher.
+
+The graph commands expose the index's distinctions instead of flattening them. `links` retains
+source order and duplicate occurrences. `backlinks` groups resolved occurrences by source, while
+reporting both the number of source notes and the number of link occurrences. `unresolved` includes
+both links with no candidate and links with multiple candidates, with either state explicit in JSON
+and human output. `orphans` means no resolved incoming source; a resolved self-link is incoming.
+`deadends` is syntax-level in this release: a note containing any parsed internal link is not a
+dead end even when that link is unresolved or ambiguous. `outline` returns heading level, text, and
+one-based source line. These choices have executable fixtures and do not yet claim every Obsidian
+edge semantic.
 
 `create` is the first mutating command. It accepts a vault-relative note name or path, adds `.md`
 when omitted, creates missing folders, and accepts empty content. `--content` interprets `\n`, `\t`,
@@ -108,7 +130,11 @@ scripts. Threadleaf currently accepts these aliases in addition to its native fo
 
 ```sh
 threadleaf --vault /path/to/vault read file="Folder/Note.md"
+threadleaf --vault /path/to/vault read path="Folder/Note.md"
 threadleaf --vault /path/to/vault search query="quoted phrase"
+threadleaf --vault /path/to/vault links path="Folder/Note.md"
+threadleaf --vault /path/to/vault backlinks file="Folder/Note.md"
+threadleaf --vault /path/to/vault outline path="Folder/Note.md"
 threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n"
 threadleaf --vault /path/to/vault create name="Root note"
 threadleaf --vault /path/to/vault append path="Folder/Note.md" content="Next line"
@@ -121,13 +147,15 @@ This is argument compatibility, not yet a claim of byte-for-byte output compatib
 command or error behavior will require an executable fixture. Threadleaf's native contract keeps
 explicit vault selection, structured JSON, headless execution, and script-safe diagnostics even
 where a compatibility spelling follows another application's convention. `file=` currently means
-an exact vault-relative path in Threadleaf; basename and wikilink-style resolution are not claimed.
+an exact vault-relative path in Threadleaf, as does `path=`. Basename and wikilink-style target
+resolution are not claimed.
 
 ## Next mutation boundary
 
 `delete` still comes later and must use a recoverable, revision-checked mutation rather than a
 direct CLI filesystem shortcut. Atomic automatic link rewriting for move and rename also remains
 open. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or template parameters,
-active-file defaults, or basename resolution, and does not claim complete output compatibility.
+active-file defaults, basename resolution, or graph-command `total`, `counts`, `verbose`, and
+`format` flags, and does not claim complete output compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).

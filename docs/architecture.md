@@ -195,7 +195,9 @@ command-line interface. Human-readable output is the interactive default, while 
 explicit exit codes are first-class automation contracts. The initial `vault info`, `files`,
 `read`, `search`, and recovery-backed `create` commands run without Electron and require an explicit
 vault path. Recovery-backed `append` and `prepend` commands extend that same headless surface for
-existing notes.
+existing notes. `links`, `backlinks`, `unresolved`, `orphans`, `deadends`, and `outline` project the
+same rebuildable metadata snapshot used by the desktop. Their native JSON keeps link resolution
+states and occurrence counts explicit instead of deriving a second graph model.
 
 Read-only kernel opening performs canonical path validation but creates no state directory, vault
 identity, recovery journal, or watcher. The CLI note corpus uses the same exclusions and index as

@@ -6,7 +6,12 @@ import { createMarkdownNote } from "../application/note-creation";
 import { movedMarkdownPath, moveMarkdownNote, renamedMarkdownPath } from "../application/note-move";
 import { mutateMarkdownNoteText } from "../application/note-text-mutation";
 import { maxSearchResults, SearchQueryError } from "../kernel/full-text-search";
-import { MetadataIndex } from "../kernel/metadata-index";
+import {
+  type DocumentMetadataSnapshot,
+  type LinkMetadata,
+  MetadataIndex,
+  type MetadataIndexSnapshot,
+} from "../kernel/metadata-index";
 import { displayTitleFromVaultPath } from "../kernel/note-path";
 import {
   canonicalizePotentialPath,
@@ -34,6 +39,12 @@ type CliCommandId =
   | "files"
   | "read"
   | "search"
+  | "links"
+  | "backlinks"
+  | "unresolved"
+  | "orphans"
+  | "deadends"
+  | "outline"
   | "create"
   | "append"
   | "prepend"
@@ -73,6 +84,15 @@ interface CliSearchCommand extends CliVaultCommand {
   limit: number;
 }
 
+interface CliTargetMetadataCommand extends CliVaultCommand {
+  id: "links" | "backlinks" | "outline";
+  filePath: string;
+}
+
+interface CliVaultMetadataCommand extends CliVaultCommand {
+  id: "unresolved" | "orphans" | "deadends";
+}
+
 interface CliCreateCommand extends CliVaultCommand {
   id: "create";
   filePath: string;
@@ -98,6 +118,8 @@ export type ParsedCliCommand =
   | CliFilesCommand
   | CliReadCommand
   | CliSearchCommand
+  | CliTargetMetadataCommand
+  | CliVaultMetadataCommand
   | CliCreateCommand
   | CliTextMutationCommand
   | CliMoveCommand;
@@ -168,6 +190,13 @@ function parsePositiveInteger(value: string, option: string): number {
     usageFailure(`${option} is too large.`);
   }
   return parsed;
+}
+
+function exactTargetPath(value: string): string {
+  if (value.startsWith("file=") || value.startsWith("path=")) {
+    return value.slice(value.indexOf("=") + 1);
+  }
+  return value;
 }
 
 export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
@@ -324,11 +353,43 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     ) {
       usageFailure("read requires exactly one vault-relative Markdown path.");
     }
-    const filePath = values[0]?.startsWith("file=") ? values[0].slice(5) : values[0];
+    const filePath = exactTargetPath(values[0] ?? "");
     if (!filePath) {
       usageFailure("read requires a non-empty Markdown path.");
     }
     return { id: "read", json, vaultPath, filePath };
+  }
+  if (name === "links" || name === "backlinks" || name === "outline") {
+    if (
+      values.length !== 1 ||
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
+      usageFailure(`${name} requires exactly one vault-relative Markdown path.`);
+    }
+    const filePath = exactTargetPath(values[0] ?? "");
+    if (!filePath) {
+      usageFailure(`${name} requires a non-empty Markdown path.`);
+    }
+    return { id: name, json, vaultPath, filePath };
+  }
+  if (name === "unresolved" || name === "orphans" || name === "deadends") {
+    if (
+      values.length > 0 ||
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
+      usageFailure(`${name} does not accept arguments yet.`);
+    }
+    return { id: name, json, vaultPath };
   }
   if (name === "search") {
     if (
@@ -518,6 +579,12 @@ Usage:
   threadleaf --vault <path> [--json] files [--directory <path>]
   threadleaf --vault <path> [--json] read <note.md>
   threadleaf --vault <path> [--json] search <query> [--limit <count>]
+  threadleaf --vault <path> [--json] links <note.md>
+  threadleaf --vault <path> [--json] backlinks <note.md>
+  threadleaf --vault <path> [--json] unresolved
+  threadleaf --vault <path> [--json] orphans
+  threadleaf --vault <path> [--json] deadends
+  threadleaf --vault <path> [--json] outline <note.md>
   threadleaf --vault <path> [--json] create <note> [--content <text>]
   threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
@@ -527,6 +594,9 @@ Usage:
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
   threadleaf --vault <path> search query=<text>
+  threadleaf --vault <path> links path=<note.md>
+  threadleaf --vault <path> backlinks file=<note.md>
+  threadleaf --vault <path> outline path=<note.md>
   threadleaf --vault <path> create path=<note> content=<text>
   threadleaf --vault <path> append path=<note> content=<text> [inline]
   threadleaf --vault <path> prepend path=<note> content=<text> [inline]
@@ -726,6 +796,73 @@ async function openWritableKernel(
   }
 }
 
+function indexedMarkdownDocument(
+  snapshot: MetadataIndexSnapshot,
+  rawPath: string,
+  commandName: string,
+): DocumentMetadataSnapshot {
+  const filePath = normalizeVaultPath(rawPath);
+  if (!filePath.toLocaleLowerCase("en-US").endsWith(".md")) {
+    throw new Error(`${commandName} accepts only Markdown note paths.`);
+  }
+  const document = snapshot.documents.find((candidate) => candidate.path === filePath);
+  if (!document) {
+    throw new Error(`Markdown note is not indexed in this vault: ${filePath}`);
+  }
+  return document;
+}
+
+function describeLink(link: LinkMetadata): string {
+  const target = `${link.target}${link.subpath ?? ""}`;
+  const kind = `${link.syntax}${link.embed ? " embed" : ""}`;
+  const alias = link.alias ? ` as ${link.alias}` : "";
+  if (link.resolution.status === "resolved") {
+    return `${target} [${kind}]${alias} -> ${link.resolution.path}`;
+  }
+  if (link.resolution.status === "ambiguous") {
+    return `${target} [${kind}]${alias} -> ambiguous: ${(link.resolution.candidates ?? []).join(", ")}`;
+  }
+  return `${target} [${kind}]${alias} -> unresolved`;
+}
+
+function backlinksForPath(snapshot: MetadataIndexSnapshot, targetPath: string) {
+  const backlinks = snapshot.documents.flatMap((document) => {
+    const count = document.links.filter(
+      (link) => link.resolution.status === "resolved" && link.resolution.path === targetPath,
+    ).length;
+    return count > 0 ? [{ path: document.path, count }] : [];
+  });
+  return {
+    path: targetPath,
+    total: backlinks.length,
+    occurrences: backlinks.reduce((total, backlink) => total + backlink.count, 0),
+    backlinks,
+  };
+}
+
+function nonResolvedLinks(snapshot: MetadataIndexSnapshot) {
+  const links = snapshot.documents.flatMap((document) =>
+    document.links
+      .filter((link) => link.resolution.status !== "resolved")
+      .map((link) => ({ sourcePath: document.path, ...link })),
+  );
+  return { total: links.length, links };
+}
+
+function orphanNotes(snapshot: MetadataIndexSnapshot) {
+  const files = snapshot.backlinks
+    .filter((backlink) => backlink.sources.length === 0)
+    .map((backlink) => backlink.path);
+  return { total: files.length, files };
+}
+
+function deadEndNotes(snapshot: MetadataIndexSnapshot) {
+  const files = snapshot.documents
+    .filter((document) => document.links.length === 0)
+    .map((document) => document.path);
+  return { total: files.length, files };
+}
+
 async function executeCommand(
   command: Exclude<ParsedCliCommand, CliHelpCommand>,
   options: CliRunOptions,
@@ -831,6 +968,27 @@ async function executeCommand(
     }
 
     const snapshot = index.snapshot();
+    if (command.id === "links") {
+      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      return { path: document.path, total: document.links.length, links: document.links };
+    }
+    if (command.id === "backlinks") {
+      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      return backlinksForPath(snapshot, document.path);
+    }
+    if (command.id === "unresolved") {
+      return nonResolvedLinks(snapshot);
+    }
+    if (command.id === "orphans") {
+      return orphanNotes(snapshot);
+    }
+    if (command.id === "deadends") {
+      return deadEndNotes(snapshot);
+    }
+    if (command.id === "outline") {
+      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      return { path: document.path, total: document.headings.length, headings: document.headings };
+    }
     const tags = new Set(snapshot.documents.flatMap((document) => document.tags));
     const headingCount = snapshot.documents.reduce(
       (count, document) => count + document.headings.length,
@@ -937,6 +1095,50 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
         return context ? `${location} [${context.kind}] ${context.text}` : location;
       })
       .join("\n")}\n`;
+  }
+  if (command.id === "links") {
+    const result = data as { path: string; links: LinkMetadata[] };
+    return result.links.length > 0
+      ? `Outgoing links from ${result.path}:\n${result.links.map(describeLink).join("\n")}\n`
+      : `No outgoing links from ${result.path}.\n`;
+  }
+  if (command.id === "backlinks") {
+    const result = data as {
+      path: string;
+      backlinks: Array<{ path: string; count: number }>;
+    };
+    return result.backlinks.length > 0
+      ? `Backlinks to ${result.path}:\n${result.backlinks
+          .map((backlink) => `${backlink.path} (${backlink.count})`)
+          .join("\n")}\n`
+      : `No backlinks to ${result.path}.\n`;
+  }
+  if (command.id === "unresolved") {
+    const result = data as { links: Array<LinkMetadata & { sourcePath: string }> };
+    return result.links.length > 0
+      ? `Non-resolved links:\n${result.links
+          .map((link) => `${link.sourcePath}: ${describeLink(link)}`)
+          .join("\n")}\n`
+      : "No non-resolved links.\n";
+  }
+  if (command.id === "orphans" || command.id === "deadends") {
+    const files = (data as { files: string[] }).files;
+    const label = command.id === "orphans" ? "Orphan notes" : "Dead-end notes";
+    return files.length > 0 ? `${label}:\n${files.join("\n")}\n` : `No ${label.toLowerCase()}.\n`;
+  }
+  if (command.id === "outline") {
+    const result = data as {
+      path: string;
+      headings: Array<{ level: number; text: string; line: number }>;
+    };
+    return result.headings.length > 0
+      ? `Outline for ${result.path}:\n${result.headings
+          .map(
+            (heading) =>
+              `${"  ".repeat(Math.max(0, heading.level - 1))}${heading.text} (line ${heading.line})`,
+          )
+          .join("\n")}\n`
+      : `No headings in ${result.path}.\n`;
   }
   if (command.id === "create") {
     return `Created ${(data as { path: string }).path}\n`;

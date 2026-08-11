@@ -71,6 +71,8 @@ equivalence through the real writer-to-watcher seam.
 - [x] Headless native CLI foundation over the shared read-only vault kernel and metadata index, with
       explicit vault selection, `vault info`, `files`, `read`, `search`, stable JSON, script-safe
       exit codes, and tested `file=` and `query=` compatibility spellings.
+- [x] Read-only CLI graph and outline corpus for ordered outgoing occurrences, grouped backlinks,
+      unresolved and ambiguous links, orphans, syntax-level dead ends, and line-aware headings.
 - [x] Vault-scoped local raster-image rendering with stable bounded reads, byte-sniffed MIME types,
       containment and stale-vault checks, explicit failure placeholders, and attachment-change
       invalidation without renderer filesystem access.

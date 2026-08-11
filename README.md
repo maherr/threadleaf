@@ -39,7 +39,9 @@ CodeMirror line. Sniffed local PNG, JPEG, GIF, and WebP attachments now render t
 vault-scoped, size-bounded main-process service; external, oversized, unsupported, private, and
 out-of-vault targets stay explicit placeholders. A headless CLI now inspects vaults, lists and
 reads notes, searches indexed content, and creates notes through the recoverable writer with stable
-JSON and explicit exit codes, without requiring the Electron application. The desktop New action,
+JSON and explicit exit codes, without requiring the Electron application. Read-only graph commands
+report outgoing links, grouped backlinks, non-resolved links, orphans, syntax-level dead ends, and
+line-aware outlines through the same metadata index as the desktop. The desktop New action,
 Ctrl/Cmd+N, and the CLI share one no-overwrite creation service. Missing folders are created,
 ordinary existing paths fail without mutation, and a path claimed during the final race window
 preserves the proposed bytes as a labeled conflict note. Headless append and prepend commands also
@@ -133,6 +135,10 @@ pnpm cli --vault /absolute/path/to/vault vault info
 pnpm cli --vault /absolute/path/to/vault files
 pnpm cli --vault /absolute/path/to/vault read "Folder/Note.md"
 pnpm cli --vault /absolute/path/to/vault --json search "quoted phrase" --limit 20
+pnpm cli --vault /absolute/path/to/vault links path="Folder/Note.md"
+pnpm cli --vault /absolute/path/to/vault backlinks file="Folder/Note.md"
+pnpm cli --vault /absolute/path/to/vault unresolved
+pnpm cli --vault /absolute/path/to/vault outline path="Folder/Note.md"
 pnpm cli --vault /absolute/path/to/vault create "Inbox/New thought"
 pnpm cli --vault /absolute/path/to/vault create path="Projects/Brief" content="# Brief\n"
 pnpm cli --vault /absolute/path/to/vault append path="Daily/Today" content="- [ ] Follow up"

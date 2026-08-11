@@ -75,6 +75,10 @@ describe("Threadleaf CLI arguments", () => {
       id: "read",
       filePath: "Folder/Note.md",
     });
+    expect(parseCliArguments(["read", "path=Folder/Note.md", "--vault=/vault"])).toMatchObject({
+      id: "read",
+      filePath: "Folder/Note.md",
+    });
     expect(
       parseCliArguments(["--vault", "/vault", "search", "query=linked", "notes", "--limit=7"]),
     ).toMatchObject({ id: "search", query: "linked notes", limit: 7 });
@@ -133,6 +137,15 @@ describe("Threadleaf CLI arguments", () => {
       sourcePath: "Folder/Old.md",
       targetPath: "Folder/New.md",
     });
+    for (const name of ["links", "backlinks", "outline"] as const) {
+      expect(parseCliArguments(["--vault=/vault", name, "path=Folder/Note.md"])).toMatchObject({
+        id: name,
+        filePath: "Folder/Note.md",
+      });
+    }
+    for (const name of ["unresolved", "orphans", "deadends"] as const) {
+      expect(parseCliArguments(["--vault=/vault", name])).toMatchObject({ id: name });
+    }
   });
 
   it("rejects ambiguous or unsupported invocations as usage errors", async () => {
@@ -168,6 +181,10 @@ describe("Threadleaf CLI arguments", () => {
         "--content=Other",
       ]),
     ).toThrow("option or parameter, not both");
+    expect(() => parseCliArguments(["--vault", "/vault", "links"])).toThrow("requires exactly one");
+    expect(() => parseCliArguments(["--vault", "/vault", "orphans", "extra"])).toThrow(
+      "does not accept arguments",
+    );
   });
 
   it("shows help without requiring a vault", async () => {
@@ -702,5 +719,192 @@ describe("Threadleaf CLI read-only workflows", () => {
       command: "search",
       error: { code: "QUERY", message: expect.stringContaining("at most 256") },
     });
+  });
+});
+
+describe("Threadleaf CLI graph and outline workflows", () => {
+  beforeEach(async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Graph.md"),
+      [
+        "# Graph root",
+        "",
+        "### Deep branch",
+        "",
+        "[[Folder/Beta]]",
+        "[[Folder/Beta#Beta heading|B]]",
+        "[[Missing]]",
+        "[[Dup]]",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.mkdir(path.join(vaultPath, "One"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Two"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "One", "Dup.md"), "# First duplicate\n", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Two", "Dup.md"), "# Second duplicate\n", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Lonely.md"), "No links here.\n", "utf8");
+  });
+
+  it("lists ordered outgoing occurrences with explicit resolution states", async () => {
+    const result = await invoke(["--json", "--vault", vaultPath, "links", "path=Graph.md"]);
+
+    expect(result.exitCode).toBe(cliExitCodes.success);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      command: "links",
+      data: {
+        path: "Graph.md",
+        total: 4,
+        links: [
+          {
+            target: "Folder/Beta",
+            subpath: null,
+            alias: null,
+            embed: false,
+            syntax: "wiki",
+            resolution: { status: "resolved", path: "Folder/Beta.md" },
+          },
+          {
+            target: "Folder/Beta",
+            subpath: "#Beta heading",
+            alias: "B",
+            resolution: { status: "resolved", path: "Folder/Beta.md" },
+          },
+          { target: "Missing", resolution: { status: "unresolved" } },
+          {
+            target: "Dup",
+            resolution: {
+              status: "ambiguous",
+              candidates: ["One/Dup.md", "Two/Dup.md"],
+            },
+          },
+        ],
+      },
+    });
+
+    const human = await invoke(["--vault", vaultPath, "links", "Graph.md"]);
+    expect(human.stdout).toBe(
+      [
+        "Outgoing links from Graph.md:",
+        "Folder/Beta [wiki] -> Folder/Beta.md",
+        "Folder/Beta#Beta heading [wiki] as B -> Folder/Beta.md",
+        "Missing [wiki] -> unresolved",
+        "Dup [wiki] -> ambiguous: One/Dup.md, Two/Dup.md",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("groups backlinks by source while retaining occurrence counts", async () => {
+    const result = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "backlinks",
+      "file=Folder/Beta.md",
+    ]);
+
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      command: "backlinks",
+      data: {
+        path: "Folder/Beta.md",
+        total: 2,
+        occurrences: 3,
+        backlinks: [
+          { path: "Alpha.md", count: 1 },
+          { path: "Graph.md", count: 2 },
+        ],
+      },
+    });
+    const human = await invoke(["--vault", vaultPath, "backlinks", "Folder/Beta.md"]);
+    expect(human.stdout).toBe("Backlinks to Folder/Beta.md:\nAlpha.md (1)\nGraph.md (2)\n");
+  });
+
+  it("reports every unresolved or ambiguous occurrence with its source", async () => {
+    const result = await invoke(["--json", "--vault", vaultPath, "unresolved"]);
+
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      command: "unresolved",
+      data: {
+        total: 2,
+        links: [
+          {
+            sourcePath: "Graph.md",
+            target: "Missing",
+            resolution: { status: "unresolved" },
+          },
+          {
+            sourcePath: "Graph.md",
+            target: "Dup",
+            resolution: {
+              status: "ambiguous",
+              candidates: ["One/Dup.md", "Two/Dup.md"],
+            },
+          },
+        ],
+      },
+    });
+    const human = await invoke(["--vault", vaultPath, "unresolved"]);
+    expect(human.stdout).toBe(
+      [
+        "Non-resolved links:",
+        "Graph.md: Missing [wiki] -> unresolved",
+        "Graph.md: Dup [wiki] -> ambiguous: One/Dup.md, Two/Dup.md",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("lists orphans and syntax-level dead ends deterministically", async () => {
+    const orphans = await invoke(["--json", "--vault", vaultPath, "orphans"]);
+    expect(JSON.parse(orphans.stdout)).toMatchObject({
+      command: "orphans",
+      data: {
+        total: 5,
+        files: ["Alpha.md", "Graph.md", "Lonely.md", "One/Dup.md", "Two/Dup.md"],
+      },
+    });
+
+    const deadends = await invoke(["--json", "--vault", vaultPath, "deadends"]);
+    expect(JSON.parse(deadends.stdout)).toMatchObject({
+      command: "deadends",
+      data: {
+        total: 4,
+        files: ["Folder/Beta.md", "Lonely.md", "One/Dup.md", "Two/Dup.md"],
+      },
+    });
+  });
+
+  it("returns a line-aware outline and never creates CLI state", async () => {
+    const result = await invoke(["--json", "--vault", vaultPath, "outline", "Graph.md"]);
+
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      command: "outline",
+      data: {
+        path: "Graph.md",
+        total: 2,
+        headings: [
+          { level: 1, text: "Graph root", line: 1 },
+          { level: 3, text: "Deep branch", line: 3 },
+        ],
+      },
+    });
+    const human = await invoke(["--vault", vaultPath, "outline", "path=Graph.md"]);
+    expect(human.stdout).toBe(
+      "Outline for Graph.md:\nGraph root (line 1)\n    Deep branch (line 3)\n",
+    );
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails closed when a target note is missing, private, or not Markdown", async () => {
+    for (const target of ["Missing.md", ".obsidian/Hidden.md", "asset.png"]) {
+      const result = await invoke(["--json", "--vault", vaultPath, "links", `path=${target}`]);
+      expect(result.exitCode).toBe(cliExitCodes.vault);
+      expect(JSON.parse(result.stderr)).toMatchObject({
+        command: "links",
+        error: { code: "VAULT" },
+      });
+    }
   });
 });

@@ -55,6 +55,34 @@ if (
 ) {
   throw new Error("Built CLI returned an unexpected vault info envelope.");
 }
+const cliGraphResult = spawnSync(
+  process.execPath,
+  [
+    cliPath,
+    "--vault",
+    path.join(projectRoot, "fixtures", "vaults", "basic"),
+    "--json",
+    "links",
+    "path=Welcome.md",
+  ],
+  { encoding: "utf8" },
+);
+if (cliGraphResult.status !== 0 || cliGraphResult.stderr !== "") {
+  throw new Error(
+    `Built CLI graph smoke test failed: ${cliGraphResult.stderr || `exit ${cliGraphResult.status}`}`,
+  );
+}
+const cliGraphEnvelope = JSON.parse(cliGraphResult.stdout);
+if (
+  cliGraphEnvelope.schemaVersion !== 1 ||
+  cliGraphEnvelope.ok !== true ||
+  cliGraphEnvelope.command !== "links" ||
+  cliGraphEnvelope.data?.path !== "Welcome.md" ||
+  cliGraphEnvelope.data?.total !== 1 ||
+  cliGraphEnvelope.data?.links?.[0]?.resolution?.path !== "Linked Note.md"
+) {
+  throw new Error("Built CLI returned an unexpected graph envelope.");
+}
 try {
   await access(path.join(projectRoot, "fixtures", "vaults", ".threadleaf-cli-read-only-state"));
   throw new Error("Built read-only CLI created a state directory.");
@@ -65,5 +93,5 @@ try {
 }
 
 console.log(
-  `Verified Electron entry points, headless CLI, and ${assetPaths.length} relative renderer assets.`,
+  `Verified Electron entry points, headless CLI graph behavior, and ${assetPaths.length} relative renderer assets.`,
 );
