@@ -213,10 +213,12 @@ export class VaultPathPolicy {
     entries.sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of entries) {
+      const foldedName = entry.name.toLocaleLowerCase("en-US");
       if (
-        entry.name === ".obsidian" ||
-        entry.name === ".git" ||
-        entry.name.startsWith(".threadleaf-")
+        foldedName === ".obsidian" ||
+        foldedName === ".git" ||
+        foldedName === ".trash" ||
+        foldedName.startsWith(".threadleaf-")
       ) {
         continue;
       }

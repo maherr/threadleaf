@@ -68,6 +68,10 @@ describe("vault image target resolution", () => {
       status: "rejected",
       reason: "private",
     });
+    expect(resolveVaultImageTarget("Notes/Current.md", "/.trash/deleted.png")).toMatchObject({
+      status: "rejected",
+      reason: "private",
+    });
     expect(resolveVaultImageTarget("Notes/Current.md", "../../../outside.png")).toMatchObject({
       status: "rejected",
       reason: "outside-vault",

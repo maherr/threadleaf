@@ -30,6 +30,7 @@ describe("Markdown note paths", () => {
     expect(() => normalizeMarkdownNotePath("Folder/")).toThrow("name a file");
     expect(() => normalizeMarkdownNotePath(".Obsidian/Hidden")).toThrow("private application");
     expect(() => normalizeMarkdownNotePath("Folder/.git/Hidden")).toThrow("private application");
+    expect(() => normalizeMarkdownNotePath(".Trash/Deleted")).toThrow("private application");
     expect(() => normalizeMarkdownNotePath(".threadleaf-write-secret")).toThrow(
       "private application",
     );

@@ -51,7 +51,10 @@ and rename commands project the complete post-move index before writing. They pr
 every wiki and Markdown link keeps the same resolution, and otherwise return exact blockers without
 changing the vault. The desktop Move action and Ctrl/Cmd+Shift+M use that same preflight, bind the
 request to the active vault and note revision, show exact link-resolution blockers, reject
-destination collisions, and remap open tabs after a successful move. Runtime-owned tabs keep one
+destination collisions, and remap open tabs after a successful move. Headless delete moves exact
+bytes to the same path under vault-local `.trash/`; dedicated list and restore commands keep that
+recovery content outside the ordinary corpus and never overwrite either side of a collision.
+Runtime-owned tabs keep one
 ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
 externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
 right neighbor, then its left neighbor. Their order and active note restore per vault from
@@ -124,8 +127,8 @@ THREADLEAF_VAULT_PATH=/absolute/path/to/disposable-vault pnpm start
 
 This non-packaged development override is not persisted and is ignored by packaged builds. The
 `pnpm check` gate verifies the packaged Electron entry points and confirms that renderer assets
-remain loadable over `file://`. It also executes the built CLI against the synthetic vault and
-validates its versioned JSON envelope.
+remain loadable over `file://`. It also executes the built CLI against disposable synthetic-vault
+copies, validates its versioned JSON envelope, and proves exact-byte delete and restore behavior.
 
 The development CLI requires an explicit vault and never consults the desktop application's saved
 selection:
@@ -145,6 +148,9 @@ pnpm cli --vault /absolute/path/to/vault append path="Daily/Today" content="- [ 
 pnpm cli --vault /absolute/path/to/vault prepend "Projects/Brief.md" --content="Draft context"
 pnpm cli --vault /absolute/path/to/vault move "Inbox/Thought.md" --to "Archive/Thought.md"
 pnpm cli --vault /absolute/path/to/vault rename path="Draft.md" name="Published"
+pnpm cli --vault /absolute/path/to/vault delete path="Archive/Old thought.md"
+pnpm cli --vault /absolute/path/to/vault trash list
+pnpm cli --vault /absolute/path/to/vault restore path="Archive/Old thought.md"
 ```
 
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported

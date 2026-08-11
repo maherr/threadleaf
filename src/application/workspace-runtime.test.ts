@@ -428,7 +428,7 @@ describe("WorkspaceRuntime", () => {
     });
   });
 
-  it("rejects stale-vault and private create requests before writing", async () => {
+  it("rejects stale-vault and private create or save requests before writing", async () => {
     const workspace = await openRuntime();
 
     await expect(workspace.createNote("Wrong vault", "", "stale-vault")).rejects.toThrow(
@@ -437,9 +437,20 @@ describe("WorkspaceRuntime", () => {
     await expect(workspace.createNote(".obsidian/Private", "", workspace.vaultId)).rejects.toThrow(
       "private application",
     );
+    await expect(workspace.createNote(".trash/Private", "", workspace.vaultId)).rejects.toThrow(
+      "private application",
+    );
     await expect(workspace.createNote("../Outside", "", workspace.vaultId)).rejects.toThrow(
       "traversal",
     );
+    const opened = await workspace.openNote("Welcome.md");
+    const revision = opened.workspace?.activeNote?.revision;
+    if (!revision) {
+      throw new Error("Expected an active note revision.");
+    }
+    await expect(
+      workspace.saveNote(".trash/Welcome.md", "private", revision, workspace.vaultId),
+    ).rejects.toThrow("private application");
     await expect(fs.stat(path.join(vaultPath, "Wrong vault.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });

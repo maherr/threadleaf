@@ -5,6 +5,11 @@ import path from "node:path";
 import { createMarkdownNote } from "../application/note-creation";
 import { movedMarkdownPath, moveMarkdownNote, renamedMarkdownPath } from "../application/note-move";
 import { mutateMarkdownNoteText } from "../application/note-text-mutation";
+import {
+  listTrashedMarkdownNotes,
+  restoreTrashedMarkdownNote,
+  trashMarkdownNote,
+} from "../application/note-trash";
 import { maxSearchResults, SearchQueryError } from "../kernel/full-text-search";
 import {
   type DocumentMetadataSnapshot,
@@ -49,7 +54,10 @@ type CliCommandId =
   | "append"
   | "prepend"
   | "move"
-  | "rename";
+  | "rename"
+  | "delete"
+  | "trash.list"
+  | "restore";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -112,6 +120,15 @@ interface CliMoveCommand extends CliVaultCommand {
   targetPath: string;
 }
 
+interface CliTrashMutationCommand extends CliVaultCommand {
+  id: "delete" | "restore";
+  filePath: string;
+}
+
+interface CliTrashListCommand extends CliVaultCommand {
+  id: "trash.list";
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
@@ -122,7 +139,9 @@ export type ParsedCliCommand =
   | CliVaultMetadataCommand
   | CliCreateCommand
   | CliTextMutationCommand
-  | CliMoveCommand;
+  | CliMoveCommand
+  | CliTrashMutationCommand
+  | CliTrashListCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -278,6 +297,11 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       inline = true;
       continue;
     }
+    if (token === "--permanent") {
+      usageFailure(
+        "Threadleaf does not expose permanent deletion; recoverable trash is mandatory.",
+      );
+    }
     if (token === "--to" || token.startsWith("--to=")) {
       if (destination !== null) {
         usageFailure("--to may be supplied only once.");
@@ -358,6 +382,45 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure("read requires a non-empty Markdown path.");
     }
     return { id: "read", json, vaultPath, filePath };
+  }
+  if (
+    (name === "trash" && values[0] === "list" && values.length === 1) ||
+    (name === "trash:list" && values.length === 0)
+  ) {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
+      usageFailure("trash list does not accept options.");
+    }
+    return { id: "trash.list", json, vaultPath };
+  }
+  if (name === "delete" || name === "restore") {
+    if (values.includes("permanent")) {
+      usageFailure(
+        "Threadleaf does not expose permanent deletion; recoverable trash is mandatory.",
+      );
+    }
+    if (
+      values.length !== 1 ||
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
+      usageFailure(`${name} requires exactly one vault-relative Markdown path.`);
+    }
+    const filePath = exactTargetPath(values[0] ?? "");
+    if (!filePath) {
+      usageFailure(`${name} requires a non-empty Markdown path.`);
+    }
+    return { id: name, json, vaultPath, filePath };
   }
   if (name === "links" || name === "backlinks" || name === "outline") {
     if (
@@ -590,6 +653,9 @@ Usage:
   threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] move <note> --to <path>
   threadleaf --vault <path> [--json] rename <note> --name <filename>
+  threadleaf --vault <path> [--json] delete <note>
+  threadleaf --vault <path> [--json] trash list
+  threadleaf --vault <path> [--json] restore <note>
 
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
@@ -602,6 +668,8 @@ Compatibility spellings:
   threadleaf --vault <path> prepend path=<note> content=<text> [inline]
   threadleaf --vault <path> move path=<note> to=<path>
   threadleaf --vault <path> rename path=<note> name=<filename>
+  threadleaf --vault <path> delete path=<note>
+  threadleaf --vault <path> restore path=<note>
 
 Commands are headless and never require a running Electron process.
 `;
@@ -872,7 +940,9 @@ async function executeCommand(
     command.id === "append" ||
     command.id === "prepend" ||
     command.id === "move" ||
-    command.id === "rename"
+    command.id === "rename" ||
+    command.id === "delete" ||
+    command.id === "restore"
       ? await openWritableKernel(command, options)
       : await openReadOnlyKernel(command, options);
   try {
@@ -916,6 +986,22 @@ async function executeCommand(
       }
       return outcome;
     }
+    if (command.id === "delete" || command.id === "restore") {
+      const outcome =
+        command.id === "delete"
+          ? await trashMarkdownNote(kernel, command.filePath)
+          : await restoreTrashedMarkdownNote(kernel, command.filePath);
+      if (outcome.status === "conflict") {
+        const operation = command.id === "delete" ? "move to recoverable trash" : "restore";
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `Could not ${operation} ${outcome.from} to ${outcome.to}: ${outcome.reason}. No files were changed.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
+    }
     if (command.id === "append" || command.id === "prepend") {
       const outcome = await mutateMarkdownNoteText(
         kernel,
@@ -953,6 +1039,9 @@ async function executeCommand(
       }
       const note = await kernel.readText(filePath);
       return note;
+    }
+    if (command.id === "trash.list") {
+      return listTrashedMarkdownNotes(kernel);
     }
 
     const index = await MetadataIndex.build(kernel);
@@ -1039,7 +1128,9 @@ async function executeWithCommandState(
     command.id !== "append" &&
     command.id !== "prepend" &&
     command.id !== "move" &&
-    command.id !== "rename"
+    command.id !== "rename" &&
+    command.id !== "delete" &&
+    command.id !== "restore"
   ) {
     return executeCommand(command, options);
   }
@@ -1156,6 +1247,20 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "rename") {
     const result = data as { from: string; to: string };
     return `Renamed ${result.from} to ${result.to}\n`;
+  }
+  if (command.id === "delete") {
+    const result = data as { from: string; to: string };
+    return `Deleted ${result.from} to ${result.to}\n`;
+  }
+  if (command.id === "restore") {
+    const result = data as { from: string; to: string };
+    return `Restored ${result.from} to ${result.to}\n`;
+  }
+  if (command.id === "trash.list") {
+    const entries = (data as { entries: Array<{ path: string; trashPath: string }> }).entries;
+    return entries.length > 0
+      ? `Recoverable trash:\n${entries.map((entry) => `${entry.path} <- ${entry.trashPath}`).join("\n")}\n`
+      : "Recoverable trash is empty.\n";
   }
   const info = data as {
     name: string;

@@ -25,6 +25,9 @@ threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text"
 threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
 threadleaf --vault /path/to/vault move "Folder/Note.md" --to "Archive/Note.md"
 threadleaf --vault /path/to/vault rename "Folder/Note.md" --name "New name"
+threadleaf --vault /path/to/vault delete "Folder/Note.md"
+threadleaf --vault /path/to/vault trash list
+threadleaf --vault /path/to/vault restore "Folder/Note.md"
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
@@ -46,10 +49,14 @@ During development, prefix the same arguments with `pnpm cli`.
 | `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `move` | Source and destination paths | Link-integrity preflight plus recoverable rename |
 | `rename` | Source and same-folder destination | Link-integrity preflight plus recoverable rename |
+| `delete` | Source and recoverable trash paths | Revision-checked recoverable rename |
+| `trash list` or `trash:list` | Original path, trash path, revision, and byte size | Dedicated read-only trash inspection |
+| `restore` | Trash and restored paths | Revision-checked recoverable rename |
 
-The note corpus excludes `.obsidian/`, `.git/`, and Threadleaf transaction artifacts. Read-only
-kernel opening performs path validation but creates no state directory, vault identity, recovery
-journal, or watcher.
+The note corpus excludes `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts.
+Read-only kernel opening performs path validation but creates no state directory, vault identity,
+recovery journal, or watcher. `trash list` deliberately inspects `.trash/` through a dedicated path
+without admitting its contents to files, read, search, graph, watcher, workspace, or image results.
 
 The graph commands expose the index's distinctions instead of flattening them. `links` retains
 source order and duplicate occurrences. `backlinks` groups resolved occurrences by source, while
@@ -94,6 +101,15 @@ For `move`, `to=` is an exact note path unless it ends in `/` or `\`, in which c
 the source filename inside that explicit destination folder. `rename` accepts one filename without
 directory separators and keeps the note in its current folder. Both add `.md` when omitted.
 
+`delete` is recoverable by construction. It stores a note at the same relative path under
+vault-local `.trash/`, preserves exact bytes, and intentionally allows incoming links to become
+unresolved. A prior trash entry with that path blocks another delete instead of being overwritten.
+`restore` accepts either the original path or its `.trash/` path and moves the entry back only when
+the original path is free. This exact one-to-one mapping avoids hidden manifests and makes recovery
+understandable in any file browser. Both operations compare the source revision again at commit and
+recover through the same rename journal after interruption. Threadleaf rejects `permanent` deletion;
+manual removal from `.trash/` remains outside the current CLI contract.
+
 ## JSON contract
 
 Add `--json` anywhere before `--` to receive a versioned success envelope on standard output:
@@ -121,7 +137,7 @@ shape with `ok: false` and a stable error code. Without it, standard error recei
 | 2 | `USAGE` | Invalid command, option, or argument |
 | 3 | `VAULT` | Vault, path, UTF-8, or indexed-note failure |
 | 4 | `QUERY` | Search query exceeds the documented bounds |
-| 5 | `CONFLICT` | A target exists, a race was preserved, link integrity blocks a move, or another CLI mutation is active |
+| 5 | `CONFLICT` | A target exists, a race was preserved, link integrity blocks a move, trash recovery collides, or another CLI mutation is active |
 
 ## Compatibility spellings
 
@@ -141,6 +157,8 @@ threadleaf --vault /path/to/vault append path="Folder/Note.md" content="Next lin
 threadleaf --vault /path/to/vault prepend file="Folder/Note.md" content="Lead" inline
 threadleaf --vault /path/to/vault move path="Folder/Note.md" to="Archive/Note.md"
 threadleaf --vault /path/to/vault rename file="Folder/Note.md" name="New name"
+threadleaf --vault /path/to/vault delete path="Folder/Note.md"
+threadleaf --vault /path/to/vault restore path="Folder/Note.md"
 ```
 
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
@@ -150,12 +168,13 @@ where a compatibility spelling follows another application's convention. `file=`
 an exact vault-relative path in Threadleaf, as does `path=`. Basename and wikilink-style target
 resolution are not claimed.
 
-## Next mutation boundary
+## Current compatibility boundary
 
-`delete` still comes later and must use a recoverable, revision-checked mutation rather than a
-direct CLI filesystem shortcut. Atomic automatic link rewriting for move and rename also remains
-open. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or template parameters,
-active-file defaults, basename resolution, or graph-command `total`, `counts`, `verbose`, and
-`format` flags, and does not claim complete output compatibility.
+Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberately omits its
+`permanent` flag. Atomic automatic link rewriting for move and rename also remains open. Threadleaf
+does not yet accept Obsidian's `open`, `overwrite`, or template parameters, active-file defaults,
+basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags, and does not
+claim complete output compatibility. `trash list`, `trash:list`, and `restore` are native Threadleaf
+recovery commands rather than claimed Obsidian CLI compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).

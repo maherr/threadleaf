@@ -96,6 +96,7 @@ describe("VaultKernel path policy", () => {
       recursive: true,
     });
     await fs.mkdir(path.join(vaultPath, ".git", "notes"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, ".trash", "Folder"), { recursive: true });
     await fs.writeFile(path.join(vaultPath, "Root.md"), "root", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "A.md"), "a", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "B.md"), "b", "utf8");
@@ -105,6 +106,7 @@ describe("VaultKernel path policy", () => {
       "utf8",
     );
     await fs.writeFile(path.join(vaultPath, ".git", "notes", "README.md"), "git metadata", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".trash", "Folder", "Deleted.md"), "deleted", "utf8");
     const kernel = await openKernel();
 
     await expect(kernel.listMarkdownPaths()).resolves.toEqual([
@@ -116,6 +118,7 @@ describe("VaultKernel path policy", () => {
       "Folder/A.md",
       "Folder/Nested/B.md",
     ]);
+    await expect(kernel.listMarkdownPaths(".trash")).resolves.toEqual([".trash/Folder/Deleted.md"]);
     await expect(kernel.listMarkdownPaths("../")).rejects.toBeInstanceOf(VaultPathError);
   });
 });

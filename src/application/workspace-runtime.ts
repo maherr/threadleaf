@@ -1,7 +1,7 @@
 import { SearchQueryError } from "../kernel/full-text-search";
 import { VaultIndexReactor } from "../kernel/metadata-index";
 import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
-import { displayTitleFromVaultPath } from "../kernel/note-path";
+import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
 import { normalizeVaultPath } from "../kernel/path-policy";
 import type { StateRootPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
@@ -649,9 +649,7 @@ export class WorkspaceRuntime {
     if (!normalizedPath.toLowerCase().endsWith(".md")) {
       throw new Error("The workspace editor can save only Markdown notes.");
     }
-    if (normalizedPath.toLowerCase().startsWith(".obsidian/")) {
-      throw new Error("The workspace editor never writes inside .obsidian.");
-    }
+    normalizeMarkdownNotePath(normalizedPath);
 
     const outcome = await this.kernel.writeText(
       normalizedPath,

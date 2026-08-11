@@ -159,6 +159,8 @@ describe("NodeVaultWatcher", () => {
       "utf8",
     );
     await fs.writeFile(path.join(vaultPath, ".threadleaf-write-deadbeef.tmp"), "temp", "utf8");
+    await fs.mkdir(path.join(vaultPath, ".trash"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, ".trash", "Deleted.md"), "deleted", "utf8");
     const outsidePath = path.join(sandboxPath, "Outside.md");
     await fs.writeFile(outsidePath, "outside", "utf8");
     await fs.symlink(outsidePath, path.join(vaultPath, "Outside-link.md"));

@@ -199,10 +199,17 @@ existing notes. `links`, `backlinks`, `unresolved`, `orphans`, `deadends`, and `
 same rebuildable metadata snapshot used by the desktop. Their native JSON keeps link resolution
 states and occurrence counts explicit instead of deriving a second graph model.
 
+Recoverable `delete` moves exact note bytes to the same relative path under vault-local `.trash/`.
+`trash list` exposes those entries without adding them to the ordinary note corpus, and `restore`
+moves one back to its exact original path. Both directions use the kernel's revision-checked,
+journaled rename. A collision at either path blocks without overwrite or an invented suffix, so the
+trash path itself is sufficient recovery metadata. The CLI exposes no permanent-delete path.
+
 Read-only kernel opening performs canonical path validation but creates no state directory, vault
 identity, recovery journal, or watcher. The CLI note corpus uses the same exclusions and index as
-the desktop workspace, so `.obsidian/`, `.git/`, and Threadleaf transaction artifacts do not leak
-into file listing, direct note reads, or search.
+the desktop workspace, so `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts do
+not leak into file listing, direct note reads, or search. Dedicated trash inspection is the only
+read-only exception.
 
 An Obsidian-style compatibility facade may accept familiar public command names and arguments, but
 it translates into Threadleaf's own typed command model. It does not make the GUI a hidden CLI

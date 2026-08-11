@@ -20,7 +20,12 @@ export function normalizeMarkdownNotePath(input: string): string {
   }
   const privateSegment = normalized.split("/").find((segment) => {
     const folded = segment.toLocaleLowerCase("en-US");
-    return folded === ".obsidian" || folded === ".git" || folded.startsWith(".threadleaf-");
+    return (
+      folded === ".obsidian" ||
+      folded === ".git" ||
+      folded === ".trash" ||
+      folded.startsWith(".threadleaf-")
+    );
   });
   if (privateSegment) {
     throw new Error(

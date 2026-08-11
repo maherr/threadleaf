@@ -83,6 +83,8 @@ equivalence through the real writer-to-watcher seam.
       prepend, LF/CRLF separators, inline mode, and full-proposal conflict preservation.
 - [x] Recovery-backed CLI move and rename with destination no-clobber behavior and a whole-vault
       projected-index preflight that blocks every detected internal-link resolution change.
+- [x] Recovery-backed CLI delete, trash inspection, and restore with exact-path `.trash/` mapping,
+      revision checks, collision refusal, interruption recovery, and normal-corpus exclusion.
 - [x] Revision-bound desktop move and rename with exact blocker evidence, destination collision and
       dirty-draft guards, and open-tab remapping after a successful link-safe move.
 - [x] Ordered session tabs with path deduplication, dirty-draft guards, neighbor selection on close,

@@ -137,6 +137,20 @@ describe("Threadleaf CLI arguments", () => {
       sourcePath: "Folder/Old.md",
       targetPath: "Folder/New.md",
     });
+    expect(parseCliArguments(["--vault=/vault", "delete", "path=Folder/Old.md"])).toMatchObject({
+      id: "delete",
+      filePath: "Folder/Old.md",
+    });
+    expect(parseCliArguments(["--vault=/vault", "restore", "file=Folder/Old.md"])).toMatchObject({
+      id: "restore",
+      filePath: "Folder/Old.md",
+    });
+    expect(parseCliArguments(["--vault=/vault", "trash", "list"])).toMatchObject({
+      id: "trash.list",
+    });
+    expect(parseCliArguments(["--vault=/vault", "trash:list"])).toMatchObject({
+      id: "trash.list",
+    });
     for (const name of ["links", "backlinks", "outline"] as const) {
       expect(parseCliArguments(["--vault=/vault", name, "path=Folder/Note.md"])).toMatchObject({
         id: name,
@@ -185,6 +199,9 @@ describe("Threadleaf CLI arguments", () => {
     expect(() => parseCliArguments(["--vault", "/vault", "orphans", "extra"])).toThrow(
       "does not accept arguments",
     );
+    expect(() =>
+      parseCliArguments(["--vault", "/vault", "delete", "Note.md", "permanent"]),
+    ).toThrow("permanent deletion");
   });
 
   it("shows help without requiring a vault", async () => {
@@ -590,6 +607,149 @@ describe("Threadleaf CLI move and rename workflows", () => {
       ]);
       expect(result.exitCode).toBe(cliExitCodes.usage);
       expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: "USAGE" } });
+    }
+    await expect(fs.stat(path.join(sandboxPath, "Outside.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+});
+
+describe("Threadleaf CLI recoverable deletion workflows", () => {
+  it("deletes a referenced note to vault-local trash without treating it as an ordinary note", async () => {
+    const before = await fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8");
+    const result = await invoke(["--json", "--vault", vaultPath, "delete", "path=Folder/Beta.md"]);
+
+    expect(result.exitCode).toBe(cliExitCodes.success);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "delete",
+      data: {
+        status: "committed",
+        from: "Folder/Beta.md",
+        to: ".trash/Folder/Beta.md",
+      },
+    });
+    await expect(
+      fs.readFile(path.join(vaultPath, ".trash", "Folder", "Beta.md"), "utf8"),
+    ).resolves.toBe(before);
+    await expect(fs.stat(path.join(vaultPath, "Folder", "Beta.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    const files = await invoke(["--vault", vaultPath, "files"]);
+    expect(files.stdout).toBe("Alpha.md\n");
+    const unresolved = await invoke(["--json", "--vault", vaultPath, "unresolved"]);
+    expect(JSON.parse(unresolved.stdout)).toMatchObject({
+      data: {
+        total: 1,
+        links: [{ sourcePath: "Alpha.md", target: "Folder/Beta" }],
+      },
+    });
+  });
+
+  it("lists recoverable trash without creating read-only CLI state", async () => {
+    await fs.mkdir(path.join(vaultPath, ".trash", "Archive"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, ".trash", "Archive", "Old.md"), "old", "utf8");
+
+    const json = await invoke(["--json", "--vault", vaultPath, "trash:list"]);
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      command: "trash.list",
+      data: {
+        total: 1,
+        entries: [
+          {
+            path: "Archive/Old.md",
+            trashPath: ".trash/Archive/Old.md",
+            revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+            size: 3,
+          },
+        ],
+      },
+    });
+    const human = await invoke(["--vault", vaultPath, "trash", "list"]);
+    expect(human.stdout).toBe("Recoverable trash:\nArchive/Old.md <- .trash/Archive/Old.md\n");
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("restores exact bytes to their original path", async () => {
+    const before = await fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8");
+    await invoke(["--vault", vaultPath, "delete", "Folder/Beta.md"]);
+
+    const restored = await invoke(["--vault", vaultPath, "restore", "Folder/Beta"]);
+
+    expect(restored).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Restored .trash/Folder/Beta.md to Folder/Beta.md\n",
+      stderr: "",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8")).resolves.toBe(
+      before,
+    );
+    await expect(
+      fs.stat(path.join(vaultPath, ".trash", "Folder", "Beta.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects delete and restore collisions without overwriting either copy", async () => {
+    const sourcePath = path.join(vaultPath, "Folder", "Beta.md");
+    const trashPath = path.join(vaultPath, ".trash", "Folder", "Beta.md");
+    const source = await fs.readFile(sourcePath, "utf8");
+    await fs.mkdir(path.dirname(trashPath), { recursive: true });
+    await fs.writeFile(trashPath, "earlier", "utf8");
+
+    const deleteCollision = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "delete",
+      "Folder/Beta.md",
+    ]);
+    expect(deleteCollision.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(deleteCollision.stderr)).toMatchObject({
+      command: "delete",
+      error: {
+        code: "CONFLICT",
+        details: { status: "conflict", reason: "target-exists" },
+      },
+    });
+    await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe(source);
+    await expect(fs.readFile(trashPath, "utf8")).resolves.toBe("earlier");
+
+    const restoreCollision = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "restore",
+      ".trash/Folder/Beta.md",
+    ]);
+    expect(restoreCollision.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(restoreCollision.stderr)).toMatchObject({
+      command: "restore",
+      error: {
+        code: "CONFLICT",
+        details: { status: "conflict", reason: "target-exists" },
+      },
+    });
+    await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe(source);
+    await expect(fs.readFile(trashPath, "utf8")).resolves.toBe("earlier");
+  });
+
+  it("fails closed on missing, private, and traversal targets", async () => {
+    for (const [command, target] of [
+      ["delete", "Missing.md"],
+      ["delete", ".trash/Folder/Beta.md"],
+      ["delete", "../Outside.md"],
+      ["restore", "Missing.md"],
+      ["restore", "../Outside.md"],
+    ] as const) {
+      const result = await invoke(["--json", "--vault", vaultPath, command, target]);
+      expect(result.exitCode).toBe(cliExitCodes.vault);
+      expect(JSON.parse(result.stderr)).toMatchObject({
+        command,
+        error: { code: "VAULT" },
+      });
     }
     await expect(fs.stat(path.join(sandboxPath, "Outside.md"))).rejects.toMatchObject({
       code: "ENOENT",

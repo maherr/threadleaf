@@ -44,7 +44,12 @@ function unavailable(
 function isPrivateVaultPath(relativePath: string): boolean {
   return relativePath.split("/").some((segment) => {
     const folded = segment.toLocaleLowerCase("en-US");
-    return folded === ".obsidian" || folded === ".git" || folded.startsWith(".threadleaf-");
+    return (
+      folded === ".obsidian" ||
+      folded === ".git" ||
+      folded === ".trash" ||
+      folded.startsWith(".threadleaf-")
+    );
   });
 }
 

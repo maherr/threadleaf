@@ -67,3 +67,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Desktop move and rename through the whole-vault link-integrity preflight, with vault and revision
   binding, exact before/after blocker evidence, no-clobber conflicts, dirty-draft protection,
   remappable Ctrl/Cmd+Shift+M, and open-tab remapping after a successful move.
+- Recoverable CLI delete, trash inspection, and restore with exact-path vault-local `.trash/`
+  storage, revision and collision checks, crash recovery, exact-byte build smoke coverage, and
+  exclusion from ordinary note, watcher, workspace, search, and image surfaces.
