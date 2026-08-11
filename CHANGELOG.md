@@ -20,8 +20,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Safe vault-kernel foundation with canonical path containment, stable content revisions,
   single-writer serialization, durable recovery journals, no-clobber writes, explicit conflict
   copies, recoverable renames, and interruption-matrix tests.
-- Sequenced and debounced filesystem watcher with inode-based rename pairing, explicit rescan
-  requests, operation-aware attribution, and a live backend fixture.
+- Sequenced and debounced filesystem watcher with inode-based rename pairing, full or targeted
+  subtree rescan requests, operation-aware attribution, and a live backend fixture.
 - Rebuildable Markdown metadata index for headings, basic properties, tags, links, embeds,
   backlinks, duplicate names, and unresolved targets, with incremental-versus-clean equivalence
   tests across the real writer and watcher seam.

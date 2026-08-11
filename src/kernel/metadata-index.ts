@@ -1,4 +1,5 @@
 import path from "node:path";
+import { normalizeVaultDirectoryPath } from "./path-policy";
 import type { VaultReadPort, VaultTextSnapshot } from "./ports";
 import { type RescanReason, type VaultChangeBatch, WatchSequenceGate } from "./watch-protocol";
 
@@ -270,6 +271,20 @@ export class MetadataIndex {
     }
   }
 
+  async rebuildSubtree(source: VaultReadPort, relativeDirectory: string): Promise<void> {
+    const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
+    const prefix = normalizedDirectory ? `${normalizedDirectory}/` : "";
+    for (const filePath of this.#documents.keys()) {
+      if (!prefix || filePath.startsWith(prefix)) {
+        this.#documents.delete(filePath);
+      }
+    }
+    const paths = await source.listMarkdownPaths(normalizedDirectory);
+    for (const filePath of paths) {
+      this.#documents.set(filePath, parseDocument(await source.readText(filePath)));
+    }
+  }
+
   async refresh(source: VaultReadPort, filePath: string): Promise<void> {
     if (!filePath.toLowerCase().endsWith(".md")) {
       this.#documents.delete(filePath);
@@ -391,7 +406,11 @@ export class VaultIndexReactor {
   async accept(batch: VaultChangeBatch): Promise<IndexUpdateResult> {
     const decision = this.#gate.accept(batch);
     if (!decision.accepted || decision.rescan) {
-      await this.index.rebuild(this.#source);
+      if (decision.rescan?.scope === "subtree" && decision.rescan.path !== undefined) {
+        await this.index.rebuildSubtree(this.#source, decision.rescan.path);
+      } else {
+        await this.index.rebuild(this.#source);
+      }
       return {
         mode: "rebuild",
         ...(decision.rescan ? { reason: decision.rescan.reason } : {}),

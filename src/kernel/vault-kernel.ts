@@ -180,8 +180,8 @@ export class VaultKernel implements VaultReadPort {
     return this.paths.getName();
   }
 
-  async listMarkdownPaths(): Promise<string[]> {
-    return this.paths.listMarkdownPaths();
+  async listMarkdownPaths(relativeDirectory = ""): Promise<string[]> {
+    return this.paths.listMarkdownPaths(relativeDirectory);
   }
 
   async readText(relativePath: string): Promise<TextFileSnapshot> {

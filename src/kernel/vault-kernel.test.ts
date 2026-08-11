@@ -89,6 +89,20 @@ describe("VaultKernel path policy", () => {
     const stat = await fs.stat(identityPath);
     expect(stat.mtimeMs).toBe(oldDate.getTime());
   });
+
+  it("lists a requested Markdown subtree and rejects directory traversal", async () => {
+    await fs.mkdir(path.join(vaultPath, "Folder", "Nested"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Root.md"), "root", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "A.md"), "a", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "B.md"), "b", "utf8");
+    const kernel = await openKernel();
+
+    await expect(kernel.listMarkdownPaths("Folder/")).resolves.toEqual([
+      "Folder/A.md",
+      "Folder/Nested/B.md",
+    ]);
+    await expect(kernel.listMarkdownPaths("../")).rejects.toBeInstanceOf(VaultPathError);
+  });
 });
 
 describe("VaultKernel writes", () => {

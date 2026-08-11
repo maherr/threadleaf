@@ -11,7 +11,7 @@ export interface VaultTextSnapshot {
 
 export interface VaultReadPort {
   getName(): string;
-  listMarkdownPaths(): Promise<string[]>;
+  listMarkdownPaths(relativeDirectory?: string): Promise<string[]>;
   readText(relativePath: string): Promise<VaultTextSnapshot>;
 }
 

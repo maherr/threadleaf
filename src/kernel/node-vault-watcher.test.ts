@@ -77,6 +77,16 @@ describe("snapshot diff", () => {
       rescan: { scope: "vault", reason: "ambiguous-rename" },
     });
   });
+
+  it("scopes an ambiguous rename to its common subtree", () => {
+    const before = snapshot(state("Folder/A.md", "shared"), state("Folder/Nested/B.md", "shared"));
+    const after = snapshot(state("Folder/C.md", "shared"));
+
+    expect(diffVaultSnapshots(before, after)).toEqual({
+      changes: [],
+      rescan: { scope: "subtree", reason: "ambiguous-rename", path: "Folder" },
+    });
+  });
 });
 
 describe("watch protocol", () => {
@@ -183,6 +193,34 @@ describe("NodeVaultWatcher", () => {
       sequence: 1,
       changes: [],
       rescan: { scope: "vault", reason: "overflow" },
+    });
+    await watcher.close();
+  });
+
+  it("can reconcile one subtree without consuming changes elsewhere", async () => {
+    await fs.mkdir(path.join(vaultPath, "Folder"));
+    await fs.writeFile(path.join(vaultPath, "Folder", "Inside.md"), "old", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Outside.md"), "old", "utf8");
+    const watcher = await NodeVaultWatcher.open(vaultPath, { streamId: "subtree-stream" });
+
+    await fs.writeFile(path.join(vaultPath, "Folder", "Inside.md"), "new", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Outside.md"), "new", "utf8");
+    const subtree = await watcher.scanSubtree("Folder/");
+
+    expect(subtree?.changes).toMatchObject([
+      { kind: "upsert", state: { path: "Folder/Inside.md" } },
+    ]);
+    const remainder = await watcher.scanNow();
+    expect(remainder?.changes).toMatchObject([{ kind: "upsert", state: { path: "Outside.md" } }]);
+    await watcher.close();
+  });
+
+  it("emits an explicit subtree invalidation", async () => {
+    const watcher = await NodeVaultWatcher.open(vaultPath, { streamId: "subtree-stream" });
+
+    await expect(watcher.reportSubtreeInvalidated("Folder/")).resolves.toMatchObject({
+      sequence: 1,
+      rescan: { scope: "subtree", reason: "backend-error", path: "Folder" },
     });
     await watcher.close();
   });

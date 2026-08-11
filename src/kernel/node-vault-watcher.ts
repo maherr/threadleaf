@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { type FSWatcher, promises as fs, watch } from "node:fs";
 import path from "node:path";
-import { isPathInside, VaultPathPolicy } from "./path-policy";
+import { isPathInside, normalizeVaultDirectoryPath, VaultPathPolicy } from "./path-policy";
 import {
   type RescanRequest,
   type VaultChange,
@@ -96,9 +96,10 @@ async function readWatchedState(
 export async function captureVaultSnapshot(
   policy: VaultPathPolicy,
   previous: VaultSnapshot = new Map(),
+  relativeDirectory = "",
 ): Promise<VaultSnapshot> {
   const snapshot: VaultSnapshot = new Map();
-  const paths = await policy.listMarkdownPaths();
+  const paths = await policy.listMarkdownPaths(relativeDirectory);
   for (const relativePath of paths) {
     if (isTransactionTemporary(path.posix.basename(relativePath))) {
       continue;
@@ -149,9 +150,13 @@ export function diffVaultSnapshots(before: VaultSnapshot, after: VaultSnapshot):
       continue;
     }
     if (removedStates.length !== 1 || addedStates.length !== 1) {
+      const affectedPaths = [...removedStates, ...addedStates].map((state) => state.path);
+      const commonDirectory = commonParentDirectory(affectedPaths);
       return {
         changes: [],
-        rescan: { scope: "vault", reason: "ambiguous-rename" },
+        rescan: commonDirectory
+          ? { scope: "subtree", reason: "ambiguous-rename", path: commonDirectory }
+          : { scope: "vault", reason: "ambiguous-rename" },
       };
     }
     const from = removedStates[0];
@@ -179,6 +184,23 @@ export function diffVaultSnapshots(before: VaultSnapshot, after: VaultSnapshot):
     return leftPath.localeCompare(rightPath) || left.kind.localeCompare(right.kind);
   });
   return { changes };
+}
+
+function commonParentDirectory(paths: readonly string[]): string {
+  if (paths.length === 0) {
+    return "";
+  }
+  const directories = paths.map((filePath) => path.posix.dirname(filePath).split("/"));
+  const first = directories[0] ?? [];
+  const common: string[] = [];
+  for (let index = 0; index < first.length; index += 1) {
+    const segment = first[index];
+    if (!segment || segment === "." || directories.some((parts) => parts[index] !== segment)) {
+      break;
+    }
+    common.push(segment);
+  }
+  return common.join("/");
 }
 
 export interface NodeVaultWatcherOptions {
@@ -257,9 +279,50 @@ export class NodeVaultWatcher {
     });
   }
 
+  async scanSubtree(relativeDirectory: string): Promise<VaultChangeBatch | null> {
+    const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
+    const prefix = normalizedDirectory ? `${normalizedDirectory}/` : "";
+    const nextSubtree = await captureVaultSnapshot(
+      this.policy,
+      this.#snapshot,
+      normalizedDirectory,
+    );
+    const next = new Map(this.#snapshot);
+    for (const filePath of next.keys()) {
+      if (!prefix || filePath.startsWith(prefix)) {
+        next.delete(filePath);
+      }
+    }
+    for (const [filePath, state] of nextSubtree) {
+      next.set(filePath, state);
+    }
+    const diff = diffVaultSnapshots(this.#snapshot, next);
+    this.#snapshot = next;
+    if (diff.changes.length === 0 && !diff.rescan) {
+      return null;
+    }
+    if (diff.rescan) {
+      this.#ledger.clear();
+    }
+    return this.#sequencer.next({
+      changes: this.#ledger.annotate(diff.changes),
+      ...(diff.rescan ? { rescan: diff.rescan } : {}),
+    });
+  }
+
   async reportOverflow(): Promise<VaultChangeBatch> {
     this.#ledger.clear();
     return this.emitRescan("overflow");
+  }
+
+  async reportSubtreeInvalidated(relativeDirectory: string): Promise<VaultChangeBatch> {
+    this.#ledger.clear();
+    const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
+    return this.emitRescan("backend-error", {
+      scope: "subtree",
+      reason: "backend-error",
+      path: normalizedDirectory,
+    });
   }
 
   async close(): Promise<void> {
@@ -293,10 +356,13 @@ export class NodeVaultWatcher {
     }, this.#debounceMs);
   }
 
-  private async emitRescan(reason: "backend-error" | "overflow"): Promise<VaultChangeBatch> {
+  private async emitRescan(
+    reason: "backend-error" | "overflow",
+    request: RescanRequest = { scope: "vault", reason },
+  ): Promise<VaultChangeBatch> {
     this.#ledger.clear();
     const batch = this.#sequencer.next({
-      rescan: { scope: "vault", reason },
+      rescan: request,
     });
     if (this.#listener) {
       await this.#listener(batch);

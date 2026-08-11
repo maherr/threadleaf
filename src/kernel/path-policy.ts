@@ -39,6 +39,24 @@ export function normalizeVaultPath(input: string): string {
   return normalized;
 }
 
+export function normalizeVaultDirectoryPath(input: string): string {
+  if (input === "" || input === ".") {
+    return "";
+  }
+  if (input.includes("\0") || path.posix.isAbsolute(input) || path.win32.isAbsolute(input)) {
+    throw new VaultPathError(`Vault directory paths must be relative: ${input}`);
+  }
+  const portable = input.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (portable.split("/").includes("..")) {
+    throw new VaultPathError(`Vault path traversal is not allowed: ${input}`);
+  }
+  const normalized = path.posix.normalize(portable).replace(/^\.\//, "");
+  if (normalized === ".." || normalized.startsWith("../")) {
+    throw new VaultPathError(`Vault directory path escapes the vault: ${input}`);
+  }
+  return normalized === "." ? "" : normalized;
+}
+
 export async function canonicalizePotentialPath(input: string): Promise<string> {
   let current = path.resolve(input);
   const missingSegments: string[] = [];
@@ -160,9 +178,29 @@ export class VaultPathPolicy {
     return path.relative(this.rootPath, absolutePath).split(path.sep).join("/");
   }
 
-  async listMarkdownPaths(): Promise<string[]> {
+  async listMarkdownPaths(relativeDirectory = ""): Promise<string[]> {
+    const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
+    const startDirectory = normalizedDirectory
+      ? path.resolve(this.rootPath, ...normalizedDirectory.split("/"))
+      : this.rootPath;
+    let canonicalDirectory: string;
+    try {
+      canonicalDirectory = await fs.realpath(startDirectory);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+    if (!isPathInside(this.rootPath, canonicalDirectory)) {
+      throw new VaultPathError(`Directory resolves outside the vault: ${relativeDirectory}`);
+    }
+    const stat = await fs.stat(canonicalDirectory);
+    if (!stat.isDirectory()) {
+      throw new VaultPathError(`Vault directory path is not a directory: ${relativeDirectory}`);
+    }
     const files: string[] = [];
-    await this.collectMarkdownPaths(this.rootPath, "", files);
+    await this.collectMarkdownPaths(canonicalDirectory, normalizedDirectory, files);
     return files.sort((left, right) => left.localeCompare(right));
   }
 

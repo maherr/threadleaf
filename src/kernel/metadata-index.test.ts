@@ -7,6 +7,7 @@ import type { VaultChange, VaultChangeBatch, WatchedPathState } from "./watch-pr
 class MemoryVault implements VaultReadPort {
   readonly #files = new Map<string, string>();
   failNextRead = false;
+  readonly readPaths: string[] = [];
 
   getName(): string {
     return "fixture";
@@ -29,13 +30,16 @@ class MemoryVault implements VaultReadPort {
     this.#files.set(to, content);
   }
 
-  async listMarkdownPaths(): Promise<string[]> {
+  async listMarkdownPaths(relativeDirectory = ""): Promise<string[]> {
+    const prefix = relativeDirectory ? `${relativeDirectory.replace(/\/+$/, "")}/` : "";
     return [...this.#files.keys()]
       .filter((filePath) => filePath.toLowerCase().endsWith(".md"))
+      .filter((filePath) => !prefix || filePath.startsWith(prefix))
       .sort();
   }
 
   async readText(relativePath: string): Promise<VaultTextSnapshot> {
+    this.readPaths.push(relativePath);
     if (this.failNextRead) {
       this.failNextRead = false;
       throw new Error("simulated read race");
@@ -267,6 +271,27 @@ describe("VaultIndexReactor", () => {
         }),
       ),
     ).resolves.toEqual({ mode: "rebuild", reason: "read-race" });
+    await expectEquivalent(reactor, vault);
+  });
+
+  it("rebuilds only the requested subtree when the watcher scopes the invalidation", async () => {
+    const vault = new MemoryVault();
+    vault.set("Folder/A.md", "old");
+    vault.set("Outside.md", "untouched");
+    const reactor = await VaultIndexReactor.open(vault);
+    vault.readPaths.length = 0;
+
+    vault.set("Folder/A.md", "new");
+    vault.set("Folder/B.md", "added");
+    await expect(
+      reactor.accept(
+        batch(1, [], {
+          rescan: { scope: "subtree", reason: "backend-error", path: "Folder" },
+        }),
+      ),
+    ).resolves.toEqual({ mode: "rebuild", reason: "backend-error" });
+
+    expect(vault.readPaths.sort()).toEqual(["Folder/A.md", "Folder/B.md"]);
     await expectEquivalent(reactor, vault);
   });
 });

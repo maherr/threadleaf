@@ -32,7 +32,7 @@ changing any fixture byte.
 - [ ] Mutation port and adapter boundary.
 - [x] Sequenced, debounced file watching with inode-based rename pairing.
 - [x] Overflow, ambiguity, sequence-gap, stream-restart, and full-rescan behavior.
-- [ ] Targeted subtree rescan behavior.
+- [x] Targeted subtree scan and index-rebuild behavior.
 - [x] Durable no-clobber writes and crash-recovery journal.
 - [x] Content revisions, external-edit detection, conflict copies, and writer serialization.
 - [x] Recoverable single-file rename.
