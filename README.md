@@ -47,7 +47,10 @@ use the recovery-backed writer. They require an existing note, preserve its line
 and keep a full proposed conflict copy if an external edit wins the revision race. Headless move
 and rename commands project the complete post-move index before writing. They proceed only when
 every wiki and Markdown link keeps the same resolution, and otherwise return exact blockers without
-changing the vault.
+changing the vault. Runtime-owned tabs keep one ordered entry per open note, reactivate an existing
+entry instead of duplicating it, follow externally renamed notes, and remove externally deleted
+notes. Closing an active tab selects its right neighbor, then its left neighbor. Tab state is
+session-local and does not write workspace metadata into the vault.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
@@ -95,10 +98,11 @@ properties; Ctrl/Cmd+, opens keyboard settings. Search terms use AND semantics a
 matched as a phrase. Every listed shortcut can be reassigned or cleared, and Reset defaults
 restores the portable built-in bindings. Threadleaf stores these preferences in private
 application data, not in the vault or `.obsidian/`. Ctrl/Cmd+E switches between Markdown source and
-reading view. Reading view previews the current draft without saving it; clicking a source-line
-control returns to the exact source line. Relative and vault-rooted local raster images render
-without exposing filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New
-note dialog and selects the resulting empty Markdown note for editing.
+reading view. Ctrl/Cmd+W closes the active clean tab; Alt+Left and Alt+Right move through open tabs.
+Reading view previews the current draft without saving it; clicking a source-line control returns
+to the exact source line. Relative and vault-rooted local raster images render without exposing
+filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New note dialog and
+selects the resulting empty Markdown note for editing.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

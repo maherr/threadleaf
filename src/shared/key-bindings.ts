@@ -3,6 +3,9 @@ export const shortcutTargetIds = [
   "settings.open-keybindings",
   "workspace.open-vault",
   "workspace.create-note",
+  "workspace.close-tab",
+  "workspace.next-tab",
+  "workspace.previous-tab",
   "workspace.focus-note-filter",
   "editor.save-note",
   "editor.revert-note",
@@ -35,6 +38,9 @@ export const defaultKeyBindings: Readonly<Record<ShortcutTargetId, string | null
   "settings.open-keybindings": "Mod+Comma",
   "workspace.open-vault": "Mod+O",
   "workspace.create-note": "Mod+N",
+  "workspace.close-tab": "Mod+W",
+  "workspace.next-tab": "Alt+ArrowRight",
+  "workspace.previous-tab": "Alt+ArrowLeft",
   "workspace.focus-note-filter": "Mod+P",
   "editor.save-note": "Mod+S",
   "editor.revert-note": null,
@@ -57,6 +63,7 @@ const namedKeys = new Set([
   "ArrowDown",
   "ArrowLeft",
   "ArrowRight",
+  "Tab",
 ]);
 
 const eventKeyNames: Readonly<Record<string, string>> = {

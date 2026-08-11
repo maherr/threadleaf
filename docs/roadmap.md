@@ -81,9 +81,12 @@ equivalence through the real writer-to-watcher seam.
       prepend, LF/CRLF separators, inline mode, and full-proposal conflict preservation.
 - [x] Recovery-backed CLI move and rename with destination no-clobber behavior and a whole-vault
       projected-index preflight that blocks every detected internal-link resolution change.
+- [x] Ordered session tabs with path deduplication, dirty-draft guards, neighbor selection on close,
+      watcher rename and delete reconciliation, remappable close and cycle shortcuts, and bounded
+      horizontal overflow at the minimum desktop viewport.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
-- [ ] Tabs, split panes, application menus, and broader workspace settings.
+- [ ] Split panes, application menus, tab restoration, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
 - [ ] Rich property views and editing, broader attachment types, and wiki embeds.
 

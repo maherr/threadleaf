@@ -56,3 +56,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   documented exit codes, `vault info`, `files`, `read`, and `search`, plus tested `file=` and
   `query=` argument compatibility without requiring a running Electron process.
 - State-free read-only kernel opening so CLI inspection creates no application or vault data.
+- Ordered session tabs with deduplicated note activation, safe neighbor selection on close,
+  external rename and deletion reconciliation, dirty-draft guards, remappable keyboard actions,
+  accessible horizontal overflow, and no vault-owned workspace state.

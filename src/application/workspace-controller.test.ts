@@ -70,6 +70,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
   readonly #snapshot: RuntimeSnapshot;
   readonly #listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
+  closedNote: { filePath: string; expectedVaultId: string } | null = null;
   closed = false;
 
   constructor(options: WorkspaceRuntimeOptions) {
@@ -112,6 +113,11 @@ class FakeRuntime implements WorkspaceRuntimePort {
   }
 
   async openNote(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
+    this.closedNote = { filePath, expectedVaultId };
     return this.#snapshot;
   }
 
@@ -353,6 +359,26 @@ describe("WorkspaceController", () => {
     expect(controller.vaultPath).toBe(path.resolve(fixtureVaultPath));
     expect(store.saved).toEqual([]);
     expect(harness.runtimes).toHaveLength(1);
+    await controller.close();
+  });
+
+  it("forwards tab closure with the active vault identity", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+
+    await controller.closeNote("Notes/Current.md", expectedVaultId);
+
+    expect(harness.runtimes[0]?.closedNote).toEqual({
+      filePath: "Notes/Current.md",
+      expectedVaultId,
+    });
     await controller.close();
   });
 

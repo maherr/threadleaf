@@ -25,6 +25,7 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
   ): Promise<VaultImageResponse>;
   openNote(filePath: string): Promise<RuntimeSnapshot>;
+  closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
   createNote(
     filePath: string,
     content: string,
@@ -179,6 +180,10 @@ export class WorkspaceController {
 
   openNote(filePath: string): Promise<RuntimeSnapshot> {
     return this.#runtime.openNote(filePath);
+  }
+
+  closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
+    return this.#runtime.closeNote(filePath, expectedVaultId);
   }
 
   createNote(

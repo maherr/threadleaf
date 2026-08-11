@@ -125,6 +125,12 @@ function registerIpcHandlers(): void {
     }
     return workspaceController.openNote(filePath);
   });
+  ipcMain.handle(ipcChannels.closeNote, (_event, filePath: unknown, expectedVaultId: unknown) => {
+    if (typeof filePath !== "string" || typeof expectedVaultId !== "string") {
+      throw new Error("Close note requires string path and vault values.");
+    }
+    return workspaceController.closeNote(filePath, expectedVaultId);
+  });
   ipcMain.handle(
     ipcChannels.createNote,
     (_event, filePath: unknown, content: unknown, expectedVaultId: unknown) => {

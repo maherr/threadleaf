@@ -47,6 +47,25 @@ interface CreateNoteRequest {
   expectedVaultId: string;
 }
 
+interface CloseNoteRequest {
+  path: string;
+  expectedVaultId: string;
+}
+
+function parseCloseNoteRequest(payload: unknown): CloseNoteRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Close note requires string path and vault values.");
+  }
+  return { path: payload.path, expectedVaultId: payload.expectedVaultId };
+}
+
 function parseCreateNoteRequest(payload: unknown): CreateNoteRequest {
   if (
     typeof payload !== "object" ||
@@ -104,6 +123,7 @@ export class WorkspaceRuntime {
   readonly warning: string | null;
 
   #activePath: string | null = null;
+  #openPaths: string[] = [];
   #watcherError: string | null = null;
   #lastWatchSequence = 0;
   #lastRescanReason: string | null = null;
@@ -153,6 +173,12 @@ export class WorkspaceRuntime {
         },
       }),
       this.actions.register("threadleaf-workspace", {
+        id: "workspace.close-note",
+        name: "Close note",
+        source: "workspace",
+        execute: (payload) => this.closeNoteThroughWorkspace(parseCloseNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
         id: "workspace.save-note",
         name: "Save note",
         source: "workspace",
@@ -184,7 +210,9 @@ export class WorkspaceRuntime {
     );
 
     const firstPath = indexReactor.index.snapshot().documents[0]?.path;
-    runtime.#activePath = firstPath ?? null;
+    if (firstPath) {
+      runtime.activatePath(firstPath);
+    }
     if (options.pluginDirectory) {
       await pluginHost.loadPlugin(options.pluginDirectory);
     }
@@ -214,6 +242,14 @@ export class WorkspaceRuntime {
 
   async openNote(filePath: string): Promise<RuntimeSnapshot> {
     await this.actions.dispatch("workspace.open-note", filePath);
+    return this.publishSnapshot();
+  }
+
+  async closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.close-note", {
+      path: filePath,
+      expectedVaultId,
+    });
     return this.publishSnapshot();
   }
 
@@ -330,7 +366,48 @@ export class WorkspaceRuntime {
       throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
     }
     await this.kernel.readText(filePath);
+    this.activatePath(filePath);
+  }
+
+  private activatePath(filePath: string): void {
+    if (!this.#openPaths.includes(filePath)) {
+      this.#openPaths.push(filePath);
+    }
     this.#activePath = filePath;
+  }
+
+  private removeOpenPath(filePath: string): void {
+    const index = this.#openPaths.indexOf(filePath);
+    if (index === -1) {
+      return;
+    }
+    this.#openPaths.splice(index, 1);
+    if (this.#activePath === filePath) {
+      this.#activePath = this.#openPaths[index] ?? this.#openPaths[index - 1] ?? null;
+    }
+  }
+
+  private moveOpenPath(from: string, to: string): void {
+    const sourceIndex = this.#openPaths.indexOf(from);
+    if (sourceIndex === -1) {
+      return;
+    }
+    const targetIndex = this.#openPaths.indexOf(to);
+    if (targetIndex === -1) {
+      this.#openPaths[sourceIndex] = to;
+    } else {
+      this.#openPaths.splice(sourceIndex, 1);
+    }
+    if (this.#activePath === from) {
+      this.#activePath = to;
+    }
+  }
+
+  private closeNoteThroughWorkspace(request: CloseNoteRequest): void {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this tab could be closed.");
+    }
+    this.removeOpenPath(normalizeVaultPath(request.path));
   }
 
   private async saveNoteThroughKernel(request: SaveNoteRequest): Promise<NoteSaveOutcome> {
@@ -358,7 +435,7 @@ export class WorkspaceRuntime {
         revision: outcome.revision,
       });
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
-      this.#activePath = outcome.path;
+      this.activatePath(outcome.path);
       return outcome;
     }
 
@@ -375,7 +452,7 @@ export class WorkspaceRuntime {
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
     }
     await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
-    this.#activePath = conflictCopy.path;
+    this.activatePath(conflictCopy.path);
     return outcome;
   }
 
@@ -395,7 +472,7 @@ export class WorkspaceRuntime {
         revision: outcome.revision,
       });
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
-      this.#activePath = outcome.path;
+      this.activatePath(outcome.path);
       return outcome;
     }
 
@@ -410,12 +487,21 @@ export class WorkspaceRuntime {
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
     }
     await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
-    this.#activePath = conflictCopy.path;
+    this.activatePath(conflictCopy.path);
     return outcome;
   }
 
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
     const result = await this.indexReactor.accept(batch);
+    if (result.mode === "incremental") {
+      for (const change of batch.changes) {
+        if (change.kind === "move") {
+          this.moveOpenPath(change.from, change.to);
+        } else if (change.kind === "delete") {
+          this.removeOpenPath(change.path);
+        }
+      }
+    }
     this.#lastWatchSequence = batch.sequence;
     this.#lastRescanReason = result.mode === "rebuild" ? (result.reason ?? "unknown") : null;
     if (publish) {
@@ -438,8 +524,9 @@ export class WorkspaceRuntime {
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const index = this.indexReactor.index.snapshot();
     const documents = new Map(index.documents.map((document) => [document.path, document]));
-    if (!this.#activePath || !documents.has(this.#activePath)) {
-      this.#activePath = index.documents[0]?.path ?? null;
+    this.#openPaths = this.#openPaths.filter((filePath) => documents.has(filePath));
+    if (!this.#activePath || !this.#openPaths.includes(this.#activePath)) {
+      this.#activePath = this.#openPaths.at(-1) ?? null;
     }
     const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
     const files: WorkspaceFileSummary[] = index.documents.map((document) => {
@@ -484,6 +571,11 @@ export class WorkspaceRuntime {
       state: this.#watcherError ? "degraded" : "ready",
       indexGeneration: this.indexReactor.index.generation,
       files,
+      tabs: this.#openPaths.map((filePath) => ({
+        path: filePath,
+        title: displayTitleFromVaultPath(filePath),
+        active: filePath === this.#activePath,
+      })),
       activeNote,
       recoveryActionCount: this.kernel.startupRecoveryActions.length,
       watcher: {

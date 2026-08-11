@@ -649,7 +649,7 @@ h2 {
 
 .note-stage {
   display: grid;
-  grid-template-rows: 42px minmax(0, 1fr);
+  grid-template-rows: 34px 42px minmax(0, 1fr);
   overflow: hidden;
   background:
     linear-gradient(
@@ -659,6 +659,112 @@ h2 {
       transparent 49px
     ),
     var(--surface-raised);
+}
+
+.note-tabs-shell {
+  min-width: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.note-tabs {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.note-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 25px;
+  min-width: 104px;
+  max-width: 190px;
+  flex: 1 1 150px;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 72%, var(--surface-sunken));
+  box-shadow: inset 0 -1px 0 transparent;
+}
+
+.note-tab[data-active="true"] {
+  background: var(--surface-raised);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.note-tab-activate,
+.note-tab-close {
+  min-width: 0;
+  border: 0;
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.note-tab-activate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 10px;
+  overflow: hidden;
+  font-size: 10px;
+  text-align: left;
+}
+
+.note-tab-mark {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: 10px;
+  opacity: 0.72;
+}
+
+.note-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-tab[data-active="true"] .note-tab-activate {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.note-tab[data-active="true"] .note-tab-mark {
+  color: var(--accent-strong);
+}
+
+.note-tab-activate:hover,
+.note-tab-activate:focus-visible,
+.note-tab-close:hover:not(:disabled),
+.note-tab-close:focus-visible {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-soft) 58%, transparent);
+}
+
+.note-tab-close {
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.note-tab-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.32;
+}
+
+.note-tabs-empty {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.78;
 }
 
 .note-toolbar {
@@ -2538,6 +2644,11 @@ button.inspector-item:hover {
 
   .note-header {
     padding: 25px 24px 15px 57px;
+  }
+
+  .note-tab {
+    min-width: 92px;
+    max-width: 152px;
   }
 
   .note-editor .cm-content {

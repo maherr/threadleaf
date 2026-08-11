@@ -54,8 +54,10 @@ describe("WorkspaceRuntime", () => {
         { path: "Welcome.md", title: "Welcome", outgoingCount: 1 },
       ],
       activeNote: { path: "Linked Note.md", title: "Linked Note" },
+      tabs: [{ path: "Linked Note.md", title: "Linked Note", active: true }],
     });
     expect(initial.actions).toEqual([
+      { id: "workspace.close-note", name: "Close note", source: "workspace" },
       {
         id: "threadleaf-fixture-confirm",
         name: "Confirm compatibility bridge",
@@ -88,6 +90,57 @@ describe("WorkspaceRuntime", () => {
     const commanded = await workspace.runPluginCommand("threadleaf-fixture-confirm");
     expect(commanded.notices).toContain("Fixture command crossed the compatibility bridge.");
     expect(commanded.plugin?.compatibilityLevel).toBe(4);
+  });
+
+  it("opens, reuses, activates, and closes ordered note tabs", async () => {
+    const workspace = await openRuntime();
+
+    const welcome = await workspace.openNote("Welcome.md");
+    expect(welcome.workspace?.tabs).toEqual([
+      { path: "Linked Note.md", title: "Linked Note", active: false },
+      { path: "Welcome.md", title: "Welcome", active: true },
+    ]);
+
+    const reused = await workspace.openNote("Linked Note.md");
+    expect(reused.workspace?.tabs).toEqual([
+      { path: "Linked Note.md", title: "Linked Note", active: true },
+      { path: "Welcome.md", title: "Welcome", active: false },
+    ]);
+
+    const closedActive = await workspace.closeNote("Linked Note.md", workspace.vaultId);
+    expect(closedActive.workspace).toMatchObject({
+      tabs: [{ path: "Welcome.md", title: "Welcome", active: true }],
+      activeNote: { path: "Welcome.md" },
+    });
+
+    const closedLast = await workspace.closeNote("Welcome.md", workspace.vaultId);
+    expect(closedLast.workspace).toMatchObject({ tabs: [], activeNote: null });
+    expect(closedLast.workspace?.files).toHaveLength(2);
+    await expect(workspace.closeNote("Welcome.md", "stale-vault")).rejects.toThrow(
+      "active vault changed",
+    );
+  });
+
+  it("keeps open tabs aligned with external note renames and deletions", async () => {
+    const workspace = await openRuntime();
+    await workspace.openNote("Welcome.md");
+
+    await fs.rename(path.join(vaultPath, "Welcome.md"), path.join(vaultPath, "Renamed.md"));
+    const renamed = await workspace.reconcileNow();
+    expect(renamed.workspace).toMatchObject({
+      tabs: [
+        { path: "Linked Note.md", active: false },
+        { path: "Renamed.md", active: true },
+      ],
+      activeNote: { path: "Renamed.md" },
+    });
+
+    await fs.unlink(path.join(vaultPath, "Renamed.md"));
+    const deleted = await workspace.reconcileNow();
+    expect(deleted.workspace).toMatchObject({
+      tabs: [{ path: "Linked Note.md", active: true }],
+      activeNote: { path: "Linked Note.md" },
+    });
   });
 
   it("creates a nested Markdown note through the recoverable writer and selects it", async () => {
@@ -416,6 +469,7 @@ describe("WorkspaceRuntime", () => {
 
     expect(unloaded.commands).toEqual([]);
     expect(unloaded.actions).toEqual([
+      { id: "workspace.close-note", name: "Close note", source: "workspace" },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },

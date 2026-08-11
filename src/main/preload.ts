@@ -34,6 +34,12 @@ const bridge: ThreadleafBridge = {
   chooseVault: () => ipcRenderer.invoke(ipcChannels.chooseVault) as Promise<VaultOpenResponse>,
   openNote: (filePath) =>
     ipcRenderer.invoke(ipcChannels.openNote, filePath) as Promise<RuntimeSnapshot>,
+  closeNote: (filePath, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.closeNote,
+      filePath,
+      expectedVaultId,
+    ) as Promise<RuntimeSnapshot>,
   createNote: (filePath, content, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.createNote,

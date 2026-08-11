@@ -10,6 +10,7 @@ import type {
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
+  WorkspaceTabSummary,
 } from "../shared/contracts";
 import {
   type AppSettingsSnapshot,
@@ -48,6 +49,7 @@ const elements = {
   fileList: getElement("file-list"),
   indexStatus: getElement("index-status"),
   recoveryCount: getElement("recovery-count"),
+  noteTabs: getElement("note-tabs"),
   notePath: getElement("note-path"),
   noteEmpty: getElement("note-empty"),
   noteView: getElement("note-view"),
@@ -152,6 +154,21 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.create-note",
     label: "Create new note",
     description: "Create and open a Markdown note through the recoverable writer.",
+  },
+  {
+    id: "workspace.close-tab",
+    label: "Close current tab",
+    description: "Close the current note after its draft is saved or reverted.",
+  },
+  {
+    id: "workspace.next-tab",
+    label: "Activate next tab",
+    description: "Move forward through the ordered open notes.",
+  },
+  {
+    id: "workspace.previous-tab",
+    label: "Activate previous tab",
+    description: "Move backward through the ordered open notes.",
   },
   {
     id: "workspace.focus-note-filter",
@@ -324,6 +341,7 @@ function shortcutFor(targetId: ShortcutTargetId): string | null {
 
 function commandCatalog(): RendererCommand[] {
   const plugin = currentSnapshot?.plugin ?? null;
+  const tabs = currentSnapshot?.workspace?.tabs ?? [];
   const commands: RendererCommand[] = [
     {
       id: "workspace.create-note",
@@ -338,6 +356,50 @@ function commandCatalog(): RendererCommand[] {
           ? "Threadleaf is finishing another action."
           : "No writable vault is active.",
       run: openNewNoteDialog,
+    },
+    {
+      id: "workspace.close-tab",
+      label: "Close current tab",
+      category: "Workspace",
+      keywords: ["close", "tab", "note"],
+      shortcut: shortcutFor("workspace.close-tab"),
+      enabled: Boolean(loadedNote && loadedVaultId && !busy && !saving && !dirty),
+      disabledReason: !loadedNote
+        ? "No note tab is active."
+        : dirty
+          ? "Save or revert the current note before closing it."
+          : "Threadleaf is finishing another action.",
+      run: closeActiveTab,
+    },
+    {
+      id: "workspace.next-tab",
+      label: "Activate next tab",
+      category: "Workspace",
+      keywords: ["cycle", "forward", "switch", "tab"],
+      shortcut: shortcutFor("workspace.next-tab"),
+      enabled: tabs.length > 1 && !busy && !saving && !dirty,
+      disabledReason:
+        tabs.length < 2
+          ? "Open another note to cycle tabs."
+          : dirty
+            ? "Save or revert the current note before switching tabs."
+            : "Threadleaf is finishing another action.",
+      run: () => cycleTab(1),
+    },
+    {
+      id: "workspace.previous-tab",
+      label: "Activate previous tab",
+      category: "Workspace",
+      keywords: ["cycle", "backward", "switch", "tab"],
+      shortcut: shortcutFor("workspace.previous-tab"),
+      enabled: tabs.length > 1 && !busy && !saving && !dirty,
+      disabledReason:
+        tabs.length < 2
+          ? "Open another note to cycle tabs."
+          : dirty
+            ? "Save or revert the current note before switching tabs."
+            : "Threadleaf is finishing another action.",
+      run: () => cycleTab(-1),
     },
     {
       id: "workspace.open-vault",
@@ -1366,6 +1428,80 @@ function render(snapshot: RuntimeSnapshot): void {
   }
 }
 
+function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): void {
+  elements.noteTabs.replaceChildren();
+  if (tabs.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "note-tabs-empty";
+    empty.textContent = "No open notes";
+    elements.noteTabs.append(empty);
+    return;
+  }
+
+  const runtimeActivePath = tabs.find((tab) => tab.active)?.path ?? null;
+  let activeTab: HTMLElement | null = null;
+  for (const tab of tabs) {
+    const isActive = tab.path === displayedPath;
+    const wrapper = document.createElement("div");
+    wrapper.className = "note-tab";
+    wrapper.dataset.active = String(isActive);
+
+    const activate = document.createElement("button");
+    activate.type = "button";
+    activate.className = "note-tab-activate";
+    activate.setAttribute("role", "tab");
+    activate.setAttribute("aria-selected", String(isActive));
+    activate.setAttribute("aria-controls", "note-view");
+    activate.tabIndex = isActive || (!displayedPath && tab.path === runtimeActivePath) ? 0 : -1;
+    activate.title = tab.path;
+    activate.ariaLabel = `${isActive ? "Current note" : "Open note"}: ${tab.path}`;
+
+    const mark = document.createElement("span");
+    mark.className = "note-tab-mark";
+    mark.ariaHidden = "true";
+    mark.textContent = "◇";
+    const title = document.createElement("span");
+    title.className = "note-tab-title";
+    title.textContent = tab.title;
+    activate.append(mark, title);
+    if (isActive) {
+      activeTab = wrapper;
+    }
+    activate.addEventListener("click", () => void openNote(tab.path));
+    activate.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      event.preventDefault();
+      void cycleTab(event.key === "ArrowRight" ? 1 : -1);
+    });
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "note-tab-close";
+    close.ariaLabel = `Close ${tab.path}`;
+    close.textContent = "×";
+    close.disabled = busy || saving || (isActive && dirty);
+    close.title =
+      isActive && dirty ? "Save or revert this note before closing it" : `Close ${tab.path}`;
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void closeTab(tab.path);
+    });
+
+    wrapper.append(activate, close);
+    elements.noteTabs.append(wrapper);
+  }
+  if (activeTab) {
+    const tab = activeTab;
+    window.requestAnimationFrame(() => {
+      if (tab.isConnected) {
+        tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    });
+  }
+}
+
 function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): void {
   const query = elements.fileSearch.value.trim();
   elements.fileList.replaceChildren();
@@ -1743,6 +1879,7 @@ function renderEditControls(): void {
   elements.newNote.disabled = busy || saving || dirty;
   elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
+  renderTabs(currentSnapshot?.workspace?.tabs ?? [], loadedNote?.path ?? null);
   renderEditNotice();
   renderDocumentView();
   renderPaletteResults();
@@ -1775,6 +1912,58 @@ function scrollToSourceLine(line: number): void {
   editor.focus();
 }
 
+async function closeTab(filePath: string): Promise<void> {
+  if (busy || saving) {
+    return;
+  }
+  if (loadedNote?.path === filePath && dirty) {
+    showToast("Save or revert the current note before closing its tab.");
+    setDocumentView("source");
+    editor.focus();
+    return;
+  }
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId) {
+    return;
+  }
+  await runAction(() => window.threadleaf.closeNote(filePath, expectedVaultId));
+  window.requestAnimationFrame(() => {
+    if (loadedNote) {
+      if (documentViewMode === "reading") {
+        elements.notePreview.focus();
+      } else {
+        editor.focus();
+      }
+    } else {
+      elements.fileSearch.focus();
+    }
+  });
+}
+
+function closeActiveTab(): Promise<void> {
+  return loadedNote ? closeTab(loadedNote.path) : Promise.resolve();
+}
+
+async function cycleTab(direction: -1 | 1): Promise<void> {
+  const tabs = currentSnapshot?.workspace?.tabs ?? [];
+  if (tabs.length < 2 || busy || saving) {
+    return;
+  }
+  if (dirty) {
+    showToast("Save or revert the current note before switching tabs.");
+    setDocumentView("source");
+    editor.focus();
+    return;
+  }
+  const activePath = loadedNote?.path ?? tabs.find((tab) => tab.active)?.path;
+  const activeIndex = tabs.findIndex((tab) => tab.path === activePath);
+  const nextIndex = (Math.max(0, activeIndex) + direction + tabs.length) % tabs.length;
+  const nextTab = tabs[nextIndex];
+  if (nextTab) {
+    await openNote(nextTab.path);
+  }
+}
+
 async function openNote(filePath: string, line?: number): Promise<boolean> {
   if (busy) {
     return false;
@@ -1788,6 +1977,15 @@ async function openNote(filePath: string, line?: number): Promise<boolean> {
   await runAction(() => window.threadleaf.openNote(filePath));
   if (line && loadedNote?.path === filePath) {
     scrollToDocumentLine(line);
+  }
+  if (!line && loadedNote?.path === filePath) {
+    window.requestAnimationFrame(() => {
+      if (documentViewMode === "reading") {
+        elements.notePreview.focus();
+      } else {
+        editor.focus();
+      }
+    });
   }
   return loadedNote?.path === filePath;
 }
@@ -2050,6 +2248,9 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   const targetId = shortcutTargetForEvent(settingsSnapshot.settings.keyBindings, event, isMac);
+  if (targetId === "workspace.close-tab") {
+    event.preventDefault();
+  }
   if (targetId === "ui.command-palette") {
     if (elements.settingsDialog.open || elements.newNoteDialog.open) {
       return;

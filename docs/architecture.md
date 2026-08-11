@@ -72,6 +72,21 @@ both vaults. The renderer also blocks user-initiated switching while a note is u
 development overrides take precedence without changing the persisted user selection and are
 ignored by packaged builds.
 
+### Workspace tabs and draft ownership
+
+The workspace runtime owns an ordered, deduplicated list of open Markdown paths and one active
+path. Opening an existing entry reactivates it. Closing the active entry selects the next entry to
+its right, then the nearest entry to its left. Incremental watcher moves remap open paths and
+deletions remove them, while every published snapshot filters the list against the current derived
+index. Each close request carries the expected vault identity, so a delayed renderer action cannot
+close a similarly named note after a vault switch.
+
+Tabs are session-local derived workspace state. They do not write layout files into the vault or
+`.obsidian/`, and they are not restored after an application restart yet. The renderer owns one
+CodeMirror draft rather than a hidden unsaved draft per tab. A dirty active draft therefore blocks
+tab activation, active-tab closure, and vault switching until it is saved or reverted. Closing an
+inactive tab remains safe because it cannot discard the current draft.
+
 ### Application settings and key bindings
 
 Threadleaf settings live in a versioned document under the operating system's application-data

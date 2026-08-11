@@ -59,6 +59,12 @@ export interface WorkspaceFileSummary {
   unresolvedCount: number;
 }
 
+export interface WorkspaceTabSummary {
+  path: string;
+  title: string;
+  active: boolean;
+}
+
 export interface WorkspaceLinkSummary {
   label: string;
   status: "resolved" | "unresolved" | "ambiguous";
@@ -111,6 +117,7 @@ export interface WorkspaceSnapshot {
   state: "ready" | "degraded";
   indexGeneration: number;
   files: WorkspaceFileSummary[];
+  tabs: WorkspaceTabSummary[];
   activeNote: WorkspaceNoteSnapshot | null;
   recoveryActionCount: number;
   watcher: {
@@ -219,6 +226,7 @@ export interface ThreadleafBridge {
   reloadPlugin(): Promise<RuntimeSnapshot>;
   unloadPlugin(): Promise<RuntimeSnapshot>;
   openNote(path: string): Promise<RuntimeSnapshot>;
+  closeNote(path: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
   createNote(path: string, content: string, expectedVaultId: string): Promise<NoteCreateResponse>;
   saveNote(
     path: string,

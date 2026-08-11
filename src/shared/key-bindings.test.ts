@@ -22,6 +22,7 @@ describe("key bindings", () => {
   it("normalizes supported chords and rejects unsafe or ambiguous input", () => {
     expect(normalizeKeyBinding("shift + mod + l")).toBe("Mod+Shift+L");
     expect(normalizeKeyBinding("mod+,")).toBe("Mod+Comma");
+    expect(normalizeKeyBinding("mod+shift+tab")).toBe("Mod+Shift+Tab");
     expect(() => normalizeKeyBinding("Shift+K")).toThrow("Mod or Alt");
     expect(() => normalizeKeyBinding("Mod+Mod+K")).toThrow("repeated");
     expect(() => normalizeKeyBinding("Ctrl+K")).toThrow("Unsupported shortcut modifier");
@@ -40,6 +41,9 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["ui.command-palette"]).toBe("Alt+K");
     expect(parsed.keyBindings["workspace.open-vault"]).toBe("Mod+O");
     expect(parsed.keyBindings["workspace.create-note"]).toBe("Mod+N");
+    expect(parsed.keyBindings["workspace.close-tab"]).toBe("Mod+W");
+    expect(parsed.keyBindings["workspace.next-tab"]).toBe("Alt+ArrowRight");
+    expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
     expect(() =>
@@ -66,6 +70,7 @@ describe("key bindings", () => {
   it("captures portable bindings and matches the platform primary modifier exactly", () => {
     expect(bindingFromKeyboardEvent(ctrl, false)).toBe("Mod+K");
     expect(bindingFromKeyboardEvent({ ...ctrl, key: "," }, false)).toBe("Mod+Comma");
+    expect(bindingFromKeyboardEvent({ ...ctrl, key: "Tab" }, false)).toBe("Mod+Tab");
     expect(bindingFromKeyboardEvent({ ...ctrl, ctrlKey: false }, false)).toBeNull();
     expect(bindingFromKeyboardEvent(ctrl, true)).toBeNull();
 
@@ -77,6 +82,18 @@ describe("key bindings", () => {
     expect(shortcutTargetForEvent(createDefaultAppSettings().keyBindings, ctrl, false)).toBe(
       "ui.command-palette",
     );
+    expect(
+      shortcutTargetForEvent(
+        createDefaultAppSettings().keyBindings,
+        {
+          ...ctrl,
+          key: "ArrowLeft",
+          ctrlKey: false,
+          altKey: true,
+        },
+        false,
+      ),
+    ).toBe("workspace.previous-tab");
   });
 
   it("formats bindings for the active platform", () => {
