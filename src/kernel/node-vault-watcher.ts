@@ -221,6 +221,7 @@ export class NodeVaultWatcher {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #listener: ((batch: VaultChangeBatch) => void | Promise<void>) | undefined;
   #flushTail: Promise<void> = Promise.resolve();
+  #activitySinceScan = false;
 
   private constructor(
     policy: VaultPathPolicy,
@@ -255,7 +256,10 @@ export class NodeVaultWatcher {
       throw new Error("Vault watcher is already running.");
     }
     this.#listener = listener;
-    this.#watcher = watch(this.policy.rootPath, { recursive: true }, () => this.scheduleScan());
+    this.#watcher = watch(this.policy.rootPath, { recursive: true }, () => {
+      this.#activitySinceScan = true;
+      this.scheduleScan();
+    });
     this.#watcher.on("error", (error) => {
       this.#onError(error);
       void this.emitRescan("backend-error").catch(this.#onError);
@@ -344,7 +348,11 @@ export class NodeVaultWatcher {
       this.#timer = undefined;
       this.#flushTail = this.#flushTail.then(async () => {
         try {
-          const batch = await this.scanNow();
+          const observedFilesystemActivity = this.#activitySinceScan;
+          this.#activitySinceScan = false;
+          const batch =
+            (await this.scanNow()) ??
+            (observedFilesystemActivity ? this.#sequencer.next({ changes: [] }) : null);
           if (batch && this.#listener) {
             await this.#listener(batch);
           }

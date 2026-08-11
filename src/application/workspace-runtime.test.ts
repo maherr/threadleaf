@@ -179,6 +179,65 @@ describe("WorkspaceRuntime", () => {
     });
   });
 
+  it("loads local raster images through the active-vault identity boundary", async () => {
+    const workspace = await openRuntime();
+    const imageBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlL8AAAAASUVORK5CYII=",
+      "base64",
+    );
+    await fs.mkdir(path.join(vaultPath, "assets"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "assets", "pixel.png"), imageBytes);
+
+    await expect(
+      workspace.loadVaultImage("Welcome.md", "assets/pixel.png", workspace.vaultId),
+    ).resolves.toMatchObject({
+      status: "ready",
+      vaultId: workspace.vaultId,
+      path: "assets/pixel.png",
+      mimeType: "image/png",
+      base64: imageBytes.toString("base64"),
+    });
+    await expect(
+      workspace.loadVaultImage("Welcome.md", "assets/pixel.png", "stale-vault"),
+    ).resolves.toEqual({ status: "stale-vault", vaultId: workspace.vaultId });
+  });
+
+  it("keeps Markdown image targets out of the note-link inspector", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Gallery.md"),
+      "# Gallery\n\n![Local](assets/image.png)\n\n[[Linked Note]]",
+      "utf8",
+    );
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Gallery.md");
+
+    expect(opened.workspace?.activeNote?.outgoing).toEqual([
+      expect.objectContaining({ syntax: "wiki", path: "Linked Note.md", status: "resolved" }),
+    ]);
+    expect(opened.workspace?.files.find((file) => file.path === "Gallery.md")).toMatchObject({
+      outgoingCount: 1,
+      unresolvedCount: 0,
+    });
+  });
+
+  it("publishes a new watcher sequence after an external attachment edit", async () => {
+    const workspace = await openRuntime();
+    const observed = new Promise<number>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("attachment update timed out")), 2_000);
+      workspace.onSnapshot((snapshot) => {
+        const sequence = snapshot.workspace?.watcher.lastSequence ?? 0;
+        if (sequence > 0) {
+          clearTimeout(timeout);
+          resolve(sequence);
+        }
+      });
+    });
+
+    await fs.writeFile(path.join(vaultPath, "preview.png"), Buffer.from([0x89, 0x50, 0x4e]));
+
+    await expect(observed).resolves.toBeGreaterThan(0);
+  });
+
   it("preserves a stale edit as an indexed conflict copy", async () => {
     const workspace = await openRuntime();
     const opened = await workspace.openNote("Welcome.md");

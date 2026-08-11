@@ -35,11 +35,14 @@ every vault, reject collisions, and persist changes before activating them. Comp
 in selected and restored vaults stay off by default. An explicit reading view renders the current
 editor draft through a sanitized Markdown subset, keeps unsaved text off disk, resolves internal
 links through the derived index, and provides source-line controls that return to the matching
-CodeMirror line. A headless CLI now inspects vaults, lists and reads notes, and searches indexed
-content with stable JSON and explicit exit codes, without requiring the Electron application.
+CodeMirror line. Sniffed local PNG, JPEG, GIF, and WebP attachments now render through a
+vault-scoped, size-bounded main-process service; external, oversized, unsupported, private, and
+out-of-vault targets stay explicit placeholders. A headless CLI now inspects vaults, lists and
+reads notes, and searches indexed content with stable JSON and explicit exit codes, without
+requiring the Electron application.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
-functional, but Threadleaf is still pre-alpha and has no inline live preview, attachment rendering,
+functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
 or release-grade backup and restore workflow.
 
 ## Product promises
@@ -85,7 +88,8 @@ matched as a phrase. Every listed shortcut can be reassigned or cleared, and Res
 restores the portable built-in bindings. Threadleaf stores these preferences in private
 application data, not in the vault or `.obsidian/`. Ctrl/Cmd+E switches between Markdown source and
 reading view. Reading view previews the current draft without saving it; clicking a source-line
-control returns to the exact source line.
+control returns to the exact source line. Relative and vault-rooted local raster images render
+without exposing filesystem paths or general file access to the renderer.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

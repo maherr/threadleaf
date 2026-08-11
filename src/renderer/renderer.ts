@@ -24,7 +24,11 @@ import {
   movePaletteSelection,
   type PaletteCommandDescriptor,
 } from "./command-palette-model";
-import { addPreviewSourceControls, renderMarkdownPreview } from "./markdown-preview";
+import {
+  addPreviewSourceControls,
+  hydrateMarkdownPreviewImages,
+  renderMarkdownPreview,
+} from "./markdown-preview";
 import "./styles.css";
 
 const elements = {
@@ -177,6 +181,9 @@ let syncingEditor = false;
 let documentViewMode: DocumentViewMode = "source";
 let renderedPreviewPath: string | null = null;
 let renderedPreviewSource: string | null = null;
+let renderedPreviewVaultId: string | null = null;
+let renderedPreviewWatchSequence = -1;
+let previewImageRequest = 0;
 let paletteMatches: RendererCommand[] = [];
 let paletteSelection = -1;
 let paletteRestoreFocus: HTMLElement | null = null;
@@ -504,15 +511,27 @@ function sourceLineForSubpath(
 
 function renderReadingView(): void {
   if (!loadedNote) {
+    previewImageRequest += 1;
     elements.notePreview.replaceChildren();
     renderedPreviewPath = null;
     renderedPreviewSource = null;
+    renderedPreviewVaultId = null;
+    renderedPreviewWatchSequence = -1;
     return;
   }
   const source = editor.state.doc.toString();
-  if (renderedPreviewPath === loadedNote.path && renderedPreviewSource === source) {
+  const vaultId = loadedVaultId;
+  const watchSequence = currentSnapshot?.workspace?.watcher.lastSequence ?? 0;
+  if (
+    renderedPreviewPath === loadedNote.path &&
+    renderedPreviewSource === source &&
+    renderedPreviewVaultId === vaultId &&
+    renderedPreviewWatchSequence === watchSequence
+  ) {
     return;
   }
+  const request = previewImageRequest + 1;
+  previewImageRequest = request;
   const fragment = addPreviewSourceControls(renderMarkdownPreview(source));
   elements.notePreview.replaceChildren(fragment);
   for (const anchor of elements.notePreview.querySelectorAll<HTMLAnchorElement>(
@@ -538,6 +557,21 @@ function renderReadingView(): void {
   }
   renderedPreviewPath = loadedNote.path;
   renderedPreviewSource = source;
+  renderedPreviewVaultId = vaultId;
+  renderedPreviewWatchSequence = watchSequence;
+  if (vaultId) {
+    void hydrateMarkdownPreviewImages(elements.notePreview, {
+      sourceNotePath: loadedNote.path,
+      expectedVaultId: vaultId,
+      loadImage: (sourceNotePath, target, expectedVaultId) =>
+        window.threadleaf.loadVaultImage(sourceNotePath, target, expectedVaultId),
+      isCurrent: () =>
+        previewImageRequest === request &&
+        loadedVaultId === vaultId &&
+        renderedPreviewPath === loadedNote?.path &&
+        renderedPreviewSource === source,
+    });
+  }
 }
 
 function renderDocumentView(): void {
@@ -1438,6 +1472,12 @@ function replaceEditorDocument(note: WorkspaceNoteSnapshot | null, vaultId: stri
   }
   loadedNote = note;
   loadedVaultId = note ? vaultId : null;
+  previewImageRequest += 1;
+  renderedPreviewPath = null;
+  renderedPreviewSource = null;
+  renderedPreviewVaultId = null;
+  renderedPreviewWatchSequence = -1;
+  elements.notePreview.replaceChildren();
   pendingDiskNote = null;
   diskChanged = false;
   dirty = false;

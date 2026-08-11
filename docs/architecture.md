@@ -99,6 +99,10 @@ ID, monotonic sequence number, and explicit path-state or move operations. Split
 within a bounded window. Overflow, backend errors, ambiguous renames, and sequence gaps request a
 subtree scan or full rebuild instead of guessing.
 
+Non-Markdown filesystem activity publishes an empty sequenced batch without hashing attachment
+bytes. This invalidates reading-view asset requests while keeping binary files out of the metadata
+index. The next image request performs its own stable, bounded read.
+
 The metadata index is derived state. After every accepted mutation sequence, its externally visible
 state must equal an index rebuilt from the current vault bytes. Tests compare incremental and clean
 rebuild snapshots for additions, edits, deletions, renames, unresolved links, duplicates, and
@@ -138,9 +142,15 @@ write boundary. Switching modes stores only an application preference outside th
 The first renderer uses Markdown-it for deterministic block parsing and DOMPurify with a narrow
 element and attribute allowlist. Raw HTML is accepted only after sanitization. Scripts, event
 handlers, forms, styles, media elements, and active URLs are removed. Markdown images and wiki
-embeds remain inert placeholders until the attachment resolver can provide a dedicated read-only
-resource boundary. External links also stay inert during pre-alpha rather than broadening IPC for
-shell access prematurely.
+embeds first become inert placeholders. A dedicated read-only service may then replace Markdown
+image placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. The renderer supplies the source
+note, raw target, and expected vault identity; the main process resolves note-relative and
+vault-rooted paths, follows symlinks only within the vault, excludes `.obsidian/`, `.git/`, and
+transaction artifacts, rechecks the active runtime after asynchronous reads, and never returns a
+filesystem URL. Reads are stable and limited to 10 MiB per image. One preview accepts at most 128
+images and 64 MiB of decoded input. Oversized, missing, external, malformed, unsupported, and
+out-of-vault targets remain labeled placeholders. SVG and wiki embeds remain inert. External links
+also stay inert during pre-alpha rather than broadening IPC for shell access prematurely.
 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized

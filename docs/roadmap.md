@@ -71,11 +71,14 @@ equivalence through the real writer-to-watcher seam.
 - [x] Headless native CLI foundation over the shared read-only vault kernel and metadata index, with
       explicit vault selection, `vault info`, `files`, `read`, `search`, stable JSON, script-safe
       exit codes, and tested `file=` and `query=` compatibility spellings.
+- [x] Vault-scoped local raster-image rendering with stable bounded reads, byte-sniffed MIME types,
+      containment and stale-vault checks, explicit failure placeholders, and attachment-change
+      invalidation without renderer filesystem access.
 - [ ] Recovery-backed CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Tabs, split panes, application menus, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
-- [ ] Rich property views and editing, attachments, and embeds.
+- [ ] Rich property views and editing, broader attachment types, and wiki embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
 

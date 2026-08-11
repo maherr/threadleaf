@@ -3,6 +3,7 @@ import type {
   NoteSaveResponse,
   RuntimeSnapshot,
   ThreadleafBridge,
+  VaultImageResponse,
   VaultOpenResponse,
   VaultSearchResponse,
 } from "../shared/contracts";
@@ -14,6 +15,13 @@ const bridge: ThreadleafBridge = {
   getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
   searchVault: (query) =>
     ipcRenderer.invoke(ipcChannels.searchVault, query) as Promise<VaultSearchResponse>,
+  loadVaultImage: (sourceNotePath, target, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.loadVaultImage,
+      sourceNotePath,
+      target,
+      expectedVaultId,
+    ) as Promise<VaultImageResponse>,
   setKeyBinding: (targetId, binding) =>
     ipcRenderer.invoke(
       ipcChannels.setKeyBinding,

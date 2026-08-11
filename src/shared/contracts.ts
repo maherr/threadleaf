@@ -140,6 +140,39 @@ export interface NoteSaveResponse {
   snapshot: RuntimeSnapshot;
 }
 
+export type VaultImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+
+export type VaultImageUnavailableReason =
+  | "external"
+  | "invalid"
+  | "private"
+  | "missing"
+  | "outside-vault"
+  | "unsupported"
+  | "too-large"
+  | "unreadable";
+
+export type VaultImageResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      path: string;
+      mimeType: VaultImageMimeType;
+      size: number;
+      revision: string;
+      base64: string;
+    }
+  | {
+      status: "unavailable";
+      vaultId: string;
+      reason: VaultImageUnavailableReason;
+      message: string;
+    }
+  | {
+      status: "stale-vault";
+      vaultId: string;
+    };
+
 export type VaultOpenResponse =
   | { status: "cancelled"; snapshot: RuntimeSnapshot }
   | { status: "opened"; snapshot: RuntimeSnapshot }
@@ -149,6 +182,11 @@ export interface ThreadleafBridge {
   getSnapshot(): Promise<RuntimeSnapshot>;
   getSettings(): Promise<AppSettingsSnapshot>;
   searchVault(query: string): Promise<VaultSearchResponse>;
+  loadVaultImage(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultImageResponse>;
   setKeyBinding(targetId: ShortcutTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
   resetKeyBindings(): Promise<AppSettingsSnapshot>;
   chooseVault(): Promise<VaultOpenResponse>;

@@ -8,6 +8,7 @@ import {
   installStagedFile,
   pathExists,
   readStableFile,
+  readStableFileWithinLimit,
   removeIfPresent,
   revisionOf,
   sameFile,
@@ -65,6 +66,17 @@ export interface VaultKernelOptions {
 }
 
 export type TextFileSnapshot = VaultTextSnapshot;
+
+export interface BinaryFileSnapshot {
+  path: string;
+  bytes: Buffer;
+  revision: string;
+  size: number;
+}
+
+export type BinaryReadResult =
+  | { status: "ready"; snapshot: BinaryFileSnapshot }
+  | { status: "too-large"; path: string; size: number };
 
 export type WriteResult = VaultWriteResult;
 export type RenameResult = VaultRenameResult;
@@ -206,6 +218,33 @@ export class VaultKernel implements VaultMutationPort {
       content: textDecoder.decode(snapshot.bytes),
       revision: snapshot.revision,
       size: snapshot.size,
+    };
+  }
+
+  async resolveReadPath(relativePath: string): Promise<string> {
+    const normalized = normalizeVaultPath(relativePath);
+    const absolutePath = await this.paths.resolveForRead(normalized);
+    return this.paths.toVaultPath(absolutePath);
+  }
+
+  async readBinary(relativePath: string, maxBytes: number): Promise<BinaryReadResult> {
+    const normalized = normalizeVaultPath(relativePath);
+    const absolutePath = await this.paths.resolveForRead(normalized);
+    const result = await readStableFileWithinLimit(absolutePath, maxBytes);
+    if (!result) {
+      throw new Error(`File does not exist: ${normalized}`);
+    }
+    if (result.status === "too-large") {
+      return { status: "too-large", path: normalized, size: result.size };
+    }
+    return {
+      status: "ready",
+      snapshot: {
+        path: normalized,
+        bytes: result.snapshot.bytes,
+        revision: result.snapshot.revision,
+        size: result.snapshot.size,
+      },
     };
   }
 

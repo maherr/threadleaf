@@ -61,6 +61,19 @@ function registerIpcHandlers(): void {
     }
     return workspaceController.searchVault(query);
   });
+  ipcMain.handle(
+    ipcChannels.loadVaultImage,
+    (_event, sourceNotePath: unknown, target: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof sourceNotePath !== "string" ||
+        typeof target !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Load vault image requires string note, target, and vault values.");
+      }
+      return workspaceController.loadVaultImage(sourceNotePath, target, expectedVaultId);
+    },
+  );
   ipcMain.handle(ipcChannels.setKeyBinding, (_event, targetId: unknown, binding: unknown) => {
     if (
       typeof targetId !== "string" ||

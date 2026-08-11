@@ -1,5 +1,6 @@
 import DOMPurify, { type Config } from "dompurify";
 import MarkdownIt, { type RendererRule, type StateInline } from "markdown-it";
+import type { VaultImageResponse } from "../shared/contracts";
 
 export interface PreviewWikiLink extends Record<string, unknown> {
   target: string;
@@ -47,6 +48,7 @@ const sanitizeConfig = {
     "class",
     "colspan",
     "data-source-line",
+    "data-threadleaf-alt",
     "data-threadleaf-asset",
     "data-threadleaf-embed",
     "data-threadleaf-external-url",
@@ -218,8 +220,130 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
   const source = String(token.attrGet("src") ?? "");
   const alt = renderer.renderInlineAsText(token.children ?? [], options, env).trim();
   const label = alt || source || "attachment";
-  return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(source)}">Image: ${escapeText(label)}</span>`;
+  return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(source)}" data-threadleaf-alt="${escapeAttribute(alt)}">Image: ${escapeText(label)}</span>`;
 };
+
+const maxImagesPerPreview = 128;
+const maxPreviewImageBytes = 64 * 1024 * 1024;
+
+export interface PreviewImageHydrationOptions {
+  sourceNotePath: string;
+  expectedVaultId: string;
+  loadImage(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultImageResponse>;
+  isCurrent?(): boolean;
+}
+
+function imageLabel(placeholder: HTMLElement): string {
+  return placeholder.dataset.threadleafAlt || placeholder.dataset.threadleafAsset || "attachment";
+}
+
+function markImageUnavailable(
+  placeholder: HTMLElement,
+  label: string,
+  status: string,
+  message: string,
+): void {
+  placeholder.ariaBusy = "false";
+  placeholder.dataset.threadleafAssetStatus = status;
+  placeholder.textContent = `Image unavailable: ${label}`;
+  placeholder.title = message;
+}
+
+export async function hydrateMarkdownPreviewImages(
+  root: HTMLElement,
+  options: PreviewImageHydrationOptions,
+): Promise<void> {
+  const placeholders = [
+    ...root.querySelectorAll<HTMLElement>(".preview-asset-placeholder[data-threadleaf-asset]"),
+  ];
+  let loadedBytes = 0;
+
+  for (const [index, placeholder] of placeholders.entries()) {
+    if (options.isCurrent && !options.isCurrent()) {
+      return;
+    }
+    const label = imageLabel(placeholder);
+    if (index >= maxImagesPerPreview) {
+      markImageUnavailable(
+        placeholder,
+        label,
+        "preview-limit",
+        `Reading view loads at most ${maxImagesPerPreview} local images at once.`,
+      );
+      continue;
+    }
+    const target = placeholder.dataset.threadleafAsset ?? "";
+    placeholder.ariaBusy = "true";
+    placeholder.dataset.threadleafAssetStatus = "loading";
+
+    let response: VaultImageResponse;
+    try {
+      response = await options.loadImage(options.sourceNotePath, target, options.expectedVaultId);
+    } catch {
+      if ((!options.isCurrent || options.isCurrent()) && root.contains(placeholder)) {
+        markImageUnavailable(placeholder, label, "unreadable", "The local image request failed.");
+      }
+      continue;
+    }
+    if ((options.isCurrent && !options.isCurrent()) || !root.contains(placeholder)) {
+      return;
+    }
+    if (response.status === "stale-vault" || response.vaultId !== options.expectedVaultId) {
+      markImageUnavailable(
+        placeholder,
+        label,
+        "stale-vault",
+        "The active vault changed before this image finished loading.",
+      );
+      continue;
+    }
+    if (response.status === "unavailable") {
+      markImageUnavailable(placeholder, label, response.reason, response.message);
+      continue;
+    }
+    if (loadedBytes + response.size > maxPreviewImageBytes) {
+      markImageUnavailable(
+        placeholder,
+        label,
+        "preview-limit",
+        "This reading view reached its 64 MiB local-image budget.",
+      );
+      continue;
+    }
+    loadedBytes += response.size;
+
+    const image = root.ownerDocument.createElement("img");
+    image.className = "preview-local-image";
+    image.alt = placeholder.dataset.threadleafAlt ?? "";
+    image.loading = "eager";
+    image.decoding = "async";
+    image.dataset.threadleafAsset = target;
+    image.dataset.threadleafAssetPath = response.path;
+    image.dataset.threadleafRevision = response.revision;
+    image.addEventListener("error", () => {
+      if (!root.contains(image)) {
+        return;
+      }
+      const failure = root.ownerDocument.createElement("span");
+      failure.className = "preview-asset-placeholder";
+      failure.setAttribute("role", "note");
+      failure.dataset.threadleafAsset = target;
+      markImageUnavailable(
+        failure,
+        label,
+        "decode-failed",
+        "Chromium could not decode the sniffed local image.",
+      );
+      image.replaceWith(failure);
+    });
+    image.src = `data:${response.mimeType};base64,${response.base64}`;
+    placeholder.replaceWith(image);
+  }
+}
 
 export function renderMarkdownPreview(source: string): DocumentFragment {
   const html = markdown.render(maskFrontmatter(source));

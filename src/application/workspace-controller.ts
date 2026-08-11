@@ -2,6 +2,7 @@ import type { StateRootPort } from "../kernel/ports";
 import type {
   NoteSaveResponse,
   RuntimeSnapshot,
+  VaultImageResponse,
   VaultSearchResponse,
   VaultSelectionSource,
 } from "../shared/contracts";
@@ -17,6 +18,11 @@ export interface WorkspaceRuntimePort {
   readonly vaultPath: string;
   getSnapshot(): Promise<RuntimeSnapshot>;
   searchVault(query: string): Promise<VaultSearchResponse>;
+  loadVaultImage(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultImageResponse>;
   openNote(filePath: string): Promise<RuntimeSnapshot>;
   saveNote(
     filePath: string,
@@ -147,6 +153,22 @@ export class WorkspaceController {
 
   searchVault(query: string): Promise<VaultSearchResponse> {
     return this.#runtime.searchVault(query);
+  }
+
+  async loadVaultImage(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultImageResponse> {
+    const runtime = this.#runtime;
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.loadVaultImage(sourceNotePath, target, expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
   }
 
   openNote(filePath: string): Promise<RuntimeSnapshot> {

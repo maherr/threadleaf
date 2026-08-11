@@ -4,6 +4,7 @@ export const ipcChannels = {
   settings: "threadleaf:settings",
   settingsChanged: "threadleaf:settings-changed",
   searchVault: "threadleaf:search-vault",
+  loadVaultImage: "threadleaf:load-vault-image",
   setKeyBinding: "threadleaf:set-key-binding",
   resetKeyBindings: "threadleaf:reset-key-bindings",
   chooseVault: "threadleaf:choose-vault",

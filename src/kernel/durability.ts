@@ -8,6 +8,10 @@ export interface FileSnapshot {
   size: number;
 }
 
+export type BoundedFileSnapshot =
+  | { status: "ready"; snapshot: FileSnapshot }
+  | { status: "too-large"; size: number };
+
 export function revisionOf(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -36,6 +40,76 @@ export async function readStableFile(filePath: string): Promise<FileSnapshot | n
         before.ctimeNs === after.ctimeNs
       ) {
         return { bytes, revision: revisionOf(bytes), size: bytes.length };
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+
+  throw new Error(`File kept changing while it was read: ${filePath}`);
+}
+
+export async function readStableFileWithinLimit(
+  filePath: string,
+  maxBytes: number,
+): Promise<BoundedFileSnapshot | null> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new Error("A stable file read limit must be a positive safe integer.");
+  }
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let handle: Awaited<ReturnType<typeof fs.open>>;
+    try {
+      handle = await fs.open(filePath, "r");
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+
+    try {
+      const before = await handle.stat({ bigint: true });
+      if (before.size > BigInt(maxBytes)) {
+        return {
+          status: "too-large",
+          size:
+            before.size > BigInt(Number.MAX_SAFE_INTEGER)
+              ? Number.MAX_SAFE_INTEGER
+              : Number(before.size),
+        };
+      }
+      const capacity = Math.min(maxBytes + 1, Number(before.size) + 1);
+      const boundedBuffer = Buffer.allocUnsafe(capacity);
+      let offset = 0;
+      while (offset < boundedBuffer.length) {
+        const { bytesRead } = await handle.read(
+          boundedBuffer,
+          offset,
+          boundedBuffer.length - offset,
+          null,
+        );
+        if (bytesRead === 0) {
+          break;
+        }
+        offset += bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      if (
+        before.dev === after.dev &&
+        before.ino === after.ino &&
+        before.size === after.size &&
+        before.mtimeNs === after.mtimeNs &&
+        before.ctimeNs === after.ctimeNs
+      ) {
+        if (offset > maxBytes) {
+          return { status: "too-large", size: offset };
+        }
+        const bytes = Buffer.from(boundedBuffer.subarray(0, offset));
+        return {
+          status: "ready",
+          snapshot: { bytes, revision: revisionOf(bytes), size: bytes.length },
+        };
       }
     } finally {
       await handle.close();

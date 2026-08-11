@@ -11,6 +11,7 @@ import type {
   NoteSaveOutcome,
   NoteSaveResponse,
   RuntimeSnapshot,
+  VaultImageResponse,
   VaultSearchResponse,
   VaultSelectionSource,
   WorkspaceFileSummary,
@@ -18,6 +19,7 @@ import type {
   WorkspaceNoteSnapshot,
 } from "../shared/contracts";
 import { ActionRegistry } from "./action-registry";
+import { loadVaultImage } from "./vault-image-service";
 
 export interface WorkspaceRuntimeOptions {
   vaultRoot: string;
@@ -57,6 +59,10 @@ function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
     expectedRevision: payload.expectedRevision,
     expectedVaultId: payload.expectedVaultId,
   };
+}
+
+function isWorkspaceNoteLink(link: { syntax: "wiki" | "markdown"; embed: boolean }): boolean {
+  return link.syntax !== "markdown" || !link.embed;
 }
 
 export class WorkspaceRuntime {
@@ -207,6 +213,14 @@ export class WorkspaceRuntime {
     }
   }
 
+  loadVaultImage(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultImageResponse> {
+    return loadVaultImage(this.kernel, sourceNotePath, target, expectedVaultId);
+  }
+
   async saveNote(
     filePath: string,
     content: string,
@@ -345,15 +359,17 @@ export class WorkspaceRuntime {
       this.#activePath = index.documents[0]?.path ?? null;
     }
     const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
-    const files: WorkspaceFileSummary[] = index.documents.map((document) => ({
-      path: document.path,
-      title: displayTitleFromVaultPath(document.path),
-      tags: document.tags,
-      backlinkCount: backlinks.get(document.path)?.length ?? 0,
-      outgoingCount: document.links.length,
-      unresolvedCount: document.links.filter((link) => link.resolution.status !== "resolved")
-        .length,
-    }));
+    const files: WorkspaceFileSummary[] = index.documents.map((document) => {
+      const noteLinks = document.links.filter(isWorkspaceNoteLink);
+      return {
+        path: document.path,
+        title: displayTitleFromVaultPath(document.path),
+        tags: document.tags,
+        backlinkCount: backlinks.get(document.path)?.length ?? 0,
+        outgoingCount: noteLinks.length,
+        unresolvedCount: noteLinks.filter((link) => link.resolution.status !== "resolved").length,
+      };
+    });
 
     let activeNote: WorkspaceNoteSnapshot | null = null;
     const activeMetadata = this.#activePath ? documents.get(this.#activePath) : undefined;
@@ -366,7 +382,7 @@ export class WorkspaceRuntime {
         revision: note.revision,
         tags: activeMetadata.tags,
         headings: activeMetadata.headings,
-        outgoing: activeMetadata.links.map(
+        outgoing: activeMetadata.links.filter(isWorkspaceNoteLink).map(
           (link): WorkspaceLinkSummary => ({
             label: link.alias ?? `${link.target}${link.subpath ?? ""}`,
             status: link.resolution.status,

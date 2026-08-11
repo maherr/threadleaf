@@ -1,7 +1,12 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
-import type { NoteSaveResponse, RuntimeSnapshot, VaultSearchResponse } from "../shared/contracts";
+import type {
+  NoteSaveResponse,
+  RuntimeSnapshot,
+  VaultImageResponse,
+  VaultSearchResponse,
+} from "../shared/contracts";
 import {
   type VaultSelectionStore,
   WorkspaceController,
@@ -63,6 +68,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
   readonly options: WorkspaceRuntimeOptions;
   readonly #snapshot: RuntimeSnapshot;
   readonly #listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
+  imageLoader: (() => Promise<VaultImageResponse>) | null = null;
   closed = false;
 
   constructor(options: WorkspaceRuntimeOptions) {
@@ -86,6 +92,21 @@ class FakeRuntime implements WorkspaceRuntimePort {
       total: 0,
       truncated: false,
       results: [],
+    };
+  }
+
+  async loadVaultImage(): Promise<VaultImageResponse> {
+    if (this.imageLoader) {
+      return this.imageLoader();
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      path: "image.png",
+      mimeType: "image/png",
+      size: 1,
+      revision: "a".repeat(64),
+      base64: "AA==",
     };
   }
 
@@ -315,6 +336,44 @@ describe("WorkspaceController", () => {
     expect(controller.vaultPath).toBe(path.resolve(fixtureVaultPath));
     expect(store.saved).toEqual([]);
     expect(harness.runtimes).toHaveLength(1);
+    await controller.close();
+  });
+
+  it("rejects an image response that completes after the active vault changes", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const firstRuntime = harness.runtimes[0];
+    if (!firstRuntime) {
+      throw new Error("Expected the initial runtime.");
+    }
+    let releaseImage: ((response: VaultImageResponse) => void) | undefined;
+    firstRuntime.imageLoader = () =>
+      new Promise<VaultImageResponse>((resolve) => {
+        releaseImage = resolve;
+      });
+
+    const pending = controller.loadVaultImage("Current.md", "image.png", firstRuntime.vaultId);
+    await controller.switchVault("/picked/vault");
+    releaseImage?.({
+      status: "ready",
+      vaultId: firstRuntime.vaultId,
+      path: "image.png",
+      mimeType: "image/png",
+      size: 1,
+      revision: "b".repeat(64),
+      base64: "AA==",
+    });
+
+    await expect(pending).resolves.toEqual({
+      status: "stale-vault",
+      vaultId: harness.runtimes[1]?.vaultId,
+    });
     await controller.close();
   });
 });

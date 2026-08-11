@@ -1242,6 +1242,30 @@ h2 {
   color: var(--signal);
 }
 
+.preview-asset-placeholder[data-threadleaf-asset-status="loading"]::before {
+  content: "…";
+}
+
+.preview-asset-placeholder[data-threadleaf-asset-status]:not(
+  [data-threadleaf-asset-status="loading"]
+)::before {
+  content: "×";
+}
+
+.preview-local-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: min(72vh, 920px);
+  margin: 10px auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-sunken);
+  object-fit: contain;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
 .preview-source-action {
   position: absolute;
   top: 0.2em;

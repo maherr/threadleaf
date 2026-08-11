@@ -272,4 +272,27 @@ describe("NodeVaultWatcher", () => {
     expect(errors).toEqual([]);
     await watcher.close();
   });
+
+  it("publishes non-Markdown filesystem activity without indexing binary bytes", async () => {
+    const watcher = await NodeVaultWatcher.open(vaultPath, {
+      debounceMs: 20,
+      streamId: "asset-stream",
+    });
+    const received = new Promise<unknown>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("asset watcher fixture timed out")), 2_000);
+      watcher.start((batch) => {
+        clearTimeout(timeout);
+        resolve(batch);
+      });
+    });
+
+    await fs.writeFile(path.join(vaultPath, "image.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    await expect(received).resolves.toMatchObject({
+      streamId: "asset-stream",
+      sequence: 1,
+      changes: [],
+    });
+    await watcher.close();
+  });
 });
