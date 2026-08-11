@@ -28,6 +28,10 @@ threadleaf --vault /path/to/vault rename "Folder/Note.md" --name "New name"
 threadleaf --vault /path/to/vault delete "Folder/Note.md"
 threadleaf --vault /path/to/vault trash list
 threadleaf --vault /path/to/vault restore "Folder/Note.md"
+threadleaf --vault /path/to/vault properties path="Folder/Note.md"
+threadleaf --vault /path/to/vault property:read path="Folder/Note.md" name=status
+threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status value=review
+threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
@@ -52,6 +56,10 @@ During development, prefix the same arguments with `pnpm cli`.
 | `delete` | Source and recoverable trash paths | Revision-checked recoverable rename |
 | `trash list` or `trash:list` | Original path, trash path, revision, and byte size | Dedicated read-only trash inspection |
 | `restore` | Trash and restored paths | Revision-checked recoverable rename |
+| `properties` | Sorted indexed property names and values for one note | Derived metadata index |
+| `property:read` | One indexed property value or an explicit absent result | Derived metadata index |
+| `property:set` | Typed property value, note revision, and transaction | Revision-checked recoverable writer |
+| `property:remove` | Committed removal or explicit no-write missing result | Revision-checked recoverable writer |
 
 The note corpus excludes `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts.
 Read-only kernel opening performs path validation but creates no state directory, vault identity,
@@ -110,6 +118,26 @@ understandable in any file browser. Both operations compare the source revision 
 recover through the same rename journal after interruption. Threadleaf rejects `permanent` deletion;
 manual removal from `.trash/` remains outside the current CLI contract.
 
+`properties` and `property:read` expose the same current scalar-and-list projection used by desktop
+search. Both are read-only and create no CLI state. Threadleaf has no active-file default, so each
+property command requires an exact `path=` or `file=` target. `file=` remains an exact path in this
+release rather than basename or wikilink resolution.
+
+`property:set` defaults to `type=text`. Supported explicit types are `text`, `list`, `number`,
+`checkbox`, `date`, and `datetime`. Text is stored as a quoted one-line YAML string. A list value may
+be a JSON array of strings or a comma-separated list; each member is quoted on its own YAML line.
+Numbers must be literal integers or decimals, checkboxes must be `true` or `false`, dates use
+`YYYY-MM-DD`, and datetimes use `YYYY-MM-DDTHH:mm:ss`. Property names currently accept ASCII letters,
+numbers, underscores, and hyphens.
+
+The mutation service changes only the selected top-level property block and preserves the BOM,
+line endings, comments, unrelated property order and spelling, and complete note body. A note with
+no frontmatter gets a new YAML envelope. Removing the last property removes the resulting empty
+envelope; removing an absent property succeeds without writing. Duplicate keys, quoted or spaced
+keys, JSON frontmatter, nested mappings, and block scalars are refused before any write because this
+first patcher cannot yet preserve them losslessly. A revision race keeps the external winner at the
+requested path, stores the complete proposed file as a conflict copy, and returns exit 5.
+
 ## JSON contract
 
 Add `--json` anywhere before `--` to receive a versioned success envelope on standard output:
@@ -137,7 +165,7 @@ shape with `ok: false` and a stable error code. Without it, standard error recei
 | 2 | `USAGE` | Invalid command, option, or argument |
 | 3 | `VAULT` | Vault, path, UTF-8, or indexed-note failure |
 | 4 | `QUERY` | Search query exceeds the documented bounds |
-| 5 | `CONFLICT` | A target exists, a race was preserved, link integrity blocks a move, trash recovery collides, or another CLI mutation is active |
+| 5 | `CONFLICT` | A target exists, a write race was preserved, link integrity blocks a move, trash recovery collides, or another CLI mutation is active |
 
 ## Compatibility spellings
 
@@ -159,6 +187,11 @@ threadleaf --vault /path/to/vault move path="Folder/Note.md" to="Archive/Note.md
 threadleaf --vault /path/to/vault rename file="Folder/Note.md" name="New name"
 threadleaf --vault /path/to/vault delete path="Folder/Note.md"
 threadleaf --vault /path/to/vault restore path="Folder/Note.md"
+threadleaf --vault /path/to/vault properties path="Folder/Note.md"
+threadleaf --vault /path/to/vault property:read path="Folder/Note.md" name=status
+threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status value=review
+threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=aliases 'value=["First","Second"]' type=list
+threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
 ```
 
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
@@ -172,9 +205,11 @@ resolution are not claimed.
 
 Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberately omits its
 `permanent` flag. Atomic automatic link rewriting for move and rename also remains open. Threadleaf
-does not yet accept Obsidian's `open`, `overwrite`, or template parameters, active-file defaults,
-basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags, and does not
-claim complete output compatibility. `trash list`, `trash:list`, and `restore` are native Threadleaf
-recovery commands rather than claimed Obsidian CLI compatibility.
+accepts the public property command names and parameter spellings, but its lossless frontmatter
+subset and native JSON contract are narrower than a complete compatibility claim. Threadleaf does
+not yet accept Obsidian's `open`, `overwrite`, or template parameters, active-file defaults,
+basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags. `trash list`,
+`trash:list`, and `restore` are native Threadleaf recovery commands rather than claimed Obsidian CLI
+compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).

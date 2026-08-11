@@ -57,6 +57,10 @@ recovery content outside the ordinary corpus and never overwrite either side of 
 desktop Trash action uses the same revision-bound service behind a confirmation that names both
 paths and the indexed-link impact. A committed move closes the note tab and selects its surviving
 neighbor; a stale revision or occupied trash path remains reviewable and changes nothing.
+Headless property commands list and read the current indexed projection, then set or remove typed
+top-level YAML properties through a byte-preserving, revision-checked application service. The
+writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated
+frontmatter and body bytes, and refuses complex YAML shapes instead of reserializing them blindly.
 Runtime-owned tabs keep one
 ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
 externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
@@ -136,7 +140,8 @@ THREADLEAF_VAULT_PATH=/absolute/path/to/disposable-vault pnpm start
 This non-packaged development override is not persisted and is ignored by packaged builds. The
 `pnpm check` gate verifies the packaged Electron entry points and confirms that renderer assets
 remain loadable over `file://`. It also executes the built CLI against disposable synthetic-vault
-copies, validates its versioned JSON envelope, and proves exact-byte delete and restore behavior.
+copies, validates its versioned JSON envelope, proves an exact property set/read/remove round trip,
+and proves exact-byte delete and restore behavior.
 
 The development CLI requires an explicit vault and never consults the desktop application's saved
 selection:
@@ -159,6 +164,11 @@ pnpm cli --vault /absolute/path/to/vault rename path="Draft.md" name="Published"
 pnpm cli --vault /absolute/path/to/vault delete path="Archive/Old thought.md"
 pnpm cli --vault /absolute/path/to/vault trash list
 pnpm cli --vault /absolute/path/to/vault restore path="Archive/Old thought.md"
+pnpm cli --vault /absolute/path/to/vault properties path="Projects/Brief.md"
+pnpm cli --vault /absolute/path/to/vault property:read path="Projects/Brief.md" name=status
+pnpm cli --vault /absolute/path/to/vault property:set path="Projects/Brief.md" name=status value=review
+pnpm cli --vault /absolute/path/to/vault property:set path="Projects/Brief.md" name=aliases 'value=["Brief","Overview"]' type=list
+pnpm cli --vault /absolute/path/to/vault property:remove path="Projects/Brief.md" name=status
 ```
 
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported

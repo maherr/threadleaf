@@ -85,7 +85,7 @@ if (
   throw new Error("Built CLI returned an unexpected graph envelope.");
 }
 
-async function verifyBuiltCliRecovery() {
+async function verifyBuiltCliMutations() {
   const scratchPath = await mkdtemp(path.join(os.tmpdir(), "threadleaf-built-cli-"));
   try {
     const vaultPath = path.join(scratchPath, "vault");
@@ -96,7 +96,74 @@ async function verifyBuiltCliRecovery() {
     const originalPath = path.join(vaultPath, "Linked Note.md");
     const trashPath = path.join(vaultPath, ".trash", "Linked Note.md");
     const original = await readFile(originalPath);
+    const propertyPath = path.join(vaultPath, "Welcome.md");
+    const propertyOriginal = await readFile(propertyPath);
     const environment = { ...process.env, XDG_STATE_HOME: statePath };
+
+    const propertySet = spawnSync(
+      process.execPath,
+      [
+        cliPath,
+        "--vault",
+        vaultPath,
+        "--json",
+        "property:set",
+        "path=Welcome.md",
+        "name=status",
+        "value=built-smoke",
+      ],
+      { encoding: "utf8", env: environment },
+    );
+    const propertySetEnvelope = propertySet.status === 0 ? JSON.parse(propertySet.stdout) : null;
+    if (
+      propertySet.stderr !== "" ||
+      propertySetEnvelope?.command !== "property.set" ||
+      propertySetEnvelope.data?.name !== "status" ||
+      propertySetEnvelope.data?.value !== "built-smoke"
+    ) {
+      throw new Error(
+        `Built CLI property-set smoke test failed: ${propertySet.stderr || `exit ${propertySet.status}`}`,
+      );
+    }
+
+    const propertyRead = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "property:read", "path=Welcome.md", "name=status"],
+      { encoding: "utf8", env: environment },
+    );
+    const propertyReadEnvelope = propertyRead.status === 0 ? JSON.parse(propertyRead.stdout) : null;
+    if (
+      propertyRead.stderr !== "" ||
+      propertyReadEnvelope?.data?.exists !== true ||
+      propertyReadEnvelope.data?.value !== "built-smoke"
+    ) {
+      throw new Error(
+        `Built CLI property-read smoke test failed: ${propertyRead.stderr || `exit ${propertyRead.status}`}`,
+      );
+    }
+
+    const propertyRemove = spawnSync(
+      process.execPath,
+      [
+        cliPath,
+        "--vault",
+        vaultPath,
+        "--json",
+        "property:remove",
+        "path=Welcome.md",
+        "name=status",
+      ],
+      { encoding: "utf8", env: environment },
+    );
+    if (
+      propertyRemove.status !== 0 ||
+      propertyRemove.stderr !== "" ||
+      !propertyOriginal.equals(await readFile(propertyPath))
+    ) {
+      throw new Error(
+        `Built CLI property-remove smoke test failed: ${propertyRemove.stderr || `exit ${propertyRemove.status}`}`,
+      );
+    }
 
     const deleted = spawnSync(
       process.execPath,
@@ -165,7 +232,7 @@ async function verifyBuiltCliRecovery() {
   }
 }
 
-await verifyBuiltCliRecovery();
+await verifyBuiltCliMutations();
 try {
   await access(path.join(projectRoot, "fixtures", "vaults", ".threadleaf-cli-read-only-state"));
   throw new Error("Built read-only CLI created a state directory.");
@@ -176,5 +243,5 @@ try {
 }
 
 console.log(
-  `Verified Electron entry points, headless CLI graph and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
+  `Verified Electron entry points, headless CLI graph, property, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
 );

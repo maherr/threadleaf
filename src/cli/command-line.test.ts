@@ -151,6 +151,43 @@ describe("Threadleaf CLI arguments", () => {
     expect(parseCliArguments(["--vault=/vault", "trash:list"])).toMatchObject({
       id: "trash.list",
     });
+    expect(
+      parseCliArguments(["--vault=/vault", "properties", "path=Folder/Note.md"]),
+    ).toMatchObject({
+      id: "properties",
+      filePath: "Folder/Note.md",
+    });
+    expect(
+      parseCliArguments(["--vault=/vault", "property:read", "path=Folder/Note.md", "name=status"]),
+    ).toMatchObject({ id: "property.read", filePath: "Folder/Note.md", propertyName: "status" });
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
+        "property:set",
+        "path=Folder/Note.md",
+        "name=priority",
+        "value=4",
+        "type=number",
+      ]),
+    ).toMatchObject({
+      id: "property.set",
+      filePath: "Folder/Note.md",
+      propertyName: "priority",
+      propertyValue: "4",
+      propertyType: "number",
+    });
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
+        "property:remove",
+        "file=Folder/Note.md",
+        "name=priority",
+      ]),
+    ).toMatchObject({
+      id: "property.remove",
+      filePath: "Folder/Note.md",
+      propertyName: "priority",
+    });
     for (const name of ["links", "backlinks", "outline"] as const) {
       expect(parseCliArguments(["--vault=/vault", name, "path=Folder/Note.md"])).toMatchObject({
         id: name,
@@ -202,6 +239,19 @@ describe("Threadleaf CLI arguments", () => {
     expect(() =>
       parseCliArguments(["--vault", "/vault", "delete", "Note.md", "permanent"]),
     ).toThrow("permanent deletion");
+    expect(() =>
+      parseCliArguments([
+        "--vault=/vault",
+        "property:set",
+        "path=Note.md",
+        "name=status",
+        "value=active",
+        "type=object",
+      ]),
+    ).toThrow("Unsupported property type");
+    expect(() => parseCliArguments(["--vault=/vault", "property:remove", "path=Note.md"])).toThrow(
+      "requires name=<name>",
+    );
   });
 
   it("shows help without requiring a vault", async () => {
@@ -369,6 +419,21 @@ describe("Threadleaf CLI create workflow", () => {
     await expect(fs.stat(path.join(vaultPath, "Archive", "Alpha.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+
+    const propertyResult = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:set",
+      "path=Alpha.md",
+      "name=status",
+      "value=blocked",
+    ]);
+    expect(propertyResult.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(propertyResult.stderr)).toMatchObject({
+      error: { code: "CONFLICT", details: { status: "busy" } },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(alphaBefore);
   });
 
   it("takes over a dead CLI lock, recovers state, and releases ownership", async () => {
@@ -753,6 +818,191 @@ describe("Threadleaf CLI recoverable deletion workflows", () => {
     }
     await expect(fs.stat(path.join(sandboxPath, "Outside.md"))).rejects.toMatchObject({
       code: "ENOENT",
+    });
+  });
+});
+
+describe("Threadleaf CLI property workflows", () => {
+  it("lists and reads indexed properties without creating CLI state", async () => {
+    const listed = await invoke(["--json", "--vault", vaultPath, "properties", "path=Alpha.md"]);
+    expect(listed.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(listed.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "properties",
+      data: {
+        path: "Alpha.md",
+        total: 1,
+        properties: { tags: ["project", "open"] },
+      },
+    });
+
+    const read = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:read",
+      "path=Alpha.md",
+      "name=tags",
+    ]);
+    expect(JSON.parse(read.stdout)).toMatchObject({
+      command: "property.read",
+      data: {
+        path: "Alpha.md",
+        name: "tags",
+        exists: true,
+        value: ["project", "open"],
+      },
+    });
+
+    const missing = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:read",
+      "path=Alpha.md",
+      "name=missing",
+    ]);
+    expect(JSON.parse(missing.stdout)).toMatchObject({
+      command: "property.read",
+      data: { path: "Alpha.md", name: "missing", exists: false, value: null },
+    });
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("sets typed values through compatibility parameters and preserves the note body", async () => {
+    const body = "\n\n# Alpha heading\n\nA distinctive needle links to [[Folder/Beta]].";
+    const text = await invoke([
+      "--vault",
+      vaultPath,
+      "property:set",
+      "path=Alpha.md",
+      "name=status",
+      "value=review",
+    ]);
+    expect(text).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Set status on Alpha.md\n",
+      stderr: "",
+    });
+
+    const list = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:set",
+      "path=Alpha.md",
+      "name=aliases",
+      'value=["First","[[Second]]"]',
+      "type=list",
+    ]);
+    expect(JSON.parse(list.stdout)).toMatchObject({
+      command: "property.set",
+      data: {
+        status: "committed",
+        path: "Alpha.md",
+        name: "aliases",
+        type: "list",
+        value: ["First", "[[Second]]"],
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(
+      [
+        "---",
+        "tags: [project, open]",
+        'status: "review"',
+        "aliases:",
+        '  - "First"',
+        '  - "[[Second]]"',
+        "---",
+      ].join("\n") + body,
+    );
+  });
+
+  it("removes a property idempotently and reports the no-write case", async () => {
+    const removed = await invoke([
+      "--vault",
+      vaultPath,
+      "property:remove",
+      "path=Alpha.md",
+      "name=tags",
+    ]);
+    expect(removed).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Removed tags from Alpha.md\n",
+      stderr: "",
+    });
+    expect(await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).not.toContain("tags:");
+
+    const missing = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:remove",
+      "path=Alpha.md",
+      "name=tags",
+    ]);
+    expect(JSON.parse(missing.stdout)).toMatchObject({
+      command: "property.remove",
+      data: { status: "missing", path: "Alpha.md", name: "tags" },
+    });
+  });
+
+  it("fails closed for unsafe frontmatter, invalid values, and private paths", async () => {
+    const alphaBefore = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const invalidValue = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:set",
+      "path=Alpha.md",
+      "name=due",
+      "value=2026-02-30",
+      "type=date",
+    ]);
+    expect(invalidValue.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(invalidValue.stderr)).toMatchObject({
+      command: "property.set",
+      error: { code: "VAULT", message: expect.stringContaining("calendar date") },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(alphaBefore);
+
+    await fs.writeFile(
+      path.join(vaultPath, "Complex.md"),
+      '---\n{"status":"active"}\n---\nBody',
+      "utf8",
+    );
+    const complexBefore = await fs.readFile(path.join(vaultPath, "Complex.md"), "utf8");
+    const complex = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:set",
+      "path=Complex.md",
+      "name=status",
+      "value=review",
+    ]);
+    expect(complex.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(complex.stderr)).toMatchObject({
+      command: "property.set",
+      error: { code: "VAULT", message: expect.stringContaining("JSON or complex YAML") },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Complex.md"), "utf8")).resolves.toBe(
+      complexBefore,
+    );
+
+    const privatePath = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:remove",
+      "path=.obsidian/Hidden.md",
+      "name=status",
+    ]);
+    expect(privatePath.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(privatePath.stderr)).toMatchObject({
+      command: "property.remove",
+      error: { code: "VAULT" },
     });
   });
 });

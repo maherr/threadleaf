@@ -4,6 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { createMarkdownNote } from "../application/note-creation";
 import { movedMarkdownPath, moveMarkdownNote, renamedMarkdownPath } from "../application/note-move";
+import {
+  type NotePropertyType,
+  notePropertyTypes,
+  removeMarkdownNoteProperty,
+  setMarkdownNoteProperty,
+} from "../application/note-properties";
 import { mutateMarkdownNoteText } from "../application/note-text-mutation";
 import {
   listTrashedMarkdownNotes,
@@ -57,7 +63,11 @@ type CliCommandId =
   | "rename"
   | "delete"
   | "trash.list"
-  | "restore";
+  | "restore"
+  | "properties"
+  | "property.read"
+  | "property.set"
+  | "property.remove";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -129,6 +139,31 @@ interface CliTrashListCommand extends CliVaultCommand {
   id: "trash.list";
 }
 
+interface CliPropertiesCommand extends CliVaultCommand {
+  id: "properties";
+  filePath: string;
+}
+
+interface CliPropertyReadCommand extends CliVaultCommand {
+  id: "property.read";
+  filePath: string;
+  propertyName: string;
+}
+
+interface CliPropertySetCommand extends CliVaultCommand {
+  id: "property.set";
+  filePath: string;
+  propertyName: string;
+  propertyValue: string;
+  propertyType: NotePropertyType;
+}
+
+interface CliPropertyRemoveCommand extends CliVaultCommand {
+  id: "property.remove";
+  filePath: string;
+  propertyName: string;
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
@@ -141,7 +176,11 @@ export type ParsedCliCommand =
   | CliTextMutationCommand
   | CliMoveCommand
   | CliTrashMutationCommand
-  | CliTrashListCommand;
+  | CliTrashListCommand
+  | CliPropertiesCommand
+  | CliPropertyReadCommand
+  | CliPropertySetCommand
+  | CliPropertyRemoveCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -216,6 +255,67 @@ function exactTargetPath(value: string): string {
     return value.slice(value.indexOf("=") + 1);
   }
   return value;
+}
+
+interface PropertyParameters {
+  filePath: string | null;
+  name: string | null;
+  value: string | null;
+  type: string | null;
+}
+
+function parsePropertyParameters(
+  values: readonly string[],
+  commandName: string,
+): PropertyParameters {
+  const parsed: PropertyParameters = { filePath: null, name: null, value: null, type: null };
+  for (const value of values) {
+    if (value.startsWith("path=") || value.startsWith("file=")) {
+      if (parsed.filePath !== null) {
+        usageFailure(`${commandName} accepts only one note path.`);
+      }
+      parsed.filePath = value.slice(value.indexOf("=") + 1);
+    } else if (value.startsWith("name=")) {
+      if (parsed.name !== null) {
+        usageFailure(`${commandName} accepts name only once.`);
+      }
+      parsed.name = value.slice("name=".length);
+    } else if (value.startsWith("value=")) {
+      if (parsed.value !== null) {
+        usageFailure(`${commandName} accepts value only once.`);
+      }
+      parsed.value = value.slice("value=".length);
+    } else if (value.startsWith("type=")) {
+      if (parsed.type !== null) {
+        usageFailure(`${commandName} accepts type only once.`);
+      }
+      parsed.type = value.slice("type=".length);
+    } else if (parsed.filePath === null && !value.includes("=")) {
+      parsed.filePath = value;
+    } else {
+      usageFailure(`Unsupported ${commandName} argument: ${value}`);
+    }
+  }
+  return parsed;
+}
+
+function requiredPropertyPath(parameters: PropertyParameters, commandName: string): string {
+  if (!parameters.filePath) {
+    usageFailure(`${commandName} requires path=<note.md>.`);
+  }
+  return parameters.filePath;
+}
+
+function requiredPropertyName(parameters: PropertyParameters, commandName: string): string {
+  if (!parameters.name) {
+    usageFailure(`${commandName} requires name=<name>.`);
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(parameters.name)) {
+    usageFailure(
+      `${commandName} property names accept letters, numbers, underscores, and hyphens.`,
+    );
+  }
+  return parameters.name;
 }
 
 export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
@@ -421,6 +521,60 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure(`${name} requires a non-empty Markdown path.`);
     }
     return { id: name, json, vaultPath, filePath };
+  }
+  if (
+    name === "properties" ||
+    name === "property:read" ||
+    name === "property:set" ||
+    name === "property:remove"
+  ) {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
+      usageFailure(`${name} accepts parameter=value arguments only.`);
+    }
+    const parameters = parsePropertyParameters(values, name);
+    const filePath = requiredPropertyPath(parameters, name);
+    if (name === "properties") {
+      if (parameters.name !== null || parameters.value !== null || parameters.type !== null) {
+        usageFailure("properties accepts only one note path.");
+      }
+      return { id: "properties", json, vaultPath, filePath };
+    }
+    const propertyName = requiredPropertyName(parameters, name);
+    if (name === "property:read") {
+      if (parameters.value !== null || parameters.type !== null) {
+        usageFailure("property:read accepts only path and name parameters.");
+      }
+      return { id: "property.read", json, vaultPath, filePath, propertyName };
+    }
+    if (name === "property:remove") {
+      if (parameters.value !== null || parameters.type !== null) {
+        usageFailure("property:remove accepts only path and name parameters.");
+      }
+      return { id: "property.remove", json, vaultPath, filePath, propertyName };
+    }
+    if (parameters.value === null) {
+      usageFailure("property:set requires value=<value>.");
+    }
+    const propertyType = parameters.type ?? "text";
+    if (!notePropertyTypes.includes(propertyType as NotePropertyType)) {
+      usageFailure(`Unsupported property type: ${propertyType}`);
+    }
+    return {
+      id: "property.set",
+      json,
+      vaultPath,
+      filePath,
+      propertyName,
+      propertyValue: parameters.value,
+      propertyType: propertyType as NotePropertyType,
+    };
   }
   if (name === "links" || name === "backlinks" || name === "outline") {
     if (
@@ -656,6 +810,10 @@ Usage:
   threadleaf --vault <path> [--json] delete <note>
   threadleaf --vault <path> [--json] trash list
   threadleaf --vault <path> [--json] restore <note>
+  threadleaf --vault <path> [--json] properties path=<note.md>
+  threadleaf --vault <path> [--json] property:read path=<note.md> name=<name>
+  threadleaf --vault <path> [--json] property:set path=<note.md> name=<name> value=<value> [type=<type>]
+  threadleaf --vault <path> [--json] property:remove path=<note.md> name=<name>
 
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
@@ -670,6 +828,10 @@ Compatibility spellings:
   threadleaf --vault <path> rename path=<note> name=<filename>
   threadleaf --vault <path> delete path=<note>
   threadleaf --vault <path> restore path=<note>
+  threadleaf --vault <path> properties path=<note.md>
+  threadleaf --vault <path> property:read path=<note.md> name=<name>
+  threadleaf --vault <path> property:set path=<note.md> name=<name> value=<value> [type=<type>]
+  threadleaf --vault <path> property:remove path=<note.md> name=<name>
 
 Commands are headless and never require a running Electron process.
 `;
@@ -942,7 +1104,9 @@ async function executeCommand(
     command.id === "move" ||
     command.id === "rename" ||
     command.id === "delete" ||
-    command.id === "restore"
+    command.id === "restore" ||
+    command.id === "property.set" ||
+    command.id === "property.remove"
       ? await openWritableKernel(command, options)
       : await openReadOnlyKernel(command, options);
   try {
@@ -1020,6 +1184,40 @@ async function executeCommand(
       }
       return outcome;
     }
+    if (command.id === "property.set") {
+      const outcome = await setMarkdownNoteProperty(
+        kernel,
+        command.filePath,
+        command.propertyName,
+        command.propertyValue,
+        command.propertyType,
+      );
+      if (outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The note changed while setting ${command.propertyName}. The proposed version was preserved as ${outcome.conflictPath}.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
+    }
+    if (command.id === "property.remove") {
+      const outcome = await removeMarkdownNoteProperty(
+        kernel,
+        command.filePath,
+        command.propertyName,
+      );
+      if (outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The note changed while removing ${command.propertyName}. The proposed version was preserved as ${outcome.conflictPath}.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
+    }
     if (command.id === "files") {
       const directory = normalizeVaultDirectoryPath(command.directory);
       const prefix = directory ? `${directory}/` : "";
@@ -1078,6 +1276,24 @@ async function executeCommand(
       const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
       return { path: document.path, total: document.headings.length, headings: document.headings };
     }
+    if (command.id === "properties") {
+      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      return {
+        path: document.path,
+        total: Object.keys(document.properties).length,
+        properties: document.properties,
+      };
+    }
+    if (command.id === "property.read") {
+      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      const exists = Object.hasOwn(document.properties, command.propertyName);
+      return {
+        path: document.path,
+        name: command.propertyName,
+        exists,
+        value: exists ? document.properties[command.propertyName] : null,
+      };
+    }
     const tags = new Set(snapshot.documents.flatMap((document) => document.tags));
     const headingCount = snapshot.documents.reduce(
       (count, document) => count + document.headings.length,
@@ -1130,7 +1346,9 @@ async function executeWithCommandState(
     command.id !== "move" &&
     command.id !== "rename" &&
     command.id !== "delete" &&
-    command.id !== "restore"
+    command.id !== "restore" &&
+    command.id !== "property.set" &&
+    command.id !== "property.remove"
   ) {
     return executeCommand(command, options);
   }
@@ -1154,6 +1372,10 @@ async function executeWithCommandState(
   } finally {
     await release();
   }
+}
+
+function humanPropertyValue(value: string | string[]): string {
+  return Array.isArray(value) ? JSON.stringify(value) : value;
 }
 
 function humanOutput(command: ParsedCliCommand, data: unknown): string {
@@ -1261,6 +1483,36 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     return entries.length > 0
       ? `Recoverable trash:\n${entries.map((entry) => `${entry.path} <- ${entry.trashPath}`).join("\n")}\n`
       : "Recoverable trash is empty.\n";
+  }
+  if (command.id === "properties") {
+    const result = data as { path: string; properties: Record<string, string | string[]> };
+    const entries = Object.entries(result.properties);
+    return entries.length > 0
+      ? `Properties for ${result.path}:\n${entries
+          .map(([name, value]) => `${name}: ${humanPropertyValue(value)}`)
+          .join("\n")}\n`
+      : `No indexed properties in ${result.path}.\n`;
+  }
+  if (command.id === "property.read") {
+    const result = data as {
+      path: string;
+      name: string;
+      exists: boolean;
+      value: string | string[] | null;
+    };
+    return result.exists && result.value !== null
+      ? `${humanPropertyValue(result.value)}\n`
+      : `Property ${result.name} is not set on ${result.path}.\n`;
+  }
+  if (command.id === "property.set") {
+    const result = data as { path: string; name: string };
+    return `Set ${result.name} on ${result.path}\n`;
+  }
+  if (command.id === "property.remove") {
+    const result = data as { status: "committed" | "missing"; path: string; name: string };
+    return result.status === "missing"
+      ? `Property ${result.name} is already absent from ${result.path}\n`
+      : `Removed ${result.name} from ${result.path}\n`;
   }
   const info = data as {
     name: string;

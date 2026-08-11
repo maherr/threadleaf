@@ -96,6 +96,8 @@ equivalence through the real writer-to-watcher seam.
 - [x] Versioned per-vault tab restoration in private application state, including exact order and
       active-note restoration, explicit empty workspaces, stale-path pruning, and visible malformed
       state recovery without vault-owned metadata.
+- [x] Headless indexed property listing and reads plus recovery-backed typed property set and remove,
+      with conservative lossless frontmatter patching, mutation serialization, and conflict copies.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.

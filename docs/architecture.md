@@ -228,6 +228,14 @@ complete YAML frontmatter block. Default separators follow the note's LF or CRLF
 inline mode inserts no separator. The kernel preserves the whole proposal as a conflict copy when
 the source revision changes.
 
+Property set and remove use a separate frontmatter-mutation service over the same revision-checked
+writer. It patches one simple top-level mapping entry, preserves the BOM, line endings, unrelated
+frontmatter lines, comments, order, and complete body, and removes an empty frontmatter envelope
+after its final property is removed. Text and list members are always quoted when serialized;
+number, checkbox, date, and datetime inputs are validated before a proposal exists. Duplicate keys,
+quoted or spaced keys, JSON frontmatter, nested mappings, and block scalars fail closed in this
+initial boundary. A revision race preserves the complete proposed file as a conflict copy.
+
 Move and rename add a link-integrity preflight in front of the recoverable rename primitive. The
 service snapshots the Markdown corpus, builds the current metadata index, projects the source at
 its proposed destination, and builds the projected index from the same bytes. Every parsed wiki and
