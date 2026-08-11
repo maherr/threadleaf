@@ -1,0 +1,32 @@
+{
+  "name": "threadleaf",
+  "version": "0.0.0",
+  "private": true,
+  "description": "An open runtime for local Markdown vaults and community plugins.",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "build": "pnpm run build:main && pnpm run build:renderer",
+    "build:main": "tsup",
+    "build:renderer": "vite build",
+    "check": "pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run build",
+    "format": "biome check --write .",
+    "format:check": "biome check .",
+    "start": "electron .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.8",
+    "@types/node": "22.20.1",
+    "electron": "43.3.0",
+    "tsup": "8.5.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}
