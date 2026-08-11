@@ -10,19 +10,24 @@ Threadleaf is not affiliated with or endorsed by Obsidian.
 
 ## Status
 
-Threadleaf is pre-alpha. Its Phase 0 architecture proof now loads an unchanged CommonJS fixture
+Threadleaf is pre-alpha. Its Phase 0 architecture proof loads an unchanged CommonJS fixture
 plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
 command, and exercises that command through an isolated Electron renderer. The fixture completes
 the documented load, activation, integration, command, reload, and unload lifecycles.
 
-Phase 1 is complete. The unintegrated vault kernel proves canonical path containment,
+Phase 1 is complete. The vault kernel proves canonical path containment,
 durable recovery journals, external-edit conflict preservation, serialized writes, and recoverable
 renames against filesystem fixtures. A sequenced live watcher and rebuildable metadata index now
 converge across internal writes, external edits, renames, conflicts, event gaps, and backend
 fallbacks. Multi-file operations durably retain every proposal and resume safely after interruption.
 
-Do not use the current build with an important vault. Phase 0 uses only a synthetic fixture vault
-and the desktop application exposes no user-file writes.
+Phase 2 is in progress. The production runtime now composes that kernel, watcher, index, one shared
+action registry, and the compatibility host. The Electron workspace can navigate the bundled
+fixture, inspect Markdown source, headings, tags, links, and backlinks, filter notes from the
+keyboard, and reflect external changes without giving the renderer filesystem access.
+
+Do not use the current build with an important vault. It still opens only a bundled synthetic
+fixture and exposes neither an arbitrary vault picker nor an editing control.
 
 ## Product promises
 

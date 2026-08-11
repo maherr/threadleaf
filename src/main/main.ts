@@ -1,32 +1,43 @@
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
-import { PluginHost } from "../runtime/plugin-host";
-
-const channels = {
-  snapshot: "threadleaf:snapshot",
-  runCommand: "threadleaf:run-command",
-  reloadPlugin: "threadleaf:reload-plugin",
-  unloadPlugin: "threadleaf:unload-plugin",
-} as const;
+import { WorkspaceRuntime } from "../application/workspace-runtime";
+import { FixedStateRoot } from "../kernel/ports";
+import { ipcChannels } from "../shared/ipc-channels";
 
 let mainWindow: BrowserWindow | null = null;
-let pluginHost: PluginHost;
+let workspaceRuntime: WorkspaceRuntime;
 
-async function createPluginHost(): Promise<PluginHost> {
+async function createWorkspaceRuntime(): Promise<WorkspaceRuntime> {
   const vaultPath = join(app.getAppPath(), "fixtures", "vaults", "basic");
   const pluginPath = join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture");
-  const host = new PluginHost(vaultPath);
-  await host.loadPlugin(pluginPath);
-  return host;
+  return WorkspaceRuntime.open({
+    vaultRoot: vaultPath,
+    stateRoot: new FixedStateRoot(app.getPath("userData")),
+    pluginDirectory: pluginPath,
+  });
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle(channels.snapshot, () => pluginHost.getSnapshot());
-  ipcMain.handle(channels.runCommand, (_event, commandId: string) =>
-    pluginHost.runCommand(commandId),
-  );
-  ipcMain.handle(channels.reloadPlugin, () => pluginHost.reloadPlugin());
-  ipcMain.handle(channels.unloadPlugin, () => pluginHost.unloadPlugin());
+  ipcMain.handle(ipcChannels.snapshot, () => workspaceRuntime.getSnapshot());
+  ipcMain.handle(ipcChannels.openNote, (_event, filePath: unknown) => {
+    if (typeof filePath !== "string") {
+      throw new Error("Open note requires a string path.");
+    }
+    return workspaceRuntime.openNote(filePath);
+  });
+  ipcMain.handle(ipcChannels.runCommand, (_event, commandId: unknown) => {
+    if (typeof commandId !== "string") {
+      throw new Error("Run command requires a string identifier.");
+    }
+    return workspaceRuntime.runPluginCommand(commandId);
+  });
+  ipcMain.handle(ipcChannels.reloadPlugin, () => workspaceRuntime.reloadPlugin());
+  ipcMain.handle(ipcChannels.unloadPlugin, () => workspaceRuntime.unloadPlugin());
+  workspaceRuntime.onSnapshot((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(ipcChannels.snapshotChanged, snapshot);
+    }
+  });
 }
 
 async function createWindow(): Promise<void> {
@@ -51,7 +62,7 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  pluginHost = await createPluginHost();
+  workspaceRuntime = await createWorkspaceRuntime();
   registerIpcHandlers();
   await createWindow();
 
@@ -60,6 +71,10 @@ app.whenReady().then(async () => {
       await createWindow();
     }
   });
+});
+
+app.on("will-quit", () => {
+  void workspaceRuntime?.close();
 });
 
 app.on("window-all-closed", () => {

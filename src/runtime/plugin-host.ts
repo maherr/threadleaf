@@ -2,6 +2,9 @@ import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { compileFunction } from "node:vm";
+import { ActionRegistry } from "../application/action-registry";
+import { isPathInside } from "../kernel/path-policy";
+import type { VaultReadPort } from "../kernel/ports";
 import type {
   PluginSummary,
   RuntimeEvent,
@@ -34,9 +37,9 @@ export class PluginHost {
   private pluginDirectory: string | null = null;
   private pluginSummary: PluginSummary | null = null;
 
-  constructor(vaultPath: string) {
-    this.vault = new Vault(vaultPath);
-    const commands = new CommandRegistry();
+  constructor(vaultPath: string, reader?: VaultReadPort, actions = new ActionRegistry()) {
+    this.vault = new Vault(vaultPath, reader);
+    const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
@@ -47,7 +50,7 @@ export class PluginHost {
       await this.unloadPlugin();
     }
 
-    const resolvedDirectory = this.assertInsideVault(pluginDirectory);
+    const resolvedDirectory = await this.assertInsideVault(pluginDirectory);
     const manifest = await this.readManifest(path.join(resolvedDirectory, "manifest.json"));
     const entryPath = path.join(resolvedDirectory, "main.js");
     const stylesheetDiscovered = await this.fileExists(path.join(resolvedDirectory, "styles.css"));
@@ -144,6 +147,7 @@ export class PluginHost {
       },
       plugin: this.pluginSummary ? { ...this.pluginSummary } : null,
       commands: this.app.commands.list(),
+      actions: this.app.commands.actions.list(),
       notices: this.app.notices.list(),
       events: this.events.map((event) => ({ ...event })),
     };
@@ -213,13 +217,16 @@ export class PluginHost {
     return manifest as unknown as PluginManifest;
   }
 
-  private assertInsideVault(candidatePath: string): string {
+  private async assertInsideVault(candidatePath: string): Promise<string> {
     const resolved = path.resolve(candidatePath);
-    const relative = path.relative(this.vault.rootPath, resolved);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    const [canonicalVault, canonicalCandidate] = await Promise.all([
+      fs.realpath(this.vault.rootPath),
+      fs.realpath(resolved),
+    ]);
+    if (!isPathInside(canonicalVault, canonicalCandidate)) {
       throw new Error("Plugin directory must be inside the active vault.");
     }
-    return resolved;
+    return canonicalCandidate;
   }
 
   private async fileExists(filePath: string): Promise<boolean> {

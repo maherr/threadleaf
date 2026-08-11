@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { ActionRegistry } from "../application/action-registry";
+import type { VaultReadPort } from "../kernel/ports";
 import type { CommandSummary } from "../shared/contracts";
 
 export interface PluginManifest {
@@ -39,9 +41,11 @@ export class TFile {
 
 export class Vault {
   readonly rootPath: string;
+  readonly #reader: VaultReadPort | undefined;
 
-  constructor(rootPath: string) {
+  constructor(rootPath: string, reader?: VaultReadPort) {
     this.rootPath = path.resolve(rootPath);
+    this.#reader = reader;
   }
 
   getName(): string {
@@ -49,12 +53,18 @@ export class Vault {
   }
 
   async getMarkdownFiles(): Promise<TFile[]> {
+    if (this.#reader) {
+      return (await this.#reader.listMarkdownPaths()).map((filePath) => new TFile(filePath));
+    }
     const files: TFile[] = [];
     await this.collectMarkdownFiles(this.rootPath, files);
     return files.sort((left, right) => left.path.localeCompare(right.path));
   }
 
   async read(file: TFile): Promise<string> {
+    if (this.#reader) {
+      return (await this.#reader.readText(file.path)).content;
+    }
     const absolutePath = this.resolveVaultPath(file.path);
     return fs.readFile(absolutePath, "utf8");
   }
@@ -94,17 +104,34 @@ export class Vault {
 
 export class CommandRegistry {
   private readonly commands = new Map<string, RegisteredCommand>();
+  readonly actions: ActionRegistry;
+
+  constructor(actions = new ActionRegistry()) {
+    this.actions = actions;
+  }
 
   register(ownerId: string, command: Command): () => void {
     if (this.commands.has(command.id)) {
       throw new Error(`Command already registered: ${command.id}`);
     }
 
+    const releaseAction = this.actions.register(ownerId, {
+      id: command.id,
+      name: command.name,
+      source: "plugin",
+      execute: async () => {
+        if (!command.callback) {
+          throw new Error(`Command has no supported callback: ${command.id}`);
+        }
+        return command.callback();
+      },
+    });
     this.commands.set(command.id, { ...command, ownerId });
     return () => {
       const registered = this.commands.get(command.id);
       if (registered?.ownerId === ownerId) {
         this.commands.delete(command.id);
+        releaseAction();
       }
     };
   }
@@ -121,7 +148,7 @@ export class CommandRegistry {
       return false;
     }
 
-    await command.callback();
+    await this.actions.dispatch(commandId);
     return true;
   }
 }

@@ -49,12 +49,16 @@ equivalence through the real writer-to-watcher seam.
 
 ## Phase 2: Knowledge workspace
 
-- One action registry for menus, hotkeys, commands, plugins, and visible controls.
-- Vertical feature slices with ports, services, side-effect-free stores, and reactors.
-- File navigation, tabs, panes, commands, and settings.
-- CodeMirror editor with source mode and live preview.
-- Search, links, backlinks, tags, properties, and embeds.
-- Keyboard-first desktop behavior and accessible theme foundations.
+- [x] One action registry shared by workspace and compatibility-plugin commands.
+- [x] Production composition of the vault kernel, watcher, index reactor, action registry, and
+      compatibility host.
+- [x] File navigation, three-pane source workspace, indexed filtering, headings, tags, links, and
+      backlinks.
+- [x] Keyboard-first filtering and accessible light and dark theme foundations.
+- [ ] Arbitrary vault picker and persistent workspace restoration.
+- [ ] Tabs, split panes, command palette, menus, hotkeys, and settings.
+- [ ] CodeMirror editor with source mode, live preview, recoverable save, and conflict UI.
+- [ ] Full-text search, properties, attachments, and embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
 
