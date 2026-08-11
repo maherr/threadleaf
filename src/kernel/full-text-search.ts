@@ -1,4 +1,4 @@
-import path from "node:path";
+import { displayTitleFromVaultPath } from "./note-path";
 
 export const maxSearchQueryLength = 256;
 export const maxSearchTerms = 12;
@@ -71,10 +71,6 @@ function normalizeSearchText(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase("en-US");
 }
 
-function titleFromPath(filePath: string): string {
-  return path.posix.basename(filePath, path.posix.extname(filePath));
-}
-
 function propertyText(key: string, value: string | string[]): string {
   return `${key}: ${Array.isArray(value) ? value.join(", ") : value}`;
 }
@@ -88,8 +84,8 @@ function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument 
   return {
     path: document.path,
     normalizedPath: normalizeSearchText(document.path),
-    title: titleFromPath(document.path),
-    normalizedTitle: normalizeSearchText(titleFromPath(document.path)),
+    title: displayTitleFromVaultPath(document.path),
+    normalizedTitle: normalizeSearchText(displayTitleFromVaultPath(document.path)),
     lines,
     normalizedContent: lines.map((line) => line.normalized).join("\n"),
     headings: document.headings.map((heading) => ({

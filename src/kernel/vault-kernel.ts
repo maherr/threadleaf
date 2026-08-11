@@ -174,14 +174,15 @@ export class VaultKernel implements VaultMutationPort {
     const vaultId = createHash("sha256").update(identityPath).digest("hex");
     const stateRoot = path.join(canonicalStateRoot, "vaults", vaultId);
     const kernel = new VaultKernel(paths, stateRoot, vaultId, options);
+    if (kernel.readOnly) {
+      return kernel;
+    }
     await kernel.initializeState();
     const realizedStateRoot = await fs.realpath(kernel.stateRoot);
     if (isPathInside(paths.rootPath, realizedStateRoot)) {
       throw new Error("Threadleaf state must be stored outside the vault.");
     }
-    if (!kernel.readOnly) {
-      kernel.startupRecoveryActions.push(...(await kernel.recover()));
-    }
+    kernel.startupRecoveryActions.push(...(await kernel.recover()));
     return kernel;
   }
 

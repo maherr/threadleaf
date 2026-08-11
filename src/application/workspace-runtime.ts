@@ -1,7 +1,7 @@
-import path from "node:path";
 import { SearchQueryError } from "../kernel/full-text-search";
 import { VaultIndexReactor } from "../kernel/metadata-index";
 import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
+import { displayTitleFromVaultPath } from "../kernel/note-path";
 import { normalizeVaultPath } from "../kernel/path-policy";
 import type { StateRootPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
@@ -57,13 +57,6 @@ function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
     expectedRevision: payload.expectedRevision,
     expectedVaultId: payload.expectedVaultId,
   };
-}
-
-function titleFromPath(filePath: string): string {
-  const stem = path.posix.basename(filePath, path.posix.extname(filePath));
-  const conflictMarker = ".threadleaf-conflict-";
-  const conflictIndex = stem.lastIndexOf(conflictMarker);
-  return conflictIndex > 0 ? `${stem.slice(0, conflictIndex)} (conflict copy)` : stem;
 }
 
 export class WorkspaceRuntime {
@@ -194,7 +187,7 @@ export class WorkspaceRuntime {
         ...search,
         results: search.results.map((result) => ({
           ...result,
-          title: titleFromPath(result.path),
+          title: displayTitleFromVaultPath(result.path),
         })),
       };
     } catch (error) {
@@ -354,7 +347,7 @@ export class WorkspaceRuntime {
     const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
     const files: WorkspaceFileSummary[] = index.documents.map((document) => ({
       path: document.path,
-      title: titleFromPath(document.path),
+      title: displayTitleFromVaultPath(document.path),
       tags: document.tags,
       backlinkCount: backlinks.get(document.path)?.length ?? 0,
       outgoingCount: document.links.length,
@@ -368,7 +361,7 @@ export class WorkspaceRuntime {
       const note = await this.kernel.readText(this.#activePath);
       activeNote = {
         path: note.path,
-        title: titleFromPath(note.path),
+        title: displayTitleFromVaultPath(note.path),
         content: note.content,
         revision: note.revision,
         tags: activeMetadata.tags,

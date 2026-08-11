@@ -318,6 +318,8 @@ describe("VaultKernel writes", () => {
       stateRoot: new FixedStateRoot(statePath),
       readOnly: true,
     });
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(kernel.listMarkdownPaths()).resolves.toEqual([]);
     await expect(kernel.writeText("Note.md", "content", null)).rejects.toThrow("read-only mode");
   });
 

@@ -154,16 +154,21 @@ source-line, and no-implicit-write guarantees.
 
 ### Command-line boundary
 
-Threadleaf will expose the same headless workspace kernel and action semantics through a native
+Threadleaf exposes the same vault kernel and derived metadata behavior through a native headless
 command-line interface. Human-readable output is the interactive default, while stable JSON and
-explicit exit codes are first-class automation contracts. Core file, search, metadata, task, and
-mutation commands must not require a running Electron process.
+explicit exit codes are first-class automation contracts. The initial `vault info`, `files`,
+`read`, and `search` commands run without Electron and require an explicit vault path.
+
+Read-only kernel opening performs canonical path validation but creates no state directory, vault
+identity, recovery journal, or watcher. The CLI note corpus uses the same exclusions and index as
+the desktop workspace, so `.obsidian/`, `.git/`, and Threadleaf transaction artifacts do not leak
+into file listing, direct note reads, or search.
 
 An Obsidian-style compatibility facade may accept familiar public command names and arguments, but
 it translates into Threadleaf's own typed command model. It does not make the GUI a hidden CLI
 server, copy proprietary implementation details, or create a second mutation path. Every mutating
 command uses the same containment, revision, recovery-journal, conflict, and watcher contracts as
-the desktop application. See the [CLI direction](cli.md).
+the desktop application. See the [CLI guide](cli.md).
 
 ### Write authority
 

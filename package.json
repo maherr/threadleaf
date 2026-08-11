@@ -10,6 +10,9 @@
     "node": ">=22.0.0"
   },
   "main": "dist/main/main.cjs",
+  "bin": {
+    "threadleaf": "dist/main/cli.cjs"
+  },
   "scripts": {
     "build": "pnpm run build:main && pnpm run build:renderer && pnpm run build:verify",
     "build:main": "tsup",
@@ -17,6 +20,7 @@
     "build:verify": "node scripts/check-built-app.mjs",
     "benchmark:search": "vitest bench --run src/kernel/full-text-search.bench.ts",
     "check": "pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run build",
+    "cli": "pnpm run build:main && node dist/main/cli.cjs",
     "format": "biome check --write .",
     "format:check": "biome check .",
     "start": "electron .",

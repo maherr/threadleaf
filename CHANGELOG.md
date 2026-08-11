@@ -52,3 +52,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Explicit Ctrl/Cmd+E reading view that safely renders the current editor draft, sanitizes raw HTML,
   preserves source-line navigation, resolves internal links through indexed metadata, blocks dirty
   note navigation, and leaves unsupported external links and attachments inert.
+- Headless `threadleaf` CLI with explicit vault selection, human and versioned JSON output,
+  documented exit codes, `vault info`, `files`, `read`, and `search`, plus tested `file=` and
+  `query=` argument compatibility without requiring a running Electron process.
+- State-free read-only kernel opening so CLI inspection creates no application or vault data.

@@ -35,7 +35,8 @@ every vault, reject collisions, and persist changes before activating them. Comp
 in selected and restored vaults stay off by default. An explicit reading view renders the current
 editor draft through a sanitized Markdown subset, keeps unsaved text off disk, resolves internal
 links through the derived index, and provides source-line controls that return to the matching
-CodeMirror line.
+CodeMirror line. A headless CLI now inspects vaults, lists and reads notes, and searches indexed
+content with stable JSON and explicit exit codes, without requiring the Electron application.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, attachment rendering,
@@ -51,12 +52,13 @@ or release-grade backup and restore workflow.
 - Support existing trusted plugins while developing a safer capability-based native extension API.
 - Remain useful offline without an account, subscription, or hosted service.
 - Keep any future encrypted sync protocol and server open and self-hostable.
+- Keep the native CLI headless, script-safe, and backed by the same vault kernel as the desktop app.
 
 ## Project map
 
 - [Project charter](docs/charter.md)
 - [Architecture](docs/architecture.md)
-- [CLI direction](docs/cli.md)
+- [CLI guide](docs/cli.md)
 - [Compatibility contract](docs/compatibility/contract.md)
 - [Roadmap](docs/roadmap.md)
 - [Performance baselines](docs/performance.md)
@@ -93,7 +95,21 @@ THREADLEAF_VAULT_PATH=/absolute/path/to/disposable-vault pnpm start
 
 This non-packaged development override is not persisted and is ignored by packaged builds. The
 `pnpm check` gate verifies the packaged Electron entry points and confirms that renderer assets
-remain loadable over `file://`.
+remain loadable over `file://`. It also executes the built CLI against the synthetic vault and
+validates its versioned JSON envelope.
+
+The development CLI requires an explicit vault and never consults the desktop application's saved
+selection:
+
+```sh
+pnpm cli --vault /absolute/path/to/vault vault info
+pnpm cli --vault /absolute/path/to/vault files
+pnpm cli --vault /absolute/path/to/vault read "Folder/Note.md"
+pnpm cli --vault /absolute/path/to/vault --json search "quoted phrase" --limit 20
+```
+
+See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported
+Obsidian-style argument spellings.
 
 Run `pnpm benchmark:search` for the deterministic 10,000-note search microbenchmark. It reports
 measurements rather than enforcing machine-dependent timing thresholds.

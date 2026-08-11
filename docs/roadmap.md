@@ -68,9 +68,11 @@ equivalence through the real writer-to-watcher seam.
 - [x] Explicit sanitized reading view over the current saved or unsaved editor draft, with
       deterministic source-line navigation, index-resolved internal links, inert external links,
       dirty-navigation protection, and no new filesystem or shell authority in the renderer.
-- [ ] Headless native CLI over the shared vault kernel and action semantics, with stable JSON,
-      script-safe exit codes, recovery-backed mutations, and an executable compatibility corpus for
-      familiar Obsidian-style command names.
+- [x] Headless native CLI foundation over the shared read-only vault kernel and metadata index, with
+      explicit vault selection, `vault info`, `files`, `read`, `search`, stable JSON, script-safe
+      exit codes, and tested `file=` and `query=` compatibility spellings.
+- [ ] Recovery-backed CLI mutation commands and a broader executable behavior corpus for familiar
+      Obsidian-style command names and errors.
 - [ ] Tabs, split panes, application menus, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
 - [ ] Rich property views and editing, attachments, and embeds.

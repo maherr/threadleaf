@@ -1,49 +1,81 @@
-# Command-line direction
+# Command-line interface
 
-Threadleaf's CLI is a first-class interface to the same open vault runtime as the desktop app. It
-will be useful on a headless machine, in a shell pipeline, from an editor, or in an automated test.
-It will not depend on a running Electron window.
+Threadleaf's CLI is a first-class interface to the same open vault kernel and metadata index as the
+desktop app. It works on a headless machine, in a shell pipeline, from an editor, or in an automated
+test. It does not depend on a running Electron window.
 
-## Contract
+## Current commands
 
-- Markdown and attachments remain canonical.
-- Read commands never create application state inside a vault.
-- Mutations use the shared vault writer, revision checks, recovery journal, and keep-both conflict
-  behavior.
-- Human-readable output is concise; `--json` has a versioned, machine-readable shape.
-- Success and failure have documented exit codes. Diagnostics go to standard error.
-- Commands are non-interactive by default when standard input or output is not a terminal.
-- A vault can be supplied explicitly. No command silently operates on an unrelated remembered
-  vault.
-- Plugin and developer commands declare when they require the desktop compatibility host.
+Every command requires an explicit vault path. The CLI never silently uses the desktop app's
+remembered vault.
 
-## Initial command families
+```sh
+threadleaf --vault /path/to/vault vault info
+threadleaf --vault /path/to/vault files [--directory Folder]
+threadleaf --vault /path/to/vault read "Folder/Note.md"
+threadleaf --vault /path/to/vault search "quoted phrase" [--limit 20]
+```
 
-| Family | Examples | Initial authority |
+During development, prefix the same arguments with `pnpm cli`.
+
+| Command | Output | Authority |
 | --- | --- | --- |
-| Vault | `vault info`, `files`, `read` | Read-only kernel access |
-| Discovery | `search`, `links`, `backlinks`, `headings`, `tags` | Rebuildable indexes |
-| Mutation | `create`, `append`, `prepend`, `move`, `delete` | Recoverable writer |
-| Daily notes | `daily path`, `daily read`, `daily append` | Configured path plus writer |
-| Tasks | `tasks`, `tasks daily` | Parsed Markdown checkboxes |
-| Automation | `command`, `--json`, `--stdin` | Shared action registry |
-| Development | `plugin inspect`, `plugin test` | Explicit compatibility host |
+| `vault info` or `vault:info` | Canonical path and note, heading, tag, and link counts | Read-only kernel plus derived index |
+| `files` | Sorted Markdown paths, optionally filtered to a directory | Read-only kernel |
+| `read` | Exact UTF-8 note content | Read-only kernel |
+| `search` | Ranked paths and best context, with a bounded result count | Derived metadata and full-text index |
 
-The first implementation should make `vault info`, `files`, `read`, and `search` real before adding
-mutations. This establishes parsing, output, vault selection, and exit-code contracts without
-creating another write path. Mutation commands follow only by calling the existing recoverable
-writer, never by using direct filesystem helpers.
+The note corpus excludes `.obsidian/`, `.git/`, and Threadleaf transaction artifacts. Read-only
+kernel opening performs path validation but creates no state directory, vault identity, recovery
+journal, or watcher.
 
-## Compatibility facade
+## JSON contract
 
-Obsidian's public CLI guide is useful behavioral input because its concise verbs already appear in
-user scripts. Threadleaf can accept a measured subset such as `read`, `search query=...`, `files`,
-`tags counts`, and `daily:append`, then translate those arguments into the native typed command
-model. Compatibility is recorded per command and fixture, including output and error behavior.
+Add `--json` anywhere before `--` to receive a versioned success envelope on standard output:
 
-The native interface remains the stable contract. It adds explicit vault selection, structured
-JSON, headless execution, and script-safe diagnostics even where the compatibility spelling keeps
-another application's conventions. No compatibility command may bypass the normal kernel or gain
-implicit access to a running user's vault.
+```json
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "files",
+  "data": {
+    "directory": "",
+    "total": 2,
+    "files": ["Linked Note.md", "Welcome.md"]
+  }
+}
+```
+
+Failures leave standard output empty. With `--json`, standard error receives the same versioned
+shape with `ok: false` and a stable error code. Without it, standard error receives concise prose.
+
+| Exit | Code | Meaning |
+| ---: | --- | --- |
+| 0 | success | Command completed, including an empty search result |
+| 1 | `INTERNAL` | Unexpected Threadleaf failure |
+| 2 | `USAGE` | Invalid command, option, or argument |
+| 3 | `VAULT` | Vault, path, UTF-8, or indexed-note failure |
+| 4 | `QUERY` | Search query exceeds the documented bounds |
+
+## Compatibility spellings
+
+The public Obsidian CLI guide is behavioral input because its concise verbs already appear in user
+scripts. Threadleaf currently accepts these aliases in addition to its native forms:
+
+```sh
+threadleaf --vault /path/to/vault read file="Folder/Note.md"
+threadleaf --vault /path/to/vault search query="quoted phrase"
+```
+
+This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
+command or error behavior will require an executable fixture. Threadleaf's native contract keeps
+explicit vault selection, structured JSON, headless execution, and script-safe diagnostics even
+where a compatibility spelling follows another application's convention.
+
+## Next boundary
+
+Mutation commands come later. `create`, `append`, `prepend`, `move`, and `delete` must call the
+existing recoverable writer with revision and conflict semantics. They will never use a direct CLI
+filesystem shortcut or create a second mutation path.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).
