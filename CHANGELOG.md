@@ -38,3 +38,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Native local-folder picker with Ctrl/Cmd+O, private persisted selection, validated runtime swaps,
   startup restoration and fallback warnings, vault-bound save protection, and plugins kept off by
   default for selected vaults.
+- Searchable Ctrl/Cmd+K command palette that routes visible controls and hotkeys through shared
+  core and compatibility-plugin actions, skips unavailable commands during keyboard navigation,
+  and explains disabled states.

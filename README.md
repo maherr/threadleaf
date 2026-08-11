@@ -27,7 +27,9 @@ Markdown folder, restore the last successful selection, edit through CodeMirror,
 tags, links, and backlinks, filter notes from the keyboard, and reflect external changes without
 giving the renderer filesystem access. Revision-aware saves use the recoverable writer. If the
 file changed externally, the original is left untouched and the local edit becomes a clearly
-labeled conflict copy. Compatibility plugins in selected and restored vaults stay off by default.
+labeled conflict copy. Core actions and dynamically registered compatibility-plugin commands share
+a searchable, keyboard-navigable command palette. Compatibility plugins in selected and restored
+vaults stay off by default.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no live preview or release-grade backup and
@@ -67,6 +69,7 @@ pnpm start
 On first launch, the executable build opens the bundled synthetic vault. Use the Open control or
 Ctrl/Cmd+O to select a Markdown folder. Threadleaf validates and persists a successful selection,
 restores it on the next launch, and does not automatically run its compatibility plugins.
+Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P focuses the note filter.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

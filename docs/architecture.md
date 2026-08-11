@@ -119,6 +119,22 @@ Restart completes pending entries, recognizes versions already installed, and tu
 into keep-both conflicts. Proposal blobs remain as recovery evidence until a later, explicit
 retention policy can remove them.
 
+### Cross-platform boundary
+
+Desktop compatibility and portable product semantics are separate concerns. Electron and Node.js
+are deliberate parts of the trusted desktop compatibility host, but vault revisions, link
+resolution, action descriptors, extension capabilities, and the future sync protocol must not
+depend on Electron renderer objects or desktop-only plugin globals.
+
+Each public extension surface is classified before release as portable native, desktop
+compatibility only, or unavailable on mobile. This prevents a later iOS or Android client from
+silently promising an extension contract its storage sandbox or distribution rules cannot honor.
+It does not pull mobile implementation ahead of the desktop safety and compatibility gates.
+
+Native mobile clients remain a later product phase. They may use platform-specific storage and UI
+adapters rather than sharing every desktop implementation detail, but they must preserve the same
+canonical Markdown, revision, recovery, and sync semantics.
+
 ### Future encrypted sync boundary
 
 Encrypted sync is an optional transport around the local-first vault, not a replacement for it.
@@ -176,5 +192,7 @@ Capability host ---> native Threadleaf extension
 - Native extension SDK license and capability vocabulary.
 - Editor architecture and source-to-preview mapping.
 - Metadata schema and migration strategy.
+- Behavior-import schema for hotkeys, themes, CSS, plugin settings, and workspace layout.
+- Public benchmark corpora, target devices, and regression budgets.
 - Packaging, signing, and update channels.
 - Encrypted object format, key hierarchy, recovery model, and residual-metadata budget.

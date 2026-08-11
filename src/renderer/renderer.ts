@@ -8,6 +8,12 @@ import type {
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
 } from "../shared/contracts";
+import {
+  filterPaletteCommands,
+  firstEnabledPaletteIndex,
+  movePaletteSelection,
+  type PaletteCommandDescriptor,
+} from "./command-palette-model";
 import "./styles.css";
 
 const elements = {
@@ -57,8 +63,16 @@ const elements = {
   eventList: getElement("event-list"),
   watchSequence: getElement("watch-sequence"),
   watchMessage: getElement("watch-message"),
+  commandTrigger: getButton("command-trigger"),
+  commandShortcut: getElement("command-shortcut"),
   themeToggle: getButton("theme-toggle"),
   themeLabel: getElement("theme-label"),
+  commandPalette: getDialog("command-palette"),
+  paletteQuery: getInput("palette-query"),
+  paletteClose: getButton("palette-close"),
+  paletteCount: getElement("palette-count"),
+  paletteResults: getElement("palette-results"),
+  paletteHint: getElement("palette-hint"),
   toast: getElement("toast"),
 };
 
@@ -68,6 +82,11 @@ interface EditNoticeState {
   message: string;
 }
 
+interface RendererCommand extends PaletteCommandDescriptor {
+  run: () => void | Promise<void>;
+}
+
+const isMac = navigator.platform.toLocaleLowerCase("en-US").includes("mac");
 let currentSnapshot: RuntimeSnapshot | null = null;
 let loadedNote: WorkspaceNoteSnapshot | null = null;
 let loadedVaultId: string | null = null;
@@ -80,6 +99,9 @@ let busy = false;
 let saving = false;
 let dirty = false;
 let syncingEditor = false;
+let paletteMatches: RendererCommand[] = [];
+let paletteSelection = -1;
+let paletteRestoreFocus: HTMLElement | null = null;
 
 const editorStyleNonce = "threadleaf-codemirror";
 const sourceHighlight = HighlightStyle.define([
@@ -141,6 +163,279 @@ function getInput(id: string): HTMLInputElement {
     throw new Error(`Expected an input: ${id}`);
   }
   return element;
+}
+
+function getDialog(id: string): HTMLDialogElement {
+  const element = getElement(id);
+  if (!(element instanceof HTMLDialogElement)) {
+    throw new Error(`Expected a dialog: ${id}`);
+  }
+  return element;
+}
+
+function commandCatalog(): RendererCommand[] {
+  const modifier = isMac ? "⌘" : "Ctrl";
+  const plugin = currentSnapshot?.plugin ?? null;
+  const commands: RendererCommand[] = [
+    {
+      id: "workspace.open-vault",
+      label: "Open another vault",
+      category: "Workspace",
+      keywords: ["folder", "switch", "choose"],
+      shortcut: `${modifier} O`,
+      enabled: !busy && !saving && !dirty,
+      disabledReason: dirty
+        ? "Save or revert the open note before switching vaults."
+        : busy || saving
+          ? "Threadleaf is finishing another action."
+          : null,
+      run: chooseVault,
+    },
+    {
+      id: "workspace.focus-note-filter",
+      label: "Focus note filter",
+      category: "Workspace",
+      keywords: ["find", "files", "search", "quick switcher"],
+      shortcut: `${modifier} P`,
+      enabled: true,
+      disabledReason: null,
+      run: focusNoteFilter,
+    },
+    {
+      id: "editor.save-note",
+      label: "Save current note",
+      category: "Editor",
+      keywords: ["write", "commit"],
+      shortcut: `${modifier} S`,
+      enabled: Boolean(loadedNote && loadedVaultId && dirty && !busy && !saving),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : !dirty
+          ? "The current note has no unsaved changes."
+          : "Threadleaf is finishing another action.",
+      run: saveActiveNote,
+    },
+    {
+      id: "editor.revert-note",
+      label: "Revert current note",
+      category: "Editor",
+      keywords: ["discard", "reload", "undo changes"],
+      shortcut: null,
+      enabled: Boolean(loadedNote && dirty && !busy && !saving),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : !dirty
+          ? "The current note has no unsaved changes."
+          : "Threadleaf is finishing another action.",
+      run: revertActiveNote,
+    },
+    {
+      id: "appearance.toggle-theme",
+      label: `Switch to ${document.documentElement.dataset.theme === "dark" ? "light" : "dark"} theme`,
+      category: "Appearance",
+      keywords: ["color", "dark", "light"],
+      shortcut: `${modifier} Shift L`,
+      enabled: true,
+      disabledReason: null,
+      run: toggleTheme,
+    },
+  ];
+
+  for (const command of currentSnapshot?.commands ?? []) {
+    commands.push({
+      id: `plugin.command.${command.id}`,
+      label: command.name,
+      category: plugin?.name ?? "Compatibility plugin",
+      keywords: [command.id, "plugin", "compatibility"],
+      shortcut: null,
+      enabled: !busy && !saving,
+      disabledReason: busy || saving ? "Threadleaf is finishing another action." : null,
+      run: () => runCompatibilityCommand(command.id),
+    });
+  }
+
+  commands.push(
+    {
+      id: "plugin.reload",
+      label: "Reload compatibility plugin",
+      category: "Compatibility",
+      keywords: ["refresh", "restart", "plugin"],
+      shortcut: null,
+      enabled: Boolean(plugin && !busy && !saving),
+      disabledReason: plugin
+        ? "Threadleaf is finishing another action."
+        : "No compatibility plugin is loaded.",
+      run: () => runAction(() => window.threadleaf.reloadPlugin()),
+    },
+    {
+      id: "plugin.unload",
+      label: "Unload compatibility plugin",
+      category: "Compatibility",
+      keywords: ["disable", "stop", "plugin"],
+      shortcut: null,
+      enabled: Boolean(plugin?.state === "loaded" && !busy && !saving),
+      disabledReason:
+        plugin?.state === "loaded"
+          ? "Threadleaf is finishing another action."
+          : "No loaded compatibility plugin is available.",
+      run: () => runAction(() => window.threadleaf.unloadPlugin()),
+    },
+  );
+  return commands;
+}
+
+function focusNoteFilter(): void {
+  elements.fileSearch.focus();
+  elements.fileSearch.select();
+}
+
+function toggleTheme(): void {
+  setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+}
+
+async function runCompatibilityCommand(commandId: string): Promise<void> {
+  await runAction(async () => {
+    const snapshot = await window.threadleaf.runCommand(commandId);
+    showToast(snapshot.notices.at(-1) ?? "Command completed.");
+    return snapshot;
+  });
+}
+
+async function executeRendererCommand(commandId: string): Promise<void> {
+  const command = commandCatalog().find((candidate) => candidate.id === commandId);
+  if (!command) {
+    showToast("That command is no longer available.");
+    return;
+  }
+  if (!command.enabled) {
+    showToast(command.disabledReason ?? "That command is currently unavailable.");
+    return;
+  }
+  if (elements.commandPalette.open) {
+    closeCommandPalette(false);
+  }
+  try {
+    await command.run();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function openCommandPalette(): void {
+  if (elements.commandPalette.open) {
+    elements.paletteQuery.focus();
+    elements.paletteQuery.select();
+    return;
+  }
+  paletteRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  elements.paletteQuery.value = "";
+  paletteSelection = -1;
+  elements.commandPalette.showModal();
+  renderPaletteResults();
+  window.requestAnimationFrame(() => elements.paletteQuery.focus());
+}
+
+function closeCommandPalette(restoreFocus = true): void {
+  if (!elements.commandPalette.open) {
+    return;
+  }
+  elements.commandPalette.close();
+  const restoreTarget = paletteRestoreFocus;
+  paletteRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+function selectPaletteIndex(index: number, scrollIntoView: boolean): void {
+  paletteSelection = index;
+  const options = [
+    ...elements.paletteResults.querySelectorAll<HTMLButtonElement>(".palette-option"),
+  ];
+  for (const [optionIndex, option] of options.entries()) {
+    const active = optionIndex === index;
+    option.dataset.active = String(active);
+    option.setAttribute("aria-selected", String(active));
+  }
+  const activeOption = options[index];
+  if (activeOption) {
+    elements.paletteQuery.setAttribute("aria-activedescendant", activeOption.id);
+    const command = paletteMatches[index];
+    elements.paletteHint.textContent = command ? `Ready: ${command.label}` : "Ready";
+    if (scrollIntoView) {
+      activeOption.scrollIntoView({ block: "nearest" });
+    }
+  } else {
+    elements.paletteQuery.removeAttribute("aria-activedescendant");
+    elements.paletteHint.textContent = "No command selected";
+  }
+}
+
+function renderPaletteResults(): void {
+  if (!elements.commandPalette.open) {
+    return;
+  }
+  const selectedId = paletteMatches[paletteSelection]?.id;
+  paletteMatches = filterPaletteCommands(commandCatalog(), elements.paletteQuery.value);
+  const preservedIndex = selectedId
+    ? paletteMatches.findIndex((command) => command.id === selectedId && command.enabled)
+    : -1;
+  paletteSelection =
+    preservedIndex >= 0 ? preservedIndex : firstEnabledPaletteIndex(paletteMatches);
+  elements.paletteResults.replaceChildren();
+
+  for (const [index, command] of paletteMatches.entries()) {
+    const option = document.createElement("button");
+    option.id = `palette-option-${index}`;
+    option.type = "button";
+    option.className = "palette-option";
+    option.dataset.commandId = command.id;
+    option.setAttribute("role", "option");
+    option.disabled = !command.enabled;
+
+    const mark = document.createElement("span");
+    mark.className = "palette-option-mark";
+    mark.ariaHidden = "true";
+    mark.textContent = command.enabled ? "◇" : "×";
+    const copy = document.createElement("span");
+    copy.className = "palette-option-copy";
+    const label = document.createElement("strong");
+    label.textContent = command.label;
+    const identity = document.createElement("small");
+    identity.textContent = `${command.category} · ${command.id}`;
+    copy.append(label, identity);
+    const meta = document.createElement("span");
+    meta.className = "palette-option-meta";
+    if (command.shortcut) {
+      const shortcut = document.createElement("kbd");
+      shortcut.textContent = command.shortcut;
+      meta.append(shortcut);
+    }
+    if (!command.enabled) {
+      const reason = document.createElement("small");
+      reason.textContent = command.disabledReason ?? "Unavailable";
+      meta.append(reason);
+    }
+    option.append(mark, copy, meta);
+    option.addEventListener("click", () => void executeRendererCommand(command.id));
+    option.addEventListener("mousemove", () => {
+      if (command.enabled) {
+        selectPaletteIndex(index, false);
+      }
+    });
+    elements.paletteResults.append(option);
+  }
+
+  if (paletteMatches.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "palette-empty";
+    empty.textContent = "No command matches this search.";
+    elements.paletteResults.append(empty);
+  }
+  const enabledCount = paletteMatches.filter((command) => command.enabled).length;
+  elements.paletteCount.textContent = `${enabledCount} available · ${paletteMatches.length} shown`;
+  selectPaletteIndex(paletteSelection, false);
 }
 
 function render(snapshot: RuntimeSnapshot): void {
@@ -484,6 +779,7 @@ function renderEditControls(): void {
   elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
   renderEditNotice();
+  renderPaletteResults();
 }
 
 function setEditNotice(notice: EditNoticeState): void {
@@ -647,6 +943,7 @@ function setTheme(theme: "light" | "dark"): void {
   const next = theme === "light" ? "dark" : "light";
   elements.themeLabel.textContent = next === "dark" ? "Dark" : "Light";
   elements.themeToggle.ariaLabel = `Switch to ${next} theme`;
+  renderPaletteResults();
 }
 
 elements.fileSearch.addEventListener("input", () => {
@@ -654,13 +951,20 @@ elements.fileSearch.addEventListener("input", () => {
   renderFiles(workspace?.files ?? [], loadedNote?.path ?? null);
 });
 
-elements.themeToggle.addEventListener("click", () => {
-  setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
-});
-
-elements.openVault.addEventListener("click", () => void chooseVault());
-elements.saveNote.addEventListener("click", () => void saveActiveNote());
-elements.revertNote.addEventListener("click", revertActiveNote);
+elements.commandTrigger.addEventListener("click", openCommandPalette);
+elements.themeToggle.addEventListener(
+  "click",
+  () => void executeRendererCommand("appearance.toggle-theme"),
+);
+elements.openVault.addEventListener(
+  "click",
+  () => void executeRendererCommand("workspace.open-vault"),
+);
+elements.saveNote.addEventListener("click", () => void executeRendererCommand("editor.save-note"));
+elements.revertNote.addEventListener(
+  "click",
+  () => void executeRendererCommand("editor.revert-note"),
+);
 elements.dismissEditNotice.addEventListener("click", clearEditNotice);
 
 elements.runCommand.addEventListener("click", () => {
@@ -668,43 +972,81 @@ elements.runCommand.addEventListener("click", () => {
   if (!command) {
     return;
   }
-  void runAction(async () => {
-    const snapshot = await window.threadleaf.runCommand(command.id);
-    showToast(snapshot.notices.at(-1) ?? "Command completed.");
-    return snapshot;
-  });
+  void executeRendererCommand(`plugin.command.${command.id}`);
 });
 
-elements.reloadPlugin.addEventListener("click", () => {
-  void runAction(() => window.threadleaf.reloadPlugin());
-});
+elements.reloadPlugin.addEventListener("click", () => void executeRendererCommand("plugin.reload"));
 
-elements.unloadPlugin.addEventListener("click", () => {
-  void runAction(() => window.threadleaf.unloadPlugin());
+elements.unloadPlugin.addEventListener("click", () => void executeRendererCommand("plugin.unload"));
+
+elements.paletteQuery.addEventListener("input", renderPaletteResults);
+elements.paletteQuery.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    paletteSelection = movePaletteSelection(
+      paletteMatches,
+      paletteSelection,
+      event.key === "ArrowDown" ? 1 : -1,
+    );
+    selectPaletteIndex(paletteSelection, true);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    const command = paletteMatches[paletteSelection];
+    if (command?.enabled) {
+      void executeRendererCommand(command.id);
+    }
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeCommandPalette();
+  }
+});
+elements.paletteClose.addEventListener("click", () => closeCommandPalette());
+elements.commandPalette.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeCommandPalette();
+});
+elements.commandPalette.addEventListener("click", (event) => {
+  if (event.target === elements.commandPalette) {
+    closeCommandPalette();
+  }
 });
 
 document.addEventListener("keydown", (event) => {
   const modifier = event.metaKey || event.ctrlKey;
   const key = event.key.toLocaleLowerCase("en-US");
+  if (modifier && key === "k") {
+    event.preventDefault();
+    if (elements.commandPalette.open) {
+      closeCommandPalette();
+    } else {
+      openCommandPalette();
+    }
+    return;
+  }
+  if (elements.commandPalette.open) {
+    return;
+  }
   if (modifier && key === "s") {
     event.preventDefault();
-    void saveActiveNote();
+    void executeRendererCommand("editor.save-note");
   } else if (modifier && key === "o") {
     event.preventDefault();
-    void chooseVault();
+    void executeRendererCommand("workspace.open-vault");
   } else if (modifier && key === "p") {
     event.preventDefault();
-    elements.fileSearch.focus();
-    elements.fileSearch.select();
+    void executeRendererCommand("workspace.focus-note-filter");
+  } else if (modifier && event.shiftKey && key === "l") {
+    event.preventDefault();
+    void executeRendererCommand("appearance.toggle-theme");
   } else if (event.key === "Escape" && document.activeElement === elements.fileSearch) {
     elements.fileSearch.value = "";
     elements.fileSearch.dispatchEvent(new Event("input"));
   }
 });
 
-const isMac = navigator.platform.toLocaleLowerCase("en-US").includes("mac");
 elements.searchShortcut.textContent = isMac ? "⌘P" : "Ctrl P";
 elements.saveShortcut.textContent = isMac ? "⌘S" : "Ctrl S";
+elements.commandShortcut.textContent = isMac ? "⌘K" : "Ctrl K";
 
 const storedTheme = localStorage.getItem("threadleaf-theme");
 const initialTheme =

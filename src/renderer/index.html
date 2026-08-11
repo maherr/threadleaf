@@ -35,10 +35,22 @@
           </button>
         </div>
 
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="Switch to dark theme">
-          <span aria-hidden="true">◐</span>
-          <span id="theme-label">Dark</span>
-        </button>
+        <div class="topbar-actions">
+          <button
+            class="icon-button command-trigger"
+            id="command-trigger"
+            type="button"
+            aria-label="Open command palette"
+          >
+            <span aria-hidden="true">⌘</span>
+            <span class="command-trigger-copy">Commands</span>
+            <kbd id="command-shortcut">Ctrl K</kbd>
+          </button>
+          <button class="icon-button" id="theme-toggle" type="button" aria-label="Switch to dark theme">
+            <span aria-hidden="true">◐</span>
+            <span id="theme-label">Dark</span>
+          </button>
+        </div>
       </header>
 
       <div class="workspace">
@@ -171,6 +183,48 @@
         <span class="statusbar-end">AGPL-3.0-or-later</span>
       </footer>
     </div>
+
+    <dialog
+      class="command-palette"
+      id="command-palette"
+      aria-labelledby="palette-title"
+      aria-modal="true"
+    >
+      <div class="palette-shell">
+        <div class="palette-search">
+          <span class="palette-prompt" aria-hidden="true">›</span>
+          <label class="sr-only" for="palette-query">Search commands</label>
+          <input
+            id="palette-query"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Type a command or plugin action"
+            role="combobox"
+            aria-controls="palette-results"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-haspopup="listbox"
+          />
+          <button id="palette-close" type="button" aria-label="Close command palette">
+            <kbd>Esc</kbd>
+          </button>
+        </div>
+        <div class="palette-title-row">
+          <span>
+            <small>Command palette</small>
+            <strong id="palette-title">Threadleaf actions</strong>
+          </span>
+          <span id="palette-count" aria-live="polite">0 available</span>
+        </div>
+        <div class="palette-results" id="palette-results" role="listbox" aria-label="Available commands"></div>
+        <footer class="palette-footer">
+          <span><kbd>↑↓</kbd> Navigate</span>
+          <span><kbd>Enter</kbd> Run</span>
+          <span id="palette-hint">Ready</span>
+        </footer>
+      </div>
+    </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/renderer.ts"></script>

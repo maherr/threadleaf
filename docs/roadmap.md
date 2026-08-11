@@ -58,7 +58,9 @@ equivalence through the real writer-to-watcher seam.
 - [x] CodeMirror source editor with dirty state, explicit Revert, revision-aware recoverable save,
       external-change detection, and keep-both conflict UI.
 - [x] Arbitrary vault picker, validated runtime swaps, and persistent workspace restoration.
-- [ ] Tabs, split panes, command palette, menus, hotkeys, and settings.
+- [x] Accessible command palette with shared core and compatibility-plugin actions, search,
+      disabled-state explanations, and keyboard navigation.
+- [ ] Tabs, split panes, application menus, remappable hotkeys, and settings.
 - [ ] Live preview and source-to-preview position mapping.
 - [ ] Full-text search, properties, attachments, and embeds.
 
@@ -70,7 +72,12 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
   frontmatter, rename semantics, JSON Canvas, and `.obsidian/` coexistence.
 - Broaden the public API based on measured plugin usage.
 - Add workspace views, Markdown processors, menus, settings, and editor extensions.
+- Import behavior with an explicit preview: enabled-plugin inventory, compatible plugin settings,
+  hotkeys, themes, CSS snippets, and workspace layout. Never require or mutate `.obsidian/`.
 - Publish a generated compatibility registry.
+- Publish benchmark vaults and regression budgets for cold start, full rebuild, watcher bursts,
+  search latency, memory use, and plugin activation.
+- Run plugin bundles through automated compatibility and security checks before distribution.
 - Verify representative open plugins, including a demanding Excalidraw workflow.
 
 Exit gate: selected high-value plugins complete named workflows against public fixtures.
@@ -79,7 +86,8 @@ Exit gate: selected high-value plugins complete named workflows against public f
 
 - Stable capability vocabulary.
 - Permission declarations and review surface.
-- Versioned SDK, conformance suite, and marketplace metadata.
+- Versioned SDK, conformance suite, signed manifests, marketplace metadata, automated review, and
+  a rapid delisting path.
 - First-party features moved out of the kernel where practical.
 
 ## Later phases
@@ -115,5 +123,7 @@ conversion.
 - Reproducible checks and platform packaging run without maintainer-only state.
 - Architecture and conformance docs remain short enough for a new contributor to follow.
 - Work is split into reviewable feature slices rather than one application-wide state layer.
+- Every public API is classified as portable native, desktop compatibility only, or unavailable on
+  mobile before third-party code depends on it.
 - Any copied open-source code is pinned to a source revision and recorded with its license and
   retained notice.

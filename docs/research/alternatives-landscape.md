@@ -213,6 +213,12 @@ The concepts are useful. The Lokus API and implementation are not imported.
 10. Record every copied dependency or source fragment in a third-party notice with its source,
     revision, license, modifications, and retained notice. No project code has been copied during
     this review.
+11. Treat hotkeys, themes, CSS, plugin configuration, enabled-plugin state, and workspace layout as
+    migration data. Moving Markdown alone does not move a workflow.
+12. Publish performance fixtures and budgets before making speed or scale claims.
+13. Audit Tangent for filesystem-first product behavior, SilverBullet for programmable extension
+    design, and Joplin for cross-platform sync operations before implementing those respective
+    layers. These are targeted reference audits, not candidates for wholesale reuse.
 
 ## Reuse ledger
 
