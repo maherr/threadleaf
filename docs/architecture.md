@@ -129,6 +129,42 @@ rare-query, and deliberately broad-query behavior over a deterministic 10,000-no
 inverted or SQLite FTS index must be earned by those measurements and preserve the same rebuildable
 contract, rather than adding canonical database state speculatively.
 
+### Reading view and source mapping
+
+Reading view is an explicit document mode, not an implicit write or a second source of truth. It
+renders the current CodeMirror draft, including unsaved changes, without crossing the main-process
+write boundary. Switching modes stores only an application preference outside the vault.
+
+The first renderer uses Markdown-it for deterministic block parsing and DOMPurify with a narrow
+element and attribute allowlist. Raw HTML is accepted only after sanitization. Scripts, event
+handlers, forms, styles, media elements, and active URLs are removed. Markdown images and wiki
+embeds remain inert placeholders until the attachment resolver can provide a dedicated read-only
+resource boundary. External links also stay inert during pre-alpha rather than broadening IPC for
+shell access prematurely.
+
+Every rendered top-level block carries its source line. A visible line control switches back to
+source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized
+identities, but the derived metadata index remains authoritative for resolution status and target
+paths. Dirty-note navigation is blocked and preserves the draft; no preview action silently saves
+or discards text.
+
+This is reading preview, not inline live preview. Precise cursor-to-decoration mapping inside one
+mixed source/rendered editor remains later Phase 2 work and must preserve the same sanitizer,
+source-line, and no-implicit-write guarantees.
+
+### Command-line boundary
+
+Threadleaf will expose the same headless workspace kernel and action semantics through a native
+command-line interface. Human-readable output is the interactive default, while stable JSON and
+explicit exit codes are first-class automation contracts. Core file, search, metadata, task, and
+mutation commands must not require a running Electron process.
+
+An Obsidian-style compatibility facade may accept familiar public command names and arguments, but
+it translates into Threadleaf's own typed command model. It does not make the GUI a hidden CLI
+server, copy proprietary implementation details, or create a second mutation path. Every mutating
+command uses the same containment, revision, recovery-journal, conflict, and watcher contracts as
+the desktop application. See the [CLI direction](cli.md).
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable
@@ -230,7 +266,7 @@ Capability host ---> native Threadleaf extension
 
 - Long-term process isolation for trusted plugins.
 - Native extension SDK license and capability vocabulary.
-- Editor architecture and source-to-preview mapping.
+- Inline live-preview editor architecture and fine-grained cursor mapping.
 - Metadata schema and migration strategy.
 - Behavior-import schema for hotkeys, themes, CSS, plugin settings, and workspace layout.
 - Public benchmark corpora, target devices, and regression budgets.

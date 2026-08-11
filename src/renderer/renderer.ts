@@ -24,6 +24,7 @@ import {
   movePaletteSelection,
   type PaletteCommandDescriptor,
 } from "./command-palette-model";
+import { addPreviewSourceControls, renderMarkdownPreview } from "./markdown-preview";
 import "./styles.css";
 
 const elements = {
@@ -47,7 +48,11 @@ const elements = {
   noteTitle: getElement("note-title"),
   noteStats: getElement("note-stats"),
   noteTags: getElement("note-tags"),
+  editView: getButton("edit-view"),
+  readView: getButton("read-view"),
+  noteEditorShell: getElement("note-editor-shell"),
   noteEditor: getElement("note-editor"),
+  notePreview: getElement("note-preview"),
   editState: getElement("edit-state"),
   saveNote: getButton("save-note"),
   saveShortcut: getElement("save-shortcut"),
@@ -111,6 +116,8 @@ interface ShortcutTargetDefinition {
   description: string;
 }
 
+type DocumentViewMode = "source" | "reading";
+
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   {
     id: "ui.command-palette",
@@ -143,6 +150,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     description: "Discard the current editor draft and accept the disk version.",
   },
   {
+    id: "editor.toggle-reading-view",
+    label: "Toggle editing or reading view",
+    description: "Preview the current draft or return to its Markdown source.",
+  },
+  {
     id: "appearance.toggle-theme",
     label: "Toggle light or dark theme",
     description: "Switch the current Threadleaf color scheme.",
@@ -162,6 +174,9 @@ let busy = false;
 let saving = false;
 let dirty = false;
 let syncingEditor = false;
+let documentViewMode: DocumentViewMode = "source";
+let renderedPreviewPath: string | null = null;
+let renderedPreviewSource: string | null = null;
 let paletteMatches: RendererCommand[] = [];
 let paletteSelection = -1;
 let paletteRestoreFocus: HTMLElement | null = null;
@@ -330,6 +345,16 @@ function commandCatalog(): RendererCommand[] {
       run: revertActiveNote,
     },
     {
+      id: "editor.toggle-reading-view",
+      label: documentViewMode === "reading" ? "Switch to editing view" : "Switch to reading view",
+      category: "Editor",
+      keywords: ["preview", "read", "source", "markdown"],
+      shortcut: shortcutFor("editor.toggle-reading-view"),
+      enabled: Boolean(loadedNote && !busy && !saving),
+      disabledReason: loadedNote ? "Threadleaf is finishing another action." : "No note is open.",
+      run: toggleDocumentView,
+    },
+    {
       id: "appearance.toggle-theme",
       label: `Switch to ${document.documentElement.dataset.theme === "dark" ? "light" : "dark"} theme`,
       category: "Appearance",
@@ -399,6 +424,202 @@ function focusVaultSearch(): void {
   elements.fileSearch.select();
 }
 
+function splitPreviewTarget(value: string): { target: string; subpath: string | null } {
+  let normalized: string;
+  try {
+    normalized = decodeURIComponent(value).replaceAll("\\", "/");
+  } catch {
+    normalized = value.replaceAll("\\", "/");
+  }
+  const headingIndex = normalized.indexOf("#");
+  const blockIndex = normalized.indexOf("^");
+  const indexes = [headingIndex, blockIndex].filter((index) => index >= 0);
+  const splitAt = indexes.length > 0 ? Math.min(...indexes) : -1;
+  if (splitAt === -1) {
+    return { target: normalized.trim(), subpath: null };
+  }
+  return {
+    target: normalized.slice(0, splitAt).trim(),
+    subpath: normalized.slice(splitAt).trim() || null,
+  };
+}
+
+function previewLinkIdentity(anchor: HTMLAnchorElement): {
+  syntax: "wiki" | "markdown";
+  target: string;
+  subpath: string | null;
+} | null {
+  const syntax = anchor.dataset.threadleafLink;
+  if (syntax !== "wiki" && syntax !== "markdown") {
+    return null;
+  }
+  if (syntax === "markdown") {
+    return { syntax, ...splitPreviewTarget(anchor.dataset.threadleafTarget ?? "") };
+  }
+  return {
+    syntax,
+    target: anchor.dataset.threadleafTarget ?? "",
+    subpath: anchor.dataset.threadleafSubpath || null,
+  };
+}
+
+function matchingPreviewLink(
+  note: WorkspaceNoteSnapshot,
+  anchor: HTMLAnchorElement,
+): WorkspaceLinkSummary | null {
+  const identity = previewLinkIdentity(anchor);
+  if (!identity) {
+    return null;
+  }
+  return (
+    note.outgoing.find(
+      (link) =>
+        link.syntax === identity.syntax &&
+        link.target === identity.target &&
+        (link.subpath ?? null) === identity.subpath,
+    ) ?? null
+  );
+}
+
+function sourceLineForSubpath(
+  note: WorkspaceNoteSnapshot | null,
+  subpath: string | null | undefined,
+): number | null {
+  if (!note || !subpath?.startsWith("#")) {
+    return null;
+  }
+  let headingText: string;
+  try {
+    headingText = decodeURIComponent(subpath.slice(1));
+  } catch {
+    headingText = subpath.slice(1);
+  }
+  const normalized = headingText.normalize("NFC").toLocaleLowerCase("en-US");
+  return (
+    note.headings.find(
+      (heading) => heading.text.normalize("NFC").toLocaleLowerCase("en-US") === normalized,
+    )?.line ?? null
+  );
+}
+
+function renderReadingView(): void {
+  if (!loadedNote) {
+    elements.notePreview.replaceChildren();
+    renderedPreviewPath = null;
+    renderedPreviewSource = null;
+    return;
+  }
+  const source = editor.state.doc.toString();
+  if (renderedPreviewPath === loadedNote.path && renderedPreviewSource === source) {
+    return;
+  }
+  const fragment = addPreviewSourceControls(renderMarkdownPreview(source));
+  elements.notePreview.replaceChildren(fragment);
+  for (const anchor of elements.notePreview.querySelectorAll<HTMLAnchorElement>(
+    "a[data-threadleaf-link]",
+  )) {
+    if (anchor.dataset.threadleafLink === "external") {
+      anchor.ariaLabel = `${anchor.textContent?.trim() || "External link"}, external link`;
+      anchor.title = "External link opening is disabled in this pre-alpha build.";
+      continue;
+    }
+    const identity = previewLinkIdentity(anchor);
+    if (identity) {
+      anchor.dataset.threadleafTarget = identity.target;
+      anchor.dataset.threadleafSubpath = identity.subpath ?? "";
+    }
+    const link = matchingPreviewLink(loadedNote, anchor);
+    const status = link?.status ?? "unresolved";
+    anchor.dataset.linkStatus = status;
+    anchor.ariaLabel = `${anchor.textContent?.trim() || "Internal link"}, ${status} internal link`;
+    if (link?.path) {
+      anchor.dataset.threadleafPath = link.path;
+    }
+  }
+  renderedPreviewPath = loadedNote.path;
+  renderedPreviewSource = source;
+}
+
+function renderDocumentView(): void {
+  const hasNote = loadedNote !== null;
+  const reading = hasNote && documentViewMode === "reading";
+  elements.noteEditorShell.hidden = reading;
+  elements.notePreview.hidden = !reading;
+  elements.noteView.dataset.view = reading ? "reading" : "source";
+  elements.editView.disabled = !hasNote || busy || saving;
+  elements.readView.disabled = !hasNote || busy || saving;
+  elements.editView.setAttribute("aria-pressed", String(!reading));
+  elements.readView.setAttribute("aria-pressed", String(reading));
+  const shortcut = shortcutFor("editor.toggle-reading-view");
+  elements.editView.title = shortcut ? `Editing view (${shortcut})` : "Editing view";
+  elements.readView.title = shortcut ? `Reading view (${shortcut})` : "Reading view";
+  if (reading) {
+    renderReadingView();
+  }
+}
+
+function setDocumentView(mode: DocumentViewMode, focus = true): void {
+  if (!loadedNote) {
+    return;
+  }
+  documentViewMode = mode;
+  localStorage.setItem("threadleaf-document-view", mode);
+  renderDocumentView();
+  renderPaletteResults();
+  if (!focus) {
+    return;
+  }
+  if (mode === "source") {
+    editor.focus();
+  } else {
+    elements.notePreview.focus();
+  }
+}
+
+function toggleDocumentView(): void {
+  setDocumentView(documentViewMode === "reading" ? "source" : "reading");
+}
+
+function scrollToDocumentLine(line: number): void {
+  if (documentViewMode === "reading") {
+    const block = elements.notePreview.querySelector<HTMLElement>(
+      `.preview-block[data-source-line="${Math.max(1, line)}"]`,
+    );
+    block?.scrollIntoView({ block: "start" });
+    return;
+  }
+  scrollToSourceLine(line);
+}
+
+async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
+  if (anchor.dataset.threadleafLink === "external") {
+    showToast("External link opening is disabled in this pre-alpha build.");
+    return;
+  }
+  if (!loadedNote) {
+    return;
+  }
+  const link = matchingPreviewLink(loadedNote, anchor);
+  if (link?.status !== "resolved" || !link.path) {
+    showToast(
+      link?.status === "ambiguous"
+        ? "That link has more than one possible destination."
+        : "That link does not resolve to a note in this vault.",
+    );
+    return;
+  }
+  const opened = await openNote(link.path);
+  if (!opened) {
+    return;
+  }
+  const line = sourceLineForSubpath(loadedNote, link.subpath);
+  if (line) {
+    scrollToDocumentLine(line);
+  } else if (link.subpath?.startsWith("^")) {
+    showToast("Block-anchor navigation is not available yet.");
+  }
+}
+
 function toggleTheme(): void {
   setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 }
@@ -461,6 +682,7 @@ function closeCommandPalette(restoreFocus = true): void {
 function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   settingsSnapshot = snapshot;
   updateShortcutLabels();
+  renderDocumentView();
   if (snapshot.warning && snapshot.warning !== lastSettingsWarning) {
     showToast(snapshot.warning);
   }
@@ -1118,7 +1340,7 @@ function renderNote(note: WorkspaceNoteSnapshot | null): void {
     button.className = "inspector-item outline-item";
     button.style.setProperty("--outline-depth", String(Math.max(0, heading.level - 1)));
     button.textContent = heading.text;
-    button.addEventListener("click", () => scrollToSourceLine(heading.line));
+    button.addEventListener("click", () => scrollToDocumentLine(heading.line));
     elements.outlineList.append(button);
   }
   if (note.headings.length === 0) {
@@ -1317,6 +1539,7 @@ function renderEditControls(): void {
   elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
   renderEditNotice();
+  renderDocumentView();
   renderPaletteResults();
 }
 
@@ -1347,19 +1570,21 @@ function scrollToSourceLine(line: number): void {
   editor.focus();
 }
 
-async function openNote(filePath: string, line?: number): Promise<void> {
+async function openNote(filePath: string, line?: number): Promise<boolean> {
   if (busy) {
-    return;
+    return false;
   }
   if (dirty || saving) {
     showToast("Save or revert the open note before navigating away.");
+    setDocumentView("source");
     editor.focus();
-    return;
+    return false;
   }
   await runAction(() => window.threadleaf.openNote(filePath));
   if (line && loadedNote?.path === filePath) {
-    scrollToSourceLine(line);
+    scrollToDocumentLine(line);
   }
+  return loadedNote?.path === filePath;
 }
 
 async function chooseVault(): Promise<void> {
@@ -1491,6 +1716,28 @@ elements.fileSearch.addEventListener("input", () => {
   scheduleVaultSearch();
 });
 
+elements.editView.addEventListener("click", () => setDocumentView("source"));
+elements.readView.addEventListener("click", () => setDocumentView("reading"));
+elements.notePreview.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  const sourceAction = event.target.closest<HTMLButtonElement>(".preview-source-action");
+  if (sourceAction) {
+    const line = Number.parseInt(sourceAction.dataset.sourceLine ?? "", 10);
+    if (Number.isSafeInteger(line) && line > 0) {
+      setDocumentView("source", false);
+      window.requestAnimationFrame(() => scrollToSourceLine(line));
+    }
+    return;
+  }
+  const anchor = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-link]");
+  if (anchor) {
+    event.preventDefault();
+    void activatePreviewLink(anchor);
+  }
+});
+
 elements.commandTrigger.addEventListener("click", openCommandPalette);
 elements.settingsTrigger.addEventListener(
   "click",
@@ -1611,6 +1858,9 @@ document.addEventListener("keydown", (event) => {
 });
 
 updateShortcutLabels();
+
+const storedDocumentView = localStorage.getItem("threadleaf-document-view");
+documentViewMode = storedDocumentView === "reading" ? "reading" : "source";
 
 const storedTheme = localStorage.getItem("threadleaf-theme");
 const initialTheme =

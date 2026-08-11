@@ -104,7 +104,11 @@
               <span id="note-path">No note selected</span>
             </div>
             <div class="editor-controls">
-              <span class="source-label">Markdown source</span>
+              <fieldset class="document-view-switch">
+                <legend class="sr-only">Document view</legend>
+                <button id="edit-view" type="button" aria-pressed="true">Edit</button>
+                <button id="read-view" type="button" aria-pressed="false">Read</button>
+              </fieldset>
               <span class="edit-state" id="edit-state" data-state="empty">No note</span>
               <button class="toolbar-button" id="revert-note" type="button" disabled>Revert</button>
               <button class="toolbar-button save-button" id="save-note" type="button" disabled>
@@ -137,6 +141,13 @@
             <div class="note-editor-shell" id="note-editor-shell">
               <div class="note-editor" id="note-editor"></div>
             </div>
+            <section
+              class="note-preview"
+              id="note-preview"
+              tabindex="-1"
+              aria-label="Rendered Markdown preview"
+              hidden
+            ></section>
           </article>
         </main>
 

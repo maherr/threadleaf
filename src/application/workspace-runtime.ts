@@ -377,6 +377,10 @@ export class WorkspaceRuntime {
           (link): WorkspaceLinkSummary => ({
             label: link.alias ?? `${link.target}${link.subpath ?? ""}`,
             status: link.resolution.status,
+            target: link.target,
+            subpath: link.subpath,
+            embed: link.embed,
+            syntax: link.syntax,
             ...(link.resolution.path ? { path: link.resolution.path } : {}),
           }),
         ),

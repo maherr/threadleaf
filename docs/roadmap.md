@@ -65,8 +65,14 @@ equivalence through the real writer-to-watcher seam.
 - [x] Bounded vault-wide full-text search over saved paths, headings, tags, properties, fenced code,
       and body text, with ranked context, line navigation, stale-response identity, watcher
       convergence, and a reproducible 10,000-note microbenchmark.
+- [x] Explicit sanitized reading view over the current saved or unsaved editor draft, with
+      deterministic source-line navigation, index-resolved internal links, inert external links,
+      dirty-navigation protection, and no new filesystem or shell authority in the renderer.
+- [ ] Headless native CLI over the shared vault kernel and action semantics, with stable JSON,
+      script-safe exit codes, recovery-backed mutations, and an executable compatibility corpus for
+      familiar Obsidian-style command names.
 - [ ] Tabs, split panes, application menus, and broader workspace settings.
-- [ ] Live preview and source-to-preview position mapping.
+- [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
 - [ ] Rich property views and editing, attachments, and embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.

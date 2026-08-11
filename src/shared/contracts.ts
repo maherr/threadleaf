@@ -63,6 +63,10 @@ export interface WorkspaceLinkSummary {
   label: string;
   status: "resolved" | "unresolved" | "ambiguous";
   path?: string;
+  target?: string;
+  subpath?: string | null;
+  embed?: boolean;
+  syntax?: "wiki" | "markdown";
 }
 
 export interface WorkspaceNoteSnapshot {

@@ -32,11 +32,14 @@ original is left untouched and the local edit becomes a clearly labeled conflict
 and dynamically registered compatibility-plugin commands share a searchable, keyboard-navigable
 command palette. Versioned application settings now keep remappable keyboard shortcuts outside
 every vault, reject collisions, and persist changes before activating them. Compatibility plugins
-in selected and restored vaults stay off by default.
+in selected and restored vaults stay off by default. An explicit reading view renders the current
+editor draft through a sanitized Markdown subset, keeps unsaved text off disk, resolves internal
+links through the derived index, and provides source-line controls that return to the matching
+CodeMirror line.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
-functional, but Threadleaf is still pre-alpha and has no live preview or release-grade backup and
-restore workflow.
+functional, but Threadleaf is still pre-alpha and has no inline live preview, attachment rendering,
+or release-grade backup and restore workflow.
 
 ## Product promises
 
@@ -53,6 +56,7 @@ restore workflow.
 
 - [Project charter](docs/charter.md)
 - [Architecture](docs/architecture.md)
+- [CLI direction](docs/cli.md)
 - [Compatibility contract](docs/compatibility/contract.md)
 - [Roadmap](docs/roadmap.md)
 - [Performance baselines](docs/performance.md)
@@ -77,7 +81,9 @@ Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P searches saved content, paths, 
 properties; Ctrl/Cmd+, opens keyboard settings. Search terms use AND semantics and quoted text is
 matched as a phrase. Every listed shortcut can be reassigned or cleared, and Reset defaults
 restores the portable built-in bindings. Threadleaf stores these preferences in private
-application data, not in the vault or `.obsidian/`.
+application data, not in the vault or `.obsidian/`. Ctrl/Cmd+E switches between Markdown source and
+reading view. Reading view previews the current draft without saving it; clicking a source-line
+control returns to the exact source line.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

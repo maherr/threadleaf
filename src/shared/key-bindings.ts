@@ -5,6 +5,7 @@ export const shortcutTargetIds = [
   "workspace.focus-note-filter",
   "editor.save-note",
   "editor.revert-note",
+  "editor.toggle-reading-view",
   "appearance.toggle-theme",
 ] as const;
 
@@ -35,6 +36,7 @@ export const defaultKeyBindings: Readonly<Record<ShortcutTargetId, string | null
   "workspace.focus-note-filter": "Mod+P",
   "editor.save-note": "Mod+S",
   "editor.revert-note": null,
+  "editor.toggle-reading-view": "Mod+E",
   "appearance.toggle-theme": "Mod+Shift+L",
 };
 

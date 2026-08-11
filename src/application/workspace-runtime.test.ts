@@ -73,6 +73,10 @@ describe("WorkspaceRuntime", () => {
           label: "Linked Note",
           status: "resolved",
           path: "Linked Note.md",
+          target: "Linked Note",
+          subpath: null,
+          embed: false,
+          syntax: "wiki",
         },
       ],
     });
@@ -106,7 +110,17 @@ describe("WorkspaceRuntime", () => {
       content: "# Saved in Threadleaf\n\n#edited and [[Linked Note]]",
       tags: ["edited"],
       headings: [{ level: 1, text: "Saved in Threadleaf", line: 1 }],
-      outgoing: [{ label: "Linked Note", status: "resolved", path: "Linked Note.md" }],
+      outgoing: [
+        {
+          label: "Linked Note",
+          status: "resolved",
+          path: "Linked Note.md",
+          target: "Linked Note",
+          subpath: null,
+          embed: false,
+          syntax: "wiki",
+        },
+      ],
     });
     await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(
       "# Saved in Threadleaf\n\n#edited and [[Linked Note]]",
