@@ -116,7 +116,7 @@ interface InternalWriteConflict {
 
 type InternalWriteResult = InternalWriteCommitted | InternalWriteConflict;
 
-const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const textDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const revisionPattern = /^[a-f0-9]{64}$/;
 
 function revisionsMatch(snapshot: FileSnapshot | null, expectedRevision: string | null): boolean {

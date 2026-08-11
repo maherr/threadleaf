@@ -77,3 +77,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Headless `properties`, `property:read`, `property:set`, and `property:remove` commands, with typed
   scalar and list serialization, conservative byte-preserving frontmatter patches, idempotent
   removal, mutation locking, revision conflicts, stable JSON, and explicit complex-YAML refusal.
+- Source-offset-preserving wiki and Markdown link parsing plus deterministic move-rewrite planning,
+  including fenced and inline code exclusion, HTML-comment exclusion, alias and anchor retention,
+  relative-path regeneration, ambiguity refusal, and final projected-index validation.
+- UTF-8 BOM retention at the vault read boundary so revision-aware rewrites preserve BOM and CRLF
+  bytes instead of silently normalizing them.

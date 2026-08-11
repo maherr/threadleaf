@@ -4,6 +4,7 @@ import {
   FullTextSearchIndex,
   type FullTextSearchPage,
 } from "./full-text-search";
+import { type ParsedMarkdownLink, parseMarkdownLinks } from "./markdown-links";
 import { normalizeVaultDirectoryPath } from "./path-policy";
 import type { VaultReadPort, VaultTextSnapshot } from "./ports";
 import { type RescanReason, type VaultChangeBatch, WatchSequenceGate } from "./watch-protocol";
@@ -44,22 +45,13 @@ export interface MetadataIndexSnapshot {
   duplicateNames: Array<{ name: string; paths: string[] }>;
 }
 
-interface ParsedLink {
-  target: string;
-  subpath: string | null;
-  alias: string | null;
-  embed: boolean;
-  syntax: "wiki" | "markdown";
-  position: number;
-}
-
 interface ParsedDocument {
   path: string;
   revision: string;
   headings: HeadingMetadata[];
   tags: string[];
   properties: Record<string, string | string[]>;
-  links: ParsedLink[];
+  links: ParsedMarkdownLink[];
 }
 
 export interface IndexUpdateResult {
@@ -153,71 +145,6 @@ function tagsFromProperties(properties: Record<string, string | string[]>): stri
   return values.map((tag) => tag.trim().replace(/^#/, "")).filter(Boolean);
 }
 
-function splitTarget(value: string): { target: string; subpath: string | null } {
-  const headingIndex = value.indexOf("#");
-  const blockIndex = value.indexOf("^");
-  const indexes = [headingIndex, blockIndex].filter((index) => index >= 0);
-  const splitAt = indexes.length > 0 ? Math.min(...indexes) : -1;
-  if (splitAt === -1) {
-    return { target: value.trim(), subpath: null };
-  }
-  return {
-    target: value.slice(0, splitAt).trim(),
-    subpath: value.slice(splitAt).trim() || null,
-  };
-}
-
-function normalizeLinkTarget(value: string): string {
-  const unwrapped = value.startsWith("<") && value.endsWith(">") ? value.slice(1, -1) : value;
-  try {
-    return decodeURIComponent(unwrapped).replaceAll("\\", "/");
-  } catch {
-    return unwrapped.replaceAll("\\", "/");
-  }
-}
-
-function isExternalLink(value: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith("//");
-}
-
-function parseLinks(content: string): ParsedLink[] {
-  const links: ParsedLink[] = [];
-  const wikiPattern = /(!)?\[\[([^\]\n]+)\]\]/g;
-  for (const match of content.matchAll(wikiPattern)) {
-    const inner = match[2] ?? "";
-    const aliasAt = inner.indexOf("|");
-    const rawTarget = aliasAt === -1 ? inner : inner.slice(0, aliasAt);
-    const { target, subpath } = splitTarget(normalizeLinkTarget(rawTarget));
-    links.push({
-      target,
-      subpath,
-      alias: aliasAt === -1 ? null : inner.slice(aliasAt + 1).trim() || null,
-      embed: match[1] === "!",
-      syntax: "wiki",
-      position: match.index,
-    });
-  }
-
-  const markdownPattern = /(!)?\[[^\]\n]*\]\(([^)\n]+)\)/g;
-  for (const match of content.matchAll(markdownPattern)) {
-    const destination = (match[2] ?? "").trim().split(/\s+["']/)[0] ?? "";
-    const normalized = normalizeLinkTarget(destination);
-    if (!normalized || isExternalLink(normalized)) {
-      continue;
-    }
-    const { target, subpath } = splitTarget(normalized);
-    links.push({
-      target,
-      subpath,
-      alias: null,
-      embed: match[1] === "!",
-      syntax: "markdown",
-      position: match.index,
-    });
-  }
-  return links.sort((left, right) => left.position - right.position);
-}
-
 function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
   const searchable = stripFencedCode(snapshot.content);
   const properties = parseProperties(snapshot.content);
@@ -243,7 +170,7 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     headings,
     tags: [...tags].sort((left, right) => left.localeCompare(right)),
     properties,
-    links: parseLinks(searchable),
+    links: parseMarkdownLinks(snapshot.content),
   };
 }
 

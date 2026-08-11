@@ -98,6 +98,10 @@ equivalence through the real writer-to-watcher seam.
       state recovery without vault-owned metadata.
 - [x] Headless indexed property listing and reads plus recovery-backed typed property set and remove,
       with conservative lossless frontmatter patching, mutation serialization, and conflict copies.
+- [x] Source-offset-preserving internal-link rewrite planning with code and comment exclusion,
+      alias and anchor retention, relative Markdown paths, ambiguity refusal, and final-index proof.
+- [ ] Crash-recoverable compound note moves that apply the validated link rewrites and rename under
+      one parent journal, with explicit preview and conflict recovery in desktop and CLI surfaces.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.

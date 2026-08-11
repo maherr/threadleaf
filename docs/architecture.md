@@ -240,9 +240,20 @@ Move and rename add a link-integrity preflight in front of the recoverable renam
 service snapshots the Markdown corpus, builds the current metadata index, projects the source at
 its proposed destination, and builds the projected index from the same bytes. Every parsed wiki and
 Markdown link must retain the same resolved, unresolved, or ambiguous meaning after remapping the
-moved note's identity. Any difference blocks the operation and returns structured evidence without
-writing. This is the safe baseline for a later atomic link-rewrite transaction; it does not claim
-automatic rewriting yet.
+moved note's identity.
+
+The shared link parser retains exact source and target ranges while excluding fenced code, inline
+code, and HTML comments. When a currently resolved link would change meaning, the move planner
+replaces only its target slice: wiki links receive an escaped vault path without `.md`, while
+Markdown links receive an escaped path relative to the linking note's projected location. Anchors,
+aliases, labels, titles, surrounding whitespace, BOM, line endings, and all unrelated bytes remain
+untouched. Replacements are applied from the end of each file, then the complete projected vault is
+indexed again. A proposal is valid only when every occurrence resolves to its original logical
+target after remapping the moved note's identity. Unresolved or ambiguous links are never guessed.
+
+The current desktop and CLI mutation boundary still blocks whenever a rewrite is required and
+returns structured evidence without writing. Automatic application waits for one parent recovery
+journal that can coordinate the rewritten files and rename as a compound operation.
 
 The desktop Move action dispatches through the same service. It carries the active vault identity
 and source revision across IPC, refuses dirty drafts, and keeps blocked or conflicting requests in

@@ -49,9 +49,12 @@ use the recovery-backed writer. They require an existing note, preserve its line
 and keep a full proposed conflict copy if an external edit wins the revision race. Headless move
 and rename commands project the complete post-move index before writing. They proceed only when
 every wiki and Markdown link keeps the same resolution, and otherwise return exact blockers without
-changing the vault. The desktop Move action and Ctrl/Cmd+Shift+M use that same preflight, bind the
-request to the active vault and note revision, show exact link-resolution blockers, reject
-destination collisions, and remap open tabs after a successful move. Headless delete moves exact
+changing the vault. The preflight also prepares source-range-preserving target rewrites for resolved
+links and proves them against a final rebuilt index. Commands still block instead of applying that
+plan until the compound move-and-rewrite journal is complete. The desktop Move action and
+Ctrl/Cmd+Shift+M use that same preflight, bind the request to the active vault and note revision,
+show exact link-resolution blockers, reject destination collisions, and remap open tabs after a
+successful move. Headless delete moves exact
 bytes to the same path under vault-local `.trash/`; dedicated list and restore commands keep that
 recovery content outside the ordinary corpus and never overwrite either side of a collision. The
 desktop Trash action uses the same revision-bound service behind a confirmation that names both

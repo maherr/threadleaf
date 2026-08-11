@@ -124,6 +124,25 @@ describe("VaultKernel path policy", () => {
 });
 
 describe("VaultKernel writes", () => {
+  it("preserves a UTF-8 BOM and CRLF bytes across a read and write", async () => {
+    const original = "\uFEFFfirst\r\nsecond\r\n";
+    await fs.writeFile(path.join(vaultPath, "Note.md"), original, "utf8");
+    const kernel = await openKernel();
+
+    const snapshot = await kernel.readText("Note.md");
+    expect(snapshot.content).toBe(original);
+    const result = await kernel.writeText(
+      "Note.md",
+      snapshot.content.replace("second", "changed"),
+      snapshot.revision,
+    );
+
+    expect(result.status).toBe("committed");
+    await expect(fs.readFile(path.join(vaultPath, "Note.md"), "utf8")).resolves.toBe(
+      "\uFEFFfirst\r\nchanged\r\n",
+    );
+  });
+
   it.each([
     ["write:after-intent", "rolled-back", "original", false],
     ["write:after-stage", "conflict-copy", "original", true],
