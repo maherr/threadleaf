@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createMarkdownNote } from "../application/note-creation";
+import { mutateMarkdownNoteText } from "../application/note-text-mutation";
 import { maxSearchResults, SearchQueryError } from "../kernel/full-text-search";
 import { MetadataIndex } from "../kernel/metadata-index";
 import { displayTitleFromVaultPath } from "../kernel/note-path";
@@ -26,7 +27,15 @@ export const cliExitCodes = {
   conflict: 5,
 } as const;
 
-type CliCommandId = "help" | "vault.info" | "files" | "read" | "search" | "create";
+type CliCommandId =
+  | "help"
+  | "vault.info"
+  | "files"
+  | "read"
+  | "search"
+  | "create"
+  | "append"
+  | "prepend";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -67,13 +76,21 @@ interface CliCreateCommand extends CliVaultCommand {
   content: string;
 }
 
+interface CliTextMutationCommand extends CliVaultCommand {
+  id: "append" | "prepend";
+  filePath: string;
+  content: string;
+  inline: boolean;
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
   | CliFilesCommand
   | CliReadCommand
   | CliSearchCommand
-  | CliCreateCommand;
+  | CliCreateCommand
+  | CliTextMutationCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -141,6 +158,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let directory: string | null = null;
   let limit: number | null = null;
   let content: string | null = null;
+  let inline = false;
   let help = false;
   const positional: string[] = [];
 
@@ -204,6 +222,13 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       }
       continue;
     }
+    if (token === "--inline") {
+      if (inline) {
+        usageFailure("--inline may be supplied only once.");
+      }
+      inline = true;
+      continue;
+    }
     if (token.startsWith("--")) {
       usageFailure(`Unknown option: ${token}`);
     }
@@ -222,19 +247,19 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     (name === "vault" && values[0] === "info" && values.length === 1) ||
     (name === "vault:info" && values.length === 0)
   ) {
-    if (directory !== null || limit !== null || content !== null) {
-      usageFailure("vault info does not accept --directory, --limit, or --content.");
+    if (directory !== null || limit !== null || content !== null || inline) {
+      usageFailure("vault info does not accept --directory, --limit, --content, or --inline.");
     }
     return { id: "vault.info", json, vaultPath };
   }
   if (name === "files") {
-    if (values.length > 0 || limit !== null || content !== null) {
+    if (values.length > 0 || limit !== null || content !== null || inline) {
       usageFailure("files accepts only the optional --directory value.");
     }
     return { id: "files", json, vaultPath, directory: directory ?? "" };
   }
   if (name === "read") {
-    if (values.length !== 1 || directory !== null || limit !== null || content !== null) {
+    if (values.length !== 1 || directory !== null || limit !== null || content !== null || inline) {
       usageFailure("read requires exactly one vault-relative Markdown path.");
     }
     const filePath = values[0]?.startsWith("file=") ? values[0].slice(5) : values[0];
@@ -244,7 +269,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     return { id: "read", json, vaultPath, filePath };
   }
   if (name === "search") {
-    if (values.length === 0 || directory !== null || content !== null) {
+    if (values.length === 0 || directory !== null || content !== null || inline) {
       usageFailure("search requires a query and does not accept --directory.");
     }
     const first = values[0] ?? "";
@@ -260,8 +285,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     return { id: "search", json, vaultPath, query, limit: limit ?? 50 };
   }
   if (name === "create") {
-    if (directory !== null || limit !== null) {
-      usageFailure("create does not accept --directory or --limit.");
+    if (directory !== null || limit !== null || inline) {
+      usageFailure("create does not accept --directory, --limit, or --inline.");
     }
     let filePath: string | null = null;
     let parameterContent: string | null = null;
@@ -296,6 +321,54 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       content: decodeContentEscapes(content ?? parameterContent ?? ""),
     };
   }
+  if (name === "append" || name === "prepend") {
+    if (directory !== null || limit !== null) {
+      usageFailure(`${name} does not accept --directory or --limit.`);
+    }
+    let filePath: string | null = null;
+    let parameterContent: string | null = null;
+    let inlineFlag = inline;
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (filePath !== null) {
+          usageFailure(`${name} accepts only one note path.`);
+        }
+        filePath = value.slice(value.indexOf("=") + 1);
+      } else if (value.startsWith("content=")) {
+        if (parameterContent !== null) {
+          usageFailure("content may be supplied only once.");
+        }
+        parameterContent = value.slice("content=".length);
+      } else if (value === "inline") {
+        if (inlineFlag) {
+          usageFailure("inline may be supplied only once.");
+        }
+        inlineFlag = true;
+      } else if (filePath === null && !value.includes("=")) {
+        filePath = value;
+      } else {
+        usageFailure(`Unsupported ${name} argument: ${value}`);
+      }
+    }
+    if (!filePath) {
+      usageFailure(`${name} requires one note path.`);
+    }
+    if (content !== null && parameterContent !== null) {
+      usageFailure(`${name} content may be supplied as an option or parameter, not both.`);
+    }
+    const decodedContent = decodeContentEscapes(content ?? parameterContent ?? "");
+    if (!decodedContent) {
+      usageFailure(`${name} requires non-empty content.`);
+    }
+    return {
+      id: name,
+      json,
+      vaultPath,
+      filePath,
+      content: decodedContent,
+      inline: inlineFlag,
+    };
+  }
 
   usageFailure(`Unknown command: ${positional.join(" ")}`);
 }
@@ -308,11 +381,15 @@ Usage:
   threadleaf --vault <path> [--json] read <note.md>
   threadleaf --vault <path> [--json] search <query> [--limit <count>]
   threadleaf --vault <path> [--json] create <note> [--content <text>]
+  threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
+  threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
 
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
   threadleaf --vault <path> search query=<text>
   threadleaf --vault <path> create path=<note> content=<text>
+  threadleaf --vault <path> append path=<note> content=<text> [inline]
+  threadleaf --vault <path> prepend path=<note> content=<text> [inline]
 
 Commands are headless and never require a running Electron process.
 `;
@@ -512,7 +589,7 @@ async function executeCommand(
   options: CliRunOptions,
 ): Promise<unknown> {
   const kernel =
-    command.id === "create"
+    command.id === "create" || command.id === "append" || command.id === "prepend"
       ? await openWritableKernel(command, options)
       : await openReadOnlyKernel(command, options);
   try {
@@ -531,6 +608,24 @@ async function executeCommand(
           "CONFLICT",
           cliExitCodes.conflict,
           `The requested path appeared during creation. The proposed note was preserved as ${outcome.conflictPath}.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
+    }
+    if (command.id === "append" || command.id === "prepend") {
+      const outcome = await mutateMarkdownNoteText(
+        kernel,
+        command.filePath,
+        command.content,
+        command.id,
+        command.inline,
+      );
+      if (outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The note changed during ${command.id}. The proposed version was preserved as ${outcome.conflictPath}.`,
           { details: outcome },
         );
       }
@@ -615,7 +710,7 @@ async function executeWithCommandState(
   command: Exclude<ParsedCliCommand, CliHelpCommand>,
   options: CliRunOptions,
 ): Promise<unknown> {
-  if (command.id !== "create") {
+  if (command.id !== "create" && command.id !== "append" && command.id !== "prepend") {
     return executeCommand(command, options);
   }
   const stateRoot = options.stateRoot ?? defaultWritableStateRoot();
@@ -673,6 +768,12 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
   }
   if (command.id === "create") {
     return `Created ${(data as { path: string }).path}\n`;
+  }
+  if (command.id === "append") {
+    return `Appended ${(data as { path: string }).path}\n`;
+  }
+  if (command.id === "prepend") {
+    return `Prepended ${(data as { path: string }).path}\n`;
   }
   const info = data as {
     name: string;

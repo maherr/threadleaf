@@ -77,6 +77,8 @@ equivalence through the real writer-to-watcher seam.
 - [x] Recovery-backed desktop and CLI note creation with nested paths, no-overwrite preflight,
       create-race conflict preservation, interruption recovery, process serialization, stable JSON,
       and tested `path=`, `name=`, and `content=` compatibility spellings.
+- [x] Recovery-backed CLI append and prepend with required existing-note targets, frontmatter-aware
+      prepend, LF/CRLF separators, inline mode, and full-proposal conflict preservation.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Tabs, split panes, application menus, and broader workspace settings.

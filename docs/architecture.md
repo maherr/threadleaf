@@ -168,7 +168,8 @@ Threadleaf exposes the same vault kernel and derived metadata behavior through a
 command-line interface. Human-readable output is the interactive default, while stable JSON and
 explicit exit codes are first-class automation contracts. The initial `vault info`, `files`,
 `read`, `search`, and recovery-backed `create` commands run without Electron and require an explicit
-vault path.
+vault path. Recovery-backed `append` and `prepend` commands extend that same headless surface for
+existing notes.
 
 Read-only kernel opening performs canonical path validation but creates no state directory, vault
 identity, recovery journal, or watcher. The CLI note corpus uses the same exclusions and index as
@@ -185,6 +186,12 @@ The desktop and CLI call one note-creation service. The CLI keeps journals in an
 operating-system-owned state root and serializes its mutating invocations with a process-owned
 lock, so one headless process never recovers another live process's transaction. The portable
 no-clobber install remains the arbiter against desktop, external-editor, and sync-provider races.
+
+Append and prepend use a shared text-mutation service that reads a stable note snapshot, computes
+the complete proposed file, and writes against the exact revision read. Prepend inserts after a
+complete YAML frontmatter block. Default separators follow the note's LF or CRLF convention, while
+inline mode inserts no separator. The kernel preserves the whole proposal as a conflict copy when
+the source revision changes.
 
 ### Write authority
 

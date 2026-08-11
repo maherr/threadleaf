@@ -94,6 +94,31 @@ describe("Threadleaf CLI arguments", () => {
     expect(
       parseCliArguments(["create", "Inbox/Native", "--content=hello", "--vault=/vault"]),
     ).toMatchObject({ id: "create", filePath: "Inbox/Native", content: "hello" });
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
+        "append",
+        "path=Folder/Note",
+        "content=Next\\nline",
+        "inline",
+      ]),
+    ).toMatchObject({
+      id: "append",
+      filePath: "Folder/Note",
+      content: "Next\nline",
+      inline: true,
+    });
+    expect(
+      parseCliArguments([
+        "prepend",
+        "Folder/Note.md",
+        "--content",
+        "Lead",
+        "--inline",
+        "--vault",
+        "/vault",
+      ]),
+    ).toMatchObject({ id: "prepend", filePath: "Folder/Note.md", content: "Lead", inline: true });
   });
 
   it("rejects ambiguous or unsupported invocations as usage errors", async () => {
@@ -115,6 +140,20 @@ describe("Threadleaf CLI arguments", () => {
     const literalJson = await invoke(["--", "--json"]);
     expect(literalJson.exitCode).toBe(cliExitCodes.usage);
     expect(literalJson.stderr).toMatch(/^threadleaf:/);
+
+    expect(() => parseCliArguments(["--vault", "/vault", "append", "Note.md"])).toThrow(
+      "requires non-empty content",
+    );
+    expect(() =>
+      parseCliArguments([
+        "--vault",
+        "/vault",
+        "prepend",
+        "Note.md",
+        "content=Lead",
+        "--content=Other",
+      ]),
+    ).toThrow("option or parameter, not both");
   });
 
   it("shows help without requiring a vault", async () => {
@@ -229,6 +268,7 @@ describe("Threadleaf CLI create workflow", () => {
   });
 
   it("rejects a concurrent CLI mutation and leaves the vault untouched", async () => {
+    const alphaBefore = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
     const lockPath = path.join(statePath, ".cli-mutation-lock");
     await fs.mkdir(lockPath, { recursive: true });
     await fs.writeFile(
@@ -251,6 +291,20 @@ describe("Threadleaf CLI create workflow", () => {
     await expect(fs.stat(path.join(vaultPath, "Blocked.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+
+    const appendResult = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "append",
+      "Alpha.md",
+      "--content=blocked",
+    ]);
+    expect(appendResult.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(appendResult.stderr)).toMatchObject({
+      error: { code: "CONFLICT", details: { status: "busy" } },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(alphaBefore);
   });
 
   it("takes over a dead CLI lock, recovers state, and releases ownership", async () => {
@@ -272,6 +326,96 @@ describe("Threadleaf CLI create workflow", () => {
     expect(result.exitCode).toBe(cliExitCodes.success);
     await expect(fs.readFile(path.join(vaultPath, "Recovered.md"), "utf8")).resolves.toBe("");
     await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("Threadleaf CLI append and prepend workflows", () => {
+  it("appends decoded content with a default separator and stable JSON", async () => {
+    const before = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const result = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "append",
+      "path=Alpha",
+      "content=Added\\nline",
+    ]);
+
+    expect(result.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "append",
+      data: {
+        status: "committed",
+        path: "Alpha.md",
+        revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(
+      `${before}\nAdded\nline`,
+    );
+  });
+
+  it("supports inline append through native options", async () => {
+    const before = await fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8");
+    const result = await invoke([
+      "--vault",
+      vaultPath,
+      "append",
+      "Folder/Beta.md",
+      "--content=inline",
+      "--inline",
+    ]);
+
+    expect(result).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Appended Folder/Beta.md\n",
+      stderr: "",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8")).resolves.toBe(
+      `${before}inline`,
+    );
+  });
+
+  it("prepends after frontmatter and keeps the body intact", async () => {
+    const result = await invoke(["--vault", vaultPath, "prepend", "file=Alpha", "content=Context"]);
+
+    expect(result).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Prepended Alpha.md\n",
+      stderr: "",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(
+      [
+        "---",
+        "tags: [project, open]",
+        "---",
+        "Context",
+        "",
+        "# Alpha heading",
+        "",
+        "A distinctive needle links to [[Folder/Beta]].",
+      ].join("\n"),
+    );
+  });
+
+  it("fails closed for missing, private, and traversal targets", async () => {
+    for (const target of ["Missing", ".obsidian/Hidden", "../Outside"]) {
+      const result = await invoke([
+        "--json",
+        "--vault",
+        vaultPath,
+        "append",
+        `path=${target}`,
+        "content=blocked",
+      ]);
+      expect(result.exitCode).toBe(cliExitCodes.vault);
+      expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: "VAULT" } });
+    }
+    await expect(fs.stat(path.join(sandboxPath, "Outside.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });
 

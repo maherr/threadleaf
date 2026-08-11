@@ -15,6 +15,8 @@ threadleaf --vault /path/to/vault files [--directory Folder]
 threadleaf --vault /path/to/vault read "Folder/Note.md"
 threadleaf --vault /path/to/vault search "quoted phrase" [--limit 20]
 threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n"]
+threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text" [--inline]
+threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
@@ -26,6 +28,8 @@ During development, prefix the same arguments with `pnpm cli`.
 | `read` | Exact UTF-8 note content | Read-only kernel |
 | `search` | Ranked paths and best context, with a bounded result count | Derived metadata and full-text index |
 | `create` | Created Markdown path and revision | Recoverable no-clobber writer |
+| `append` | Updated Markdown path and revision | Revision-checked recoverable writer |
+| `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
 
 The note corpus excludes `.obsidian/`, `.git/`, and Threadleaf transaction artifacts. Read-only
 kernel opening performs path validation but creates no state directory, vault identity, recovery
@@ -43,6 +47,14 @@ a labeled conflict note and reports its path. Recovery completes a staged new-fi
 requested path after interruption when that name remains free. All CLI mutation journals live in
 Threadleaf's operating-system state directory outside the vault. A process-owned lock serializes
 CLI mutations, rejects a live concurrent invocation, and permits takeover from a dead process.
+
+`append` and `prepend` require an existing Markdown note and non-empty content. Without `inline`,
+Threadleaf adds one separator using the note's existing LF or CRLF convention. With `inline`, it
+inserts the decoded content directly. Prepend places content after a complete YAML frontmatter block;
+an unterminated opening marker is ordinary Markdown and stays with the body. Both commands read a
+stable snapshot and write against that exact revision. If the note changes before commit, the
+external version remains at the requested path, the full proposal is kept as a conflict note, and
+the command returns exit 5.
 
 ## JSON contract
 
@@ -83,18 +95,21 @@ threadleaf --vault /path/to/vault read file="Folder/Note.md"
 threadleaf --vault /path/to/vault search query="quoted phrase"
 threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n"
 threadleaf --vault /path/to/vault create name="Root note"
+threadleaf --vault /path/to/vault append path="Folder/Note.md" content="Next line"
+threadleaf --vault /path/to/vault prepend file="Folder/Note.md" content="Lead" inline
 ```
 
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
 command or error behavior will require an executable fixture. Threadleaf's native contract keeps
 explicit vault selection, structured JSON, headless execution, and script-safe diagnostics even
-where a compatibility spelling follows another application's convention.
+where a compatibility spelling follows another application's convention. `file=` currently means
+an exact vault-relative path in Threadleaf; basename and wikilink-style resolution are not claimed.
 
 ## Next mutation boundary
 
-`append`, `prepend`, `move`, and `delete` still come later. Each must call the existing recoverable
-writer with revision and conflict semantics. They will never use a direct CLI filesystem shortcut
-or create a second mutation path. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or
-template parameters, and does not claim complete output compatibility.
+`move` and `delete` still come later. Each must call the existing recoverable writer with revision
+and conflict semantics. They will never use a direct CLI filesystem shortcut or create a second
+mutation path. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or template parameters,
+active-file defaults, or basename resolution, and does not claim complete output compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).
