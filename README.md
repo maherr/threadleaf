@@ -10,9 +10,10 @@ Threadleaf is not affiliated with or endorsed by Obsidian.
 
 ## Status
 
-Threadleaf is pre-alpha. The current build target is an architecture proof: load an unchanged
-CommonJS plugin bundle, provide it with an independently implemented `obsidian` compatibility
-module, register a command, and exercise that command through an isolated Electron renderer.
+Threadleaf is pre-alpha. Its Phase 0 architecture proof now loads an unchanged CommonJS fixture
+plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
+command, and exercises that command through an isolated Electron renderer. The fixture completes
+the documented load, activation, integration, command, reload, and unload lifecycles.
 
 Do not use the current build with an important vault. Phase 0 uses only a synthetic fixture vault
 and implements no user-file writes.
@@ -46,8 +47,9 @@ pnpm check
 pnpm start
 ```
 
-The first executable build opens the bundled synthetic vault. It does not yet expose a vault
-picker or accept an arbitrary filesystem path.
+The executable build opens the bundled synthetic vault. It does not yet expose a vault picker or
+accept an arbitrary filesystem path. `pnpm check` also verifies that the packaged Electron entry
+points exist and that renderer assets remain loadable over `file://`.
 
 ## License
 

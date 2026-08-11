@@ -10,3 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Initial project charter, architecture, compatibility contract, and execution roadmap.
+- Read-only synthetic Markdown vault fixture.
+- Independently implemented compatibility API for plugin, vault, command, file, and notice behavior.
+- Trusted CommonJS plugin host with observable load, command, unload, and reload lifecycles.
+- Isolated Electron renderer with light and dark runtime-inspection surfaces.
+- Tests proving the fixture remains byte-for-byte unchanged and rejecting plugin paths outside the
+  active vault.
+- Build verification for Electron entry points and relative `file://` renderer assets.

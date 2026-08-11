@@ -1,0 +1,9 @@
+{
+  "id": "threadleaf-fixture",
+  "name": "Threadleaf Compatibility Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Exercises the first open compatibility boundary.",
+  "author": "Threadleaf contributors",
+  "isDesktopOnly": true
+}

@@ -2,15 +2,16 @@
 
 Threadleaf advances through proof gates rather than dates.
 
-## Phase 0: Compatibility architecture proof
+## Phase 0: Compatibility architecture proof (complete)
 
-- Load a synthetic vault without writing to it.
-- Replace `require("obsidian")` for an unchanged plugin bundle.
-- Complete plugin load, command execution, notice, reload, and unload lifecycles.
-- Display the observable runtime state in an isolated Electron renderer.
-- Cover the host with automated tests and a rendered-surface check.
+- [x] Load a synthetic vault without writing to it.
+- [x] Replace `require("obsidian")` for an unchanged plugin bundle.
+- [x] Complete plugin load, command execution, notice, reload, and unload lifecycles.
+- [x] Display the observable runtime state in an isolated Electron renderer.
+- [x] Cover the host with automated tests and a rendered-surface check.
 
-Exit gate: the fixture reaches compatibility level 4 through the production loader.
+Exit gate passed: the fixture reaches compatibility level 4 through the production loader without
+changing any fixture byte.
 
 ## Phase 1: Safe vault kernel
 

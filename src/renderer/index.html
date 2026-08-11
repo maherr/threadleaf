@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'"
+    />
+    <title>Threadleaf</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#main-content" aria-label="Threadleaf home">
+          <span class="brand-mark" aria-hidden="true">T</span>
+          <span>
+            <strong>Threadleaf</strong>
+            <small>Open vault runtime</small>
+          </span>
+        </a>
+        <button class="quiet-button" id="theme-toggle" type="button">Switch to dark</button>
+      </header>
+
+      <main id="main-content">
+        <section class="hero" aria-labelledby="hero-title">
+          <div class="hero-copy">
+            <p class="eyebrow">Compatibility architecture proof 01</p>
+            <h1 id="hero-title">An unchanged plugin crossed an open boundary.</h1>
+            <p class="hero-description">
+              Threadleaf opened a synthetic Markdown vault, replaced
+              <code>require("obsidian")</code>, and completed the plugin lifecycle without touching a
+              user vault.
+            </p>
+          </div>
+          <div class="runtime-badge" aria-live="polite">
+            <span class="status-shape" aria-hidden="true"></span>
+            <span>
+              <small>Runtime state</small>
+              <strong id="runtime-state">Connecting</strong>
+            </span>
+          </div>
+        </section>
+
+        <section class="metrics" aria-label="Runtime summary">
+          <article>
+            <span class="metric-index">01</span>
+            <small>Vault mode</small>
+            <strong id="vault-mode">Loading</strong>
+          </article>
+          <article>
+            <span class="metric-index">02</span>
+            <small>Markdown files</small>
+            <strong id="file-count">0</strong>
+          </article>
+          <article>
+            <span class="metric-index">03</span>
+            <small>Compatibility</small>
+            <strong id="compatibility-level">Level 0</strong>
+          </article>
+          <article>
+            <span class="metric-index">04</span>
+            <small>Registered commands</small>
+            <strong id="command-count">0</strong>
+          </article>
+        </section>
+
+        <div class="workspace-grid">
+          <section class="panel plugin-panel" aria-labelledby="plugin-heading">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Loaded bundle</p>
+                <h2 id="plugin-heading">Plugin contract</h2>
+              </div>
+              <span class="state-label" id="plugin-state">Waiting</span>
+            </div>
+
+            <dl class="plugin-details">
+              <div>
+                <dt>Name</dt>
+                <dd id="plugin-name">Not loaded</dd>
+              </div>
+              <div>
+                <dt>Identifier</dt>
+                <dd><code id="plugin-id">none</code></dd>
+              </div>
+              <div>
+                <dt>Version</dt>
+                <dd id="plugin-version">none</dd>
+              </div>
+              <div>
+                <dt>Stylesheet</dt>
+                <dd id="plugin-stylesheet">Not discovered</dd>
+              </div>
+            </dl>
+
+            <div class="command-region">
+              <p class="eyebrow">Commands exposed by the plugin</p>
+              <div id="command-list" class="command-list"></div>
+            </div>
+
+            <div class="button-row">
+              <button class="primary-button" id="run-command" type="button" disabled>
+                Run compatibility command
+              </button>
+              <button class="secondary-button" id="reload-plugin" type="button">Reload</button>
+              <button class="secondary-button" id="unload-plugin" type="button">Unload</button>
+            </div>
+          </section>
+
+          <section class="panel ledger-panel" aria-labelledby="ledger-heading">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Observable lifecycle</p>
+                <h2 id="ledger-heading">Runtime ledger</h2>
+              </div>
+              <span class="ledger-count" id="event-count">0 events</span>
+            </div>
+            <ol class="event-list" id="event-list" aria-live="polite"></ol>
+          </section>
+        </div>
+
+        <p class="safety-note">
+          <span aria-hidden="true">◇</span>
+          Phase 0 is synthetic and read-only. No personal vault path is accepted by this build.
+        </p>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/renderer.ts"></script>
+  </body>
+</html>
