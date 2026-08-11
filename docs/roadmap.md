@@ -79,6 +79,8 @@ equivalence through the real writer-to-watcher seam.
       and tested `path=`, `name=`, and `content=` compatibility spellings.
 - [x] Recovery-backed CLI append and prepend with required existing-note targets, frontmatter-aware
       prepend, LF/CRLF separators, inline mode, and full-proposal conflict preservation.
+- [x] Recovery-backed CLI move and rename with destination no-clobber behavior and a whole-vault
+      projected-index preflight that blocks every detected internal-link resolution change.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Tabs, split panes, application menus, and broader workspace settings.

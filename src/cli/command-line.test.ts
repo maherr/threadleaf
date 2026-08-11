@@ -119,6 +119,20 @@ describe("Threadleaf CLI arguments", () => {
         "/vault",
       ]),
     ).toMatchObject({ id: "prepend", filePath: "Folder/Note.md", content: "Lead", inline: true });
+    expect(
+      parseCliArguments(["--vault=/vault", "move", "path=Folder/Old", "to=Archive/"]),
+    ).toMatchObject({
+      id: "move",
+      sourcePath: "Folder/Old",
+      targetPath: "Archive/Old.md",
+    });
+    expect(
+      parseCliArguments(["rename", "Folder/Old.md", "--name", "New", "--vault", "/vault"]),
+    ).toMatchObject({
+      id: "rename",
+      sourcePath: "Folder/Old.md",
+      targetPath: "Folder/New.md",
+    });
   });
 
   it("rejects ambiguous or unsupported invocations as usage errors", async () => {
@@ -305,6 +319,22 @@ describe("Threadleaf CLI create workflow", () => {
       error: { code: "CONFLICT", details: { status: "busy" } },
     });
     await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(alphaBefore);
+
+    const moveResult = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "move",
+      "Alpha.md",
+      "to=Archive/Alpha.md",
+    ]);
+    expect(moveResult.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(moveResult.stderr)).toMatchObject({
+      error: { code: "CONFLICT", details: { status: "busy" } },
+    });
+    await expect(fs.stat(path.join(vaultPath, "Archive", "Alpha.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("takes over a dead CLI lock, recovers state, and releases ownership", async () => {
@@ -412,6 +442,137 @@ describe("Threadleaf CLI append and prepend workflows", () => {
       ]);
       expect(result.exitCode).toBe(cliExitCodes.vault);
       expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: "VAULT" } });
+    }
+    await expect(fs.stat(path.join(sandboxPath, "Outside.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+});
+
+describe("Threadleaf CLI move and rename workflows", () => {
+  it("moves a link-safe note through the recoverable rename path", async () => {
+    const before = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const result = await invoke([
+      "--vault",
+      vaultPath,
+      "move",
+      "Alpha.md",
+      "--to",
+      "Archive/Alpha",
+    ]);
+
+    expect(result).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Moved Alpha.md to Archive/Alpha.md\n",
+      stderr: "",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Archive", "Alpha.md"), "utf8")).resolves.toBe(
+      before,
+    );
+    await expect(fs.stat(path.join(vaultPath, "Alpha.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("renames an unreferenced note and preserves the Markdown extension", async () => {
+    await fs.writeFile(path.join(vaultPath, "Solo.md"), "solo", "utf8");
+    const result = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "rename",
+      "path=Solo.md",
+      "name=Renamed",
+    ]);
+
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "rename",
+      data: { status: "committed", from: "Solo.md", to: "Renamed.md" },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Renamed.md"), "utf8")).resolves.toBe("solo");
+  });
+
+  it("blocks a rename that would change a resolved link and reports the exact blocker", async () => {
+    const alphaBefore = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const betaBefore = await fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8");
+    const result = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "rename",
+      "file=Folder/Beta.md",
+      "name=Gamma",
+    ]);
+
+    expect(result.exitCode).toBe(cliExitCodes.conflict);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      schemaVersion: 1,
+      ok: false,
+      command: "rename",
+      error: {
+        code: "CONFLICT",
+        details: {
+          status: "blocked",
+          from: "Folder/Beta.md",
+          to: "Folder/Gamma.md",
+          blockers: [
+            {
+              documentPath: "Alpha.md",
+              target: "Folder/Beta",
+              before: { status: "resolved", path: "Folder/Beta.md" },
+              after: { status: "unresolved" },
+            },
+          ],
+        },
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(alphaBefore);
+    await expect(fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8")).resolves.toBe(
+      betaBefore,
+    );
+  });
+
+  it("rejects a destination collision without overwriting either note", async () => {
+    const alphaBefore = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const betaBefore = await fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8");
+    const result = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "move",
+      "Alpha.md",
+      "to=Folder/Beta.md",
+    ]);
+
+    expect(result.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      command: "move",
+      error: {
+        code: "CONFLICT",
+        details: { status: "conflict", reason: "target-exists" },
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(alphaBefore);
+    await expect(fs.readFile(path.join(vaultPath, "Folder", "Beta.md"), "utf8")).resolves.toBe(
+      betaBefore,
+    );
+  });
+
+  it("fails closed on traversal and private move paths during argument validation", async () => {
+    for (const target of ["../Outside.md", ".obsidian/Injected.md"]) {
+      const result = await invoke([
+        "--json",
+        "--vault",
+        vaultPath,
+        "move",
+        "Alpha.md",
+        `to=${target}`,
+      ]);
+      expect(result.exitCode).toBe(cliExitCodes.usage);
+      expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: "USAGE" } });
     }
     await expect(fs.stat(path.join(sandboxPath, "Outside.md"))).rejects.toMatchObject({
       code: "ENOENT",

@@ -17,6 +17,8 @@ threadleaf --vault /path/to/vault search "quoted phrase" [--limit 20]
 threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n"]
 threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text" [--inline]
 threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
+threadleaf --vault /path/to/vault move "Folder/Note.md" --to "Archive/Note.md"
+threadleaf --vault /path/to/vault rename "Folder/Note.md" --name "New name"
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
@@ -30,6 +32,8 @@ During development, prefix the same arguments with `pnpm cli`.
 | `create` | Created Markdown path and revision | Recoverable no-clobber writer |
 | `append` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
+| `move` | Source and destination paths | Link-integrity preflight plus recoverable rename |
+| `rename` | Source and same-folder destination | Link-integrity preflight plus recoverable rename |
 
 The note corpus excludes `.obsidian/`, `.git/`, and Threadleaf transaction artifacts. Read-only
 kernel opening performs path validation but creates no state directory, vault identity, recovery
@@ -55,6 +59,18 @@ an unterminated opening marker is ordinary Markdown and stays with the body. Bot
 stable snapshot and write against that exact revision. If the note changes before commit, the
 external version remains at the requested path, the full proposal is kept as a conflict note, and
 the command returns exit 5.
+
+`move` and `rename` never overwrite a destination. Before mutation, Threadleaf snapshots the
+Markdown corpus and compares every parsed link against a projected index containing the proposed
+path. A move proceeds only when every link keeps the same resolution after the moved note's identity
+is remapped. A resolved link becoming unresolved, a changed ambiguity set, or a relative outgoing
+link changing meaning blocks the operation with exit 5 and structured blocker details. No file is
+changed on a blocked preflight. This initial boundary preserves link integrity by refusing moves
+that require textual rewriting; automatic link rewriting is not yet claimed.
+
+For `move`, `to=` is an exact note path unless it ends in `/` or `\`, in which case Threadleaf keeps
+the source filename inside that explicit destination folder. `rename` accepts one filename without
+directory separators and keeps the note in its current folder. Both add `.md` when omitted.
 
 ## JSON contract
 
@@ -83,7 +99,7 @@ shape with `ok: false` and a stable error code. Without it, standard error recei
 | 2 | `USAGE` | Invalid command, option, or argument |
 | 3 | `VAULT` | Vault, path, UTF-8, or indexed-note failure |
 | 4 | `QUERY` | Search query exceeds the documented bounds |
-| 5 | `CONFLICT` | Create target exists, a create race was preserved, or another CLI mutation is active |
+| 5 | `CONFLICT` | A target exists, a race was preserved, link integrity blocks a move, or another CLI mutation is active |
 
 ## Compatibility spellings
 
@@ -97,6 +113,8 @@ threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n"
 threadleaf --vault /path/to/vault create name="Root note"
 threadleaf --vault /path/to/vault append path="Folder/Note.md" content="Next line"
 threadleaf --vault /path/to/vault prepend file="Folder/Note.md" content="Lead" inline
+threadleaf --vault /path/to/vault move path="Folder/Note.md" to="Archive/Note.md"
+threadleaf --vault /path/to/vault rename file="Folder/Note.md" name="New name"
 ```
 
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
@@ -107,9 +125,9 @@ an exact vault-relative path in Threadleaf; basename and wikilink-style resoluti
 
 ## Next mutation boundary
 
-`move` and `delete` still come later. Each must call the existing recoverable writer with revision
-and conflict semantics. They will never use a direct CLI filesystem shortcut or create a second
-mutation path. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or template parameters,
+`delete` still comes later and must use a recoverable, revision-checked mutation rather than a
+direct CLI filesystem shortcut. Atomic automatic link rewriting for move and rename also remains
+open. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or template parameters,
 active-file defaults, or basename resolution, and does not claim complete output compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).

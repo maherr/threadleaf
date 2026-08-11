@@ -44,7 +44,10 @@ Ctrl/Cmd+N, and the CLI share one no-overwrite creation service. Missing folders
 ordinary existing paths fail without mutation, and a path claimed during the final race window
 preserves the proposed bytes as a labeled conflict note. Headless append and prepend commands also
 use the recovery-backed writer. They require an existing note, preserve its line-ending convention,
-and keep a full proposed conflict copy if an external edit wins the revision race.
+and keep a full proposed conflict copy if an external edit wins the revision race. Headless move
+and rename commands project the complete post-move index before writing. They proceed only when
+every wiki and Markdown link keeps the same resolution, and otherwise return exact blockers without
+changing the vault.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
@@ -120,6 +123,8 @@ pnpm cli --vault /absolute/path/to/vault create "Inbox/New thought"
 pnpm cli --vault /absolute/path/to/vault create path="Projects/Brief" content="# Brief\n"
 pnpm cli --vault /absolute/path/to/vault append path="Daily/Today" content="- [ ] Follow up"
 pnpm cli --vault /absolute/path/to/vault prepend "Projects/Brief.md" --content="Draft context"
+pnpm cli --vault /absolute/path/to/vault move "Inbox/Thought.md" --to "Archive/Thought.md"
+pnpm cli --vault /absolute/path/to/vault rename path="Draft.md" name="Published"
 ```
 
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported

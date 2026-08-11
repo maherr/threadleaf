@@ -193,6 +193,14 @@ complete YAML frontmatter block. Default separators follow the note's LF or CRLF
 inline mode inserts no separator. The kernel preserves the whole proposal as a conflict copy when
 the source revision changes.
 
+Move and rename add a link-integrity preflight in front of the recoverable rename primitive. The
+service snapshots the Markdown corpus, builds the current metadata index, projects the source at
+its proposed destination, and builds the projected index from the same bytes. Every parsed wiki and
+Markdown link must retain the same resolved, unresolved, or ambiguous meaning after remapping the
+moved note's identity. Any difference blocks the operation and returns structured evidence without
+writing. This is the safe baseline for a later atomic link-rewrite transaction; it does not claim
+automatic rewriting yet.
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable

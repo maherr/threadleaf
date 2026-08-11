@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createMarkdownNote } from "../application/note-creation";
+import { movedMarkdownPath, moveMarkdownNote, renamedMarkdownPath } from "../application/note-move";
 import { mutateMarkdownNoteText } from "../application/note-text-mutation";
 import { maxSearchResults, SearchQueryError } from "../kernel/full-text-search";
 import { MetadataIndex } from "../kernel/metadata-index";
@@ -35,7 +36,9 @@ type CliCommandId =
   | "search"
   | "create"
   | "append"
-  | "prepend";
+  | "prepend"
+  | "move"
+  | "rename";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -83,6 +86,12 @@ interface CliTextMutationCommand extends CliVaultCommand {
   inline: boolean;
 }
 
+interface CliMoveCommand extends CliVaultCommand {
+  id: "move" | "rename";
+  sourcePath: string;
+  targetPath: string;
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
@@ -90,7 +99,8 @@ export type ParsedCliCommand =
   | CliReadCommand
   | CliSearchCommand
   | CliCreateCommand
-  | CliTextMutationCommand;
+  | CliTextMutationCommand
+  | CliMoveCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -122,6 +132,14 @@ class CliFailure extends Error {
 
 function usageFailure(message: string): never {
   throw new CliFailure("USAGE", cliExitCodes.usage, message);
+}
+
+function pathArgument(operation: () => string): string {
+  try {
+    return operation();
+  } catch (error) {
+    usageFailure(error instanceof Error ? error.message : String(error));
+  }
 }
 
 function takeOptionValue(args: readonly string[], index: number, name: string): string {
@@ -159,6 +177,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let limit: number | null = null;
   let content: string | null = null;
   let inline = false;
+  let destination: string | null = null;
+  let renamedName: string | null = null;
   let help = false;
   const positional: string[] = [];
 
@@ -229,6 +249,26 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       inline = true;
       continue;
     }
+    if (token === "--to" || token.startsWith("--to=")) {
+      if (destination !== null) {
+        usageFailure("--to may be supplied only once.");
+      }
+      destination = takeOptionValue(args, index, "--to");
+      if (token === "--to") {
+        index += 1;
+      }
+      continue;
+    }
+    if (token === "--name" || token.startsWith("--name=")) {
+      if (renamedName !== null) {
+        usageFailure("--name may be supplied only once.");
+      }
+      renamedName = takeOptionValue(args, index, "--name");
+      if (token === "--name") {
+        index += 1;
+      }
+      continue;
+    }
     if (token.startsWith("--")) {
       usageFailure(`Unknown option: ${token}`);
     }
@@ -247,19 +287,41 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     (name === "vault" && values[0] === "info" && values.length === 1) ||
     (name === "vault:info" && values.length === 0)
   ) {
-    if (directory !== null || limit !== null || content !== null || inline) {
-      usageFailure("vault info does not accept --directory, --limit, --content, or --inline.");
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
+      usageFailure("vault info received an option that it does not accept.");
     }
     return { id: "vault.info", json, vaultPath };
   }
   if (name === "files") {
-    if (values.length > 0 || limit !== null || content !== null || inline) {
+    if (
+      values.length > 0 ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
       usageFailure("files accepts only the optional --directory value.");
     }
     return { id: "files", json, vaultPath, directory: directory ?? "" };
   }
   if (name === "read") {
-    if (values.length !== 1 || directory !== null || limit !== null || content !== null || inline) {
+    if (
+      values.length !== 1 ||
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
       usageFailure("read requires exactly one vault-relative Markdown path.");
     }
     const filePath = values[0]?.startsWith("file=") ? values[0].slice(5) : values[0];
@@ -269,7 +331,14 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     return { id: "read", json, vaultPath, filePath };
   }
   if (name === "search") {
-    if (values.length === 0 || directory !== null || content !== null || inline) {
+    if (
+      values.length === 0 ||
+      directory !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
       usageFailure("search requires a query and does not accept --directory.");
     }
     const first = values[0] ?? "";
@@ -285,8 +354,14 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     return { id: "search", json, vaultPath, query, limit: limit ?? 50 };
   }
   if (name === "create") {
-    if (directory !== null || limit !== null || inline) {
-      usageFailure("create does not accept --directory, --limit, or --inline.");
+    if (
+      directory !== null ||
+      limit !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null
+    ) {
+      usageFailure("create received an option that it does not accept.");
     }
     let filePath: string | null = null;
     let parameterContent: string | null = null;
@@ -322,8 +397,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     };
   }
   if (name === "append" || name === "prepend") {
-    if (directory !== null || limit !== null) {
-      usageFailure(`${name} does not accept --directory or --limit.`);
+    if (directory !== null || limit !== null || destination !== null || renamedName !== null) {
+      usageFailure(`${name} received an option that it does not accept.`);
     }
     let filePath: string | null = null;
     let parameterContent: string | null = null;
@@ -369,6 +444,69 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       inline: inlineFlag,
     };
   }
+  if (name === "move" || name === "rename") {
+    if (directory !== null || limit !== null || content !== null || inline) {
+      usageFailure(`${name} received an option that it does not accept.`);
+    }
+    let sourcePath: string | null = null;
+    let parameterDestination: string | null = null;
+    let parameterName: string | null = null;
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (sourcePath !== null) {
+          usageFailure(`${name} accepts only one source path.`);
+        }
+        sourcePath = value.slice(value.indexOf("=") + 1);
+      } else if (value.startsWith("to=")) {
+        if (parameterDestination !== null) {
+          usageFailure("to may be supplied only once.");
+        }
+        parameterDestination = value.slice("to=".length);
+      } else if (value.startsWith("name=")) {
+        if (parameterName !== null) {
+          usageFailure("name may be supplied only once.");
+        }
+        parameterName = value.slice("name=".length);
+      } else if (sourcePath === null && !value.includes("=")) {
+        sourcePath = value;
+      } else {
+        usageFailure(`Unsupported ${name} argument: ${value}`);
+      }
+    }
+    if (!sourcePath) {
+      usageFailure(`${name} requires one source note path.`);
+    }
+    if (destination !== null && parameterDestination !== null) {
+      usageFailure("move destination may be supplied as an option or parameter, not both.");
+    }
+    if (renamedName !== null && parameterName !== null) {
+      usageFailure("rename name may be supplied as an option or parameter, not both.");
+    }
+    const targetDestination = destination ?? parameterDestination;
+    const targetName = renamedName ?? parameterName;
+    if (name === "move") {
+      if (!targetDestination || targetName !== null) {
+        usageFailure("move requires exactly one --to or to= destination.");
+      }
+      return {
+        id: "move",
+        json,
+        vaultPath,
+        sourcePath,
+        targetPath: pathArgument(() => movedMarkdownPath(sourcePath, targetDestination)),
+      };
+    }
+    if (!targetName || targetDestination !== null) {
+      usageFailure("rename requires exactly one --name or name= filename.");
+    }
+    return {
+      id: "rename",
+      json,
+      vaultPath,
+      sourcePath,
+      targetPath: pathArgument(() => renamedMarkdownPath(sourcePath, targetName)),
+    };
+  }
 
   usageFailure(`Unknown command: ${positional.join(" ")}`);
 }
@@ -383,6 +521,8 @@ Usage:
   threadleaf --vault <path> [--json] create <note> [--content <text>]
   threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
+  threadleaf --vault <path> [--json] move <note> --to <path>
+  threadleaf --vault <path> [--json] rename <note> --name <filename>
 
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
@@ -390,6 +530,8 @@ Compatibility spellings:
   threadleaf --vault <path> create path=<note> content=<text>
   threadleaf --vault <path> append path=<note> content=<text> [inline]
   threadleaf --vault <path> prepend path=<note> content=<text> [inline]
+  threadleaf --vault <path> move path=<note> to=<path>
+  threadleaf --vault <path> rename path=<note> name=<filename>
 
 Commands are headless and never require a running Electron process.
 `;
@@ -589,7 +731,11 @@ async function executeCommand(
   options: CliRunOptions,
 ): Promise<unknown> {
   const kernel =
-    command.id === "create" || command.id === "append" || command.id === "prepend"
+    command.id === "create" ||
+    command.id === "append" ||
+    command.id === "prepend" ||
+    command.id === "move" ||
+    command.id === "rename"
       ? await openWritableKernel(command, options)
       : await openReadOnlyKernel(command, options);
   try {
@@ -608,6 +754,26 @@ async function executeCommand(
           "CONFLICT",
           cliExitCodes.conflict,
           `The requested path appeared during creation. The proposed note was preserved as ${outcome.conflictPath}.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
+    }
+    if (command.id === "move" || command.id === "rename") {
+      const outcome = await moveMarkdownNote(kernel, command.sourcePath, command.targetPath);
+      if (outcome.status === "blocked") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The ${command.id} would change ${outcome.blockers.length} internal link resolution${outcome.blockers.length === 1 ? "" : "s"}. No files were changed.`,
+          { details: outcome },
+        );
+      }
+      if (outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `Could not ${command.id} ${outcome.from} to ${outcome.to}: ${outcome.reason}.`,
           { details: outcome },
         );
       }
@@ -710,7 +876,13 @@ async function executeWithCommandState(
   command: Exclude<ParsedCliCommand, CliHelpCommand>,
   options: CliRunOptions,
 ): Promise<unknown> {
-  if (command.id !== "create" && command.id !== "append" && command.id !== "prepend") {
+  if (
+    command.id !== "create" &&
+    command.id !== "append" &&
+    command.id !== "prepend" &&
+    command.id !== "move" &&
+    command.id !== "rename"
+  ) {
     return executeCommand(command, options);
   }
   const stateRoot = options.stateRoot ?? defaultWritableStateRoot();
@@ -774,6 +946,14 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
   }
   if (command.id === "prepend") {
     return `Prepended ${(data as { path: string }).path}\n`;
+  }
+  if (command.id === "move") {
+    const result = data as { from: string; to: string };
+    return `Moved ${result.from} to ${result.to}\n`;
+  }
+  if (command.id === "rename") {
+    const result = data as { from: string; to: string };
+    return `Renamed ${result.from} to ${result.to}\n`;
   }
   const info = data as {
     name: string;
