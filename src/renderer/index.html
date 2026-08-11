@@ -70,7 +70,13 @@
               <p class="eyebrow">Vault</p>
               <h1 id="files-heading">Notes</h1>
             </div>
-            <span class="count-badge" id="file-count">0</span>
+            <div class="navigator-heading-actions">
+              <span class="count-badge" id="file-count">0</span>
+              <button class="navigator-new-note" id="new-note" type="button">
+                <span aria-hidden="true">＋</span>
+                <span>New</span>
+              </button>
+            </div>
           </div>
 
           <label class="search-field" for="file-search">
@@ -294,6 +300,51 @@
           </span>
         </footer>
       </div>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog"
+      id="new-note-dialog"
+      aria-labelledby="new-note-title"
+      aria-describedby="new-note-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="new-note-form">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">◇</span>
+          <span>
+            <small>Filesystem-backed creation</small>
+            <strong id="new-note-title">Create a Markdown note</strong>
+          </span>
+          <button id="new-note-close" type="button" aria-label="Cancel new note">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="new-note-description" class="new-note-description">
+          Enter a vault-relative path. Threadleaf adds <code>.md</code>, creates missing folders,
+          and never overwrites an existing note.
+        </p>
+        <label class="new-note-field" for="new-note-path">
+          <span>Note path</span>
+          <input
+            id="new-note-path"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Inbox/New thought"
+            maxlength="4096"
+            required
+          />
+        </label>
+        <p class="new-note-error" id="new-note-error" role="alert" hidden></p>
+        <footer class="new-note-footer">
+          <span id="new-note-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="new-note-cancel" type="button">Cancel</button>
+            <button class="primary-button" id="new-note-create" type="submit">Create note</button>
+          </span>
+        </footer>
+      </form>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

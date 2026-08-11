@@ -140,6 +140,31 @@ export interface NoteSaveResponse {
   snapshot: RuntimeSnapshot;
 }
 
+export type NoteCreateOutcome =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+    }
+  | {
+      status: "exists";
+      path: string;
+      currentRevision: string;
+    }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+    };
+
+export interface NoteCreateResponse {
+  outcome: NoteCreateOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
 export type VaultImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 export type VaultImageUnavailableReason =
@@ -194,6 +219,7 @@ export interface ThreadleafBridge {
   reloadPlugin(): Promise<RuntimeSnapshot>;
   unloadPlugin(): Promise<RuntimeSnapshot>;
   openNote(path: string): Promise<RuntimeSnapshot>;
+  createNote(path: string, content: string, expectedVaultId: string): Promise<NoteCreateResponse>;
   saveNote(
     path: string,
     content: string,

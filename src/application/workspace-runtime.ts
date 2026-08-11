@@ -8,6 +8,8 @@ import { VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost } from "../runtime/plugin-host";
 import type {
+  NoteCreateOutcome,
+  NoteCreateResponse,
   NoteSaveOutcome,
   NoteSaveResponse,
   RuntimeSnapshot,
@@ -19,6 +21,7 @@ import type {
   WorkspaceNoteSnapshot,
 } from "../shared/contracts";
 import { ActionRegistry } from "./action-registry";
+import { createMarkdownNote } from "./note-creation";
 import { loadVaultImage } from "./vault-image-service";
 
 export interface WorkspaceRuntimeOptions {
@@ -36,6 +39,32 @@ interface SaveNoteRequest {
   content: string;
   expectedRevision: string;
   expectedVaultId: string;
+}
+
+interface CreateNoteRequest {
+  path: string;
+  content: string;
+  expectedVaultId: string;
+}
+
+function parseCreateNoteRequest(payload: unknown): CreateNoteRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("content" in payload) ||
+    typeof payload.content !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Create note requires string path, content, and vault values.");
+  }
+  return {
+    path: payload.path,
+    content: payload.content,
+    expectedVaultId: payload.expectedVaultId,
+  };
 }
 
 function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
@@ -106,6 +135,12 @@ export class WorkspaceRuntime {
     this.selectionSource = selectionSource;
     this.warning = warning;
     this.#releaseActions.push(
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.create-note",
+        name: "Create note",
+        source: "workspace",
+        execute: (payload) => this.createNoteThroughKernel(parseCreateNoteRequest(payload)),
+      }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.open-note",
         name: "Open note",
@@ -236,6 +271,19 @@ export class WorkspaceRuntime {
     return { outcome, snapshot: await this.publishSnapshot() };
   }
 
+  async createNote(
+    filePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<NoteCreateResponse> {
+    const outcome = await this.actions.dispatch<NoteCreateOutcome>("workspace.create-note", {
+      path: filePath,
+      content,
+      expectedVaultId,
+    });
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
   async runPluginCommand(commandId: string): Promise<RuntimeSnapshot> {
     await this.pluginHost.runCommand(commandId);
     return this.publishSnapshot();
@@ -324,6 +372,41 @@ export class WorkspaceRuntime {
     if (outcome.currentRevision === null) {
       this.indexReactor.index.remove(outcome.path);
     } else {
+      await this.indexReactor.index.refresh(this.kernel, outcome.path);
+    }
+    await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
+    this.#activePath = conflictCopy.path;
+    return outcome;
+  }
+
+  private async createNoteThroughKernel(request: CreateNoteRequest): Promise<NoteCreateOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this note could be created.");
+    }
+    const outcome = await createMarkdownNote(this.kernel, request.path, request.content);
+    if (outcome.status === "exists") {
+      return outcome;
+    }
+    if (outcome.status === "committed") {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "write",
+        path: outcome.path,
+        revision: outcome.revision,
+      });
+      await this.indexReactor.index.refresh(this.kernel, outcome.path);
+      this.#activePath = outcome.path;
+      return outcome;
+    }
+
+    const conflictCopy = await this.kernel.readText(outcome.conflictPath);
+    this.watcher.operations.expect({
+      id: outcome.transactionId,
+      kind: "write",
+      path: conflictCopy.path,
+      revision: conflictCopy.revision,
+    });
+    if (outcome.currentRevision !== null) {
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
     }
     await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);

@@ -420,6 +420,38 @@ h2 {
   font-weight: 700;
 }
 
+.navigator-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.navigator-new-note {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--accent-strong);
+  background: var(--surface);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.navigator-new-note:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.navigator-new-note > span:first-child {
+  font-size: 13px;
+  line-height: 1;
+}
+
 .search-field {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2197,6 +2229,191 @@ button.inspector-item:hover {
 
 .settings-actions .primary-button,
 .settings-actions .secondary-button {
+  min-height: 34px;
+  padding: 0 13px;
+  font-size: 9px;
+}
+
+.new-note-dialog {
+  width: min(540px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px 4px 13px 4px;
+  color: var(--ink);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-large);
+}
+
+.new-note-dialog[open] {
+  animation: palette-arrive 120ms ease-out;
+}
+
+.new-note-dialog::backdrop {
+  background: color-mix(in srgb, var(--canvas) 72%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.new-note-dialog::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  content: "";
+  background: linear-gradient(90deg, var(--accent) 0 68%, var(--signal) 68% 74%, transparent 74%);
+}
+
+.new-note-shell {
+  display: grid;
+  min-width: 0;
+}
+
+.new-note-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 22px 22px 11px;
+}
+
+.new-note-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 11px 3px 11px 3px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 18px;
+}
+
+.new-note-header > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+}
+
+.new-note-header small {
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.new-note-header strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  line-height: 1.12;
+}
+
+.new-note-header button {
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink-muted);
+  background: var(--surface-sunken);
+  cursor: pointer;
+}
+
+.new-note-header kbd {
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.new-note-description {
+  margin: 0;
+  padding: 0 22px 15px 67px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.new-note-description code {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.new-note-field {
+  display: grid;
+  gap: 6px;
+  padding: 13px 22px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.new-note-field > span {
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.new-note-field input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  outline: 0;
+  color: var(--ink);
+  background: var(--surface-raised);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.new-note-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.new-note-error {
+  margin: -7px 22px 15px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--signal) 42%, var(--line));
+  border-left: 4px solid var(--signal);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--signal-soft);
+  font-size: 10px;
+}
+
+.new-note-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px 16px 12px 22px;
+  border-top: 1px solid var(--line);
+}
+
+.new-note-footer > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-note-footer > span:last-child {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.new-note-footer .primary-button,
+.new-note-footer .secondary-button {
   min-height: 34px;
   padding: 0 13px;
   font-size: 9px;

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import { WorkspaceRuntime } from "./workspace-runtime";
 
@@ -61,6 +61,7 @@ describe("WorkspaceRuntime", () => {
         name: "Confirm compatibility bridge",
         source: "plugin",
       },
+      { id: "workspace.create-note", name: "Create note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
     ]);
@@ -87,6 +88,89 @@ describe("WorkspaceRuntime", () => {
     const commanded = await workspace.runPluginCommand("threadleaf-fixture-confirm");
     expect(commanded.notices).toContain("Fixture command crossed the compatibility bridge.");
     expect(commanded.plugin?.compatibilityLevel).toBe(4);
+  });
+
+  it("creates a nested Markdown note through the recoverable writer and selects it", async () => {
+    const workspace = await openRuntime();
+
+    const created = await workspace.createNote(
+      "Projects/New thread",
+      "# New thread\n\n#fresh and [[Welcome]]\n",
+      workspace.vaultId,
+    );
+
+    expect(created.outcome).toMatchObject({
+      status: "committed",
+      path: "Projects/New thread.md",
+      revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(created.snapshot.workspace?.activeNote).toMatchObject({
+      path: "Projects/New thread.md",
+      title: "New thread",
+      tags: ["fresh"],
+      outgoing: [expect.objectContaining({ path: "Welcome.md", status: "resolved" })],
+    });
+    await expect(
+      fs.readFile(path.join(vaultPath, "Projects", "New thread.md"), "utf8"),
+    ).resolves.toBe("# New thread\n\n#fresh and [[Welcome]]\n");
+  });
+
+  it("reports an existing note without changing it or creating a conflict copy", async () => {
+    const workspace = await openRuntime();
+    const before = await fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8");
+
+    const result = await workspace.createNote("Welcome", "replacement", workspace.vaultId);
+
+    expect(result.outcome).toMatchObject({
+      status: "exists",
+      path: "Welcome.md",
+      currentRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(before);
+    expect((await fs.readdir(vaultPath)).filter((name) => name.includes("conflict"))).toEqual([]);
+  });
+
+  it("preserves a create race as a selected conflict note without overwriting the winner", async () => {
+    const workspace = await openRuntime();
+    const writeText = workspace.kernel.writeText.bind(workspace.kernel);
+    vi.spyOn(workspace.kernel, "writeText").mockImplementationOnce(async (...args) => {
+      await fs.writeFile(path.join(vaultPath, "Race.md"), "external winner", "utf8");
+      return writeText(...args);
+    });
+
+    const result = await workspace.createNote("Race", "my draft", workspace.vaultId);
+
+    expect(result.outcome).toMatchObject({ status: "conflict", path: "Race.md" });
+    if (result.outcome.status !== "conflict") {
+      throw new Error("Expected the create race to return a conflict.");
+    }
+    await expect(fs.readFile(path.join(vaultPath, "Race.md"), "utf8")).resolves.toBe(
+      "external winner",
+    );
+    await expect(
+      fs.readFile(path.join(vaultPath, result.outcome.conflictPath), "utf8"),
+    ).resolves.toBe("my draft");
+    expect(result.snapshot.workspace?.activeNote).toMatchObject({
+      path: result.outcome.conflictPath,
+      content: "my draft",
+    });
+  });
+
+  it("rejects stale-vault and private create requests before writing", async () => {
+    const workspace = await openRuntime();
+
+    await expect(workspace.createNote("Wrong vault", "", "stale-vault")).rejects.toThrow(
+      "active vault changed",
+    );
+    await expect(workspace.createNote(".obsidian/Private", "", workspace.vaultId)).rejects.toThrow(
+      "private application",
+    );
+    await expect(workspace.createNote("../Outside", "", workspace.vaultId)).rejects.toThrow(
+      "traversal",
+    );
+    await expect(fs.stat(path.join(vaultPath, "Wrong vault.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("saves through the recoverable writer and refreshes derived metadata", async () => {
@@ -332,6 +416,7 @@ describe("WorkspaceRuntime", () => {
 
     expect(unloaded.commands).toEqual([]);
     expect(unloaded.actions).toEqual([
+      { id: "workspace.create-note", name: "Create note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
     ]);

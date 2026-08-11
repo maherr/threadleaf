@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type {
+  NoteCreateResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
   VaultImageResponse,
@@ -112,6 +113,22 @@ class FakeRuntime implements WorkspaceRuntimePort {
 
   async openNote(): Promise<RuntimeSnapshot> {
     return this.#snapshot;
+  }
+
+  async createNote(
+    filePath: string,
+    _content: string,
+    _expectedVaultId: string,
+  ): Promise<NoteCreateResponse> {
+    return {
+      outcome: {
+        status: "committed",
+        path: filePath,
+        revision: "a".repeat(64),
+        transactionId: "create",
+      },
+      snapshot: this.#snapshot,
+    };
   }
 
   async saveNote(

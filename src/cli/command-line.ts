@@ -1,9 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { createMarkdownNote } from "../application/note-creation";
 import { maxSearchResults, SearchQueryError } from "../kernel/full-text-search";
 import { MetadataIndex } from "../kernel/metadata-index";
 import { displayTitleFromVaultPath } from "../kernel/note-path";
 import {
+  canonicalizePotentialPath,
   isPathInside,
   normalizeVaultDirectoryPath,
   normalizeVaultPath,
@@ -19,9 +23,10 @@ export const cliExitCodes = {
   usage: 2,
   vault: 3,
   query: 4,
+  conflict: 5,
 } as const;
 
-type CliCommandId = "help" | "vault.info" | "files" | "read" | "search";
+type CliCommandId = "help" | "vault.info" | "files" | "read" | "search" | "create";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -56,12 +61,19 @@ interface CliSearchCommand extends CliVaultCommand {
   limit: number;
 }
 
+interface CliCreateCommand extends CliVaultCommand {
+  id: "create";
+  filePath: string;
+  content: string;
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
   | CliFilesCommand
   | CliReadCommand
-  | CliSearchCommand;
+  | CliSearchCommand
+  | CliCreateCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -73,14 +85,21 @@ export interface CliRunOptions {
 }
 
 class CliFailure extends Error {
-  readonly code: "USAGE" | "VAULT" | "QUERY" | "INTERNAL";
+  readonly code: "USAGE" | "VAULT" | "QUERY" | "CONFLICT" | "INTERNAL";
   readonly exitCode: number;
+  readonly details: unknown;
 
-  constructor(code: CliFailure["code"], exitCode: number, message: string, options?: ErrorOptions) {
+  constructor(
+    code: CliFailure["code"],
+    exitCode: number,
+    message: string,
+    options?: ErrorOptions & { details?: unknown },
+  ) {
     super(message, options);
     this.name = "CliFailure";
     this.code = code;
     this.exitCode = exitCode;
+    this.details = options?.details;
   }
 }
 
@@ -121,6 +140,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let vaultPath: string | null = null;
   let directory: string | null = null;
   let limit: number | null = null;
+  let content: string | null = null;
   let help = false;
   const positional: string[] = [];
 
@@ -168,6 +188,22 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       }
       continue;
     }
+    if (token === "--content" || token.startsWith("--content=")) {
+      if (content !== null) {
+        usageFailure("--content may be supplied only once.");
+      }
+      if (token.startsWith("--content=")) {
+        content = token.slice("--content=".length);
+      } else {
+        const value = args[index + 1];
+        if (value === undefined || value.startsWith("--")) {
+          usageFailure("--content requires a value.");
+        }
+        content = value;
+        index += 1;
+      }
+      continue;
+    }
     if (token.startsWith("--")) {
       usageFailure(`Unknown option: ${token}`);
     }
@@ -186,19 +222,19 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     (name === "vault" && values[0] === "info" && values.length === 1) ||
     (name === "vault:info" && values.length === 0)
   ) {
-    if (directory !== null || limit !== null) {
-      usageFailure("vault info does not accept --directory or --limit.");
+    if (directory !== null || limit !== null || content !== null) {
+      usageFailure("vault info does not accept --directory, --limit, or --content.");
     }
     return { id: "vault.info", json, vaultPath };
   }
   if (name === "files") {
-    if (values.length > 0 || limit !== null) {
+    if (values.length > 0 || limit !== null || content !== null) {
       usageFailure("files accepts only the optional --directory value.");
     }
     return { id: "files", json, vaultPath, directory: directory ?? "" };
   }
   if (name === "read") {
-    if (values.length !== 1 || directory !== null || limit !== null) {
+    if (values.length !== 1 || directory !== null || limit !== null || content !== null) {
       usageFailure("read requires exactly one vault-relative Markdown path.");
     }
     const filePath = values[0]?.startsWith("file=") ? values[0].slice(5) : values[0];
@@ -208,7 +244,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     return { id: "read", json, vaultPath, filePath };
   }
   if (name === "search") {
-    if (values.length === 0 || directory !== null) {
+    if (values.length === 0 || directory !== null || content !== null) {
       usageFailure("search requires a query and does not accept --directory.");
     }
     const first = values[0] ?? "";
@@ -223,6 +259,43 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     }
     return { id: "search", json, vaultPath, query, limit: limit ?? 50 };
   }
+  if (name === "create") {
+    if (directory !== null || limit !== null) {
+      usageFailure("create does not accept --directory or --limit.");
+    }
+    let filePath: string | null = null;
+    let parameterContent: string | null = null;
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("name=")) {
+        if (filePath !== null) {
+          usageFailure("create accepts only one note path.");
+        }
+        filePath = value.slice(value.indexOf("=") + 1);
+      } else if (value.startsWith("content=")) {
+        if (parameterContent !== null) {
+          usageFailure("content may be supplied only once.");
+        }
+        parameterContent = value.slice("content=".length);
+      } else if (filePath === null && !value.includes("=")) {
+        filePath = value;
+      } else {
+        usageFailure(`Unsupported create argument: ${value}`);
+      }
+    }
+    if (!filePath) {
+      usageFailure("create requires one note path or name.");
+    }
+    if (content !== null && parameterContent !== null) {
+      usageFailure("create content may be supplied as an option or parameter, not both.");
+    }
+    return {
+      id: "create",
+      json,
+      vaultPath,
+      filePath,
+      content: decodeContentEscapes(content ?? parameterContent ?? ""),
+    };
+  }
 
   usageFailure(`Unknown command: ${positional.join(" ")}`);
 }
@@ -234,13 +307,27 @@ Usage:
   threadleaf --vault <path> [--json] files [--directory <path>]
   threadleaf --vault <path> [--json] read <note.md>
   threadleaf --vault <path> [--json] search <query> [--limit <count>]
+  threadleaf --vault <path> [--json] create <note> [--content <text>]
 
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
   threadleaf --vault <path> search query=<text>
+  threadleaf --vault <path> create path=<note> content=<text>
 
-Read commands are headless and never require a running Electron process.
+Commands are headless and never require a running Electron process.
 `;
+
+function decodeContentEscapes(value: string): string {
+  return value.replaceAll(/\\([\\nt])/g, (_match, escaped: string) => {
+    if (escaped === "n") {
+      return "\n";
+    }
+    if (escaped === "t") {
+      return "\t";
+    }
+    return "\\";
+  });
+}
 
 async function defaultStateRoot(vaultPath: string): Promise<StateRootPort> {
   const canonicalVault = await fs.realpath(path.resolve(vaultPath));
@@ -253,6 +340,132 @@ async function defaultStateRoot(vaultPath: string): Promise<StateRootPort> {
     throw new Error("Could not place the read-only CLI state boundary outside the vault.");
   }
   return new FixedStateRoot(candidate);
+}
+
+function defaultWritableStateRoot(): StateRootPort {
+  const homeDirectory = os.homedir();
+  const baseDirectory =
+    process.platform === "win32"
+      ? (process.env.LOCALAPPDATA ?? path.join(homeDirectory, "AppData", "Local"))
+      : process.platform === "darwin"
+        ? path.join(homeDirectory, "Library", "Application Support")
+        : process.env.XDG_STATE_HOME && path.isAbsolute(process.env.XDG_STATE_HOME)
+          ? process.env.XDG_STATE_HOME
+          : path.join(homeDirectory, ".local", "state");
+  return new FixedStateRoot(path.join(baseDirectory, "threadleaf-cli"));
+}
+
+interface CliMutationLockOwner {
+  version: 1;
+  pid: number;
+  token: string;
+  createdAt: string;
+}
+
+function isFileSystemCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !isFileSystemCode(error, "ESRCH");
+  }
+}
+
+async function readCliMutationLockOwner(ownerPath: string): Promise<CliMutationLockOwner | null> {
+  try {
+    const parsed = JSON.parse(
+      await fs.readFile(ownerPath, "utf8"),
+    ) as Partial<CliMutationLockOwner>;
+    if (
+      parsed.version !== 1 ||
+      !Number.isSafeInteger(parsed.pid) ||
+      (parsed.pid ?? 0) <= 0 ||
+      typeof parsed.token !== "string" ||
+      !parsed.token ||
+      typeof parsed.createdAt !== "string"
+    ) {
+      return null;
+    }
+    return parsed as CliMutationLockOwner;
+  } catch (error) {
+    if (isFileSystemCode(error, "ENOENT") || error instanceof SyntaxError) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function acquireCliMutationLock(
+  vaultPath: string,
+  stateRoot: StateRootPort,
+): Promise<() => Promise<void>> {
+  const canonicalVault = await fs.realpath(path.resolve(vaultPath));
+  const configuredStateRoot = path.resolve(await stateRoot.getPath());
+  const canonicalStateRoot = await canonicalizePotentialPath(configuredStateRoot);
+  if (
+    isPathInside(canonicalVault, configuredStateRoot) ||
+    isPathInside(canonicalVault, canonicalStateRoot)
+  ) {
+    throw new CliFailure(
+      "VAULT",
+      cliExitCodes.vault,
+      "Threadleaf CLI state must be stored outside the vault.",
+    );
+  }
+
+  await fs.mkdir(canonicalStateRoot, { recursive: true, mode: 0o700 });
+  const lockPath = path.join(canonicalStateRoot, ".cli-mutation-lock");
+  const ownerPath = path.join(lockPath, "owner.json");
+  const token = randomUUID();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await fs.mkdir(lockPath, { mode: 0o700 });
+      const owner: CliMutationLockOwner = {
+        version: 1,
+        pid: process.pid,
+        token,
+        createdAt: new Date().toISOString(),
+      };
+      await fs.writeFile(ownerPath, `${JSON.stringify(owner)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      return async () => {
+        const currentOwner = await readCliMutationLockOwner(ownerPath);
+        if (currentOwner?.token !== token) {
+          throw new Error("Threadleaf CLI mutation lock ownership changed unexpectedly.");
+        }
+        await fs.rm(lockPath, { recursive: true });
+      };
+    } catch (error) {
+      if (!isFileSystemCode(error, "EEXIST")) {
+        throw error;
+      }
+      const owner = await readCliMutationLockOwner(ownerPath);
+      const lockStat = await fs.stat(lockPath);
+      const freshIncompleteLock = !owner && Date.now() - lockStat.mtimeMs < 30_000;
+      if ((owner && processIsAlive(owner.pid)) || freshIncompleteLock) {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          "Another Threadleaf CLI mutation is already running.",
+          { details: { status: "busy" } },
+        );
+      }
+      await fs.rm(lockPath, { recursive: true });
+    }
+  }
+  throw new CliFailure(
+    "CONFLICT",
+    cliExitCodes.conflict,
+    "Could not acquire the Threadleaf CLI mutation lock.",
+    { details: { status: "busy" } },
+  );
 }
 
 async function openReadOnlyKernel(
@@ -275,12 +488,54 @@ async function openReadOnlyKernel(
   }
 }
 
+async function openWritableKernel(
+  command: CliVaultCommand,
+  options: CliRunOptions,
+): Promise<VaultKernel> {
+  try {
+    return await VaultKernel.open({
+      vaultRoot: command.vaultPath,
+      stateRoot: options.stateRoot ?? defaultWritableStateRoot(),
+    });
+  } catch (error) {
+    throw new CliFailure(
+      "VAULT",
+      cliExitCodes.vault,
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
+    );
+  }
+}
+
 async function executeCommand(
   command: Exclude<ParsedCliCommand, CliHelpCommand>,
   options: CliRunOptions,
 ): Promise<unknown> {
-  const kernel = await openReadOnlyKernel(command, options);
+  const kernel =
+    command.id === "create"
+      ? await openWritableKernel(command, options)
+      : await openReadOnlyKernel(command, options);
   try {
+    if (command.id === "create") {
+      const outcome = await createMarkdownNote(kernel, command.filePath, command.content);
+      if (outcome.status === "exists") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `Markdown note already exists: ${outcome.path}`,
+          { details: outcome },
+        );
+      }
+      if (outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The requested path appeared during creation. The proposed note was preserved as ${outcome.conflictPath}.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
+    }
     if (command.id === "files") {
       const directory = normalizeVaultDirectoryPath(command.directory);
       const prefix = directory ? `${directory}/` : "";
@@ -341,6 +596,9 @@ async function executeCommand(
       duplicateNames: snapshot.duplicateNames.length,
     };
   } catch (error) {
+    if (error instanceof CliFailure) {
+      throw error;
+    }
     if (error instanceof SearchQueryError) {
       throw new CliFailure("QUERY", cliExitCodes.query, error.message, { cause: error });
     }
@@ -350,6 +608,35 @@ async function executeCommand(
       error instanceof Error ? error.message : String(error),
       { cause: error },
     );
+  }
+}
+
+async function executeWithCommandState(
+  command: Exclude<ParsedCliCommand, CliHelpCommand>,
+  options: CliRunOptions,
+): Promise<unknown> {
+  if (command.id !== "create") {
+    return executeCommand(command, options);
+  }
+  const stateRoot = options.stateRoot ?? defaultWritableStateRoot();
+  let release: () => Promise<void>;
+  try {
+    release = await acquireCliMutationLock(command.vaultPath, stateRoot);
+  } catch (error) {
+    if (error instanceof CliFailure) {
+      throw error;
+    }
+    throw new CliFailure(
+      "VAULT",
+      cliExitCodes.vault,
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
+    );
+  }
+  try {
+    return await executeCommand(command, { ...options, stateRoot });
+  } finally {
+    await release();
   }
 }
 
@@ -383,6 +670,9 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
         return context ? `${location} [${context.kind}] ${context.text}` : location;
       })
       .join("\n")}\n`;
+  }
+  if (command.id === "create") {
+    return `Created ${(data as { path: string }).path}\n`;
   }
   const info = data as {
     name: string;
@@ -427,7 +717,11 @@ function errorOutput(command: CliCommandId | null, error: CliFailure, json: bool
         schemaVersion: cliSchemaVersion,
         ok: false,
         command,
-        error: { code: error.code, message: error.message },
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(error.details === undefined ? {} : { details: error.details }),
+        },
       },
       null,
       2,
@@ -460,7 +754,7 @@ export async function runCli(
   try {
     command = parseCliArguments(args);
     const data =
-      command.id === "help" ? { usage: cliHelp } : await executeCommand(command, options);
+      command.id === "help" ? { usage: cliHelp } : await executeWithCommandState(command, options);
     io.stdout(command.json ? jsonOutput(command.id, data) : humanOutput(command, data));
     return cliExitCodes.success;
   } catch (error) {

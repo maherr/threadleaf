@@ -167,7 +167,8 @@ source-line, and no-implicit-write guarantees.
 Threadleaf exposes the same vault kernel and derived metadata behavior through a native headless
 command-line interface. Human-readable output is the interactive default, while stable JSON and
 explicit exit codes are first-class automation contracts. The initial `vault info`, `files`,
-`read`, and `search` commands run without Electron and require an explicit vault path.
+`read`, `search`, and recovery-backed `create` commands run without Electron and require an explicit
+vault path.
 
 Read-only kernel opening performs canonical path validation but creates no state directory, vault
 identity, recovery journal, or watcher. The CLI note corpus uses the same exclusions and index as
@@ -180,6 +181,11 @@ server, copy proprietary implementation details, or create a second mutation pat
 command uses the same containment, revision, recovery-journal, conflict, and watcher contracts as
 the desktop application. See the [CLI guide](cli.md).
 
+The desktop and CLI call one note-creation service. The CLI keeps journals in an
+operating-system-owned state root and serializes its mutating invocations with a process-owned
+lock, so one headless process never recovers another live process's transaction. The portable
+no-clobber install remains the arbiter against desktop, external-editor, and sync-provider races.
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable
@@ -190,6 +196,11 @@ operations, not unrelated filesystem calls.
 External changes are preserved. A stale writer never overwrites them silently; it returns a
 conflict result and can create an explicit keep-both copy through the same writer. Watcher
 suppression is operation-aware rather than a time-only ignore window.
+
+A write whose expected revision is `null` is a create transaction. On restart, a correctly staged
+new file is installed at its requested path when that path remains absent. If another process has
+claimed the name, recovery keeps both versions instead. A crash before durable staging rolls back
+without inventing an empty note.
 
 The portable writer favors no-clobber installation over an unchecked replace. It durably stages a
 complete file beside its target, moves the old directory entry to a transaction-owned rollback

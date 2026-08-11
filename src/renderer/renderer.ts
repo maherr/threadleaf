@@ -3,6 +3,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 import type {
+  NoteCreateResponse,
   RuntimeSnapshot,
   VaultSearchResponse,
   VaultSearchResult,
@@ -40,6 +41,7 @@ const elements = {
   runtimeState: getElement("runtime-state"),
   statusShape: getElement("status-shape"),
   fileCount: getElement("file-count"),
+  newNote: getButton("new-note"),
   fileSearch: getInput("file-search"),
   searchShortcut: getElement("search-shortcut"),
   filterSummary: getElement("filter-summary"),
@@ -101,6 +103,14 @@ const elements = {
   settingsWarning: getElement("settings-warning"),
   settingsList: getElement("key-binding-list"),
   settingsStatus: getElement("settings-status"),
+  newNoteDialog: getDialog("new-note-dialog"),
+  newNoteForm: getForm("new-note-form"),
+  newNotePath: getInput("new-note-path"),
+  newNoteClose: getButton("new-note-close"),
+  newNoteCancel: getButton("new-note-cancel"),
+  newNoteCreate: getButton("new-note-create"),
+  newNoteError: getElement("new-note-error"),
+  newNoteVault: getElement("new-note-vault"),
   toast: getElement("toast"),
 };
 
@@ -137,6 +147,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.open-vault",
     label: "Open another vault",
     description: "Choose a local Markdown folder after any draft is saved or reverted.",
+  },
+  {
+    id: "workspace.create-note",
+    label: "Create new note",
+    description: "Create and open a Markdown note through the recoverable writer.",
   },
   {
     id: "workspace.focus-note-filter",
@@ -197,6 +212,9 @@ let settingsBusy = false;
 let settingsMessage = "Select a command, then press its new shortcut.";
 let settingsMessageKind: "info" | "saved" | "error" = "info";
 let lastSettingsWarning: string | null = null;
+let newNoteRestoreFocus: HTMLElement | null = null;
+let newNoteBusy = false;
+let newNoteVaultId: string | null = null;
 type VaultSearchState =
   | { status: "idle" }
   | {
@@ -287,6 +305,14 @@ function getDialog(id: string): HTMLDialogElement {
   return element;
 }
 
+function getForm(id: string): HTMLFormElement {
+  const element = getElement(id);
+  if (!(element instanceof HTMLFormElement)) {
+    throw new Error(`Expected a form: ${id}`);
+  }
+  return element;
+}
+
 function bindingFor(targetId: ShortcutTargetId): string | null {
   return settingsSnapshot.settings.keyBindings[targetId] ?? null;
 }
@@ -299,6 +325,20 @@ function shortcutFor(targetId: ShortcutTargetId): string | null {
 function commandCatalog(): RendererCommand[] {
   const plugin = currentSnapshot?.plugin ?? null;
   const commands: RendererCommand[] = [
+    {
+      id: "workspace.create-note",
+      label: "Create new note",
+      category: "Workspace",
+      keywords: ["new", "file", "markdown", "note"],
+      shortcut: shortcutFor("workspace.create-note"),
+      enabled: Boolean(currentSnapshot?.vault.id && !busy && !saving && !dirty),
+      disabledReason: dirty
+        ? "Save or revert the open note before creating another."
+        : currentSnapshot?.vault.id
+          ? "Threadleaf is finishing another action."
+          : "No writable vault is active.",
+      run: openNewNoteDialog,
+    },
     {
       id: "workspace.open-vault",
       label: "Open another vault",
@@ -730,6 +770,127 @@ function updateShortcutLabels(): void {
   elements.settingsShortcut.textContent = shortcutFor("settings.open-keybindings") ?? "None";
   elements.searchShortcut.textContent = shortcutFor("workspace.focus-note-filter") ?? "None";
   elements.saveShortcut.textContent = shortcutFor("editor.save-note") ?? "None";
+  const newNoteShortcut = shortcutFor("workspace.create-note");
+  elements.newNote.title = newNoteShortcut
+    ? `Create a new note (${newNoteShortcut})`
+    : "Create a new note";
+}
+
+function renderNewNoteDialog(): void {
+  const staleVault = Boolean(
+    newNoteVaultId && currentSnapshot?.vault.id && newNoteVaultId !== currentSnapshot.vault.id,
+  );
+  if (staleVault && !elements.newNoteError.textContent) {
+    elements.newNoteError.textContent = "The active vault changed. Cancel and reopen New note.";
+  }
+  const message = elements.newNoteError.textContent ?? "";
+  elements.newNoteError.hidden = message.length === 0;
+  elements.newNotePath.disabled = newNoteBusy;
+  elements.newNoteClose.disabled = newNoteBusy;
+  elements.newNoteCancel.disabled = newNoteBusy;
+  elements.newNoteCreate.disabled = newNoteBusy || staleVault;
+  elements.newNoteCreate.textContent = newNoteBusy ? "Creating…" : "Create note";
+  elements.newNoteForm.setAttribute("aria-busy", String(newNoteBusy));
+  elements.newNoteVault.textContent = staleVault
+    ? "Vault changed"
+    : currentSnapshot
+      ? `In ${currentSnapshot.vault.name}`
+      : "Active vault";
+}
+
+function openNewNoteDialog(): void {
+  if (elements.newNoteDialog.open) {
+    elements.newNotePath.focus();
+    elements.newNotePath.select();
+    return;
+  }
+  if (!currentSnapshot?.vault.id || busy || saving || dirty) {
+    showToast(
+      dirty
+        ? "Save or revert the open note before creating another."
+        : "A writable vault must be ready before creating a note.",
+    );
+    return;
+  }
+  if (elements.commandPalette.open) {
+    closeCommandPalette(false);
+  }
+  newNoteRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  newNoteBusy = false;
+  newNoteVaultId = currentSnapshot.vault.id;
+  elements.newNotePath.value = "";
+  elements.newNoteError.textContent = "";
+  elements.newNoteDialog.showModal();
+  renderNewNoteDialog();
+  window.requestAnimationFrame(() => elements.newNotePath.focus());
+}
+
+function closeNewNoteDialog(restoreFocus = true): void {
+  if (!elements.newNoteDialog.open || newNoteBusy) {
+    return;
+  }
+  elements.newNoteDialog.close();
+  newNoteVaultId = null;
+  const restoreTarget = newNoteRestoreFocus;
+  newNoteRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function createNewNote(): Promise<void> {
+  const expectedVaultId = newNoteVaultId;
+  if (!expectedVaultId || newNoteBusy) {
+    return;
+  }
+  const requestedPath = elements.newNotePath.value.trim();
+  if (!requestedPath) {
+    elements.newNoteError.textContent = "Enter a note name or vault-relative path.";
+    renderNewNoteDialog();
+    elements.newNotePath.focus();
+    return;
+  }
+
+  let response: NoteCreateResponse | null = null;
+  newNoteBusy = true;
+  elements.newNoteError.textContent = "";
+  renderNewNoteDialog();
+  setActionState(true);
+  try {
+    response = await window.threadleaf.createNote(requestedPath, "", expectedVaultId);
+    if (response.outcome.status === "exists") {
+      elements.newNoteError.textContent = `${response.outcome.path} already exists. Choose another path.`;
+      response = null;
+    } else {
+      render(response.snapshot);
+    }
+  } catch (error) {
+    elements.newNoteError.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    newNoteBusy = false;
+    setActionState(false);
+    renderNewNoteDialog();
+  }
+
+  if (!response) {
+    elements.newNotePath.focus();
+    elements.newNotePath.select();
+    return;
+  }
+  closeNewNoteDialog(false);
+  setDocumentView("source", false);
+  if (response.outcome.status === "conflict") {
+    setEditNotice({
+      kind: "conflict",
+      title: "The requested path appeared during creation",
+      message: `The existing note was not overwritten. Your new note is ${response.outcome.conflictPath}.`,
+    });
+    showToast(`Preserved as ${response.outcome.conflictPath}`);
+  } else {
+    showToast(`Created ${response.outcome.path}`);
+  }
+  window.setTimeout(() => editor.focus(), 0);
 }
 
 function openSettings(): void {
@@ -1200,6 +1361,9 @@ function render(snapshot: RuntimeSnapshot): void {
   renderCommands(snapshot);
   renderEvents(snapshot);
   setActionState(busy);
+  if (elements.newNoteDialog.open) {
+    renderNewNoteDialog();
+  }
 }
 
 function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): void {
@@ -1576,6 +1740,7 @@ function renderEditControls(): void {
   }
   elements.editState.dataset.state = state;
   elements.editState.textContent = label;
+  elements.newNote.disabled = busy || saving || dirty;
   elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
   renderEditNotice();
@@ -1737,6 +1902,7 @@ async function runAction(action: () => Promise<RuntimeSnapshot>): Promise<void> 
 function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
   elements.openVault.disabled = busy || saving;
+  elements.newNote.disabled = busy || saving || dirty;
   elements.reloadPlugin.disabled = busy || saving || !currentSnapshot?.plugin;
   elements.unloadPlugin.disabled = busy || saving || currentSnapshot?.plugin?.state !== "loaded";
   elements.runCommand.disabled = busy || saving || (currentSnapshot?.commands.length ?? 0) === 0;
@@ -1790,6 +1956,10 @@ elements.themeToggle.addEventListener(
 elements.openVault.addEventListener(
   "click",
   () => void executeRendererCommand("workspace.open-vault"),
+);
+elements.newNote.addEventListener(
+  "click",
+  () => void executeRendererCommand("workspace.create-note"),
 );
 elements.saveNote.addEventListener("click", () => void executeRendererCommand("editor.save-note"));
 elements.revertNote.addEventListener(
@@ -1859,13 +2029,29 @@ elements.settingsDialog.addEventListener("click", (event) => {
   }
 });
 
+elements.newNoteForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void createNewNote();
+});
+elements.newNoteClose.addEventListener("click", () => closeNewNoteDialog());
+elements.newNoteCancel.addEventListener("click", () => closeNewNoteDialog());
+elements.newNoteDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeNewNoteDialog();
+});
+elements.newNoteDialog.addEventListener("click", (event) => {
+  if (event.target === elements.newNoteDialog) {
+    closeNewNoteDialog();
+  }
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.repeat) {
     return;
   }
   const targetId = shortcutTargetForEvent(settingsSnapshot.settings.keyBindings, event, isMac);
   if (targetId === "ui.command-palette") {
-    if (elements.settingsDialog.open) {
+    if (elements.settingsDialog.open || elements.newNoteDialog.open) {
       return;
     }
     event.preventDefault();
@@ -1877,6 +2063,9 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (targetId === "settings.open-keybindings") {
+    if (elements.newNoteDialog.open) {
+      return;
+    }
     event.preventDefault();
     if (elements.settingsDialog.open) {
       closeSettings();
@@ -1885,7 +2074,7 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
-  if (elements.commandPalette.open || elements.settingsDialog.open) {
+  if (elements.commandPalette.open || elements.settingsDialog.open || elements.newNoteDialog.open) {
     return;
   }
   if (targetId) {

@@ -9,6 +9,7 @@ export const ipcChannels = {
   resetKeyBindings: "threadleaf:reset-key-bindings",
   chooseVault: "threadleaf:choose-vault",
   openNote: "threadleaf:open-note",
+  createNote: "threadleaf:create-note",
   saveNote: "threadleaf:save-note",
   runCommand: "threadleaf:run-command",
   reloadPlugin: "threadleaf:reload-plugin",

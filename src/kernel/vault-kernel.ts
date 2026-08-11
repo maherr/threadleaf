@@ -896,6 +896,24 @@ export class VaultKernel implements VaultMutationPort {
       };
     }
 
+    if (journal.beforeRevision === null && !target) {
+      const temporary = await readStableFile(temporaryAbsolute);
+      if (temporary?.revision === journal.nextRevision) {
+        const installed = await installStagedFile(temporaryAbsolute, targetAbsolute);
+        if (installed) {
+          journal.phase = "committed";
+          await this.writeJournal(journal);
+          await this.archiveJournal(journal, "committed");
+          return {
+            transactionId: journal.id,
+            kind: "write",
+            outcome: "committed",
+            path: journal.targetPath,
+          };
+        }
+      }
+    }
+
     if (!(await pathExists(targetAbsolute)) && (await pathExists(rollbackAbsolute))) {
       const restored = await installStagedFile(rollbackAbsolute, targetAbsolute);
       if (!restored) {

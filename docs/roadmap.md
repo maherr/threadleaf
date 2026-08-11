@@ -74,7 +74,10 @@ equivalence through the real writer-to-watcher seam.
 - [x] Vault-scoped local raster-image rendering with stable bounded reads, byte-sniffed MIME types,
       containment and stale-vault checks, explicit failure placeholders, and attachment-change
       invalidation without renderer filesystem access.
-- [ ] Recovery-backed CLI mutation commands and a broader executable behavior corpus for familiar
+- [x] Recovery-backed desktop and CLI note creation with nested paths, no-overwrite preflight,
+      create-race conflict preservation, interruption recovery, process serialization, stable JSON,
+      and tested `path=`, `name=`, and `content=` compatibility spellings.
+- [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Tabs, split panes, application menus, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.

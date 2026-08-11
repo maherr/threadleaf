@@ -126,6 +126,19 @@ function registerIpcHandlers(): void {
     return workspaceController.openNote(filePath);
   });
   ipcMain.handle(
+    ipcChannels.createNote,
+    (_event, filePath: unknown, content: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof content !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Create note requires string path, content, and vault values.");
+      }
+      return workspaceController.createNote(filePath, content, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
     ipcChannels.saveNote,
     (
       _event,

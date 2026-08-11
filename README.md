@@ -38,8 +38,11 @@ links through the derived index, and provides source-line controls that return t
 CodeMirror line. Sniffed local PNG, JPEG, GIF, and WebP attachments now render through a
 vault-scoped, size-bounded main-process service; external, oversized, unsupported, private, and
 out-of-vault targets stay explicit placeholders. A headless CLI now inspects vaults, lists and
-reads notes, and searches indexed content with stable JSON and explicit exit codes, without
-requiring the Electron application.
+reads notes, searches indexed content, and creates notes through the recoverable writer with stable
+JSON and explicit exit codes, without requiring the Electron application. The desktop New action,
+Ctrl/Cmd+N, and the CLI share one no-overwrite creation service. Missing folders are created,
+ordinary existing paths fail without mutation, and a path claimed during the final race window
+preserves the proposed bytes as a labeled conflict note.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
@@ -89,7 +92,8 @@ restores the portable built-in bindings. Threadleaf stores these preferences in 
 application data, not in the vault or `.obsidian/`. Ctrl/Cmd+E switches between Markdown source and
 reading view. Reading view previews the current draft without saving it; clicking a source-line
 control returns to the exact source line. Relative and vault-rooted local raster images render
-without exposing filesystem paths or general file access to the renderer.
+without exposing filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New
+note dialog and selects the resulting empty Markdown note for editing.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 
@@ -110,6 +114,8 @@ pnpm cli --vault /absolute/path/to/vault vault info
 pnpm cli --vault /absolute/path/to/vault files
 pnpm cli --vault /absolute/path/to/vault read "Folder/Note.md"
 pnpm cli --vault /absolute/path/to/vault --json search "quoted phrase" --limit 20
+pnpm cli --vault /absolute/path/to/vault create "Inbox/New thought"
+pnpm cli --vault /absolute/path/to/vault create path="Projects/Brief" content="# Brief\n"
 ```
 
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported

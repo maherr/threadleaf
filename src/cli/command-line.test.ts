@@ -78,6 +78,22 @@ describe("Threadleaf CLI arguments", () => {
     expect(
       parseCliArguments(["--vault", "/vault", "search", "query=linked", "notes", "--limit=7"]),
     ).toMatchObject({ id: "search", query: "linked notes", limit: 7 });
+    expect(
+      parseCliArguments([
+        "--vault",
+        "/vault",
+        "create",
+        "path=Folder/New note",
+        "content=# Title\\n\\nBody",
+      ]),
+    ).toMatchObject({
+      id: "create",
+      filePath: "Folder/New note",
+      content: "# Title\n\nBody",
+    });
+    expect(
+      parseCliArguments(["create", "Inbox/Native", "--content=hello", "--vault=/vault"]),
+    ).toMatchObject({ id: "create", filePath: "Inbox/Native", content: "hello" });
   });
 
   it("rejects ambiguous or unsupported invocations as usage errors", async () => {
@@ -104,6 +120,158 @@ describe("Threadleaf CLI arguments", () => {
   it("shows help without requiring a vault", async () => {
     const result = await invoke(["--help"]);
     expect(result).toEqual({ exitCode: 0, stdout: cliHelp, stderr: "" });
+  });
+});
+
+describe("Threadleaf CLI create workflow", () => {
+  it("creates nested Markdown through the recoverable kernel in human mode", async () => {
+    const result = await invoke([
+      "--vault",
+      vaultPath,
+      "create",
+      "Projects/New thread",
+      "--content",
+      "# New thread\\n\\nBody",
+    ]);
+
+    expect(result).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Created Projects/New thread.md\n",
+      stderr: "",
+    });
+    await expect(
+      fs.readFile(path.join(vaultPath, "Projects", "New thread.md"), "utf8"),
+    ).resolves.toBe("# New thread\n\nBody");
+    await expect(fs.stat(statePath)).resolves.toBeDefined();
+  });
+
+  it("supports path, name, content, and JSON compatibility spellings", async () => {
+    const byPath = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "create",
+      "path=Inbox/Path note",
+      "content=Line one\\nLine two\\tvalue",
+    ]);
+    expect(JSON.parse(byPath.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "create",
+      data: {
+        status: "committed",
+        path: "Inbox/Path note.md",
+        revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Inbox", "Path note.md"), "utf8")).resolves.toBe(
+      "Line one\nLine two\tvalue",
+    );
+
+    const byName = await invoke(["--vault", vaultPath, "create", "name=Root note"]);
+    expect(byName.stdout).toBe("Created Root note.md\n");
+    await expect(fs.readFile(path.join(vaultPath, "Root note.md"), "utf8")).resolves.toBe("");
+  });
+
+  it("returns a stable conflict error without overwriting an existing note", async () => {
+    const before = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const result = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "create",
+      "Alpha",
+      "--content=replacement",
+    ]);
+
+    expect(result.exitCode).toBe(cliExitCodes.conflict);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      schemaVersion: 1,
+      ok: false,
+      command: "create",
+      error: {
+        code: "CONFLICT",
+        details: { status: "exists", path: "Alpha.md" },
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(before);
+    expect((await fs.readdir(vaultPath)).filter((name) => name.includes("conflict"))).toEqual([]);
+  });
+
+  it("fails closed on traversal and private create targets", async () => {
+    const traversal = await invoke(["--json", "--vault", vaultPath, "create", "../Outside"]);
+    expect(traversal.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(traversal.stderr)).toMatchObject({ error: { code: "VAULT" } });
+
+    const privatePath = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "create",
+      ".obsidian/Injected",
+    ]);
+    expect(privatePath.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(privatePath.stderr).error.message).toContain("private application");
+    await expect(fs.stat(path.join(sandboxPath, "Outside.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    const missingVault = await invoke([
+      "--json",
+      "--vault",
+      path.join(sandboxPath, "missing-vault"),
+      "create",
+      "Note",
+    ]);
+    expect(missingVault.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(missingVault.stderr)).toMatchObject({ error: { code: "VAULT" } });
+  });
+
+  it("rejects a concurrent CLI mutation and leaves the vault untouched", async () => {
+    const lockPath = path.join(statePath, ".cli-mutation-lock");
+    await fs.mkdir(lockPath, { recursive: true });
+    await fs.writeFile(
+      path.join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        version: 1,
+        pid: process.pid,
+        token: "live-owner",
+        createdAt: new Date().toISOString(),
+      })}\n`,
+      "utf8",
+    );
+
+    const result = await invoke(["--json", "--vault", vaultPath, "create", "Blocked"]);
+
+    expect(result.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: { code: "CONFLICT", details: { status: "busy" } },
+    });
+    await expect(fs.stat(path.join(vaultPath, "Blocked.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("takes over a dead CLI lock, recovers state, and releases ownership", async () => {
+    const lockPath = path.join(statePath, ".cli-mutation-lock");
+    await fs.mkdir(lockPath, { recursive: true });
+    await fs.writeFile(
+      path.join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        version: 1,
+        pid: 2_147_483_647,
+        token: "dead-owner",
+        createdAt: new Date(0).toISOString(),
+      })}\n`,
+      "utf8",
+    );
+
+    const result = await invoke(["--vault", vaultPath, "create", "Recovered"]);
+
+    expect(result.exitCode).toBe(cliExitCodes.success);
+    await expect(fs.readFile(path.join(vaultPath, "Recovered.md"), "utf8")).resolves.toBe("");
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

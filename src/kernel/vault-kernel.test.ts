@@ -167,6 +167,40 @@ describe("VaultKernel writes", () => {
     },
   );
 
+  it.each([
+    ["write:after-intent", "rolled-back", false],
+    ["write:after-stage", "committed", true],
+    ["write:after-backup", "committed", true],
+    ["write:before-final-check", "committed", true],
+    ["write:after-prepare", "committed", true],
+    ["write:after-install", "committed", true],
+    ["write:after-commit", "committed", true],
+  ] as const)(
+    "recovers a new-file write after interruption at %s",
+    async (faultPoint, expectedOutcome, expectsTarget) => {
+      const kernel = await openKernel((point) => {
+        if (point === faultPoint) {
+          throw new Error(`interrupted at ${faultPoint}`);
+        }
+      });
+
+      await expect(kernel.writeText("New.md", "created", null)).rejects.toThrow(
+        `interrupted at ${faultPoint}`,
+      );
+      const recovered = await openKernel();
+
+      expect(recovered.startupRecoveryActions).toMatchObject([
+        { kind: "write", outcome: expectedOutcome, path: "New.md" },
+      ]);
+      if (expectsTarget) {
+        await expect(recovered.readText("New.md")).resolves.toMatchObject({ content: "created" });
+      } else {
+        await expect(recovered.readText("New.md")).rejects.toMatchObject({ code: "ENOENT" });
+      }
+      expect((await fs.readdir(vaultPath)).filter((name) => name.includes("conflict"))).toEqual([]);
+    },
+  );
+
   it("recovers an interrupted staged write without losing either version", async () => {
     const notePath = path.join(vaultPath, "Note.md");
     await fs.writeFile(notePath, "original", "utf8");

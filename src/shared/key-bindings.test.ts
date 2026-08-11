@@ -39,6 +39,7 @@ describe("key bindings", () => {
 
     expect(parsed.keyBindings["ui.command-palette"]).toBe("Alt+K");
     expect(parsed.keyBindings["workspace.open-vault"]).toBe("Mod+O");
+    expect(parsed.keyBindings["workspace.create-note"]).toBe("Mod+N");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
     expect(() =>
