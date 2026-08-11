@@ -28,15 +28,17 @@ changing any fixture byte.
 
 - [x] Canonical path handling and symlink policy.
 - [x] State-root port and fixed-path adapter.
-- [ ] Port-based filesystem adapter.
-- [ ] Sequenced, batched file watching with rename pairing.
-- [ ] Overflow, ambiguity, sequence-gap, subtree-scan, and full-rescan behavior.
+- [x] Read-only vault port with the Node vault kernel as its filesystem adapter.
+- [ ] Mutation port and adapter boundary.
+- [x] Sequenced, debounced file watching with inode-based rename pairing.
+- [x] Overflow, ambiguity, sequence-gap, stream-restart, and full-rescan behavior.
+- [ ] Targeted subtree rescan behavior.
 - [x] Durable no-clobber writes and crash-recovery journal.
 - [x] Content revisions, external-edit detection, conflict copies, and writer serialization.
 - [x] Recoverable single-file rename.
 - [ ] Recoverable multi-file mutation transactions.
-- [ ] Rebuildable metadata and link index.
-- [ ] Incremental-versus-clean-rebuild equivalence tests.
+- [x] Rebuildable metadata and link index foundation.
+- [x] Incremental-versus-clean-rebuild equivalence tests across the writer and watcher seam.
 
 Exit gate: interruption, concurrent external-edit, rename, and recovery fixtures lose no bytes.
 Every watcher fallback converges, and every incremental index snapshot equals a clean rebuild.

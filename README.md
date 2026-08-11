@@ -17,7 +17,9 @@ the documented load, activation, integration, command, reload, and unload lifecy
 
 Phase 1 is in progress. The unintegrated vault kernel now proves canonical path containment,
 durable recovery journals, external-edit conflict preservation, serialized writes, and recoverable
-renames against filesystem fixtures.
+renames against filesystem fixtures. A sequenced live watcher and rebuildable metadata index now
+converge across internal writes, external edits, renames, conflicts, event gaps, and backend
+fallbacks.
 
 Do not use the current build with an important vault. Phase 0 uses only a synthetic fixture vault
 and the desktop application exposes no user-file writes.

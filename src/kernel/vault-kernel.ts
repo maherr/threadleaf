@@ -25,7 +25,7 @@ import {
   normalizeVaultPath,
   VaultPathPolicy,
 } from "./path-policy";
-import type { StateRootPort } from "./ports";
+import type { StateRootPort, VaultReadPort, VaultTextSnapshot } from "./ports";
 
 export type KernelFaultPoint =
   | "write:after-intent"
@@ -50,12 +50,7 @@ export interface VaultKernelOptions {
   clock?: () => Date;
 }
 
-export interface TextFileSnapshot {
-  path: string;
-  content: string;
-  revision: string;
-  size: number;
-}
+export type TextFileSnapshot = VaultTextSnapshot;
 
 export type WriteResult =
   | {
@@ -123,7 +118,7 @@ function sanitizeTimestamp(date: Date): string {
   return date.toISOString().replaceAll(/[-:.]/g, "");
 }
 
-export class VaultKernel {
+export class VaultKernel implements VaultReadPort {
   readonly paths: VaultPathPolicy;
   readonly stateRoot: string;
   readonly vaultId: string;

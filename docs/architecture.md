@@ -65,6 +65,11 @@ state must equal an index rebuilt from the current vault bytes. Tests compare in
 rebuild snapshots for additions, edits, deletions, renames, unresolved links, duplicates, and
 recovery.
 
+The Phase 1 Markdown parser deliberately covers a documented structural subset: headings, basic
+frontmatter scalars and lists, tags, wiki links, embeds, and local Markdown links. Its link resolver
+is provisional. Obsidian-equivalent edge semantics remain gated on the executable behavior corpus
+in Phase 3 rather than being inferred from filenames or third-party compatibility claims.
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable
