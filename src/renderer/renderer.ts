@@ -4,6 +4,8 @@ import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 import type {
   NoteCreateResponse,
+  NoteMoveBlocker,
+  NoteMoveResponse,
   RuntimeSnapshot,
   VaultSearchResponse,
   VaultSearchResult,
@@ -62,6 +64,7 @@ const elements = {
   noteEditor: getElement("note-editor"),
   notePreview: getElement("note-preview"),
   editState: getElement("edit-state"),
+  moveNote: getButton("move-note"),
   saveNote: getButton("save-note"),
   saveShortcut: getElement("save-shortcut"),
   revertNote: getButton("revert-note"),
@@ -113,6 +116,18 @@ const elements = {
   newNoteCreate: getButton("new-note-create"),
   newNoteError: getElement("new-note-error"),
   newNoteVault: getElement("new-note-vault"),
+  moveNoteDialog: getDialog("move-note-dialog"),
+  moveNoteForm: getForm("move-note-form"),
+  moveNoteTarget: getInput("move-note-target"),
+  moveNoteClose: getButton("move-note-close"),
+  moveNoteCancel: getButton("move-note-cancel"),
+  moveNoteSubmit: getButton("move-note-submit"),
+  moveNoteError: getElement("move-note-error"),
+  moveNoteCurrentPath: getElement("move-note-current-path"),
+  moveNoteVault: getElement("move-note-vault"),
+  moveNoteBlockers: getElement("move-note-blockers"),
+  moveNoteBlockerSummary: getElement("move-note-blocker-summary"),
+  moveNoteBlockerList: getElement("move-note-blocker-list"),
   toast: getElement("toast"),
 };
 
@@ -154,6 +169,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.create-note",
     label: "Create new note",
     description: "Create and open a Markdown note through the recoverable writer.",
+  },
+  {
+    id: "workspace.move-note",
+    label: "Move or rename current note",
+    description: "Move only when every indexed internal link keeps the same meaning.",
   },
   {
     id: "workspace.close-tab",
@@ -232,6 +252,12 @@ let lastSettingsWarning: string | null = null;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
 let newNoteVaultId: string | null = null;
+let moveNoteRestoreFocus: HTMLElement | null = null;
+let moveNoteBusy = false;
+let moveNoteVaultId: string | null = null;
+let moveNoteSourcePath: string | null = null;
+let moveNoteRevision: string | null = null;
+let moveNoteBlockers: NoteMoveBlocker[] = [];
 type VaultSearchState =
   | { status: "idle" }
   | {
@@ -356,6 +382,20 @@ function commandCatalog(): RendererCommand[] {
           ? "Threadleaf is finishing another action."
           : "No writable vault is active.",
       run: openNewNoteDialog,
+    },
+    {
+      id: "workspace.move-note",
+      label: "Move or rename current note",
+      category: "Workspace",
+      keywords: ["move", "rename", "path", "file", "refactor"],
+      shortcut: shortcutFor("workspace.move-note"),
+      enabled: Boolean(loadedNote && loadedVaultId && !busy && !saving && !dirty),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : dirty
+          ? "Save or revert the current note before moving it."
+          : "Threadleaf is finishing another action.",
+      run: openMoveNoteDialog,
     },
     {
       id: "workspace.close-tab",
@@ -836,6 +876,10 @@ function updateShortcutLabels(): void {
   elements.newNote.title = newNoteShortcut
     ? `Create a new note (${newNoteShortcut})`
     : "Create a new note";
+  const moveNoteShortcut = shortcutFor("workspace.move-note");
+  elements.moveNote.title = moveNoteShortcut
+    ? `Move or rename current note (${moveNoteShortcut})`
+    : "Move or rename current note";
 }
 
 function renderNewNoteDialog(): void {
@@ -953,6 +997,222 @@ async function createNewNote(): Promise<void> {
     showToast(`Created ${response.outcome.path}`);
   }
   window.setTimeout(() => editor.focus(), 0);
+}
+
+function moveResolutionText(resolution: NoteMoveBlocker["before"]): string {
+  if (resolution.status === "resolved") {
+    return resolution.path ? `Resolved to ${resolution.path}` : "Resolved";
+  }
+  if (resolution.status === "ambiguous") {
+    const candidates = resolution.candidates ?? [];
+    if (candidates.length === 0) {
+      return "Ambiguous";
+    }
+    const visible = candidates.slice(0, 4).join(", ");
+    const remainder = candidates.length - 4;
+    return `Ambiguous between ${visible}${remainder > 0 ? ` and ${remainder} more` : ""}`;
+  }
+  return "Unresolved";
+}
+
+function renderMoveNoteDialog(): void {
+  const staleVault = Boolean(
+    moveNoteVaultId && moveNoteVaultId !== (currentSnapshot?.vault.id ?? null),
+  );
+  const staleNote = Boolean(
+    moveNoteSourcePath &&
+      moveNoteRevision &&
+      (!loadedNote ||
+        loadedNote.path !== moveNoteSourcePath ||
+        loadedNote.revision !== moveNoteRevision),
+  );
+  if ((staleVault || staleNote) && !elements.moveNoteError.textContent) {
+    elements.moveNoteError.textContent = staleVault
+      ? "The active vault changed. Cancel and reopen Move."
+      : "The note changed on disk. Cancel, review it, and reopen Move.";
+  }
+
+  const message = elements.moveNoteError.textContent ?? "";
+  elements.moveNoteError.hidden = message.length === 0;
+  elements.moveNoteCurrentPath.textContent = moveNoteSourcePath ?? "No note selected";
+  elements.moveNoteTarget.disabled = moveNoteBusy;
+  elements.moveNoteClose.disabled = moveNoteBusy;
+  elements.moveNoteCancel.disabled = moveNoteBusy;
+  elements.moveNoteSubmit.disabled = moveNoteBusy || staleVault || staleNote;
+  elements.moveNoteSubmit.textContent = moveNoteBusy ? "Checking…" : "Check and move";
+  elements.moveNoteForm.setAttribute("aria-busy", String(moveNoteBusy));
+  elements.moveNoteVault.textContent = staleVault
+    ? "Vault changed"
+    : currentSnapshot
+      ? `In ${currentSnapshot.vault.name}`
+      : "Active vault";
+
+  elements.moveNoteBlockerList.replaceChildren();
+  elements.moveNoteBlockers.hidden = moveNoteBlockers.length === 0;
+  elements.moveNoteBlockerSummary.textContent =
+    moveNoteBlockers.length === 1
+      ? "1 internal link resolution would change"
+      : `${moveNoteBlockers.length} internal link resolutions would change`;
+  for (const blocker of moveNoteBlockers.slice(0, 100)) {
+    const item = document.createElement("li");
+    const origin = document.createElement("span");
+    origin.className = "move-note-blocker-origin";
+    origin.textContent = `${blocker.documentPath} · ${blocker.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
+    const target = document.createElement("code");
+    target.textContent = blocker.target;
+    const change = document.createElement("span");
+    change.className = "move-note-blocker-change";
+    const before = document.createElement("span");
+    before.dataset.status = blocker.before.status;
+    before.textContent = moveResolutionText(blocker.before);
+    const arrow = document.createElement("span");
+    arrow.className = "move-note-blocker-arrow";
+    arrow.ariaHidden = "true";
+    arrow.textContent = "→";
+    const after = document.createElement("span");
+    after.dataset.status = blocker.after.status;
+    after.textContent = moveResolutionText(blocker.after);
+    change.append(before, arrow, after);
+    item.append(origin, target, change);
+    elements.moveNoteBlockerList.append(item);
+  }
+  if (moveNoteBlockers.length > 100) {
+    const remainder = document.createElement("li");
+    remainder.className = "move-note-blocker-more";
+    remainder.textContent = `${moveNoteBlockers.length - 100} more blockers are not shown.`;
+    elements.moveNoteBlockerList.append(remainder);
+  }
+}
+
+function openMoveNoteDialog(): void {
+  if (elements.moveNoteDialog.open) {
+    elements.moveNoteTarget.focus();
+    elements.moveNoteTarget.select();
+    return;
+  }
+  if (!loadedNote || !loadedVaultId || busy || saving || dirty) {
+    showToast(
+      dirty
+        ? "Save or revert the current note before moving it."
+        : loadedNote
+          ? "Threadleaf is finishing another action."
+          : "Open a note before moving or renaming it.",
+    );
+    return;
+  }
+  if (elements.commandPalette.open) {
+    closeCommandPalette(false);
+  }
+  moveNoteRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  moveNoteBusy = false;
+  moveNoteVaultId = loadedVaultId;
+  moveNoteSourcePath = loadedNote.path;
+  moveNoteRevision = loadedNote.revision;
+  moveNoteBlockers = [];
+  elements.moveNoteTarget.value = loadedNote.path;
+  elements.moveNoteError.textContent = "";
+  elements.moveNoteDialog.showModal();
+  renderMoveNoteDialog();
+  window.requestAnimationFrame(() => {
+    const nameStart = loadedNote ? loadedNote.path.lastIndexOf("/") + 1 : 0;
+    const nameEnd = Math.max(nameStart, elements.moveNoteTarget.value.length - 3);
+    elements.moveNoteTarget.focus();
+    elements.moveNoteTarget.setSelectionRange(nameStart, nameEnd);
+  });
+}
+
+function closeMoveNoteDialog(restoreFocus = true): void {
+  if (!elements.moveNoteDialog.open || moveNoteBusy) {
+    return;
+  }
+  elements.moveNoteDialog.close();
+  moveNoteVaultId = null;
+  moveNoteSourcePath = null;
+  moveNoteRevision = null;
+  moveNoteBlockers = [];
+  elements.moveNoteError.textContent = "";
+  const restoreTarget = moveNoteRestoreFocus;
+  moveNoteRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function moveCurrentNote(): Promise<void> {
+  const expectedVaultId = moveNoteVaultId;
+  const sourcePath = moveNoteSourcePath;
+  const expectedRevision = moveNoteRevision;
+  if (!expectedVaultId || !sourcePath || !expectedRevision || moveNoteBusy) {
+    return;
+  }
+  const requestedPath = elements.moveNoteTarget.value.trim();
+  if (!requestedPath) {
+    elements.moveNoteError.textContent = "Enter a new vault-relative path.";
+    moveNoteBlockers = [];
+    renderMoveNoteDialog();
+    elements.moveNoteTarget.focus();
+    return;
+  }
+  if (
+    currentSnapshot?.vault.id !== expectedVaultId ||
+    loadedNote?.path !== sourcePath ||
+    loadedNote.revision !== expectedRevision
+  ) {
+    elements.moveNoteError.textContent =
+      "The vault or note changed. Cancel, review the current note, and reopen Move.";
+    moveNoteBlockers = [];
+    renderMoveNoteDialog();
+    return;
+  }
+
+  let response: NoteMoveResponse | null = null;
+  let committedPath: string | null = null;
+  moveNoteBusy = true;
+  moveNoteBlockers = [];
+  elements.moveNoteError.textContent = "";
+  renderMoveNoteDialog();
+  setActionState(true);
+  try {
+    response = await window.threadleaf.moveNote(
+      sourcePath,
+      requestedPath,
+      expectedRevision,
+      expectedVaultId,
+    );
+    render(response.snapshot);
+    if (response.outcome.status === "committed") {
+      committedPath = response.outcome.to;
+    } else if (response.outcome.status === "blocked") {
+      moveNoteBlockers = response.outcome.blockers;
+      elements.moveNoteError.textContent = `Move blocked: ${response.outcome.blockers.length} internal link resolution${response.outcome.blockers.length === 1 ? "" : "s"} would change. No files were changed.`;
+    } else if (response.outcome.reason === "target-exists") {
+      elements.moveNoteError.textContent = `${response.outcome.to} already exists. No files were changed.`;
+    } else if (response.outcome.reason === "source-revision-changed") {
+      elements.moveNoteError.textContent =
+        "The note changed on disk while Threadleaf checked the move. No files were changed.";
+    } else {
+      elements.moveNoteError.textContent = `The move could not commit (${response.outcome.reason}). No files were changed.`;
+    }
+  } catch (error) {
+    elements.moveNoteError.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    moveNoteBusy = false;
+    setActionState(false);
+    if (elements.moveNoteDialog.open) {
+      renderMoveNoteDialog();
+    }
+  }
+
+  if (committedPath) {
+    closeMoveNoteDialog(false);
+    setDocumentView("source", false);
+    showToast(`Moved note to ${committedPath}`);
+    window.setTimeout(() => editor.focus(), 0);
+  } else if (response) {
+    elements.moveNoteTarget.focus();
+    elements.moveNoteTarget.select();
+  }
 }
 
 function openSettings(): void {
@@ -1426,6 +1686,9 @@ function render(snapshot: RuntimeSnapshot): void {
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
   }
+  if (elements.moveNoteDialog.open) {
+    renderMoveNoteDialog();
+  }
 }
 
 function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): void {
@@ -1877,6 +2140,7 @@ function renderEditControls(): void {
   elements.editState.dataset.state = state;
   elements.editState.textContent = label;
   elements.newNote.disabled = busy || saving || dirty;
+  elements.moveNote.disabled = busy || saving || dirty || !loadedNote || !loadedVaultId;
   elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
   renderTabs(currentSnapshot?.workspace?.tabs ?? [], loadedNote?.path ?? null);
@@ -2159,6 +2423,10 @@ elements.newNote.addEventListener(
   "click",
   () => void executeRendererCommand("workspace.create-note"),
 );
+elements.moveNote.addEventListener(
+  "click",
+  () => void executeRendererCommand("workspace.move-note"),
+);
 elements.saveNote.addEventListener("click", () => void executeRendererCommand("editor.save-note"));
 elements.revertNote.addEventListener(
   "click",
@@ -2243,6 +2511,27 @@ elements.newNoteDialog.addEventListener("click", (event) => {
   }
 });
 
+elements.moveNoteTarget.addEventListener("input", () => {
+  moveNoteBlockers = [];
+  elements.moveNoteError.textContent = "";
+  renderMoveNoteDialog();
+});
+elements.moveNoteForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void moveCurrentNote();
+});
+elements.moveNoteClose.addEventListener("click", () => closeMoveNoteDialog());
+elements.moveNoteCancel.addEventListener("click", () => closeMoveNoteDialog());
+elements.moveNoteDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeMoveNoteDialog();
+});
+elements.moveNoteDialog.addEventListener("click", (event) => {
+  if (event.target === elements.moveNoteDialog) {
+    closeMoveNoteDialog();
+  }
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.repeat) {
     return;
@@ -2252,7 +2541,11 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
   }
   if (targetId === "ui.command-palette") {
-    if (elements.settingsDialog.open || elements.newNoteDialog.open) {
+    if (
+      elements.settingsDialog.open ||
+      elements.newNoteDialog.open ||
+      elements.moveNoteDialog.open
+    ) {
       return;
     }
     event.preventDefault();
@@ -2264,7 +2557,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (targetId === "settings.open-keybindings") {
-    if (elements.newNoteDialog.open) {
+    if (elements.newNoteDialog.open || elements.moveNoteDialog.open) {
       return;
     }
     event.preventDefault();
@@ -2275,7 +2568,12 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
-  if (elements.commandPalette.open || elements.settingsDialog.open || elements.newNoteDialog.open) {
+  if (
+    elements.commandPalette.open ||
+    elements.settingsDialog.open ||
+    elements.newNoteDialog.open ||
+    elements.moveNoteDialog.open
+  ) {
     return;
   }
   if (targetId) {

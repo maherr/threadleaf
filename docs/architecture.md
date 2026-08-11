@@ -216,6 +216,12 @@ moved note's identity. Any difference blocks the operation and returns structure
 writing. This is the safe baseline for a later atomic link-rewrite transaction; it does not claim
 automatic rewriting yet.
 
+The desktop Move action dispatches through the same service. It carries the active vault identity
+and source revision across IPC, refuses dirty drafts, and keeps blocked or conflicting requests in
+a reviewable dialog. Each blocker names its document, syntax, target, and before/after resolution.
+After a committed move, the runtime refreshes the derived index and remaps every open tab from the
+old path to the new one before publishing its next snapshot.
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable

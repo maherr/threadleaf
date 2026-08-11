@@ -119,6 +119,7 @@
                 <button id="read-view" type="button" aria-pressed="false">Read</button>
               </fieldset>
               <span class="edit-state" id="edit-state" data-state="empty">No note</span>
+              <button class="toolbar-button" id="move-note" type="button" disabled>Move</button>
               <button class="toolbar-button" id="revert-note" type="button" disabled>Revert</button>
               <button class="toolbar-button save-button" id="save-note" type="button" disabled>
                 Save <kbd id="save-shortcut">⌘S</kbd>
@@ -345,6 +346,66 @@
           <span>
             <button class="secondary-button" id="new-note-cancel" type="button">Cancel</button>
             <button class="primary-button" id="new-note-create" type="submit">Create note</button>
+          </span>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog move-note-dialog"
+      id="move-note-dialog"
+      aria-labelledby="move-note-title"
+      aria-describedby="move-note-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="move-note-form">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">↗</span>
+          <span>
+            <small>Whole-vault link check</small>
+            <strong id="move-note-title">Move or rename this note</strong>
+          </span>
+          <button id="move-note-close" type="button" aria-label="Cancel move note">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="move-note-description" class="new-note-description">
+          Enter a new vault-relative path. Threadleaf moves the note only when every indexed wiki
+          and Markdown link keeps the same meaning. This build does not rewrite links.
+        </p>
+        <div class="move-note-current">
+          <span>Current path</span>
+          <code id="move-note-current-path">No note selected</code>
+        </div>
+        <label class="new-note-field" for="move-note-target">
+          <span>New path</span>
+          <input
+            id="move-note-target"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Archive/Renamed note"
+            maxlength="4096"
+            required
+          />
+        </label>
+        <p class="new-note-error" id="move-note-error" role="alert" hidden></p>
+        <section
+          class="move-note-blockers"
+          id="move-note-blockers"
+          aria-labelledby="move-note-blocker-summary"
+          hidden
+        >
+          <strong id="move-note-blocker-summary">Links that would change</strong>
+          <ol id="move-note-blocker-list"></ol>
+        </section>
+        <footer class="new-note-footer">
+          <span id="move-note-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="move-note-cancel" type="button">Cancel</button>
+            <button class="primary-button" id="move-note-submit" type="submit">
+              Check and move
+            </button>
           </span>
         </footer>
       </form>

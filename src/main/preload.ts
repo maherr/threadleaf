@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   NoteCreateResponse,
+  NoteMoveResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
   ThreadleafBridge,
@@ -40,6 +41,14 @@ const bridge: ThreadleafBridge = {
       filePath,
       expectedVaultId,
     ) as Promise<RuntimeSnapshot>,
+  moveNote: (filePath, targetPath, expectedRevision, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.moveNote,
+      filePath,
+      targetPath,
+      expectedRevision,
+      expectedVaultId,
+    ) as Promise<NoteMoveResponse>,
   createNote: (filePath, content, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.createNote,

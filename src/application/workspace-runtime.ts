@@ -10,6 +10,8 @@ import { PluginHost } from "../runtime/plugin-host";
 import type {
   NoteCreateOutcome,
   NoteCreateResponse,
+  NoteMoveOutcome,
+  NoteMoveResponse,
   NoteSaveOutcome,
   NoteSaveResponse,
   RuntimeSnapshot,
@@ -22,6 +24,7 @@ import type {
 } from "../shared/contracts";
 import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
+import { movedMarkdownPath, moveMarkdownNote } from "./note-move";
 import { loadVaultImage } from "./vault-image-service";
 
 export interface WorkspaceRuntimeOptions {
@@ -50,6 +53,36 @@ interface CreateNoteRequest {
 interface CloseNoteRequest {
   path: string;
   expectedVaultId: string;
+}
+
+interface MoveNoteRequest {
+  path: string;
+  targetPath: string;
+  expectedRevision: string;
+  expectedVaultId: string;
+}
+
+function parseMoveNoteRequest(payload: unknown): MoveNoteRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("targetPath" in payload) ||
+    typeof payload.targetPath !== "string" ||
+    !("expectedRevision" in payload) ||
+    typeof payload.expectedRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Move note requires string path, target, revision, and vault values.");
+  }
+  return {
+    path: payload.path,
+    targetPath: payload.targetPath,
+    expectedRevision: payload.expectedRevision,
+    expectedVaultId: payload.expectedVaultId,
+  };
 }
 
 function parseCloseNoteRequest(payload: unknown): CloseNoteRequest {
@@ -179,6 +212,12 @@ export class WorkspaceRuntime {
         execute: (payload) => this.closeNoteThroughWorkspace(parseCloseNoteRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
+        id: "workspace.move-note",
+        name: "Move or rename note",
+        source: "workspace",
+        execute: (payload) => this.moveNoteThroughKernel(parseMoveNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
         id: "workspace.save-note",
         name: "Save note",
         source: "workspace",
@@ -251,6 +290,21 @@ export class WorkspaceRuntime {
       expectedVaultId,
     });
     return this.publishSnapshot();
+  }
+
+  async moveNote(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteMoveResponse> {
+    const outcome = await this.actions.dispatch<NoteMoveOutcome>("workspace.move-note", {
+      path: filePath,
+      targetPath,
+      expectedRevision,
+      expectedVaultId,
+    });
+    return { outcome, snapshot: await this.publishSnapshot() };
   }
 
   async searchVault(query: string): Promise<VaultSearchResponse> {
@@ -408,6 +462,36 @@ export class WorkspaceRuntime {
       throw new Error("The active vault changed before this tab could be closed.");
     }
     this.removeOpenPath(normalizeVaultPath(request.path));
+  }
+
+  private async moveNoteThroughKernel(request: MoveNoteRequest): Promise<NoteMoveOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this note could be moved.");
+    }
+    const sourcePath = normalizeVaultPath(request.path);
+    const targetPath = movedMarkdownPath(sourcePath, request.targetPath);
+    const outcome = await moveMarkdownNote(
+      this.kernel,
+      sourcePath,
+      targetPath,
+      request.expectedRevision,
+    );
+    if (outcome.status !== "committed") {
+      return outcome;
+    }
+
+    const target = await this.kernel.readText(outcome.to);
+    this.watcher.operations.expect({
+      id: outcome.transactionId,
+      kind: "rename",
+      from: outcome.from,
+      to: outcome.to,
+      revision: target.revision,
+    });
+    this.indexReactor.index.remove(outcome.from);
+    await this.indexReactor.index.refresh(this.kernel, outcome.to);
+    this.moveOpenPath(outcome.from, outcome.to);
+    return outcome;
   }
 
   private async saveNoteThroughKernel(request: SaveNoteRequest): Promise<NoteSaveOutcome> {

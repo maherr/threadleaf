@@ -1,29 +1,8 @@
 import path from "node:path";
 import { type LinkResolution, MetadataIndex } from "../kernel/metadata-index";
 import { normalizeMarkdownNotePath } from "../kernel/note-path";
-import type {
-  VaultMutationPort,
-  VaultReadPort,
-  VaultRenameResult,
-  VaultTextSnapshot,
-} from "../kernel/ports";
-
-export interface NoteMoveBlocker {
-  documentPath: string;
-  target: string;
-  syntax: "wiki" | "markdown";
-  before: LinkResolution;
-  after: LinkResolution;
-}
-
-export type NoteMoveOutcome =
-  | VaultRenameResult
-  | {
-      status: "blocked";
-      from: string;
-      to: string;
-      blockers: NoteMoveBlocker[];
-    };
+import type { VaultMutationPort, VaultReadPort, VaultTextSnapshot } from "../kernel/ports";
+import type { NoteMoveBlocker, NoteMoveOutcome } from "../shared/contracts";
 
 class SnapshotVault implements VaultReadPort {
   readonly #name: string;
@@ -99,6 +78,7 @@ export async function moveMarkdownNote(
   vault: VaultMutationPort,
   requestedSourcePath: string,
   requestedTargetPath: string,
+  expectedSourceRevision?: string,
 ): Promise<NoteMoveOutcome> {
   const sourcePath = normalizeMarkdownNotePath(requestedSourcePath);
   const targetPath = normalizeMarkdownNotePath(requestedTargetPath);
@@ -115,6 +95,18 @@ export async function moveMarkdownNote(
   }
 
   const snapshots = await Promise.all(paths.map((filePath) => vault.readText(filePath)));
+  const source = snapshots.find((snapshot) => snapshot.path === sourcePath);
+  if (!source) {
+    throw new Error(`Move preflight lost its source snapshot: ${sourcePath}`);
+  }
+  if (expectedSourceRevision && source.revision !== expectedSourceRevision) {
+    return {
+      status: "conflict",
+      from: sourcePath,
+      to: targetPath,
+      reason: "source-revision-changed",
+    };
+  }
   const currentVault = new SnapshotVault(vault.getName(), snapshots);
   const projectedSnapshots = snapshots.map((snapshot) =>
     snapshot.path === sourcePath ? { ...snapshot, path: targetPath } : snapshot,
@@ -159,10 +151,6 @@ export async function moveMarkdownNote(
 
   if (blockers.length > 0) {
     return { status: "blocked", from: sourcePath, to: targetPath, blockers };
-  }
-  const source = snapshots.find((snapshot) => snapshot.path === sourcePath);
-  if (!source) {
-    throw new Error(`Move preflight lost its source snapshot: ${sourcePath}`);
   }
   return vault.renameFile(sourcePath, targetPath, source.revision);
 }

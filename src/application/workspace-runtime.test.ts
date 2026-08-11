@@ -64,6 +64,7 @@ describe("WorkspaceRuntime", () => {
         source: "plugin",
       },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
+      { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
     ]);
@@ -140,6 +141,85 @@ describe("WorkspaceRuntime", () => {
     expect(deleted.workspace).toMatchObject({
       tabs: [{ path: "Linked Note.md", active: true }],
       activeNote: { path: "Linked Note.md" },
+    });
+  });
+
+  it("moves an open note through the link-safe service and remaps its tab", async () => {
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+
+    const moved = await workspace.moveNote(
+      note.path,
+      "Archive/Welcome",
+      note.revision,
+      workspace.vaultId,
+    );
+
+    expect(moved.outcome).toMatchObject({
+      status: "committed",
+      from: "Welcome.md",
+      to: "Archive/Welcome.md",
+    });
+    expect(moved.snapshot.workspace).toMatchObject({
+      tabs: [
+        { path: "Linked Note.md", active: false },
+        { path: "Archive/Welcome.md", active: true },
+      ],
+      activeNote: { path: "Archive/Welcome.md", content: note.content },
+    });
+    await expect(fs.stat(path.join(vaultPath, "Welcome.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Archive", "Welcome.md"), "utf8")).resolves.toBe(
+      note.content,
+    );
+  });
+
+  it("returns exact blockers without moving a linked note", async () => {
+    const workspace = await openRuntime();
+    const snapshot = await workspace.getSnapshot();
+    const note = snapshot.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+    await expect(
+      workspace.moveNote(note.path, "Renamed", note.revision, "stale-vault"),
+    ).rejects.toThrow("active vault changed");
+
+    const blocked = await workspace.moveNote(
+      note.path,
+      "Renamed",
+      note.revision,
+      workspace.vaultId,
+    );
+
+    expect(blocked.outcome).toMatchObject({
+      status: "blocked",
+      from: "Linked Note.md",
+      to: "Renamed.md",
+      blockers: [
+        {
+          documentPath: "Welcome.md",
+          target: "Linked Note",
+          syntax: "wiki",
+          before: { status: "resolved", path: "Linked Note.md" },
+          after: { status: "unresolved" },
+        },
+      ],
+    });
+    expect(blocked.snapshot.workspace).toMatchObject({
+      tabs: [{ path: "Linked Note.md", active: true }],
+      activeNote: { path: "Linked Note.md" },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).resolves.toBe(
+      note.content,
+    );
+    await expect(fs.stat(path.join(vaultPath, "Renamed.md"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
   });
 
@@ -471,6 +551,7 @@ describe("WorkspaceRuntime", () => {
     expect(unloaded.actions).toEqual([
       { id: "workspace.close-note", name: "Close note", source: "workspace" },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
+      { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
     ]);

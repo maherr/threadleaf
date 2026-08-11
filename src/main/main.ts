@@ -132,6 +132,26 @@ function registerIpcHandlers(): void {
     return workspaceController.closeNote(filePath, expectedVaultId);
   });
   ipcMain.handle(
+    ipcChannels.moveNote,
+    (
+      _event,
+      filePath: unknown,
+      targetPath: unknown,
+      expectedRevision: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof targetPath !== "string" ||
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Move note requires string path, target, revision, and vault values.");
+      }
+      return workspaceController.moveNote(filePath, targetPath, expectedRevision, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
     ipcChannels.createNote,
     (_event, filePath: unknown, content: unknown, expectedVaultId: unknown) => {
       if (

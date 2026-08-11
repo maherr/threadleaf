@@ -1,6 +1,7 @@
 import type { StateRootPort } from "../kernel/ports";
 import type {
   NoteCreateResponse,
+  NoteMoveResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
   VaultImageResponse,
@@ -26,6 +27,12 @@ export interface WorkspaceRuntimePort {
   ): Promise<VaultImageResponse>;
   openNote(filePath: string): Promise<RuntimeSnapshot>;
   closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  moveNote(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteMoveResponse>;
   createNote(
     filePath: string,
     content: string,
@@ -184,6 +191,15 @@ export class WorkspaceController {
 
   closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
     return this.#runtime.closeNote(filePath, expectedVaultId);
+  }
+
+  moveNote(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteMoveResponse> {
+    return this.#runtime.moveNote(filePath, targetPath, expectedRevision, expectedVaultId);
   }
 
   createNote(

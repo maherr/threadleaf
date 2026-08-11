@@ -10,6 +10,7 @@ export const ipcChannels = {
   chooseVault: "threadleaf:choose-vault",
   openNote: "threadleaf:open-note",
   closeNote: "threadleaf:close-note",
+  moveNote: "threadleaf:move-note",
   createNote: "threadleaf:create-note",
   saveNote: "threadleaf:save-note",
   runCommand: "threadleaf:run-command",

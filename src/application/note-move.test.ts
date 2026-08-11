@@ -143,6 +143,24 @@ describe("link-safe note moves", () => {
     );
   });
 
+  it("rejects a move prepared from an older source revision", async () => {
+    await fs.writeFile(path.join(vaultPath, "Old.md"), "current", "utf8");
+    const kernel = await openKernel();
+
+    const result = await moveMarkdownNote(kernel, "Old.md", "New.md", "0".repeat(64));
+
+    expect(result).toEqual({
+      status: "conflict",
+      from: "Old.md",
+      to: "New.md",
+      reason: "source-revision-changed",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Old.md"), "utf8")).resolves.toBe("current");
+    await expect(fs.stat(path.join(vaultPath, "New.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("preserves an external target that appears after preflight", async () => {
     await fs.writeFile(path.join(vaultPath, "Old.md"), "old", "utf8");
     const kernel = await openKernel();

@@ -59,3 +59,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Ordered session tabs with deduplicated note activation, safe neighbor selection on close,
   external rename and deletion reconciliation, dirty-draft guards, remappable keyboard actions,
   accessible horizontal overflow, and no vault-owned workspace state.
+- Desktop move and rename through the whole-vault link-integrity preflight, with vault and revision
+  binding, exact before/after blocker evidence, no-clobber conflicts, dirty-draft protection,
+  remappable Ctrl/Cmd+Shift+M, and open-tab remapping after a successful move.

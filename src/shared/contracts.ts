@@ -172,6 +172,35 @@ export interface NoteCreateResponse {
   snapshot: RuntimeSnapshot;
 }
 
+export interface NoteMoveLinkResolution {
+  status: "resolved" | "unresolved" | "ambiguous";
+  path?: string;
+  candidates?: string[];
+}
+
+export interface NoteMoveBlocker {
+  documentPath: string;
+  target: string;
+  syntax: "wiki" | "markdown";
+  before: NoteMoveLinkResolution;
+  after: NoteMoveLinkResolution;
+}
+
+export type NoteMoveOutcome =
+  | { status: "committed"; from: string; to: string; transactionId: string }
+  | { status: "conflict"; from: string; to: string; reason: string }
+  | {
+      status: "blocked";
+      from: string;
+      to: string;
+      blockers: NoteMoveBlocker[];
+    };
+
+export interface NoteMoveResponse {
+  outcome: NoteMoveOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
 export type VaultImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 export type VaultImageUnavailableReason =
@@ -227,6 +256,12 @@ export interface ThreadleafBridge {
   unloadPlugin(): Promise<RuntimeSnapshot>;
   openNote(path: string): Promise<RuntimeSnapshot>;
   closeNote(path: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  moveNote(
+    path: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteMoveResponse>;
   createNote(path: string, content: string, expectedVaultId: string): Promise<NoteCreateResponse>;
   saveNote(
     path: string,

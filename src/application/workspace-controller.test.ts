@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type {
   NoteCreateResponse,
+  NoteMoveResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
   VaultImageResponse,
@@ -71,6 +72,12 @@ class FakeRuntime implements WorkspaceRuntimePort {
   readonly #listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
   closedNote: { filePath: string; expectedVaultId: string } | null = null;
+  movedNote: {
+    filePath: string;
+    targetPath: string;
+    expectedRevision: string;
+    expectedVaultId: string;
+  } | null = null;
   closed = false;
 
   constructor(options: WorkspaceRuntimeOptions) {
@@ -119,6 +126,24 @@ class FakeRuntime implements WorkspaceRuntimePort {
   async closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
     this.closedNote = { filePath, expectedVaultId };
     return this.#snapshot;
+  }
+
+  async moveNote(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteMoveResponse> {
+    this.movedNote = { filePath, targetPath, expectedRevision, expectedVaultId };
+    return {
+      outcome: {
+        status: "committed",
+        from: filePath,
+        to: targetPath,
+        transactionId: "move",
+      },
+      snapshot: this.#snapshot,
+    };
   }
 
   async createNote(
@@ -377,6 +402,34 @@ describe("WorkspaceController", () => {
 
     expect(harness.runtimes[0]?.closedNote).toEqual({
       filePath: "Notes/Current.md",
+      expectedVaultId,
+    });
+    await controller.close();
+  });
+
+  it("forwards a note move with its revision and active vault identity", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+    const expectedRevision = "a".repeat(64);
+
+    await controller.moveNote(
+      "Notes/Current.md",
+      "Archive/Current.md",
+      expectedRevision,
+      expectedVaultId,
+    );
+
+    expect(harness.runtimes[0]?.movedNote).toEqual({
+      filePath: "Notes/Current.md",
+      targetPath: "Archive/Current.md",
+      expectedRevision,
       expectedVaultId,
     });
     await controller.close();

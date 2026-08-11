@@ -47,10 +47,13 @@ use the recovery-backed writer. They require an existing note, preserve its line
 and keep a full proposed conflict copy if an external edit wins the revision race. Headless move
 and rename commands project the complete post-move index before writing. They proceed only when
 every wiki and Markdown link keeps the same resolution, and otherwise return exact blockers without
-changing the vault. Runtime-owned tabs keep one ordered entry per open note, reactivate an existing
-entry instead of duplicating it, follow externally renamed notes, and remove externally deleted
-notes. Closing an active tab selects its right neighbor, then its left neighbor. Tab state is
-session-local and does not write workspace metadata into the vault.
+changing the vault. The desktop Move action and Ctrl/Cmd+Shift+M use that same preflight, bind the
+request to the active vault and note revision, show exact link-resolution blockers, reject
+destination collisions, and remap open tabs after a successful move. Runtime-owned tabs keep one
+ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
+externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
+right neighbor, then its left neighbor. Tab state is session-local and does not write workspace
+metadata into the vault.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
@@ -102,7 +105,9 @@ reading view. Ctrl/Cmd+W closes the active clean tab; Alt+Left and Alt+Right mov
 Reading view previews the current draft without saving it; clicking a source-line control returns
 to the exact source line. Relative and vault-rooted local raster images render without exposing
 filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New note dialog and
-selects the resulting empty Markdown note for editing.
+selects the resulting empty Markdown note for editing. Ctrl/Cmd+Shift+M opens Move for the active
+clean note. Threadleaf commits only when the projected whole-vault index preserves every internal
+link resolution; blocked moves stay reviewable in the dialog and write nothing.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 
