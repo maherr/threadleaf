@@ -15,8 +15,12 @@ plugin, provides it with an independently implemented `obsidian` compatibility m
 command, and exercises that command through an isolated Electron renderer. The fixture completes
 the documented load, activation, integration, command, reload, and unload lifecycles.
 
+Phase 1 is in progress. The unintegrated vault kernel now proves canonical path containment,
+durable recovery journals, external-edit conflict preservation, serialized writes, and recoverable
+renames against filesystem fixtures.
+
 Do not use the current build with an important vault. Phase 0 uses only a synthetic fixture vault
-and implements no user-file writes.
+and the desktop application exposes no user-file writes.
 
 ## Product promises
 

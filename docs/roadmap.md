@@ -26,15 +26,17 @@ changing any fixture byte.
 
 ## Phase 1: Safe vault kernel
 
-- Canonical path handling and symlink policy.
-- Port-based filesystem and state-root adapters.
-- Sequenced, batched file watching with rename pairing.
-- Overflow, ambiguity, sequence-gap, subtree-scan, and full-rescan behavior.
-- Atomic write and crash-recovery journal.
-- Content revisions, external-edit detection, and conflict copies.
-- Recoverable rename and multi-file mutation transactions.
-- Rebuildable metadata and link index.
-- Incremental-versus-clean-rebuild equivalence tests.
+- [x] Canonical path handling and symlink policy.
+- [x] State-root port and fixed-path adapter.
+- [ ] Port-based filesystem adapter.
+- [ ] Sequenced, batched file watching with rename pairing.
+- [ ] Overflow, ambiguity, sequence-gap, subtree-scan, and full-rescan behavior.
+- [x] Durable no-clobber writes and crash-recovery journal.
+- [x] Content revisions, external-edit detection, conflict copies, and writer serialization.
+- [x] Recoverable single-file rename.
+- [ ] Recoverable multi-file mutation transactions.
+- [ ] Rebuildable metadata and link index.
+- [ ] Incremental-versus-clean-rebuild equivalence tests.
 
 Exit gate: interruption, concurrent external-edit, rename, and recovery fixtures lose no bytes.
 Every watcher fallback converges, and every incremental index snapshot equals a clean rebuild.

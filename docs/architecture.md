@@ -76,6 +76,18 @@ External changes are preserved. A stale writer never overwrites them silently; i
 conflict result and can create an explicit keep-both copy through the same writer. Watcher
 suppression is operation-aware rather than a time-only ignore window.
 
+The portable writer favors no-clobber installation over an unchecked replace. It durably stages a
+complete file beside its target, moves the old directory entry to a transaction-owned rollback
+name, and links the staged inode into the target only while that name remains absent. A concurrent
+external create therefore becomes a conflict instead of an overwrite. During that short operation,
+another process can observe the target name as absent, but never observe partially written bytes.
+The recovery journal restores or reconciles that state after interruption.
+
+This protects against crashes and ordinary concurrent editors. It is not a security boundary
+against a malicious process running as the same operating-system user, which can race filesystem
+operations after validation. Symlink and canonical-path checks fail closed whenever such a change
+is observed.
+
 ## Initial component model
 
 ```text
