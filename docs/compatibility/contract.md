@@ -27,6 +27,18 @@ Proprietary application code, copied assets, and decompiled bundled resources ar
 Third-party directories, feature tables, stars, and README claims are discovery inputs only. They
 do not raise a compatibility level without a production-path fixture.
 
+## Pre-enablement evidence
+
+The installed-package catalog reports evidence before execution. Manifest metadata states an
+Obsidian API baseline and desktop-only flag; it is not proof of compatibility. Standard plugin
+packages bundle external dependencies into `main.js` and do not declare a cross-plugin dependency
+graph in `manifest.json`, so Threadleaf states that model instead of fabricating dependencies.
+
+Workflow evidence is keyed by plugin ID and exact version. An exact tested release may display its
+measured level and named scope. A different release remains level 0 and names the prior tested
+version only as context. An otherwise valid unknown package is discovered at level 0 until a
+production-path fixture raises it.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

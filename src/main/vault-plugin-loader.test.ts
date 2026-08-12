@@ -61,6 +61,11 @@ describe("vault plugin loader", () => {
       version: "1.2.3",
       packageState: "ready",
       stylesheetDiscovered: true,
+      compatibility: {
+        level: 0,
+        status: "unverified",
+        testedVersion: null,
+      },
     });
     expect(discovery.warnings).toEqual([]);
   });
@@ -121,6 +126,11 @@ describe("vault plugin loader", () => {
 
     expect(catalog.plugins).toHaveLength(3);
     expect(catalog.plugins.filter((plugin) => plugin.packageState === "invalid")).toHaveLength(2);
+    expect(
+      catalog.plugins
+        .filter((plugin) => plugin.packageState === "invalid")
+        .every((plugin) => plugin.compatibility.level === 0),
+    ).toBe(true);
     expect(catalog.warnings.join("\n")).toContain("does not match folder");
     expect(catalog.warnings.join("\n")).toContain("main.js is missing");
     expect(catalog.warnings.join("\n")).toContain("not installed");

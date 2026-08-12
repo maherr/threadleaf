@@ -147,8 +147,9 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [ ] Add per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
 - [ ] Implement reviewable install, update, rollback, and uninstall against an open package index,
       with exact version pins, integrity checks, retained licenses, and no silent bundle execution.
-- [ ] Add dependency, minimum-app-version, desktop-only, and compatibility-level reporting before a
-      plugin can be enabled.
+- [x] Add minimum-app-version, desktop-only, standard bundled-dependency-model, and exact-version
+      compatibility-level reporting before a plugin can be enabled.
+- [ ] Add static capability and permission reporting before enablement.
 - [ ] Import behavior with an explicit preview: enabled-plugin inventory, compatible plugin
       settings, hotkeys, themes, CSS snippets, and workspace layout. Never require or mutate
       `.obsidian/`.

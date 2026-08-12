@@ -19,12 +19,22 @@ export interface PluginManifestData {
   isDesktopOnly: boolean;
 }
 
+export type PluginCompatibilityEvidenceStatus = "verified" | "different-version" | "unverified";
+
+export interface PluginCompatibilityReport {
+  level: 0 | 4;
+  status: PluginCompatibilityEvidenceStatus;
+  testedVersion: string | null;
+  summary: string;
+}
+
 export type PluginPackageState = "ready" | "invalid";
 
 export interface PluginPackageSummary extends PluginManifestData {
   source: "obsidian-vault";
   packageState: PluginPackageState;
   stylesheetDiscovered: boolean;
+  compatibility: PluginCompatibilityReport;
   error: string | null;
 }
 
@@ -47,6 +57,17 @@ export const defaultVaultPluginSettings: Readonly<VaultPluginSettings> = {
 };
 
 const pluginIdPattern = /^[a-z0-9][a-z0-9-]{0,127}$/;
+
+const verifiedPluginWorkflows: Readonly<Record<string, { version: string; workflow: string }>> = {
+  "obsidian-excalidraw-plugin": {
+    version: "2.25.3",
+    workflow: "Open, create, embed, SVG and PNG export, unload, and reload",
+  },
+  "threadleaf-fixture": {
+    version: "0.1.0",
+    workflow: "Activation, command execution, notice delivery, and unload",
+  },
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -106,6 +127,35 @@ export function parsePluginManifest(value: unknown): PluginManifestData {
     author: optionalString(value.author, "author", 200),
     authorUrl: optionalString(value.authorUrl, "authorUrl", 2_000),
     isDesktopOnly: value.isDesktopOnly ?? false,
+  };
+}
+
+export function createPluginCompatibilityReport(
+  manifest: Pick<PluginManifestData, "id" | "version">,
+): PluginCompatibilityReport {
+  const evidence = verifiedPluginWorkflows[manifest.id];
+  if (!evidence) {
+    return {
+      level: 0,
+      status: "unverified",
+      testedVersion: null,
+      summary:
+        "Package structure is valid. No production-path workflow is verified for this exact plugin version.",
+    };
+  }
+  if (evidence.version !== manifest.version) {
+    return {
+      level: 0,
+      status: "different-version",
+      testedVersion: evidence.version,
+      summary: `${evidence.workflow} workflows passed on ${evidence.version}; installed ${manifest.version} remains unverified.`,
+    };
+  }
+  return {
+    level: 4,
+    status: "verified",
+    testedVersion: evidence.version,
+    summary: `${evidence.workflow} workflows passed on this exact version.`,
   };
 }
 

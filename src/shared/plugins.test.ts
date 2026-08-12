@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultVaultPluginSettings,
+  createPluginCompatibilityReport,
   parsePluginManifest,
   parseVaultPluginSettings,
 } from "./plugins";
@@ -50,5 +51,29 @@ describe("plugin compatibility settings", () => {
         enabledPluginIds: ["fixture", "fixture"],
       }),
     ).toThrow("unique");
+  });
+
+  it("keeps compatibility evidence exact to the tested plugin version", () => {
+    expect(
+      createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.25.3" }),
+    ).toMatchObject({
+      level: 4,
+      status: "verified",
+      testedVersion: "2.25.3",
+    });
+    expect(
+      createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.26.0" }),
+    ).toMatchObject({
+      level: 0,
+      status: "different-version",
+      testedVersion: "2.25.3",
+    });
+    expect(createPluginCompatibilityReport({ id: "unknown-plugin", version: "1.0.0" })).toEqual({
+      level: 0,
+      status: "unverified",
+      testedVersion: null,
+      summary:
+        "Package structure is valid. No production-path workflow is verified for this exact plugin version.",
+    });
   });
 });

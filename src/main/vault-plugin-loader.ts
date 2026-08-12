@@ -1,6 +1,7 @@
 import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import {
+  createPluginCompatibilityReport,
   maxPluginBundleBytes,
   type PluginCatalogSnapshot,
   type PluginPackageSummary,
@@ -212,6 +213,12 @@ function invalidSummary(folderId: string, message: string): PluginPackageSummary
     source: "obsidian-vault",
     packageState: "invalid",
     stylesheetDiscovered: false,
+    compatibility: {
+      level: 0,
+      status: "unverified",
+      testedVersion: null,
+      summary: "Package validation failed before a compatibility workflow could run.",
+    },
     error: message,
   };
 }
@@ -273,6 +280,7 @@ async function inspectPlugin(
         source: "obsidian-vault",
         packageState: "ready",
         stylesheetDiscovered: stylesheetPath !== null,
+        compatibility: createPluginCompatibilityReport(manifest),
         error: null,
       },
       directoryPath,

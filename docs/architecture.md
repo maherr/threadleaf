@@ -193,6 +193,13 @@ containment, and byte limits before a package is eligible to run. Installed inve
 imply enablement. The enabled IDs and restricted-mode choice live in version 3 private application
 settings under the vault identity.
 
+Discovery also creates a pre-enablement report. It presents the manifest's minimum Obsidian API
+version and desktop-only flag, explains that the standard package model bundles external
+dependencies into `main.js` rather than declaring a cross-plugin dependency graph, and attaches
+only exact-version workflow evidence. A plugin or version without a production-path fixture stays
+at level 0. Evidence from another release is shown as historical context, not inherited as a
+compatibility claim.
+
 The main process serializes catalog and lifecycle operations so activation cannot race a vault
 switch or another enablement change. Reconciliation unloads runtime instances that are no longer
 selected, then activates each remaining selected package independently. One activation failure is

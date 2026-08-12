@@ -111,6 +111,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Community-plugin Settings with installed-package search, runtime and package status, enable
   switches, recovery diagnostics, familiar normalized desktop geometry, small-window behavior,
   keyboard names and focus, and verified light, dark, and moderate-deuteranomaly states.
+- Pre-enablement plugin reports with the declared Obsidian API baseline, desktop-only flag,
+  standard bundled-dependency model, and exact-version compatibility evidence. Unknown versions
+  remain visibly discovered at level 0 instead of inheriting another release's test result.
 - Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the
   private selected set while loading no community JavaScript or CSS.
 - Dedicated Electron compatibility renderer with Node integration isolated from the sandboxed main

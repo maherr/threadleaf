@@ -46,6 +46,28 @@ the plugin's normal `saveData` path on close, restores it on reopen, and removes
 close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
 not implied by those results.
 
+## Pre-enablement report
+
+Settings shows a read-only preflight before a package can be selected. Each row includes:
+
+- the exact installed plugin version;
+- `minAppVersion` as the plugin's declared Obsidian API baseline, without pretending that the
+  number is a Threadleaf version;
+- the `isDesktopOnly` flag, or an explicit statement that no desktop-only flag was declared;
+- the standard bundled-dependency model; and
+- an evidence level, exact tested version, and named workflow summary.
+
+The [standard Obsidian manifest](https://docs.obsidian.md/Reference/Manifest) has no cross-plugin
+dependency field. The [official plugin structure](https://github.com/obsidianmd/obsidian-api#plugin-structure)
+expects external packages to be bundled into `main.js`, so Threadleaf does not invent a dependency
+graph from plugin descriptions or filenames. Static module and capability inspection remains
+separate future work.
+
+Evidence never transfers silently between releases. Excalidraw 2.25.3 and Threadleaf's 0.1.0
+compatibility fixture report their measured level 4 workflows. Another Excalidraw version reports
+the tested 2.25.3 reference but remains unverified at level 0. Every unknown valid package starts at
+discovered level 0. Invalid packages explain that validation stopped before a workflow could run.
+
 Vault resources now expose contained browser URLs through `Vault.getResourcePath`. The compatible
 desktop `FileSystemAdapter` provides `basePath`, `url.pathToFileURL`, `getBasePath`, `getFilePath`,
 `getResourcePath`, `exists`, `stat`, `list`, `read`, and `readBinary`. It can read hidden files as
@@ -149,7 +171,7 @@ starting normally restores the persisted preference.
 ## Remaining work
 
 - Per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
-- Minimum-app-version, desktop-only, dependency, and permission reporting before enablement.
+- Static capability and permission reporting before enablement.
 - An explicit import preview for existing enabled-plugin inventory, settings, hotkeys, and layout.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.

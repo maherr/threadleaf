@@ -2266,7 +2266,15 @@ function renderPluginSettings(): void {
 
   const query = elements.pluginSearch.value.trim().toLocaleLowerCase("en-US");
   const visiblePlugins = installed.filter((plugin) =>
-    [plugin.name, plugin.id, plugin.description ?? "", plugin.author ?? ""]
+    [
+      plugin.name,
+      plugin.id,
+      plugin.description ?? "",
+      plugin.author ?? "",
+      plugin.minAppVersion ?? "",
+      plugin.isDesktopOnly ? "desktop only" : "",
+      plugin.compatibility.summary,
+    ]
       .join(" ")
       .toLocaleLowerCase("en-US")
       .includes(query),
@@ -2293,10 +2301,40 @@ function renderPluginSettings(): void {
     const description = document.createElement("small");
     description.textContent =
       plugin.error ?? plugin.description ?? "No description was provided in manifest.json.";
+    const preflight = document.createElement("span");
+    preflight.className = "plugin-preflight";
+    preflight.ariaLabel = `Compatibility preflight for ${plugin.name}`;
+    const evidence = document.createElement("span");
+    evidence.className = "plugin-preflight-badge";
+    evidence.dataset.evidence =
+      plugin.packageState === "invalid" ? "invalid" : plugin.compatibility.status;
+    evidence.textContent =
+      plugin.packageState === "invalid"
+        ? "× Package invalid"
+        : plugin.compatibility.status === "verified"
+          ? `◆ Tested L${plugin.compatibility.level}`
+          : plugin.compatibility.status === "different-version"
+            ? "△ Version untested"
+            : `◇ Discovered L${plugin.compatibility.level}`;
+    const apiBaseline = document.createElement("span");
+    apiBaseline.className = "plugin-preflight-badge";
+    apiBaseline.textContent = plugin.minAppVersion
+      ? `Obsidian API ≥ ${plugin.minAppVersion}`
+      : "API baseline unknown";
+    const platform = document.createElement("span");
+    platform.className = "plugin-preflight-badge";
+    platform.textContent = plugin.isDesktopOnly ? "Desktop only" : "No desktop-only flag";
+    const dependencies = document.createElement("span");
+    dependencies.className = "plugin-preflight-badge";
+    dependencies.textContent = "Deps: bundled model";
+    preflight.append(evidence, apiBaseline, platform, dependencies);
+    const compatibilityEvidence = document.createElement("small");
+    compatibilityEvidence.className = "plugin-compatibility-evidence";
+    compatibilityEvidence.textContent = `Evidence: ${plugin.compatibility.summary}`;
     const author = document.createElement("small");
     author.className = "plugin-author";
     author.textContent = plugin.author ? `By ${plugin.author}` : plugin.id;
-    copy.append(nameLine, description, author);
+    copy.append(nameLine, description, preflight, compatibilityEvidence, author);
 
     const controls = document.createElement("span");
     controls.className = "plugin-row-controls";

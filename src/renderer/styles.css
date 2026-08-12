@@ -2734,6 +2734,25 @@ button.inspector-item:hover {
   padding-top: 8px;
 }
 
+.plugin-preflight-explainer {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-left: 4px double var(--accent-strong);
+  border-radius: 6px;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--accent-soft) 38%, var(--surface-sunken));
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.plugin-preflight-explainer strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
 .plugin-search-field {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
@@ -2821,6 +2840,53 @@ button.inspector-item:hover {
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.plugin-preflight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.plugin-preflight-badge {
+  padding: 3px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--ink-soft);
+  background: var(--surface-sunken);
+  font: 7px / 1.15 var(--mono);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.plugin-preflight-badge[data-evidence="verified"] {
+  border-style: double;
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+  font-weight: 850;
+}
+
+.plugin-preflight-badge[data-evidence="different-version"] {
+  border-style: dashed;
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.plugin-preflight-badge[data-evidence="invalid"] {
+  border-width: 2px;
+  border-style: dashed;
+  border-color: var(--signal);
+  color: var(--signal);
+  font-weight: 850;
+}
+
+.plugin-copy > .plugin-compatibility-evidence {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .plugin-author {

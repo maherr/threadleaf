@@ -99,7 +99,11 @@ Community-plugin management now discovers standard `.obsidian/plugins/<id>/manif
 keeps its enabled set and restricted-mode choice in private per-vault application settings, never
 in `.obsidian/`. Multiple selected plugins reconcile independently at startup and after enable,
 disable, or reload operations. A full Settings catalog reports invalid packages and runtime load
-failures without hiding the rest of the inventory. Startup plugin safe mode preserves the saved
+failures without hiding the rest of the inventory. Before enablement, each package reports its
+declared Obsidian API baseline, desktop-only flag, standard bundled-dependency model, and measured
+compatibility evidence. Evidence is exact to the tested plugin version: Excalidraw 2.25.3 reports
+its named level 4 workflows, a different release remains unverified, and an unknown plugin starts
+at discovered level 0. Startup plugin safe mode preserves the saved
 selection while loading no community code or CSS. The compatibility host remains an explicitly
 trusted desktop runtime in a separate transient Electron session with Node integration, a
 browser `connect-src 'none'` policy, denied browser permissions, blocked popups and
