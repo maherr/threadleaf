@@ -3,7 +3,12 @@ import { VaultIndexReactor } from "../kernel/metadata-index";
 import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
 import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
 import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
-import type { StateRootPort, VaultDirectoryCreateResult, VaultWriteResult } from "../kernel/ports";
+import type {
+  StateRootPort,
+  VaultDirectoryCreateResult,
+  VaultRenameResult,
+  VaultWriteResult,
+} from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
@@ -619,6 +624,47 @@ export class WorkspaceRuntime {
         await this.indexReactor.index.refresh(this.kernel, outcome.path);
       }
       await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
+    }
+    await this.publishSnapshot();
+    return outcome;
+  }
+
+  async renamePluginFile(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this plugin file could be renamed.");
+    }
+    const normalizedSource = normalizeVaultPath(filePath);
+    const normalizedTarget = normalizeVaultPath(targetPath);
+    if (hasPrivateVaultSegment(normalizedSource) || hasPrivateVaultSegment(normalizedTarget)) {
+      throw new Error(
+        `Plugin file renames cannot target private application paths: ${filePath} to ${targetPath}`,
+      );
+    }
+    const outcome = await this.kernel.renameFile(
+      normalizedSource,
+      normalizedTarget,
+      expectedRevision,
+    );
+    if (outcome.status === "committed") {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "rename",
+        from: outcome.from,
+        to: outcome.to,
+        revision: expectedRevision,
+      });
+      this.indexReactor.index.remove(outcome.from);
+      await this.indexReactor.index.refresh(this.kernel, outcome.to);
+      if (this.moveOpenPath(outcome.from, outcome.to)) {
+        await this.persistWorkspaceStateBestEffort();
+      }
+    } else {
+      await this.indexReactor.index.rebuild(this.kernel);
     }
     await this.publishSnapshot();
     return outcome;

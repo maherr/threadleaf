@@ -8,6 +8,7 @@ import {
   parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
+  parsePluginVaultRenameRequest,
   parsePluginVaultWriteBinaryRequest,
   parsePluginVaultWriteRequest,
   requirePayloadString,
@@ -120,6 +121,31 @@ describe("plugin renderer protocol", () => {
         expectedRevision: revision,
       }),
     ).toThrow("ArrayBuffer content");
+  });
+
+  it("validates revision-bound plugin vault rename requests", () => {
+    const revision = "c".repeat(64);
+    expect(
+      parsePluginVaultRenameRequest({
+        vaultPath: "/vault",
+        sourcePath: "Exports/Drawing.png",
+        targetPath: "Assets/Drawing.png",
+        expectedRevision: revision,
+      }),
+    ).toEqual({
+      vaultPath: "/vault",
+      sourcePath: "Exports/Drawing.png",
+      targetPath: "Assets/Drawing.png",
+      expectedRevision: revision,
+    });
+    expect(() =>
+      parsePluginVaultRenameRequest({
+        vaultPath: "/vault",
+        sourcePath: "Exports/Drawing.png",
+        targetPath: "",
+        expectedRevision: revision,
+      }),
+    ).toThrow("vault, source, target");
   });
 
   it("validates plugin file and folder create requests", () => {

@@ -226,6 +226,54 @@ describe("Obsidian compatibility vault writes", () => {
     expect(modified).toHaveBeenCalledOnce();
   });
 
+  it("renames binary files through FileManager without changing bytes or leaving stale paths", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-binary-rename-"));
+    temporaryDirectories.push(rootPath);
+    await fs.mkdir(path.join(rootPath, "Exports"));
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 0xff, 1, 2, 3]);
+    await fs.writeFile(path.join(rootPath, "Exports", "Drawing.png"), bytes);
+    const renameFile = vi.fn(
+      async (sourcePath: string, targetPath: string, expectedRevision: string) => {
+        expect(expectedRevision).toBe(revisionOf(bytes));
+        await fs.mkdir(path.dirname(path.join(rootPath, targetPath)), { recursive: true });
+        await fs.rename(path.join(rootPath, sourcePath), path.join(rootPath, targetPath));
+        return {
+          status: "committed" as const,
+          from: sourcePath,
+          to: targetPath,
+          transactionId: "binary-rename",
+        };
+      },
+    );
+    const vault = new Vault(rootPath, undefined, { renameFile, writeText: vi.fn() });
+    const file = vault.getFileByPath("Exports/Drawing.png");
+    if (!file) {
+      throw new Error("Binary rename fixture was not discovered.");
+    }
+    const renamed = vi.fn();
+    vault.on("rename", renamed);
+
+    await new FileManager(vault).renameFile(file, "Assets/Renamed.png");
+
+    expect(renameFile).toHaveBeenCalledWith(
+      "Exports/Drawing.png",
+      "Assets/Renamed.png",
+      revisionOf(bytes),
+    );
+    expect(file).toMatchObject({
+      path: "Assets/Renamed.png",
+      name: "Renamed.png",
+      basename: "Renamed",
+      extension: "png",
+    });
+    expect(vault.getFileByPath("Exports/Drawing.png")).toBeNull();
+    expect(vault.getFileByPath("Assets/Renamed.png")).not.toBeNull();
+    expect(await fs.readFile(path.join(rootPath, "Assets", "Renamed.png"))).toEqual(
+      Buffer.from(bytes),
+    );
+    expect(renamed).toHaveBeenCalledWith(file, "Exports/Drawing.png");
+  });
+
   it("surfaces retained conflict paths and rejects files from another vault", async () => {
     const { file, rootPath } = await createVaultFile();
     const writer = {

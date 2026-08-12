@@ -12,6 +12,8 @@ import {
   type PluginVaultCreateFolderResponse,
   type PluginVaultCreateRequest,
   type PluginVaultCreateResponse,
+  type PluginVaultRenameRequest,
+  type PluginVaultRenameResponse,
   type PluginVaultWriteBinaryRequest,
   type PluginVaultWriteBinaryResponse,
   type PluginVaultWriteRequest,
@@ -23,6 +25,7 @@ export interface PluginRendererVaultMutations {
   createBinary?(request: PluginVaultCreateBinaryRequest): Promise<PluginVaultCreateBinaryResponse>;
   createFolder(request: PluginVaultCreateFolderRequest): Promise<PluginVaultCreateFolderResponse>;
   createText(request: PluginVaultCreateRequest): Promise<PluginVaultCreateResponse>;
+  renameFile?(request: PluginVaultRenameRequest): Promise<PluginVaultRenameResponse>;
   writeBinary?(request: PluginVaultWriteBinaryRequest): Promise<PluginVaultWriteBinaryResponse>;
   writeText(request: PluginVaultWriteRequest): Promise<PluginVaultWriteResponse>;
 }
@@ -47,6 +50,7 @@ export class PluginRendererService {
         await this.close();
         const vaultMutations = this.vaultMutations;
         const createBinary = vaultMutations?.createBinary;
+        const renameFile = vaultMutations?.renameFile;
         const writeBinary = vaultMutations?.writeBinary;
         this.host = new PluginHost(
           vaultPath,
@@ -66,6 +70,15 @@ export class PluginRendererService {
                   vaultMutations.createText({ vaultPath, filePath, content }),
                 createFolder: (folderPath) =>
                   vaultMutations.createFolder({ vaultPath, folderPath }),
+                ...(renameFile
+                  ? {
+                      renameFile: (
+                        sourcePath: string,
+                        targetPath: string,
+                        expectedRevision: string,
+                      ) => renameFile({ vaultPath, sourcePath, targetPath, expectedRevision }),
+                    }
+                  : {}),
                 ...(createBinary
                   ? {
                       createBinary: (filePath: string, content: Uint8Array) =>

@@ -150,3 +150,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Public `Workspace.detachLeavesOfType` compatibility plus plugin-owned modal tracking, with a
   measured active-canvas Excalidraw unload and two clean reload cycles that remove and restore the
   exact command, view, processor, suggester, ribbon, settings, leaf, and transient-UI inventory.
+- Public `Vault.rename` and `FileManager.renameFile` compatibility for revision-bound plugin files,
+  routed through the active workspace's recovery journal, watcher suppression, index refresh, and
+  open-path remapping with explicit stale-revision conflict retention.
+- An executable Excalidraw byte-compatibility corpus covering real plugin Markdown, PNG, and SVG
+  fixtures, external edits, interrupted writes and renames, conflict proposals, recovery, and exact
+  SHA-256 preservation, plus a live unchanged-plugin attachment rename through Electron.

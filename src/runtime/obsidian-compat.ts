@@ -5,7 +5,12 @@ import moment from "moment";
 import { parse as parseYaml } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
-import type { VaultDirectoryCreateResult, VaultReadPort, VaultWriteResult } from "../kernel/ports";
+import type {
+  VaultDirectoryCreateResult,
+  VaultReadPort,
+  VaultRenameResult,
+  VaultWriteResult,
+} from "../kernel/ports";
 import type { CommandSummary, NoteCreateOutcome } from "../shared/contracts";
 import { Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
@@ -95,6 +100,11 @@ export interface CompatibilityVaultWritePort {
   createBinary?(relativePath: string, content: Uint8Array): Promise<NoteCreateOutcome>;
   createFolder?(relativePath: string): Promise<VaultDirectoryCreateResult>;
   createText?(relativePath: string, content: string): Promise<NoteCreateOutcome>;
+  renameFile?(
+    sourcePath: string,
+    targetPath: string,
+    expectedRevision: string,
+  ): Promise<VaultRenameResult>;
   writeBinary?(
     relativePath: string,
     content: Uint8Array,
@@ -440,6 +450,59 @@ export class Vault {
     return folder;
   }
 
+  async rename(file: TAbstractFile, newPath: string): Promise<void> {
+    if (!this.#writer?.renameFile) {
+      throw new Error(
+        "Plugin file renames are not available in the read-only compatibility runtime.",
+      );
+    }
+    if (!(file instanceof TFile)) {
+      throw new Error("Plugin folder renames are not supported yet.");
+    }
+    if (file.vault !== this) {
+      throw new Error("Plugin vault renames require a file from the active compatibility vault.");
+    }
+    const sourcePath = normalizePath(file.path);
+    const targetPath = normalizePath(newPath);
+    let expectedRevision = this.revisions.get(sourcePath);
+    if (!expectedRevision) {
+      await this.readBinary(file);
+      expectedRevision = this.revisions.get(sourcePath);
+    }
+    if (!expectedRevision) {
+      throw new Error(`Could not establish the current revision for ${sourcePath}.`);
+    }
+    const outcome = await this.trackMutation(() =>
+      this.#writer?.renameFile?.(sourcePath, targetPath, expectedRevision),
+    );
+    if (!outcome) {
+      throw new Error(
+        "Plugin file renames are not available in the read-only compatibility runtime.",
+      );
+    }
+    if (outcome.status === "conflict") {
+      throw new Error(
+        `Plugin rename conflict for ${sourcePath} to ${targetPath}: ${outcome.reason}.`,
+      );
+    }
+    this.revisions.delete(sourcePath);
+    this.revisions.set(targetPath, expectedRevision);
+    const mutableFile = file as unknown as {
+      basename: string;
+      extension: string;
+      name: string;
+      path: string;
+    };
+    mutableFile.path = targetPath;
+    mutableFile.name = path.posix.basename(targetPath);
+    mutableFile.extension = path.posix.extname(targetPath).slice(1);
+    mutableFile.basename =
+      mutableFile.extension.length > 0
+        ? mutableFile.name.slice(0, -(mutableFile.extension.length + 1))
+        : mutableFile.name;
+    this.trigger("rename", file, sourcePath);
+  }
+
   async waitForSettledMutations(quietMs = 75, timeoutMs = 5_000): Promise<void> {
     const startedAt = Date.now();
     let observedVersion = this.mutationVersion;
@@ -544,6 +607,10 @@ export class FileManager {
 
   constructor(vault: Vault) {
     this.vault = vault;
+  }
+
+  renameFile(file: TAbstractFile, newPath: string): Promise<void> {
+    return this.vault.rename(file, newPath);
   }
 
   async getAvailablePathForAttachment(filename: string, sourcePath: string): Promise<string> {

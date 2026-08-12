@@ -1,4 +1,9 @@
-import type { StateRootPort, VaultDirectoryCreateResult, VaultWriteResult } from "../kernel/ports";
+import type {
+  StateRootPort,
+  VaultDirectoryCreateResult,
+  VaultRenameResult,
+  VaultWriteResult,
+} from "../kernel/ports";
 import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
@@ -66,6 +71,12 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<VaultWriteResult>;
+  renamePluginFile(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult>;
   createPluginFolder(
     folderPath: string,
     expectedVaultId: string,
@@ -318,6 +329,15 @@ export class WorkspaceController {
     expectedVaultId: string,
   ): Promise<VaultWriteResult> {
     return this.#runtime.writePluginFile(filePath, content, expectedRevision, expectedVaultId);
+  }
+
+  renamePluginFile(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult> {
+    return this.#runtime.renamePluginFile(filePath, targetPath, expectedRevision, expectedVaultId);
   }
 
   createPluginFolder(

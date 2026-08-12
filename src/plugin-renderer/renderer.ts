@@ -5,6 +5,7 @@ import {
   type PluginVaultCreateBinaryResponse,
   type PluginVaultCreateFolderResponse,
   type PluginVaultCreateResponse,
+  type PluginVaultRenameResponse,
   type PluginVaultWriteBinaryResponse,
   type PluginVaultWriteResponse,
   parsePluginRendererRequest,
@@ -30,6 +31,11 @@ const service = new PluginRendererService({
       pluginRendererChannels.vaultCreate,
       request,
     ) as Promise<PluginVaultCreateResponse>,
+  renameFile: (request) =>
+    ipcRenderer.invoke(
+      pluginRendererChannels.vaultRename,
+      request,
+    ) as Promise<PluginVaultRenameResponse>,
   writeBinary: (request) =>
     ipcRenderer.invoke(
       pluginRendererChannels.vaultWriteBinary,

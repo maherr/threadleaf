@@ -95,6 +95,12 @@ class FakeRuntime implements WorkspaceRuntimePort {
     content: string;
     expectedVaultId: string;
   } | null = null;
+  renamedPluginFile: {
+    filePath: string;
+    targetPath: string;
+    expectedRevision: string;
+    expectedVaultId: string;
+  } | null = null;
   closed = false;
 
   constructor(options: WorkspaceRuntimeOptions) {
@@ -255,6 +261,21 @@ class FakeRuntime implements WorkspaceRuntimePort {
       path: filePath,
       revision: "a".repeat(64),
       transactionId: "plugin-file-write",
+    };
+  }
+
+  async renamePluginFile(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ) {
+    this.renamedPluginFile = { filePath, targetPath, expectedRevision, expectedVaultId };
+    return {
+      status: "committed" as const,
+      from: filePath,
+      to: targetPath,
+      transactionId: "plugin-file-rename",
     };
   }
 

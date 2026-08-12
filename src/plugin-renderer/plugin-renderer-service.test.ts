@@ -8,6 +8,7 @@ import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import type {
   PluginRendererRequest,
   PluginVaultCreateBinaryRequest,
+  PluginVaultRenameRequest,
   PluginVaultWriteBinaryRequest,
   PluginVaultWriteRequest,
 } from "../shared/plugin-runtime-protocol";
@@ -108,6 +109,7 @@ module.exports = class RendererFixture extends Plugin {
         await this.app.vault.createFolder("Binary");
         const file = await this.app.vault.createBinary("Binary/Preview.png", Uint8Array.from([137, 80, 78, 71, 0, 255]).buffer);
         await this.app.vault.modifyBinary(file, Uint8Array.from([137, 80, 78, 71, 1, 2, 3, 0, 255]).buffer);
+        await this.app.fileManager.renameFile(file, "Binary/Renamed.png");
       },
     });
     this.registerView("renderer-view", (leaf) => new RendererView(leaf));
@@ -150,6 +152,7 @@ module.exports = class RendererFixture extends Plugin {
 
       const writes: PluginVaultWriteRequest[] = [];
       const binaryCreates: PluginVaultCreateBinaryRequest[] = [];
+      const binaryRenames: PluginVaultRenameRequest[] = [];
       const binaryWrites: PluginVaultWriteBinaryRequest[] = [];
       const createdFolders: string[] = [];
       const createdFiles: string[] = [];
@@ -190,6 +193,19 @@ module.exports = class RendererFixture extends Plugin {
             path: createRequest.filePath,
             revision: revisionOf(Buffer.from(createRequest.content, "utf8")),
             transactionId: "renderer-test-create",
+          };
+        },
+        renameFile: async (renameRequest) => {
+          binaryRenames.push(renameRequest);
+          await fs.rename(
+            path.join(renameRequest.vaultPath, renameRequest.sourcePath),
+            path.join(renameRequest.vaultPath, renameRequest.targetPath),
+          );
+          return {
+            status: "committed",
+            from: renameRequest.sourcePath,
+            to: renameRequest.targetPath,
+            transactionId: "renderer-test-binary-rename",
           };
         },
         writeBinary: async (writeRequest) => {
@@ -328,7 +344,18 @@ module.exports = class RendererFixture extends Plugin {
       expect(binaryWrites[0]?.expectedRevision).toBe(
         revisionOf(Uint8Array.from([137, 80, 78, 71, 0, 255])),
       );
-      await expect(fs.readFile(path.join(vaultPath, "Binary", "Preview.png"))).resolves.toEqual(
+      expect(binaryRenames).toEqual([
+        {
+          vaultPath,
+          sourcePath: "Binary/Preview.png",
+          targetPath: "Binary/Renamed.png",
+          expectedRevision: revisionOf(Uint8Array.from([137, 80, 78, 71, 1, 2, 3, 0, 255])),
+        },
+      ]);
+      await expect(
+        fs.readFile(path.join(vaultPath, "Binary", "Preview.png")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.readFile(path.join(vaultPath, "Binary", "Renamed.png"))).resolves.toEqual(
         Buffer.from([137, 80, 78, 71, 1, 2, 3, 0, 255]),
       );
 

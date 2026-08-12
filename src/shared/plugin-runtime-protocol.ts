@@ -7,6 +7,7 @@ export const pluginRendererChannels = {
   vaultCreate: "threadleaf:plugin-renderer-vault-create",
   vaultCreateBinary: "threadleaf:plugin-renderer-vault-create-binary",
   vaultCreateFolder: "threadleaf:plugin-renderer-vault-create-folder",
+  vaultRename: "threadleaf:plugin-renderer-vault-rename",
   vaultWrite: "threadleaf:plugin-renderer-vault-write",
   vaultWriteBinary: "threadleaf:plugin-renderer-vault-write-binary",
 } as const;
@@ -71,6 +72,17 @@ export interface PluginVaultWriteBinaryRequest {
 }
 
 export type PluginVaultWriteBinaryResponse = PluginVaultWriteResponse;
+
+export interface PluginVaultRenameRequest {
+  expectedRevision: string;
+  sourcePath: string;
+  targetPath: string;
+  vaultPath: string;
+}
+
+export type PluginVaultRenameResponse =
+  | { status: "committed"; from: string; to: string; transactionId: string }
+  | { status: "conflict"; from: string; to: string; reason: string };
 
 export type PluginRendererOperation =
   | "close"
@@ -252,6 +264,33 @@ export function parsePluginVaultWriteBinaryRequest(value: unknown): PluginVaultW
     vaultPath: candidate.vaultPath,
     filePath: candidate.filePath,
     content: candidate.content,
+    expectedRevision: candidate.expectedRevision,
+  };
+}
+
+export function parsePluginVaultRenameRequest(value: unknown): PluginVaultRenameRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin vault rename request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.sourcePath !== "string" ||
+    candidate.sourcePath.length === 0 ||
+    typeof candidate.targetPath !== "string" ||
+    candidate.targetPath.length === 0 ||
+    typeof candidate.expectedRevision !== "string" ||
+    !/^[0-9a-f]{64}$/.test(candidate.expectedRevision)
+  ) {
+    throw new Error(
+      "Plugin vault renames require vault, source, target, and SHA-256 revision strings.",
+    );
+  }
+  return {
+    vaultPath: candidate.vaultPath,
+    sourcePath: candidate.sourcePath,
+    targetPath: candidate.targetPath,
     expectedRevision: candidate.expectedRevision,
   };
 }

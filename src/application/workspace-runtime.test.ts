@@ -670,13 +670,30 @@ describe("WorkspaceRuntime", () => {
       workspace.vaultId,
     );
     expect(modifiedPng.status).toBe("committed");
+    if (modifiedPng.status !== "committed") {
+      throw new Error("Expected plugin binary modification to commit.");
+    }
+    const renamedPng = await workspace.renamePluginFile(
+      "Exports/Drawing.png",
+      "Assets/Renamed Drawing.png",
+      modifiedPng.revision,
+      workspace.vaultId,
+    );
+    expect(renamedPng).toMatchObject({
+      status: "committed",
+      from: "Exports/Drawing.png",
+      to: "Assets/Renamed Drawing.png",
+    });
     await expect(fs.readFile(path.join(vaultPath, "Exports", "Drawing.svg"))).resolves.toEqual(svg);
-    await expect(fs.readFile(path.join(vaultPath, "Exports", "Drawing.png"))).resolves.toEqual(
-      Buffer.from(secondPng),
+    await expect(fs.readFile(path.join(vaultPath, "Exports", "Drawing.png"))).rejects.toMatchObject(
+      { code: "ENOENT" },
     );
     await expect(
-      workspace.createPluginFile("Exports/Drawing.png", firstPng, workspace.vaultId),
-    ).resolves.toMatchObject({ status: "exists", path: "Exports/Drawing.png" });
+      fs.readFile(path.join(vaultPath, "Assets", "Renamed Drawing.png")),
+    ).resolves.toEqual(Buffer.from(secondPng));
+    await expect(
+      workspace.createPluginFile("Assets/Renamed Drawing.png", firstPng, workspace.vaultId),
+    ).resolves.toMatchObject({ status: "exists", path: "Assets/Renamed Drawing.png" });
     expect((await workspace.getSnapshot()).workspace?.activeNote?.path).toBe("Welcome.md");
     expect(
       (await workspace.getSnapshot()).workspace?.files.map(({ path: filePath }) => filePath),
@@ -687,6 +704,57 @@ describe("WorkspaceRuntime", () => {
     await expect(
       workspace.createPluginFile(".obsidian/Generated.png", firstPng, workspace.vaultId),
     ).rejects.toThrow("private application paths");
+  });
+
+  it("returns a plugin rename conflict after an external edit and rebuilds the Markdown index", async () => {
+    const workspace = await openRuntime();
+    const created = await workspace.createPluginNote(
+      "Excalidraw/Scene.excalidraw.md",
+      "original drawing",
+      workspace.vaultId,
+    );
+    if (created.status !== "committed") {
+      throw new Error("Expected the Excalidraw fixture to be created.");
+    }
+    await fs.writeFile(
+      path.join(vaultPath, "Excalidraw", "Scene.excalidraw.md"),
+      "external drawing",
+      "utf8",
+    );
+
+    await expect(
+      workspace.renamePluginFile(
+        "Excalidraw/Scene.excalidraw.md",
+        "Excalidraw/Renamed.excalidraw.md",
+        created.revision,
+        workspace.vaultId,
+      ),
+    ).resolves.toMatchObject({ status: "conflict", reason: "source-revision-changed" });
+    await expect(
+      fs.readFile(path.join(vaultPath, "Excalidraw", "Scene.excalidraw.md"), "utf8"),
+    ).resolves.toBe("external drawing");
+    await expect(
+      fs.stat(path.join(vaultPath, "Excalidraw", "Renamed.excalidraw.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await workspace.getSnapshot()).workspace?.files).toContainEqual(
+      expect.objectContaining({ path: "Excalidraw/Scene.excalidraw.md" }),
+    );
+    await expect(
+      workspace.renamePluginFile(
+        "Excalidraw/Scene.excalidraw.md",
+        ".obsidian/Renamed.excalidraw.md",
+        created.revision,
+        workspace.vaultId,
+      ),
+    ).rejects.toThrow("private application paths");
+    await expect(
+      workspace.renamePluginFile(
+        "Excalidraw/Scene.excalidraw.md",
+        "Excalidraw/Renamed.excalidraw.md",
+        created.revision,
+        "stale-vault",
+      ),
+    ).rejects.toThrow("active vault changed");
   });
 
   it("preserves a create race as a selected conflict note without overwriting the winner", async () => {

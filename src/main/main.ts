@@ -19,6 +19,7 @@ import {
   parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
+  parsePluginVaultRenameRequest,
   parsePluginVaultWriteBinaryRequest,
   parsePluginVaultWriteRequest,
   pluginRendererChannels,
@@ -377,6 +378,26 @@ function registerIpcHandlers(): void {
       throw new Error("The active vault changed before the plugin folder could be created.");
     }
     return workspaceController.createPluginFolder(request.folderPath, workspaceController.vaultId);
+  });
+  ipcMain.handle(pluginRendererChannels.vaultRename, async (event, value: unknown) => {
+    const pluginView = compatibilityPluginView;
+    if (
+      !pluginView ||
+      pluginView.webContents.isDestroyed() ||
+      event.sender !== pluginView.webContents
+    ) {
+      throw new Error("Plugin vault renames require the active compatibility renderer.");
+    }
+    const request = parsePluginVaultRenameRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin file could be renamed.");
+    }
+    return workspaceController.renamePluginFile(
+      request.sourcePath,
+      request.targetPath,
+      request.expectedRevision,
+      workspaceController.vaultId,
+    );
   });
   ipcMain.handle(pluginRendererChannels.vaultWrite, async (event, value: unknown) => {
     const pluginView = compatibilityPluginView;
