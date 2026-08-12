@@ -215,6 +215,18 @@ export class Workspace {
     });
   }
 
+  detachLeavesOfType(viewType: string): void {
+    for (const leaf of this.getLeavesOfType(viewType)) {
+      if (!leaf || typeof leaf !== "object" || !("detach" in leaf)) {
+        continue;
+      }
+      const detach = leaf.detach;
+      if (typeof detach === "function") {
+        void detach.call(leaf);
+      }
+    }
+  }
+
   iterateAllLeaves(callback: (leaf: unknown) => unknown): void {
     for (const leaf of this.leaves) {
       callback(leaf);

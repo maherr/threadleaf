@@ -113,10 +113,13 @@ distinct from ordinary Markdown editor chrome. The plugin can mutate an existing
 through Threadleaf's revision-bound recoverable writer, close the drawing leaf, and reconstruct the
 same persisted scene after reopening. That named edit, save, close, and reopen workflow is measured
 level 4. New drawing creation, native-editor embed insertion, and SVG/PNG vault export are also
-measured level 4 workflows. Inline wiki-embed rendering, untested export formats, and universal
-plugin parity remain unsupported. Excalidraw's release-notes modal and Threadleaf light/dark chrome
-also render, and its stylesheet is preserved while four remote font URLs are replaced with inert
-embedded assets. The runtime is still trusted:
+measured level 4 workflows. Full active-view unload and reload is measured too: plugin-owned
+transient UI, the drawing leaf, all 69 commands, and every registered integration are removed, and
+two reload cycles restore the exact command and integration counts without duplicates or runtime
+errors. Inline wiki-embed rendering, untested export formats, and universal plugin parity remain
+unsupported. Excalidraw's release-notes modal and Threadleaf light/dark chrome also render, and its
+stylesheet is preserved while four remote font URLs are replaced with inert embedded assets. The
+runtime is still trusted:
 Node-capable plugin code can perform its own I/O.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now

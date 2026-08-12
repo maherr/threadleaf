@@ -326,6 +326,7 @@ export class PluginHost implements PluginRuntimePort {
     if (!record || record.summary.state === "unloaded") {
       return this.getSnapshot();
     }
+    const modalCloseFailure = this.app.closePluginModals(record.summary.id);
     let unloadError: string | null = null;
     try {
       await record.instance?.__unload();
@@ -338,12 +339,25 @@ export class PluginHost implements PluginRuntimePort {
       ...record.summary,
       state: "unloaded",
       compatibilityLevel: 1,
-      error: unloadError,
+      error:
+        unloadError ??
+        (modalCloseFailure
+          ? modalCloseFailure instanceof Error
+            ? modalCloseFailure.message
+            : String(modalCloseFailure)
+          : null),
     };
     this.lastPluginId = targetId ?? this.lastPluginId;
     this.record("plugin", `Unloaded ${record.summary.name} and released its registrations.`);
     if (unloadError) {
       this.record("error", `${record.summary.name} onunload failed: ${unloadError}`);
+    } else if (modalCloseFailure) {
+      this.record(
+        "error",
+        `${record.summary.name} modal cleanup failed: ${
+          modalCloseFailure instanceof Error ? modalCloseFailure.message : String(modalCloseFailure)
+        }`,
+      );
     }
     return this.getSnapshot();
   }

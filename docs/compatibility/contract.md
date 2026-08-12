@@ -54,5 +54,9 @@ the exact saved file. A third workflow runs the unchanged auto-create-and-embed 
 native Markdown editor, creates the drawing through the recoverable kernel, and inserts its embed
 link into the revision-bound draft. A fourth opens Export Drawing and verifies both SVG-to-vault
 and PNG-to-vault creation and overwrite. The SVG parses as XML, while the PNG retains its exact
-binary signature and decodes as the expected image after closing and reopening the drawing. These
-results do not imply inline wiki-embed rendering, every export format, or full plugin unload pass.
+binary signature and decodes as the expected image after closing and reopening the drawing. A fifth
+workflow unloads Excalidraw while that drawing view is active. It proves the plugin instance,
+canvas leaf, plugin-owned release modal, all 69 commands, and every registered view, extension,
+processor, suggester, ribbon, and settings tab are gone, then repeats reload and unload without a
+duplicate or captured runtime error. These results do not imply inline wiki-embed rendering or
+every export format.

@@ -195,6 +195,12 @@ selected, then activates each remaining selected package independently. One acti
 retained as diagnostic state and does not prevent later packages from loading. Reload performs a
 clean unload before activation. Workspace shutdown unloads every instance.
 
+Lifecycle ownership includes commands, event registrations, view and extension factories,
+processors, editor suggestions, ribbons, status items, settings tabs, leaves, and transient modals
+that retain a direct reference to their creating plugin. Targeted unload closes only that plugin's
+owned modals and views before releasing its remaining registrations. Reload must reconstruct the
+same inventory without duplicates; a second plugin's modal is an explicit negative control.
+
 Plugin CSS crosses a separately bounded and CSP-constrained renderer channel. It is applied only
 for selected packages while compatibility mode is enabled. Imports and legacy executable CSS are
 rejected. Other non-embedded asset URLs are replaced with inert data URLs and reported before the

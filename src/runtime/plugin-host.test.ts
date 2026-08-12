@@ -98,6 +98,79 @@ describe("PluginHost", () => {
     );
   });
 
+  it("closes plugin-owned modals on unload without duplicating them after reload", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-modal-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "modal-fixture");
+    const otherPluginPath = path.join(vaultPath, ".obsidian", "plugins", "other-modal-fixture");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+      });
+      const pluginSource = `const { Modal, Plugin } = require("obsidian");
+class FixtureModal extends Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+  onOpen() { this.containerEl.addClass(this.plugin.manifest.id); }
+}
+module.exports = class ModalFixture extends Plugin {
+  async onload() { new FixtureModal(this.app, this).open(); }
+};
+`;
+      for (const [directoryPath, manifest] of [
+        [pluginPath, { id: "modal-fixture", name: "Modal fixture", version: "0.1.0" }],
+        [
+          otherPluginPath,
+          { id: "other-modal-fixture", name: "Other modal fixture", version: "0.1.0" },
+        ],
+      ] as const) {
+        await fs.mkdir(directoryPath, { recursive: true });
+        await fs.writeFile(
+          path.join(directoryPath, "manifest.json"),
+          JSON.stringify(manifest),
+          "utf8",
+        );
+        await fs.writeFile(path.join(directoryPath, "main.js"), pluginSource, "utf8");
+      }
+
+      const host = new PluginHost(vaultPath);
+      await host.loadPlugin(pluginPath);
+      await host.loadPlugin(otherPluginPath);
+      expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(1);
+      expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
+
+      await host.unloadPlugin("modal-fixture");
+      expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(0);
+      expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
+
+      await host.reloadPlugin("modal-fixture");
+      expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(1);
+      expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
+    } finally {
+      if (previousWindow === undefined) {
+        Reflect.deleteProperty(globalThis, "window");
+      } else {
+        globalThis.window = previousWindow;
+      }
+      if (previousDocument === undefined) {
+        Reflect.deleteProperty(globalThis, "document");
+      } else {
+        globalThis.document = previousDocument;
+      }
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("persists plugin data across reloads and host restarts", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-data-"));
     const vaultPath = path.join(sandboxPath, "vault");

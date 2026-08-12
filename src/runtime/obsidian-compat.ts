@@ -953,6 +953,21 @@ export class PluginManager {
   getPlugin(pluginId: string): Plugin | null {
     return this.plugins[pluginId] ?? null;
   }
+
+  ownerIdForReference(holder: object): string | null {
+    for (const [pluginId, plugin] of Object.entries(this.plugins)) {
+      if (holder === plugin) {
+        return pluginId;
+      }
+      for (const key of Reflect.ownKeys(holder)) {
+        const descriptor = Object.getOwnPropertyDescriptor(holder, key);
+        if (descriptor && "value" in descriptor && descriptor.value === plugin) {
+          return pluginId;
+        }
+      }
+    }
+    return null;
+  }
 }
 
 function createCanvasNode(file: TFile) {
@@ -1012,6 +1027,7 @@ export class App {
   readonly internalPlugins = createInternalPlugins();
   readonly keymap = new Keymap();
   readonly plugins = new PluginManager();
+  private readonly pluginModals = new Map<string, Set<{ close(): void }>>();
 
   constructor(vault: Vault, commands: CommandRegistry, notices: NoticeBus) {
     this.vault = vault;
@@ -1063,6 +1079,36 @@ export class App {
 
   createFile(filePath: string): TFile {
     return this.vault.getFileByPath(filePath) ?? new TFile(filePath, this.vault);
+  }
+
+  registerPluginModal(modal: { close(): void }): () => void {
+    const pluginId = this.plugins.ownerIdForReference(modal);
+    if (!pluginId) {
+      return () => {};
+    }
+    const modals = this.pluginModals.get(pluginId) ?? new Set<{ close(): void }>();
+    modals.add(modal);
+    this.pluginModals.set(pluginId, modals);
+    return () => {
+      modals.delete(modal);
+      if (modals.size === 0 && this.pluginModals.get(pluginId) === modals) {
+        this.pluginModals.delete(pluginId);
+      }
+    };
+  }
+
+  closePluginModals(pluginId: string): unknown | null {
+    const modals = [...(this.pluginModals.get(pluginId) ?? [])];
+    this.pluginModals.delete(pluginId);
+    let failure: unknown = null;
+    for (const modal of modals.reverse()) {
+      try {
+        modal.close();
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    return failure;
   }
 
   getAccentColor(): string {

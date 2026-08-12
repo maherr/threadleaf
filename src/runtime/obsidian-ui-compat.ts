@@ -674,6 +674,7 @@ export class Modal {
   readonly contentEl: HTMLElement;
   shouldRestoreSelection = true;
   private openState = false;
+  private releasePluginOwnership: (() => void) | null = null;
 
   constructor(app: App) {
     this.app = app;
@@ -700,8 +701,17 @@ export class Modal {
       return;
     }
     this.openState = true;
+    this.releasePluginOwnership = this.app.registerPluginModal(this);
     currentDocument().body.append(this.containerEl);
-    this.onOpen();
+    try {
+      this.onOpen();
+    } catch (error) {
+      this.openState = false;
+      this.containerEl.remove();
+      this.releasePluginOwnership?.();
+      this.releasePluginOwnership = null;
+      throw error;
+    }
   }
 
   close(): void {
@@ -713,6 +723,8 @@ export class Modal {
       this.onClose();
     } finally {
       this.containerEl.remove();
+      this.releasePluginOwnership?.();
+      this.releasePluginOwnership = null;
     }
   }
 

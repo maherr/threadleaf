@@ -34,8 +34,12 @@ vault, fully detaching the view on close, and reopening the exact persisted scen
 4 for that named workflow. The unchanged new-drawing command also reaches level 4: it creates the
 standard Excalidraw folder and Markdown file through Threadleaf's recovery-backed kernel, opens the
 new custom leaf through the built-in Markdown handoff, saves deterministic scene elements, closes
-the leaf, and reloads those elements from the exact persisted file. Embed, export, and full plugin
-unload remain unsupported and are not implied by those results.
+the leaf, and reloads those elements from the exact persisted file. Native-editor embed insertion
+and SVG/PNG vault export also reach level 4. The full unload fixture starts from an active drawing,
+removes the leaf, plugin-owned release modal, all 69 commands, and every registered integration,
+then completes two clean reload cycles with the exact original counts and no captured runtime
+error. Inline wiki-embed rendering, other export formats, and universal plugin parity are not
+implied by those results.
 
 ## Trust model
 
@@ -59,6 +63,8 @@ Threadleaf reconciles selected plugins after the vault runtime opens:
 Disable unloads the selected runtime instance. Reload performs clean unload and activation. Closing
 or replacing the workspace unloads every instance. Catalog and lifecycle operations are serialized
 and bound to the active vault identity so a late result cannot cross a vault switch.
+Plugin-owned modals that retain a direct reference to their plugin are tracked independently, so
+targeted unload closes that plugin's transient UI without closing another plugin's modal.
 
 Plugin stylesheets are applied only while the corresponding package is selected and compatibility
 mode is enabled. Imports and legacy executable CSS remain rejected. External and relative asset
@@ -102,4 +108,5 @@ starting normally restores the persisted preference.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
 - Broader workspace, editor, menu, settings-control, file, and metadata APIs.
-- Complete Excalidraw embed, export, full-plugin-unload, and byte-preservation workflows.
+- Complete Excalidraw inline wiki-embed, remaining export-format, and cross-application
+  byte-preservation workflows.

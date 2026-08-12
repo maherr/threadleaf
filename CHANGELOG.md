@@ -147,3 +147,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `Vault.modifyBinary`, with validated active-vault IPC and recovery-backed exact-byte writes.
 - Measured level 4 Excalidraw workflows for auto-creating a drawing and inserting its native-editor
   embed, plus SVG-to-vault and PNG-to-vault creation and overwrite with parsed-image verification.
+- Public `Workspace.detachLeavesOfType` compatibility plus plugin-owned modal tracking, with a
+  measured active-canvas Excalidraw unload and two clean reload cycles that remove and restore the
+  exact command, view, processor, suggester, ribbon, settings, leaf, and transient-UI inventory.
