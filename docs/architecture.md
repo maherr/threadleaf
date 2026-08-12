@@ -148,10 +148,12 @@ internal saves, external edits, moves, deletes, subtree rescans, and full rebuil
 draft does not appear until it crosses the recoverable save boundary, which the UI states plainly.
 
 Queries are bounded to 256 characters, 12 distinct AND terms, and at most 100 returned documents.
-Quoted text is one phrase. Ranking favors exact titles, then title, tag, heading, path, property, and
-body evidence; results retain bounded contextual lines and source line numbers. Every response
-carries the active vault ID and monotonic index generation. The renderer rejects a response that no
-longer matches its current vault, query, or generation and immediately requests the current result.
+Quoted text is one phrase. Exact folder scopes are applied before result limiting, and an explicit
+case-sensitive mode selects NFC-normalized original text rather than the default case-folded index.
+Ranking favors exact titles, then title, tag, heading, path, property, and body evidence; results
+retain bounded contextual lines and source line numbers. Every response carries the active vault ID
+and monotonic index generation. The renderer rejects a response that no longer matches its current
+vault, query, or generation and immediately requests the current result.
 
 The initial index is an in-memory normalized scan. That is the simplest correct implementation and
 already clears the current interactive scale baseline. `pnpm benchmark:search` measures rebuild,
@@ -198,6 +200,8 @@ and require an explicit vault path. Recovery-backed `append` and `prepend` exten
 surface for existing notes. `links`, `backlinks`, `unresolved`, `orphans`, `deadends`, and `outline`
 project the same rebuildable metadata snapshot used by the desktop. Their native JSON keeps link
 resolution states and occurrence counts explicit instead of deriving a second graph model.
+Compatibility output modes project that rich data into path-only search, grep-style context,
+totals, counts, JSON, TSV, CSV, outline trees, and Markdown without changing index authority.
 
 Recoverable `delete` moves exact note bytes to the same relative path under vault-local `.trash/`.
 `trash list` exposes those entries without adding them to the ordinary note corpus, and `restore`

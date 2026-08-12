@@ -114,6 +114,35 @@ describe("Threadleaf CLI arguments", () => {
     ).toMatchObject({ id: "search", query: "linked notes", limit: 7 });
     expect(
       parseCliArguments([
+        "--vault=/vault",
+        "search",
+        "query=Needle",
+        "path=Folder",
+        "limit=7",
+        "format=json",
+        "total",
+        "case",
+      ]),
+    ).toMatchObject({
+      id: "search",
+      query: "Needle",
+      folder: "Folder",
+      limit: 7,
+      format: "json",
+      totalOnly: true,
+      caseSensitive: true,
+    });
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
+        "search:context",
+        "query=needle",
+        "path=Folder",
+        "format=json",
+      ]),
+    ).toMatchObject({ id: "search.context", folder: "Folder", format: "json" });
+    expect(
+      parseCliArguments([
         "--vault",
         "/vault",
         "create",
@@ -273,6 +302,15 @@ describe("Threadleaf CLI arguments", () => {
         filePath: "Folder/Note.md",
       });
     }
+    expect(
+      parseCliArguments(["--vault=/vault", "backlinks", "file=Note", "counts", "format=csv"]),
+    ).toMatchObject({ id: "backlinks", counts: true, format: "csv" });
+    expect(
+      parseCliArguments(["--vault=/vault", "outline", "file=Note", "format=md", "total"]),
+    ).toMatchObject({ id: "outline", format: "md", totalOnly: true });
+    expect(
+      parseCliArguments(["--vault=/vault", "unresolved", "counts", "verbose", "format=json"]),
+    ).toMatchObject({ id: "unresolved", counts: true, verbose: true, format: "json" });
     for (const name of ["unresolved", "orphans", "deadends"] as const) {
       expect(parseCliArguments(["--vault=/vault", name])).toMatchObject({ id: name });
     }
@@ -323,8 +361,20 @@ describe("Threadleaf CLI arguments", () => {
     ).toThrow("option or parameter, not both");
     expect(() => parseCliArguments(["--vault", "/vault", "links"])).toThrow("requires exactly one");
     expect(() => parseCliArguments(["--vault", "/vault", "orphans", "extra"])).toThrow(
-      "does not accept arguments",
+      "optional total",
     );
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "backlinks", "file=Note", "format=md"]),
+    ).toThrow("json, tsv, or csv");
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "outline", "file=Note", "format=csv"]),
+    ).toThrow("tree, md, or json");
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "search:context", "query=needle", "total"]),
+    ).toThrow("does not accept total");
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "search", "query=needle", "limit=5", "--limit=6"]),
+    ).toThrow("not both");
     expect(() =>
       parseCliArguments(["--vault", "/vault", "delete", "Note.md", "permanent"]),
     ).toThrow("permanent deletion");
@@ -1722,12 +1772,12 @@ describe("Threadleaf CLI read-only workflows", () => {
     expect(JSON.parse(hidden.stderr).error.message).toContain("private application paths");
   });
 
-  it("searches indexed content in human and JSON modes", async () => {
+  it("separates path search from grep-style context and supports filters and formats", async () => {
     const human = await invoke(["--vault", vaultPath, "search", "needle"]);
-    expect(human.exitCode).toBe(0);
-    expect(human.stderr).toBe("");
-    expect(human.stdout).toContain("Alpha.md:7 [content]");
-    expect(human.stdout).toContain("distinctive needle");
+    expect(human).toEqual({ exitCode: 0, stdout: "Alpha.md\n", stderr: "" });
+
+    const context = await invoke(["--vault", vaultPath, "search:context", "query=needle"]);
+    expect(context.stdout).toBe("Alpha.md:7: A distinctive needle links to [[Folder/Beta]].\n");
 
     const json = await invoke([
       "--vault",
@@ -1742,11 +1792,51 @@ describe("Threadleaf CLI read-only workflows", () => {
       command: "search",
       data: {
         query: "local target",
+        folder: "",
+        caseSensitive: false,
         total: 1,
         truncated: false,
         results: [{ path: "Folder/Beta.md", title: "Beta" }],
       },
     });
+
+    const scopedJson = await invoke([
+      "--vault",
+      vaultPath,
+      "search",
+      "query=local",
+      "path=Folder",
+      "format=json",
+    ]);
+    expect(JSON.parse(scopedJson.stdout)).toEqual(["Folder/Beta.md"]);
+
+    const contextJson = await invoke([
+      "--vault",
+      vaultPath,
+      "search:context",
+      "query=needle",
+      "format=json",
+    ]);
+    expect(JSON.parse(contextJson.stdout)).toEqual([
+      {
+        path: "Alpha.md",
+        line: 7,
+        text: "A distinctive needle links to [[Folder/Beta]].",
+      },
+    ]);
+
+    const scopedOut = await invoke(["--vault", vaultPath, "search", "query=needle", "path=Folder"]);
+    expect(scopedOut.stdout).toBe("");
+
+    const caseSensitive = await invoke([
+      "--vault",
+      vaultPath,
+      "search",
+      "query=Needle",
+      "case",
+      "total",
+    ]);
+    expect(caseSensitive.stdout).toBe("0\n");
   });
 
   it("uses the query exit code and stderr envelope for invalid search input", async () => {
@@ -1822,16 +1912,9 @@ describe("Threadleaf CLI graph and outline workflows", () => {
     });
 
     const human = await invoke(["--vault", vaultPath, "links", "Graph.md"]);
-    expect(human.stdout).toBe(
-      [
-        "Outgoing links from Graph.md:",
-        "Folder/Beta [wiki] -> Folder/Beta.md",
-        "Folder/Beta#Beta heading [wiki] as B -> Folder/Beta.md",
-        "Missing [wiki] -> unresolved",
-        "Dup [wiki] -> ambiguous: One/Dup.md, Two/Dup.md",
-        "",
-      ].join("\n"),
-    );
+    expect(human.stdout).toBe("Folder/Beta\nFolder/Beta#Beta heading\nMissing\nDup\n");
+    const total = await invoke(["--vault", vaultPath, "links", "Graph.md", "total"]);
+    expect(total.stdout).toBe("4\n");
   });
 
   it("groups backlinks by source while retaining occurrence counts", async () => {
@@ -1856,7 +1939,35 @@ describe("Threadleaf CLI graph and outline workflows", () => {
       },
     });
     const human = await invoke(["--vault", vaultPath, "backlinks", "Folder/Beta.md"]);
-    expect(human.stdout).toBe("Backlinks to Folder/Beta.md:\nAlpha.md (1)\nGraph.md (2)\n");
+    expect(human.stdout).toBe("Alpha.md\nGraph.md\n");
+
+    const counted = await invoke(["--vault", vaultPath, "backlinks", "Folder/Beta.md", "counts"]);
+    expect(counted.stdout).toBe("Alpha.md\t1\nGraph.md\t2\n");
+    const rawJson = await invoke([
+      "--vault",
+      vaultPath,
+      "backlinks",
+      "Folder/Beta.md",
+      "counts",
+      "format=json",
+    ]);
+    expect(JSON.parse(rawJson.stdout)).toEqual([
+      { path: "Alpha.md", count: 1 },
+      { path: "Graph.md", count: 2 },
+    ]);
+    const total = await invoke(["--vault", vaultPath, "backlinks", "Folder/Beta.md", "total"]);
+    expect(total.stdout).toBe("2\n");
+
+    await fs.writeFile(path.join(vaultPath, "Comma, Source.md"), "[[Folder/Beta]]\n", "utf8");
+    const csv = await invoke([
+      "--vault",
+      vaultPath,
+      "backlinks",
+      "Folder/Beta.md",
+      "counts",
+      "format=csv",
+    ]);
+    expect(csv.stdout).toBe('Alpha.md,1\n"Comma, Source.md",1\nGraph.md,2\n');
   });
 
   it("reports every unresolved or ambiguous occurrence with its source", async () => {
@@ -1884,14 +1995,42 @@ describe("Threadleaf CLI graph and outline workflows", () => {
       },
     });
     const human = await invoke(["--vault", vaultPath, "unresolved"]);
-    expect(human.stdout).toBe(
-      [
-        "Non-resolved links:",
-        "Graph.md: Missing [wiki] -> unresolved",
-        "Graph.md: Dup [wiki] -> ambiguous: One/Dup.md, Two/Dup.md",
-        "",
-      ].join("\n"),
+    expect(human.stdout).toBe("Dup\nMissing\n");
+    const detailed = await invoke(["--vault", vaultPath, "unresolved", "counts", "verbose"]);
+    expect(detailed.stdout).toBe("Dup\t1\tGraph.md\nMissing\t1\tGraph.md\n");
+    const rawJson = await invoke([
+      "--vault",
+      vaultPath,
+      "unresolved",
+      "counts",
+      "verbose",
+      "format=json",
+    ]);
+    expect(JSON.parse(rawJson.stdout)).toEqual([
+      { target: "Dup", count: 1, sources: ["Graph.md"] },
+      { target: "Missing", count: 1, sources: ["Graph.md"] },
+    ]);
+    const total = await invoke(["--vault", vaultPath, "unresolved", "total"]);
+    expect(total.stdout).toBe("2\n");
+  });
+
+  it("aggregates repeated unresolved targets while retaining occurrence evidence", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Repeated.md"),
+      "[[Missing]] and [[Missing]]\n",
+      "utf8",
     );
+    const result = await invoke(["--json", "--vault", vaultPath, "unresolved"]);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      data: {
+        total: 2,
+        occurrences: 4,
+        entries: [
+          { target: "Dup", count: 1, sources: ["Graph.md"] },
+          { target: "Missing", count: 3, sources: ["Graph.md", "Repeated.md"] },
+        ],
+      },
+    });
   });
 
   it("lists orphans and syntax-level dead ends deterministically", async () => {
@@ -1912,6 +2051,8 @@ describe("Threadleaf CLI graph and outline workflows", () => {
         files: ["Folder/Beta.md", "Lonely.md", "One/Dup.md", "Two/Dup.md"],
       },
     });
+    expect((await invoke(["--vault", vaultPath, "orphans", "total"])).stdout).toBe("5\n");
+    expect((await invoke(["--vault", vaultPath, "deadends", "total"])).stdout).toBe("4\n");
   });
 
   it("returns a line-aware outline and never creates CLI state", async () => {
@@ -1929,8 +2070,16 @@ describe("Threadleaf CLI graph and outline workflows", () => {
       },
     });
     const human = await invoke(["--vault", vaultPath, "outline", "path=Graph.md"]);
-    expect(human.stdout).toBe(
-      "Outline for Graph.md:\nGraph root (line 1)\n    Deep branch (line 3)\n",
+    expect(human.stdout).toBe("Graph root\n    Deep branch\n");
+    const markdown = await invoke(["--vault", vaultPath, "outline", "path=Graph.md", "format=md"]);
+    expect(markdown.stdout).toBe("# Graph root\n### Deep branch\n");
+    const rawJson = await invoke(["--vault", vaultPath, "outline", "path=Graph.md", "format=json"]);
+    expect(JSON.parse(rawJson.stdout)).toEqual([
+      { level: 1, text: "Graph root", line: 1 },
+      { level: 3, text: "Deep branch", line: 3 },
+    ]);
+    expect((await invoke(["--vault", vaultPath, "outline", "Graph.md", "total"])).stdout).toBe(
+      "2\n",
     );
     await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
   });

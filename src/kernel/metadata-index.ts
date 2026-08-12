@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   type FullTextSearchDocument,
   FullTextSearchIndex,
+  type FullTextSearchOptions,
   type FullTextSearchPage,
 } from "./full-text-search";
 import {
@@ -289,8 +290,12 @@ export class MetadataIndex {
     }
   }
 
-  search(query: string, limit = 50): FullTextSearchPage & { generation: number } {
-    return { ...this.#searchIndex.search(query, limit), generation: this.#generation };
+  search(
+    query: string,
+    limit = 50,
+    options: FullTextSearchOptions = {},
+  ): FullTextSearchPage & { generation: number } {
+    return { ...this.#searchIndex.search(query, limit, options), generation: this.#generation };
   }
 
   snapshot(): MetadataIndexSnapshot {

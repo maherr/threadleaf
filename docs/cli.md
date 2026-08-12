@@ -17,13 +17,14 @@ threadleaf --vault /path/to/vault folder path=Folder [info=files|folders|size]
 threadleaf --vault /path/to/vault folders [folder=Folder] [total]
 threadleaf --vault /path/to/vault wordcount file="Note" [words|characters]
 threadleaf --vault /path/to/vault read "Folder/Note.md"
-threadleaf --vault /path/to/vault search "quoted phrase" [--limit 20]
-threadleaf --vault /path/to/vault links "Folder/Note.md"
-threadleaf --vault /path/to/vault backlinks "Folder/Note.md"
-threadleaf --vault /path/to/vault unresolved
-threadleaf --vault /path/to/vault orphans
-threadleaf --vault /path/to/vault deadends
-threadleaf --vault /path/to/vault outline "Folder/Note.md"
+threadleaf --vault /path/to/vault search query="quoted phrase" [path=Folder] [limit=20] [format=text|json] [total] [case]
+threadleaf --vault /path/to/vault search:context query="quoted phrase" [path=Folder] [limit=20] [format=text|json] [case]
+threadleaf --vault /path/to/vault links "Folder/Note.md" [total]
+threadleaf --vault /path/to/vault backlinks "Folder/Note.md" [counts] [total] [format=json|tsv|csv]
+threadleaf --vault /path/to/vault unresolved [counts] [total] [verbose] [format=json|tsv|csv]
+threadleaf --vault /path/to/vault orphans [total]
+threadleaf --vault /path/to/vault deadends [total]
+threadleaf --vault /path/to/vault outline "Folder/Note.md" [format=tree|md|json] [total]
 threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n"]
 threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text" [--inline]
 threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
@@ -54,13 +55,14 @@ During development, prefix the same arguments with `pnpm cli`.
 | `folders` | Sorted visible folder paths with parent and count filters | Safe visible-file inventory |
 | `wordcount` | Unicode word and grapheme-character counts for one Markdown note | Read-only kernel |
 | `read` | UTF-8 note content | Read-only kernel |
-| `search` | Ranked paths and best context, with a bounded result count | Derived metadata and full-text index |
-| `links` | Ordered outgoing internal-link occurrences and resolution states | Derived metadata index |
-| `backlinks` | Resolved source notes and occurrence counts for one note | Derived metadata index |
-| `unresolved` | Every unresolved or ambiguous link occurrence with its source | Derived metadata index |
+| `search` | Ranked matching paths with folder, limit, case, count, and text/JSON controls | Derived metadata and full-text index |
+| `search:context` | Grep-style matching source lines with folder, limit, case, and text/JSON controls | Derived metadata and full-text index |
+| `links` | Ordered outgoing targets, totals, and rich occurrence resolution states | Derived metadata index |
+| `backlinks` | Resolved source notes, totals, counts, and JSON/TSV/CSV formats | Derived metadata index |
+| `unresolved` | Grouped non-resolved targets plus counts, sources, and rich occurrences | Derived metadata index |
 | `orphans` | Notes with no resolved incoming source | Derived metadata index |
 | `deadends` | Notes with no parsed outgoing internal-link occurrence | Derived metadata index |
-| `outline` | Ordered headings with levels and source lines | Derived metadata index |
+| `outline` | Ordered headings in tree, Markdown, JSON, total, or rich source-line form | Derived metadata index |
 | `create` | Created Markdown path and revision | Recoverable no-clobber writer |
 | `append` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
@@ -123,18 +125,34 @@ trees.
 
 `wordcount` counts the complete saved Markdown source after excluding a leading UTF-8 BOM. Words
 use Unicode word boundaries. Characters are Unicode grapheme clusters, so a composed accent or ZWJ
-emoji sequence counts as one visible character. `words` or `characters` returns only that number in
+emoji sequence counts as one grapheme character. `words` or `characters` returns only that number in
 human mode; JSON always includes the canonical note path and both counts.
 
-The graph commands expose the index's distinctions instead of flattening them. `links` retains
-source order and duplicate occurrences. `backlinks` groups resolved occurrences by source, while
-reporting both the number of source notes and the number of link occurrences. `unresolved` includes
-both links with no candidate and links with multiple candidates, with either state explicit in JSON
-and human output. `orphans` means no resolved incoming source; a resolved self-link is incoming.
-`deadends` is syntax-level in this release: a note containing any parsed internal link is not a
-dead end even when that link is unresolved or ambiguous. `outline` returns heading level, text, and
-one-based source line. These choices have executable fixtures and do not yet claim every Obsidian
-edge semantic.
+## Search and graph output
+
+`search` returns ranked file paths. `search:context` returns matching saved source lines as
+`path:line: text`; JSON format returns objects with those three fields. Both accept `path=<folder>`,
+`limit=<n>`, `format=text|json`, and `case`. Folder filtering happens before limiting. The default
+search is case-insensitive after NFC normalization, while `case` compares NFC-normalized original
+text. `search total` returns the complete matching-file count before the result limit. Native
+`--limit` and `--directory` remain aliases for `limit=` and `path=`. Global `--json` always returns
+Threadleaf's rich versioned envelope; command-level `format=json` emits the compact compatibility
+array when the global flag is absent.
+
+The graph commands expose the index's distinctions while projecting concise compatibility output.
+`links` retains source order and duplicate occurrences, prints targets by default, and accepts
+`total`. `backlinks` groups resolved occurrences by source; `counts` adds occurrence counts, `total`
+returns the source-file count, and `format=json|tsv|csv` selects output. `unresolved` groups missing
+and ambiguous occurrences by target. Its `counts` flag adds occurrence counts, `verbose` adds sorted
+source files, and `total` returns the distinct target count; the rich global JSON envelope also
+retains every occurrence and resolution state. CSV fields use RFC 4180 quoting.
+
+`orphans` means no resolved incoming source; a resolved self-link is incoming. `deadends` is
+syntax-level in this release: a note containing any parsed internal link is not a dead end even when
+that link is unresolved or ambiguous. Both accept `total`. `outline` retains heading level, text,
+and one-based source line in rich JSON; compatibility output supports an indented `tree`, Markdown
+headings with `format=md`, raw heading objects with `format=json`, and `total`. Empty list output is
+an empty stdout stream, making shell pipelines deterministic.
 
 `create` is the first mutating command. It accepts a vault-relative note name or path, adds `.md`
 when omitted, creates missing folders, and accepts empty content. `--content` interprets `\n`, `\t`,
@@ -276,10 +294,14 @@ threadleaf --vault /path/to/vault folders folder="Projects" total
 threadleaf --vault /path/to/vault wordcount file="Note" words
 threadleaf --vault /path/to/vault read file="Note"
 threadleaf --vault /path/to/vault read path="Folder/Note.md"
-threadleaf --vault /path/to/vault search query="quoted phrase"
-threadleaf --vault /path/to/vault links path="Folder/Note.md"
-threadleaf --vault /path/to/vault backlinks file="Note"
-threadleaf --vault /path/to/vault outline path="Folder/Note.md"
+threadleaf --vault /path/to/vault search query="quoted phrase" path="Projects" limit=20 case
+threadleaf --vault /path/to/vault search:context query="quoted phrase" format=json
+threadleaf --vault /path/to/vault links path="Folder/Note.md" total
+threadleaf --vault /path/to/vault backlinks file="Note" counts format=csv
+threadleaf --vault /path/to/vault unresolved counts verbose format=json
+threadleaf --vault /path/to/vault orphans total
+threadleaf --vault /path/to/vault deadends total
+threadleaf --vault /path/to/vault outline path="Folder/Note.md" format=md
 threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n"
 threadleaf --vault /path/to/vault create name="Root note"
 threadleaf --vault /path/to/vault append path="Folder/Note.md" content="Next line"
@@ -315,9 +337,10 @@ Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberat
 native `--update-links` confirmation flag. Threadleaf accepts the public property command names and
 parameter spellings, but its lossless frontmatter subset and native JSON contract are narrower than
 a complete compatibility claim. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or
-template parameters, active-file defaults, or graph-command `total`, `counts`, `verbose`, and
-`format` flags. The task subset does not yet support `active`, `daily`, or alternate `format`
-output. Alias and tag commands do not yet support `active` or alternate `format` output.
+template parameters or active-file defaults. Search and graph flags are executable compatibility
+targets, but ranked query grammar and exact byte-for-byte formatting still require a live reference
+corpus. The task subset does not yet support `active`, `daily`, or alternate `format` output. Alias
+and tag commands do not yet support `active` or alternate `format` output.
 `trash list`, `trash:list`, and `restore` are native Threadleaf recovery commands rather than
 claimed Obsidian CLI compatibility.
 

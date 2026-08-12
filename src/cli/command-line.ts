@@ -62,6 +62,7 @@ type CliCommandId =
   | "wordcount"
   | "read"
   | "search"
+  | "search.context"
   | "links"
   | "backlinks"
   | "unresolved"
@@ -129,6 +130,9 @@ interface CliFoldersCommand extends CliVaultCommand {
 }
 
 type CliTargetKind = "path" | "file";
+type CliTabularFormat = "tsv" | "csv" | "json";
+type CliSearchFormat = "text" | "json";
+type CliOutlineFormat = "tree" | "md" | "json";
 
 interface CliReadCommand extends CliVaultCommand {
   id: "read";
@@ -144,19 +148,50 @@ interface CliWordcountCommand extends CliVaultCommand {
 }
 
 interface CliSearchCommand extends CliVaultCommand {
-  id: "search";
+  id: "search" | "search.context";
   query: string;
+  folder: string;
   limit: number;
+  format: CliSearchFormat;
+  totalOnly: boolean;
+  caseSensitive: boolean;
 }
 
-interface CliTargetMetadataCommand extends CliVaultCommand {
-  id: "links" | "backlinks" | "outline";
+interface CliLinksCommand extends CliVaultCommand {
+  id: "links";
   filePath: string;
   targetKind: CliTargetKind;
+  totalOnly: boolean;
+}
+
+interface CliBacklinksCommand extends CliVaultCommand {
+  id: "backlinks";
+  filePath: string;
+  targetKind: CliTargetKind;
+  counts: boolean;
+  totalOnly: boolean;
+  format: CliTabularFormat;
+}
+
+interface CliOutlineCommand extends CliVaultCommand {
+  id: "outline";
+  filePath: string;
+  targetKind: CliTargetKind;
+  totalOnly: boolean;
+  format: CliOutlineFormat;
+}
+
+interface CliUnresolvedCommand extends CliVaultCommand {
+  id: "unresolved";
+  counts: boolean;
+  totalOnly: boolean;
+  verbose: boolean;
+  format: CliTabularFormat;
 }
 
 interface CliVaultMetadataCommand extends CliVaultCommand {
-  id: "unresolved" | "orphans" | "deadends";
+  id: "orphans" | "deadends";
+  totalOnly: boolean;
 }
 
 interface CliCreateCommand extends CliVaultCommand {
@@ -277,7 +312,10 @@ export type ParsedCliCommand =
   | CliWordcountCommand
   | CliReadCommand
   | CliSearchCommand
-  | CliTargetMetadataCommand
+  | CliLinksCommand
+  | CliBacklinksCommand
+  | CliOutlineCommand
+  | CliUnresolvedCommand
   | CliVaultMetadataCommand
   | CliCreateCommand
   | CliTextMutationCommand
@@ -468,6 +506,13 @@ function taskStatusArgument(value: string): string {
   } catch (error) {
     usageFailure(error instanceof Error ? error.message : String(error));
   }
+}
+
+function parseTabularFormat(value: string, commandName: string): CliTabularFormat {
+  if (value !== "tsv" && value !== "csv" && value !== "json") {
+    usageFailure(`${commandName} format must be json, tsv, or csv.`);
+  }
+  return value;
 }
 
 export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
@@ -1200,7 +1245,6 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   }
   if (name === "links" || name === "backlinks" || name === "outline") {
     if (
-      values.length !== 1 ||
       directory !== null ||
       limit !== null ||
       content !== null ||
@@ -1209,17 +1253,87 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       renamedName !== null ||
       updateLinks
     ) {
-      usageFailure(`${name} requires exactly one vault-relative Markdown path.`);
+      usageFailure(`${name} accepts one note target and its documented output flags only.`);
     }
-    const { filePath, targetKind } = parseCliTarget(values[0] ?? "");
-    if (!filePath) {
-      usageFailure(`${name} requires a non-empty Markdown path.`);
+    let filePath: string | null = null;
+    let targetKind: CliTargetKind | null = null;
+    let totalOnly = false;
+    let counts = false;
+    let format: CliTabularFormat | CliOutlineFormat = name === "outline" ? "tree" : "tsv";
+    let hasFormat = false;
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (filePath !== null) {
+          usageFailure(`${name} accepts only one note target.`);
+        }
+        const target = parseCliTarget(value);
+        filePath = target.filePath;
+        targetKind = target.targetKind;
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure(`${name} total may be supplied only once.`);
+        }
+        totalOnly = true;
+      } else if (value === "counts" && name === "backlinks") {
+        if (counts) {
+          usageFailure("backlinks counts may be supplied only once.");
+        }
+        counts = true;
+      } else if (value.startsWith("format=") && name !== "links") {
+        if (hasFormat) {
+          usageFailure(`${name} format may be supplied only once.`);
+        }
+        const requestedFormat = value.slice("format=".length);
+        if (name === "outline") {
+          if (
+            requestedFormat !== "tree" &&
+            requestedFormat !== "md" &&
+            requestedFormat !== "json"
+          ) {
+            usageFailure("outline format must be tree, md, or json.");
+          }
+          format = requestedFormat;
+        } else {
+          format = parseTabularFormat(requestedFormat, name);
+        }
+        hasFormat = true;
+      } else if (filePath === null && !value.includes("=")) {
+        filePath = value;
+        targetKind = "path";
+      } else {
+        usageFailure(`Unsupported ${name} argument: ${value}`);
+      }
     }
-    return { id: name, json, vaultPath, filePath, targetKind };
+    if (!filePath || targetKind === null) {
+      usageFailure(`${name} requires exactly one Markdown note target.`);
+    }
+    if (name === "links") {
+      return { id: "links", json, vaultPath, filePath, targetKind, totalOnly };
+    }
+    if (name === "backlinks") {
+      return {
+        id: "backlinks",
+        json,
+        vaultPath,
+        filePath,
+        targetKind,
+        counts,
+        totalOnly,
+        format: format as CliTabularFormat,
+      };
+    }
+    return {
+      id: "outline",
+      json,
+      vaultPath,
+      filePath,
+      targetKind,
+      totalOnly,
+      format: format as CliOutlineFormat,
+    };
   }
-  if (name === "unresolved" || name === "orphans" || name === "deadends") {
+  if (name === "unresolved") {
     if (
-      values.length > 0 ||
       directory !== null ||
       limit !== null ||
       content !== null ||
@@ -1228,33 +1342,142 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       renamedName !== null ||
       updateLinks
     ) {
-      usageFailure(`${name} does not accept arguments yet.`);
+      usageFailure("unresolved accepts output flags only.");
     }
-    return { id: name, json, vaultPath };
+    let totalOnly = false;
+    let counts = false;
+    let verbose = false;
+    let format: CliTabularFormat = "tsv";
+    let hasFormat = false;
+    for (const value of values) {
+      if (value === "total") {
+        if (totalOnly) {
+          usageFailure("unresolved total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else if (value === "counts") {
+        if (counts) {
+          usageFailure("unresolved counts may be supplied only once.");
+        }
+        counts = true;
+      } else if (value === "verbose") {
+        if (verbose) {
+          usageFailure("unresolved verbose may be supplied only once.");
+        }
+        verbose = true;
+      } else if (value.startsWith("format=")) {
+        if (hasFormat) {
+          usageFailure("unresolved format may be supplied only once.");
+        }
+        format = parseTabularFormat(value.slice("format=".length), "unresolved");
+        hasFormat = true;
+      } else {
+        usageFailure(`Unsupported unresolved argument: ${value}`);
+      }
+    }
+    return { id: "unresolved", json, vaultPath, counts, totalOnly, verbose, format };
   }
-  if (name === "search") {
+  if (name === "orphans" || name === "deadends") {
     if (
-      values.length === 0 ||
       directory !== null ||
+      limit !== null ||
       content !== null ||
       inline ||
       destination !== null ||
       renamedName !== null ||
-      updateLinks
+      updateLinks ||
+      values.some((value) => value !== "total") ||
+      values.filter((value) => value === "total").length > 1
     ) {
-      usageFailure("search requires a query and does not accept --directory.");
+      usageFailure(`${name} accepts only the optional total flag.`);
     }
-    const first = values[0] ?? "";
-    const query = [first.startsWith("query=") ? first.slice(6) : first, ...values.slice(1)]
-      .join(" ")
-      .trim();
+    return { id: name, json, vaultPath, totalOnly: values.includes("total") };
+  }
+  if (name === "search" || name === "search:context") {
+    if (content !== null || inline || destination !== null || renamedName !== null || updateLinks) {
+      usageFailure(`${name} received an option that it does not accept.`);
+    }
+    let explicitQuery: string | null = null;
+    const queryParts: string[] = [];
+    let parameterFolder: string | null = null;
+    let parameterLimit: number | null = null;
+    let format: CliSearchFormat = "text";
+    let hasFormat = false;
+    let totalOnly = false;
+    let caseSensitive = false;
+    for (const value of values) {
+      if (value.startsWith("query=")) {
+        if (explicitQuery !== null) {
+          usageFailure(`${name} query may be supplied only once.`);
+        }
+        explicitQuery = value.slice("query=".length);
+      } else if (value.startsWith("path=")) {
+        if (parameterFolder !== null) {
+          usageFailure(`${name} path may be supplied only once.`);
+        }
+        parameterFolder = value.slice("path=".length);
+        if (!parameterFolder) {
+          usageFailure(`${name} path requires a folder.`);
+        }
+      } else if (value.startsWith("limit=")) {
+        if (parameterLimit !== null) {
+          usageFailure(`${name} limit may be supplied only once.`);
+        }
+        parameterLimit = parsePositiveInteger(value.slice("limit=".length), "limit");
+      } else if (value.startsWith("format=")) {
+        if (hasFormat) {
+          usageFailure(`${name} format may be supplied only once.`);
+        }
+        const requestedFormat = value.slice("format=".length);
+        if (requestedFormat !== "text" && requestedFormat !== "json") {
+          usageFailure(`${name} format must be text or json.`);
+        }
+        format = requestedFormat;
+        hasFormat = true;
+      } else if (value === "total") {
+        if (name !== "search") {
+          usageFailure("search:context does not accept total.");
+        }
+        if (totalOnly) {
+          usageFailure("search total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else if (value === "case") {
+        if (caseSensitive) {
+          usageFailure(`${name} case may be supplied only once.`);
+        }
+        caseSensitive = true;
+      } else if (!value.includes("=")) {
+        queryParts.push(value);
+      } else {
+        usageFailure(`Unsupported ${name} argument: ${value}`);
+      }
+    }
+    if (directory !== null && parameterFolder !== null) {
+      usageFailure(`${name} path may be supplied as --directory or path=, not both.`);
+    }
+    if (limit !== null && parameterLimit !== null) {
+      usageFailure(`${name} limit may be supplied as --limit or limit=, not both.`);
+    }
+    const query = [explicitQuery ?? "", ...queryParts].join(" ").trim();
     if (!query) {
-      usageFailure("search requires a non-empty query.");
+      usageFailure(`${name} requires query=<text>.`);
     }
-    if (limit !== null && limit > maxSearchResults) {
-      usageFailure(`--limit may not exceed ${maxSearchResults}.`);
+    const requestedLimit = limit ?? parameterLimit ?? 50;
+    if (requestedLimit > maxSearchResults) {
+      usageFailure(`search limits may not exceed ${maxSearchResults}.`);
     }
-    return { id: "search", json, vaultPath, query, limit: limit ?? 50 };
+    return {
+      id: name === "search" ? "search" : "search.context",
+      json,
+      vaultPath,
+      query,
+      folder: directory ?? parameterFolder ?? "",
+      limit: requestedLimit,
+      format,
+      totalOnly,
+      caseSensitive,
+    };
   }
   if (name === "create") {
     if (
@@ -1446,13 +1669,14 @@ Usage:
   threadleaf --vault <path> [--json] folders [folder=<path>] [total]
   threadleaf --vault <path> [--json] wordcount <note.md> [words|characters]
   threadleaf --vault <path> [--json] read <note.md>
-  threadleaf --vault <path> [--json] search <query> [--limit <count>]
-  threadleaf --vault <path> [--json] links <note.md>
-  threadleaf --vault <path> [--json] backlinks <note.md>
-  threadleaf --vault <path> [--json] unresolved
-  threadleaf --vault <path> [--json] orphans
-  threadleaf --vault <path> [--json] deadends
-  threadleaf --vault <path> [--json] outline <note.md>
+  threadleaf --vault <path> [--json] search query=<text> [path=<folder>] [limit=<n>] [format=text|json] [total] [case]
+  threadleaf --vault <path> [--json] search:context query=<text> [path=<folder>] [limit=<n>] [format=text|json] [case]
+  threadleaf --vault <path> [--json] links <note.md> [total]
+  threadleaf --vault <path> [--json] backlinks <note.md> [counts] [total] [format=json|tsv|csv]
+  threadleaf --vault <path> [--json] unresolved [counts] [total] [verbose] [format=json|tsv|csv]
+  threadleaf --vault <path> [--json] orphans [total]
+  threadleaf --vault <path> [--json] deadends [total]
+  threadleaf --vault <path> [--json] outline <note.md> [format=tree|md|json] [total]
   threadleaf --vault <path> [--json] create <note> [--content <text>]
   threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
@@ -1478,10 +1702,12 @@ Compatibility spellings:
   threadleaf --vault <path> folders folder=<path> total
   threadleaf --vault <path> wordcount file=<note-name> words
   threadleaf --vault <path> read file=<note-name>
-  threadleaf --vault <path> search query=<text>
-  threadleaf --vault <path> links path=<note.md>
-  threadleaf --vault <path> backlinks file=<note-name>
-  threadleaf --vault <path> outline path=<note.md>
+  threadleaf --vault <path> search query=<text> path=<folder> limit=<n> total case
+  threadleaf --vault <path> search:context query=<text> format=json
+  threadleaf --vault <path> links path=<note.md> total
+  threadleaf --vault <path> backlinks file=<note-name> counts format=csv
+  threadleaf --vault <path> unresolved counts verbose format=json
+  threadleaf --vault <path> outline path=<note.md> format=md
   threadleaf --vault <path> create path=<note> content=<text>
   threadleaf --vault <path> append path=<note> content=<text> [inline]
   threadleaf --vault <path> prepend path=<note> content=<text> [inline]
@@ -1901,19 +2127,6 @@ function tagCatalog(
     );
 }
 
-function describeLink(link: LinkMetadata): string {
-  const target = `${link.target}${link.subpath ?? ""}`;
-  const kind = `${link.syntax}${link.embed ? " embed" : ""}`;
-  const alias = link.alias ? ` as ${link.alias}` : "";
-  if (link.resolution.status === "resolved") {
-    return `${target} [${kind}]${alias} -> ${link.resolution.path}`;
-  }
-  if (link.resolution.status === "ambiguous") {
-    return `${target} [${kind}]${alias} -> ambiguous: ${(link.resolution.candidates ?? []).join(", ")}`;
-  }
-  return `${target} [${kind}]${alias} -> unresolved`;
-}
-
 function backlinksForPath(snapshot: MetadataIndexSnapshot, targetPath: string) {
   const backlinks = snapshot.documents.flatMap((document) => {
     const count = document.links.filter(
@@ -1935,7 +2148,32 @@ function nonResolvedLinks(snapshot: MetadataIndexSnapshot) {
       .filter((link) => link.resolution.status !== "resolved")
       .map((link) => ({ sourcePath: document.path, ...link })),
   );
-  return { total: links.length, links };
+  const byTarget = new Map<
+    string,
+    { target: string; count: number; sources: Set<string>; statuses: Set<string> }
+  >();
+  for (const link of links) {
+    const target = `${link.target}${link.subpath ?? ""}`;
+    const current = byTarget.get(target) ?? {
+      target,
+      count: 0,
+      sources: new Set<string>(),
+      statuses: new Set<string>(),
+    };
+    current.count += 1;
+    current.sources.add(link.sourcePath);
+    current.statuses.add(link.resolution.status);
+    byTarget.set(target, current);
+  }
+  const entries = [...byTarget.values()]
+    .map((entry) => ({
+      target: entry.target,
+      count: entry.count,
+      sources: [...entry.sources].sort((left, right) => left.localeCompare(right)),
+      statuses: [...entry.statuses].sort((left, right) => left.localeCompare(right)),
+    }))
+    .sort((left, right) => left.target.localeCompare(right.target));
+  return { total: entries.length, occurrences: links.length, entries, links };
 }
 
 function orphanNotes(snapshot: MetadataIndexSnapshot) {
@@ -2228,10 +2466,17 @@ async function executeCommand(
     }
 
     const index = await MetadataIndex.build(kernel);
-    if (command.id === "search") {
-      const page = index.search(command.query, command.limit);
+    if (command.id === "search" || command.id === "search.context") {
+      const folder = normalizeVaultDirectoryPath(command.folder);
+      const page = index.search(command.query, command.limit, {
+        caseSensitive: command.caseSensitive,
+        folder,
+        maxContexts: command.id === "search.context" ? 100 : 3,
+      });
       return {
         ...page,
+        folder,
+        caseSensitive: command.caseSensitive,
         results: page.results.map((result) => ({
           ...result,
           title: displayTitleFromVaultPath(result.path),
@@ -2382,6 +2627,27 @@ function humanTask(task: MarkdownTaskRecord): string {
   return `- [${task.status}]${task.text ? ` ${task.text}` : ""}`;
 }
 
+function compatibilityJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function csvField(value: string | number): string {
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function tabularRows(rows: Array<Array<string | number>>, format: "tsv" | "csv"): string {
+  if (rows.length === 0) {
+    return "";
+  }
+  const separator = format === "csv" ? "," : "\t";
+  return `${rows
+    .map((row) =>
+      row.map((value) => (format === "csv" ? csvField(value) : String(value))).join(separator),
+    )
+    .join("\n")}\n`;
+}
+
 function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "help") {
     return cliHelp;
@@ -2428,69 +2694,129 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     }
     return `path\t${result.path}\nwords\t${result.words}\ncharacters\t${result.characters}\n`;
   }
-  if (command.id === "search") {
-    const results = (
-      data as {
-        results: Array<{
-          path: string;
-          contexts: Array<{ kind: string; text: string; line?: number }>;
-        }>;
-      }
-    ).results;
-    if (results.length === 0) {
-      return "No matches.\n";
+  if (command.id === "search" || command.id === "search.context") {
+    const result = data as {
+      total: number;
+      results: Array<{
+        path: string;
+        contexts: Array<{ kind: string; text: string; line?: number }>;
+      }>;
+    };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
     }
-    return `${results
-      .map((result) => {
-        const context = result.contexts[0];
-        const location = context?.line ? `${result.path}:${context.line}` : result.path;
-        return context ? `${location} [${context.kind}] ${context.text}` : location;
-      })
-      .join("\n")}\n`;
+    if (command.id === "search") {
+      const paths = result.results.map((entry) => entry.path);
+      return command.format === "json"
+        ? compatibilityJson(paths)
+        : paths.length > 0
+          ? `${paths.join("\n")}\n`
+          : "";
+    }
+    const matches = result.results.flatMap<{
+      path: string;
+      line: number | null;
+      text: string | null;
+    }>((entry) => {
+      const contexts = entry.contexts.filter(
+        (context): context is { kind: string; text: string; line: number } =>
+          context.kind === "content" && context.line !== undefined,
+      );
+      return contexts.length > 0
+        ? contexts.map((context) => ({ path: entry.path, line: context.line, text: context.text }))
+        : [{ path: entry.path, line: null, text: null }];
+    });
+    if (command.format === "json") {
+      return compatibilityJson(matches);
+    }
+    return matches.length > 0
+      ? `${matches
+          .map((match) =>
+            match.line === null ? match.path : `${match.path}:${match.line}: ${match.text}`,
+          )
+          .join("\n")}\n`
+      : "";
   }
   if (command.id === "links") {
-    const result = data as { path: string; links: LinkMetadata[] };
-    return result.links.length > 0
-      ? `Outgoing links from ${result.path}:\n${result.links.map(describeLink).join("\n")}\n`
-      : `No outgoing links from ${result.path}.\n`;
+    const result = data as { total: number; links: LinkMetadata[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    const targets = result.links.map((link) => `${link.target}${link.subpath ?? ""}`);
+    return targets.length > 0 ? `${targets.join("\n")}\n` : "";
   }
   if (command.id === "backlinks") {
     const result = data as {
-      path: string;
+      total: number;
       backlinks: Array<{ path: string; count: number }>;
     };
-    return result.backlinks.length > 0
-      ? `Backlinks to ${result.path}:\n${result.backlinks
-          .map((backlink) => `${backlink.path} (${backlink.count})`)
-          .join("\n")}\n`
-      : `No backlinks to ${result.path}.\n`;
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    if (command.format === "json") {
+      return compatibilityJson(
+        command.counts ? result.backlinks : result.backlinks.map((backlink) => backlink.path),
+      );
+    }
+    return tabularRows(
+      result.backlinks.map((backlink) =>
+        command.counts ? [backlink.path, backlink.count] : [backlink.path],
+      ),
+      command.format,
+    );
   }
   if (command.id === "unresolved") {
-    const result = data as { links: Array<LinkMetadata & { sourcePath: string }> };
-    return result.links.length > 0
-      ? `Non-resolved links:\n${result.links
-          .map((link) => `${link.sourcePath}: ${describeLink(link)}`)
-          .join("\n")}\n`
-      : "No non-resolved links.\n";
+    const result = data as {
+      total: number;
+      entries: Array<{ target: string; count: number; sources: string[] }>;
+    };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    if (command.format === "json") {
+      return compatibilityJson(
+        command.counts || command.verbose
+          ? result.entries.map((entry) => ({
+              target: entry.target,
+              ...(command.counts ? { count: entry.count } : {}),
+              ...(command.verbose ? { sources: entry.sources } : {}),
+            }))
+          : result.entries.map((entry) => entry.target),
+      );
+    }
+    return tabularRows(
+      result.entries.map((entry) => [
+        entry.target,
+        ...(command.counts ? [entry.count] : []),
+        ...(command.verbose ? [entry.sources.join(", ")] : []),
+      ]),
+      command.format,
+    );
   }
   if (command.id === "orphans" || command.id === "deadends") {
-    const files = (data as { files: string[] }).files;
-    const label = command.id === "orphans" ? "Orphan notes" : "Dead-end notes";
-    return files.length > 0 ? `${label}:\n${files.join("\n")}\n` : `No ${label.toLowerCase()}.\n`;
+    const result = data as { total: number; files: string[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    return result.files.length > 0 ? `${result.files.join("\n")}\n` : "";
   }
   if (command.id === "outline") {
     const result = data as {
-      path: string;
+      total: number;
       headings: Array<{ level: number; text: string; line: number }>;
     };
-    return result.headings.length > 0
-      ? `Outline for ${result.path}:\n${result.headings
-          .map(
-            (heading) =>
-              `${"  ".repeat(Math.max(0, heading.level - 1))}${heading.text} (line ${heading.line})`,
-          )
-          .join("\n")}\n`
-      : `No headings in ${result.path}.\n`;
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    if (command.format === "json") {
+      return compatibilityJson(result.headings);
+    }
+    const headings = result.headings.map((heading) =>
+      command.format === "md"
+        ? `${"#".repeat(heading.level)} ${heading.text}`
+        : `${"  ".repeat(Math.max(0, heading.level - 1))}${heading.text}`,
+    );
+    return headings.length > 0 ? `${headings.join("\n")}\n` : "";
   }
   if (command.id === "create") {
     return `Created ${(data as { path: string }).path}\n`;

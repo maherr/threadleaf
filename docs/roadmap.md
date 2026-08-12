@@ -110,6 +110,8 @@ equivalence through the real writer-to-watcher seam.
       property, and task commands, with case-insensitive NFC matching and explicit ambiguity.
 - [x] Read-only CLI file and folder inventory across ordinary vault file types plus Unicode-aware
       word and grapheme-character counts, with private-tree and symlink containment.
+- [x] Obsidian-style CLI search and graph output controls, including folder, limit, case, total,
+      counts, verbose sources, grep-style context, JSON/TSV/CSV, and tree/Markdown/JSON outlines.
 - [ ] Remaining CLI commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.

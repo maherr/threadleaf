@@ -84,6 +84,49 @@ if (
 ) {
   throw new Error("Built CLI returned an unexpected graph envelope.");
 }
+const cliSearchResult = spawnSync(
+  process.execPath,
+  [
+    cliPath,
+    "--vault",
+    path.join(projectRoot, "fixtures", "vaults", "basic"),
+    "search",
+    "query=Threadleaf",
+    "format=json",
+  ],
+  { encoding: "utf8" },
+);
+if (
+  cliSearchResult.status !== 0 ||
+  cliSearchResult.stderr !== "" ||
+  JSON.stringify(JSON.parse(cliSearchResult.stdout)) !== JSON.stringify(["Welcome.md"])
+) {
+  throw new Error(
+    `Built CLI filtered search smoke test failed: ${cliSearchResult.stderr || `exit ${cliSearchResult.status}`}`,
+  );
+}
+const cliBacklinksResult = spawnSync(
+  process.execPath,
+  [
+    cliPath,
+    "--vault",
+    path.join(projectRoot, "fixtures", "vaults", "basic"),
+    "backlinks",
+    "file=Linked Note",
+    "counts",
+    "format=csv",
+  ],
+  { encoding: "utf8" },
+);
+if (
+  cliBacklinksResult.status !== 0 ||
+  cliBacklinksResult.stderr !== "" ||
+  cliBacklinksResult.stdout !== "Welcome.md,1\n"
+) {
+  throw new Error(
+    `Built CLI backlink format smoke test failed: ${cliBacklinksResult.stderr || `exit ${cliBacklinksResult.status}`}`,
+  );
+}
 
 async function verifyBuiltCliMutations() {
   const scratchPath = await mkdtemp(path.join(os.tmpdir(), "threadleaf-built-cli-"));
@@ -398,5 +441,5 @@ try {
 }
 
 console.log(
-  `Verified Electron entry points, headless CLI inventory, wordcount, graph, property, alias, tag, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
+  `Verified Electron entry points, headless CLI inventory, wordcount, search and graph formats, property, alias, tag, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
 );

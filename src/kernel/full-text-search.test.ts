@@ -116,6 +116,31 @@ describe("FullTextSearchIndex", () => {
     expect(page.results[0]?.matchCount).toBeGreaterThanOrEqual(4);
   });
 
+  it("supports deterministic folder scopes, case-sensitive matching, and context limits", () => {
+    const index = new FullTextSearchIndex();
+    index.replace([
+      document("Research/Case.md", "Needle first\nneedle second\nNeedle third"),
+      document("Archive/Case.md", "Needle archived"),
+    ]);
+
+    expect(index.search("Needle", 50, { caseSensitive: true, folder: "Research" })).toMatchObject({
+      total: 1,
+      results: [{ path: "Research/Case.md", matchCount: 2 }],
+    });
+    expect(index.search("NEEDLE", 50, { caseSensitive: true }).total).toBe(0);
+    expect(index.search("needle", 50, { folder: "Archive" }).results).toMatchObject([
+      { path: "Archive/Case.md" },
+    ]);
+    expect(index.search("needle", 50, { maxContexts: 1 }).results[0]?.contexts).toHaveLength(1);
+    expect(() => index.search("needle", 50, { maxContexts: 101 })).toThrow("between 1 and 100");
+
+    const longLineIndex = new FullTextSearchIndex();
+    longLineIndex.upsert(document("Long.md", `${"lower prefix ".repeat(30)}Needle exact`));
+    expect(
+      longLineIndex.search("Needle", 50, { caseSensitive: true }).results[0]?.contexts[0]?.text,
+    ).toContain("Needle exact");
+  });
+
   it("replaces, updates, and removes documents without retaining stale matches", () => {
     const index = new FullTextSearchIndex();
     index.replace([document("Old.md", "before")]);

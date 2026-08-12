@@ -97,3 +97,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Headless `file`, `folder`, `folders`, and `wordcount` commands plus expanded `files` filters over a
   safe visible-file inventory, including attachments, recursive sizes, Unicode counts, private-tree
   exclusion, and contained file-symlink handling.
+- Obsidian-style CLI search folder, limit, case, total, and text/JSON output controls plus a separate
+  grep-style `search:context` command, backed by the same bounded rebuildable index.
+- Graph and outline CLI totals, backlink and unresolved counts, verbose unresolved sources,
+  JSON/TSV/CSV output, and tree/Markdown/JSON outline formats with deterministic empty output.
