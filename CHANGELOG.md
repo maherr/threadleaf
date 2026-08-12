@@ -137,13 +137,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   reveal, and absolute accessible item positions for large vaults.
 - Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the
   private selected set while loading no community JavaScript or CSS.
-- Dedicated Electron compatibility renderer with Node integration isolated from the sandboxed main
-  renderer, typed lifecycle IPC, transient session partitions, denied permissions and navigation,
-  operation timeouts, renderer-exit attribution, and production startup activation of the unchanged
-  Excalidraw 2.25.3 bundle.
-- Fatal compatibility-renderer recovery for timed-out operations, invalid protocol responses, send
-  failures, and renderer crashes. The shared plugin process is terminated, replaced with a clean
-  renderer, and every stopped plugin remains visible for explicit reload.
+- One Electron renderer process and transient session partition per compatibility plugin, with Node
+  integration isolated from the sandboxed main renderer, typed lifecycle IPC, denied permissions
+  and navigation, operation timeouts, renderer-exit attribution, and production activation of the
+  unchanged Excalidraw bundle.
+- Culprit-only compatibility-renderer recovery for timed-out operations, invalid protocol
+  responses, send failures, and renderer crashes. A production fixture proves the culprit PID is
+  replaced while a healthy sibling plugin and the native workspace continue responding.
 - Visible community-plugin `ItemView` attachment in a bounded child surface, including filename
   headers, plugin action icons, light/dark chrome propagation, view lifecycle, and layout snapshots.
 - Compatibility implementations for workspace view factories, metadata and frontmatter caches,

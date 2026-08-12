@@ -199,14 +199,15 @@ Custom views await `View.onOpen` before applying state and await `View.onClose` 
 unload. A failing close hook is reported without preventing component cleanup, workspace
 unregistration, or container removal.
 
-Every renderer request has a bounded deadline. A timeout, invalid response, failed IPC send, or
-renderer crash is fatal to the shared compatibility process. Threadleaf hides and terminates the
-old view, creates a clean renderer with the same vault boundary, keeps the native workspace
-responsive, and reports every plugin that had been loaded as stopped. It does not automatically
-replay plugins after an unknown failure point. Reload all or an individual plugin is an explicit
-new activation. A production-path disposable fixture verifies an infinite-looping command,
-replacement renderer creation, visible failure state, native-workspace responsiveness, and clean
-reload. Run the Linux production-path fixture with `pnpm test:plugin-recovery`.
+Every plugin receives its own renderer process and every renderer request has a bounded deadline.
+A timeout, invalid response, failed IPC send, or renderer crash is fatal only to that plugin's
+compatibility process. Threadleaf hides and terminates the culprit view, creates a clean renderer
+with the same vault boundary, keeps sibling plugins and the native workspace responsive, and
+reports the culprit as stopped. It does not automatically replay a plugin after an unknown failure
+point. Reload all or an individual plugin is an explicit new activation. A Linux production-path
+fixture starts two plugins in distinct renderer PIDs, blocks one in an infinite loop, proves only
+that PID is replaced, executes the healthy sibling immediately, and verifies clean reload. Run it
+with `pnpm test:plugin-recovery`.
 
 Plugin stylesheets are applied only while the corresponding package is selected, compatibility
 mode is enabled, and the exact bundle grant remains current. Imports and legacy executable CSS

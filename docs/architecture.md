@@ -14,16 +14,17 @@ compatibility problem before optimization begins.
 
 The primary application renderer remains isolated with `contextIsolation`, no Node integration,
 and Chromium sandboxing. DOM-dependent community plugins cannot execute in the main-process host or
-inside that sanitized renderer. They run in a separate, explicitly trusted `WebContentsView` with
-Node integration, a transient session partition, denied browser permissions, blocked navigation
-and popups, and `connect-src 'none'` for browser requests. This does not sandbox Node-capable plugin
-I/O. The main process communicates with that realm through validated typed request and response
-messages, times out every operation, attributes renderer exits, and never gives the primary
-renderer Node authority. A timeout, invalid protocol response, failed send, or renderer exit is a
-fatal boundary for the shared compatibility process. Threadleaf force-terminates that realm,
-creates a clean replacement, and retains every previously loaded plugin as stopped diagnostic
-state until the user explicitly reloads it. No plugin is replayed automatically after an unknown
-failure point. The unchanged Excalidraw 2.25.3 bundle activates in this production realm
+inside that sanitized renderer. Each enabled community plugin runs in its own explicitly trusted
+`WebContentsView` with Node integration, a unique transient session partition, denied browser
+permissions, blocked navigation and popups, and `connect-src 'none'` for browser requests. This
+does not sandbox Node-capable plugin I/O. The main process communicates with each realm through
+validated typed request and response messages, times out every operation, attributes renderer
+exits, and never gives the primary renderer Node authority. A timeout, invalid protocol response,
+failed send, or renderer exit is fatal only to the owning plugin process. Threadleaf forcibly
+terminates that realm, creates a clean replacement, and retains the culprit as stopped diagnostic
+state until the user explicitly reloads it. Healthy sibling plugins and the native workspace keep
+running, and no plugin is replayed automatically after an unknown failure point. The unchanged
+Excalidraw 2.25.3 bundle activates in this production realm
 and its registered `ItemView` now attaches to a bounded visible workspace leaf. The plugin owns the
 leaf content, filename header, action icons, modal content, and canvas lifecycle; Threadleaf owns
 the surrounding layout and propagates its light/dark chrome. The normal Markdown header is not
@@ -288,7 +289,7 @@ inert data URLs and reported before the remaining stylesheet is applied.
 saved settings. Safe mode and restricted mode remain distinct: safe mode is a process recovery
 boundary, while restricted mode is a persisted vault preference.
 
-The current CommonJS host is a trusted compatibility runtime, not a security sandbox. Static
+The current CommonJS hosts are trusted compatibility runtimes, not security sandboxes. Static
 authority reporting makes trust reviewable and revocable but does not enforce runtime permissions.
 The host exposes only the independently implemented API surface backed by executable fixtures.
 Installed plugins outside that surface can fail during activation and are not claimed compatible

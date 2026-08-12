@@ -134,6 +134,25 @@ equivalence through the real writer-to-watcher seam.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
 
+### Daily-drive beta handoff
+
+Threadleaf will be presented as ready for Maher's daily-drive testing only when every unchecked
+item here is closed. The first handoff uses a copy of the live vault and never requires conversion.
+
+- [ ] Exercise a representative copy of the live vault at real scale, including large notes,
+      attachments, external edits, sync-style event bursts, rename refactors, and restart recovery.
+- [ ] Complete the editor reliability pass for IME, undo and redo, selections, dirty navigation,
+      save conflicts, crash recovery, and no-loss reopen behavior.
+- [x] Isolate each compatibility plugin in its own renderer process and prove that a timed-out
+      plugin does not stop a healthy sibling or the native workspace.
+- [x] Load the current public Excalidraw 2.26.4 bundle through the packaged desktop authority and
+      process-isolation path without changing its source.
+- [x] Produce installable Linux desktop artifacts with checksums and native package inspection.
+- [ ] Add a one-command, privacy-reviewed diagnostic bundle and a short beta feedback template for
+      reproducible bugs and improvement notes.
+- [ ] Rehearse application upgrade and rollback with the beta package while preserving the vault
+      and Threadleaf's private settings.
+
 ## Phase 3: Compatibility alpha
 
 - [ ] Build an executable same-vault behavior corpus for links, aliases, embeds, attachments,
@@ -152,9 +171,10 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       exact-version compatibility evidence, and missing packages without loading or selecting code.
 - [x] Implement enable, disable, reload, startup safe mode, lifecycle diagnostics, independent
       failure retention, and clean unload for every discovered compatibility plugin.
-- [x] Add renderer-wide operation deadlines, forced termination, crash attribution, clean runtime
-      replacement, stopped-plugin diagnostics, and explicit reload recovery.
-- [ ] Add per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
+- [x] Add per-plugin process isolation, operation deadlines, forced culprit termination, crash
+      attribution, clean runtime replacement, stopped-plugin diagnostics, and explicit reload
+      recovery while healthy sibling plugins continue running.
+- [ ] Add per-plugin CPU, memory, and operation-specific resource budgets.
 - [x] Implement reviewable install, update, rollback, uninstall, and restore through a replaceable
       package-source interface and public compatibility registry, with exact version pins, full
       SHA-256 evidence, retained licenses, five-version private history, durable interruption

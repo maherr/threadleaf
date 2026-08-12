@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 const appRoot = process.cwd();
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
@@ -16,6 +17,7 @@ const output = [];
 let child;
 let cdp;
 let exited;
+const execFileAsync = promisify(execFile);
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -164,6 +166,44 @@ async function waitForReadyPlugins(vaultPath, timeoutMs) {
   throw new Error("The target vault and both recovery fixtures were not ready in time.");
 }
 
+async function rendererProcessIds(rootPid) {
+  const { stdout } = await execFileAsync("ps", ["-eo", "pid=,ppid=,args="], {
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const rows = stdout
+    .split("\n")
+    .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/u))
+    .filter(Boolean)
+    .map((match) => ({ pid: Number(match[1]), ppid: Number(match[2]), args: match[3] }));
+  const descendants = new Set([rootPid]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const row of rows) {
+      if (descendants.has(row.ppid) && !descendants.has(row.pid)) {
+        descendants.add(row.pid);
+        changed = true;
+      }
+    }
+  }
+  return rows
+    .filter((row) => descendants.has(row.pid) && row.args.includes("--type=renderer"))
+    .map(({ pid }) => pid)
+    .sort((left, right) => left - right);
+}
+
+async function waitForRendererProcesses(rootPid, expectedCount, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const processIds = await rendererProcessIds(rootPid);
+    if (processIds.length >= expectedCount) {
+      return processIds;
+    }
+    await delay(50);
+  }
+  throw new Error(`Expected at least ${expectedCount} isolated renderer processes.`);
+}
+
 try {
   if (process.platform !== "linux") {
     throw new Error("The plugin recovery integration check currently requires Linux and Xvfb.");
@@ -177,17 +217,33 @@ try {
   await fs.mkdir(userDataPath, { recursive: true });
   const canonicalVaultPath = await fs.realpath(vaultPath);
   const vaultId = createHash("sha256").update(canonicalVaultPath).digest("hex");
+  const fixtureBundle = await fs.readFile(
+    path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture", "main.js"),
+  );
+  const hangBundle = await fs.readFile(
+    path.join(vaultPath, ".obsidian", "plugins", "threadleaf-hang", "main.js"),
+  );
   await fs.writeFile(
     path.join(userDataPath, "settings.json"),
     `${JSON.stringify(
       {
-        version: 3,
+        version: 4,
         keyBindings: {},
         appearanceByVault: {},
         pluginsByVault: {
           [vaultId]: {
             compatibilityMode: "enabled",
             enabledPluginIds: ["threadleaf-fixture", "threadleaf-hang"],
+            capabilityGrantsByPlugin: {
+              "threadleaf-fixture": {
+                bundleSha256: createHash("sha256").update(fixtureBundle).digest("hex"),
+                capabilities: ["workspace-ui"],
+              },
+              "threadleaf-hang": {
+                bundleSha256: createHash("sha256").update(hangBundle).digest("hex"),
+                capabilities: ["workspace-ui"],
+              },
+            },
           },
         },
       },
@@ -238,10 +294,17 @@ try {
   const target = await waitForMainTarget(port);
   cdp = connectCdp(target.webSocketDebuggerUrl);
   const before = await waitForReadyPlugins(canonicalVaultPath, 15_000);
+  const rendererPidsBefore = await waitForRendererProcesses(child.pid, 3, 5_000);
   const recovered = await withTimeout(
     evaluate('window.threadleaf.runCommand("hang")'),
     10_000,
     "The timed-out command did not recover within 10 seconds.",
+  );
+  const rendererPidsAfter = await waitForRendererProcesses(child.pid, 3, 5_000);
+  const survivor = await withTimeout(
+    evaluate('window.threadleaf.runCommand("threadleaf-fixture-confirm")'),
+    5_000,
+    "The healthy plugin command stopped responding after its sibling timed out.",
   );
   const after = await withTimeout(
     evaluate("window.threadleaf.getSnapshot()"),
@@ -253,7 +316,15 @@ try {
     10_000,
     "Explicit plugin reload did not resolve within 10 seconds.",
   );
-  const result = { before, recovered, after, reloaded };
+  const result = {
+    before,
+    recovered,
+    survivor,
+    after,
+    reloaded,
+    rendererPidsBefore,
+    rendererPidsAfter,
+  };
 
   assert(result, "Renderer probe returned no result.");
   assert(
@@ -264,15 +335,35 @@ try {
     result.before.commands.length === 2,
     "Both disposable plugins must load before the probe.",
   );
-  assert(result.recovered.commands.length === 0, "Recovered renderer retained stale commands.");
   assert(
-    result.recovered.plugins.length === 2 &&
-      result.recovered.plugins.every(({ state }) => state === "failed"),
-    "Stopped plugins were not retained as failed diagnostics.",
+    result.rendererPidsBefore.length >= 3,
+    "The two plugins did not receive separate renderer processes.",
+  );
+  assert(
+    result.rendererPidsAfter.some((pid) => !result.rendererPidsBefore.includes(pid)),
+    "The timed-out plugin renderer process was not replaced.",
+  );
+  assert(
+    result.rendererPidsBefore.filter((pid) => result.rendererPidsAfter.includes(pid)).length >= 2,
+    "The main and healthy plugin renderer processes did not survive the isolated failure.",
+  );
+  assert(
+    result.recovered.commands.length === 1 &&
+      result.recovered.commands[0]?.id === "threadleaf-fixture-confirm",
+    "The isolated recovery did not preserve the healthy plugin command.",
+  );
+  assert(
+    result.recovered.plugins.find(({ id }) => id === "threadleaf-hang")?.state === "failed" &&
+      result.recovered.plugins.find(({ id }) => id === "threadleaf-fixture")?.state === "loaded",
+    "The isolated recovery did not fail only the culprit plugin.",
   );
   assert(
     result.recovered.notices.at(-1)?.includes("plugin operation was stopped"),
     "The timed-out command did not return an explicit recovery notice.",
+  );
+  assert(
+    result.survivor.notices.at(-1) === "Fixture command crossed the compatibility bridge.",
+    "The healthy plugin did not execute after its sibling timed out.",
   );
   assert(
     result.after.events.some(({ message }) =>
@@ -289,7 +380,7 @@ try {
   );
 
   await withTimeout(
-    evaluate("setTimeout(() => window.close(), 0); true"),
+    evaluate("setTimeout(() => window.close(), 1000); true"),
     5_000,
     "The main renderer did not acknowledge its close request.",
   );
@@ -302,7 +393,7 @@ try {
     `Electron did not exit cleanly: ${JSON.stringify(exit)}\n${output.join("")}`,
   );
   console.log(
-    "Verified forced plugin-renderer termination, clean replacement, failed-plugin diagnostics, native-workspace responsiveness, and explicit reload recovery.",
+    "Verified one renderer process per plugin, culprit-only timeout recovery, healthy-plugin continuity, native-workspace responsiveness, and explicit reload recovery.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

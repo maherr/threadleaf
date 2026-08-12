@@ -126,14 +126,15 @@ restores the exact prior directory and private metadata or completes cleanup for
 committed operation. The current source adapter reads the public `obsidian-releases` registry at
 runtime but does not redistribute it or represent that unlicensed repository as Threadleaf's future
 open directory. The source interface and review protocol are replaceable open code.
-Startup plugin safe mode preserves the saved selection while loading no community code or CSS. The
-compatibility host remains an explicitly
-trusted desktop runtime in a separate transient Electron session with Node integration, a
+Startup plugin safe mode preserves the saved selection while loading no community code or CSS.
+Each compatibility host remains an explicitly trusted desktop runtime in a separate transient
+Electron session with Node integration, a
 browser `connect-src 'none'` policy, denied browser permissions, blocked popups and
-navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. A timed
-out operation, invalid response, send failure, or renderer crash terminates that shared plugin
-process. Threadleaf starts a clean renderer, keeps the native workspace responsive, and marks every
-stopped plugin for explicit reload instead of assuming its in-memory state survived. Its
+navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. Each
+plugin gets its own renderer process and transient partition. A timed-out operation, invalid
+response, send failure, or renderer crash terminates only the culprit process. Threadleaf starts a
+clean renderer, keeps healthy sibling plugins and the native workspace responsive, and marks the
+culprit for explicit reload instead of assuming its in-memory state survived. The host's
 independently implemented DOM and UI base APIs activate the unchanged Excalidraw 2.25.3 release
 bundle in both a disposable DOM probe and the production compatibility renderer. Excalidraw
 registers two views, its commands, a ribbon action, a settings tab, and a Markdown processor. An

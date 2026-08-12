@@ -12,6 +12,7 @@ import { AppSettingsController } from "../application/app-settings-controller";
 import { AppUpdateController } from "../application/app-update-controller";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
+import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
 import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared/appearance";
 import type {
@@ -78,61 +79,74 @@ let appUpdateController: AppUpdateController;
 let pluginPackageManager: PluginPackageManager;
 let pluginOperationTail: Promise<void> = Promise.resolve();
 let attachedPluginView: WebContentsView | null = null;
-let compatibilityPluginView: WebContentsView | null = null;
+const compatibilityPluginViews = new Set<WebContentsView>();
+const compatibilityPluginWebContents = new Set<WebContents>();
+const visiblePluginViews = new Set<WebContentsView>();
 let pluginSurfaceBounds: PluginSurfaceBounds = { x: 0, y: 0, width: 0, height: 0 };
 let pluginSurfaceCss = "";
-let pluginSurfaceCssKey: string | null = null;
-let pluginSurfaceCssWebContents: WebContents | null = null;
-let compatibilityPluginWebContents: WebContents | null = null;
+const pluginSurfaceCssKeys = new Map<WebContents, string>();
 let pluginSurfaceTheme: "dark" | "light" = "dark";
 let pluginSurfacePresentationVisible = true;
-let pluginRuntimeSurfaceVisible = false;
 
 async function applyPluginSurfaceTheme(
   theme: "dark" | "light",
-  webContents = compatibilityPluginWebContents,
+  webContents?: WebContents,
 ): Promise<void> {
   pluginSurfaceTheme = theme;
-  if (!webContents || webContents.isDestroyed()) {
-    return;
-  }
-  await webContents.executeJavaScript(`
-    (() => {
-      const theme = ${JSON.stringify(theme)};
-      document.documentElement.dataset.theme = theme;
-      for (const target of [document.documentElement, document.body]) {
-        target.classList.toggle("theme-dark", theme === "dark");
-        target.classList.toggle("theme-light", theme === "light");
+  const targets = webContents ? [webContents] : [...compatibilityPluginWebContents];
+  const results = await Promise.allSettled(
+    targets.map(async (target) => {
+      if (target.isDestroyed()) {
+        return;
       }
-    })()
-  `);
+      await target.executeJavaScript(`
+        (() => {
+          const theme = ${JSON.stringify(theme)};
+          document.documentElement.dataset.theme = theme;
+          for (const target of [document.documentElement, document.body]) {
+            target.classList.toggle("theme-dark", theme === "dark");
+            target.classList.toggle("theme-light", theme === "light");
+          }
+        })()
+      `);
+    }),
+  );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Could not apply the theme to an isolated plugin renderer:", result.reason);
+    }
+  }
 }
 
-async function applyPluginSurfaceCss(
-  css: string,
-  view = compatibilityPluginView,
-  webContents = compatibilityPluginWebContents,
-): Promise<void> {
+async function applyPluginSurfaceCss(css: string, view?: WebContentsView): Promise<void> {
   pluginSurfaceCss = css;
-  const previousWebContents = pluginSurfaceCssWebContents;
-  const previousKey = pluginSurfaceCssKey;
-  pluginSurfaceCssWebContents = null;
-  pluginSurfaceCssKey = null;
-  if (previousWebContents && previousKey && !previousWebContents.isDestroyed()) {
-    await previousWebContents.removeInsertedCSS(previousKey).catch(() => undefined);
-  }
-  if (!view || !webContents || webContents.isDestroyed() || !css) {
-    return;
-  }
-  const key = await webContents.insertCSS(css, { cssOrigin: "author" });
-  if (webContents.isDestroyed() || view !== compatibilityPluginView) {
-    if (!webContents.isDestroyed()) {
-      await webContents.removeInsertedCSS(key).catch(() => undefined);
+  const targets = view ? [view] : [...compatibilityPluginViews];
+  const results = await Promise.allSettled(
+    targets.map(async (target) => {
+      const webContents = target.webContents;
+      const previousKey = pluginSurfaceCssKeys.get(webContents);
+      pluginSurfaceCssKeys.delete(webContents);
+      if (previousKey && !webContents.isDestroyed()) {
+        await webContents.removeInsertedCSS(previousKey).catch(() => undefined);
+      }
+      if (webContents.isDestroyed() || !css) {
+        return;
+      }
+      const key = await webContents.insertCSS(css, { cssOrigin: "author" });
+      if (webContents.isDestroyed() || !compatibilityPluginViews.has(target)) {
+        if (!webContents.isDestroyed()) {
+          await webContents.removeInsertedCSS(key).catch(() => undefined);
+        }
+        return;
+      }
+      pluginSurfaceCssKeys.set(webContents, key);
+    }),
+  );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Could not apply CSS to an isolated plugin renderer:", result.reason);
     }
-    return;
   }
-  pluginSurfaceCssWebContents = webContents;
-  pluginSurfaceCssKey = key;
 }
 
 function detachPluginView(): void {
@@ -150,16 +164,16 @@ function updatePluginViewBounds(): void {
 }
 
 function setPluginViewVisibility(view: WebContentsView, visible: boolean): void {
-  if (view === compatibilityPluginView) {
-    pluginRuntimeSurfaceVisible = visible;
-  }
   if (!visible) {
+    visiblePluginViews.delete(view);
     if (attachedPluginView === view) {
       detachPluginView();
     }
     return;
   }
-  if (!pluginSurfacePresentationVisible || view !== compatibilityPluginView) {
+  visiblePluginViews.delete(view);
+  visiblePluginViews.add(view);
+  if (!pluginSurfacePresentationVisible || !compatibilityPluginViews.has(view)) {
     return;
   }
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -181,10 +195,35 @@ function setPluginSurfacePresentationVisible(visible: boolean): void {
     detachPluginView();
     return;
   }
-  const view = compatibilityPluginView;
-  if (view && pluginRuntimeSurfaceVisible) {
+  const view = [...visiblePluginViews].findLast(
+    (candidate) => compatibilityPluginViews.has(candidate) && !candidate.webContents.isDestroyed(),
+  );
+  if (view) {
     setPluginViewVisibility(view, true);
   }
+}
+
+async function registerCompatibilityPluginView(view: WebContentsView): Promise<void> {
+  const webContents = view.webContents;
+  compatibilityPluginViews.add(view);
+  compatibilityPluginWebContents.add(webContents);
+  webContents.once("destroyed", () => {
+    compatibilityPluginViews.delete(view);
+    compatibilityPluginWebContents.delete(webContents);
+    visiblePluginViews.delete(view);
+    pluginSurfaceCssKeys.delete(webContents);
+    if (attachedPluginView === view) {
+      detachPluginView();
+    }
+  });
+  await Promise.all([
+    applyPluginSurfaceTheme(pluginSurfaceTheme, webContents),
+    applyPluginSurfaceCss(pluginSurfaceCss, view),
+  ]);
+}
+
+function isCompatibilityPluginSender(webContents: WebContents): boolean {
+  return compatibilityPluginWebContents.has(webContents) && !webContents.isDestroyed();
 }
 
 function describeVaultOpenFailure(error: unknown): string {
@@ -412,43 +451,33 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
     pluginRuntimeFactory: async (vaultPath) => {
       const pluginOperationTimeout = developmentPluginOperationTimeout();
-      return RecoveringPluginRuntime.open({
+      return IsolatedPluginRuntime.open({
         create: () =>
-          ElectronPluginRuntime.open({
-            hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
-            onSurfaceVisibilityChange: setPluginViewVisibility,
-            packageJsonPath: join(app.getAppPath(), "package.json"),
-            vaultPath,
-            ...(pluginOperationTimeout ? { operationTimeoutMs: pluginOperationTimeout } : {}),
+          RecoveringPluginRuntime.open({
+            create: () =>
+              ElectronPluginRuntime.open({
+                hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
+                onSurfaceVisibilityChange: setPluginViewVisibility,
+                packageJsonPath: join(app.getAppPath(), "package.json"),
+                vaultPath,
+                ...(pluginOperationTimeout ? { operationTimeoutMs: pluginOperationTimeout } : {}),
+              }),
+            describePlugin: async (pluginDirectory) => {
+              const discovery = await discoverVaultPlugins(vaultPath);
+              const installed = discovery.plugins.find(
+                (plugin) => plugin.directoryPath === pluginDirectory,
+              );
+              return installed
+                ? {
+                    id: installed.summary.id,
+                    name: installed.summary.name,
+                    version: installed.summary.version,
+                    stylesheetDiscovered: installed.summary.stylesheetDiscovered,
+                  }
+                : null;
+            },
+            onRuntimeChange: async (runtime) => registerCompatibilityPluginView(runtime.view),
           }),
-        describePlugin: async (pluginDirectory) => {
-          const discovery = await discoverVaultPlugins(vaultPath);
-          const installed = discovery.plugins.find(
-            (plugin) => plugin.directoryPath === pluginDirectory,
-          );
-          return installed
-            ? {
-                id: installed.summary.id,
-                name: installed.summary.name,
-                version: installed.summary.version,
-                stylesheetDiscovered: installed.summary.stylesheetDiscovered,
-              }
-            : null;
-        },
-        onRuntimeChange: async (runtime) => {
-          if (attachedPluginView === compatibilityPluginView) {
-            detachPluginView();
-          }
-          pluginRuntimeSurfaceVisible = false;
-          compatibilityPluginView = runtime.view;
-          compatibilityPluginWebContents = runtime.view.webContents;
-          await applyPluginSurfaceTheme(pluginSurfaceTheme, compatibilityPluginWebContents);
-          await applyPluginSurfaceCss(
-            pluginSurfaceCss,
-            runtime.view,
-            compatibilityPluginWebContents,
-          );
-        },
       });
     },
     deferInitialVault: true,
@@ -496,12 +525,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.downloadAppUpdate, () => appUpdateController.downloadUpdate());
   ipcMain.handle(ipcChannels.installAppUpdate, () => appUpdateController.installUpdate());
   ipcMain.handle(pluginRendererChannels.vaultCreate, async (event, value: unknown) => {
-    const pluginWebContents = compatibilityPluginWebContents;
-    if (
-      !pluginWebContents ||
-      pluginWebContents.isDestroyed() ||
-      event.sender !== pluginWebContents
-    ) {
+    if (!isCompatibilityPluginSender(event.sender)) {
       throw new Error("Plugin vault creates require the active compatibility renderer.");
     }
     const request = parsePluginVaultCreateRequest(value);
@@ -515,12 +539,7 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultCreateBinary, async (event, value: unknown) => {
-    const pluginWebContents = compatibilityPluginWebContents;
-    if (
-      !pluginWebContents ||
-      pluginWebContents.isDestroyed() ||
-      event.sender !== pluginWebContents
-    ) {
+    if (!isCompatibilityPluginSender(event.sender)) {
       throw new Error("Plugin binary vault creates require the active compatibility renderer.");
     }
     const request = parsePluginVaultCreateBinaryRequest(value);
@@ -534,12 +553,7 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultCreateFolder, async (event, value: unknown) => {
-    const pluginWebContents = compatibilityPluginWebContents;
-    if (
-      !pluginWebContents ||
-      pluginWebContents.isDestroyed() ||
-      event.sender !== pluginWebContents
-    ) {
+    if (!isCompatibilityPluginSender(event.sender)) {
       throw new Error("Plugin vault folder creates require the active compatibility renderer.");
     }
     const request = parsePluginVaultCreateFolderRequest(value);
@@ -549,12 +563,7 @@ function registerIpcHandlers(): void {
     return workspaceController.createPluginFolder(request.folderPath, workspaceController.vaultId);
   });
   ipcMain.handle(pluginRendererChannels.vaultRename, async (event, value: unknown) => {
-    const pluginWebContents = compatibilityPluginWebContents;
-    if (
-      !pluginWebContents ||
-      pluginWebContents.isDestroyed() ||
-      event.sender !== pluginWebContents
-    ) {
+    if (!isCompatibilityPluginSender(event.sender)) {
       throw new Error("Plugin vault renames require the active compatibility renderer.");
     }
     const request = parsePluginVaultRenameRequest(value);
@@ -569,12 +578,7 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultTrash, async (event, value: unknown) => {
-    const pluginWebContents = compatibilityPluginWebContents;
-    if (
-      !pluginWebContents ||
-      pluginWebContents.isDestroyed() ||
-      event.sender !== pluginWebContents
-    ) {
+    if (!isCompatibilityPluginSender(event.sender)) {
       throw new Error("Plugin vault trash requires the active compatibility renderer.");
     }
     const request = parsePluginVaultTrashRequest(value);
@@ -588,12 +592,7 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultWrite, async (event, value: unknown) => {
-    const pluginWebContents = compatibilityPluginWebContents;
-    if (
-      !pluginWebContents ||
-      pluginWebContents.isDestroyed() ||
-      event.sender !== pluginWebContents
-    ) {
+    if (!isCompatibilityPluginSender(event.sender)) {
       throw new Error("Plugin vault writes require the active compatibility renderer.");
     }
     const request = parsePluginVaultWriteRequest(value);
@@ -608,12 +607,7 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultWriteBinary, async (event, value: unknown) => {
-    const pluginWebContents = compatibilityPluginWebContents;
-    if (
-      !pluginWebContents ||
-      pluginWebContents.isDestroyed() ||
-      event.sender !== pluginWebContents
-    ) {
+    if (!isCompatibilityPluginSender(event.sender)) {
       throw new Error("Plugin binary vault writes require the active compatibility renderer.");
     }
     const request = parsePluginVaultWriteBinaryRequest(value);
@@ -1196,10 +1190,10 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
   prepare: detachPluginView,
   close: () => workspaceController?.close(),
   finalize: () => {
-    compatibilityPluginView = null;
-    compatibilityPluginWebContents = null;
-    pluginSurfaceCssWebContents = null;
-    pluginSurfaceCssKey = null;
+    compatibilityPluginViews.clear();
+    compatibilityPluginWebContents.clear();
+    visiblePluginViews.clear();
+    pluginSurfaceCssKeys.clear();
   },
   quit: () => app.quit(),
   reportError: (error) => console.error("Threadleaf shutdown cleanup failed:", error),
