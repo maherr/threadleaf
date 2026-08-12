@@ -160,6 +160,30 @@ describe("VaultKernel path policy", () => {
     await expect(kernel.listMarkdownPaths()).resolves.toEqual(["Root.md"]);
     await expect(kernel.listVisiblePaths("../")).rejects.toBeInstanceOf(VaultPathError);
   });
+
+  it("creates nested public directories while rejecting private, linked, and file paths", async () => {
+    const kernel = await openKernel();
+
+    await expect(kernel.createDirectory("Excalidraw/Nested")).resolves.toEqual({
+      path: "Excalidraw/Nested",
+      created: true,
+    });
+    await expect(kernel.createDirectory("Excalidraw/Nested/")).resolves.toEqual({
+      path: "Excalidraw/Nested",
+      created: false,
+    });
+    await expect(fs.stat(path.join(vaultPath, "Excalidraw", "Nested"))).resolves.toMatchObject({
+      isDirectory: expect.any(Function),
+    });
+    await expect(kernel.createDirectory(".obsidian/Plugins")).rejects.toThrow(
+      "private application paths",
+    );
+
+    await fs.symlink("Excalidraw", path.join(vaultPath, "Linked"), "dir");
+    await expect(kernel.createDirectory("Linked/New")).rejects.toThrow("symbolic links");
+    await fs.writeFile(path.join(vaultPath, "Not a folder"), "file", "utf8");
+    await expect(kernel.createDirectory("Not a folder/Nested")).rejects.toThrow("not a directory");
+  });
 });
 
 describe("VaultKernel writes", () => {

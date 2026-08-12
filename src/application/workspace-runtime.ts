@@ -3,7 +3,7 @@ import { VaultIndexReactor } from "../kernel/metadata-index";
 import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
 import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
 import { normalizeVaultPath } from "../kernel/path-policy";
-import type { StateRootPort } from "../kernel/ports";
+import type { StateRootPort, VaultDirectoryCreateResult } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
@@ -519,6 +519,29 @@ export class WorkspaceRuntime {
     return { outcome, snapshot: await this.publishSnapshot() };
   }
 
+  async createPluginNote(
+    filePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome> {
+    const outcome = await this.createNoteThroughKernel(
+      { path: filePath, content, expectedVaultId },
+      false,
+    );
+    await this.publishSnapshot();
+    return outcome;
+  }
+
+  async createPluginFolder(
+    folderPath: string,
+    expectedVaultId: string,
+  ): Promise<VaultDirectoryCreateResult> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this folder could be created.");
+    }
+    return this.kernel.createDirectory(folderPath);
+  }
+
   async runPluginCommand(commandId: string): Promise<RuntimeSnapshot> {
     await this.pluginHost.runCommand(commandId);
     return this.publishSnapshot();
@@ -829,7 +852,10 @@ export class WorkspaceRuntime {
     return outcome;
   }
 
-  private async createNoteThroughKernel(request: CreateNoteRequest): Promise<NoteCreateOutcome> {
+  private async createNoteThroughKernel(
+    request: CreateNoteRequest,
+    activate = true,
+  ): Promise<NoteCreateOutcome> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this note could be created.");
     }
@@ -845,7 +871,7 @@ export class WorkspaceRuntime {
         revision: outcome.revision,
       });
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
-      if (this.activatePath(outcome.path)) {
+      if (activate && this.activatePath(outcome.path)) {
         await this.persistWorkspaceStateBestEffort();
       }
       return outcome;
@@ -862,7 +888,7 @@ export class WorkspaceRuntime {
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
     }
     await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
-    if (this.activatePath(conflictCopy.path)) {
+    if (activate && this.activatePath(conflictCopy.path)) {
       await this.persistWorkspaceStateBestEffort();
     }
     return outcome;

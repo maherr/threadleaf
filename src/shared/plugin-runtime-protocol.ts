@@ -4,8 +4,37 @@ export const pluginRendererChannels = {
   ready: "threadleaf:plugin-renderer-ready",
   request: "threadleaf:plugin-renderer-request",
   response: "threadleaf:plugin-renderer-response",
+  vaultCreate: "threadleaf:plugin-renderer-vault-create",
+  vaultCreateFolder: "threadleaf:plugin-renderer-vault-create-folder",
   vaultWrite: "threadleaf:plugin-renderer-vault-write",
 } as const;
+
+export interface PluginVaultCreateRequest {
+  content: string;
+  filePath: string;
+  vaultPath: string;
+}
+
+export type PluginVaultCreateResponse =
+  | { status: "committed"; path: string; revision: string; transactionId: string }
+  | { status: "exists"; path: string; currentRevision: string }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+    };
+
+export interface PluginVaultCreateFolderRequest {
+  folderPath: string;
+  vaultPath: string;
+}
+
+export interface PluginVaultCreateFolderResponse {
+  created: boolean;
+  path: string;
+}
 
 export interface PluginVaultWriteRequest {
   content: string;
@@ -135,6 +164,45 @@ export function parsePluginVaultWriteRequest(value: unknown): PluginVaultWriteRe
     content: candidate.content,
     expectedRevision: candidate.expectedRevision,
   };
+}
+
+export function parsePluginVaultCreateRequest(value: unknown): PluginVaultCreateRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin vault create request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.filePath !== "string" ||
+    candidate.filePath.length === 0 ||
+    typeof candidate.content !== "string"
+  ) {
+    throw new Error("Plugin vault creates require vault, file, and content strings.");
+  }
+  return {
+    vaultPath: candidate.vaultPath,
+    filePath: candidate.filePath,
+    content: candidate.content,
+  };
+}
+
+export function parsePluginVaultCreateFolderRequest(
+  value: unknown,
+): PluginVaultCreateFolderRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin vault folder create request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.folderPath !== "string" ||
+    candidate.folderPath.length === 0
+  ) {
+    throw new Error("Plugin vault folder creates require vault and folder strings.");
+  }
+  return { vaultPath: candidate.vaultPath, folderPath: candidate.folderPath };
 }
 
 export function requirePayloadString(request: PluginRendererRequest, key: string): string {

@@ -25,6 +25,11 @@ export type VaultWriteResult =
       transactionId: string;
     };
 
+export interface VaultDirectoryCreateResult {
+  created: boolean;
+  path: string;
+}
+
 export type VaultRenameResult =
   | { status: "committed"; from: string; to: string; transactionId: string }
   | { status: "conflict"; from: string; to: string; reason: string };

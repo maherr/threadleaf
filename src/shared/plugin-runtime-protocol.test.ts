@@ -3,6 +3,8 @@ import {
   optionalPayloadString,
   parsePluginRendererRequest,
   parsePluginRendererResponse,
+  parsePluginVaultCreateFolderRequest,
+  parsePluginVaultCreateRequest,
   parsePluginVaultWriteRequest,
   requirePayloadString,
 } from "./plugin-runtime-protocol";
@@ -79,5 +81,31 @@ describe("plugin renderer protocol", () => {
         expectedRevision: "stale",
       }),
     ).toThrow("SHA-256 revision");
+  });
+
+  it("validates plugin file and folder create requests", () => {
+    expect(
+      parsePluginVaultCreateRequest({
+        vaultPath: "/vault",
+        filePath: "Excalidraw/Drawing.excalidraw.md",
+        content: "drawing bytes",
+      }),
+    ).toEqual({
+      vaultPath: "/vault",
+      filePath: "Excalidraw/Drawing.excalidraw.md",
+      content: "drawing bytes",
+    });
+    expect(
+      parsePluginVaultCreateFolderRequest({
+        vaultPath: "/vault",
+        folderPath: "Excalidraw",
+      }),
+    ).toEqual({ vaultPath: "/vault", folderPath: "Excalidraw" });
+    expect(() =>
+      parsePluginVaultCreateRequest({ vaultPath: "/vault", filePath: "", content: "" }),
+    ).toThrow("vault, file, and content");
+    expect(() =>
+      parsePluginVaultCreateFolderRequest({ vaultPath: "/vault", folderPath: "" }),
+    ).toThrow("vault and folder");
   });
 });

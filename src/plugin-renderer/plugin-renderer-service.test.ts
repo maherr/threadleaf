@@ -66,7 +66,7 @@ describe("PluginRendererService", () => {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { MarkdownRenderer, Notice, Plugin, TextFileView, WorkspaceSplit } = require("obsidian");
+        `const { MarkdownRenderer, Notice, Plugin, TextFileView, WorkspaceSplit, moment } = require("obsidian");
 class RendererView extends TextFileView {
   constructor(leaf) {
     super(leaf);
@@ -85,9 +85,20 @@ class RendererView extends TextFileView {
 }
 module.exports = class RendererFixture extends Plugin {
   async onload() {
+    if (moment.utc("2026-08-12").format("YYYY-MM-DD") !== "2026-08-12") throw new Error("Module moment missing");
+    if (window.moment.utc("2026-08-12").format("YYYY-MM-DD") !== "2026-08-12") throw new Error("Global moment missing");
     this.addRibbonIcon("leaf", "Renderer action", () => new Notice("Renderer action ran."));
     this.addCommand({ id: "renderer-command", name: "Superseded command", callback: () => new Notice("Superseded command ran.") });
     this.addCommand({ id: "renderer-command", name: "Renderer command", callback: () => new Notice("Renderer command ran.") });
+    this.addCommand({
+      id: "renderer-create",
+      name: "Create renderer drawing",
+      callback: async () => {
+        await this.app.vault.createFolder("Drawings");
+        const file = await this.app.vault.create("Drawings/New.drawing", "new drawing content");
+        await this.app.workspace.getLeaf(false).openFile(file);
+      },
+    });
     this.registerView("renderer-view", (leaf) => new RendererView(leaf));
     this.registerExtensions(["drawing"], "renderer-view");
     this.registerEditorExtension([]);
@@ -127,16 +138,45 @@ module.exports = class RendererFixture extends Plugin {
       );
 
       const writes: PluginVaultWriteRequest[] = [];
-      const service = new PluginRendererService(async (writeRequest) => {
-        writes.push({ ...writeRequest });
-        const absolutePath = path.join(writeRequest.vaultPath, writeRequest.filePath);
-        await fs.writeFile(absolutePath, writeRequest.content, "utf8");
-        return {
-          status: "committed",
-          path: writeRequest.filePath,
-          revision: revisionOf(Buffer.from(writeRequest.content, "utf8")),
-          transactionId: "renderer-test-write",
-        };
+      const createdFolders: string[] = [];
+      const createdFiles: string[] = [];
+      const service = new PluginRendererService({
+        createFolder: async (createRequest) => {
+          const absolutePath = path.join(createRequest.vaultPath, createRequest.folderPath);
+          let created = false;
+          try {
+            await fs.mkdir(absolutePath);
+            created = true;
+          } catch (error) {
+            if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+              throw error;
+            }
+          }
+          createdFolders.push(createRequest.folderPath);
+          return { path: createRequest.folderPath, created };
+        },
+        createText: async (createRequest) => {
+          const absolutePath = path.join(createRequest.vaultPath, createRequest.filePath);
+          await fs.writeFile(absolutePath, createRequest.content, { encoding: "utf8", flag: "wx" });
+          createdFiles.push(createRequest.filePath);
+          return {
+            status: "committed",
+            path: createRequest.filePath,
+            revision: revisionOf(Buffer.from(createRequest.content, "utf8")),
+            transactionId: "renderer-test-create",
+          };
+        },
+        writeText: async (writeRequest) => {
+          writes.push({ ...writeRequest });
+          const absolutePath = path.join(writeRequest.vaultPath, writeRequest.filePath);
+          await fs.writeFile(absolutePath, writeRequest.content, "utf8");
+          return {
+            status: "committed",
+            path: writeRequest.filePath,
+            revision: revisionOf(Buffer.from(writeRequest.content, "utf8")),
+            transactionId: "renderer-test-write",
+          };
+        },
       });
       const initialized = await service.handle(
         request("initialize", {
@@ -146,6 +186,7 @@ module.exports = class RendererFixture extends Plugin {
       );
       expect(initialized?.vault.path).toBe(path.resolve(vaultPath));
       expect(dom.window.eval("app.vault.getName()")).toBe("vault");
+      expect(dom.window.eval("typeof moment")).toBe("function");
 
       const loaded = await service.handle(request("load-plugin", { pluginDirectory: pluginPath }));
       expect(loaded?.plugin).toMatchObject({
@@ -153,7 +194,7 @@ module.exports = class RendererFixture extends Plugin {
         state: "loaded",
         compatibilityLevel: 3,
       });
-      expect(loaded?.actions.map(({ id }) => id)).toEqual(["renderer-command"]);
+      expect(loaded?.actions.map(({ id }) => id)).toEqual(["renderer-create", "renderer-command"]);
       expect(loaded?.integrations).toMatchObject({
         extensions: [{ extension: "drawing", viewType: "renderer-view" }],
         viewTypes: ["renderer-view"],
@@ -223,6 +264,20 @@ module.exports = class RendererFixture extends Plugin {
         "saved renderer surface",
       );
 
+      const created = await service.handle(
+        request("run-command", { commandId: "renderer-create" }),
+      );
+      expect(created?.pluginSurface).toEqual({
+        displayText: "New",
+        filePath: "Drawings/New.drawing",
+        viewType: "renderer-view",
+      });
+      expect(createdFolders).toEqual(["Drawings"]);
+      expect(createdFiles).toEqual(["Drawings/New.drawing"]);
+      expect(await fs.readFile(path.join(vaultPath, "Drawings", "New.drawing"), "utf8")).toBe(
+        "new drawing content",
+      );
+
       const ready = await service.handle(request("mark-layout-ready"));
       expect(ready?.notices).toContain("Renderer layout ready.");
 
@@ -241,6 +296,7 @@ module.exports = class RendererFixture extends Plugin {
 
       await service.handle(request("close"));
       expect(Object.hasOwn(dom.window, "app")).toBe(false);
+      expect(Object.hasOwn(dom.window, "moment")).toBe(false);
       await expect(service.handle(request("get-snapshot"))).rejects.toThrow(
         "has not been initialized",
       );

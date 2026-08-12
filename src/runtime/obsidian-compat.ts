@@ -1,11 +1,12 @@
 import { type Dirent, promises as fs, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import MarkdownIt from "markdown-it";
+import moment from "moment";
 import { parse as parseYaml } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { revisionOf } from "../kernel/durability";
-import type { VaultReadPort, VaultWriteResult } from "../kernel/ports";
-import type { CommandSummary } from "../shared/contracts";
+import type { VaultDirectoryCreateResult, VaultReadPort, VaultWriteResult } from "../kernel/ports";
+import type { CommandSummary, NoteCreateOutcome } from "../shared/contracts";
 import { Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
 import {
@@ -89,6 +90,8 @@ export interface FileStats {
 }
 
 export interface CompatibilityVaultWritePort {
+  createFolder?(relativePath: string): Promise<VaultDirectoryCreateResult>;
+  createText?(relativePath: string, content: string): Promise<NoteCreateOutcome>;
   writeText(
     relativePath: string,
     content: string,
@@ -227,6 +230,15 @@ export class Vault {
     return stats.isDirectory() ? this.folderForPath(normalized) : null;
   }
 
+  getAbstractFileByPathInsensitive(filePath: string): TAbstractFile | null {
+    const requested = normalizePath(filePath).toLocaleLowerCase("en-US");
+    return (
+      this.getAllLoadedFiles().find(
+        (candidate) => candidate.path.toLocaleLowerCase("en-US") === requested,
+      ) ?? null
+    );
+  }
+
   getFileByPath(filePath: string): TFile | null {
     const abstractFile = this.getAbstractFileByPath(filePath);
     return abstractFile instanceof TFile ? abstractFile : null;
@@ -281,6 +293,49 @@ export class Vault {
     file.stat.mtime = Date.now();
     file.stat.size = Buffer.byteLength(content, "utf8");
     this.trigger("modify", file);
+  }
+
+  async create(filePath: string, content: string): Promise<TFile> {
+    if (!this.#writer?.createText) {
+      throw new Error(
+        "Plugin file creation is not available in the read-only compatibility runtime.",
+      );
+    }
+    const normalized = normalizePath(filePath);
+    const outcome = await this.#writer.createText(normalized, content);
+    if (outcome.status === "exists") {
+      throw new Error(`Plugin file creation refused to overwrite ${outcome.path}.`);
+    }
+    if (outcome.status === "conflict") {
+      throw new Error(
+        `Plugin file creation conflict for ${normalized}; the proposed bytes were preserved at ${outcome.conflictPath}.`,
+      );
+    }
+    const now = Date.now();
+    const file =
+      this.getFileByPath(outcome.path) ??
+      new TFile(outcome.path, this, {
+        ctime: now,
+        mtime: now,
+        size: Buffer.byteLength(content, "utf8"),
+      });
+    this.revisions.set(file.path, outcome.revision);
+    this.trigger("create", file);
+    return file;
+  }
+
+  async createFolder(folderPath: string): Promise<TFolder> {
+    if (!this.#writer?.createFolder) {
+      throw new Error(
+        "Plugin folder creation is not available in the read-only compatibility runtime.",
+      );
+    }
+    const outcome = await this.#writer.createFolder(normalizePath(folderPath));
+    const folder = this.folderForPath(outcome.path);
+    if (outcome.created) {
+      this.trigger("create", folder);
+    }
+    return folder;
   }
 
   resolveVaultPath(relativePath: string): string {
@@ -875,6 +930,20 @@ export class Plugin extends Component {
     this.app.compatibility.savePluginData(this.manifest.id, data);
   }
 
+  async __load(): Promise<void> {
+    if (this._loaded) {
+      return;
+    }
+    this._loaded = true;
+    try {
+      await this.onload();
+    } catch (error) {
+      this._loaded = false;
+      this.releaseComponentResources();
+      throw error;
+    }
+  }
+
   async __unload(): Promise<void> {
     let failure: { error: unknown } | null = null;
     try {
@@ -886,6 +955,7 @@ export class Plugin extends Component {
     if (releaseFailure) {
       failure ??= { error: releaseFailure };
     }
+    this._loaded = false;
     if (failure) {
       throw failure.error;
     }
@@ -910,6 +980,7 @@ export interface ObsidianCompatibilityModule {
   MarkdownView: typeof MarkdownView;
   MarkdownRenderer: typeof MarkdownRenderer;
   MetadataCache: typeof MetadataCache;
+  moment: typeof moment;
   Modal: typeof Modal;
   MomentFormatComponent: typeof MomentFormatComponent;
   Notice: new (message: string, timeout?: number) => object;
@@ -1039,6 +1110,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     MarkdownView,
     MarkdownRenderer,
     MetadataCache,
+    moment,
     Modal,
     MomentFormatComponent,
     Notice,

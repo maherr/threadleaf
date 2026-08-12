@@ -65,6 +65,7 @@ describe("PluginHost", () => {
       compatibilityLevel: 3,
       stylesheetDiscovered: true,
     });
+    expect(host.app.plugins.getPlugin("threadleaf-fixture")?._loaded).toBe(true);
     expect(loaded.commands).toEqual([
       {
         id: "threadleaf-fixture-confirm",
@@ -324,6 +325,54 @@ module.exports = class UiApiPlugin extends Plugin {
 
       await host.app.workspace.markLayoutReady();
       expect((await host.getSnapshot()).notices).toContain("Fixture layout became ready.");
+
+      const viewSnapshot = await host.openPluginView("ui-api-view", "Drawing.drawing");
+      expect(viewSnapshot.pluginSurface).toMatchObject({
+        filePath: null,
+        viewType: "empty",
+      });
+      expect(host.app.workspace.getLayout()).toEqual({
+        floating: { children: [], direction: "vertical", type: "split" },
+        left: { children: [], direction: "vertical", type: "split" },
+        main: {
+          children: [
+            {
+              id: expect.stringMatching(/^threadleaf-leaf-/),
+              state: {
+                state: { file: "Drawing.drawing" },
+                type: "ui-api-view",
+              },
+              type: "leaf",
+            },
+          ],
+          direction: "vertical",
+          type: "split",
+        },
+        right: { children: [], direction: "vertical", type: "split" },
+      });
+
+      const originalLeaf = host.app.workspace.activeLeaf;
+      const splitLeaf = host.app.workspace.createLeafBySplit(originalLeaf);
+      expect(splitLeaf).not.toBeNull();
+      expect(host.app.workspace.getLayout().main.children).toHaveLength(2);
+      expect((splitLeaf as { containerEl: HTMLElement }).containerEl.hidden).toBe(true);
+      host.app.workspace.setActiveLeaf(splitLeaf);
+      expect((splitLeaf as { containerEl: HTMLElement }).containerEl.hidden).toBe(false);
+      expect((originalLeaf as { containerEl: HTMLElement }).containerEl.hidden).toBe(true);
+      await fs.writeFile(path.join(vaultPath, "Drawing.md"), "# Drawing\n", "utf8");
+      await (
+        splitLeaf as {
+          openFile(file: ReturnType<typeof host.app.createFile>): Promise<void>;
+          view: { getViewType(): string } | null;
+        }
+      ).openFile(host.app.createFile("Drawing.md"));
+      expect(
+        (
+          splitLeaf as {
+            view: { getViewType(): string } | null;
+          }
+        ).view?.getViewType(),
+      ).toBe("markdown");
 
       await host.unloadPlugin();
       expect(host.app.compatibility.snapshot()).toEqual({

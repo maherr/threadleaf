@@ -130,6 +130,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A measured level 4 workflow for opening an existing Excalidraw Markdown document, mutating its
   scene, saving it through the compatibility vault, closing its plugin-owned leaf, and reopening the
   exact persisted scene in the production Electron host.
+- Recovery-backed compatibility-plugin folder and file creation through vault-bound IPC, with
+  private-path, symlink, no-overwrite, durability, indexing, and native-workspace activation guards.
+- Moment, loaded-plugin lifecycle, workspace-layout, split-leaf, and built-in Markdown-view
+  compatibility required by Excalidraw's unchanged new-drawing workflow.
+- A measured level 4 workflow for running Excalidraw's new-drawing command, opening the generated
+  custom view, saving deterministic scene elements, fully closing it, and reopening the exact
+  persisted scene in the production Electron host.
 - Document-view selection and teardown rules that reserve Excalidraw views for supported files,
   keep ordinary Markdown in the native editor, and remove the child plugin surface on leaf close.
 - Plugin stylesheet preservation with external asset URLs replaced by inert embedded data,

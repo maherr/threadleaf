@@ -38,6 +38,7 @@ import type {
   MultiWriteRequest,
   MultiWriteResult,
   StateRootPort,
+  VaultDirectoryCreateResult,
   VaultMutationPort,
   VaultRenameResult,
   VaultTextSnapshot,
@@ -302,6 +303,11 @@ export class VaultKernel implements VaultMutationPort {
         transactionId: result.transactionId,
       };
     });
+  }
+
+  async createDirectory(relativeDirectory: string): Promise<VaultDirectoryCreateResult> {
+    this.assertWritable();
+    return this.withMutation(() => this.paths.createDirectory(relativeDirectory));
   }
 
   async renameFile(

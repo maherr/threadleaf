@@ -15,6 +15,8 @@ import type { PluginSurfaceBounds, PluginUpdateResponse } from "../shared/contra
 import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
 import {
+  parsePluginVaultCreateFolderRequest,
+  parsePluginVaultCreateRequest,
   parsePluginVaultWriteRequest,
   pluginRendererChannels,
 } from "../shared/plugin-runtime-protocol";
@@ -294,6 +296,40 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.handle(pluginRendererChannels.vaultCreate, async (event, value: unknown) => {
+    const pluginView = compatibilityPluginView;
+    if (
+      !pluginView ||
+      pluginView.webContents.isDestroyed() ||
+      event.sender !== pluginView.webContents
+    ) {
+      throw new Error("Plugin vault creates require the active compatibility renderer.");
+    }
+    const request = parsePluginVaultCreateRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin file could be created.");
+    }
+    return workspaceController.createPluginNote(
+      request.filePath,
+      request.content,
+      workspaceController.vaultId,
+    );
+  });
+  ipcMain.handle(pluginRendererChannels.vaultCreateFolder, async (event, value: unknown) => {
+    const pluginView = compatibilityPluginView;
+    if (
+      !pluginView ||
+      pluginView.webContents.isDestroyed() ||
+      event.sender !== pluginView.webContents
+    ) {
+      throw new Error("Plugin vault folder creates require the active compatibility renderer.");
+    }
+    const request = parsePluginVaultCreateFolderRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin folder could be created.");
+    }
+    return workspaceController.createPluginFolder(request.folderPath, workspaceController.vaultId);
+  });
   ipcMain.handle(pluginRendererChannels.vaultWrite, async (event, value: unknown) => {
     const pluginView = compatibilityPluginView;
     if (

@@ -604,6 +604,40 @@ describe("WorkspaceRuntime", () => {
     expect((await fs.readdir(vaultPath)).filter((name) => name.includes("conflict"))).toEqual([]);
   });
 
+  it("creates plugin-owned folders and Markdown files without replacing the active native note", async () => {
+    const workspace = await openRuntime();
+    await workspace.openNote("Welcome.md");
+
+    await expect(workspace.createPluginFolder("Excalidraw", workspace.vaultId)).resolves.toEqual({
+      path: "Excalidraw",
+      created: true,
+    });
+    const outcome = await workspace.createPluginNote(
+      "Excalidraw/Drawing.excalidraw.md",
+      "---\nexcalidraw-plugin: parsed\n---\n",
+      workspace.vaultId,
+    );
+
+    expect(outcome).toMatchObject({
+      status: "committed",
+      path: "Excalidraw/Drawing.excalidraw.md",
+    });
+    const snapshot = await workspace.getSnapshot();
+    expect(snapshot.workspace?.activeNote?.path).toBe("Welcome.md");
+    expect(snapshot.workspace?.files.map(({ path: filePath }) => filePath)).toContain(
+      "Excalidraw/Drawing.excalidraw.md",
+    );
+    await expect(
+      fs.readFile(path.join(vaultPath, "Excalidraw", "Drawing.excalidraw.md"), "utf8"),
+    ).resolves.toContain("excalidraw-plugin: parsed");
+    await expect(
+      workspace.createPluginFolder(".obsidian/Generated", workspace.vaultId),
+    ).rejects.toThrow("private application paths");
+    await expect(
+      workspace.createPluginNote("Excalidraw/Wrong.md", "", "stale-vault"),
+    ).rejects.toThrow("active vault changed");
+  });
+
   it("preserves a create race as a selected conflict note without overwriting the winner", async () => {
     const workspace = await openRuntime();
     const writeText = workspace.kernel.writeText.bind(workspace.kernel);

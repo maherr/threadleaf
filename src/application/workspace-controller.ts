@@ -1,7 +1,8 @@
-import type { StateRootPort } from "../kernel/ports";
+import type { StateRootPort, VaultDirectoryCreateResult } from "../kernel/ports";
 import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  NoteCreateOutcome,
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
@@ -48,6 +49,15 @@ export interface WorkspaceRuntimePort {
     content: string,
     expectedVaultId: string,
   ): Promise<NoteCreateResponse>;
+  createPluginNote(
+    filePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome>;
+  createPluginFolder(
+    folderPath: string,
+    expectedVaultId: string,
+  ): Promise<VaultDirectoryCreateResult>;
   saveNote(
     filePath: string,
     content: string,
@@ -268,6 +278,21 @@ export class WorkspaceController {
     expectedVaultId: string,
   ): Promise<NoteCreateResponse> {
     return this.#runtime.createNote(filePath, content, expectedVaultId);
+  }
+
+  createPluginNote(
+    filePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome> {
+    return this.#runtime.createPluginNote(filePath, content, expectedVaultId);
+  }
+
+  createPluginFolder(
+    folderPath: string,
+    expectedVaultId: string,
+  ): Promise<VaultDirectoryCreateResult> {
+    return this.#runtime.createPluginFolder(folderPath, expectedVaultId);
   }
 
   saveNote(

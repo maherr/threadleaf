@@ -979,7 +979,10 @@ export class WorkspaceLeaf {
     if (viewState.type === "empty") {
       return;
     }
-    const candidate = this.app.compatibility.createView(viewState.type, this);
+    const candidate =
+      viewState.type === "markdown"
+        ? new MarkdownView(this)
+        : this.app.compatibility.createView(viewState.type, this);
     if (!(candidate instanceof View)) {
       throw new Error(`View creator did not return a View: ${viewState.type}`);
     }
@@ -993,7 +996,7 @@ export class WorkspaceLeaf {
         const filePath = candidate instanceof FileView ? candidate.file?.path : null;
         candidate.setHeaderTitle(filePath ?? displayText);
       }
-      this.app.workspace.activeLeaf = this;
+      this.app.workspace.setActiveLeaf(this);
       this.app.workspace.trigger("active-leaf-change", this);
       this.app.workspace.trigger("layout-change");
     } catch (error) {

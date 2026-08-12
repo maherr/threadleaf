@@ -2,6 +2,29 @@ import type { PluginIntegrationSnapshot } from "../shared/contracts";
 import type { CompatibilityEventRef } from "./obsidian-components";
 
 type EventCallback = (...args: unknown[]) => unknown;
+type WorkspaceLeafFactory = (containerEl?: HTMLElement) => unknown;
+
+interface WorkspaceLayoutLeaf {
+  id: string;
+  state: {
+    state: Record<string, unknown>;
+    type: string;
+  };
+  type: "leaf";
+}
+
+interface WorkspaceLayoutSplit {
+  children: WorkspaceLayoutLeaf[];
+  direction: "horizontal" | "vertical";
+  type: "split";
+}
+
+export interface WorkspaceLayout {
+  floating: WorkspaceLayoutSplit;
+  left: WorkspaceLayoutSplit;
+  main: WorkspaceLayoutSplit;
+  right: WorkspaceLayoutSplit;
+}
 
 class WorkspaceEventRef implements CompatibilityEventRef {
   private callback: (() => void) | null;
@@ -60,7 +83,12 @@ export class Workspace {
   private readonly layoutReadyCallbacks = new Set<() => unknown>();
   private readonly leaves = new Set<unknown>();
   private readonly listeners = new Map<string, Set<EventCallback>>();
+  private leafFactory: WorkspaceLeafFactory | null = null;
   private layoutReady = false;
+
+  setLeafFactory(factory: WorkspaceLeafFactory): void {
+    this.leafFactory = factory;
+  }
 
   onLayoutReady(callback: () => unknown): void {
     if (this.layoutReady) {
@@ -92,13 +120,31 @@ export class Workspace {
 
   registerLeaf(leaf: unknown): () => void {
     this.leaves.add(leaf);
-    this.activeLeaf = leaf;
+    if (this.activeLeaf === null) {
+      this.setActiveLeaf(leaf);
+    } else {
+      this.setLeafVisibility(leaf, false);
+    }
     return () => {
       this.leaves.delete(leaf);
       if (this.activeLeaf === leaf) {
-        this.activeLeaf = [...this.leaves].at(-1) ?? null;
+        const nextLeaf = [...this.leaves].at(-1) ?? null;
+        this.activeLeaf = null;
+        if (nextLeaf) {
+          this.setActiveLeaf(nextLeaf);
+        }
       }
     };
+  }
+
+  setActiveLeaf(leaf: unknown): void {
+    if (!this.leaves.has(leaf)) {
+      return;
+    }
+    this.activeLeaf = leaf;
+    for (const candidate of this.leaves) {
+      this.setLeafVisibility(candidate, candidate === leaf);
+    }
   }
 
   on(name: string, callback: EventCallback, context?: unknown): CompatibilityEventRef {
@@ -154,8 +200,83 @@ export class Workspace {
     return this.activeLeaf;
   }
 
-  getLeaf(): unknown | null {
+  getLayout(): WorkspaceLayout {
+    const mainLeaves = [...this.leaves]
+      .map((leaf): WorkspaceLayoutLeaf | null => {
+        if (!leaf || typeof leaf !== "object" || !("id" in leaf)) {
+          return null;
+        }
+        const getViewState =
+          "getViewState" in leaf && typeof leaf.getViewState === "function"
+            ? leaf.getViewState.bind(leaf)
+            : null;
+        const viewState = getViewState?.() ?? { type: "empty", state: {} };
+        return {
+          id: typeof leaf.id === "string" ? leaf.id : String(leaf.id),
+          state: {
+            state:
+              viewState && typeof viewState === "object" && "state" in viewState
+                ? structuredClone(viewState.state as Record<string, unknown>)
+                : {},
+            type:
+              viewState && typeof viewState === "object" && "type" in viewState
+                ? String(viewState.type)
+                : "empty",
+          },
+          type: "leaf",
+        };
+      })
+      .filter((leaf): leaf is WorkspaceLayoutLeaf => leaf !== null);
+    const emptySplit = (): WorkspaceLayoutSplit => ({
+      children: [],
+      direction: "vertical",
+      type: "split",
+    });
+    return {
+      floating: emptySplit(),
+      left: emptySplit(),
+      main: {
+        children: mainLeaves,
+        direction: this.rootSplit.direction,
+        type: "split",
+      },
+      right: emptySplit(),
+    };
+  }
+
+  getLeaf(newLeaf?: boolean | string): unknown | null {
+    if (newLeaf === true || typeof newLeaf === "string") {
+      return this.createLeafBySplit(this.activeLeaf);
+    }
     return this.activeLeaf;
+  }
+
+  createLeafBySplit(originLeaf?: unknown): unknown | null {
+    if (!this.leafFactory) {
+      return null;
+    }
+    const originContainer = this.leafContainer(originLeaf);
+    const doc =
+      originContainer?.ownerDocument ?? (typeof document === "undefined" ? null : document);
+    if (!doc) {
+      return this.leafFactory();
+    }
+    const containerEl = doc.createElement("div");
+    containerEl.className = "threadleaf-plugin-surface workspace-leaf";
+    Object.assign(containerEl.style, {
+      display: "flex",
+      inset: "0",
+      minHeight: "0",
+      minWidth: "0",
+      overflow: "hidden",
+      position: "absolute",
+    });
+    if (originContainer?.parentElement) {
+      originContainer.after(containerEl);
+    } else {
+      doc.body.append(containerEl);
+    }
+    return this.leafFactory(containerEl);
   }
 
   getLeafById(leafId: string | null | undefined): unknown | null {
@@ -177,13 +298,26 @@ export class Workspace {
   }
 
   createLeafInParent(_parent: WorkspaceSplit, _index: number): unknown {
-    const containerEl = createWorkspaceElement("workspace-leaf");
-    return {
-      containerEl,
-      detach: () => containerEl.remove(),
-      id: `threadleaf-internal-leaf-${this.leaves.size + 1}`,
-      view: null,
-    };
+    return this.createLeafBySplit(this.activeLeaf);
+  }
+
+  private leafContainer(leaf: unknown): HTMLElement | null {
+    if (!leaf || typeof leaf !== "object" || !("containerEl" in leaf)) {
+      return null;
+    }
+    const containerEl = leaf.containerEl;
+    return containerEl && typeof containerEl === "object" && "ownerDocument" in containerEl
+      ? (containerEl as HTMLElement)
+      : null;
+  }
+
+  private setLeafVisibility(leaf: unknown, active: boolean): void {
+    const containerEl = this.leafContainer(leaf);
+    if (!containerEl) {
+      return;
+    }
+    containerEl.hidden = !active;
+    containerEl.classList.toggle("mod-active", active);
   }
 }
 

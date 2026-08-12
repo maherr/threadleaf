@@ -30,7 +30,15 @@ enter the same workspace controller and recovery-backed writer as native edits. 
 original untouched and retain the plugin's proposed bytes as a labeled conflict file. Opening an
 existing Excalidraw Markdown document, mutating its scene, explicitly saving, closing the drawing
 leaf, and reopening the persisted scene reaches measured level 4 for that named workflow. Creating
-a new file from plugin code remains outside the current compatibility boundary.
+a new drawing now crosses separate create-folder and create-file IPC channels into the same
+workspace controller and recovery-backed kernel used by native note creation. The kernel rejects
+private paths, symlink traversal, and existing destinations; syncs created directories; and never
+activates the new file in Threadleaf's native Markdown workspace on behalf of plugin code. The
+compatibility runtime supplies Moment, Obsidian's loaded-plugin lifecycle flag, built-in Markdown
+leaves, workspace layout snapshots, and split-leaf creation so the unchanged Excalidraw command can
+create its standard folder and Markdown file, pass through a Markdown leaf, and promote that leaf
+to the registered drawing view. Creating a drawing, adding scene elements, saving, closing, and
+reopening the exact scene reaches measured level 4 for that named workflow.
 
 ### Filesystem authority
 

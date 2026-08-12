@@ -1,25 +1,32 @@
 import { createRequire } from "node:module";
 import path from "node:path";
+import moment from "moment";
 import { PluginHost } from "../runtime/plugin-host";
 import {
   optionalPayloadString,
   type PluginRendererRequest,
+  type PluginVaultCreateFolderRequest,
+  type PluginVaultCreateFolderResponse,
+  type PluginVaultCreateRequest,
+  type PluginVaultCreateResponse,
   type PluginVaultWriteRequest,
   type PluginVaultWriteResponse,
   requirePayloadString,
 } from "../shared/plugin-runtime-protocol";
 
-export type PluginRendererVaultWriter = (
-  request: PluginVaultWriteRequest,
-) => Promise<PluginVaultWriteResponse>;
+export interface PluginRendererVaultMutations {
+  createFolder(request: PluginVaultCreateFolderRequest): Promise<PluginVaultCreateFolderResponse>;
+  createText(request: PluginVaultCreateRequest): Promise<PluginVaultCreateResponse>;
+  writeText(request: PluginVaultWriteRequest): Promise<PluginVaultWriteResponse>;
+}
 
 export class PluginRendererService {
   private host: PluginHost | null = null;
-  private restoreGlobalApp: (() => void) | null = null;
-  private readonly writeVaultText: PluginRendererVaultWriter | undefined;
+  private restoreCompatibilityGlobals: (() => void) | null = null;
+  private readonly vaultMutations: PluginRendererVaultMutations | undefined;
 
-  constructor(writeVaultText?: PluginRendererVaultWriter) {
-    this.writeVaultText = writeVaultText;
+  constructor(vaultMutations?: PluginRendererVaultMutations) {
+    this.vaultMutations = vaultMutations;
   }
 
   async handle(request: PluginRendererRequest) {
@@ -31,25 +38,29 @@ export class PluginRendererService {
           throw new Error("Plugin renderer initialization requires absolute paths.");
         }
         await this.close();
-        const writeVaultText = this.writeVaultText;
+        const vaultMutations = this.vaultMutations;
         this.host = new PluginHost(
           vaultPath,
           undefined,
           undefined,
           createRequire(packageJsonPath),
-          writeVaultText
+          vaultMutations
             ? {
                 writeText: (filePath, content, expectedRevision) =>
-                  writeVaultText({
+                  vaultMutations.writeText({
                     vaultPath,
                     filePath,
                     content,
                     expectedRevision,
                   }),
+                createText: (filePath, content) =>
+                  vaultMutations.createText({ vaultPath, filePath, content }),
+                createFolder: (folderPath) =>
+                  vaultMutations.createFolder({ vaultPath, folderPath }),
               }
             : undefined,
         );
-        this.restoreGlobalApp = this.installGlobalApp(this.host);
+        this.restoreCompatibilityGlobals = this.installCompatibilityGlobals(this.host);
         return this.host.getSnapshot();
       }
       case "get-snapshot":
@@ -87,34 +98,39 @@ export class PluginRendererService {
     try {
       await host?.close();
     } finally {
-      this.restoreGlobalApp?.();
-      this.restoreGlobalApp = null;
+      this.restoreCompatibilityGlobals?.();
+      this.restoreCompatibilityGlobals = null;
     }
   }
 
-  private installGlobalApp(host: PluginHost): () => void {
+  private installCompatibilityGlobals(host: PluginHost): () => void {
     const targets: object[] = [globalThis];
     if (typeof window !== "undefined" && window !== globalThis) {
       targets.push(window);
     }
-    const descriptors = targets.map((target) => ({
-      descriptor: Object.getOwnPropertyDescriptor(target, "app"),
-      target,
-    }));
-    for (const { target } of descriptors) {
-      Object.defineProperty(target, "app", {
+    const values = { app: host.app, moment } as const;
+    const descriptors = targets.flatMap((target) =>
+      Object.entries(values).map(([name, value]) => ({
+        descriptor: Object.getOwnPropertyDescriptor(target, name),
+        name,
+        target,
+        value,
+      })),
+    );
+    for (const { name, target, value } of descriptors) {
+      Object.defineProperty(target, name, {
         configurable: true,
         enumerable: true,
-        value: host.app,
+        value,
         writable: false,
       });
     }
     return () => {
-      for (const { descriptor, target } of descriptors) {
+      for (const { descriptor, name, target } of descriptors) {
         if (descriptor) {
-          Object.defineProperty(target, "app", descriptor);
+          Object.defineProperty(target, name, descriptor);
         } else {
-          Reflect.deleteProperty(target, "app");
+          Reflect.deleteProperty(target, name);
         }
       }
     };

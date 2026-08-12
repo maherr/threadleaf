@@ -46,5 +46,8 @@ model, and proves that its title, content, action icon, layout bounds, theme, an
 cross the main-renderer and compatibility-renderer seam. The unchanged Excalidraw 2.25.3 bundle is
 then sampled through that same path. Its verified workflow opens an existing Excalidraw Markdown
 document, mutates the scene, saves with the file revision through the recoverable writer, closes and
-detaches the plugin leaf, and reopens the exact persisted scene. This does not imply that drawing
-creation, embeds, export, or full plugin unload pass.
+detaches the plugin leaf, and reopens the exact persisted scene. A second verified workflow runs the
+unchanged plugin's new-drawing command, creates its standard nested folder and
+`Drawing <timestamp>.excalidraw.md` file through the recoverable kernel, opens the resulting custom
+view, persists deterministic scene elements, fully closes the view, and reloads those elements from
+the exact saved file. This does not imply that embeds, export, or full plugin unload pass.

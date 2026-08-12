@@ -86,6 +86,7 @@ export class PluginHost implements PluginRuntimePort {
     const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
+    this.app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(this.app, containerEl));
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
   }
 
@@ -137,7 +138,7 @@ export class PluginHost implements PluginRuntimePort {
       this.record("plugin", "Injected the open compatibility module and constructed the plugin.");
 
       const commandIdsBefore = new Set(this.app.commands.list().map(({ id }) => id));
-      await instance.onload();
+      await instance.__load();
       record.summary = { ...record.summary, compatibilityLevel: 2 };
       this.record("plugin", "Plugin onload completed without an uncaught error.");
 
@@ -221,11 +222,21 @@ export class PluginHost implements PluginRuntimePort {
   }
 
   async closePluginView(): Promise<RuntimeSnapshot> {
-    const leaf = this.activePluginLeaf;
+    const leaves: WorkspaceLeaf[] = [];
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf instanceof WorkspaceLeaf) {
+        leaves.push(leaf);
+      }
+    });
+    const viewType =
+      (this.app.workspace.activeLeaf instanceof WorkspaceLeaf
+        ? this.app.workspace.activeLeaf.view?.getViewType()
+        : this.activePluginLeaf?.view?.getViewType()) ?? "unknown";
     this.activePluginLeaf = null;
-    if (leaf) {
-      const viewType = leaf.view?.getViewType() ?? "unknown";
-      await leaf.detach();
+    if (leaves.length > 0) {
+      for (const leaf of leaves.reverse()) {
+        await leaf.detach();
+      }
       this.record("runtime", `Closed plugin view ${viewType}.`);
     }
     return this.getSnapshot();
@@ -288,6 +299,10 @@ export class PluginHost implements PluginRuntimePort {
     const currentPlugin = this.lastPluginId
       ? (plugins.find(({ id }) => id === this.lastPluginId) ?? null)
       : null;
+    const activePluginLeaf =
+      this.app.workspace.activeLeaf instanceof WorkspaceLeaf
+        ? this.app.workspace.activeLeaf
+        : this.activePluginLeaf;
     return {
       vault: {
         id: null,
@@ -305,14 +320,14 @@ export class PluginHost implements PluginRuntimePort {
       notices: this.app.notices.list(),
       events: this.events.map((event) => ({ ...event })),
       integrations: this.app.compatibility.snapshot(),
-      pluginSurface: this.activePluginLeaf?.view
+      pluginSurface: activePluginLeaf?.view
         ? {
-            displayText: this.activePluginLeaf.view.getDisplayText(),
+            displayText: activePluginLeaf.view.getDisplayText(),
             filePath:
-              this.activePluginLeaf.view instanceof FileView && this.activePluginLeaf.view.file
-                ? this.activePluginLeaf.view.file.path
+              activePluginLeaf.view instanceof FileView && activePluginLeaf.view.file
+                ? activePluginLeaf.view.file.path
                 : null,
-            viewType: this.activePluginLeaf.view.getViewType(),
+            viewType: activePluginLeaf.view.getViewType(),
           }
         : null,
     };

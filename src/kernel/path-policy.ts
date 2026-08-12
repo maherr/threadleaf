@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { syncDirectory } from "./durability";
+import type { VaultDirectoryCreateResult } from "./ports";
 
 export class VaultPathError extends Error {
   constructor(message: string) {
@@ -190,6 +192,56 @@ export class VaultPathPolicy {
       throw new VaultPathError(`Vault file path points to a directory: ${relativePath}`);
     }
     return absolutePath;
+  }
+
+  async createDirectory(relativeDirectory: string): Promise<VaultDirectoryCreateResult> {
+    const normalized = normalizeVaultDirectoryPath(relativeDirectory);
+    if (normalized === "") {
+      return { path: "", created: false };
+    }
+    if (hasPrivateVaultSegment(normalized)) {
+      throw new VaultPathError(
+        `Vault directories cannot use private application paths: ${normalized}`,
+      );
+    }
+
+    let currentDirectory = this.rootPath;
+    let created = false;
+    for (const segment of normalized.split("/")) {
+      const parentDirectory = currentDirectory;
+      currentDirectory = path.join(parentDirectory, segment);
+      let stat = await lstatOrNull(currentDirectory);
+      if (!stat) {
+        try {
+          await fs.mkdir(currentDirectory);
+          await syncDirectory(parentDirectory);
+          created = true;
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+            throw error;
+          }
+        }
+        stat = await fs.lstat(currentDirectory);
+      }
+      if (stat.isSymbolicLink()) {
+        throw new VaultPathError(
+          `Directory creation through symbolic links is not allowed: ${relativeDirectory}`,
+        );
+      }
+      if (!stat.isDirectory()) {
+        throw new VaultPathError(`Vault directory path is not a directory: ${relativeDirectory}`);
+      }
+      const canonicalDirectory = await fs.realpath(currentDirectory);
+      if (
+        path.resolve(canonicalDirectory) !== path.resolve(currentDirectory) ||
+        !isPathInside(this.rootPath, canonicalDirectory)
+      ) {
+        throw new VaultPathError(
+          `Directory creation through symbolic links is not allowed: ${relativeDirectory}`,
+        );
+      }
+    }
+    return { path: normalized, created };
   }
 
   toVaultPath(absolutePath: string): string {

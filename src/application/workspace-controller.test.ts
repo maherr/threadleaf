@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  NoteCreateOutcome,
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
@@ -86,6 +87,12 @@ class FakeRuntime implements WorkspaceRuntimePort {
   deletedNote: {
     filePath: string;
     expectedRevision: string;
+    expectedVaultId: string;
+  } | null = null;
+  createdPluginFolder: { folderPath: string; expectedVaultId: string } | null = null;
+  createdPluginNote: {
+    filePath: string;
+    content: string;
     expectedVaultId: string;
   } | null = null;
   closed = false;
@@ -208,6 +215,25 @@ class FakeRuntime implements WorkspaceRuntimePort {
       },
       snapshot: this.#snapshot,
     };
+  }
+
+  async createPluginNote(
+    filePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome> {
+    this.createdPluginNote = { filePath, content, expectedVaultId };
+    return {
+      status: "committed",
+      path: filePath,
+      revision: "a".repeat(64),
+      transactionId: "plugin-create",
+    };
+  }
+
+  async createPluginFolder(folderPath: string, expectedVaultId: string) {
+    this.createdPluginFolder = { folderPath, expectedVaultId };
+    return { path: folderPath, created: true };
   }
 
   async saveNote(
@@ -528,6 +554,36 @@ describe("WorkspaceController", () => {
     expect(harness.runtimes[0]?.deletedNote).toEqual({
       filePath: "Notes/Current.md",
       expectedRevision,
+      expectedVaultId,
+    });
+    await controller.close();
+  });
+
+  it("forwards plugin file and folder creation with the active vault identity", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+
+    await controller.createPluginFolder("Excalidraw", expectedVaultId);
+    await controller.createPluginNote(
+      "Excalidraw/Drawing.excalidraw.md",
+      "drawing bytes",
+      expectedVaultId,
+    );
+
+    expect(harness.runtimes[0]?.createdPluginFolder).toEqual({
+      folderPath: "Excalidraw",
+      expectedVaultId,
+    });
+    expect(harness.runtimes[0]?.createdPluginNote).toEqual({
+      filePath: "Excalidraw/Drawing.excalidraw.md",
+      content: "drawing bytes",
       expectedVaultId,
     });
     await controller.close();

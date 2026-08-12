@@ -34,6 +34,81 @@ async function createVaultFile(content = "initial drawing"): Promise<{
 }
 
 describe("Obsidian compatibility vault writes", () => {
+  it("creates folders and files through the mutation port and resolves paths case-insensitively", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-vault-create-"));
+    temporaryDirectories.push(rootPath);
+    const writer = {
+      writeText: vi.fn(),
+      createFolder: vi.fn(async (folderPath: string) => {
+        const absolutePath = path.join(rootPath, folderPath);
+        let created = false;
+        try {
+          await fs.mkdir(absolutePath, { recursive: true });
+          created = true;
+        } catch {
+          created = false;
+        }
+        return { path: folderPath, created };
+      }),
+      createText: vi.fn(async (filePath: string, content: string) => {
+        await fs.writeFile(path.join(rootPath, filePath), content, {
+          encoding: "utf8",
+          flag: "wx",
+        });
+        return {
+          status: "committed" as const,
+          path: filePath,
+          revision: revisionOf(Buffer.from(content, "utf8")),
+          transactionId: "created-file",
+        };
+      }),
+    };
+    const vault = new Vault(rootPath, undefined, writer);
+    const created = vi.fn();
+    vault.on("create", created);
+
+    const folder = await vault.createFolder("Excalidraw");
+    const file = await vault.create("Excalidraw/Drawing.excalidraw.md", "drawing bytes");
+
+    expect(folder.path).toBe("Excalidraw");
+    expect(file.path).toBe("Excalidraw/Drawing.excalidraw.md");
+    expect(file.stat.size).toBe(Buffer.byteLength("drawing bytes", "utf8"));
+    expect(
+      vault.getAbstractFileByPathInsensitive("excalidraw/DRAWING.excalidraw.MD"),
+    ).toMatchObject({
+      path: "Excalidraw/Drawing.excalidraw.md",
+    });
+    expect(created).toHaveBeenCalledTimes(2);
+    expect(await fs.readFile(path.join(rootPath, file.path), "utf8")).toBe("drawing bytes");
+  });
+
+  it("refuses plugin create overwrites and reports retained create conflicts", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-vault-create-"));
+    temporaryDirectories.push(rootPath);
+    const createText = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "exists" as const,
+        path: "Existing.md",
+        currentRevision: "a".repeat(64),
+      })
+      .mockResolvedValueOnce({
+        status: "conflict" as const,
+        path: "Raced.md",
+        currentRevision: "b".repeat(64),
+        conflictPath: "Raced.threadleaf-conflict.md",
+        transactionId: "create-race",
+      });
+    const vault = new Vault(rootPath, undefined, { writeText: vi.fn(), createText });
+
+    await expect(vault.create("Existing.md", "replacement")).rejects.toThrow(
+      "refused to overwrite Existing.md",
+    );
+    await expect(vault.create("Raced.md", "proposal")).rejects.toThrow(
+      "Raced.threadleaf-conflict.md",
+    );
+  });
+
   it("binds sequential modifications to the last committed revision", async () => {
     const initial = "initial drawing";
     const { file, rootPath } = await createVaultFile(initial);
