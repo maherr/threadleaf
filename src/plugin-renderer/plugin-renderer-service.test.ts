@@ -70,7 +70,7 @@ describe("PluginRendererService", () => {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { MarkdownRenderer, Notice, Plugin, PluginSettingTab, Setting, TextFileView, WorkspaceSplit, moment } = require("obsidian");
+        `const { FileSystemAdapter, MarkdownRenderer, Notice, Plugin, PluginSettingTab, Setting, TextFileView, WorkspaceSplit, arrayBufferToBase64, base64ToArrayBuffer, moment } = require("obsidian");
 class RendererView extends TextFileView {
   constructor(leaf) {
     super(leaf);
@@ -91,6 +91,12 @@ module.exports = class RendererFixture extends Plugin {
   async onload() {
     if (moment.utc("2026-08-12").format("YYYY-MM-DD") !== "2026-08-12") throw new Error("Module moment missing");
     if (window.moment.utc("2026-08-12").format("YYYY-MM-DD") !== "2026-08-12") throw new Error("Global moment missing");
+    if (!(this.app.vault.adapter instanceof FileSystemAdapter)) throw new Error("Desktop adapter missing");
+    if (this.app.vault.adapter.basePath !== this.app.vault.adapter.getBasePath()) throw new Error("Adapter base path mismatch");
+    const canvasFile = this.app.vault.getFileByPath("Canvas.drawing");
+    if (!this.app.vault.getResourcePath(canvasFile).startsWith("file:")) throw new Error("Resource URL missing");
+    if (arrayBufferToBase64(base64ToArrayBuffer("AAH/")) !== "AAH/") throw new Error("Binary codec mismatch");
+    if (this.app.vault.getConfig("propertiesInDocument") !== undefined) throw new Error("Unexpected compatibility config");
     this.addRibbonIcon("leaf", "Renderer action", () => new Notice("Renderer action ran."));
     this.addCommand({ id: "renderer-command", name: "Superseded command", callback: () => new Notice("Superseded command ran.") });
     this.addCommand({ id: "renderer-command", name: "Renderer command", callback: () => new Notice("Renderer command ran.") });

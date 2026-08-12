@@ -1,9 +1,19 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { revisionOf } from "../kernel/durability";
-import { FileManager, parseFrontMatterEntry, TFile, Vault } from "./obsidian-compat";
+import {
+  arrayBufferToBase64,
+  arrayBufferToHex,
+  base64ToArrayBuffer,
+  FileManager,
+  FileSystemAdapter,
+  parseFrontMatterEntry,
+  TFile,
+  Vault,
+} from "./obsidian-compat";
 
 const temporaryDirectories: string[] = [];
 
@@ -34,6 +44,14 @@ async function createVaultFile(content = "initial drawing"): Promise<{
 }
 
 describe("Obsidian compatibility vault writes", () => {
+  it("roundtrips public binary codecs without changing any byte", () => {
+    const bytes = Uint8Array.from([0, 1, 2, 0x7f, 0x80, 0xfe, 0xff]);
+
+    expect(arrayBufferToBase64(bytes.buffer)).toBe("AAECf4D+/w==");
+    expect(arrayBufferToHex(bytes.buffer)).toBe("0001027f80feff");
+    expect(new Uint8Array(base64ToArrayBuffer("AAECf4D+/w=="))).toEqual(bytes);
+  });
+
   it("reads exact and regular-expression frontmatter entries", () => {
     const frontmatter = { cssclasses: ["wide-page", "drawing"], title: "Canvas" };
 
@@ -57,6 +75,85 @@ describe("Obsidian compatibility vault writes", () => {
     await expect(
       fileManager.getAvailablePathForAttachment("Sketch.png", "Source.md"),
     ).resolves.toBe("Sketch.png");
+  });
+
+  it("exposes contained resource URLs and a read-only desktop adapter surface", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-resources-"));
+    temporaryDirectories.push(rootPath);
+    await fs.mkdir(path.join(rootPath, "Assets"));
+    await fs.mkdir(path.join(rootPath, ".obsidian"));
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 0xff]);
+    const relativePath = "Assets/Résumé image.png";
+    const absolutePath = path.join(rootPath, relativePath);
+    await fs.writeFile(absolutePath, bytes);
+    await fs.writeFile(path.join(rootPath, ".obsidian", "appearance.json"), "{}", "utf8");
+    const vault = new Vault(rootPath);
+    const file = vault.getFileByPath(relativePath);
+    if (!file) {
+      throw new Error("Resource fixture was not discovered.");
+    }
+
+    expect(vault.adapter).toBeInstanceOf(FileSystemAdapter);
+    expect(vault.adapter.getName()).toBe(path.basename(rootPath));
+    expect(vault.adapter.getBasePath()).toBe(rootPath);
+    expect(vault.adapter.basePath).toBe(rootPath);
+    expect(vault.adapter.url.pathToFileURL(absolutePath).toString()).toBe(
+      pathToFileURL(absolutePath).toString(),
+    );
+    expect(vault.getResourcePath(file)).toBe(pathToFileURL(absolutePath).toString());
+    expect(vault.adapter.getResourcePath(relativePath)).toBe(
+      pathToFileURL(absolutePath).toString(),
+    );
+    expect(vault.adapter.getFilePath(relativePath)).toBe(absolutePath);
+    await expect(vault.adapter.exists(relativePath)).resolves.toBe(true);
+    await expect(vault.adapter.exists("assets/Résumé image.png", true)).resolves.toBe(false);
+    await expect(vault.adapter.exists("Assets/Missing.png")).resolves.toBe(false);
+    await expect(vault.adapter.readBinary(relativePath)).resolves.toEqual(bytes.buffer);
+    await expect(vault.adapter.read(".obsidian/appearance.json")).resolves.toBe("{}");
+    await expect(vault.adapter.stat(relativePath)).resolves.toMatchObject({
+      type: "file",
+      size: bytes.byteLength,
+    });
+    await expect(vault.adapter.list("Assets")).resolves.toEqual({
+      files: [relativePath],
+      folders: [],
+    });
+    expect(vault.getFolderByPath("Assets")?.path).toBe("Assets");
+    expect(vault.getFolderByPath(relativePath)).toBeNull();
+    expect(vault.getConfig("propertiesInDocument")).toBeUndefined();
+
+    const foreignFile = new TFile(relativePath, new Vault(rootPath));
+    expect(() => vault.getResourcePath(foreignFile)).toThrow("active compatibility vault");
+  });
+
+  it("allows internal resource symlinks but rejects resource paths that resolve outside", async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-plugin-resource-link-"),
+    );
+    temporaryDirectories.push(sandboxPath);
+    const rootPath = path.join(sandboxPath, "vault");
+    await fs.mkdir(rootPath);
+    await fs.writeFile(path.join(rootPath, "Inside.png"), "inside", "utf8");
+    await fs.writeFile(path.join(sandboxPath, "Outside.png"), "outside", "utf8");
+    await fs.symlink("Inside.png", path.join(rootPath, "Inside link.png"));
+    await fs.symlink(
+      path.join(sandboxPath, "Outside.png"),
+      path.join(rootPath, "Outside link.png"),
+    );
+    const vault = new Vault(rootPath);
+    const insideLink = vault.getFileByPath("Inside link.png");
+    const outsideLink = vault.getFileByPath("Outside link.png");
+    if (!insideLink || !outsideLink) {
+      throw new Error("Resource symlink fixtures were not discovered.");
+    }
+
+    expect(vault.getResourcePath(insideLink)).toBe(
+      pathToFileURL(path.join(rootPath, "Inside.png")).toString(),
+    );
+    expect(() => vault.getResourcePath(outsideLink)).toThrow("resolves outside the vault");
+    await expect(vault.adapter.readBinary("Outside link.png")).rejects.toThrow(
+      "resolves outside the vault",
+    );
   });
 
   it("creates folders and files through the mutation port and resolves paths case-insensitively", async () => {

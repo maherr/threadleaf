@@ -46,6 +46,19 @@ the plugin's normal `saveData` path on close, restores it on reopen, and removes
 close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
 not implied by those results.
 
+Vault resources now expose contained browser URLs through `Vault.getResourcePath`. The compatible
+desktop `FileSystemAdapter` provides `basePath`, `url.pathToFileURL`, `getBasePath`, `getFilePath`,
+`getResourcePath`, `exists`, `stat`, `list`, `read`, and `readBinary`. It can read hidden files as
+the public adapter contract permits, accepts internal symlinks, and rejects a symlink resolving
+outside the active vault. Adapter mutation methods remain unsupported; plugin writes continue to
+cross the revision-bound `Vault` and `FileManager` methods described above. The CommonJS module
+also provides byte-exact `arrayBufferToBase64`, `arrayBufferToHex`, and `base64ToArrayBuffer`
+helpers used by image and attachment workflows. The undocumented `Vault.getConfig` lookup is
+present as a conservative undefined fallback, which preserves default behavior without claiming
+ownership of Obsidian's private configuration. In the production Electron renderer, Chromium
+loaded the corpus's real 58,472-byte Excalidraw PNG through this resource URL and reported its exact
+803 by 549 dimensions while the adapter independently returned all 58,472 bytes.
+
 ## Trust model
 
 Existing community bundles run in the trusted desktop compatibility runtime. This is not a
@@ -115,6 +128,6 @@ starting normally restores the persisted preference.
 - An explicit import preview for existing enabled-plugin inventory, settings, hotkeys, and layout.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
-- Broader workspace, editor, menu, settings-control, file, and metadata APIs.
+- Broader workspace, editor, menu, settings-control, adapter-mutation, file, and metadata APIs.
 - Complete Excalidraw inline wiki-embed, remaining export-format, and cross-application
   byte-preservation workflows.

@@ -163,3 +163,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Per-plugin Options surfaces for registered `PluginSettingTab` instances, with typed Electron IPC,
   light and dark styling, no-note operation, save and reopen behavior, deterministic hide and
   unload cleanup, and live unchanged-Excalidraw verification across 200 setting rows.
+- Contained `Vault.getResourcePath` and read-only desktop `FileSystemAdapter` compatibility,
+  including exact binary reads, hidden-file reads, internal-symlink support, external-symlink
+  rejection, file URL helpers used by Excalidraw, and byte-exact public Base64 and hex codecs.

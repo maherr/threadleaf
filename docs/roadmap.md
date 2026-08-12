@@ -179,6 +179,9 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [x] Expose plugin-owned settings tabs from the Community plugins page, including per-plugin
       ownership, light and dark presentation, no-note operation, standard save and reopen behavior,
       and deterministic close and unload cleanup against unchanged Excalidraw.
+- [x] Provide contained vault resource URLs, Excalidraw's desktop adapter URL fields, a bounded
+      read-only adapter surface, and byte-exact public binary codecs, including internal and
+      external symlink fixtures.
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
   - [x] Preserve exact Markdown, PNG, and SVG bytes through Threadleaf plugin writes, attachment

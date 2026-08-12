@@ -1,10 +1,19 @@
-import { type Dirent, promises as fs, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  type Dirent,
+  promises as fs,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import MarkdownIt from "markdown-it";
 import moment from "moment";
 import { parse as parseYaml } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
+import { isPathInside } from "../kernel/path-policy";
 import type {
   VaultDirectoryCreateResult,
   VaultReadPort,
@@ -166,7 +175,140 @@ export class TFile extends TAbstractFile {
   }
 }
 
+export interface ListedFiles {
+  files: string[];
+  folders: string[];
+}
+
+export interface AdapterStat {
+  type: "file" | "folder";
+  ctime: number;
+  mtime: number;
+  size: number;
+}
+
+export class FileSystemAdapter {
+  readonly basePath: string;
+  readonly url = { pathToFileURL };
+  private readonly canonicalRootPath: string;
+  private readonly vault: Vault;
+
+  constructor(vault: Vault) {
+    this.vault = vault;
+    this.basePath = vault.rootPath;
+    this.canonicalRootPath = realpathSync(vault.rootPath);
+  }
+
+  getName(): string {
+    return this.vault.getName();
+  }
+
+  getBasePath(): string {
+    return this.basePath;
+  }
+
+  async exists(normalizedPath: string, sensitive = false): Promise<boolean> {
+    let resolvedPath: string;
+    try {
+      resolvedPath = this.resolveExistingPath(normalizedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
+    if (!sensitive) {
+      return true;
+    }
+    const normalized = normalizePath(normalizedPath);
+    let currentPath = this.basePath;
+    for (const segment of normalized.split("/").filter(Boolean)) {
+      const entries = await fs.readdir(currentPath);
+      if (!entries.includes(segment)) {
+        return false;
+      }
+      currentPath = path.join(currentPath, segment);
+    }
+    return isPathInside(this.canonicalRootPath, resolvedPath);
+  }
+
+  async stat(normalizedPath: string): Promise<AdapterStat | null> {
+    let resolvedPath: string;
+    try {
+      resolvedPath = this.resolveExistingPath(normalizedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+    const stats = await fs.stat(resolvedPath);
+    if (!stats.isFile() && !stats.isDirectory()) {
+      return null;
+    }
+    return {
+      type: stats.isDirectory() ? "folder" : "file",
+      ctime: stats.birthtimeMs || stats.ctimeMs,
+      mtime: stats.mtimeMs,
+      size: stats.size,
+    };
+  }
+
+  async list(normalizedPath: string): Promise<ListedFiles> {
+    const resolvedPath = this.resolveExistingPath(normalizedPath);
+    const entries = await fs.readdir(resolvedPath, { withFileTypes: true });
+    const listed: ListedFiles = { files: [], folders: [] };
+    for (const entry of entries) {
+      const childPath = normalizePath(path.posix.join(normalizePath(normalizedPath), entry.name));
+      let type: "file" | "folder" | null = entry.isFile()
+        ? "file"
+        : entry.isDirectory()
+          ? "folder"
+          : null;
+      if (entry.isSymbolicLink()) {
+        const childStats = await fs.stat(this.resolveExistingPath(childPath));
+        type = childStats.isFile() ? "file" : childStats.isDirectory() ? "folder" : null;
+      }
+      if (type === "file") {
+        listed.files.push(childPath);
+      } else if (type === "folder") {
+        listed.folders.push(childPath);
+      }
+    }
+    listed.files.sort((left, right) => left.localeCompare(right));
+    listed.folders.sort((left, right) => left.localeCompare(right));
+    return listed;
+  }
+
+  async read(normalizedPath: string): Promise<string> {
+    return fs.readFile(this.resolveExistingPath(normalizedPath), "utf8");
+  }
+
+  async readBinary(normalizedPath: string): Promise<ArrayBuffer> {
+    const bytes = await fs.readFile(this.resolveExistingPath(normalizedPath));
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  }
+
+  getResourcePath(normalizedPath: string): string {
+    return pathToFileURL(this.resolveExistingPath(normalizedPath)).toString();
+  }
+
+  getFilePath(normalizedPath: string): string {
+    return this.resolveExistingPath(normalizedPath);
+  }
+
+  private resolveExistingPath(normalizedPath: string): string {
+    const lexicalPath = this.vault.resolveVaultPath(normalizePath(normalizedPath));
+    const canonicalPath = realpathSync(lexicalPath);
+    if (!isPathInside(this.canonicalRootPath, canonicalPath)) {
+      throw new Error(`Path resolves outside the vault: ${normalizedPath}`);
+    }
+    return canonicalPath;
+  }
+}
+
 export class Vault {
+  readonly adapter: FileSystemAdapter;
   readonly configDir = ".obsidian";
   readonly rootPath: string;
   readonly #reader: VaultReadPort | undefined;
@@ -180,6 +322,7 @@ export class Vault {
     this.rootPath = path.resolve(rootPath);
     this.#reader = reader;
     this.#writer = writer;
+    this.adapter = new FileSystemAdapter(this);
   }
 
   getName(): string {
@@ -263,6 +406,22 @@ export class Vault {
   getFileByPath(filePath: string): TFile | null {
     const abstractFile = this.getAbstractFileByPath(filePath);
     return abstractFile instanceof TFile ? abstractFile : null;
+  }
+
+  getFolderByPath(folderPath: string): TFolder | null {
+    const abstractFile = this.getAbstractFileByPath(folderPath);
+    return abstractFile instanceof TFolder ? abstractFile : null;
+  }
+
+  getResourcePath(file: TFile): string {
+    if (file.vault !== this) {
+      throw new Error("Plugin resource paths require a file from the active compatibility vault.");
+    }
+    return this.adapter.getResourcePath(file.path);
+  }
+
+  getConfig(_key: string): unknown {
+    return undefined;
   }
 
   async read(file: TFile): Promise<string> {
@@ -1356,7 +1515,10 @@ export class Plugin extends Component {
 export interface ObsidianCompatibilityModule {
   AbstractTextComponent: typeof AbstractTextComponent;
   App: typeof App;
+  arrayBufferToBase64: typeof arrayBufferToBase64;
+  arrayBufferToHex: typeof arrayBufferToHex;
   BaseComponent: typeof BaseComponent;
+  base64ToArrayBuffer: typeof base64ToArrayBuffer;
   ButtonComponent: typeof ButtonComponent;
   ColorComponent: typeof ColorComponent;
   Component: typeof Component;
@@ -1365,6 +1527,7 @@ export interface ObsidianCompatibilityModule {
   EditorSuggest: typeof EditorSuggest;
   ExtraButtonComponent: typeof ExtraButtonComponent;
   FileManager: typeof FileManager;
+  FileSystemAdapter: typeof FileSystemAdapter;
   FileView: typeof FileView;
   FuzzySuggestModal: typeof FuzzySuggestModal;
   getLanguage: typeof getLanguage;
@@ -1407,6 +1570,19 @@ export interface ObsidianCompatibilityModule {
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
   sleep(milliseconds: number): Promise<void>;
+}
+
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  return Buffer.from(buffer).toString("base64");
+}
+
+export function arrayBufferToHex(buffer: ArrayBuffer): string {
+  return Buffer.from(buffer).toString("hex");
+}
+
+export function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const bytes = Buffer.from(base64, "base64");
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
 export function getLanguage(): string {
@@ -1490,7 +1666,10 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
   return {
     AbstractTextComponent,
     App,
+    arrayBufferToBase64,
+    arrayBufferToHex,
     BaseComponent,
+    base64ToArrayBuffer,
     ButtonComponent,
     ColorComponent,
     Component,
@@ -1499,6 +1678,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     EditorSuggest,
     ExtraButtonComponent,
     FileManager,
+    FileSystemAdapter,
     FileView,
     FuzzySuggestModal,
     ItemView,
