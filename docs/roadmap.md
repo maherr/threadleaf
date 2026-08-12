@@ -157,8 +157,11 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [ ] Run plugin bundles through automated compatibility and security checks before distribution.
 - [ ] Verify representative open plugins for queries, tasks, templates, Git, citations, calendars,
       tables, and databases through named end-to-end workflows.
-- [ ] Run the open Excalidraw plugin unchanged through discovery, activation, command registration,
-      drawing creation, edit, embed, reopen, export, and clean unload fixtures.
+- [x] Run the unchanged open Excalidraw 2.25.3 bundle through discovery and `onload` activation in a
+      disposable DOM realm, including view, ribbon, settings-tab, and Markdown-processor
+      registration.
+- [ ] Run Excalidraw through the production compatibility renderer, command registration, drawing
+      creation, edit, embed, reopen, export, and clean unload fixtures.
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
 

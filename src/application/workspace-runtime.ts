@@ -6,7 +6,7 @@ import { normalizeVaultPath } from "../kernel/path-policy";
 import type { StateRootPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
-import { PluginHost } from "../runtime/plugin-host";
+import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import type {
   NoteCreateOutcome,
   NoteCreateResponse,
@@ -39,6 +39,7 @@ export interface WorkspaceRuntimeOptions {
   vaultRoot: string;
   stateRoot: StateRootPort;
   pluginDirectory?: string;
+  pluginModuleResolver?: PluginModuleResolver;
   selectionSource?: VaultSelectionSource;
   warning?: string | null;
   workspaceStateStore?: WorkspaceStateStore;
@@ -317,7 +318,12 @@ export class WorkspaceRuntime {
       onError: (error) => runtime?.recordWatcherError(error),
     });
     const indexReactor = await VaultIndexReactor.open(kernel);
-    const pluginHost = new PluginHost(kernel.paths.rootPath, kernel, actions);
+    const pluginHost = new PluginHost(
+      kernel.paths.rootPath,
+      kernel,
+      actions,
+      options.pluginModuleResolver,
+    );
     let restoredWorkspace: PersistedWorkspaceState | null = null;
     let workspaceLoadWarning: string | null = null;
     let workspaceStateReadable = true;

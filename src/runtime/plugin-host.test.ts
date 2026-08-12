@@ -1,7 +1,10 @@
 import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
+import { installObsidianDomCompatibility } from "./obsidian-dom";
 import { PluginHost } from "./plugin-host";
 
 const fixtureVault = path.resolve("fixtures/vaults/basic");
@@ -164,6 +167,163 @@ module.exports = class FailingUnloadPlugin extends Plugin {
       );
       expect(unloaded.events.some(({ message }) => message.includes("onunload failed"))).toBe(true);
     } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("provides declared host modules to plugins copied outside the application tree", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-modules-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    try {
+      await fs.mkdir(path.join(vaultPath, ".obsidian", "plugins"), { recursive: true });
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "host-module-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "host-module-fixture",
+          name: "Host module fixture",
+          version: "0.1.0",
+        }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { EditorView } = require("@codemirror/view");
+const { getLanguage, Notice, Plugin } = require("obsidian");
+module.exports = class HostModulePlugin extends Plugin {
+  async onload() {
+    if (typeof EditorView !== "function") throw new Error("EditorView host module missing");
+    if (!getLanguage()) throw new Error("Host language missing");
+    this.addCommand({
+      id: "confirm-host-module",
+      name: "Confirm host module",
+      callback: () => new Notice(EditorView.name + ":" + getLanguage()),
+    });
+  }
+};
+`,
+        "utf8",
+      );
+      const host = new PluginHost(
+        vaultPath,
+        undefined,
+        undefined,
+        createRequire(path.resolve("package.json")),
+      );
+
+      const loaded = await host.loadPlugin(pluginPath);
+      expect(loaded.plugin).toMatchObject({ state: "loaded", compatibilityLevel: 3 });
+
+      const verified = await host.runCommand("confirm-host-module");
+      expect(verified.notices.some((message) => message.startsWith("EditorView:"))).toBe(true);
+    } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("provides UI base classes and releases registered integrations on unload", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-ui-api-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const previousElement = globalThis.Element;
+    const previousMouseEvent = globalThis.MouseEvent;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+        Element: dom.window.Element,
+        MouseEvent: dom.window.MouseEvent,
+      });
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "ui-api-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "ui-api-fixture", name: "UI API fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const {
+  BaseComponent, Component, EditorSuggest, FileView, FuzzySuggestModal, ItemView,
+  MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Scope, SettingTab,
+  SuggestModal, TextFileView, View, Workspace, WorkspaceLeaf, addIcon, normalizePath
+} = require("obsidian");
+if (![BaseComponent, Component, EditorSuggest, FileView, FuzzySuggestModal, ItemView,
+  MarkdownView, Modal, PluginSettingTab, Scope, SettingTab, SuggestModal,
+  TextFileView, View, Workspace, WorkspaceLeaf].every((value) => typeof value === "function")) {
+  throw new Error("UI base class export missing");
+}
+module.exports = class UiApiPlugin extends Plugin {
+  async onload() {
+    if (normalizePath("/Folder\\\\Note.md") !== "Folder/Note.md") throw new Error("normalizePath failed");
+    addIcon("ui-api-icon", "<path d='M0 0h1v1z'/>");
+    this.registerView("ui-api-view", (leaf) => new ItemView(leaf));
+    this.registerExtensions(["drawing"], "ui-api-view");
+    this.addRibbonIcon("ui-api-icon", "Open drawing", () => {});
+    this.addStatusBarItem().setText("Ready");
+    this.addSettingTab(new (class extends PluginSettingTab { display() {} })(this.app, this));
+    this.registerMarkdownPostProcessor(() => {});
+    this.registerEditorSuggest(new (class extends EditorSuggest {})(this.app));
+    this.app.workspace.onLayoutReady(() => new Notice("Fixture layout became ready."));
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      const loaded = await host.loadPlugin(pluginPath);
+      expect(loaded.plugin).toMatchObject({ state: "loaded", compatibilityLevel: 2 });
+      expect(host.app.compatibility.snapshot()).toEqual({
+        editorSuggests: 1,
+        markdownPostProcessors: 1,
+        ribbonItems: 1,
+        settingTabs: 1,
+        statusBarItems: 1,
+        viewTypes: ["ui-api-view"],
+      });
+      expect(loaded.notices).not.toContain("Fixture layout became ready.");
+
+      host.app.workspace.markLayoutReady();
+      expect((await host.getSnapshot()).notices).toContain("Fixture layout became ready.");
+
+      await host.unloadPlugin();
+      expect(host.app.compatibility.snapshot()).toEqual({
+        editorSuggests: 0,
+        markdownPostProcessors: 0,
+        ribbonItems: 0,
+        settingTabs: 0,
+        statusBarItems: 0,
+        viewTypes: [],
+      });
+    } finally {
+      if (previousWindow === undefined) {
+        Reflect.deleteProperty(globalThis, "window");
+      } else {
+        globalThis.window = previousWindow;
+      }
+      if (previousDocument === undefined) {
+        Reflect.deleteProperty(globalThis, "document");
+      } else {
+        globalThis.document = previousDocument;
+      }
+      if (previousElement === undefined) {
+        Reflect.deleteProperty(globalThis, "Element");
+      } else {
+        globalThis.Element = previousElement;
+      }
+      if (previousMouseEvent === undefined) {
+        Reflect.deleteProperty(globalThis, "MouseEvent");
+      } else {
+        globalThis.MouseEvent = previousMouseEvent;
+      }
+      dom.window.close();
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });

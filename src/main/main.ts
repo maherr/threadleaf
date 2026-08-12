@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
 import { AppSettingsController } from "../application/app-settings-controller";
@@ -174,6 +175,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
     workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
+    pluginModuleResolver: createRequire(join(app.getAppPath(), "package.json")),
     ...(configuredPath ? { configuredVaultPath: configuredPath } : {}),
   });
 }

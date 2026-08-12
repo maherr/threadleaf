@@ -100,8 +100,9 @@ in `.obsidian/`. Multiple selected plugins reconcile independently at startup an
 disable, or reload operations. A full Settings catalog reports invalid packages and runtime load
 failures without hiding the rest of the inventory. Startup plugin safe mode preserves the saved
 selection while loading no community code or CSS. The compatibility host remains an explicitly
-trusted, unsandboxed desktop runtime, and its API is still too small for general plugins such as
-Excalidraw to complete their workflows.
+trusted, unsandboxed desktop runtime. Its independently implemented DOM and UI base APIs activate
+the unchanged Excalidraw 2.25.3 release bundle in a disposable probe, but the production renderer
+realm and drawing workflow APIs are not complete yet.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,

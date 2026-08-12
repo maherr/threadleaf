@@ -12,8 +12,12 @@ Threadleaf starts as an Electron and TypeScript desktop application. Existing pl
 assume Chromium, the DOM, Node.js, and Electron behavior. Matching that environment reduces the
 compatibility problem before optimization begins.
 
-The renderer remains isolated with `contextIsolation`, no Node integration, and Chromium sandboxing.
-The trusted compatibility runtime executes outside the renderer and exposes a narrow IPC surface.
+The primary application renderer remains isolated with `contextIsolation`, no Node integration,
+and Chromium sandboxing. DOM-dependent community plugins cannot execute in the main-process host or
+inside that sanitized renderer. They will run in a separate, explicitly trusted compatibility
+renderer whose authority and lifecycle are visible to the user. The main renderer communicates
+with that realm through narrow typed messages and never receives its Node authority. Disposable
+DOM probes exercise this boundary until the production Electron realm is connected.
 
 ### Filesystem authority
 

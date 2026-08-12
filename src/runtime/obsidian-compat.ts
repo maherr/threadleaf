@@ -3,6 +3,24 @@ import path from "node:path";
 import { ActionRegistry } from "../application/action-registry";
 import type { VaultReadPort } from "../kernel/ports";
 import type { CommandSummary } from "../shared/contracts";
+import { Component } from "./obsidian-components";
+import {
+  BaseComponent,
+  EditorSuggest,
+  FileView,
+  FuzzySuggestModal,
+  ItemView,
+  MarkdownView,
+  Modal,
+  PluginSettingTab,
+  Scope,
+  SettingTab,
+  SuggestModal,
+  TextFileView,
+  View,
+  WorkspaceLeaf,
+} from "./obsidian-ui-compat";
+import { CompatibilityIntegrationRegistry, Workspace } from "./obsidian-workspace-compat";
 
 export interface PluginManifest {
   id: string;
@@ -180,20 +198,26 @@ export class App {
   readonly vault: Vault;
   readonly commands: CommandRegistry;
   readonly notices: NoticeBus;
+  readonly workspace = new Workspace();
+  readonly compatibility = new CompatibilityIntegrationRegistry();
 
   constructor(vault: Vault, commands: CommandRegistry, notices: NoticeBus) {
     this.vault = vault;
     this.commands = commands;
     this.notices = notices;
   }
+
+  createFile(filePath: string): TFile {
+    return new TFile(filePath);
+  }
 }
 
-export class Plugin {
+export class Plugin extends Component {
   readonly app: App;
   readonly manifest: PluginManifest;
-  private readonly registrations: Array<() => void> = [];
 
   constructor(app: App, manifest: PluginManifest) {
+    super();
     this.app = app;
     this.manifest = manifest;
   }
@@ -207,8 +231,66 @@ export class Plugin {
     return command;
   }
 
-  register(dispose: () => void): void {
-    this.registrations.push(dispose);
+  addRibbonIcon(
+    icon: string,
+    title: string,
+    callback: (event: MouseEvent) => unknown,
+  ): HTMLElement {
+    const doc = requireCompatibilityDocument();
+    const element = doc.createElement("button");
+    element.type = "button";
+    element.className = "side-dock-ribbon-action clickable-icon";
+    element.dataset.icon = icon;
+    element.title = title;
+    element.setAttribute("aria-label", title);
+    element.addEventListener("click", callback);
+    this.register(() => element.removeEventListener("click", callback));
+    this.register(this.app.compatibility.addRibbonItem(element));
+    return element;
+  }
+
+  addStatusBarItem(): HTMLElement {
+    const element = requireCompatibilityDocument().createElement("div");
+    element.className = "status-bar-item plugin-editor-status";
+    this.register(this.app.compatibility.addStatusBarItem(element));
+    return element;
+  }
+
+  addSettingTab(settingTab: PluginSettingTab): void {
+    this.register(this.app.compatibility.addSettingTab(settingTab));
+  }
+
+  registerView(type: string, creator: (leaf: WorkspaceLeaf) => View): void {
+    this.register(
+      this.app.compatibility.registerView(
+        this.manifest.id,
+        type,
+        creator as (leaf: unknown) => unknown,
+      ),
+    );
+  }
+
+  registerExtensions(extensions: string[], viewType: string): void {
+    this.register(
+      this.app.compatibility.registerExtensions(this.manifest.id, extensions, viewType),
+    );
+  }
+
+  registerMarkdownPostProcessor<T>(postProcessor: T, _sortOrder?: number): T {
+    this.register(this.app.compatibility.registerMarkdownPostProcessor(postProcessor));
+    return postProcessor;
+  }
+
+  registerEditorSuggest(editorSuggest: EditorSuggest<unknown>): void {
+    this.register(this.app.compatibility.registerEditorSuggest(editorSuggest));
+  }
+
+  async loadData(): Promise<unknown | null> {
+    return this.app.compatibility.loadPluginData(this.manifest.id);
+  }
+
+  async saveData(data: unknown): Promise<void> {
+    this.app.compatibility.savePluginData(this.manifest.id, data);
   }
 
   async __unload(): Promise<void> {
@@ -218,14 +300,10 @@ export class Plugin {
     } catch (error) {
       failure = { error };
     }
-    for (const dispose of [...this.registrations].reverse()) {
-      try {
-        dispose();
-      } catch (error) {
-        failure ??= { error };
-      }
+    const releaseFailure = this.releaseComponentResources();
+    if (releaseFailure) {
+      failure ??= { error: releaseFailure };
     }
-    this.registrations.length = 0;
     if (failure) {
       throw failure.error;
     }
@@ -234,10 +312,49 @@ export class Plugin {
 
 export interface ObsidianCompatibilityModule {
   App: typeof App;
+  BaseComponent: typeof BaseComponent;
+  Component: typeof Component;
+  EditorSuggest: typeof EditorSuggest;
+  FileView: typeof FileView;
+  FuzzySuggestModal: typeof FuzzySuggestModal;
+  getLanguage: typeof getLanguage;
+  ItemView: typeof ItemView;
+  MarkdownView: typeof MarkdownView;
+  Modal: typeof Modal;
   Notice: new (message: string, timeout?: number) => object;
   Plugin: typeof Plugin;
+  PluginSettingTab: typeof PluginSettingTab;
+  Scope: typeof Scope;
+  SettingTab: typeof SettingTab;
+  SuggestModal: typeof SuggestModal;
   TFile: typeof TFile;
+  TextFileView: typeof TextFileView;
+  View: typeof View;
   Vault: typeof Vault;
+  Workspace: typeof Workspace;
+  WorkspaceLeaf: typeof WorkspaceLeaf;
+  addIcon(id: string, svgContent: string): void;
+  getIcon(id: string): SVGSVGElement | null;
+  normalizePath(filePath: string): string;
+  requireApiVersion(version: string): boolean;
+  setIcon(parent: HTMLElement, iconId: string): void;
+}
+
+export function getLanguage(): string {
+  const locale = Intl.DateTimeFormat().resolvedOptions().locale.trim();
+  return locale || "en";
+}
+
+function requireCompatibilityDocument(): Document {
+  if (typeof document === "undefined") {
+    throw new Error("Obsidian UI compatibility requires a renderer document.");
+  }
+  return document;
+}
+
+export function normalizePath(filePath: string): string {
+  const normalized = path.posix.normalize(filePath.replaceAll("\\", "/")).normalize("NFC");
+  return normalized.replace(/^\.\//, "").replace(/^\/+/, "");
 }
 
 export function createObsidianCompatibilityModule(app: App): ObsidianCompatibilityModule {
@@ -252,5 +369,57 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     }
   }
 
-  return { App, Notice, Plugin, TFile, Vault };
+  const addIcon = (id: string, svgContent: string): void => {
+    app.compatibility.addIcon(id, svgContent);
+  };
+  const getIcon = (id: string): SVGSVGElement | null => {
+    const content = app.compatibility.getIcon(id);
+    if (content === null) {
+      return null;
+    }
+    const svg = requireCompatibilityDocument().createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.dataset.icon = id;
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = content;
+    return svg;
+  };
+  const setIcon = (parent: HTMLElement, iconId: string): void => {
+    parent.replaceChildren();
+    const icon = getIcon(iconId);
+    if (icon) {
+      parent.append(icon);
+    } else {
+      parent.dataset.icon = iconId;
+    }
+  };
+
+  return {
+    App,
+    BaseComponent,
+    Component,
+    EditorSuggest,
+    FileView,
+    FuzzySuggestModal,
+    ItemView,
+    MarkdownView,
+    Modal,
+    Notice,
+    Plugin,
+    PluginSettingTab,
+    Scope,
+    SettingTab,
+    SuggestModal,
+    TFile,
+    TextFileView,
+    Vault,
+    View,
+    Workspace,
+    WorkspaceLeaf,
+    addIcon,
+    getIcon,
+    getLanguage,
+    normalizePath,
+    requireApiVersion: () => true,
+    setIcon,
+  };
 }

@@ -22,9 +22,12 @@ an API that Threadleaf has not implemented. Threadleaf reports that activation f
 package and keeps loading other selected plugins.
 
 Compatibility means a named, executable workflow passes against a public fixture. A package being
-listed, enabled, or activated is not by itself a compatibility claim. In particular, the open
-Excalidraw plugin is currently discovered as a valid package in a real vault, but its drawing
-workflow is not yet supported.
+listed, enabled, or activated is not by itself a workflow claim. The unchanged open Excalidraw
+2.25.3 release bundle now passes discovery and `onload` activation in Threadleaf's disposable DOM
+probe. It registers its two view types, ribbon action, settings tab, and Markdown processor without
+an uncaught activation error. That is measured level 2 compatibility, not a working canvas. The
+production Electron host still needs its dedicated compatibility renderer, and Excalidraw's
+create, edit, embed, reopen, and export workflows remain unsupported.
 
 ## Trust model
 
@@ -87,5 +90,5 @@ starting normally restores the persisted preference.
 - An explicit import preview for existing enabled-plugin inventory, settings, hotkeys, and layout.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
-- Broader workspace, editor, view, menu, settings, and Markdown processor APIs.
+- Broader workspace, editor, menu, settings-control, file, and metadata APIs.
 - Complete Excalidraw create, edit, embed, reopen, export, unload, and byte-preservation workflows.

@@ -34,6 +34,31 @@ interface LoadedPluginRecord {
   summary: PluginSummary;
 }
 
+const compatibilityHostModuleRoots = [
+  "@codemirror/autocomplete",
+  "@codemirror/collab",
+  "@codemirror/commands",
+  "@codemirror/language",
+  "@codemirror/lint",
+  "@codemirror/search",
+  "@codemirror/state",
+  "@codemirror/view",
+  "@lezer/common",
+  "@lezer/highlight",
+  "@lezer/lr",
+  "@zsviczian/excalidraw",
+  "react",
+  "react-dom",
+] as const;
+
+export type PluginModuleResolver = NodeJS.Require;
+
+function isCompatibilityHostModule(request: string): boolean {
+  return compatibilityHostModuleRoots.some(
+    (moduleRoot) => request === moduleRoot || request.startsWith(`${moduleRoot}/`),
+  );
+}
+
 export class PluginHost {
   readonly app: App;
   readonly vault: Vault;
@@ -42,9 +67,16 @@ export class PluginHost {
   private eventSequence = 0;
   private readonly plugins = new Map<string, LoadedPluginRecord>();
   private lastPluginId: string | null = null;
+  private readonly pluginModuleResolver: PluginModuleResolver | undefined;
 
-  constructor(vaultPath: string, reader?: VaultReadPort, actions = new ActionRegistry()) {
+  constructor(
+    vaultPath: string,
+    reader?: VaultReadPort,
+    actions = new ActionRegistry(),
+    pluginModuleResolver?: PluginModuleResolver,
+  ) {
     this.vault = new Vault(vaultPath, reader);
+    this.pluginModuleResolver = pluginModuleResolver;
     const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
@@ -225,12 +257,18 @@ export class PluginHost {
       if (request === "obsidian") {
         return compatibilityModule;
       }
+      if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
+        return this.pluginModuleResolver(request);
+      }
       return nativeRequire(request);
     }) as NodeJS.Require;
 
     pluginRequire.resolve = ((request: string, options?: { paths?: string[] }) => {
       if (request === "obsidian") {
         return "obsidian";
+      }
+      if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
+        return this.pluginModuleResolver.resolve(request, options);
       }
       return nativeRequire.resolve(request, options);
     }) as NodeJS.RequireResolve;

@@ -1,4 +1,5 @@
 import type { StateRootPort } from "../kernel/ports";
+import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type {
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -72,6 +73,7 @@ export interface WorkspaceControllerOptions {
   fixturePluginDirectory?: string;
   configuredVaultPath?: string;
   configuredPluginDirectory?: string;
+  pluginModuleResolver?: PluginModuleResolver;
   runtimeFactory?: WorkspaceRuntimeFactory;
   workspaceStateStore?: WorkspaceStateStore;
 }
@@ -89,6 +91,7 @@ function runtimeOptions(
   warning: string | null,
   workspaceStateStore?: WorkspaceStateStore,
   pluginDirectory?: string,
+  pluginModuleResolver?: PluginModuleResolver,
 ): WorkspaceRuntimeOptions {
   return {
     vaultRoot,
@@ -97,6 +100,7 @@ function runtimeOptions(
     warning,
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
     ...(pluginDirectory ? { pluginDirectory } : {}),
+    ...(pluginModuleResolver ? { pluginModuleResolver } : {}),
   };
 }
 
@@ -105,6 +109,7 @@ export class WorkspaceController {
   readonly #selectionStore: VaultSelectionStore;
   readonly #workspaceStateStore: WorkspaceStateStore | undefined;
   readonly #runtimeFactory: WorkspaceRuntimeFactory;
+  readonly #pluginModuleResolver: PluginModuleResolver | undefined;
   readonly #listeners = new Set<SnapshotListener>();
   #runtime: WorkspaceRuntimePort;
   #releaseRuntimeListener: () => void;
@@ -119,6 +124,7 @@ export class WorkspaceController {
     this.#selectionStore = options.selectionStore;
     this.#workspaceStateStore = options.workspaceStateStore;
     this.#runtimeFactory = runtimeFactory;
+    this.#pluginModuleResolver = options.pluginModuleResolver;
     this.#releaseRuntimeListener = this.bindRuntime(runtime);
   }
 
@@ -133,6 +139,7 @@ export class WorkspaceController {
           null,
           options.workspaceStateStore,
           options.configuredPluginDirectory,
+          options.pluginModuleResolver,
         ),
       );
       return new WorkspaceController(runtime, options, runtimeFactory);
@@ -155,6 +162,8 @@ export class WorkspaceController {
             "restored",
             null,
             options.workspaceStateStore,
+            undefined,
+            options.pluginModuleResolver,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory);
@@ -171,6 +180,7 @@ export class WorkspaceController {
         restoreWarning,
         options.workspaceStateStore,
         options.fixturePluginDirectory,
+        options.pluginModuleResolver,
       ),
     );
     return new WorkspaceController(runtime, options, runtimeFactory);
@@ -279,7 +289,15 @@ export class WorkspaceController {
 
   async switchVault(vaultPath: string): Promise<RuntimeSnapshot> {
     const nextRuntime = await this.#runtimeFactory(
-      runtimeOptions(vaultPath, this.#stateRoot, "picked", null, this.#workspaceStateStore),
+      runtimeOptions(
+        vaultPath,
+        this.#stateRoot,
+        "picked",
+        null,
+        this.#workspaceStateStore,
+        undefined,
+        this.#pluginModuleResolver,
+      ),
     );
     let adopted = false;
     try {

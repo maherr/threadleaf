@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
@@ -369,11 +370,13 @@ describe("WorkspaceController", () => {
       load: async () => null,
       save: async (state) => state,
     };
+    const pluginModuleResolver = createRequire(path.resolve("package.json"));
     const controller = await WorkspaceController.open({
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
       workspaceStateStore,
+      pluginModuleResolver,
       runtimeFactory: harness.runtimeFactory,
     });
     const previous = harness.runtimes[0];
@@ -390,6 +393,8 @@ describe("WorkspaceController", () => {
     expect(store.saved).toEqual(["/picked/vault"]);
     expect(harness.optionsSeen[0]?.workspaceStateStore).toBe(workspaceStateStore);
     expect(harness.optionsSeen[1]?.workspaceStateStore).toBe(workspaceStateStore);
+    expect(harness.optionsSeen[0]?.pluginModuleResolver).toBe(pluginModuleResolver);
+    expect(harness.optionsSeen[1]?.pluginModuleResolver).toBe(pluginModuleResolver);
     expect(previous?.closed).toBe(true);
     expect(observed).toEqual(["/picked/vault"]);
     harness.runtimes[1]?.emit();
