@@ -4,7 +4,11 @@ import {
   FullTextSearchIndex,
   type FullTextSearchPage,
 } from "./full-text-search";
-import { type ParsedMarkdownLink, parseMarkdownLinks } from "./markdown-links";
+import {
+  maskMarkdownCodeAndComments,
+  type ParsedMarkdownLink,
+  parseMarkdownLinks,
+} from "./markdown-links";
 import { normalizeVaultDirectoryPath } from "./path-policy";
 import type { VaultReadPort, VaultTextSnapshot } from "./ports";
 import { type RescanReason, type VaultChangeBatch, WatchSequenceGate } from "./watch-protocol";
@@ -35,6 +39,7 @@ export interface DocumentMetadataSnapshot {
   revision: string;
   headings: HeadingMetadata[];
   tags: string[];
+  tagCounts: Record<string, number>;
   properties: Record<string, string | string[]>;
   links: LinkMetadata[];
 }
@@ -50,6 +55,7 @@ interface ParsedDocument {
   revision: string;
   headings: HeadingMetadata[];
   tags: string[];
+  tagCounts: Record<string, number>;
   properties: Record<string, string | string[]>;
   links: ParsedMarkdownLink[];
 }
@@ -149,26 +155,41 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
   const searchable = stripFencedCode(snapshot.content);
   const properties = parseProperties(snapshot.content);
   const headings: HeadingMetadata[] = [];
-  const inlineTags = new Set<string>();
+  const tagCounts = new Map<string, number>();
+  for (const tag of tagsFromProperties(properties)) {
+    tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+  }
   const lines = searchable.split("\n");
-  for (let index = 0; index < lines.length; index += 1) {
+  const tagLines = maskMarkdownCodeAndComments(snapshot.content).split("\n");
+  let bodyStart = 0;
+  if (lines[0]?.trim() === "---") {
+    const closingIndex = lines.slice(1).findIndex((line) => line.trim() === "---");
+    if (closingIndex >= 0) {
+      bodyStart = closingIndex + 2;
+    }
+  }
+  for (let index = bodyStart; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     const heading = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
     if (heading?.[1] && heading[2]) {
       headings.push({ level: heading[1].length, text: heading[2], line: index + 1 });
     }
-    for (const tag of line.matchAll(/(?:^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
+    const tagLine = tagLines[index] ?? "";
+    for (const tag of tagLine.matchAll(/(?:^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
       if (tag[1]) {
-        inlineTags.add(tag[1]);
+        tagCounts.set(tag[1], (tagCounts.get(tag[1]) ?? 0) + 1);
       }
     }
   }
-  const tags = new Set([...tagsFromProperties(properties), ...inlineTags]);
+  const sortedTagCounts = Object.fromEntries(
+    [...tagCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
   return {
     path: snapshot.path,
     revision: snapshot.revision,
     headings,
-    tags: [...tags].sort((left, right) => left.localeCompare(right)),
+    tags: Object.keys(sortedTagCounts),
+    tagCounts: sortedTagCounts,
     properties,
     links: parseMarkdownLinks(snapshot.content),
   };
@@ -292,6 +313,7 @@ export class MetadataIndex {
       revision: document.revision,
       headings: document.headings,
       tags: document.tags,
+      tagCounts: document.tagCounts,
       properties: document.properties,
       links: document.links.map((link) => {
         const resolution = this.resolveLink(document.path, link.target, byPath, byName);

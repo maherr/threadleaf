@@ -106,7 +106,8 @@ describe("MetadataIndex", () => {
         "  - '#open'",
         "---",
         "# Home",
-        "work #inline",
+        "work #inline #inline",
+        "`#inline-code` <!-- #comment -->",
         "[[Folder/Target#Section|Target alias]]",
         "![[Missing]]",
         "[[Duplicate]]",
@@ -127,6 +128,7 @@ describe("MetadataIndex", () => {
     expect(home).toMatchObject({
       headings: [{ level: 1, text: "Home", line: 7 }],
       tags: ["inline", "open", "project"],
+      tagCounts: { inline: 2, open: 1, project: 1 },
       properties: { status: "active", tags: ["project", "#open"] },
     });
     expect(home?.links).toMatchObject([

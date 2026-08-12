@@ -34,6 +34,9 @@ threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status
 threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
 threadleaf --vault /path/to/vault tasks [path="Folder/Note.md"] [done|todo|status="?"] [total|verbose]
 threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" [toggle|done|todo|status="?"]
+threadleaf --vault /path/to/vault aliases [path="Folder/Note.md"] [total|verbose]
+threadleaf --vault /path/to/vault tags [path="Folder/Note.md"] [sort=count] [total|counts]
+threadleaf --vault /path/to/vault tag name=project [total|verbose]
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
@@ -64,6 +67,9 @@ During development, prefix the same arguments with `pnpm cli`.
 | `property:remove` | Committed removal or explicit no-write missing result | Revision-checked recoverable writer |
 | `tasks` | Vault-wide or exact-note Markdown tasks with status filters and optional count/location output | Read-only kernel plus Markdown task scanner |
 | `task` | One exact `path:line` task, optionally with a new checkbox status | Read-only scanner or revision-checked recoverable writer |
+| `aliases` | Frontmatter aliases across the vault or one exact note, optionally with source paths | Derived metadata index |
+| `tags` | Unique tag catalog with occurrence counts across the vault or one exact note | Derived metadata index |
+| `tag` | Occurrence total and carrying files for one tag | Derived metadata index |
 
 The note corpus excludes `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts.
 Read-only kernel opening performs path validation but creates no state directory, vault identity,
@@ -163,6 +169,18 @@ task text, indentation, and all unrelated bytes. Setting the current status succ
 write. A revision race keeps the external winner, stores the complete proposed note as a conflict
 copy, and returns exit 5.
 
+`aliases` reads `alias` and `aliases` frontmatter values across the vault or one exact `path=` or
+`file=` target. `total` prints the number of alias entries. Human output lists aliases alone by
+default and adds the exact source path with `verbose`. Versioned JSON always includes both fields.
+
+`tags` reports distinct tag names from frontmatter and inline Markdown. `total` prints the distinct
+tag count, `counts` adds each tag's occurrence total to human output, and `sort=count` orders by
+descending occurrence count with a name tie-breaker. Repeating one tag in a note increases its
+occurrence count; the file list still contains that note once. `tag name=<tag>` accepts a name with
+or without a leading `#`; `total` prints its occurrence count and `verbose` includes every carrying
+file. Fenced code, inline code, and HTML comments are excluded, and a frontmatter tag is not
+counted again as inline syntax.
+
 ## JSON contract
 
 Add `--json` anywhere before `--` to receive a versioned success envelope on standard output:
@@ -220,6 +238,9 @@ threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=sta
 threadleaf --vault /path/to/vault tasks file="Folder/Note.md" todo verbose
 threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" toggle
 threadleaf --vault /path/to/vault task path="Folder/Note.md" line=12 status="?"
+threadleaf --vault /path/to/vault aliases file="Folder/Note.md" verbose
+threadleaf --vault /path/to/vault tags path="Folder/Note.md" counts
+threadleaf --vault /path/to/vault tag name=project verbose
 ```
 
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
@@ -239,7 +260,8 @@ subset and native JSON contract are narrower than a complete compatibility claim
 not yet accept Obsidian's `open`, `overwrite`, or template parameters, active-file defaults,
 basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags. The task
 subset does not yet support `active`, `daily`, basename-based `file=` resolution, or alternate
-`format` output. `trash list`, `trash:list`, and `restore` are native Threadleaf recovery commands
-rather than claimed Obsidian CLI compatibility.
+`format` output. Alias and tag commands do not yet support `active`, basename-based `file=`
+resolution, or alternate `format` output. `trash list`, `trash:list`, and `restore` are native
+Threadleaf recovery commands rather than claimed Obsidian CLI compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).

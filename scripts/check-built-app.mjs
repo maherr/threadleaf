@@ -101,6 +101,11 @@ async function verifyBuiltCliMutations() {
     const taskPath = path.join(vaultPath, "Tasks.md");
     const taskOriginal = Buffer.from("\ufeff# Tasks\r\n\r\n- [ ] built smoke\r\n", "utf8");
     await writeFile(taskPath, taskOriginal);
+    await writeFile(
+      path.join(vaultPath, "Metadata.md"),
+      "---\naliases: [Built alias]\ntags: [built, smoke]\n---\n# Metadata\n",
+      "utf8",
+    );
     const environment = { ...process.env, XDG_STATE_HOME: statePath };
 
     const propertySet = spawnSync(
@@ -166,6 +171,55 @@ async function verifyBuiltCliMutations() {
       throw new Error(
         `Built CLI property-remove smoke test failed: ${propertyRemove.stderr || `exit ${propertyRemove.status}`}`,
       );
+    }
+
+    const aliases = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "aliases", "path=Metadata.md", "verbose"],
+      { encoding: "utf8", env: environment },
+    );
+    const aliasesEnvelope = aliases.status === 0 ? JSON.parse(aliases.stdout) : null;
+    if (
+      aliases.stderr !== "" ||
+      aliasesEnvelope?.command !== "aliases" ||
+      aliasesEnvelope.data?.total !== 1 ||
+      aliasesEnvelope.data?.aliases?.[0]?.alias !== "Built alias" ||
+      aliasesEnvelope.data?.aliases?.[0]?.path !== "Metadata.md"
+    ) {
+      throw new Error(
+        `Built CLI aliases smoke test failed: ${aliases.stderr || `exit ${aliases.status}`}`,
+      );
+    }
+
+    const tags = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "tags", "path=Metadata.md", "counts"],
+      { encoding: "utf8", env: environment },
+    );
+    const tagsEnvelope = tags.status === 0 ? JSON.parse(tags.stdout) : null;
+    if (
+      tags.stderr !== "" ||
+      tagsEnvelope?.command !== "tags" ||
+      tagsEnvelope.data?.total !== 2 ||
+      tagsEnvelope.data?.tags?.[0]?.name !== "built" ||
+      tagsEnvelope.data?.tags?.[0]?.count !== 1
+    ) {
+      throw new Error(`Built CLI tags smoke test failed: ${tags.stderr || `exit ${tags.status}`}`);
+    }
+
+    const tag = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "tag", "name=built", "verbose"],
+      { encoding: "utf8", env: environment },
+    );
+    const tagEnvelope = tag.status === 0 ? JSON.parse(tag.stdout) : null;
+    if (
+      tag.stderr !== "" ||
+      tagEnvelope?.command !== "tag" ||
+      tagEnvelope.data?.count !== 1 ||
+      tagEnvelope.data?.files?.[0] !== "Metadata.md"
+    ) {
+      throw new Error(`Built CLI tag smoke test failed: ${tag.stderr || `exit ${tag.status}`}`);
     }
 
     const tasks = spawnSync(
@@ -313,5 +367,5 @@ try {
 }
 
 console.log(
-  `Verified Electron entry points, headless CLI graph, property, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
+  `Verified Electron entry points, headless CLI graph, property, alias, tag, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
 );

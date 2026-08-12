@@ -88,3 +88,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Headless `tasks` and `task` commands with vault-wide or exact-note scanning, completed, incomplete,
   and custom-status filters, exact `path:line` addressing, source-range-only status mutation,
   no-op detection, recovery-backed conflicts, and code and comment exclusion.
+- Headless `aliases`, `tags`, and `tag` commands with exact-note filtering, deterministic alias
+  source paths, distinct tag names, raw occurrence totals, count sorting, and verbose carrying-file
+  output from the rebuildable metadata index.

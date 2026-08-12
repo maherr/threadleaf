@@ -216,6 +216,19 @@ describe("Threadleaf CLI arguments", () => {
       line: 12,
       mutation: { kind: "set", status: "?" },
     });
+    expect(
+      parseCliArguments(["--vault=/vault", "aliases", "file=Folder/Note.md", "verbose"]),
+    ).toMatchObject({ id: "aliases", filePath: "Folder/Note.md", verbose: true });
+    expect(parseCliArguments(["--vault=/vault", "tags", "sort=count", "counts"])).toMatchObject({
+      id: "tags",
+      sortBy: "count",
+      counts: true,
+    });
+    expect(parseCliArguments(["--vault=/vault", "tag", "name=#project", "total"])).toMatchObject({
+      id: "tag",
+      tagName: "project",
+      totalOnly: true,
+    });
     for (const name of ["links", "backlinks", "outline"] as const) {
       expect(parseCliArguments(["--vault=/vault", name, "path=Folder/Note.md"])).toMatchObject({
         id: name,
@@ -287,6 +300,13 @@ describe("Threadleaf CLI arguments", () => {
     expect(() =>
       parseCliArguments(["--vault=/vault", "task", "path=Note.md", "line=1", "status=xx"]),
     ).toThrow("one character");
+    expect(() => parseCliArguments(["--vault=/vault", "aliases", "active"])).toThrow(
+      "not available",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "tags", "sort=name"])).toThrow("sort=count");
+    expect(() => parseCliArguments(["--vault=/vault", "tag", "name=two words"])).toThrow(
+      "tag names accept",
+    );
   });
 
   it("shows help without requiring a vault", async () => {
@@ -1215,6 +1235,79 @@ describe("Threadleaf CLI task workflows", () => {
       command: "tasks",
       error: { code: "VAULT" },
     });
+  });
+});
+
+describe("Threadleaf CLI alias and tag workflows", () => {
+  it("lists frontmatter aliases across the vault or one exact note", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Alpha.md"),
+      ["---", "tags: [project, open]", "aliases: [First, Shared]", "---", "# Alpha"].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(vaultPath, "Folder", "Beta.md"),
+      ["---", "alias: Second", "---", "# Beta"].join("\n"),
+      "utf8",
+    );
+
+    const all = await invoke(["--json", "--vault", vaultPath, "aliases"]);
+    expect(all.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(all.stdout)).toMatchObject({
+      command: "aliases",
+      data: {
+        path: null,
+        total: 3,
+        aliases: [
+          { alias: "First", path: "Alpha.md" },
+          { alias: "Second", path: "Folder/Beta.md" },
+          { alias: "Shared", path: "Alpha.md" },
+        ],
+      },
+    });
+
+    const verbose = await invoke(["--vault", vaultPath, "aliases", "path=Alpha.md", "verbose"]);
+    expect(verbose.stdout).toBe("First\tAlpha.md\nShared\tAlpha.md\n");
+
+    const total = await invoke(["--vault", vaultPath, "aliases", "file=Alpha.md", "total"]);
+    expect(total.stdout).toBe("2\n");
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("lists distinct tags with occurrence counts and reports per-tag files", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Folder", "Beta.md"),
+      ["---", "tags: [project, nested/topic]", "---", "# Beta", "#project"].join("\n"),
+      "utf8",
+    );
+
+    const counted = await invoke(["--json", "--vault", vaultPath, "tags", "sort=count", "counts"]);
+    expect(JSON.parse(counted.stdout)).toMatchObject({
+      command: "tags",
+      data: {
+        path: null,
+        sort: "count",
+        total: 3,
+        tags: [
+          { name: "project", count: 3, files: ["Alpha.md", "Folder/Beta.md"] },
+          { name: "nested/topic", count: 1, files: ["Folder/Beta.md"] },
+          { name: "open", count: 1, files: ["Alpha.md"] },
+        ],
+      },
+    });
+
+    const exact = await invoke(["--vault", vaultPath, "tags", "path=Alpha.md"]);
+    expect(exact.stdout).toBe("#open\n#project\n");
+
+    const total = await invoke(["--vault", vaultPath, "tags", "total"]);
+    expect(total.stdout).toBe("3\n");
+
+    const verbose = await invoke(["--vault", vaultPath, "tag", "name=#project", "verbose"]);
+    expect(verbose.stdout).toBe("#project\t3\nAlpha.md\nFolder/Beta.md\n");
+
+    const absent = await invoke(["--vault", vaultPath, "tag", "name=missing", "total"]);
+    expect(absent.stdout).toBe("0\n");
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

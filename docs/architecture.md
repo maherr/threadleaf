@@ -243,6 +243,13 @@ mutation replaces only that status range against the revision that was read. A m
 status returns without invoking the writer; a revision race preserves the complete proposed note
 as a conflict copy.
 
+The metadata index keeps both a sorted unique tag list for navigation and a per-document occurrence
+map for compatibility output. Frontmatter tags are counted from their parsed property value, while
+inline tags are counted only after the complete frontmatter block and outside fenced code, inline
+code, and HTML comments. Alias and tag CLI projections are derived from that disposable index:
+aliases retain their source path, tag totals sum occurrences, and verbose tag information lists
+each carrying document once.
+
 Move and rename add a link-integrity preflight in front of the recoverable rename primitive. The
 service snapshots the Markdown corpus, builds the current metadata index, projects the source at
 its proposed destination, and builds the projected index from the same bytes. Every parsed wiki and

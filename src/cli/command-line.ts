@@ -77,7 +77,10 @@ type CliCommandId =
   | "property.set"
   | "property.remove"
   | "tasks"
-  | "task";
+  | "task"
+  | "aliases"
+  | "tags"
+  | "tag";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -196,6 +199,28 @@ interface CliTaskCommand extends CliVaultCommand {
   mutation: MarkdownTaskMutation | null;
 }
 
+interface CliAliasesCommand extends CliVaultCommand {
+  id: "aliases";
+  filePath: string | null;
+  totalOnly: boolean;
+  verbose: boolean;
+}
+
+interface CliTagsCommand extends CliVaultCommand {
+  id: "tags";
+  filePath: string | null;
+  sortBy: "name" | "count";
+  totalOnly: boolean;
+  counts: boolean;
+}
+
+interface CliTagCommand extends CliVaultCommand {
+  id: "tag";
+  tagName: string;
+  totalOnly: boolean;
+  verbose: boolean;
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
@@ -214,7 +239,10 @@ export type ParsedCliCommand =
   | CliPropertySetCommand
   | CliPropertyRemoveCommand
   | CliTasksCommand
-  | CliTaskCommand;
+  | CliTaskCommand
+  | CliAliasesCommand
+  | CliTagsCommand
+  | CliTagCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -713,6 +741,142 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     }
     return { id: "task", json, vaultPath, filePath, line, mutation };
   }
+  if (name === "aliases") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("aliases accepts path and alias flags only.");
+    }
+    let filePath: string | null = null;
+    let totalOnly = false;
+    let verbose = false;
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (filePath !== null) {
+          usageFailure("aliases accepts only one note path.");
+        }
+        filePath = value.slice(value.indexOf("=") + 1);
+        if (!filePath) {
+          usageFailure("aliases path requires a value.");
+        }
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure("aliases total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else if (value === "verbose") {
+        if (verbose) {
+          usageFailure("aliases verbose may be supplied only once.");
+        }
+        verbose = true;
+      } else if (value === "active") {
+        usageFailure("aliases active is not available in the headless native subset yet.");
+      } else {
+        usageFailure(`Unsupported aliases argument: ${value}`);
+      }
+    }
+    return { id: "aliases", json, vaultPath, filePath, totalOnly, verbose };
+  }
+  if (name === "tags") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("tags accepts path and tag flags only.");
+    }
+    let filePath: string | null = null;
+    let sortBy: "name" | "count" = "name";
+    let totalOnly = false;
+    let counts = false;
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (filePath !== null) {
+          usageFailure("tags accepts only one note path.");
+        }
+        filePath = value.slice(value.indexOf("=") + 1);
+        if (!filePath) {
+          usageFailure("tags path requires a value.");
+        }
+      } else if (value.startsWith("sort=")) {
+        if (value !== "sort=count" || sortBy !== "name") {
+          usageFailure("tags accepts sort=count only once.");
+        }
+        sortBy = "count";
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure("tags total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else if (value === "counts") {
+        if (counts) {
+          usageFailure("tags counts may be supplied only once.");
+        }
+        counts = true;
+      } else if (value === "active") {
+        usageFailure("tags active is not available in the headless native subset yet.");
+      } else {
+        usageFailure(`Unsupported tags argument: ${value}`);
+      }
+    }
+    return { id: "tags", json, vaultPath, filePath, sortBy, totalOnly, counts };
+  }
+  if (name === "tag") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("tag accepts name and tag flags only.");
+    }
+    let tagName: string | null = null;
+    let totalOnly = false;
+    let verbose = false;
+    for (const value of values) {
+      if (value.startsWith("name=")) {
+        if (tagName !== null) {
+          usageFailure("tag name may be supplied only once.");
+        }
+        tagName = value.slice("name=".length).replace(/^#/, "");
+        if (!tagName) {
+          usageFailure("tag name requires a value.");
+        }
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure("tag total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else if (value === "verbose") {
+        if (verbose) {
+          usageFailure("tag verbose may be supplied only once.");
+        }
+        verbose = true;
+      } else {
+        usageFailure(`Unsupported tag argument: ${value}`);
+      }
+    }
+    if (!tagName) {
+      usageFailure("tag requires name=<tag>.");
+    }
+    if (!/^[\p{L}\p{N}_/-]+$/u.test(tagName)) {
+      usageFailure("tag names accept letters, numbers, underscores, hyphens, and slashes.");
+    }
+    return { id: "tag", json, vaultPath, tagName, totalOnly, verbose };
+  }
   if (
     name === "properties" ||
     name === "property:read" ||
@@ -1020,6 +1184,9 @@ Usage:
   threadleaf --vault <path> [--json] property:remove path=<note.md> name=<name>
   threadleaf --vault <path> [--json] tasks [path=<note.md>] [done|todo|status=<char>] [total|verbose]
   threadleaf --vault <path> [--json] task ref=<note.md:line> [toggle|done|todo|status=<char>]
+  threadleaf --vault <path> [--json] aliases [path=<note.md>] [total|verbose]
+  threadleaf --vault <path> [--json] tags [path=<note.md>] [sort=count] [total|counts]
+  threadleaf --vault <path> [--json] tag name=<tag> [total|verbose]
 
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
@@ -1040,6 +1207,9 @@ Compatibility spellings:
   threadleaf --vault <path> property:remove path=<note.md> name=<name>
   threadleaf --vault <path> tasks [path=<note.md>] [done|todo|status=<char>] [total|verbose]
   threadleaf --vault <path> task path=<note.md> line=<n> [toggle|done|todo|status=<char>]
+  threadleaf --vault <path> aliases [path=<note.md>] [total|verbose]
+  threadleaf --vault <path> tags [path=<note.md>] [sort=count] [total|counts]
+  threadleaf --vault <path> tag name=<tag> [total|verbose]
 
 Commands are headless and never require a running Electron process.
 `;
@@ -1248,6 +1418,71 @@ function indexedMarkdownDocument(
     throw new Error(`Markdown note is not indexed in this vault: ${filePath}`);
   }
   return document;
+}
+
+interface AliasCatalogEntry {
+  alias: string;
+  path: string;
+}
+
+interface TagCatalogEntry {
+  name: string;
+  count: number;
+  files: string[];
+}
+
+function selectedMetadataDocuments(
+  snapshot: MetadataIndexSnapshot,
+  filePath: string | null,
+  commandName: string,
+): DocumentMetadataSnapshot[] {
+  return filePath === null
+    ? snapshot.documents
+    : [indexedMarkdownDocument(snapshot, filePath, commandName)];
+}
+
+function aliasCatalog(
+  snapshot: MetadataIndexSnapshot,
+  filePath: string | null,
+): AliasCatalogEntry[] {
+  return selectedMetadataDocuments(snapshot, filePath, "aliases")
+    .flatMap((document) =>
+      Object.entries(document.properties)
+        .filter(([name]) => {
+          const normalized = name.toLocaleLowerCase("en-US");
+          return normalized === "alias" || normalized === "aliases";
+        })
+        .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
+        .filter((alias) => alias.length > 0)
+        .map((alias) => ({ alias, path: document.path })),
+    )
+    .sort(
+      (left, right) => left.alias.localeCompare(right.alias) || left.path.localeCompare(right.path),
+    );
+}
+
+function tagCatalog(
+  snapshot: MetadataIndexSnapshot,
+  filePath: string | null,
+  sortBy: "name" | "count" = "name",
+): TagCatalogEntry[] {
+  const entriesByTag = new Map<string, { count: number; files: string[] }>();
+  for (const document of selectedMetadataDocuments(snapshot, filePath, "tags")) {
+    for (const [name, count] of Object.entries(document.tagCounts)) {
+      const current = entriesByTag.get(name) ?? { count: 0, files: [] };
+      entriesByTag.set(name, {
+        count: current.count + count,
+        files: [...current.files, document.path],
+      });
+    }
+  }
+  return [...entriesByTag.entries()]
+    .map(([name, entry]) => ({ name, count: entry.count, files: entry.files }))
+    .sort((left, right) =>
+      sortBy === "count"
+        ? right.count - left.count || left.name.localeCompare(right.name)
+        : left.name.localeCompare(right.name),
+    );
 }
 
 function describeLink(link: LinkMetadata): string {
@@ -1563,6 +1798,18 @@ async function executeCommand(
         value: exists ? document.properties[command.propertyName] : null,
       };
     }
+    if (command.id === "aliases") {
+      const aliases = aliasCatalog(snapshot, command.filePath);
+      return { path: command.filePath, total: aliases.length, aliases };
+    }
+    if (command.id === "tags") {
+      const tags = tagCatalog(snapshot, command.filePath, command.sortBy);
+      return { path: command.filePath, sort: command.sortBy, total: tags.length, tags };
+    }
+    if (command.id === "tag") {
+      const entry = tagCatalog(snapshot, null).find((tag) => tag.name === command.tagName);
+      return entry ?? { name: command.tagName, count: 0, files: [] };
+    }
     const tags = new Set(snapshot.documents.flatMap((document) => document.tags));
     const headingCount = snapshot.documents.reduce(
       (count, document) => count + document.headings.length,
@@ -1773,6 +2020,40 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     return result.status === "unchanged"
       ? `Task already has that status: ${rendered}\n`
       : `Updated task: ${rendered}\n`;
+  }
+  if (command.id === "aliases") {
+    const result = data as { total: number; aliases: AliasCatalogEntry[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    if (result.aliases.length === 0) {
+      return "No aliases.\n";
+    }
+    return `${result.aliases
+      .map((entry) => (command.verbose ? `${entry.alias}\t${entry.path}` : entry.alias))
+      .join("\n")}\n`;
+  }
+  if (command.id === "tags") {
+    const result = data as { total: number; tags: TagCatalogEntry[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    if (result.tags.length === 0) {
+      return "No tags.\n";
+    }
+    return `${result.tags
+      .map((entry) => `#${entry.name}${command.counts ? `\t${entry.count}` : ""}`)
+      .join("\n")}\n`;
+  }
+  if (command.id === "tag") {
+    const result = data as TagCatalogEntry;
+    if (command.totalOnly) {
+      return `${result.count}\n`;
+    }
+    const summary = `#${result.name}\t${result.count}`;
+    return command.verbose && result.files.length > 0
+      ? `${summary}\n${result.files.join("\n")}\n`
+      : `${summary}\n`;
   }
   if (command.id === "properties") {
     const result = data as { path: string; properties: Record<string, string | string[]> };

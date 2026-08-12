@@ -68,6 +68,9 @@ filter complete, incomplete, and custom statuses, and address one task by its ex
 Toggle, done, todo, and custom-status mutations replace only the checkbox character through the
 recoverable writer. Unrelated bytes remain exact, no-op requests do not write, and an external-edit
 race keeps the proposed note as a conflict copy.
+Headless alias and tag catalogs reuse the rebuildable metadata index. They can inspect the full
+vault or one exact note, retain frontmatter aliases with their source paths, distinguish unique tag
+names from occurrence totals, and report every document carrying a requested tag.
 Runtime-owned tabs keep one
 ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
 externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
@@ -150,8 +153,8 @@ This non-packaged development override is not persisted and is ignored by packag
 `pnpm check` gate verifies the packaged Electron entry points and confirms that renderer assets
 remain loadable over `file://`. It also executes the built CLI against disposable synthetic-vault
 copies, validates its versioned JSON envelope, proves an exact property set/read/remove round trip,
-proves an exact task read/status/toggle round trip, and proves exact-byte delete and restore
-behavior.
+proves alias and tag catalog output, proves an exact task read/status/toggle round trip, and proves
+exact-byte delete and restore behavior.
 
 The development CLI requires an explicit vault and never consults the desktop application's saved
 selection:
@@ -182,6 +185,9 @@ pnpm cli --vault /absolute/path/to/vault property:remove path="Projects/Brief.md
 pnpm cli --vault /absolute/path/to/vault tasks todo verbose
 pnpm cli --vault /absolute/path/to/vault task ref="Daily/Today.md:12" done
 pnpm cli --vault /absolute/path/to/vault task path="Daily/Today.md" line=12 status="?"
+pnpm cli --vault /absolute/path/to/vault aliases verbose
+pnpm cli --vault /absolute/path/to/vault tags sort=count counts
+pnpm cli --vault /absolute/path/to/vault tag name=project verbose
 ```
 
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported
