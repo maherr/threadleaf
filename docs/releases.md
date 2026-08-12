@@ -1,9 +1,9 @@
 # Release engineering
 
-Threadleaf is pre-alpha. Native contributor lanes create unsigned Linux x64, macOS ARM64 and x64,
-and Windows x64 artifacts. These are installability and package-integrity proofs, not supported
-public releases. A separate manual workflow fails closed unless Windows signing and Apple Developer
-ID plus notarization credentials are present. Nothing publishes automatically.
+Threadleaf 0.1.0-beta.1 is a maintainer-led daily-drive beta. Native contributor lanes create
+unsigned Linux x64, macOS ARM64 and x64, and Windows x64 artifacts. These remain contributor builds,
+not signed public releases. A separate manual workflow fails closed unless Windows signing and
+Apple Developer ID plus notarization credentials are present. Nothing publishes automatically.
 
 ## Linux artifacts
 
@@ -172,7 +172,7 @@ changes.
 On Fedora, the built RPM can be exercised through the same contract after installation:
 
 ```sh
-sudo dnf install ./release/Threadleaf-0.1.0-alpha.1-linux-x86_64.rpm
+sudo dnf install ./release/Threadleaf-0.1.0-beta.1-linux-x86_64.rpm
 THREADLEAF_PACKAGED_EXECUTABLE=/opt/Threadleaf/threadleaf \
   THREADLEAF_PACKAGED_SCREENSHOT_DIR=/tmp/threadleaf-installed-visual \
   xvfb-run -a node scripts/check-packaged-app.mjs
@@ -183,9 +183,23 @@ desktop-file-validate /usr/share/applications/threadleaf.desktop
 An empty `rpm -V` result means the installed payload still matches the RPM database. The desktop
 entry validation must also exit successfully.
 
+## Linux upgrade and rollback rehearsal
+
+`pnpm run test:upgrade-rollback` archives the pinned pre-handoff baseline source, builds it as
+`0.1.0-alpha.0`, builds the current source as its declared version, and requires byte-distinct
+AppImages. It then runs baseline, candidate, and baseline again against one isolated writable vault
+and one persistent Threadleaf user-data directory.
+
+The gate makes and verifies a note save in every package, leaves a second note byte-identical,
+restores the selected vault and open tabs, and carries a custom hotkey and appearance choice both
+forward and backward. It also requires private settings and workspace documents to remain mode
+0600, proves candidate-only UI appears after upgrade and disappears after rollback, and rejects any
+Threadleaf-private entry in the vault. This proves portable AppImage upgrade and rollback. It does
+not substitute for the remaining signed-update-feed or native package-manager transaction gates.
+
 ## Remaining release gates
 
-Public releases still require the first hosted Intel macOS and Windows runs, real signing authority,
-a successful signed release and update-feed rehearsal, Linux native-container signing, upgrade and
-downgrade tests, rollback, and published support and security-response procedures. Until those
-gates pass, every local package remains clearly labeled pre-alpha and unsigned.
+Signed public releases still require the first hosted Intel macOS and Windows runs, real signing
+authority, a successful signed release and update-feed rehearsal, Linux native-container signing,
+native package-manager upgrade and downgrade tests, and published support and security-response
+procedures. Until those gates pass, every local package remains clearly labeled unsigned.

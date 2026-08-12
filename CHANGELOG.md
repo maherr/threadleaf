@@ -225,6 +225,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   aggregate-only schema, main-renderer authority, outside-vault and symlink containment, atomic
   mode-0600 writes, no upload path, private-field canary tests, and live About-page plus
   command-palette verification in light and dark themes.
+- A reproducible Linux daily-drive handoff gate that builds byte-distinct baseline and candidate
+  AppImages, drives baseline, upgrade, and rollback over one vault and private-state root, preserves
+  exact note bytes, selection, hotkeys, appearance, and tabs, and proves the rollback stays writable.
 - A renderer-to-main startup handshake that paints the opening workspace before restored-vault
   activation begins, plus cooperative metadata construction that yields during large corpus builds.
 - Obsidian-style raster wiki-image embeds through the existing contained, MIME-sniffed, bounded

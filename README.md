@@ -10,7 +10,8 @@ Threadleaf is not affiliated with or endorsed by Obsidian.
 
 ## Status
 
-Threadleaf is pre-alpha. Its Phase 0 architecture proof loads an unchanged CommonJS fixture
+Threadleaf 0.1.0-beta.1 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
+proof loads an unchanged CommonJS fixture
 plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
 command, and exercises that command through a dedicated Electron compatibility renderer. The
 primary application renderer remains sandboxed and has no Node integration. The fixture completes
@@ -170,9 +171,12 @@ the preview does not load plugins or change Threadleaf settings, `.obsidian/`, o
 is no Apply action yet; behavior import remains an explicit future transaction rather than a side
 effect of opening a vault.
 
-Do not use the current build with an important vault. The picker and recoverable writer are now
-functional, but Threadleaf is still pre-alpha and has no inline live preview, note transclusion, or
-completed beta package upgrade and rollback rehearsal.
+The current Linux build has crossed the daily-drive beta handoff: real-scale copied-vault use,
+editor and crash recovery, isolated compatibility plugins, unchanged Excalidraw workflows,
+installable packages, privacy-safe feedback, and a distinct-package upgrade and rollback sequence
+all pass. Keep an ordinary external backup while field testing. Threadleaf still lacks inline live
+preview and note transclusion, and broad community-plugin compatibility remains measured per plugin
+rather than assumed.
 
 Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather
 than a development server. A fresh package opens an external, read-only demo vault, keeps the
@@ -198,6 +202,12 @@ privacy-safe support bundle in Ctrl/Cmd+K. It saves a mode-0600 Markdown feedbac
 fixed allowlist of aggregate diagnostics outside the active vault. It never uploads anything and
 does not include note text, filenames, vault paths or identifiers, hashes, plugin identities or
 settings, raw errors, usernames, hostnames, network addresses, or locale.
+
+For the Linux daily-drive handoff, keep the versioned AppImage as the rollback unit. Close
+Threadleaf before changing versions, run the newer AppImage against the same vault and private app
+data, and retain the prior AppImage until the new build has proved itself. Returning to the prior
+AppImage needs no vault conversion. The automated release gate exercises this exact sequence in
+both directions before an artifact is handed off.
 
 ## Product promises
 
@@ -330,6 +340,13 @@ process, and generated Markdown:
 
 ```sh
 pnpm run test:support-bundle
+```
+
+The Linux upgrade gate builds a previous baseline and the current beta as byte-distinct AppImages,
+then drives baseline, candidate, and rollback against one isolated vault and private-state root:
+
+```sh
+pnpm run test:upgrade-rollback
 ```
 
 The development CLI requires an explicit vault and never consults the desktop application's saved

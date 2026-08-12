@@ -152,8 +152,13 @@ conversion.
 - [x] Produce installable Linux desktop artifacts with checksums and native package inspection.
 - [x] Add a one-command, privacy-reviewed diagnostic bundle and a short beta feedback template for
       reproducible bugs and improvement notes.
-- [ ] Rehearse application upgrade and rollback with the beta package while preserving the vault
-      and Threadleaf's private settings.
+- [x] Rehearse application upgrade and rollback with distinct baseline and beta AppImages while
+      preserving exact vault bytes, selected vault, private settings, hotkeys, appearance, and
+      workspace tabs, then prove the rolled-back package remains writable without adding private
+      application state to the vault.
+
+Exit gate passed: Threadleaf 0.1.0-beta.1 is ready for maintainer-led daily-drive testing with a
+normal external vault backup and the privacy-safe feedback workflow.
 
 ## Phase 3: Compatibility alpha
 
