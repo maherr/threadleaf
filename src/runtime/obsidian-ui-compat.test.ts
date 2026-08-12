@@ -3,11 +3,41 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type ButtonComponent,
   type DropdownComponent,
+  Editor,
   Setting,
   type SliderComponent,
   type TextComponent,
   type ToggleComponent,
 } from "./obsidian-ui-compat";
+
+describe("Obsidian editor compatibility", () => {
+  it("tracks selections, positions, replacement text, and focus", () => {
+    const changes: string[] = [];
+    const editor = new Editor((value) => changes.push(value));
+    editor.syncValue("alpha\nbeta");
+    editor.setSelection({ line: 0, ch: 2 }, { line: 1, ch: 2 });
+
+    expect(editor.getSelection()).toBe("pha\nbe");
+    expect(editor.getCursor("from")).toEqual({ line: 0, ch: 2 });
+    expect(editor.getCursor("to")).toEqual({ line: 1, ch: 2 });
+    editor.replaceSelection("X");
+
+    expect(editor.getValue()).toBe("alXta");
+    expect(editor.getSelectionOffsets()).toEqual({ anchor: 3, head: 3 });
+    expect(editor.offsetToPos(editor.posToOffset({ line: 0, ch: 4 }))).toEqual({ line: 0, ch: 4 });
+    expect(changes).toEqual(["alXta"]);
+    expect(editor.hasFocus()).toBe(false);
+    editor.focus();
+    expect(editor.hasFocus()).toBe(true);
+  });
+
+  it("clamps external offsets to the current document", () => {
+    const editor = new Editor();
+    editor.syncValue("abc");
+    editor.setSelectionOffsets(99, -4);
+    expect(editor.getSelectionOffsets()).toEqual({ anchor: 3, head: 0 });
+  });
+});
 
 describe("Obsidian settings compatibility", () => {
   it("builds standard setting rows and keeps controls interactive", () => {

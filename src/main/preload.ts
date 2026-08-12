@@ -103,8 +103,12 @@ const bridge: ThreadleafBridge = {
       expectedRevision,
       expectedVaultId,
     ) as Promise<NoteSaveResponse>,
-  runCommand: (commandId) =>
-    ipcRenderer.invoke(ipcChannels.runCommand, commandId) as Promise<RuntimeSnapshot>,
+  runCommand: (commandId, editorContext) =>
+    ipcRenderer.invoke(
+      ipcChannels.runCommand,
+      commandId,
+      editorContext,
+    ) as Promise<RuntimeSnapshot>,
   reloadPlugin: (pluginId) =>
     ipcRenderer.invoke(ipcChannels.reloadPlugin, pluginId) as Promise<RuntimeSnapshot>,
   unloadPlugin: (pluginId) =>

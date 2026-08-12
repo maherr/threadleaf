@@ -17,6 +17,7 @@ import type {
   NoteMoveResponse,
   NoteSaveOutcome,
   NoteSaveResponse,
+  PluginEditorContext,
   RuntimeSnapshot,
   VaultImageResponse,
   VaultSearchResponse,
@@ -542,8 +543,11 @@ export class WorkspaceRuntime {
     return this.kernel.createDirectory(folderPath);
   }
 
-  async runPluginCommand(commandId: string): Promise<RuntimeSnapshot> {
-    await this.pluginHost.runCommand(commandId);
+  async runPluginCommand(
+    commandId: string,
+    editorContext?: PluginEditorContext,
+  ): Promise<RuntimeSnapshot> {
+    await this.pluginHost.runCommand(commandId, editorContext);
     return this.publishSnapshot();
   }
 

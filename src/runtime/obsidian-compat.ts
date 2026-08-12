@@ -4,7 +4,7 @@ import MarkdownIt from "markdown-it";
 import moment from "moment";
 import { parse as parseYaml } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
-import { revisionOf } from "../kernel/durability";
+import { atomicWriteFile, revisionOf } from "../kernel/durability";
 import type { VaultDirectoryCreateResult, VaultReadPort, VaultWriteResult } from "../kernel/ports";
 import type { CommandSummary, NoteCreateOutcome } from "../shared/contracts";
 import { Component } from "./obsidian-components";
@@ -15,6 +15,7 @@ import {
   ButtonComponent,
   ColorComponent,
   DropdownComponent,
+  Editor,
   EditorSuggest,
   ExtraButtonComponent,
   FileView,
@@ -61,6 +62,7 @@ export interface Command {
   id: string;
   name: string;
   callback?: () => unknown | Promise<unknown>;
+  checkCallback?: (checking: boolean) => boolean | undefined | Promise<boolean | undefined>;
 }
 
 interface RegisteredCommand extends Command {
@@ -153,6 +155,8 @@ export class Vault {
   readonly #reader: VaultReadPort | undefined;
   readonly #writer: CompatibilityVaultWritePort | undefined;
   private readonly listeners = new Map<string, Set<VaultEventCallback>>();
+  private inFlightMutations = 0;
+  private mutationVersion = 0;
   private readonly revisions = new Map<string, string>();
 
   constructor(rootPath: string, reader?: VaultReadPort, writer?: CompatibilityVaultWritePort) {
@@ -283,7 +287,14 @@ export class Vault {
     if (!expectedRevision) {
       throw new Error(`Could not establish the current revision for ${normalized}.`);
     }
-    const outcome = await this.#writer.writeText(normalized, content, expectedRevision);
+    const outcome = await this.trackMutation(() =>
+      this.#writer?.writeText(normalized, content, expectedRevision),
+    );
+    if (!outcome) {
+      throw new Error(
+        "Plugin view saves are not available in the read-only compatibility runtime.",
+      );
+    }
     if (outcome.status === "conflict") {
       throw new Error(
         `Plugin save conflict for ${normalized}; the proposed bytes were preserved at ${outcome.conflictPath}.`,
@@ -302,7 +313,12 @@ export class Vault {
       );
     }
     const normalized = normalizePath(filePath);
-    const outcome = await this.#writer.createText(normalized, content);
+    const outcome = await this.trackMutation(() => this.#writer?.createText?.(normalized, content));
+    if (!outcome) {
+      throw new Error(
+        "Plugin file creation is not available in the read-only compatibility runtime.",
+      );
+    }
     if (outcome.status === "exists") {
       throw new Error(`Plugin file creation refused to overwrite ${outcome.path}.`);
     }
@@ -330,12 +346,48 @@ export class Vault {
         "Plugin folder creation is not available in the read-only compatibility runtime.",
       );
     }
-    const outcome = await this.#writer.createFolder(normalizePath(folderPath));
+    const outcome = await this.trackMutation(() =>
+      this.#writer?.createFolder?.(normalizePath(folderPath)),
+    );
+    if (!outcome) {
+      throw new Error(
+        "Plugin folder creation is not available in the read-only compatibility runtime.",
+      );
+    }
     const folder = this.folderForPath(outcome.path);
     if (outcome.created) {
       this.trigger("create", folder);
     }
     return folder;
+  }
+
+  async waitForSettledMutations(quietMs = 75, timeoutMs = 5_000): Promise<void> {
+    const startedAt = Date.now();
+    let observedVersion = this.mutationVersion;
+    let quietSince = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      if (this.inFlightMutations > 0 || this.mutationVersion !== observedVersion) {
+        observedVersion = this.mutationVersion;
+        quietSince = Date.now();
+        continue;
+      }
+      if (Date.now() - quietSince >= quietMs) {
+        return;
+      }
+    }
+    throw new Error("Plugin vault mutations did not settle before the compatibility timeout.");
+  }
+
+  private async trackMutation<T>(operation: () => Promise<T> | undefined): Promise<T | undefined> {
+    this.inFlightMutations += 1;
+    this.mutationVersion += 1;
+    try {
+      return await operation();
+    } finally {
+      this.inFlightMutations -= 1;
+      this.mutationVersion += 1;
+    }
   }
 
   resolveVaultPath(relativePath: string): string {
@@ -405,6 +457,35 @@ export class Vault {
       mtime: stats.mtimeMs,
       size: stats.size,
     });
+  }
+}
+
+export class FileManager {
+  readonly vault: Vault;
+
+  constructor(vault: Vault) {
+    this.vault = vault;
+  }
+
+  async getAvailablePathForAttachment(filename: string, sourcePath: string): Promise<string> {
+    const normalizedFilename = path.posix.basename(normalizePath(filename));
+    if (!normalizedFilename) {
+      throw new Error("Attachment filename must not be empty.");
+    }
+    const normalizedSource = normalizePath(sourcePath);
+    const sourceDirectory = path.posix.dirname(normalizedSource);
+    const folder = sourceDirectory === "." ? "" : sourceDirectory;
+    const extension = path.posix.extname(normalizedFilename);
+    const stem = extension ? normalizedFilename.slice(0, -extension.length) : normalizedFilename;
+
+    for (let suffix = 0; suffix < 10_000; suffix += 1) {
+      const candidateName = suffix === 0 ? normalizedFilename : `${stem} ${suffix}${extension}`;
+      const candidate = normalizePath(path.posix.join(folder, candidateName));
+      if (!this.vault.getAbstractFileByPath(candidate)) {
+        return candidate;
+      }
+    }
+    throw new Error(`Could not find an available attachment path for ${normalizedFilename}.`);
   }
 }
 
@@ -629,10 +710,13 @@ export class CommandRegistry {
       name: command.name,
       source: "plugin",
       execute: async () => {
-        if (!command.callback) {
-          throw new Error(`Command has no supported callback: ${command.id}`);
+        if (command.callback) {
+          return command.callback();
         }
-        return command.callback();
+        if (command.checkCallback) {
+          return command.checkCallback(false);
+        }
+        throw new Error(`Command has no supported callback: ${command.id}`);
       },
     });
     const registered = { ...command, ownerId, releaseAction };
@@ -653,12 +737,26 @@ export class CommandRegistry {
 
   async run(commandId: string): Promise<boolean> {
     const command = this.commands.get(commandId);
-    if (!command?.callback) {
+    if (!command || !(await this.canRun(commandId))) {
       return false;
     }
 
     await this.actions.dispatch(commandId);
     return true;
+  }
+
+  async canRun(commandId: string): Promise<boolean> {
+    const command = this.commands.get(commandId);
+    if (!command) {
+      return false;
+    }
+    if (command.callback) {
+      return true;
+    }
+    if (!command.checkCallback) {
+      return false;
+    }
+    return (await command.checkCallback(true)) === true;
   }
 
   ownerIdFor(commandId: string): string | null {
@@ -804,6 +902,7 @@ function createInternalPlugins() {
 
 export class App {
   readonly vault: Vault;
+  readonly fileManager: FileManager;
   readonly metadataCache: MetadataCache;
   readonly commands: CommandRegistry;
   readonly notices: NoticeBus;
@@ -815,9 +914,50 @@ export class App {
 
   constructor(vault: Vault, commands: CommandRegistry, notices: NoticeBus) {
     this.vault = vault;
+    this.fileManager = new FileManager(vault);
     this.metadataCache = new MetadataCache(vault);
     this.commands = commands;
     this.notices = notices;
+    this.vault.on("create", (file) => {
+      if (file instanceof TFile) {
+        this.metadataCache.trigger("changed", file, "", this.metadataCache.getFileCache(file));
+      }
+    });
+    this.vault.on("modify", (file) => {
+      if (file instanceof TFile) {
+        this.metadataCache.trigger("changed", file, "", this.metadataCache.getFileCache(file));
+      }
+    });
+  }
+
+  async loadPluginData(pluginId: string): Promise<unknown | null> {
+    const dataPath = this.pluginDataPath(pluginId);
+    try {
+      return JSON.parse(await fs.readFile(dataPath, "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async savePluginData(pluginId: string, data: unknown): Promise<void> {
+    const dataPath = this.pluginDataPath(pluginId);
+    const serialized = JSON.stringify(data, null, 2);
+    if (serialized === undefined) {
+      throw new Error(`Plugin ${pluginId} data is not JSON serializable.`);
+    }
+    await atomicWriteFile(dataPath, Buffer.from(`${serialized}\n`, "utf8"));
+  }
+
+  private pluginDataPath(pluginId: string): string {
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(pluginId)) {
+      throw new Error(`Invalid plugin identifier: ${pluginId}`);
+    }
+    return this.vault.resolveVaultPath(
+      path.posix.join(this.vault.configDir, "plugins", pluginId, "data.json"),
+    );
   }
 
   createFile(filePath: string): TFile {
@@ -923,11 +1063,11 @@ export class Plugin extends Component {
   }
 
   async loadData(): Promise<unknown | null> {
-    return this.app.compatibility.loadPluginData(this.manifest.id);
+    return this.app.loadPluginData(this.manifest.id);
   }
 
   async saveData(data: unknown): Promise<void> {
-    this.app.compatibility.savePluginData(this.manifest.id, data);
+    await this.app.savePluginData(this.manifest.id, data);
   }
 
   async __load(): Promise<void> {
@@ -970,8 +1110,10 @@ export interface ObsidianCompatibilityModule {
   ColorComponent: typeof ColorComponent;
   Component: typeof Component;
   DropdownComponent: typeof DropdownComponent;
+  Editor: typeof Editor;
   EditorSuggest: typeof EditorSuggest;
   ExtraButtonComponent: typeof ExtraButtonComponent;
+  FileManager: typeof FileManager;
   FileView: typeof FileView;
   FuzzySuggestModal: typeof FuzzySuggestModal;
   getLanguage: typeof getLanguage;
@@ -1101,8 +1243,10 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     ColorComponent,
     Component,
     DropdownComponent,
+    Editor,
     EditorSuggest,
     ExtraButtonComponent,
+    FileManager,
     FileView,
     FuzzySuggestModal,
     ItemView,

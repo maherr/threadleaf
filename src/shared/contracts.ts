@@ -79,6 +79,28 @@ export interface PluginSurfaceBounds {
   y: number;
 }
 
+export interface PluginEditorSelection {
+  anchor: number;
+  head: number;
+}
+
+export interface PluginEditorContext {
+  content: string;
+  path: string;
+  revision: string;
+  selection: PluginEditorSelection;
+}
+
+export interface PluginEditorUpdate {
+  baseContent: string;
+  content: string;
+  focused: boolean;
+  id: string;
+  path: string;
+  revision: string;
+  selection: PluginEditorSelection;
+}
+
 export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
 
 export interface RuntimeSnapshot {
@@ -98,6 +120,7 @@ export interface RuntimeSnapshot {
   notices: string[];
   events: RuntimeEvent[];
   integrations?: PluginIntegrationSnapshot;
+  editorUpdate?: PluginEditorUpdate | null;
   pluginSurface?: PluginSurfaceSnapshot | null;
   workspace?: WorkspaceSnapshot;
 }
@@ -363,7 +386,7 @@ export interface ThreadleafBridge {
   setKeyBinding(targetId: ShortcutTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
   resetKeyBindings(): Promise<AppSettingsSnapshot>;
   chooseVault(): Promise<VaultOpenResponse>;
-  runCommand(commandId: string): Promise<RuntimeSnapshot>;
+  runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;

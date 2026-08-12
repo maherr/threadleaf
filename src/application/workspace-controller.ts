@@ -7,6 +7,7 @@ import type {
   NoteDeleteResponse,
   NoteMoveResponse,
   NoteSaveResponse,
+  PluginEditorContext,
   RuntimeSnapshot,
   VaultImageResponse,
   VaultSearchResponse,
@@ -64,7 +65,10 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteSaveResponse>;
-  runPluginCommand(commandId: string): Promise<RuntimeSnapshot>;
+  runPluginCommand(
+    commandId: string,
+    editorContext?: PluginEditorContext,
+  ): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   closePluginView(): Promise<RuntimeSnapshot>;
@@ -304,8 +308,11 @@ export class WorkspaceController {
     return this.#runtime.saveNote(filePath, content, expectedRevision, expectedVaultId);
   }
 
-  runPluginCommand(commandId: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.runPluginCommand(commandId);
+  runPluginCommand(
+    commandId: string,
+    editorContext?: PluginEditorContext,
+  ): Promise<RuntimeSnapshot> {
+    return this.#runtime.runPluginCommand(commandId, editorContext);
   }
 
   markPluginLayoutReady(): Promise<RuntimeSnapshot> {

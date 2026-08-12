@@ -1224,7 +1224,170 @@ export class TextFileView extends FileView {
   }
 }
 
+export interface EditorPosition {
+  ch: number;
+  line: number;
+}
+
+export class Editor {
+  private anchor = 0;
+  private focused = false;
+  private head = 0;
+  private readonly onChange: (value: string) => void;
+  private value = "";
+
+  constructor(onChange: (value: string) => void = () => undefined) {
+    this.onChange = onChange;
+  }
+
+  getValue(): string {
+    return this.value;
+  }
+
+  setValue(value: string): void {
+    this.replaceValue(value, true);
+  }
+
+  syncValue(value: string): void {
+    this.replaceValue(value, false);
+  }
+
+  getSelection(): string {
+    const from = Math.min(this.anchor, this.head);
+    const to = Math.max(this.anchor, this.head);
+    return this.value.slice(from, to);
+  }
+
+  somethingSelected(): boolean {
+    return this.anchor !== this.head;
+  }
+
+  replaceSelection(replacement: string): void {
+    const from = Math.min(this.anchor, this.head);
+    const to = Math.max(this.anchor, this.head);
+    this.value = `${this.value.slice(0, from)}${replacement}${this.value.slice(to)}`;
+    this.anchor = from + replacement.length;
+    this.head = this.anchor;
+    this.onChange(this.value);
+  }
+
+  replaceRange(replacement: string, from: EditorPosition, to: EditorPosition = from): void {
+    this.setSelection(from, to);
+    this.replaceSelection(replacement);
+  }
+
+  getCursor(which: "anchor" | "from" | "head" | "to" = "head"): EditorPosition {
+    if (which === "anchor") {
+      return this.offsetToPos(this.anchor);
+    }
+    if (which === "from") {
+      return this.offsetToPos(Math.min(this.anchor, this.head));
+    }
+    if (which === "to") {
+      return this.offsetToPos(Math.max(this.anchor, this.head));
+    }
+    return this.offsetToPos(this.head);
+  }
+
+  setCursor(position: EditorPosition): void {
+    const offset = this.posToOffset(position);
+    this.anchor = offset;
+    this.head = offset;
+  }
+
+  setSelection(anchor: EditorPosition, head: EditorPosition = anchor): void {
+    this.anchor = this.posToOffset(anchor);
+    this.head = this.posToOffset(head);
+  }
+
+  setSelectionOffsets(anchor: number, head: number): void {
+    this.anchor = this.clampOffset(anchor);
+    this.head = this.clampOffset(head);
+  }
+
+  getSelectionOffsets(): { anchor: number; head: number } {
+    return { anchor: this.anchor, head: this.head };
+  }
+
+  getLine(line: number): string {
+    return this.value.split("\n")[line] ?? "";
+  }
+
+  lineCount(): number {
+    return this.value.split("\n").length;
+  }
+
+  lastLine(): number {
+    return this.lineCount() - 1;
+  }
+
+  posToOffset(position: EditorPosition): number {
+    const lines = this.value.split("\n");
+    const line = Math.max(0, Math.min(Math.trunc(position.line), lines.length - 1));
+    let offset = 0;
+    for (let index = 0; index < line; index += 1) {
+      offset += (lines[index]?.length ?? 0) + 1;
+    }
+    const ch = Math.max(0, Math.min(Math.trunc(position.ch), lines[line]?.length ?? 0));
+    return offset + ch;
+  }
+
+  offsetToPos(offset: number): EditorPosition {
+    const bounded = this.clampOffset(offset);
+    const prefix = this.value.slice(0, bounded);
+    const lines = prefix.split("\n");
+    return {
+      line: lines.length - 1,
+      ch: lines.at(-1)?.length ?? 0,
+    };
+  }
+
+  focus(): void {
+    this.focused = true;
+  }
+
+  hasFocus(): boolean {
+    return this.focused;
+  }
+
+  private clampOffset(offset: number): number {
+    return Math.max(0, Math.min(Math.trunc(offset), this.value.length));
+  }
+
+  private replaceValue(value: string, notify: boolean): void {
+    this.value = value;
+    this.anchor = this.clampOffset(this.anchor);
+    this.head = this.clampOffset(this.head);
+    if (notify) {
+      this.onChange(this.value);
+    }
+  }
+}
+
 export class MarkdownView extends TextFileView {
+  readonly editor: Editor;
+
+  constructor(leaf: WorkspaceLeaf) {
+    super(leaf);
+    this.editor = new Editor((value) => {
+      this.data = value;
+    });
+  }
+
+  override getViewData(): string {
+    return this.editor.getValue();
+  }
+
+  override setViewData(data: string, _clear: boolean): void {
+    this.data = data;
+    this.editor.syncValue(data);
+  }
+
+  override clear(): void {
+    this.data = "";
+    this.editor.syncValue("");
+  }
+
   override getViewType(): string {
     return "markdown";
   }

@@ -85,6 +85,8 @@ export class Workspace {
   private readonly listeners = new Map<string, Set<EventCallback>>();
   private leafFactory: WorkspaceLeafFactory | null = null;
   private layoutReady = false;
+  private layoutReadyFailure: unknown = null;
+  private layoutReadyTail: Promise<void> = Promise.resolve();
 
   setLeafFactory(factory: WorkspaceLeafFactory): void {
     this.leafFactory = factory;
@@ -92,29 +94,52 @@ export class Workspace {
 
   onLayoutReady(callback: () => unknown): void {
     if (this.layoutReady) {
-      queueMicrotask(callback);
+      this.enqueueLayoutReadyCallback(callback);
       return;
     }
     this.layoutReadyCallbacks.add(callback);
   }
 
   async markLayoutReady(): Promise<void> {
-    if (this.layoutReady) {
-      return;
+    if (!this.layoutReady) {
+      this.layoutReady = true;
+      const callbacks = [...this.layoutReadyCallbacks];
+      this.layoutReadyCallbacks.clear();
+      for (const callback of callbacks) {
+        this.enqueueLayoutReadyCallback(callback);
+      }
     }
-    this.layoutReady = true;
-    const callbacks = [...this.layoutReadyCallbacks];
-    this.layoutReadyCallbacks.clear();
-    let failure: unknown = null;
-    for (const callback of callbacks) {
+
+    let observedTail: Promise<void>;
+    do {
+      observedTail = this.layoutReadyTail;
+      await observedTail;
+    } while (observedTail !== this.layoutReadyTail);
+
+    if (this.layoutReadyFailure) {
+      const failure = this.layoutReadyFailure;
+      this.layoutReadyFailure = null;
+      throw failure;
+    }
+  }
+
+  isLayoutReady(): boolean {
+    return this.layoutReady;
+  }
+
+  private enqueueLayoutReadyCallback(callback: () => unknown): void {
+    this.layoutReadyTail = this.layoutReadyTail.then(async () => {
       try {
         await callback();
       } catch (error) {
-        failure ??= error;
+        this.layoutReadyFailure ??= error;
       }
-    }
-    if (failure) {
-      throw failure;
+    });
+  }
+
+  async waitForLayoutReadyCallbacks(): Promise<void> {
+    if (this.layoutReady) {
+      await this.markLayoutReady();
     }
   }
 
@@ -344,7 +369,6 @@ export class CompatibilityIntegrationRegistry {
   private readonly settingTabs = new Set<unknown>();
   private readonly statusBarItems = new Set<HTMLElement>();
   private readonly views = new Map<string, ViewRegistration>();
-  private readonly pluginData = new Map<string, unknown>();
   private readonly icons = new Map<string, string>();
 
   registerView(ownerId: string, type: string, creator: (leaf: unknown) => unknown): () => void {
@@ -435,14 +459,6 @@ export class CompatibilityIntegrationRegistry {
       }
     }
     return null;
-  }
-
-  loadPluginData(pluginId: string): unknown | null {
-    return this.pluginData.get(pluginId) ?? null;
-  }
-
-  savePluginData(pluginId: string, data: unknown): void {
-    this.pluginData.set(pluginId, structuredClone(data));
   }
 
   snapshot(): PluginIntegrationSnapshot {

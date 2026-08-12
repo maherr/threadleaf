@@ -4,6 +4,7 @@ import moment from "moment";
 import { PluginHost } from "../runtime/plugin-host";
 import {
   optionalPayloadString,
+  optionalPluginEditorContext,
   type PluginRendererRequest,
   type PluginVaultCreateFolderRequest,
   type PluginVaultCreateFolderResponse,
@@ -72,7 +73,10 @@ export class PluginRendererService {
         await this.requireHost().closePluginView();
         return this.requireHost().reloadPlugin(optionalPayloadString(request, "pluginId"));
       case "run-command":
-        return this.requireHost().runCommand(requirePayloadString(request, "commandId"));
+        return this.requireHost().runCommand(
+          requirePayloadString(request, "commandId"),
+          optionalPluginEditorContext(request),
+        );
       case "unload-plugin":
         return this.requireHost().unloadPlugin(optionalPayloadString(request, "pluginId"));
       case "unload-all":

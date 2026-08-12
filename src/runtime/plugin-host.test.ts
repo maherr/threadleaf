@@ -98,6 +98,53 @@ describe("PluginHost", () => {
     );
   });
 
+  it("persists plugin data across reloads and host restarts", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-data-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "data-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "data-fixture", name: "Data fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { Plugin } = require("obsidian");
+module.exports = class DataFixture extends Plugin {
+  async onload() {
+    const data = (await this.loadData()) ?? { loads: 0 };
+    data.loads += 1;
+    await this.saveData(data);
+    this.addCommand({ id: "data-fixture-command", name: "Data fixture command", callback() {} });
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      await host.loadPlugin(pluginPath);
+      await expect(fs.readFile(path.join(pluginPath, "data.json"), "utf8")).resolves.toContain(
+        '"loads": 1',
+      );
+
+      await host.reloadPlugin("data-fixture");
+      await expect(fs.readFile(path.join(pluginPath, "data.json"), "utf8")).resolves.toContain(
+        '"loads": 2',
+      );
+
+      const restartedHost = new PluginHost(vaultPath);
+      await restartedHost.loadPlugin(pluginPath);
+      await expect(fs.readFile(path.join(pluginPath, "data.json"), "utf8")).resolves.toContain(
+        '"loads": 3',
+      );
+    } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("owns multiple plugin lifecycles independently", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-host-"));
     const vaultPath = path.join(sandboxPath, "vault");
@@ -404,6 +451,106 @@ module.exports = class UiApiPlugin extends Plugin {
         Reflect.deleteProperty(globalThis, "MouseEvent");
       } else {
         globalThis.MouseEvent = previousMouseEvent;
+      }
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("runs check-callback commands against a native Markdown editor context", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-editor-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+      });
+      await fs.mkdir(vaultPath, { recursive: true });
+      await fs.writeFile(path.join(vaultPath, "Welcome.md"), "alpha\nomega", "utf8");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "editor-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "editor-fixture", name: "Editor fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { MarkdownView, Plugin } = require("obsidian");
+module.exports = class EditorFixture extends Plugin {
+  async onload() {
+    this.addCommand({
+      id: "insert-embed",
+      name: "Insert drawing embed",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return false;
+        if (checking) return true;
+        view.editor.replaceSelection("![[Drawing.excalidraw.md]]");
+        view.editor.focus();
+        return true;
+      },
+    });
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      await host.loadPlugin(pluginPath);
+      await expect(host.runCommand("insert-embed")).rejects.toThrow("not available");
+
+      const revision = "d".repeat(64);
+      const snapshot = await host.runCommand("insert-embed", {
+        path: "Welcome.md",
+        content: "alpha\nomega",
+        revision,
+        selection: { anchor: 6, head: 6 },
+      });
+
+      expect(snapshot.editorUpdate).toEqual({
+        baseContent: "alpha\nomega",
+        content: "alpha\n![[Drawing.excalidraw.md]]omega",
+        focused: true,
+        id: "threadleaf-plugin-editor-1",
+        path: "Welcome.md",
+        revision,
+        selection: { anchor: 32, head: 32 },
+      });
+      expect(snapshot.pluginSurface).toBeNull();
+      expect(snapshot.plugin?.compatibilityLevel).toBe(4);
+      await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(
+        "alpha\nomega",
+      );
+
+      const secondSnapshot = await host.runCommand("insert-embed", {
+        path: "Welcome.md",
+        content: "fresh content",
+        revision: "e".repeat(64),
+        selection: { anchor: 5, head: 5 },
+      });
+      expect(secondSnapshot.editorUpdate).toMatchObject({
+        baseContent: "fresh content",
+        content: "fresh![[Drawing.excalidraw.md]] content",
+        revision: "e".repeat(64),
+      });
+    } finally {
+      if (previousWindow === undefined) {
+        Reflect.deleteProperty(globalThis, "window");
+      } else {
+        globalThis.window = previousWindow;
+      }
+      if (previousDocument === undefined) {
+        Reflect.deleteProperty(globalThis, "document");
+      } else {
+        globalThis.document = previousDocument;
       }
       dom.window.close();
       await fs.rm(sandboxPath, { recursive: true, force: true });

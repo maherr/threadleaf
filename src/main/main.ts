@@ -15,6 +15,7 @@ import type { PluginSurfaceBounds, PluginUpdateResponse } from "../shared/contra
 import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
 import {
+  parsePluginEditorContext,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
   parsePluginVaultWriteRequest,
@@ -251,6 +252,11 @@ async function reconcileCompatibilityPlugins(expectedVaultId: string, forceReloa
     workspaceController.vaultPath !== vaultPath
   ) {
     throw new Error("The active vault changed during plugin reconciliation.");
+  }
+  try {
+    snapshot = await workspaceController.markPluginLayoutReady();
+  } catch {
+    snapshot = await workspaceController.getSnapshot();
   }
   return snapshot;
 }
@@ -602,11 +608,14 @@ function registerIpcHandlers(): void {
       return workspaceController.saveNote(filePath, content, expectedRevision, expectedVaultId);
     },
   );
-  ipcMain.handle(ipcChannels.runCommand, (_event, commandId: unknown) => {
-    if (typeof commandId !== "string") {
+  ipcMain.handle(ipcChannels.runCommand, (_event, commandId: unknown, editorContext: unknown) => {
+    if (typeof commandId !== "string" || commandId.length === 0) {
       throw new Error("Run command requires a string identifier.");
     }
-    return workspaceController.runPluginCommand(commandId);
+    return workspaceController.runPluginCommand(
+      commandId,
+      editorContext === undefined ? undefined : parsePluginEditorContext(editorContext),
+    );
   });
   ipcMain.handle(ipcChannels.reloadPlugin, (_event, pluginId: unknown) => {
     if (pluginId !== undefined && typeof pluginId !== "string") {

@@ -6,6 +6,8 @@ import { ActionRegistry } from "../application/action-registry";
 import { isPathInside } from "../kernel/path-policy";
 import type { VaultReadPort } from "../kernel/ports";
 import type {
+  PluginEditorContext,
+  PluginEditorUpdate,
   PluginSummary,
   RuntimeEvent,
   RuntimeEventKind,
@@ -23,7 +25,7 @@ import {
   sleep,
   Vault,
 } from "./obsidian-compat";
-import { FileView, WorkspaceLeaf } from "./obsidian-ui-compat";
+import { FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
 interface CommonJsModuleRecord {
@@ -71,7 +73,12 @@ export class PluginHost implements PluginRuntimePort {
   private eventSequence = 0;
   private readonly plugins = new Map<string, LoadedPluginRecord>();
   private activePluginLeaf: WorkspaceLeaf | null = null;
+  private editorUpdate: PluginEditorUpdate | null = null;
+  private editorUpdateSequence = 0;
   private lastPluginId: string | null = null;
+  private nativeEditorContext: PluginEditorContext | null = null;
+  private nativeMarkdownLeaf: WorkspaceLeaf | null = null;
+  private nativeMarkdownView: MarkdownView | null = null;
   private readonly pluginModuleResolver: PluginModuleResolver | undefined;
 
   constructor(
@@ -139,6 +146,7 @@ export class PluginHost implements PluginRuntimePort {
 
       const commandIdsBefore = new Set(this.app.commands.list().map(({ id }) => id));
       await instance.__load();
+      await this.app.workspace.waitForLayoutReadyCallbacks();
       record.summary = { ...record.summary, compatibilityLevel: 2 };
       this.record("plugin", "Plugin onload completed without an uncaught error.");
 
@@ -170,12 +178,26 @@ export class PluginHost implements PluginRuntimePort {
     return this.getSnapshot();
   }
 
-  async runCommand(commandId: string): Promise<RuntimeSnapshot> {
+  async runCommand(
+    commandId: string,
+    editorContext?: PluginEditorContext,
+  ): Promise<RuntimeSnapshot> {
     const command = this.app.commands.list().find(({ id }) => id === commandId);
+    const canRunInCurrentView = await this.app.commands.canRun(commandId);
+    const shouldUseEditorContext =
+      editorContext &&
+      (!canRunInCurrentView || this.app.workspace.activeLeaf === this.nativeMarkdownLeaf);
+    if (shouldUseEditorContext) {
+      await this.openNativeEditorContext(editorContext);
+    } else {
+      this.editorUpdate = null;
+    }
     const ran = await this.app.commands.run(commandId);
     if (!ran || !command) {
       throw new Error(`Command is not available: ${commandId}`);
     }
+    await this.vault.waitForSettledMutations();
+    this.captureEditorUpdate();
 
     this.record("command", `Ran command: ${command.name}.`);
     const ownerId = this.app.commands.ownerIdFor(commandId);
@@ -187,10 +209,61 @@ export class PluginHost implements PluginRuntimePort {
     return this.getSnapshot();
   }
 
+  private async openNativeEditorContext(context: PluginEditorContext): Promise<void> {
+    await this.nativeMarkdownLeaf?.detach();
+    this.nativeMarkdownLeaf = null;
+    this.nativeMarkdownView = null;
+    this.nativeEditorContext = null;
+    this.editorUpdate = null;
+    if (typeof document === "undefined") {
+      throw new Error("Native editor compatibility requires a renderer document.");
+    }
+    const container = document.createElement("div");
+    container.className = "threadleaf-native-editor-context workspace-leaf";
+    const leaf = new WorkspaceLeaf(this.app, container);
+    await leaf.setViewState({ type: "markdown", state: { file: context.path } });
+    if (!(leaf.view instanceof MarkdownView)) {
+      await leaf.detach();
+      throw new Error("Native editor compatibility could not open a Markdown view.");
+    }
+    leaf.view.setViewData(context.content, true);
+    leaf.view.editor.setSelectionOffsets(context.selection.anchor, context.selection.head);
+    this.nativeMarkdownLeaf = leaf;
+    this.nativeMarkdownView = leaf.view;
+    this.nativeEditorContext = {
+      ...context,
+      selection: { ...context.selection },
+    };
+  }
+
+  private captureEditorUpdate(): void {
+    const context = this.nativeEditorContext;
+    const view = this.nativeMarkdownView;
+    if (!context || !view) {
+      return;
+    }
+    this.editorUpdateSequence += 1;
+    this.editorUpdate = {
+      baseContent: context.content,
+      content: view.editor.getValue(),
+      focused: view.editor.hasFocus(),
+      id: `threadleaf-plugin-editor-${this.editorUpdateSequence}`,
+      path: context.path,
+      revision: context.revision,
+      selection: view.editor.getSelectionOffsets(),
+    };
+  }
+
   async markLayoutReady(): Promise<RuntimeSnapshot> {
-    await this.app.workspace.markLayoutReady();
-    this.record("runtime", "Plugin workspace layout became ready.");
-    return this.getSnapshot();
+    try {
+      await this.app.workspace.markLayoutReady();
+      this.record("runtime", "Plugin workspace layout became ready.");
+      return this.getSnapshot();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.record("error", `Plugin workspace startup callback failed: ${message}`);
+      throw error;
+    }
   }
 
   async openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
@@ -239,6 +312,10 @@ export class PluginHost implements PluginRuntimePort {
       }
       this.record("runtime", `Closed plugin view ${viewType}.`);
     }
+    this.nativeMarkdownLeaf = null;
+    this.nativeMarkdownView = null;
+    this.nativeEditorContext = null;
+    this.editorUpdate = null;
     return this.getSnapshot();
   }
 
@@ -320,16 +397,18 @@ export class PluginHost implements PluginRuntimePort {
       notices: this.app.notices.list(),
       events: this.events.map((event) => ({ ...event })),
       integrations: this.app.compatibility.snapshot(),
-      pluginSurface: activePluginLeaf?.view
-        ? {
-            displayText: activePluginLeaf.view.getDisplayText(),
-            filePath:
-              activePluginLeaf.view instanceof FileView && activePluginLeaf.view.file
-                ? activePluginLeaf.view.file.path
-                : null,
-            viewType: activePluginLeaf.view.getViewType(),
-          }
-        : null,
+      editorUpdate: this.editorUpdate ? structuredClone(this.editorUpdate) : null,
+      pluginSurface:
+        activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf
+          ? {
+              displayText: activePluginLeaf.view.getDisplayText(),
+              filePath:
+                activePluginLeaf.view instanceof FileView && activePluginLeaf.view.file
+                  ? activePluginLeaf.view.file.path
+                  : null,
+              viewType: activePluginLeaf.view.getViewType(),
+            }
+          : null,
     };
   }
 

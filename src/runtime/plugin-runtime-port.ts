@@ -1,5 +1,5 @@
 import type { ActionRegistry } from "../application/action-registry";
-import type { RuntimeSnapshot } from "../shared/contracts";
+import type { PluginEditorContext, RuntimeSnapshot } from "../shared/contracts";
 
 export interface PluginRuntimePort {
   closePluginView(): Promise<RuntimeSnapshot>;
@@ -8,7 +8,7 @@ export interface PluginRuntimePort {
   markLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
-  runCommand(commandId: string): Promise<RuntimeSnapshot>;
+  runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   close(): Promise<void>;

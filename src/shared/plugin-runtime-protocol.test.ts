@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   optionalPayloadString,
+  optionalPluginEditorContext,
+  parsePluginEditorContext,
   parsePluginRendererRequest,
   parsePluginRendererResponse,
   parsePluginVaultCreateFolderRequest,
@@ -107,5 +109,29 @@ describe("plugin renderer protocol", () => {
     expect(() =>
       parsePluginVaultCreateFolderRequest({ vaultPath: "/vault", folderPath: "" }),
     ).toThrow("vault and folder");
+  });
+
+  it("validates bounded native editor contexts", () => {
+    const revision = "c".repeat(64);
+    const context = {
+      path: "Welcome.md",
+      content: "hello",
+      revision,
+      selection: { anchor: 2, head: 5 },
+    };
+    expect(parsePluginEditorContext(context)).toEqual(context);
+    expect(
+      optionalPluginEditorContext({
+        id: "editor-context",
+        operation: "run-command",
+        payload: { commandId: "insert", editorContext: context },
+      }),
+    ).toEqual(context);
+    expect(() =>
+      parsePluginEditorContext({ ...context, selection: { anchor: 6, head: 6 } }),
+    ).toThrow("fit within");
+    expect(() => parsePluginEditorContext({ ...context, revision: "stale" })).toThrow(
+      "SHA-256 revision",
+    );
   });
 });

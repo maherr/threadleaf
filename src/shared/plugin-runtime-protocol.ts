@@ -1,4 +1,4 @@
-import type { RuntimeSnapshot } from "./contracts";
+import type { PluginEditorContext, RuntimeSnapshot } from "./contracts";
 
 export const pluginRendererChannels = {
   ready: "threadleaf:plugin-renderer-ready",
@@ -138,6 +138,51 @@ export function parsePluginRendererResponse(value: unknown): PluginRendererRespo
     throw new Error("Plugin renderer failure response has no error message.");
   }
   return { id: candidate.id, ok: false, error: candidate.error };
+}
+
+export function parsePluginEditorContext(value: unknown): PluginEditorContext {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin editor context must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  const selection = candidate.selection;
+  if (
+    typeof candidate.path !== "string" ||
+    candidate.path.length === 0 ||
+    typeof candidate.content !== "string" ||
+    typeof candidate.revision !== "string" ||
+    !/^[0-9a-f]{64}$/.test(candidate.revision) ||
+    !selection ||
+    typeof selection !== "object" ||
+    typeof (selection as Record<string, unknown>).anchor !== "number" ||
+    !Number.isSafeInteger((selection as Record<string, unknown>).anchor) ||
+    ((selection as Record<string, unknown>).anchor as number) < 0 ||
+    typeof (selection as Record<string, unknown>).head !== "number" ||
+    !Number.isSafeInteger((selection as Record<string, unknown>).head) ||
+    ((selection as Record<string, unknown>).head as number) < 0
+  ) {
+    throw new Error(
+      "Plugin editor context requires path, content, SHA-256 revision, and non-negative selection offsets.",
+    );
+  }
+  const anchor = (selection as Record<string, unknown>).anchor as number;
+  const head = (selection as Record<string, unknown>).head as number;
+  if (anchor > candidate.content.length || head > candidate.content.length) {
+    throw new Error("Plugin editor selection offsets must fit within the supplied content.");
+  }
+  return {
+    path: candidate.path,
+    content: candidate.content,
+    revision: candidate.revision,
+    selection: { anchor, head },
+  };
+}
+
+export function optionalPluginEditorContext(
+  request: PluginRendererRequest,
+): PluginEditorContext | undefined {
+  const value = request.payload?.editorContext;
+  return value === undefined ? undefined : parsePluginEditorContext(value);
 }
 
 export function parsePluginVaultWriteRequest(value: unknown): PluginVaultWriteRequest {

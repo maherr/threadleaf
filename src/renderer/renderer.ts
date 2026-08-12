@@ -15,6 +15,8 @@ import type {
   NoteMoveBlocker,
   NoteMoveResponse,
   NoteMoveRewritePreview,
+  PluginEditorContext,
+  PluginEditorUpdate,
   RuntimeSnapshot,
   VaultSearchResponse,
   VaultSearchResult,
@@ -336,6 +338,7 @@ let pluginRequest = 0;
 let pluginMessage = "Discovering installed plugins in this vault.";
 let pluginMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let lastPluginWarning = "";
+let lastPluginEditorUpdateId: string | null = null;
 let legacyThemeMigrationAttempted = false;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
@@ -893,6 +896,8 @@ function renderDocumentView(): void {
   const reading = hasNote && documentViewMode === "reading";
   const plugin = hasNote && documentViewMode === "plugin";
   const pluginViewType = preferredPluginViewType();
+  const visiblePluginViewType =
+    pluginViewType ?? (plugin ? (currentSnapshot?.pluginSurface?.viewType ?? null) : null);
   elements.noteEditorShell.hidden = reading;
   elements.notePreview.hidden = !reading;
   elements.noteView.hidden = !hasNote || plugin;
@@ -900,13 +905,13 @@ function renderDocumentView(): void {
   elements.noteView.dataset.view = reading ? "reading" : "source";
   elements.editView.disabled = !hasNote || busy || saving;
   elements.readView.disabled = !hasNote || busy || saving;
-  elements.pluginView.hidden = pluginViewType === null;
+  elements.pluginView.hidden = visiblePluginViewType === null;
   elements.pluginView.disabled = !hasNote || !pluginViewType || busy || saving || dirty;
   elements.editView.setAttribute("aria-pressed", String(hasNote && !reading && !plugin));
   elements.readView.setAttribute("aria-pressed", String(reading));
   elements.pluginView.setAttribute("aria-pressed", String(plugin));
-  elements.pluginView.title = pluginViewType
-    ? `Open ${pluginViewType} community plugin view`
+  elements.pluginView.title = visiblePluginViewType
+    ? `${plugin ? "Showing" : "Open"} ${visiblePluginViewType} community plugin view`
     : "No community plugin view is registered";
   const shortcut = shortcutFor("editor.toggle-reading-view");
   elements.editView.title = shortcut ? `Editing view (${shortcut})` : "Editing view";
@@ -1054,10 +1059,56 @@ async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
 
 async function runCompatibilityCommand(commandId: string): Promise<void> {
   await runAction(async () => {
-    const snapshot = await window.threadleaf.runCommand(commandId);
+    const snapshot = await window.threadleaf.runCommand(commandId, pluginEditorContext());
+    if (snapshot.pluginSurface) {
+      documentViewMode = "plugin";
+      renderDocumentView();
+      window.requestAnimationFrame(() => void updatePluginSurfaceBounds());
+    }
     showToast(snapshot.notices.at(-1) ?? "Command completed.");
     return snapshot;
   });
+}
+
+function pluginEditorContext(): PluginEditorContext | undefined {
+  if (!loadedNote) {
+    return undefined;
+  }
+  const selection = editor.state.selection.main;
+  return {
+    content: editor.state.doc.toString(),
+    path: loadedNote.path,
+    revision: loadedNote.revision,
+    selection: { anchor: selection.anchor, head: selection.head },
+  };
+}
+
+function applyPluginEditorUpdate(update: PluginEditorUpdate | null | undefined): void {
+  if (!update || update.id === lastPluginEditorUpdateId) {
+    return;
+  }
+  lastPluginEditorUpdateId = update.id;
+  if (
+    !loadedNote ||
+    loadedNote.path !== update.path ||
+    loadedNote.revision !== update.revision ||
+    editor.state.doc.toString() !== update.baseContent
+  ) {
+    showToast("A plugin editor change was retained but not applied because the note changed.");
+    return;
+  }
+  const anchor = Math.min(update.selection.anchor, update.content.length);
+  const head = Math.min(update.selection.head, update.content.length);
+  const currentContent = editor.state.doc.toString();
+  editor.dispatch({
+    ...(currentContent === update.content
+      ? {}
+      : { changes: { from: 0, to: currentContent.length, insert: update.content } }),
+    selection: { anchor, head },
+  });
+  if (update.focused && documentViewMode !== "plugin") {
+    editor.focus();
+  }
 }
 
 async function executeRendererCommand(commandId: string): Promise<void> {
@@ -2828,6 +2879,7 @@ function render(snapshot: RuntimeSnapshot): void {
     pluginCatalog = null;
     pluginStyle.textContent = "";
     lastPluginWarning = "";
+    lastPluginEditorUpdateId = null;
     applyColorScheme(currentAppearancePreference().colorScheme);
     void refreshAppearance();
     void refreshPlugins();
@@ -2868,7 +2920,12 @@ function render(snapshot: RuntimeSnapshot): void {
   lastVaultWarning = snapshot.vault.warning;
 
   const displayedNote = reconcileEditor(workspace?.activeNote ?? null, snapshot.vault.id);
-  if (documentViewMode === "plugin" && !preferredPluginViewType(snapshot)) {
+  applyPluginEditorUpdate(snapshot.editorUpdate);
+  if (
+    documentViewMode === "plugin" &&
+    !snapshot.pluginSurface &&
+    !preferredPluginViewType(snapshot)
+  ) {
     setDocumentView("source", false);
   }
   reconcileVaultSearch(snapshot);

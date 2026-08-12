@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { type IpcMainEvent, type RenderProcessGoneDetails, WebContentsView } from "electron";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
-import type { RuntimeSnapshot } from "../shared/contracts";
+import type { PluginEditorContext, RuntimeSnapshot } from "../shared/contracts";
 import {
   type PluginRendererOperation,
   type PluginRendererRequest,
@@ -109,8 +109,11 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     return this.requestSnapshot("reload-plugin", pluginId ? { pluginId } : undefined);
   }
 
-  runCommand(commandId: string): Promise<RuntimeSnapshot> {
-    return this.requestSnapshot("run-command", { commandId });
+  runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("run-command", {
+      commandId,
+      ...(editorContext ? { editorContext } : {}),
+    });
   }
 
   unloadAllPlugins(): Promise<RuntimeSnapshot> {

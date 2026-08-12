@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { revisionOf } from "../kernel/durability";
-import { TFile, Vault } from "./obsidian-compat";
+import { FileManager, TFile, Vault } from "./obsidian-compat";
 
 const temporaryDirectories: string[] = [];
 
@@ -34,6 +34,22 @@ async function createVaultFile(content = "initial drawing"): Promise<{
 }
 
 describe("Obsidian compatibility vault writes", () => {
+  it("resolves attachment paths beside the source and avoids existing names", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-attachments-"));
+    temporaryDirectories.push(rootPath);
+    await fs.mkdir(path.join(rootPath, "Notes"), { recursive: true });
+    await fs.writeFile(path.join(rootPath, "Notes", "Source.md"), "source", "utf8");
+    await fs.writeFile(path.join(rootPath, "Notes", "Drawing.excalidraw.md"), "drawing", "utf8");
+    const fileManager = new FileManager(new Vault(rootPath));
+
+    await expect(
+      fileManager.getAvailablePathForAttachment("Drawing.excalidraw.md", "Notes/Source.md"),
+    ).resolves.toBe("Notes/Drawing.excalidraw 1.md");
+    await expect(
+      fileManager.getAvailablePathForAttachment("Sketch.png", "Source.md"),
+    ).resolves.toBe("Sketch.png");
+  });
+
   it("creates folders and files through the mutation port and resolves paths case-insensitively", async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-vault-create-"));
     temporaryDirectories.push(rootPath);
