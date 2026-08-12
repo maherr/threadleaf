@@ -8,6 +8,7 @@ import {
   parseAppSettings,
   shortcutTargetForEvent,
   updateKeyBinding,
+  updateVaultPlugins,
 } from "./key-bindings";
 
 const ctrl = {
@@ -48,8 +49,9 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
-    expect(parsed.version).toBe(2);
+    expect(parsed.version).toBe(3);
     expect(parsed.appearanceByVault).toEqual({});
+    expect(parsed.pluginsByVault).toEqual({});
     expect(() =>
       parseAppSettings({
         version: 1,
@@ -88,6 +90,36 @@ describe("key bindings", () => {
 
     expect(updated.appearanceByVault).toEqual(parsed.appearanceByVault);
     expect(updated.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(updated.pluginsByVault).toEqual({});
+  });
+
+  it("loads version 3 plugin settings and updates one vault immutably", () => {
+    const firstVaultId = "b".repeat(64);
+    const secondVaultId = "c".repeat(64);
+    const parsed = parseAppSettings({
+      version: 3,
+      keyBindings: {},
+      appearanceByVault: {},
+      pluginsByVault: {
+        [firstVaultId]: {
+          compatibilityMode: "enabled",
+          enabledPluginIds: ["obsidian-excalidraw-plugin"],
+        },
+      },
+    });
+    const updated = updateVaultPlugins(parsed, secondVaultId, {
+      compatibilityMode: "restricted",
+      enabledPluginIds: ["omnisearch"],
+    });
+
+    expect(parsed.pluginsByVault[secondVaultId]).toBeUndefined();
+    expect(updated.pluginsByVault[firstVaultId]?.enabledPluginIds).toEqual([
+      "obsidian-excalidraw-plugin",
+    ]);
+    expect(updated.pluginsByVault[secondVaultId]).toEqual({
+      compatibilityMode: "restricted",
+      enabledPluginIds: ["omnisearch"],
+    });
   });
 
   it("captures portable bindings and matches the platform primary modifier exactly", () => {

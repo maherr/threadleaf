@@ -228,8 +228,8 @@
               <div class="command-list" id="command-list"></div>
               <div class="button-row">
                 <button class="primary-button" id="run-command" type="button" disabled>Run command</button>
-                <button class="secondary-button" id="reload-plugin" type="button">Reload</button>
-                <button class="secondary-button" id="unload-plugin" type="button">Unload</button>
+                <button class="secondary-button" id="reload-plugin" type="button">Reload all</button>
+                <button class="secondary-button" id="unload-plugin" type="button">Restricted</button>
               </div>
               <details class="runtime-ledger">
                 <summary>Runtime ledger <span id="event-count">0 events</span></summary>
@@ -298,22 +298,51 @@
       aria-modal="true"
     >
       <div class="settings-shell">
-        <header class="settings-header">
-          <span>
-            <small>App-owned preferences</small>
-            <strong id="settings-title">Settings</strong>
-          </span>
-          <button id="settings-close" type="button" aria-label="Close settings">
-            <kbd>Esc</kbd>
-          </button>
-        </header>
-        <p id="settings-description" class="settings-description">
-          Preferences are stored in Threadleaf's private application data. Themes and snippets are
-          discovered read-only from <code>.obsidian/</code>; Threadleaf never changes those files.
-        </p>
-        <p class="settings-warning" id="settings-warning" role="alert" hidden></p>
-        <div class="settings-content">
-          <section class="appearance-settings" aria-labelledby="appearance-heading">
+        <aside class="settings-sidebar">
+          <header class="settings-sidebar-header">
+            <span class="settings-mark" aria-hidden="true">T</span>
+            <span>
+              <small>Threadleaf</small>
+              <strong id="settings-title">Settings</strong>
+            </span>
+          </header>
+          <nav class="settings-nav" aria-label="Settings sections">
+            <button id="settings-nav-appearance" type="button" data-settings-target="appearance">
+              <span aria-hidden="true">◐</span>
+              <span>Appearance</span>
+            </button>
+            <button id="settings-nav-plugins" type="button" data-settings-target="plugins">
+              <span aria-hidden="true">◇</span>
+              <span>Community plugins</span>
+            </button>
+            <button id="settings-nav-hotkeys" type="button" data-settings-target="hotkeys">
+              <span aria-hidden="true">⌨</span>
+              <span>Hotkeys</span>
+            </button>
+          </nav>
+          <p id="settings-description" class="settings-description">
+            Preferences stay in Threadleaf's private application data. Vault themes, snippets, and
+            plugin packages are read from <code>.obsidian/</code> without changing it.
+          </p>
+        </aside>
+
+        <section class="settings-workspace">
+          <header class="settings-header">
+            <span>
+              <small id="settings-page-eyebrow">Options</small>
+              <strong id="settings-page-title">Appearance</strong>
+            </span>
+            <button id="settings-close" type="button" aria-label="Close settings">
+              <span aria-hidden="true">×</span>
+            </button>
+          </header>
+          <p class="settings-warning" id="settings-warning" role="alert" hidden></p>
+          <div class="settings-content">
+          <section
+            class="settings-page appearance-settings"
+            data-settings-page="appearance"
+            aria-labelledby="appearance-heading"
+          >
             <header class="settings-section-heading">
               <span>
                 <small>Vault appearance</small>
@@ -380,7 +409,68 @@
             </button>
           </section>
 
-          <section class="keyboard-settings" aria-labelledby="keyboard-heading">
+          <section
+            class="settings-page plugin-settings"
+            data-settings-page="plugins"
+            aria-labelledby="plugins-heading"
+            hidden
+          >
+            <header class="settings-section-heading plugin-heading">
+              <span>
+                <small>Trusted compatibility runtime</small>
+                <strong id="plugins-heading">Community plugins</strong>
+              </span>
+              <span class="appearance-state" id="plugin-mode-state">Restricted</span>
+            </header>
+
+            <article class="plugin-mode-card">
+              <span class="plugin-mode-copy">
+                <strong>Restricted mode</strong>
+                <small>
+                  Turn on restricted mode to use Threadleaf without running community plugin code.
+                  Installed packages remain untouched in the vault.
+                </small>
+              </span>
+              <button class="secondary-button" id="plugin-mode-toggle" type="button">
+                Turn off restricted mode
+              </button>
+            </article>
+
+            <div class="plugin-summary-row">
+              <span>
+                <strong>Current plugins</strong>
+                <small><span id="plugin-installed-count">0 installed</span> in this vault</small>
+              </span>
+              <button class="secondary-button" id="plugin-reload-all" type="button">
+                Reload plugins
+              </button>
+            </div>
+
+            <div class="installed-plugin-heading">
+              <span>
+                <strong>Installed plugins</strong>
+                <small>Standard manifest.json, main.js, and optional styles.css packages</small>
+              </span>
+            </div>
+            <label class="plugin-search-field" for="plugin-search">
+              <span aria-hidden="true">⌕</span>
+              <input id="plugin-search" type="search" placeholder="Search installed plugins…" />
+            </label>
+            <div class="plugin-list" id="plugin-list"></div>
+            <div class="plugin-diagnostics">
+              <p id="plugin-status" data-kind="info" role="status" aria-live="polite">
+                Discovering installed plugins in this vault.
+              </p>
+              <ul id="plugin-warnings" aria-label="Plugin diagnostics"></ul>
+            </div>
+          </section>
+
+          <section
+            class="settings-page keyboard-settings"
+            data-settings-page="hotkeys"
+            aria-labelledby="keyboard-heading"
+            hidden
+          >
             <header class="settings-section-heading keyboard-heading">
               <span>
                 <small>Keyboard</small>
@@ -394,18 +484,19 @@
             </div>
             <div class="key-binding-list" id="key-binding-list"></div>
           </section>
-        </div>
-        <footer class="settings-footer">
-          <p id="settings-status" data-kind="info" role="status" aria-live="polite">
-            Select a command, then press its new shortcut.
-          </p>
-          <span class="settings-actions">
-            <button class="secondary-button" id="settings-reset" type="button">
-              Reset shortcuts
-            </button>
-            <button class="primary-button" id="settings-done" type="button">Done</button>
-          </span>
-        </footer>
+          </div>
+          <footer class="settings-footer">
+            <p id="settings-status" data-kind="info" role="status" aria-live="polite">
+              Preferences are stored outside the vault.
+            </p>
+            <span class="settings-actions">
+              <button class="secondary-button" id="settings-reset" type="button" hidden>
+                Reset shortcuts
+              </button>
+              <button class="primary-button" id="settings-done" type="button">Done</button>
+            </span>
+          </footer>
+        </section>
       </div>
     </dialog>
 

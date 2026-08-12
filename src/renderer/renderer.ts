@@ -29,9 +29,15 @@ import {
   bindingFromKeyboardEvent,
   createDefaultAppSettings,
   displayKeyBinding,
+  pluginsForVault,
   type ShortcutTargetId,
   shortcutTargetForEvent,
 } from "../shared/key-bindings";
+import {
+  createDefaultVaultPluginSettings,
+  type PluginCatalogSnapshot,
+  type VaultPluginSettings,
+} from "../shared/plugins";
 import {
   filterPaletteCommands,
   firstEnabledPaletteIndex,
@@ -116,6 +122,11 @@ const elements = {
   settingsClose: getButton("settings-close"),
   settingsDone: getButton("settings-done"),
   settingsReset: getButton("settings-reset"),
+  settingsPageEyebrow: getElement("settings-page-eyebrow"),
+  settingsPageTitle: getElement("settings-page-title"),
+  settingsNavAppearance: getButton("settings-nav-appearance"),
+  settingsNavPlugins: getButton("settings-nav-plugins"),
+  settingsNavHotkeys: getButton("settings-nav-hotkeys"),
   settingsWarning: getElement("settings-warning"),
   appearanceState: getElement("appearance-state"),
   appearanceTheme: getSelect("appearance-theme"),
@@ -125,6 +136,14 @@ const elements = {
   appearanceReset: getButton("appearance-reset"),
   appearanceStatus: getElement("appearance-status"),
   appearanceWarnings: getElement("appearance-warnings"),
+  pluginModeState: getElement("plugin-mode-state"),
+  pluginModeToggle: getButton("plugin-mode-toggle"),
+  pluginInstalledCount: getElement("plugin-installed-count"),
+  pluginReloadAll: getButton("plugin-reload-all"),
+  pluginSearch: getInput("plugin-search"),
+  pluginList: getElement("plugin-list"),
+  pluginStatus: getElement("plugin-status"),
+  pluginWarnings: getElement("plugin-warnings"),
   schemeSystem: getInput("scheme-system"),
   schemeLight: getInput("scheme-light"),
   schemeDark: getInput("scheme-dark"),
@@ -181,6 +200,7 @@ interface ShortcutTargetDefinition {
 }
 
 type DocumentViewMode = "source" | "reading";
+type SettingsPage = "appearance" | "plugins" | "hotkeys";
 
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   {
@@ -292,6 +312,7 @@ let settingsSnapshot: AppSettingsSnapshot = {
   warning: null,
 };
 let settingsRestoreFocus: HTMLElement | null = null;
+let settingsPage: SettingsPage = "appearance";
 let recordingShortcut: ShortcutTargetId | null = null;
 let settingsBusy = false;
 let settingsMessage = "Select a command, then press its new shortcut.";
@@ -304,6 +325,12 @@ let appearanceRequest = 0;
 let appearanceMessage = "Discovering themes and snippets in this vault.";
 let appearanceMessageKind: "info" | "saved" | "error" = "info";
 let lastAppearanceWarning = "";
+let pluginCatalog: PluginCatalogSnapshot | null = null;
+let pluginBusy = false;
+let pluginRequest = 0;
+let pluginMessage = "Discovering installed plugins in this vault.";
+let pluginMessageKind: "info" | "saved" | "warning" | "error" = "info";
+let lastPluginWarning = "";
 let legacyThemeMigrationAttempted = false;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
@@ -347,6 +374,10 @@ const appearanceStyle = document.createElement("style");
 appearanceStyle.id = "threadleaf-custom-appearance";
 appearanceStyle.nonce = editorStyleNonce;
 document.head.append(appearanceStyle);
+const pluginStyle = document.createElement("style");
+pluginStyle.id = "threadleaf-compatibility-plugin-styles";
+pluginStyle.nonce = editorStyleNonce;
+document.head.append(pluginStyle);
 const systemColorScheme = window.matchMedia("(prefers-color-scheme: dark)");
 const sourceHighlight = HighlightStyle.define([
   { tag: tags.heading, color: "var(--accent-strong)", fontWeight: "700" },
@@ -443,7 +474,6 @@ function shortcutFor(targetId: ShortcutTargetId): string | null {
 }
 
 function commandCatalog(): RendererCommand[] {
-  const plugin = currentSnapshot?.plugin ?? null;
   const tabs = currentSnapshot?.workspace?.tabs ?? [];
   const commands: RendererCommand[] = [
     {
@@ -632,20 +662,29 @@ function commandCatalog(): RendererCommand[] {
       id: "settings.open-keybindings",
       label: "Open settings",
       category: "Settings",
-      keywords: ["appearance", "theme", "snippet", "shortcut", "hotkey", "preferences"],
+      keywords: [
+        "appearance",
+        "theme",
+        "snippet",
+        "plugin",
+        "community",
+        "shortcut",
+        "hotkey",
+        "preferences",
+      ],
       shortcut: shortcutFor("settings.open-keybindings"),
-      enabled: !settingsBusy && !appearanceBusy,
-      disabledReason:
-        settingsBusy || appearanceBusy ? "Threadleaf is saving application settings." : null,
+      enabled: !settingsOperationBusy(),
+      disabledReason: settingsOperationBusy() ? "Threadleaf is saving application settings." : null,
       run: openSettings,
     },
   ];
 
   for (const command of currentSnapshot?.commands ?? []) {
+    const owner = (currentSnapshot?.plugins ?? []).find(({ id }) => id === command.ownerId);
     commands.push({
       id: `plugin.command.${command.id}`,
       label: command.name,
-      category: plugin?.name ?? "Compatibility plugin",
+      category: owner?.name ?? "Compatibility plugin",
       keywords: [command.id, "plugin", "compatibility"],
       shortcut: null,
       enabled: !busy && !saving,
@@ -657,28 +696,40 @@ function commandCatalog(): RendererCommand[] {
   commands.push(
     {
       id: "plugin.reload",
-      label: "Reload compatibility plugin",
+      label: "Reload enabled community plugins",
       category: "Compatibility",
       keywords: ["refresh", "restart", "plugin"],
       shortcut: null,
-      enabled: Boolean(plugin && !busy && !saving),
-      disabledReason: plugin
-        ? "Threadleaf is finishing another action."
-        : "No compatibility plugin is loaded.",
-      run: () => runAction(() => window.threadleaf.reloadPlugin()),
+      enabled: Boolean(
+        currentSnapshot?.vault.id &&
+          currentPluginPreference().compatibilityMode === "enabled" &&
+          currentPluginPreference().enabledPluginIds.length > 0 &&
+          !pluginSafeModeActive() &&
+          !pluginBusy,
+      ),
+      disabledReason: pluginSafeModeActive()
+        ? "Threadleaf started in plugin safe mode."
+        : pluginBusy
+          ? "Threadleaf is updating community plugins."
+          : "No enabled community plugin is available.",
+      run: reloadPlugins,
     },
     {
       id: "plugin.unload",
-      label: "Unload compatibility plugin",
+      label: "Turn on restricted mode",
       category: "Compatibility",
-      keywords: ["disable", "stop", "plugin"],
+      keywords: ["disable", "stop", "safe", "restricted", "plugin"],
       shortcut: null,
-      enabled: Boolean(plugin?.state === "loaded" && !busy && !saving),
-      disabledReason:
-        plugin?.state === "loaded"
-          ? "Threadleaf is finishing another action."
-          : "No loaded compatibility plugin is available.",
-      run: () => runAction(() => window.threadleaf.unloadPlugin()),
+      enabled:
+        currentPluginPreference().compatibilityMode === "enabled" &&
+        !pluginSafeModeActive() &&
+        !pluginBusy,
+      disabledReason: pluginSafeModeActive()
+        ? "Threadleaf started in plugin safe mode."
+        : pluginBusy
+          ? "Threadleaf is updating community plugins."
+          : "Restricted mode is already active.",
+      run: () => setCompatibilityMode("restricted"),
     },
   );
   return commands;
@@ -972,6 +1023,9 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   const previousAppearance = vaultId
     ? appearanceForVault(settingsSnapshot.settings, vaultId)
     : createDefaultVaultAppearance();
+  const previousPlugins = vaultId
+    ? pluginsForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultPluginSettings();
   settingsSnapshot = snapshot;
   settingsLoaded = true;
   updateShortcutLabels();
@@ -981,6 +1035,7 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   }
   lastSettingsWarning = snapshot.warning;
   const nextAppearance = currentAppearancePreference();
+  const nextPlugins = currentPluginPreference();
   applyColorScheme(nextAppearance.colorScheme);
   if (
     vaultId &&
@@ -990,6 +1045,15 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
       !appearancesEqual(appearanceSnapshot.preference, nextAppearance))
   ) {
     void refreshAppearance();
+  }
+  if (
+    vaultId &&
+    !pluginBusy &&
+    (!pluginPreferencesEqual(previousPlugins, nextPlugins) ||
+      pluginCatalog?.vaultId !== vaultId ||
+      !pluginPreferencesEqual(pluginCatalog.preference, nextPlugins))
+  ) {
+    void refreshPlugins();
   }
   renderSettings();
   renderPaletteResults();
@@ -1581,7 +1645,7 @@ async function deleteCurrentNote(): Promise<void> {
 }
 
 function settingsOperationBusy(): boolean {
-  return settingsBusy || appearanceBusy;
+  return settingsBusy || appearanceBusy || pluginBusy;
 }
 
 function currentAppearancePreference(): VaultAppearanceSettings {
@@ -1597,6 +1661,26 @@ function appearancesEqual(left: VaultAppearanceSettings, right: VaultAppearanceS
     left.themeId === right.themeId &&
     left.enabledSnippetIds.length === right.enabledSnippetIds.length &&
     left.enabledSnippetIds.every((id, index) => id === right.enabledSnippetIds[index])
+  );
+}
+
+function currentPluginPreference(): VaultPluginSettings {
+  const vaultId = currentSnapshot?.vault.id;
+  return vaultId
+    ? pluginsForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultPluginSettings();
+}
+
+function pluginSafeModeActive(): boolean {
+  const catalog = pluginCatalog;
+  return catalog !== null && catalog.vaultId === currentSnapshot?.vault.id && catalog.safeMode;
+}
+
+function pluginPreferencesEqual(left: VaultPluginSettings, right: VaultPluginSettings): boolean {
+  return (
+    left.compatibilityMode === right.compatibilityMode &&
+    left.enabledPluginIds.length === right.enabledPluginIds.length &&
+    left.enabledPluginIds.every((id, index) => id === right.enabledPluginIds[index])
   );
 }
 
@@ -1763,6 +1847,282 @@ async function maybeMigrateLegacyTheme(): Promise<void> {
   }
 }
 
+function applyPluginCatalog(catalog: PluginCatalogSnapshot): void {
+  if (catalog.vaultId !== currentSnapshot?.vault.id) {
+    return;
+  }
+  pluginCatalog = catalog;
+  pluginStyle.textContent = catalog.css;
+  const warningKey = catalog.warnings.join("\n");
+  if (warningKey && warningKey !== lastPluginWarning) {
+    showToast(catalog.warnings[0] ?? "A compatibility plugin needs attention.");
+  }
+  lastPluginWarning = warningKey;
+  renderSettings();
+  renderPaletteResults();
+}
+
+function runtimePluginWarnings(snapshot: RuntimeSnapshot | null = currentSnapshot): string[] {
+  return (snapshot?.plugins ?? [])
+    .filter((plugin) => plugin.error)
+    .map((plugin) => `${plugin.name}: ${plugin.error}`);
+}
+
+async function refreshPlugins(successMessage?: string): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId) {
+    pluginCatalog = null;
+    pluginStyle.textContent = "";
+    renderSettings();
+    return;
+  }
+  const request = ++pluginRequest;
+  pluginBusy = true;
+  pluginMessage = "Scanning .obsidian/plugins…";
+  pluginMessageKind = "info";
+  renderSettings();
+  renderPaletteResults();
+  try {
+    const response = await window.threadleaf.getPlugins(vaultId);
+    if (request !== pluginRequest || vaultId !== currentSnapshot?.vault.id) {
+      return;
+    }
+    if (response.status === "stale-vault") {
+      pluginMessage = "The active vault changed before plugin discovery completed.";
+      pluginMessageKind = "info";
+      return;
+    }
+    applyPluginCatalog(response.catalog);
+    pluginMessage =
+      successMessage ??
+      `${response.catalog.plugins.length} installed plugin${response.catalog.plugins.length === 1 ? "" : "s"} discovered.`;
+    pluginMessageKind =
+      response.catalog.warnings.length > 0 || runtimePluginWarnings().length > 0
+        ? "warning"
+        : "saved";
+  } catch (error) {
+    if (request !== pluginRequest) {
+      return;
+    }
+    pluginMessage = error instanceof Error ? error.message : String(error);
+    pluginMessageKind = "error";
+  } finally {
+    if (request === pluginRequest) {
+      pluginBusy = false;
+      renderSettings();
+      renderPaletteResults();
+      setActionState(busy);
+    }
+  }
+}
+
+async function updatePlugins(
+  operation: (vaultId: string) => ReturnType<typeof window.threadleaf.setCompatibilityMode>,
+  progressMessage: string,
+  successMessage: string,
+): Promise<boolean> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId || pluginBusy) {
+    return false;
+  }
+  const request = ++pluginRequest;
+  pluginBusy = true;
+  pluginMessage = progressMessage;
+  pluginMessageKind = "info";
+  renderSettings();
+  renderPaletteResults();
+  try {
+    const response = await operation(vaultId);
+    if (request !== pluginRequest || vaultId !== currentSnapshot?.vault.id) {
+      return false;
+    }
+    if (response.status === "stale-vault") {
+      pluginMessage = "The active vault changed before the plugin update completed.";
+      pluginMessageKind = "info";
+      return false;
+    }
+    applySettingsSnapshot(response.settings);
+    render(response.snapshot);
+    applyPluginCatalog(response.catalog);
+    pluginMessage = successMessage;
+    pluginMessageKind =
+      response.catalog.warnings.length > 0 || runtimePluginWarnings(response.snapshot).length > 0
+        ? "warning"
+        : "saved";
+    return true;
+  } catch (error) {
+    if (request === pluginRequest) {
+      pluginMessage = error instanceof Error ? error.message : String(error);
+      pluginMessageKind = "error";
+    }
+    return false;
+  } finally {
+    if (request === pluginRequest) {
+      pluginBusy = false;
+      renderSettings();
+      renderPaletteResults();
+      setActionState(busy);
+    }
+  }
+}
+
+async function setCompatibilityMode(mode: VaultPluginSettings["compatibilityMode"]): Promise<void> {
+  const enabled = mode === "enabled";
+  const changed = await updatePlugins(
+    (vaultId) => window.threadleaf.setCompatibilityMode(vaultId, mode),
+    enabled ? "Enabling the trusted compatibility runtime…" : "Unloading community plugins…",
+    enabled ? "Community plugin compatibility enabled." : "Restricted mode is active.",
+  );
+  if (changed) {
+    showToast(enabled ? "Community plugins enabled." : "Restricted mode enabled.");
+  }
+}
+
+async function setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
+  await updatePlugins(
+    (vaultId) => window.threadleaf.setPluginEnabled(vaultId, pluginId, enabled),
+    `${enabled ? "Enabling" : "Disabling"} ${pluginId}…`,
+    `${pluginId} ${enabled ? "enabled" : "disabled"}.`,
+  );
+}
+
+async function reloadPlugins(): Promise<void> {
+  await updatePlugins(
+    (vaultId) => window.threadleaf.reloadPlugins(vaultId),
+    "Reloading enabled community plugins…",
+    "Enabled community plugins reloaded.",
+  );
+}
+
+function renderPluginSettings(): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  const catalog = pluginCatalog?.vaultId === vaultId ? pluginCatalog : null;
+  const preference = currentPluginPreference();
+  const safeMode = catalog?.safeMode ?? false;
+  const restricted = preference.compatibilityMode === "restricted";
+  const disabled = pluginBusy || !vaultId;
+  const installed = catalog?.plugins ?? [];
+
+  elements.pluginModeState.textContent = safeMode
+    ? "Safe mode"
+    : restricted
+      ? "Restricted"
+      : "Enabled";
+  elements.pluginModeState.dataset.state = safeMode ? "safe" : restricted ? "default" : "active";
+  elements.pluginModeToggle.textContent = restricted
+    ? "Turn off restricted mode"
+    : "Turn on restricted mode";
+  elements.pluginModeToggle.disabled = disabled || safeMode;
+  elements.pluginInstalledCount.textContent = `${installed.length} installed`;
+  elements.pluginReloadAll.disabled = disabled || safeMode || restricted;
+  elements.pluginSearch.disabled = disabled;
+
+  const query = elements.pluginSearch.value.trim().toLocaleLowerCase("en-US");
+  const visiblePlugins = installed.filter((plugin) =>
+    [plugin.name, plugin.id, plugin.description ?? "", plugin.author ?? ""]
+      .join(" ")
+      .toLocaleLowerCase("en-US")
+      .includes(query),
+  );
+  elements.pluginList.replaceChildren();
+  for (const plugin of visiblePlugins) {
+    const row = document.createElement("article");
+    row.className = "plugin-row";
+    row.dataset.pluginId = plugin.id;
+    row.dataset.invalid = String(plugin.packageState === "invalid");
+    if (plugin.error) {
+      row.title = plugin.error;
+    }
+
+    const copy = document.createElement("span");
+    copy.className = "plugin-copy";
+    const nameLine = document.createElement("span");
+    nameLine.className = "plugin-name-line";
+    const name = document.createElement("strong");
+    name.textContent = plugin.name;
+    const version = document.createElement("code");
+    version.textContent = plugin.version;
+    nameLine.append(name, version);
+    const description = document.createElement("small");
+    description.textContent =
+      plugin.error ?? plugin.description ?? "No description was provided in manifest.json.";
+    const author = document.createElement("small");
+    author.className = "plugin-author";
+    author.textContent = plugin.author ? `By ${plugin.author}` : plugin.id;
+    copy.append(nameLine, description, author);
+
+    const controls = document.createElement("span");
+    controls.className = "plugin-row-controls";
+    const selected = preference.enabledPluginIds.includes(plugin.id);
+    const runtimePlugin = (currentSnapshot?.plugins ?? []).find(
+      (candidate) => candidate.id === plugin.id,
+    );
+    const runtimeState = document.createElement("span");
+    runtimeState.className = "plugin-runtime-state";
+    runtimeState.textContent =
+      plugin.packageState === "invalid"
+        ? "Invalid package"
+        : safeMode
+          ? selected
+            ? "Selected · safe"
+            : "Disabled"
+          : restricted
+            ? selected
+              ? "Selected"
+              : "Disabled"
+            : runtimePlugin?.state === "failed"
+              ? "Load failed"
+              : selected
+                ? runtimePlugin?.state === "loaded"
+                  ? `Active · L${runtimePlugin.compatibilityLevel}`
+                  : "Enabled"
+                : "Disabled";
+
+    const toggle = document.createElement("label");
+    toggle.className = "plugin-toggle";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.role = "switch";
+    checkbox.checked = selected;
+    checkbox.disabled = disabled || safeMode || restricted || plugin.packageState === "invalid";
+    checkbox.ariaLabel = `${selected ? "Disable" : "Enable"} ${plugin.name}`;
+    checkbox.addEventListener("change", () => {
+      void setPluginEnabled(plugin.id, checkbox.checked);
+    });
+    const track = document.createElement("span");
+    track.className = "plugin-toggle-track";
+    track.ariaHidden = "true";
+    const toggleLabel = document.createElement("span");
+    toggleLabel.className = "plugin-toggle-label";
+    toggleLabel.textContent = selected ? "Enabled" : "Disabled";
+    toggle.append(checkbox, track, toggleLabel);
+    controls.append(runtimeState, toggle);
+    row.append(copy, controls);
+    elements.pluginList.append(row);
+  }
+
+  if (visiblePlugins.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "plugin-empty";
+    empty.textContent = catalog
+      ? query
+        ? "No installed plugins match this search."
+        : "No standard plugin packages were found in .obsidian/plugins."
+      : "Plugin catalog is not loaded yet.";
+    elements.pluginList.append(empty);
+  }
+
+  elements.pluginStatus.textContent = pluginMessage;
+  elements.pluginStatus.dataset.kind = pluginMessageKind;
+  elements.pluginWarnings.replaceChildren();
+  const runtimeWarnings = runtimePluginWarnings();
+  for (const warning of [...(catalog?.warnings ?? []), ...runtimeWarnings]) {
+    const item = document.createElement("li");
+    item.textContent = warning;
+    elements.pluginWarnings.append(item);
+  }
+}
+
 function renderAppearanceSettings(): void {
   const vaultId = currentSnapshot?.vault.id ?? null;
   const catalog = appearanceSnapshot?.vaultId === vaultId ? appearanceSnapshot : null;
@@ -1887,6 +2247,9 @@ function openSettings(): void {
   if (!appearanceSnapshot || appearanceSnapshot.vaultId !== currentSnapshot?.vault.id) {
     void refreshAppearance();
   }
+  if (!pluginCatalog || pluginCatalog.vaultId !== currentSnapshot?.vault.id) {
+    void refreshPlugins();
+  }
 }
 
 function closeSettings(restoreFocus = true): void {
@@ -2010,17 +2373,69 @@ function captureShortcut(event: KeyboardEvent, targetId: ShortcutTargetId): void
   void persistKeyBinding(targetId, binding);
 }
 
+function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
+  settingsPage = page;
+  recordingShortcut = null;
+  renderSettings();
+  if (focusNavigation) {
+    const target =
+      page === "appearance"
+        ? elements.settingsNavAppearance
+        : page === "plugins"
+          ? elements.settingsNavPlugins
+          : elements.settingsNavHotkeys;
+    target.focus();
+  }
+}
+
+function renderSettingsNavigation(): void {
+  const pageDetails: Record<SettingsPage, { eyebrow: string; title: string }> = {
+    appearance: { eyebrow: "Options", title: "Appearance" },
+    plugins: { eyebrow: "Trusted runtime", title: "Community plugins" },
+    hotkeys: { eyebrow: "Keyboard", title: "Hotkeys" },
+  };
+  elements.settingsPageEyebrow.textContent = pageDetails[settingsPage].eyebrow;
+  elements.settingsPageTitle.textContent = pageDetails[settingsPage].title;
+  for (const [page, button] of [
+    ["appearance", elements.settingsNavAppearance],
+    ["plugins", elements.settingsNavPlugins],
+    ["hotkeys", elements.settingsNavHotkeys],
+  ] as const) {
+    const active = page === settingsPage;
+    button.dataset.active = String(active);
+    if (active) {
+      button.setAttribute("aria-current", "page");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  }
+  for (const page of elements.settingsDialog.querySelectorAll<HTMLElement>(
+    "[data-settings-page]",
+  )) {
+    page.hidden = page.dataset.settingsPage !== settingsPage;
+  }
+  elements.settingsReset.hidden = settingsPage !== "hotkeys";
+}
+
 function renderSettings(): void {
   elements.settingsWarning.hidden = settingsSnapshot.warning === null;
   elements.settingsWarning.textContent = settingsSnapshot.warning ?? "";
+  const [statusMessage, statusKind] =
+    settingsPage === "appearance"
+      ? [appearanceMessage, appearanceMessageKind]
+      : settingsPage === "plugins"
+        ? [pluginMessage, pluginMessageKind]
+        : [settingsMessage, settingsMessageKind];
   elements.settingsStatus.textContent =
-    settingsMessageKind === "error" ? `Error: ${settingsMessage}` : settingsMessage;
-  elements.settingsStatus.dataset.kind = settingsMessageKind;
+    statusKind === "error" ? `Error: ${statusMessage}` : statusMessage;
+  elements.settingsStatus.dataset.kind = statusKind;
   const operationBusy = settingsOperationBusy();
   elements.settingsClose.disabled = operationBusy;
   elements.settingsDone.disabled = operationBusy;
   elements.settingsReset.disabled = operationBusy;
+  renderSettingsNavigation();
   renderAppearanceSettings();
+  renderPluginSettings();
   if (!elements.settingsDialog.open) {
     return;
   }
@@ -2298,8 +2713,14 @@ function render(snapshot: RuntimeSnapshot): void {
     appearanceSnapshot = null;
     appearanceStyle.textContent = "";
     lastAppearanceWarning = "";
+    pluginRequest += 1;
+    pluginBusy = false;
+    pluginCatalog = null;
+    pluginStyle.textContent = "";
+    lastPluginWarning = "";
     applyColorScheme(currentAppearancePreference().colorScheme);
     void refreshAppearance();
+    void refreshPlugins();
     void maybeMigrateLegacyTheme();
   }
   const workspace = snapshot.workspace;
@@ -3038,8 +3459,19 @@ function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
   elements.openVault.disabled = busy || saving;
   elements.newNote.disabled = busy || saving || dirty;
-  elements.reloadPlugin.disabled = busy || saving || !currentSnapshot?.plugin;
-  elements.unloadPlugin.disabled = busy || saving || currentSnapshot?.plugin?.state !== "loaded";
+  elements.reloadPlugin.disabled =
+    busy ||
+    saving ||
+    pluginBusy ||
+    pluginSafeModeActive() ||
+    currentPluginPreference().compatibilityMode === "restricted" ||
+    currentPluginPreference().enabledPluginIds.length === 0;
+  elements.unloadPlugin.disabled =
+    busy ||
+    saving ||
+    pluginBusy ||
+    pluginSafeModeActive() ||
+    currentPluginPreference().compatibilityMode === "restricted";
   elements.runCommand.disabled = busy || saving || (currentSnapshot?.commands.length ?? 0) === 0;
   renderEditControls();
 }
@@ -3149,6 +3581,16 @@ elements.commandPalette.addEventListener("click", (event) => {
 elements.settingsClose.addEventListener("click", () => closeSettings());
 elements.settingsDone.addEventListener("click", () => closeSettings());
 elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
+elements.settingsNavAppearance.addEventListener("click", () => setSettingsPage("appearance"));
+elements.settingsNavPlugins.addEventListener("click", () => setSettingsPage("plugins"));
+elements.settingsNavHotkeys.addEventListener("click", () => setSettingsPage("hotkeys"));
+elements.pluginModeToggle.addEventListener("click", () => {
+  void setCompatibilityMode(
+    currentPluginPreference().compatibilityMode === "restricted" ? "enabled" : "restricted",
+  );
+});
+elements.pluginReloadAll.addEventListener("click", () => void reloadPlugins());
+elements.pluginSearch.addEventListener("input", renderPluginSettings);
 for (const [input, colorScheme] of [
   [elements.schemeSystem, "system"],
   [elements.schemeLight, "light"],

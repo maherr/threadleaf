@@ -5,10 +5,13 @@ import {
   appearanceForVault,
   createDefaultAppSettings,
   defaultKeyBindings,
+  pluginsForVault,
   type ShortcutTargetId,
   updateKeyBinding,
   updateVaultAppearance,
+  updateVaultPlugins,
 } from "../shared/key-bindings";
+import type { VaultPluginSettings } from "../shared/plugins";
 
 export interface AppSettingsStore {
   load(): Promise<AppSettings | null>;
@@ -73,6 +76,19 @@ export class AppSettingsController {
     appearance: VaultAppearanceSettings,
   ): Promise<AppSettingsSnapshot> {
     const candidate = updateVaultAppearance(this.#snapshot.settings, vaultId, appearance);
+    const settings = await this.#store.save(candidate);
+    return this.adopt(settings);
+  }
+
+  getVaultPlugins(vaultId: string): VaultPluginSettings {
+    return pluginsForVault(this.#snapshot.settings, vaultId);
+  }
+
+  async setVaultPlugins(
+    vaultId: string,
+    plugins: VaultPluginSettings,
+  ): Promise<AppSettingsSnapshot> {
+    const candidate = updateVaultPlugins(this.#snapshot.settings, vaultId, plugins);
     const settings = await this.#store.save(candidate);
     return this.adopt(settings);
   }

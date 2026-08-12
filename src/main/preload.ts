@@ -6,6 +6,7 @@ import type {
   NoteDeleteResponse,
   NoteMoveResponse,
   NoteSaveResponse,
+  PluginUpdateResponse,
   RuntimeSnapshot,
   ThreadleafBridge,
   VaultImageResponse,
@@ -14,6 +15,7 @@ import type {
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
+import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
 
 const bridge: ThreadleafBridge = {
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
@@ -26,6 +28,23 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       appearance,
     ) as Promise<AppearanceUpdateResponse>,
+  getPlugins: (expectedVaultId) =>
+    ipcRenderer.invoke(ipcChannels.plugins, expectedVaultId) as Promise<PluginCatalogResponse>,
+  setCompatibilityMode: (expectedVaultId, mode: CompatibilityMode) =>
+    ipcRenderer.invoke(
+      ipcChannels.setCompatibilityMode,
+      expectedVaultId,
+      mode,
+    ) as Promise<PluginUpdateResponse>,
+  setPluginEnabled: (expectedVaultId, pluginId, enabled) =>
+    ipcRenderer.invoke(
+      ipcChannels.setPluginEnabled,
+      expectedVaultId,
+      pluginId,
+      enabled,
+    ) as Promise<PluginUpdateResponse>,
+  reloadPlugins: (expectedVaultId) =>
+    ipcRenderer.invoke(ipcChannels.reloadPlugins, expectedVaultId) as Promise<PluginUpdateResponse>,
   searchVault: (query) =>
     ipcRenderer.invoke(ipcChannels.searchVault, query) as Promise<VaultSearchResponse>,
   loadVaultImage: (sourceNotePath, target, expectedVaultId) =>
@@ -85,8 +104,10 @@ const bridge: ThreadleafBridge = {
     ) as Promise<NoteSaveResponse>,
   runCommand: (commandId) =>
     ipcRenderer.invoke(ipcChannels.runCommand, commandId) as Promise<RuntimeSnapshot>,
-  reloadPlugin: () => ipcRenderer.invoke(ipcChannels.reloadPlugin) as Promise<RuntimeSnapshot>,
-  unloadPlugin: () => ipcRenderer.invoke(ipcChannels.unloadPlugin) as Promise<RuntimeSnapshot>,
+  reloadPlugin: (pluginId) =>
+    ipcRenderer.invoke(ipcChannels.reloadPlugin, pluginId) as Promise<RuntimeSnapshot>,
+  unloadPlugin: (pluginId) =>
+    ipcRenderer.invoke(ipcChannels.unloadPlugin, pluginId) as Promise<RuntimeSnapshot>,
   onSnapshot: (listener) => {
     const subscription = (_event: Electron.IpcRendererEvent, snapshot: RuntimeSnapshot) => {
       listener(snapshot);

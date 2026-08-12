@@ -11,6 +11,7 @@ import type {
   RuntimeEventKind,
   RuntimeSnapshot,
 } from "../shared/contracts";
+import { maxPluginBundleBytes, parsePluginManifest } from "../shared/plugins";
 import {
   App,
   CommandRegistry,
@@ -27,15 +28,20 @@ interface CommonJsModuleRecord {
 
 type PluginConstructor = new (app: App, manifest: PluginManifest) => Plugin;
 
+interface LoadedPluginRecord {
+  directoryPath: string;
+  instance: Plugin | null;
+  summary: PluginSummary;
+}
+
 export class PluginHost {
   readonly app: App;
   readonly vault: Vault;
 
   private readonly events: RuntimeEvent[] = [];
   private eventSequence = 0;
-  private plugin: Plugin | null = null;
-  private pluginDirectory: string | null = null;
-  private pluginSummary: PluginSummary | null = null;
+  private readonly plugins = new Map<string, LoadedPluginRecord>();
+  private lastPluginId: string | null = null;
 
   constructor(vaultPath: string, reader?: VaultReadPort, actions = new ActionRegistry()) {
     this.vault = new Vault(vaultPath, reader);
@@ -46,53 +52,77 @@ export class PluginHost {
   }
 
   async loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
-    if (this.plugin) {
-      await this.unloadPlugin();
+    const resolvedDirectory = await this.assertInsideVault(pluginDirectory);
+    const manifestPath = await this.canonicalPluginFile(resolvedDirectory, "manifest.json");
+    const entryPath = await this.canonicalPluginFile(resolvedDirectory, "main.js");
+    const manifest = await this.readManifest(manifestPath);
+    if (manifest.id !== path.basename(resolvedDirectory)) {
+      throw new Error(
+        `Plugin manifest id ${manifest.id} does not match folder ${path.basename(resolvedDirectory)}.`,
+      );
+    }
+    const stylesheetDiscovered = await this.fileExists(
+      path.join(resolvedDirectory, "styles.css"),
+      resolvedDirectory,
+    );
+    if (this.plugins.has(manifest.id)) {
+      await this.unloadPlugin(manifest.id);
     }
 
-    const resolvedDirectory = await this.assertInsideVault(pluginDirectory);
-    const manifest = await this.readManifest(path.join(resolvedDirectory, "manifest.json"));
-    const entryPath = path.join(resolvedDirectory, "main.js");
-    const stylesheetDiscovered = await this.fileExists(path.join(resolvedDirectory, "styles.css"));
-
-    this.pluginDirectory = resolvedDirectory;
-    this.pluginSummary = {
-      id: manifest.id,
-      name: manifest.name,
-      version: manifest.version,
-      state: "empty",
-      compatibilityLevel: 0,
-      stylesheetDiscovered,
+    const record: LoadedPluginRecord = {
+      directoryPath: resolvedDirectory,
+      instance: null,
+      summary: {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        state: "empty",
+        compatibilityLevel: 0,
+        stylesheetDiscovered,
+        error: null,
+      },
     };
+    this.plugins.set(manifest.id, record);
+    this.lastPluginId = manifest.id;
     this.record("plugin", `Discovered ${manifest.name} ${manifest.version}.`);
 
+    let instance: Plugin | null = null;
     try {
       const PluginClass = await this.evaluatePlugin(entryPath);
-      this.plugin = new PluginClass(this.app, manifest);
-      if (!(this.plugin instanceof Plugin)) {
+      instance = new PluginClass(this.app, manifest);
+      if (!(instance instanceof Plugin)) {
         throw new Error("Plugin export does not extend the compatibility Plugin class.");
       }
-      this.pluginSummary = { ...this.pluginSummary, state: "loaded", compatibilityLevel: 1 };
+      record.instance = instance;
+      record.summary = { ...record.summary, state: "loaded", compatibilityLevel: 1 };
       this.record("plugin", "Injected the open compatibility module and constructed the plugin.");
 
-      await this.plugin.onload();
-      this.pluginSummary = { ...this.pluginSummary, compatibilityLevel: 2 };
+      const commandIdsBefore = new Set(this.app.commands.list().map(({ id }) => id));
+      await instance.onload();
+      record.summary = { ...record.summary, compatibilityLevel: 2 };
       this.record("plugin", "Plugin onload completed without an uncaught error.");
 
-      const commands = this.app.commands.list();
+      const commands = this.app.commands
+        .list()
+        .filter(
+          ({ id }) => !commandIdsBefore.has(id) && this.app.commands.ownerIdFor(id) === manifest.id,
+        );
       if (commands.length > 0) {
-        this.pluginSummary = { ...this.pluginSummary, compatibilityLevel: 3 };
+        record.summary = { ...record.summary, compatibilityLevel: 3 };
         for (const command of commands) {
           this.record("command", `Registered command: ${command.name}.`);
         }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.pluginSummary = {
-        ...this.pluginSummary,
+      await instance?.__unload().catch(() => undefined);
+      record.instance = null;
+      record.summary = {
+        ...record.summary,
         state: "failed",
+        error: message,
       };
-      this.record("error", `Plugin load failed: ${message}`);
+      this.record("error", `${manifest.name} load failed: ${message}`);
       throw error;
     }
 
@@ -107,38 +137,65 @@ export class PluginHost {
     }
 
     this.record("command", `Ran command: ${command.name}.`);
-    if (this.pluginSummary) {
-      this.pluginSummary = { ...this.pluginSummary, compatibilityLevel: 4 };
+    const ownerId = this.app.commands.ownerIdFor(commandId);
+    const record = ownerId ? this.plugins.get(ownerId) : undefined;
+    if (record) {
+      record.summary = { ...record.summary, compatibilityLevel: 4 };
+      this.lastPluginId = ownerId ?? this.lastPluginId;
     }
     return this.getSnapshot();
   }
 
-  async unloadPlugin(): Promise<RuntimeSnapshot> {
-    const wasActive = this.pluginSummary?.state !== "unloaded";
-
-    if (this.plugin) {
-      await this.plugin.__unload();
-      this.plugin = null;
+  async unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+    const targetId = pluginId ?? this.lastPluginId;
+    const record = targetId ? this.plugins.get(targetId) : undefined;
+    if (!record || record.summary.state === "unloaded") {
+      return this.getSnapshot();
     }
-
-    if (this.pluginSummary && wasActive) {
-      this.pluginSummary = { ...this.pluginSummary, state: "unloaded", compatibilityLevel: 1 };
-      this.record("plugin", `Unloaded ${this.pluginSummary.name} and released its registrations.`);
+    let unloadError: string | null = null;
+    try {
+      await record.instance?.__unload();
+    } catch (error) {
+      unloadError = error instanceof Error ? error.message : String(error);
     }
-
+    record.instance = null;
+    record.summary = {
+      ...record.summary,
+      state: "unloaded",
+      compatibilityLevel: 1,
+      error: unloadError,
+    };
+    this.lastPluginId = targetId ?? this.lastPluginId;
+    this.record("plugin", `Unloaded ${record.summary.name} and released its registrations.`);
+    if (unloadError) {
+      this.record("error", `${record.summary.name} onunload failed: ${unloadError}`);
+    }
     return this.getSnapshot();
   }
 
-  async reloadPlugin(): Promise<RuntimeSnapshot> {
-    if (!this.pluginDirectory) {
+  async unloadAllPlugins(): Promise<RuntimeSnapshot> {
+    for (const pluginId of [...this.plugins.keys()]) {
+      await this.unloadPlugin(pluginId);
+    }
+    return this.getSnapshot();
+  }
+
+  async reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+    const targetId = pluginId ?? this.lastPluginId;
+    const record = targetId ? this.plugins.get(targetId) : undefined;
+    if (!record) {
       throw new Error("No plugin has been loaded yet.");
     }
-
-    const directory = this.pluginDirectory;
-    return this.loadPlugin(directory);
+    return this.loadPlugin(record.directoryPath);
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
+    const plugins = [...this.plugins.values()]
+      .map(({ summary }) => ({ ...summary }))
+      .sort((left, right) => left.name.localeCompare(right.name, "en-US", { numeric: true }));
+    const currentPlugin = this.lastPluginId
+      ? (plugins.find(({ id }) => id === this.lastPluginId) ?? null)
+      : null;
     return {
       vault: {
         id: null,
@@ -149,7 +206,8 @@ export class PluginHost {
         source: "direct",
         warning: null,
       },
-      plugin: this.pluginSummary ? { ...this.pluginSummary } : null,
+      plugin: currentPlugin,
+      plugins,
       commands: this.app.commands.list(),
       actions: this.app.commands.actions.list(),
       notices: this.app.notices.list(),
@@ -158,7 +216,7 @@ export class PluginHost {
   }
 
   private async evaluatePlugin(entryPath: string): Promise<PluginConstructor> {
-    const source = await fs.readFile(entryPath, "utf8");
+    const source = await this.readBoundedText(entryPath, maxPluginBundleBytes);
     const nativeRequire = createRequire(entryPath);
     const compatibilityModule = createObsidianCompatibilityModule(this.app);
     const moduleRecord: CommonJsModuleRecord = { exports: {} };
@@ -205,38 +263,72 @@ export class PluginHost {
   }
 
   private async readManifest(manifestPath: string): Promise<PluginManifest> {
-    const raw = await fs.readFile(manifestPath, "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      throw new Error("Plugin manifest must be an object.");
-    }
-
-    const manifest = parsed as Record<string, unknown>;
-    for (const field of ["id", "name", "version"] as const) {
-      if (typeof manifest[field] !== "string" || manifest[field].length === 0) {
-        throw new Error(`Plugin manifest requires a non-empty ${field}.`);
-      }
-    }
-
-    return manifest as unknown as PluginManifest;
+    const manifest = parsePluginManifest(
+      JSON.parse(await this.readBoundedText(manifestPath, 64 * 1024)),
+    );
+    return {
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      ...(manifest.minAppVersion ? { minAppVersion: manifest.minAppVersion } : {}),
+      ...(manifest.description ? { description: manifest.description } : {}),
+      ...(manifest.author ? { author: manifest.author } : {}),
+      ...(manifest.authorUrl ? { authorUrl: manifest.authorUrl } : {}),
+      isDesktopOnly: manifest.isDesktopOnly,
+    };
   }
 
   private async assertInsideVault(candidatePath: string): Promise<string> {
     const resolved = path.resolve(candidatePath);
-    const [canonicalVault, canonicalCandidate] = await Promise.all([
+    const [canonicalVault, canonicalPluginRoot, canonicalCandidate] = await Promise.all([
       fs.realpath(this.vault.rootPath),
+      fs.realpath(path.join(this.vault.rootPath, ".obsidian", "plugins")),
       fs.realpath(resolved),
     ]);
-    if (!isPathInside(canonicalVault, canonicalCandidate)) {
-      throw new Error("Plugin directory must be inside the active vault.");
+    const stat = await fs.stat(canonicalCandidate);
+    if (
+      !stat.isDirectory() ||
+      !isPathInside(canonicalVault, canonicalPluginRoot) ||
+      path.dirname(canonicalCandidate) !== canonicalPluginRoot
+    ) {
+      throw new Error(
+        "Plugin directory must be an immediate child of .obsidian/plugins in the active vault.",
+      );
     }
     return canonicalCandidate;
   }
 
-  private async fileExists(filePath: string): Promise<boolean> {
+  private async canonicalPluginFile(directoryPath: string, filename: string): Promise<string> {
+    const candidatePath = await fs.realpath(path.join(directoryPath, filename));
+    if (!isPathInside(directoryPath, candidatePath)) {
+      throw new Error(`${filename} resolves outside its plugin directory.`);
+    }
+    const stat = await fs.stat(candidatePath);
+    if (!stat.isFile()) {
+      throw new Error(`${filename} is not a regular file.`);
+    }
+    return candidatePath;
+  }
+
+  private async readBoundedText(filePath: string, maxBytes: number): Promise<string> {
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) {
+      throw new Error(`${path.basename(filePath)} is not a regular file.`);
+    }
+    if (stat.size > maxBytes) {
+      throw new Error(`${path.basename(filePath)} exceeds its ${maxBytes} byte limit.`);
+    }
+    const bytes = await fs.readFile(filePath);
+    if (bytes.byteLength > maxBytes) {
+      throw new Error(`${path.basename(filePath)} grew beyond its size limit while reading.`);
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+
+  private async fileExists(filePath: string, directoryPath: string): Promise<boolean> {
     try {
-      const stat = await fs.stat(filePath);
-      return stat.isFile();
+      await this.canonicalPluginFile(directoryPath, path.basename(filePath));
+      return true;
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         return false;

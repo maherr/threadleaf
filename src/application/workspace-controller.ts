@@ -53,8 +53,10 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
   ): Promise<NoteSaveResponse>;
   runPluginCommand(commandId: string): Promise<RuntimeSnapshot>;
-  reloadPlugin(): Promise<RuntimeSnapshot>;
-  unloadPlugin(): Promise<RuntimeSnapshot>;
+  loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot>;
+  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
+  unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
+  unloadAllPlugins(): Promise<RuntimeSnapshot>;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   close(): Promise<void>;
 }
@@ -259,12 +261,20 @@ export class WorkspaceController {
     return this.#runtime.runPluginCommand(commandId);
   }
 
-  reloadPlugin(): Promise<RuntimeSnapshot> {
-    return this.#runtime.reloadPlugin();
+  loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
+    return this.#runtime.loadPlugin(pluginDirectory);
   }
 
-  unloadPlugin(): Promise<RuntimeSnapshot> {
-    return this.#runtime.unloadPlugin();
+  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+    return this.#runtime.reloadPlugin(pluginId);
+  }
+
+  unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+    return this.#runtime.unloadPlugin(pluginId);
+  }
+
+  unloadAllPlugins(): Promise<RuntimeSnapshot> {
+    return this.#runtime.unloadAllPlugins();
   }
 
   async switchVault(vaultPath: string): Promise<RuntimeSnapshot> {

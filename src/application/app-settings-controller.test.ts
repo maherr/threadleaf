@@ -114,4 +114,22 @@ describe("AppSettingsController", () => {
       enabledSnippetIds: ["obsidian-snippet:spacing.css"],
     });
   });
+
+  it("persists private per-vault plugin choices without changing appearance", async () => {
+    const store = new MemorySettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const vaultId = "c".repeat(64);
+
+    const snapshot = await controller.setVaultPlugins(vaultId, {
+      compatibilityMode: "enabled",
+      enabledPluginIds: ["obsidian-excalidraw-plugin"],
+    });
+
+    expect(snapshot.settings.appearanceByVault).toEqual({});
+    expect(controller.getVaultPlugins(vaultId)).toEqual({
+      compatibilityMode: "enabled",
+      enabledPluginIds: ["obsidian-excalidraw-plugin"],
+    });
+    expect(store.saved).toEqual([snapshot.settings]);
+  });
 });

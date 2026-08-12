@@ -1,0 +1,144 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
+
+let sandboxPath: string;
+let vaultPath: string;
+
+beforeEach(async () => {
+  sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugins-"));
+  vaultPath = path.join(sandboxPath, "vault");
+  await fs.mkdir(vaultPath);
+});
+
+afterEach(async () => {
+  await fs.rm(sandboxPath, { recursive: true, force: true });
+});
+
+async function writePlugin(
+  id: string,
+  options: { manifestId?: string; main?: string | null; css?: string | null } = {},
+): Promise<void> {
+  const directory = path.join(vaultPath, ".obsidian", "plugins", id);
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(
+    path.join(directory, "manifest.json"),
+    JSON.stringify({
+      id: options.manifestId ?? id,
+      name: id === "drawing" ? "Drawing" : "Fixture plugin",
+      version: "1.2.3",
+      minAppVersion: "1.0.0",
+      description: "Fixture package",
+      author: "Fixture author",
+      isDesktopOnly: false,
+    }),
+    "utf8",
+  );
+  if (options.main !== null) {
+    await fs.writeFile(
+      path.join(directory, "main.js"),
+      options.main ?? "module.exports = {};",
+      "utf8",
+    );
+  }
+  if (options.css !== null && options.css !== undefined) {
+    await fs.writeFile(path.join(directory, "styles.css"), options.css, "utf8");
+  }
+}
+
+describe("vault plugin loader", () => {
+  it("discovers standard Obsidian packages without reading enabled state from the vault", async () => {
+    await writePlugin("drawing", { css: ".drawing-view { color: #123456; }" });
+    await writePlugin("search");
+
+    const discovery = await discoverVaultPlugins(vaultPath);
+
+    expect(discovery.plugins.map((plugin) => plugin.summary.id)).toEqual(["drawing", "search"]);
+    expect(discovery.plugins[0]?.summary).toMatchObject({
+      name: "Drawing",
+      version: "1.2.3",
+      packageState: "ready",
+      stylesheetDiscovered: true,
+    });
+    expect(discovery.warnings).toEqual([]);
+  });
+
+  it("applies CSS only for privately enabled plugins outside restricted mode", async () => {
+    await writePlugin("drawing", { css: ".drawing-view { --drawing-ready: 1; }" });
+    await writePlugin("search", { css: ".search-view { --search-ready: 1; }" });
+
+    const catalog = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "a".repeat(64),
+      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      safeMode: false,
+    });
+
+    expect(catalog.css).toContain("--drawing-ready");
+    expect(catalog.css).not.toContain("--search-ready");
+    expect(catalog.warnings).toEqual([]);
+  });
+
+  it("keeps discovery visible while restricted and safe modes suppress plugin CSS", async () => {
+    await writePlugin("drawing", { css: ".drawing-view { --drawing-ready: 1; }" });
+
+    const restricted = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "b".repeat(64),
+      preference: { compatibilityMode: "restricted", enabledPluginIds: ["drawing"] },
+      safeMode: false,
+    });
+    const safe = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "b".repeat(64),
+      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      safeMode: true,
+    });
+
+    expect(restricted.plugins).toHaveLength(1);
+    expect(restricted.css).toBe("");
+    expect(safe.plugins).toHaveLength(1);
+    expect(safe.css).toBe("");
+    expect(safe.warnings[0]).toContain("safe mode");
+  });
+
+  it("reports missing, mismatched, and unsafe packages without losing the valid catalog", async () => {
+    await writePlugin("valid");
+    await writePlugin("mismatch", { manifestId: "another-id" });
+    await writePlugin("missing-main", { main: null });
+
+    const catalog = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "c".repeat(64),
+      preference: {
+        compatibilityMode: "enabled",
+        enabledPluginIds: ["valid", "not-installed"],
+      },
+      safeMode: false,
+    });
+
+    expect(catalog.plugins).toHaveLength(3);
+    expect(catalog.plugins.filter((plugin) => plugin.packageState === "invalid")).toHaveLength(2);
+    expect(catalog.warnings.join("\n")).toContain("does not match folder");
+    expect(catalog.warnings.join("\n")).toContain("main.js is missing");
+    expect(catalog.warnings.join("\n")).toContain("not installed");
+  });
+
+  it("rejects network-capable enabled plugin styles", async () => {
+    await writePlugin("drawing", {
+      css: '.drawing-view { background: url("https://example.test/image.png"); }',
+    });
+
+    const catalog = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "d".repeat(64),
+      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      safeMode: false,
+    });
+
+    expect(catalog.css).toBe("");
+    expect(catalog.warnings[0]).toContain("stylesheet was not applied");
+  });
+});

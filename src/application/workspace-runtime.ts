@@ -508,13 +508,23 @@ export class WorkspaceRuntime {
     return this.publishSnapshot();
   }
 
-  async reloadPlugin(): Promise<RuntimeSnapshot> {
-    await this.pluginHost.reloadPlugin();
+  async loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
+    await this.pluginHost.loadPlugin(pluginDirectory);
     return this.publishSnapshot();
   }
 
-  async unloadPlugin(): Promise<RuntimeSnapshot> {
-    await this.pluginHost.unloadPlugin();
+  async reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+    await this.pluginHost.reloadPlugin(pluginId);
+    return this.publishSnapshot();
+  }
+
+  async unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+    await this.pluginHost.unloadPlugin(pluginId);
+    return this.publishSnapshot();
+  }
+
+  async unloadAllPlugins(): Promise<RuntimeSnapshot> {
+    await this.pluginHost.unloadAllPlugins();
     return this.publishSnapshot();
   }
 
@@ -533,7 +543,7 @@ export class WorkspaceRuntime {
 
   async close(): Promise<void> {
     await this.watcher.close();
-    await this.pluginHost.unloadPlugin();
+    await this.pluginHost.unloadAllPlugins();
     for (const release of this.#releaseActions.reverse()) {
       release();
     }

@@ -3,6 +3,11 @@ import {
   parseVaultAppearanceSettings,
   type VaultAppearanceSettings,
 } from "./appearance";
+import {
+  createDefaultVaultPluginSettings,
+  parseVaultPluginSettings,
+  type VaultPluginSettings,
+} from "./plugins";
 
 export const shortcutTargetIds = [
   "ui.command-palette",
@@ -26,9 +31,10 @@ export const shortcutTargetIds = [
 export type ShortcutTargetId = (typeof shortcutTargetIds)[number];
 
 export interface AppSettings {
-  version: 2;
+  version: 3;
   keyBindings: Record<string, string | null>;
   appearanceByVault: Record<string, VaultAppearanceSettings>;
+  pluginsByVault: Record<string, VaultPluginSettings>;
 }
 
 export interface AppSettingsSnapshot {
@@ -133,6 +139,24 @@ function parseAppearanceByVault(value: unknown): Record<string, VaultAppearanceS
   return appearanceByVault;
 }
 
+function parsePluginsByVault(value: unknown): Record<string, VaultPluginSettings> {
+  if (!isRecord(value)) {
+    throw new Error("Settings pluginsByVault must be an object.");
+  }
+  const entries = Object.entries(value);
+  if (entries.length > 128) {
+    throw new Error("Settings contain plugin preferences for too many vaults.");
+  }
+  const pluginsByVault: Record<string, VaultPluginSettings> = {};
+  for (const [vaultId, plugins] of entries) {
+    if (!vaultIdPattern.test(vaultId)) {
+      throw new Error("Plugin preferences require lowercase SHA-256 vault identities.");
+    }
+    pluginsByVault[vaultId] = parseVaultPluginSettings(plugins);
+  }
+  return pluginsByVault;
+}
+
 function normalizeKey(value: string): string {
   const trimmed = eventKeyNames[value.trim()] ?? value.trim();
   if (/^[a-z0-9]$/i.test(trimmed)) {
@@ -179,16 +203,21 @@ export function normalizeKeyBinding(value: string): string {
 }
 
 export function createDefaultAppSettings(): AppSettings {
-  return { version: 2, keyBindings: { ...defaultKeyBindings }, appearanceByVault: {} };
+  return {
+    version: 3,
+    keyBindings: { ...defaultKeyBindings },
+    appearanceByVault: {},
+    pluginsByVault: {},
+  };
 }
 
 export function parseAppSettings(value: unknown): AppSettings {
   if (
     !isRecord(value) ||
-    (value.version !== 1 && value.version !== 2) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
     !isRecord(value.keyBindings)
   ) {
-    throw new Error("Settings must contain version 1 or 2 and a keyBindings object.");
+    throw new Error("Settings must contain version 1, 2, or 3 and a keyBindings object.");
   }
   const entries = Object.entries(value.keyBindings);
   if (entries.length > 512) {
@@ -207,7 +236,8 @@ export function parseAppSettings(value: unknown): AppSettings {
   assertNoKeyBindingCollisions(keyBindings);
   const appearanceByVault =
     value.version === 1 ? {} : parseAppearanceByVault(value.appearanceByVault);
-  return { version: 2, keyBindings, appearanceByVault };
+  const pluginsByVault = value.version === 3 ? parsePluginsByVault(value.pluginsByVault) : {};
+  return { version: 3, keyBindings, appearanceByVault, pluginsByVault };
 }
 
 export function isShortcutTargetId(value: string): value is ShortcutTargetId {
@@ -254,6 +284,34 @@ export function updateVaultAppearance(
     ...settings,
     appearanceByVault: {
       ...settings.appearanceByVault,
+      [vaultId]: normalized,
+    },
+  };
+}
+
+export function pluginsForVault(settings: AppSettings, vaultId: string): VaultPluginSettings {
+  const plugins = settings.pluginsByVault[vaultId];
+  return plugins
+    ? {
+        compatibilityMode: plugins.compatibilityMode,
+        enabledPluginIds: [...plugins.enabledPluginIds],
+      }
+    : createDefaultVaultPluginSettings();
+}
+
+export function updateVaultPlugins(
+  settings: AppSettings,
+  vaultId: string,
+  plugins: VaultPluginSettings,
+): AppSettings {
+  if (!vaultIdPattern.test(vaultId)) {
+    throw new Error("Plugin preferences require lowercase SHA-256 vault identities.");
+  }
+  const normalized = parseVaultPluginSettings(plugins);
+  return {
+    ...settings,
+    pluginsByVault: {
+      ...settings.pluginsByVault,
       [vaultId]: normalized,
     },
   };

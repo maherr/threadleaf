@@ -1,12 +1,18 @@
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
 import { AppSettingsController } from "../application/app-settings-controller";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
 import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared/appearance";
+import type { PluginUpdateResponse } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
+import {
+  type CompatibilityMode,
+  compatibilityModes,
+  type PluginCatalogResponse,
+  parsePluginId,
+} from "../shared/plugins";
 import {
   readDevelopmentPickerOverride,
   readDevelopmentVaultPath,
@@ -15,15 +21,12 @@ import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { loadVaultAppearance } from "./vault-appearance-loader";
+import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
-
-function fixturePluginDirectory(vaultPath: string): string | undefined {
-  const pluginPath = join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture");
-  return existsSync(join(pluginPath, "manifest.json")) ? pluginPath : undefined;
-}
+let pluginOperationTail: Promise<void> = Promise.resolve();
 
 function describeVaultOpenFailure(error: unknown): string {
   const code =
@@ -39,6 +42,19 @@ function appearanceSafeMode(): boolean {
   return (
     process.argv.includes("--safe-appearance") || process.env.THREADLEAF_SAFE_APPEARANCE === "1"
   );
+}
+
+function pluginSafeMode(): boolean {
+  return process.argv.includes("--safe-plugins") || process.env.THREADLEAF_SAFE_PLUGINS === "1";
+}
+
+function serializePluginOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = pluginOperationTail.then(operation, operation);
+  pluginOperationTail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 
 async function currentAppearance(expectedVaultId: string): Promise<AppearanceResponse> {
@@ -61,24 +77,104 @@ async function currentAppearance(expectedVaultId: string): Promise<AppearanceRes
   return { status: "ready", appearance };
 }
 
+async function currentPluginCatalog(expectedVaultId: string): Promise<PluginCatalogResponse> {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId };
+  }
+  const vaultPath = workspaceController.vaultPath;
+  const catalog = await loadVaultPluginCatalog({
+    vaultPath,
+    vaultId: expectedVaultId,
+    preference: settingsController.getVaultPlugins(expectedVaultId),
+    safeMode: pluginSafeMode(),
+  });
+  if (
+    workspaceController.vaultId !== expectedVaultId ||
+    workspaceController.vaultPath !== vaultPath
+  ) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId };
+  }
+  return { status: "ready", catalog };
+}
+
+async function reconcileCompatibilityPlugins(expectedVaultId: string, forceReload = false) {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    throw new Error("The active vault changed before plugin reconciliation.");
+  }
+  const vaultPath = workspaceController.vaultPath;
+  const preference = settingsController.getVaultPlugins(expectedVaultId);
+  const discovery = await discoverVaultPlugins(vaultPath);
+  const packagesById = new Map(discovery.plugins.map((plugin) => [plugin.summary.id, plugin]));
+  const pluginsAllowed = preference.compatibilityMode === "enabled" && !pluginSafeMode();
+  const targetIds = new Set(
+    pluginsAllowed
+      ? preference.enabledPluginIds.filter(
+          (pluginId) => packagesById.get(pluginId)?.summary.packageState === "ready",
+        )
+      : [],
+  );
+
+  let snapshot = await workspaceController.getSnapshot();
+  const runtimePlugins = snapshot.plugins ?? (snapshot.plugin ? [snapshot.plugin] : []);
+  for (const plugin of runtimePlugins) {
+    if (!targetIds.has(plugin.id) && plugin.state !== "unloaded") {
+      snapshot = await workspaceController.unloadPlugin(plugin.id);
+    }
+  }
+
+  for (const pluginId of preference.enabledPluginIds) {
+    if (!targetIds.has(pluginId)) {
+      continue;
+    }
+    const installed = packagesById.get(pluginId);
+    if (!installed) {
+      continue;
+    }
+    const runtimePlugin = (snapshot.plugins ?? []).find((plugin) => plugin.id === pluginId);
+    if (!forceReload && runtimePlugin?.state === "loaded") {
+      continue;
+    }
+    try {
+      snapshot = await workspaceController.loadPlugin(installed.directoryPath);
+    } catch {
+      snapshot = await workspaceController.getSnapshot();
+    }
+  }
+
+  if (
+    workspaceController.vaultId !== expectedVaultId ||
+    workspaceController.vaultPath !== vaultPath
+  ) {
+    throw new Error("The active vault changed during plugin reconciliation.");
+  }
+  return snapshot;
+}
+
+async function pluginUpdateResponse(
+  expectedVaultId: string,
+  settings: ReturnType<AppSettingsController["getSnapshot"]>,
+  forceReload = false,
+): Promise<PluginUpdateResponse> {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId };
+  }
+  const snapshot = await reconcileCompatibilityPlugins(expectedVaultId, forceReload);
+  const response = await currentPluginCatalog(expectedVaultId);
+  return response.status === "ready"
+    ? { status: "updated", settings, catalog: response.catalog, snapshot }
+    : response;
+}
+
 async function createWorkspaceController(): Promise<WorkspaceController> {
   const configuredPath = readDevelopmentVaultPath(app.isPackaged, process.env);
   const fixtureVaultPath = join(app.getAppPath(), "fixtures", "vaults", "basic");
-  const fixturePlugin = fixturePluginDirectory(fixtureVaultPath);
-  const configuredPlugin = configuredPath ? fixturePluginDirectory(configuredPath) : undefined;
   const userDataPath = app.getPath("userData");
   return WorkspaceController.open({
     fixtureVaultPath,
-    ...(fixturePlugin ? { fixturePluginDirectory: fixturePlugin } : {}),
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
     workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
-    ...(configuredPath
-      ? {
-          configuredVaultPath: configuredPath,
-          ...(configuredPlugin ? { configuredPluginDirectory: configuredPlugin } : {}),
-        }
-      : {}),
+    ...(configuredPath ? { configuredVaultPath: configuredPath } : {}),
   });
 }
 
@@ -108,6 +204,77 @@ function registerIpcHandlers(): void {
         : response;
     },
   );
+  ipcMain.handle(ipcChannels.plugins, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Plugin catalog loading requires a string vault identity.");
+    }
+    return serializePluginOperation(() => currentPluginCatalog(expectedVaultId));
+  });
+  ipcMain.handle(
+    ipcChannels.setCompatibilityMode,
+    (_event, expectedVaultId: unknown, mode: unknown) => {
+      if (
+        typeof expectedVaultId !== "string" ||
+        typeof mode !== "string" ||
+        !compatibilityModes.includes(mode as CompatibilityMode)
+      ) {
+        throw new Error("Compatibility mode requires a vault identity and restricted or enabled.");
+      }
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const current = settingsController.getVaultPlugins(expectedVaultId);
+        const settings = await settingsController.setVaultPlugins(expectedVaultId, {
+          ...current,
+          compatibilityMode: mode as CompatibilityMode,
+        });
+        return pluginUpdateResponse(expectedVaultId, settings);
+      });
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.setPluginEnabled,
+    (_event, expectedVaultId: unknown, pluginIdValue: unknown, enabled: unknown) => {
+      if (
+        typeof expectedVaultId !== "string" ||
+        typeof pluginIdValue !== "string" ||
+        typeof enabled !== "boolean"
+      ) {
+        throw new Error("Plugin enablement requires string vault and plugin values and a boolean.");
+      }
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const pluginId = parsePluginId(pluginIdValue);
+        if (enabled) {
+          const discovery = await discoverVaultPlugins(workspaceController.vaultPath);
+          const plugin = discovery.plugins.find((candidate) => candidate.summary.id === pluginId);
+          if (plugin?.summary.packageState !== "ready") {
+            throw new Error(`Plugin ${pluginId} is not installed as a valid package.`);
+          }
+        }
+        const current = settingsController.getVaultPlugins(expectedVaultId);
+        const enabledPluginIds = enabled
+          ? [...new Set([...current.enabledPluginIds, pluginId])]
+          : current.enabledPluginIds.filter((candidate) => candidate !== pluginId);
+        const settings = await settingsController.setVaultPlugins(expectedVaultId, {
+          ...current,
+          enabledPluginIds,
+        });
+        return pluginUpdateResponse(expectedVaultId, settings);
+      });
+    },
+  );
+  ipcMain.handle(ipcChannels.reloadPlugins, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Plugin reload requires a string vault identity.");
+    }
+    return serializePluginOperation(() =>
+      pluginUpdateResponse(expectedVaultId, settingsController.getSnapshot(), true),
+    );
+  });
   ipcMain.handle(ipcChannels.searchVault, (_event, query: unknown) => {
     if (typeof query !== "string") {
       throw new Error("Vault search requires a string query.");
@@ -162,7 +329,10 @@ function registerIpcHandlers(): void {
     try {
       return {
         status: "opened",
-        snapshot: await workspaceController.switchVault(selectedPath),
+        snapshot: await serializePluginOperation(async () => {
+          const opened = await workspaceController.switchVault(selectedPath);
+          return reconcileCompatibilityPlugins(opened.vault.id ?? workspaceController.vaultId);
+        }),
       } as const;
     } catch (error) {
       return {
@@ -266,8 +436,18 @@ function registerIpcHandlers(): void {
     }
     return workspaceController.runPluginCommand(commandId);
   });
-  ipcMain.handle(ipcChannels.reloadPlugin, () => workspaceController.reloadPlugin());
-  ipcMain.handle(ipcChannels.unloadPlugin, () => workspaceController.unloadPlugin());
+  ipcMain.handle(ipcChannels.reloadPlugin, (_event, pluginId: unknown) => {
+    if (pluginId !== undefined && typeof pluginId !== "string") {
+      throw new Error("Plugin reload requires an optional string identifier.");
+    }
+    return serializePluginOperation(() => workspaceController.reloadPlugin(pluginId));
+  });
+  ipcMain.handle(ipcChannels.unloadPlugin, (_event, pluginId: unknown) => {
+    if (pluginId !== undefined && typeof pluginId !== "string") {
+      throw new Error("Plugin unload requires an optional string identifier.");
+    }
+    return serializePluginOperation(() => workspaceController.unloadPlugin(pluginId));
+  });
   workspaceController.onSnapshot((snapshot) => {
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(ipcChannels.snapshotChanged, snapshot);
@@ -306,6 +486,7 @@ app.whenReady().then(async () => {
     new FileAppSettingsStore(join(app.getPath("userData"), "settings.json")),
   );
   workspaceController = await createWorkspaceController();
+  await serializePluginOperation(() => reconcileCompatibilityPlugins(workspaceController.vaultId));
   registerIpcHandlers();
   await createWindow();
 

@@ -93,6 +93,16 @@ applied under the renderer content-security policy. Missing or invalid selection
 default appearance with visible diagnostics. A startup safe mode and a recovery shortcut disable
 custom CSS without preventing catalog inspection.
 
+Community-plugin management now discovers standard `.obsidian/plugins/<id>/manifest.json`,
+`main.js`, and optional `styles.css` packages through bounded, path-contained reads. Threadleaf
+keeps its enabled set and restricted-mode choice in private per-vault application settings, never
+in `.obsidian/`. Multiple selected plugins reconcile independently at startup and after enable,
+disable, or reload operations. A full Settings catalog reports invalid packages and runtime load
+failures without hiding the rest of the inventory. Startup plugin safe mode preserves the saved
+selection while loading no community code or CSS. The compatibility host remains an explicitly
+trusted, unsandboxed desktop runtime, and its API is still too small for general plugins such as
+Excalidraw to complete their workflows.
+
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
 or release-grade backup and restore workflow.
@@ -116,6 +126,7 @@ or release-grade backup and restore workflow.
 - [CLI guide](docs/cli.md)
 - [Compatibility contract](docs/compatibility/contract.md)
 - [Theme and CSS compatibility](docs/compatibility/themes.md)
+- [Community plugin compatibility](docs/compatibility/plugins.md)
 - [Roadmap](docs/roadmap.md)
 - [Performance baselines](docs/performance.md)
 - [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
@@ -164,6 +175,12 @@ before the enabled snippets, and exposes an explicit file reload. Ctrl/Cmd+Shift
 scheme. Ctrl/Cmd+Alt+L clears the current vault's custom theme and snippet selection while retaining
 the base scheme. Start with `THREADLEAF_SAFE_APPEARANCE=1` or `--safe-appearance` to suppress all
 custom CSS for that process while keeping the saved selection available for diagnosis.
+
+The Community plugins section discovers installed packages without executing them. Restricted mode
+is the default for a vault with no saved Threadleaf plugin preference. Turn it off, then enable only
+packages you trust. Threadleaf persists that selection outside the vault and reloads it on the next
+start. Start with `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins` to suppress every community plugin
+bundle and stylesheet for that process while keeping the catalog and saved selection visible.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

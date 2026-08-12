@@ -135,12 +135,14 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       supported method, event, component, and lifecycle edge.
 - [ ] Add workspace views, Markdown processors, menus, ribbons, status items, modal and setting
       components, plugin settings views, and CodeMirror editor extensions.
-- [ ] Discover `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` through
+- [x] Discover `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` through
       contained bounded reads, with deterministic identity and explicit invalid-package evidence.
-- [ ] Keep Threadleaf's enabled-plugin set and grants in private per-vault settings while reading
-      existing Obsidian configuration only through an explicit migration preview.
-- [ ] Implement enable, disable, reload, startup safe mode, activation timeouts, crash attribution,
-      lifecycle diagnostics, and clean unload for every discovered compatibility plugin.
+- [x] Keep Threadleaf's enabled-plugin set in private per-vault settings without treating existing
+      Obsidian configuration as authority.
+- [ ] Add capability grants and an explicit migration preview for existing plugin enablement.
+- [x] Implement enable, disable, reload, startup safe mode, lifecycle diagnostics, independent
+      failure retention, and clean unload for every discovered compatibility plugin.
+- [ ] Add activation timeouts, process isolation, crash attribution, and per-plugin resource budgets.
 - [ ] Implement reviewable install, update, rollback, and uninstall against an open package index,
       with exact version pins, integrity checks, retained licenses, and no silent bundle execution.
 - [ ] Add dependency, minimum-app-version, desktop-only, and compatibility-level reporting before a

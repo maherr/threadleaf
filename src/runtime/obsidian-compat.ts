@@ -11,6 +11,7 @@ export interface PluginManifest {
   minAppVersion?: string;
   description?: string;
   author?: string;
+  authorUrl?: string;
   isDesktopOnly?: boolean;
 }
 
@@ -138,7 +139,7 @@ export class CommandRegistry {
 
   list(): CommandSummary[] {
     return [...this.commands.values()]
-      .map(({ id, name }) => ({ id, name }))
+      .map(({ id, name, ownerId }) => ({ id, name, ownerId }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
@@ -150,6 +151,10 @@ export class CommandRegistry {
 
     await this.actions.dispatch(commandId);
     return true;
+  }
+
+  ownerIdFor(commandId: string): string | null {
+    return this.commands.get(commandId)?.ownerId ?? null;
   }
 }
 
@@ -207,13 +212,22 @@ export class Plugin {
   }
 
   async __unload(): Promise<void> {
+    let failure: { error: unknown } | null = null;
     try {
       await this.onunload();
-    } finally {
-      for (const dispose of this.registrations.reverse()) {
+    } catch (error) {
+      failure = { error };
+    }
+    for (const dispose of [...this.registrations].reverse()) {
+      try {
         dispose();
+      } catch (error) {
+        failure ??= { error };
       }
-      this.registrations.length = 0;
+    }
+    this.registrations.length = 0;
+    if (failure) {
+      throw failure.error;
     }
   }
 }

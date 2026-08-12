@@ -62,9 +62,11 @@ fails, Threadleaf closes the candidate and leaves the current runtime active.
 
 The selection document lives in the operating system's application-data directory, outside every
 vault. It is written atomically with private file permissions and a versioned shape. On startup,
-Threadleaf restores that path without automatically loading compatibility plugins. An unavailable
-or malformed saved selection falls back to the bundled fixture with a visible warning and does not
-erase the saved path, so a temporarily unmounted vault can recover on a later launch.
+Threadleaf restores that path and then reconciles only the plugins explicitly selected in
+Threadleaf's private per-vault settings. A vault with no saved plugin preference starts restricted.
+An unavailable or malformed saved selection falls back to the bundled fixture with a visible
+warning and does not erase the saved path, so a temporarily unmounted vault can recover on a later
+launch.
 
 Every editor draft carries the identity of the vault that produced its revision. The save boundary
 rejects a draft after the active vault changes, even if a relative note path happens to exist in
@@ -124,8 +126,8 @@ Threadleaf treats a vault's Obsidian theme and snippet folders as read-only comp
 The main process discovers `.obsidian/themes/<folder>/theme.css` plus optional `manifest.json`
 metadata and `.obsidian/snippets/*.css`. It never uses those directories for Threadleaf state.
 Per-vault color scheme, theme ID, and ordered snippet IDs live in the versioned application settings
-document under a SHA-256 vault identity. Version 1 settings migrate to version 2 with an empty
-appearance map.
+document under a SHA-256 vault identity. Version 1 and 2 settings migrate to version 3 with empty
+maps for any settings surface they predate.
 
 The loader resolves real paths and requires every theme, manifest, and snippet to remain inside its
 expected vault directory. Theme CSS is limited to 2 MiB, each snippet to 512 KiB, each manifest to
@@ -145,6 +147,31 @@ rest of the workspace usable.
 Discovery is explicit in this phase. The user reloads changed files from Settings or the command
 palette; a future watcher must preserve the same containment, stale-vault, diagnostics, and safe
 mode boundaries. See the [theme compatibility contract](compatibility/themes.md).
+
+### Community plugin lifecycle boundary
+
+Threadleaf treats `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` as
+read-only compatibility input. Discovery validates identity, UTF-8 text, file type, realpath
+containment, and byte limits before a package is eligible to run. Installed inventory does not
+imply enablement. The enabled IDs and restricted-mode choice live in version 3 private application
+settings under the vault identity.
+
+The main process serializes catalog and lifecycle operations so activation cannot race a vault
+switch or another enablement change. Reconciliation unloads runtime instances that are no longer
+selected, then activates each remaining selected package independently. One activation failure is
+retained as diagnostic state and does not prevent later packages from loading. Reload performs a
+clean unload before activation. Workspace shutdown unloads every instance.
+
+Plugin CSS crosses a separately bounded and CSP-constrained renderer channel. It is applied only
+for selected packages while compatibility mode is enabled. `THREADLEAF_SAFE_PLUGINS=1` and
+`--safe-plugins` suppress both JavaScript and CSS without changing saved settings. Safe mode and
+restricted mode remain distinct: safe mode is a process recovery boundary, while restricted mode
+is a persisted vault preference.
+
+The current CommonJS host is a trusted compatibility runtime, not a security sandbox. It exposes
+only the independently implemented API surface backed by executable fixtures. Installed plugins
+outside that surface can fail during activation and are not claimed compatible merely because
+discovery succeeds. See the [community plugin compatibility contract](compatibility/plugins.md).
 
 ### Watcher and index model
 
@@ -422,7 +449,7 @@ Compatibility module ---> trusted community plugin
 Capability host ---> native Threadleaf extension
 ```
 
-## Phase 0 boundaries
+## Historical Phase 0 boundaries
 
 - Synthetic fixture vault only.
 - Read-only vault access.

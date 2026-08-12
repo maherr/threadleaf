@@ -217,11 +217,19 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return this.#snapshot;
   }
 
+  async loadPlugin(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
   async reloadPlugin(): Promise<RuntimeSnapshot> {
     return this.#snapshot;
   }
 
   async unloadPlugin(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async unloadAllPlugins(): Promise<RuntimeSnapshot> {
     return this.#snapshot;
   }
 

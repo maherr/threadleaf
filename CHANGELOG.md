@@ -101,3 +101,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   grep-style `search:context` command, backed by the same bounded rebuildable index.
 - Graph and outline CLI totals, backlink and unresolved counts, verbose unresolved sources,
   JSON/TSV/CSV output, and tree/Markdown/JSON outline formats with deterministic empty output.
+- Read-only discovery of standard vault community-plugin packages with bounded manifests, bundles,
+  and stylesheets, realpath containment, deterministic catalogs, and invalid-package diagnostics.
+- Version 3 private per-vault plugin preferences with restricted mode by default, explicit trusted
+  enablement, immutable settings helpers, atomic persistence, and version 1 and 2 migrations.
+- Multiple independent compatibility-plugin lifecycles with startup reconciliation, targeted and
+  bulk reload, clean unload, retained activation failures, and one plugin failing without hiding or
+  blocking the rest of the runtime inventory.
+- Community-plugin Settings with installed-package search, runtime and package status, enable
+  switches, recovery diagnostics, familiar normalized desktop geometry, small-window behavior,
+  keyboard names and focus, and verified light, dark, and moderate-deuteranomaly states.
+- Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the
+  private selected set while loading no community JavaScript or CSS.

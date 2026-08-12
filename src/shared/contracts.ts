@@ -1,11 +1,21 @@
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
+import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 
 export type AppearanceUpdateResponse =
   | {
       status: "updated";
       settings: AppSettingsSnapshot;
       appearance: AppearanceSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type PluginUpdateResponse =
+  | {
+      status: "updated";
+      settings: AppSettingsSnapshot;
+      catalog: PluginCatalogSnapshot;
+      snapshot: RuntimeSnapshot;
     }
   | { status: "stale-vault"; vaultId: string };
 
@@ -22,6 +32,7 @@ export interface RuntimeEvent {
 export interface CommandSummary {
   id: string;
   name: string;
+  ownerId: string;
 }
 
 export interface ActionSummary {
@@ -37,6 +48,7 @@ export interface PluginSummary {
   state: PluginRuntimeState;
   compatibilityLevel: 0 | 1 | 2 | 3 | 4;
   stylesheetDiscovered: boolean;
+  error: string | null;
 }
 
 export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
@@ -52,6 +64,7 @@ export interface RuntimeSnapshot {
     warning: string | null;
   };
   plugin: PluginSummary | null;
+  plugins?: PluginSummary[];
   commands: CommandSummary[];
   actions: ActionSummary[];
   notices: string[];
@@ -300,6 +313,17 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
     appearance: VaultAppearanceSettings,
   ): Promise<AppearanceUpdateResponse>;
+  getPlugins(expectedVaultId: string): Promise<PluginCatalogResponse>;
+  setCompatibilityMode(
+    expectedVaultId: string,
+    mode: CompatibilityMode,
+  ): Promise<PluginUpdateResponse>;
+  setPluginEnabled(
+    expectedVaultId: string,
+    pluginId: string,
+    enabled: boolean,
+  ): Promise<PluginUpdateResponse>;
+  reloadPlugins(expectedVaultId: string): Promise<PluginUpdateResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   loadVaultImage(
     sourceNotePath: string,
@@ -310,8 +334,8 @@ export interface ThreadleafBridge {
   resetKeyBindings(): Promise<AppSettingsSnapshot>;
   chooseVault(): Promise<VaultOpenResponse>;
   runCommand(commandId: string): Promise<RuntimeSnapshot>;
-  reloadPlugin(): Promise<RuntimeSnapshot>;
-  unloadPlugin(): Promise<RuntimeSnapshot>;
+  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
+  unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   openNote(path: string): Promise<RuntimeSnapshot>;
   closeNote(path: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
   moveNote(
