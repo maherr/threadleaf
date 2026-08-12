@@ -166,3 +166,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Contained `Vault.getResourcePath` and read-only desktop `FileSystemAdapter` compatibility,
   including exact binary reads, hidden-file reads, internal-symlink support, external-symlink
   rejection, file URL helpers used by Excalidraw, and byte-exact public Base64 and hex codecs.
+- Public `prepareFuzzySearch` with deterministic higher-is-better scoring and UTF-16 highlight
+  ranges, plus DOM and string `htmlToMarkdown` conversion backed by the MIT-licensed Turndown
+  library, both exercised through the unchanged CommonJS plugin bridge.

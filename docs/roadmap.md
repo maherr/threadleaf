@@ -182,6 +182,8 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [x] Provide contained vault resource URLs, Excalidraw's desktop adapter URL fields, a bounded
       read-only adapter surface, and byte-exact public binary codecs, including internal and
       external symlink fixtures.
+- [x] Provide deterministic fuzzy-search scores and highlight ranges plus FOSS-backed HTML-to-
+      Markdown conversion through the CommonJS compatibility module.
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
   - [x] Preserve exact Markdown, PNG, and SVG bytes through Threadleaf plugin writes, attachment

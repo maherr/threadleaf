@@ -70,7 +70,7 @@ describe("PluginRendererService", () => {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { FileSystemAdapter, MarkdownRenderer, Notice, Plugin, PluginSettingTab, Setting, TextFileView, WorkspaceSplit, arrayBufferToBase64, base64ToArrayBuffer, moment } = require("obsidian");
+        `const { FileSystemAdapter, MarkdownRenderer, Notice, Plugin, PluginSettingTab, Setting, TextFileView, WorkspaceSplit, arrayBufferToBase64, base64ToArrayBuffer, htmlToMarkdown, moment, prepareFuzzySearch } = require("obsidian");
 class RendererView extends TextFileView {
   constructor(leaf) {
     super(leaf);
@@ -96,6 +96,8 @@ module.exports = class RendererFixture extends Plugin {
     const canvasFile = this.app.vault.getFileByPath("Canvas.drawing");
     if (!this.app.vault.getResourcePath(canvasFile).startsWith("file:")) throw new Error("Resource URL missing");
     if (arrayBufferToBase64(base64ToArrayBuffer("AAH/")) !== "AAH/") throw new Error("Binary codec mismatch");
+    if (htmlToMarkdown("<h2>Renderer</h2>") !== "## Renderer") throw new Error("HTML conversion mismatch");
+    if (JSON.stringify(prepareFuzzySearch("rdr")("Renderer")?.matches) !== JSON.stringify([[0,1],[3,4],[5,6]])) throw new Error("Fuzzy search mismatch");
     if (this.app.vault.getConfig("propertiesInDocument") !== undefined) throw new Error("Unexpected compatibility config");
     this.addRibbonIcon("leaf", "Renderer action", () => new Notice("Renderer action ran."));
     this.addCommand({ id: "renderer-command", name: "Superseded command", callback: () => new Notice("Superseded command ran.") });

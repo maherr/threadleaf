@@ -10,6 +10,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import MarkdownIt from "markdown-it";
 import moment from "moment";
+import TurndownService from "turndown";
 import { parse as parseYaml } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
@@ -185,6 +186,13 @@ export interface AdapterStat {
   ctime: number;
   mtime: number;
   size: number;
+}
+
+export type SearchMatchPart = [number, number];
+
+export interface SearchResult {
+  score: number;
+  matches: SearchMatchPart[];
 }
 
 export class FileSystemAdapter {
@@ -1531,6 +1539,7 @@ export interface ObsidianCompatibilityModule {
   FileView: typeof FileView;
   FuzzySuggestModal: typeof FuzzySuggestModal;
   getLanguage: typeof getLanguage;
+  htmlToMarkdown: typeof htmlToMarkdown;
   ItemView: typeof ItemView;
   Keymap: typeof Keymap;
   MarkdownView: typeof MarkdownView;
@@ -1566,6 +1575,7 @@ export interface ObsidianCompatibilityModule {
   getIcon(id: string): SVGSVGElement | null;
   normalizePath(filePath: string): string;
   parseFrontMatterEntry: typeof parseFrontMatterEntry;
+  prepareFuzzySearch: typeof prepareFuzzySearch;
   requireApiVersion(version: string): boolean;
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
@@ -1583,6 +1593,159 @@ export function arrayBufferToHex(buffer: ArrayBuffer): string {
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const bytes = Buffer.from(base64, "base64");
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+const htmlMarkdownConverter = new TurndownService({
+  bulletListMarker: "-",
+  codeBlockStyle: "fenced",
+  emDelimiter: "*",
+  headingStyle: "atx",
+  strongDelimiter: "**",
+});
+
+export function htmlToMarkdown(html: string | HTMLElement | Document | DocumentFragment): string {
+  return htmlMarkdownConverter.turndown(html);
+}
+
+interface FuzzyCharacter {
+  end: number;
+  folded: string;
+  start: number;
+  value: string;
+}
+
+function fuzzyCharacters(value: string): FuzzyCharacter[] {
+  const characters: FuzzyCharacter[] = [];
+  let offset = 0;
+  for (const character of value) {
+    const end = offset + character.length;
+    characters.push({
+      start: offset,
+      end,
+      folded: character.toLocaleLowerCase("en-US"),
+      value: character,
+    });
+    offset = end;
+  }
+  return characters;
+}
+
+function isFuzzyWordCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}]/u.test(character);
+}
+
+function fuzzyScore(
+  query: readonly FuzzyCharacter[],
+  target: readonly FuzzyCharacter[],
+  matchedIndexes: readonly number[],
+): number {
+  let score = query.length * 100 - target.length;
+  for (let index = 0; index < matchedIndexes.length; index += 1) {
+    const targetIndex = matchedIndexes[index];
+    if (targetIndex === undefined) {
+      continue;
+    }
+    const targetCharacter = target[targetIndex];
+    const queryCharacter = query[index];
+    if (!targetCharacter || !queryCharacter) {
+      continue;
+    }
+    const previousTarget = target[targetIndex - 1];
+    const atBoundary =
+      targetIndex === 0 ||
+      !isFuzzyWordCharacter(previousTarget?.value) ||
+      (previousTarget?.value === previousTarget?.value.toLocaleLowerCase("en-US") &&
+        targetCharacter.value !== targetCharacter.value.toLocaleLowerCase("en-US"));
+    if (atBoundary) {
+      score += 35;
+    }
+    if (targetCharacter.value === queryCharacter.value) {
+      score += 5;
+    }
+    const previousMatchIndex = matchedIndexes[index - 1];
+    if (previousMatchIndex === undefined) {
+      score -= targetCharacter.start * 2;
+      continue;
+    }
+    const previousMatch = target[previousMatchIndex];
+    if (!previousMatch) {
+      continue;
+    }
+    const gap = targetCharacter.start - previousMatch.end;
+    score += gap === 0 ? 60 : -Math.min(gap, 30) * 2;
+  }
+  if (query.length === target.length) {
+    score += 1_000;
+  }
+  return score;
+}
+
+function fuzzyRanges(
+  target: readonly FuzzyCharacter[],
+  matchedIndexes: readonly number[],
+): SearchMatchPart[] {
+  const ranges: SearchMatchPart[] = [];
+  for (const matchedIndex of matchedIndexes) {
+    const character = target[matchedIndex];
+    if (!character) {
+      continue;
+    }
+    const previous = ranges.at(-1);
+    if (previous && previous[1] === character.start) {
+      previous[1] = character.end;
+    } else {
+      ranges.push([character.start, character.end]);
+    }
+  }
+  return ranges;
+}
+
+export function prepareFuzzySearch(query: string): (text: string) => SearchResult | null {
+  const queryCharacters = fuzzyCharacters(query.trim());
+  if (queryCharacters.length === 0) {
+    return () => ({ score: 0, matches: [] });
+  }
+
+  return (text: string): SearchResult | null => {
+    const targetCharacters = fuzzyCharacters(text);
+    let best: SearchResult | null = null;
+    const firstQueryCharacter = queryCharacters[0];
+    if (!firstQueryCharacter) {
+      return { score: 0, matches: [] };
+    }
+    for (let startIndex = 0; startIndex < targetCharacters.length; startIndex += 1) {
+      if (targetCharacters[startIndex]?.folded !== firstQueryCharacter.folded) {
+        continue;
+      }
+      const matchedIndexes = [startIndex];
+      let targetIndex = startIndex + 1;
+      for (let queryIndex = 1; queryIndex < queryCharacters.length; queryIndex += 1) {
+        const queryCharacter = queryCharacters[queryIndex];
+        while (
+          targetIndex < targetCharacters.length &&
+          targetCharacters[targetIndex]?.folded !== queryCharacter?.folded
+        ) {
+          targetIndex += 1;
+        }
+        if (targetIndex >= targetCharacters.length) {
+          break;
+        }
+        matchedIndexes.push(targetIndex);
+        targetIndex += 1;
+      }
+      if (matchedIndexes.length !== queryCharacters.length) {
+        continue;
+      }
+      const candidate = {
+        score: fuzzyScore(queryCharacters, targetCharacters, matchedIndexes),
+        matches: fuzzyRanges(targetCharacters, matchedIndexes),
+      };
+      if (!best || candidate.score > best.score) {
+        best = candidate;
+      }
+    }
+    return best;
+  };
 }
 
 export function getLanguage(): string {
@@ -1715,8 +1878,10 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     addIcon,
     getIcon,
     getLanguage,
+    htmlToMarkdown,
     normalizePath,
     parseFrontMatterEntry,
+    prepareFuzzySearch,
     requireApiVersion: () => true,
     sanitizeHTMLToDom,
     setIcon,

@@ -59,6 +59,12 @@ ownership of Obsidian's private configuration. In the production Electron render
 loaded the corpus's real 58,472-byte Excalidraw PNG through this resource URL and reported its exact
 803 by 549 dimensions while the adapter independently returned all 58,472 bytes.
 
+The public utility bridge also provides `prepareFuzzySearch`, returning higher-is-better scores and
+UTF-16 `[start, end)` highlight ranges for case-insensitive subsequence matches, plus
+`htmlToMarkdown` for strings, elements, documents, and fragments. HTML conversion uses the
+MIT-licensed Turndown 7.2.4 library instead of a lossy one-off converter. Synthetic CommonJS
+plugin activation exercises both exports; exact private Obsidian scoring constants are not claimed.
+
 ## Trust model
 
 Existing community bundles run in the trusted desktop compatibility runtime. This is not a
@@ -128,6 +134,7 @@ starting normally restores the persisted preference.
 - An explicit import preview for existing enabled-plugin inventory, settings, hotkeys, and layout.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
-- Broader workspace, editor, menu, settings-control, adapter-mutation, file, and metadata APIs.
+- Broader workspace, editor, menu, settings-control, conversion, adapter-mutation, file, and
+  metadata APIs.
 - Complete Excalidraw inline wiki-embed, remaining export-format, and cross-application
   byte-preservation workflows.
