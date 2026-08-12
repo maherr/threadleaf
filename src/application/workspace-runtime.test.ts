@@ -128,12 +128,13 @@ describe("WorkspaceRuntime", () => {
 
   it("composes the kernel, metadata, shared actions, and compatibility host", async () => {
     const workspace = await openRuntime();
+    const canonicalVaultPath = await fs.realpath(vaultPath);
 
     const initial = await workspace.getSnapshot();
 
     expect(initial.vault).toMatchObject({
       name: "vault",
-      path: vaultPath,
+      path: canonicalVaultPath,
       markdownFileCount: 2,
       mode: "kernel-backed",
       source: "direct",

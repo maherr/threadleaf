@@ -88,6 +88,8 @@ describe("Obsidian compatibility vault writes", () => {
     await fs.writeFile(absolutePath, bytes);
     await fs.writeFile(path.join(rootPath, ".obsidian", "appearance.json"), "{}", "utf8");
     const vault = new Vault(rootPath);
+    const canonicalRootPath = await fs.realpath(rootPath);
+    const canonicalAbsolutePath = path.join(canonicalRootPath, relativePath);
     const file = vault.getFileByPath(relativePath);
     if (!file) {
       throw new Error("Resource fixture was not discovered.");
@@ -95,16 +97,17 @@ describe("Obsidian compatibility vault writes", () => {
 
     expect(vault.adapter).toBeInstanceOf(FileSystemAdapter);
     expect(vault.adapter.getName()).toBe(path.basename(rootPath));
-    expect(vault.adapter.getBasePath()).toBe(rootPath);
-    expect(vault.adapter.basePath).toBe(rootPath);
+    expect(vault.rootPath).toBe(canonicalRootPath);
+    expect(vault.adapter.getBasePath()).toBe(canonicalRootPath);
+    expect(vault.adapter.basePath).toBe(canonicalRootPath);
     expect(vault.adapter.url.pathToFileURL(absolutePath).toString()).toBe(
       pathToFileURL(absolutePath).toString(),
     );
-    expect(vault.getResourcePath(file)).toBe(pathToFileURL(absolutePath).toString());
+    expect(vault.getResourcePath(file)).toBe(pathToFileURL(canonicalAbsolutePath).toString());
     expect(vault.adapter.getResourcePath(relativePath)).toBe(
-      pathToFileURL(absolutePath).toString(),
+      pathToFileURL(canonicalAbsolutePath).toString(),
     );
-    expect(vault.adapter.getFilePath(relativePath)).toBe(absolutePath);
+    expect(vault.adapter.getFilePath(relativePath)).toBe(canonicalAbsolutePath);
     await expect(vault.adapter.exists(relativePath)).resolves.toBe(true);
     await expect(vault.adapter.exists("assets/Résumé image.png", true)).resolves.toBe(false);
     await expect(vault.adapter.exists("Assets/Missing.png")).resolves.toBe(false);
@@ -148,7 +151,7 @@ describe("Obsidian compatibility vault writes", () => {
     }
 
     expect(vault.getResourcePath(insideLink)).toBe(
-      pathToFileURL(path.join(rootPath, "Inside.png")).toString(),
+      pathToFileURL(path.join(vault.rootPath, "Inside.png")).toString(),
     );
     expect(() => vault.getResourcePath(outsideLink)).toThrow("resolves outside the vault");
     await expect(vault.adapter.readBinary("Outside link.png")).rejects.toThrow(

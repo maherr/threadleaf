@@ -328,7 +328,7 @@ export class Vault {
   private readonly revisions = new Map<string, string>();
 
   constructor(rootPath: string, reader?: VaultReadPort, writer?: CompatibilityVaultWritePort) {
-    this.rootPath = path.resolve(rootPath);
+    this.rootPath = realpathSync(path.resolve(rootPath));
     this.#reader = reader;
     this.#writer = writer;
     this.adapter = new FileSystemAdapter(this);

@@ -287,7 +287,7 @@ module.exports = class RendererFixture extends Plugin {
           packageJsonPath: path.resolve("package.json"),
         }),
       );
-      expect(initialized?.vault.path).toBe(path.resolve(vaultPath));
+      expect(initialized?.vault.path).toBe(await fs.realpath(vaultPath));
       expect(dom.window.eval("app.vault.getName()")).toBe("vault");
       expect(dom.window.eval("typeof moment")).toBe("function");
 

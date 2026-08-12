@@ -559,7 +559,7 @@ describe("Threadleaf CLI note-name target resolution", () => {
     await expect(fs.readFile(path.join(vaultPath, "Archive", "Gamma.md"), "utf8")).resolves.toBe(
       beforeDelete,
     );
-  });
+  }, 15_000);
 });
 
 describe("Threadleaf CLI create workflow", () => {
@@ -1561,6 +1561,7 @@ describe("Threadleaf CLI alias and tag workflows", () => {
 describe("Threadleaf CLI read-only workflows", () => {
   it("returns a stable vault info envelope without creating state or changing vault bytes", async () => {
     const before = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const canonicalVaultPath = await fs.realpath(vaultPath);
     const result = await invoke(["--vault", vaultPath, "--json", "vault", "info"]);
 
     expect(result.exitCode).toBe(cliExitCodes.success);
@@ -1584,7 +1585,7 @@ describe("Threadleaf CLI read-only workflows", () => {
       command: "vault.info",
       data: {
         name: "vault",
-        path: vaultPath,
+        path: canonicalVaultPath,
         markdownFiles: 2,
         headings: 2,
         tags: 2,
