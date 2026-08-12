@@ -380,6 +380,146 @@ const fixtureVaultPath = "/fixtures/basic";
 const stateRoot = new FixedStateRoot("/state");
 
 describe("WorkspaceController", () => {
+  it("returns the bundled runtime before a configured vault begins its deferred open", async () => {
+    const store = new MemorySelectionStore("/restored/vault");
+    const harness = runtimeHarness();
+    const pluginRuntimeFactory: PluginRuntimeFactory = async () => {
+      throw new Error("The controller harness should only preserve this factory.");
+    };
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      fixturePluginDirectory: "/fixtures/basic/.obsidian/plugins/fixture",
+      configuredVaultPath: "/configured/vault",
+      configuredPluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+      deferInitialVault: true,
+      pluginRuntimeFactory,
+      runtimeFactory: harness.runtimeFactory,
+    });
+
+    expect(store.loadCount).toBe(0);
+    expect(store.saved).toEqual([]);
+    expect(harness.optionsSeen).toHaveLength(1);
+    expect(harness.optionsSeen[0]).toMatchObject({
+      vaultRoot: fixtureVaultPath,
+      selectionSource: "bundled",
+    });
+    expect(harness.optionsSeen[0]?.pluginDirectory).toBeUndefined();
+    expect(harness.optionsSeen[0]?.pluginRuntimeFactory).toBeUndefined();
+    expect(await controller.getSnapshot()).toMatchObject({
+      vault: { path: path.resolve(fixtureVaultPath), source: "bundled" },
+      startup: {
+        phase: "opening",
+        source: "environment",
+        targetName: "vault",
+        targetPath: "/configured/vault",
+      },
+    });
+    expect(() => controller.searchVault("fixture")).toThrow("vault is still opening");
+    expect(() =>
+      controller.createNote("Bootstrap.md", "must not write", controller.vaultId),
+    ).toThrow("vault is still opening");
+
+    const outcome = await controller.activateDeferredInitialVault();
+
+    expect(outcome).toMatchObject({
+      status: "activated",
+      snapshot: {
+        vault: { path: path.resolve("/configured/vault"), source: "environment" },
+      },
+    });
+    expect(outcome.snapshot?.startup).toBeUndefined();
+    expect(harness.optionsSeen[1]).toMatchObject({
+      vaultRoot: "/configured/vault",
+      selectionSource: "environment",
+      pluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+    });
+    expect(harness.optionsSeen[1]?.pluginRuntimeFactory).toBe(pluginRuntimeFactory);
+    expect(store.saved).toEqual([]);
+    expect(harness.runtimes[0]?.closed).toBe(true);
+    await expect(controller.searchVault("configured")).resolves.toMatchObject({
+      vaultId: controller.vaultId,
+      query: "configured",
+    });
+    await controller.close();
+  });
+
+  it("reports deferred restoration failure without replacing the bundled runtime", async () => {
+    const store = new MemorySelectionStore("/missing/vault");
+    const harness = runtimeHarness(["/missing/vault"]);
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      deferInitialVault: true,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const fixtureRuntime = harness.runtimes[0];
+
+    const outcome = await controller.activateDeferredInitialVault();
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.snapshot).toMatchObject({
+      vault: {
+        path: path.resolve(fixtureVaultPath),
+        source: "bundled",
+        warning: expect.stringContaining("Could not restore /missing/vault"),
+      },
+    });
+    expect(outcome.snapshot?.startup).toBeUndefined();
+    expect(controller.vaultPath).toBe(path.resolve(fixtureVaultPath));
+    expect(fixtureRuntime?.closed).toBe(false);
+    expect(store.saved).toEqual([]);
+    await controller.close();
+  });
+
+  it("does not let a deferred restore replace a vault picked while it was opening", async () => {
+    const store = new MemorySelectionStore("/restored/vault");
+    const optionsSeen: WorkspaceRuntimeOptions[] = [];
+    const runtimes: FakeRuntime[] = [];
+    let releaseRestore: (() => void) | undefined;
+    const restoreGate = new Promise<void>((resolve) => {
+      releaseRestore = resolve;
+    });
+    const runtimeFactory: WorkspaceRuntimeFactory = async (options) => {
+      optionsSeen.push(options);
+      if (path.resolve(options.vaultRoot) === path.resolve("/restored/vault")) {
+        await restoreGate;
+      }
+      const runtime = new FakeRuntime(options);
+      runtimes.push(runtime);
+      return runtime;
+    };
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      deferInitialVault: true,
+      runtimeFactory,
+    });
+
+    const activation = controller.activateDeferredInitialVault();
+    for (let attempt = 0; attempt < 5 && optionsSeen.length < 2; attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(optionsSeen.at(-1)?.vaultRoot).toBe("/restored/vault");
+
+    const picked = await controller.switchVault("/picked/vault");
+    releaseRestore?.();
+    const outcome = await activation;
+
+    expect(picked.vault).toMatchObject({ path: "/picked/vault", source: "picked" });
+    expect(outcome).toEqual({ status: "superseded", snapshot: null });
+    expect(controller.vaultPath).toBe(path.resolve("/picked/vault"));
+    expect(store.saved).toEqual(["/picked/vault"]);
+    const restoredRuntime = runtimes.find(
+      (runtime) => runtime.vaultPath === path.resolve("/restored/vault"),
+    );
+    expect(restoredRuntime?.closed).toBe(true);
+    await controller.close();
+  });
+
   it("gives an explicit environment vault priority without persisting it", async () => {
     const store = new MemorySelectionStore("/restored/vault");
     const harness = runtimeHarness();

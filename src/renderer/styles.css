@@ -317,6 +317,12 @@ button:disabled {
   transform: rotate(45deg);
 }
 
+.status-shape[data-state="opening"] {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 .state-word {
   padding-left: 8px;
   border-left: 1px solid var(--line-strong);

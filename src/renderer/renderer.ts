@@ -499,8 +499,13 @@ function shortcutFor(targetId: ShortcutTargetId): string | null {
   return binding === null ? null : displayKeyBinding(binding, isMac);
 }
 
+function vaultOpening(): boolean {
+  return currentSnapshot?.startup?.phase === "opening";
+}
+
 function commandCatalog(): RendererCommand[] {
-  const tabs = currentSnapshot?.workspace?.tabs ?? [];
+  const opening = vaultOpening();
+  const tabs = opening ? [] : (currentSnapshot?.workspace?.tabs ?? []);
   const commands: RendererCommand[] = [
     {
       id: "workspace.create-note",
@@ -508,12 +513,14 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["new", "file", "markdown", "note"],
       shortcut: shortcutFor("workspace.create-note"),
-      enabled: Boolean(currentSnapshot?.vault.id && !busy && !saving && !dirty),
-      disabledReason: dirty
-        ? "Save or revert the open note before creating another."
-        : currentSnapshot?.vault.id
-          ? "Threadleaf is finishing another action."
-          : "No writable vault is active.",
+      enabled: Boolean(currentSnapshot?.vault.id && !opening && !busy && !saving && !dirty),
+      disabledReason: opening
+        ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
+        : dirty
+          ? "Save or revert the open note before creating another."
+          : currentSnapshot?.vault.id
+            ? "Threadleaf is finishing another action."
+            : "No writable vault is active.",
       run: openNewNoteDialog,
     },
     {
@@ -608,8 +615,10 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["find", "files", "content", "full text", "quick switcher"],
       shortcut: shortcutFor("workspace.focus-note-filter"),
-      enabled: true,
-      disabledReason: null,
+      enabled: !opening,
+      disabledReason: opening
+        ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+        : null,
       run: focusVaultSearch,
     },
     {
@@ -666,10 +675,12 @@ function commandCatalog(): RendererCommand[] {
       category: "Appearance",
       keywords: ["refresh", "rescan", "theme", "snippet", "css"],
       shortcut: shortcutFor("appearance.reload-custom-css"),
-      enabled: Boolean(currentSnapshot?.vault.id && !appearanceBusy),
-      disabledReason: appearanceBusy
-        ? "Threadleaf is applying appearance settings."
-        : "No vault is active.",
+      enabled: Boolean(currentSnapshot?.vault.id && !opening && !appearanceBusy),
+      disabledReason: opening
+        ? "Appearance files become available after the vault opens."
+        : appearanceBusy
+          ? "Threadleaf is applying appearance settings."
+          : "No vault is active.",
       run: () => refreshAppearance("Appearance files reloaded."),
     },
     {
@@ -678,10 +689,12 @@ function commandCatalog(): RendererCommand[] {
       category: "Appearance",
       keywords: ["safe", "reset", "recover", "theme", "snippet", "css"],
       shortcut: shortcutFor("appearance.disable-custom-css"),
-      enabled: Boolean(currentSnapshot?.vault.id && !appearanceBusy),
-      disabledReason: appearanceBusy
-        ? "Threadleaf is applying appearance settings."
-        : "No vault is active.",
+      enabled: Boolean(currentSnapshot?.vault.id && !opening && !appearanceBusy),
+      disabledReason: opening
+        ? "Appearance files become available after the vault opens."
+        : appearanceBusy
+          ? "Threadleaf is applying appearance settings."
+          : "No vault is active.",
       run: disableCustomAppearance,
     },
     {
@@ -705,7 +718,7 @@ function commandCatalog(): RendererCommand[] {
     },
   ];
 
-  for (const command of currentSnapshot?.commands ?? []) {
+  for (const command of opening ? [] : (currentSnapshot?.commands ?? [])) {
     const owner = (currentSnapshot?.plugins ?? []).find(({ id }) => id === command.ownerId);
     commands.push({
       id: `plugin.command.${command.id}`,
@@ -728,6 +741,7 @@ function commandCatalog(): RendererCommand[] {
       shortcut: null,
       enabled: Boolean(
         currentSnapshot?.vault.id &&
+          !opening &&
           currentPluginPreference().compatibilityMode === "enabled" &&
           currentPluginPreference().enabledPluginIds.length > 0 &&
           !pluginSafeModeActive() &&
@@ -747,6 +761,7 @@ function commandCatalog(): RendererCommand[] {
       keywords: ["disable", "stop", "safe", "restricted", "plugin"],
       shortcut: null,
       enabled:
+        !opening &&
         currentPluginPreference().compatibilityMode === "enabled" &&
         !pluginSafeModeActive() &&
         !pluginBusy,
@@ -3220,6 +3235,9 @@ function renderPaletteResults(): void {
 }
 
 function currentVaultSearchIdentity(): { vaultId: string; indexGeneration: number } | null {
+  if (vaultOpening()) {
+    return null;
+  }
   const vaultId = currentSnapshot?.vault.id;
   const indexGeneration = currentSnapshot?.workspace?.indexGeneration;
   return vaultId && indexGeneration !== undefined ? { vaultId, indexGeneration } : null;
@@ -3324,6 +3342,15 @@ async function performVaultSearch(
 }
 
 function reconcileVaultSearch(snapshot: RuntimeSnapshot): void {
+  if (snapshot.startup?.phase === "opening") {
+    if (vaultSearchTimer !== undefined) {
+      window.clearTimeout(vaultSearchTimer);
+      vaultSearchTimer = undefined;
+    }
+    vaultSearchRequest += 1;
+    vaultSearchState = { status: "idle" };
+    return;
+  }
   const query = elements.fileSearch.value.trim();
   if (!query) {
     if (vaultSearchTimer !== undefined) {
@@ -3378,35 +3405,47 @@ function render(snapshot: RuntimeSnapshot): void {
     void refreshMigrationPreview();
     void maybeMigrateLegacyTheme();
   }
-  const workspace = snapshot.workspace;
-  const plugin = snapshot.plugin;
-  elements.vaultName.textContent = snapshot.vault.name;
-  elements.vaultIdentity.title = snapshot.vault.path;
-  elements.vaultMode.title = snapshot.vault.path;
-  elements.vaultSource.textContent =
-    snapshot.vault.source === "bundled"
+  const startup = snapshot.startup;
+  const opening = startup?.phase === "opening";
+  const workspace = opening ? undefined : snapshot.workspace;
+  const plugin = opening ? null : snapshot.plugin;
+  elements.vaultName.textContent = opening ? startup.targetName : snapshot.vault.name;
+  elements.vaultIdentity.title = opening ? startup.targetPath : snapshot.vault.path;
+  elements.vaultMode.title = opening ? startup.targetPath : snapshot.vault.path;
+  elements.vaultSource.textContent = opening
+    ? startup.source === "restored"
+      ? "Restoring vault"
+      : "Configured vault"
+    : snapshot.vault.source === "bundled"
       ? "Bundled vault"
       : snapshot.vault.source === "environment"
         ? "Development vault"
         : snapshot.vault.source === "restored"
           ? "Restored vault"
           : "Local vault";
-  elements.fileCount.textContent = String(
-    workspace?.files.length ?? snapshot.vault.markdownFileCount,
-  );
-  const needsAttention = workspace?.state === "degraded" || snapshot.vault.warning !== null;
-  elements.runtimeState.textContent = needsAttention ? "Needs attention" : "Ready";
-  elements.statusShape.dataset.state = needsAttention ? "degraded" : "ready";
-  elements.indexStatus.textContent = workspace ? "Current" : "Unavailable";
+  elements.fileCount.textContent = opening
+    ? "…"
+    : String(workspace?.files.length ?? snapshot.vault.markdownFileCount);
+  const needsAttention =
+    !opening && (workspace?.state === "degraded" || snapshot.vault.warning !== null);
+  elements.runtimeState.textContent = opening
+    ? "Opening"
+    : needsAttention
+      ? "Needs attention"
+      : "Ready";
+  elements.statusShape.dataset.state = opening ? "opening" : needsAttention ? "degraded" : "ready";
+  elements.indexStatus.textContent = opening ? "Indexing" : workspace ? "Current" : "Unavailable";
   elements.recoveryCount.textContent = String(workspace?.recoveryActionCount ?? 0);
   elements.watchSequence.textContent = String(workspace?.watcher.lastSequence ?? 0);
-  elements.watchMessage.textContent = snapshot.vault.warning
-    ? snapshot.vault.warning
-    : workspace?.watcher.error
-      ? `Watcher error: ${workspace.watcher.error}`
-      : workspace?.watcher.lastRescanReason
-        ? `Recovered by ${workspace.watcher.lastRescanReason} rescan`
-        : "Filesystem and index agree";
+  elements.watchMessage.textContent = opening
+    ? `Building the local index for ${startup.targetName}`
+    : snapshot.vault.warning
+      ? snapshot.vault.warning
+      : workspace?.watcher.error
+        ? `Watcher error: ${workspace.watcher.error}`
+        : workspace?.watcher.lastRescanReason
+          ? `Recovered by ${workspace.watcher.lastRescanReason} rescan`
+          : "Filesystem and index agree";
   if (snapshot.vault.warning && snapshot.vault.warning !== lastVaultWarning) {
     showToast(snapshot.vault.warning);
   }
@@ -3444,6 +3483,9 @@ function render(snapshot: RuntimeSnapshot): void {
   renderCommands(snapshot);
   renderEvents(snapshot);
   setActionState(busy);
+  elements.fileSearch.disabled = opening;
+  elements.openVault.disabled = busy || saving;
+  elements.newNote.disabled = opening || busy || saving || dirty;
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
   }
@@ -3532,6 +3574,16 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
 function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): void {
   const query = elements.fileSearch.value.trim();
   elements.fileList.replaceChildren();
+  if (vaultOpening()) {
+    elements.fileList.setAttribute("aria-busy", "true");
+    elements.fileList.setAttribute("aria-label", "Vault index progress");
+    elements.filterSummary.textContent = "Building vault index";
+    renderEmpty(
+      elements.fileList,
+      `Opening ${currentSnapshot?.startup?.targetName ?? "vault"} without blocking this window.`,
+    );
+    return;
+  }
   elements.fileList.setAttribute(
     "aria-busy",
     String(query !== "" && vaultSearchState.status === "loading"),
@@ -3903,12 +3955,13 @@ function renderEditControls(): void {
   }
   elements.editState.dataset.state = state;
   elements.editState.textContent = label;
-  elements.newNote.disabled = busy || saving || dirty;
+  const opening = vaultOpening();
+  elements.newNote.disabled = opening || busy || saving || dirty;
   elements.moveNote.disabled = busy || saving || dirty || !loadedNote || !loadedVaultId;
   elements.deleteNote.disabled = busy || saving || dirty || !loadedNote || !loadedVaultId;
   elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
-  renderTabs(currentSnapshot?.workspace?.tabs ?? [], loadedNote?.path ?? null);
+  renderTabs(opening ? [] : (currentSnapshot?.workspace?.tabs ?? []), loadedNote?.path ?? null);
   renderEditNotice();
   renderDocumentView();
   renderPaletteResults();
@@ -4128,9 +4181,11 @@ async function runAction(action: () => Promise<RuntimeSnapshot>): Promise<void> 
 
 function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
+  const opening = vaultOpening();
   elements.openVault.disabled = busy || saving;
-  elements.newNote.disabled = busy || saving || dirty;
+  elements.newNote.disabled = opening || busy || saving || dirty;
   elements.reloadPlugin.disabled =
+    opening ||
     busy ||
     saving ||
     pluginBusy ||
@@ -4138,12 +4193,14 @@ function setActionState(nextBusy: boolean): void {
     currentPluginPreference().compatibilityMode === "restricted" ||
     currentPluginPreference().enabledPluginIds.length === 0;
   elements.unloadPlugin.disabled =
+    opening ||
     busy ||
     saving ||
     pluginBusy ||
     pluginSafeModeActive() ||
     currentPluginPreference().compatibilityMode === "restricted";
-  elements.runCommand.disabled = busy || saving || (currentSnapshot?.commands.length ?? 0) === 0;
+  elements.runCommand.disabled =
+    opening || busy || saving || (currentSnapshot?.commands.length ?? 0) === 0;
   renderEditControls();
 }
 

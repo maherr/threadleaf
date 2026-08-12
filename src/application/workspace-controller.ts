@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type {
   StateRootPort,
   VaultDirectoryCreateResult,
@@ -119,6 +120,7 @@ export interface WorkspaceControllerOptions {
   fixturePluginDirectory?: string;
   configuredVaultPath?: string;
   configuredPluginDirectory?: string;
+  deferInitialVault?: boolean;
   pluginModuleResolver?: PluginModuleResolver;
   pluginRuntimeFactory?: PluginRuntimeFactory;
   runtimeFactory?: WorkspaceRuntimeFactory;
@@ -126,6 +128,16 @@ export interface WorkspaceControllerOptions {
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
+
+interface DeferredInitialVault {
+  pluginDirectory?: string;
+  source: Extract<VaultSelectionSource, "environment" | "restored">;
+  vaultPath: string;
+}
+
+export type InitialVaultActivationOutcome =
+  | { status: "activated" | "failed" | "not-pending"; snapshot: RuntimeSnapshot }
+  | { status: "superseded"; snapshot: null };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -163,11 +175,15 @@ export class WorkspaceController {
   readonly #listeners = new Set<SnapshotListener>();
   #runtime: WorkspaceRuntimePort;
   #releaseRuntimeListener: () => void;
+  #deferredInitialVault: DeferredInitialVault | null;
+  #activationGeneration = 0;
+  #controllerWarning: string | null = null;
 
   private constructor(
     runtime: WorkspaceRuntimePort,
     options: WorkspaceControllerOptions,
     runtimeFactory: WorkspaceRuntimeFactory,
+    deferredInitialVault: DeferredInitialVault | null = null,
   ) {
     this.#runtime = runtime;
     this.#stateRoot = options.stateRoot;
@@ -176,12 +192,34 @@ export class WorkspaceController {
     this.#runtimeFactory = runtimeFactory;
     this.#pluginModuleResolver = options.pluginModuleResolver;
     this.#pluginRuntimeFactory = options.pluginRuntimeFactory;
+    this.#deferredInitialVault = deferredInitialVault;
     this.#releaseRuntimeListener = this.bindRuntime(runtime);
   }
 
   static async open(options: WorkspaceControllerOptions): Promise<WorkspaceController> {
     const runtimeFactory = options.runtimeFactory ?? WorkspaceRuntime.open;
     if (options.configuredVaultPath) {
+      if (options.deferInitialVault) {
+        const runtime = await runtimeFactory(
+          runtimeOptions(
+            options.fixtureVaultPath,
+            options.stateRoot,
+            "bundled",
+            null,
+            options.workspaceStateStore,
+            undefined,
+            options.pluginModuleResolver,
+            undefined,
+          ),
+        );
+        return new WorkspaceController(runtime, options, runtimeFactory, {
+          vaultPath: options.configuredVaultPath,
+          source: "environment",
+          ...(options.configuredPluginDirectory
+            ? { pluginDirectory: options.configuredPluginDirectory }
+            : {}),
+        });
+      }
       const runtime = await runtimeFactory(
         runtimeOptions(
           options.configuredVaultPath,
@@ -206,6 +244,24 @@ export class WorkspaceController {
     }
 
     if (restoredPath) {
+      if (options.deferInitialVault) {
+        const runtime = await runtimeFactory(
+          runtimeOptions(
+            options.fixtureVaultPath,
+            options.stateRoot,
+            "bundled",
+            restoreWarning,
+            options.workspaceStateStore,
+            undefined,
+            options.pluginModuleResolver,
+            undefined,
+          ),
+        );
+        return new WorkspaceController(runtime, options, runtimeFactory, {
+          vaultPath: restoredPath,
+          source: "restored",
+        });
+      }
       try {
         const runtime = await runtimeFactory(
           runtimeOptions(
@@ -249,11 +305,68 @@ export class WorkspaceController {
   }
 
   getSnapshot(): Promise<RuntimeSnapshot> {
-    return this.#runtime.getSnapshot();
+    return this.#runtime.getSnapshot().then((snapshot) => this.decorateSnapshot(snapshot));
+  }
+
+  async activateDeferredInitialVault(): Promise<InitialVaultActivationOutcome> {
+    const target = this.#deferredInitialVault;
+    if (!target) {
+      return { status: "not-pending", snapshot: await this.getSnapshot() };
+    }
+
+    const generation = ++this.#activationGeneration;
+    this.publish(await this.getSnapshot());
+    let nextRuntime: WorkspaceRuntimePort;
+    try {
+      nextRuntime = await this.#runtimeFactory(
+        runtimeOptions(
+          target.vaultPath,
+          this.#stateRoot,
+          target.source,
+          null,
+          this.#workspaceStateStore,
+          target.pluginDirectory,
+          this.#pluginModuleResolver,
+          this.#pluginRuntimeFactory,
+        ),
+      );
+    } catch (error) {
+      if (generation !== this.#activationGeneration || this.#deferredInitialVault !== target) {
+        return { status: "superseded", snapshot: null };
+      }
+      this.#deferredInitialVault = null;
+      this.#controllerWarning =
+        target.source === "restored"
+          ? `Could not restore ${target.vaultPath}: ${errorMessage(error)} Opened the bundled vault instead.`
+          : `Could not open the configured vault ${target.vaultPath}: ${errorMessage(error)} Opened the bundled vault instead.`;
+      const snapshot = await this.getSnapshot();
+      this.publish(snapshot);
+      return { status: "failed", snapshot };
+    }
+
+    let adopted = false;
+    try {
+      const snapshot = await nextRuntime.getSnapshot();
+      if (generation !== this.#activationGeneration || this.#deferredInitialVault !== target) {
+        await nextRuntime.close().catch(() => undefined);
+        return { status: "superseded", snapshot: null };
+      }
+      this.#deferredInitialVault = null;
+      this.#controllerWarning = null;
+      const adoption = this.adoptRuntime(nextRuntime, snapshot);
+      adopted = true;
+      await adoption;
+      return { status: "activated", snapshot };
+    } catch (error) {
+      if (!adopted) {
+        await nextRuntime.close().catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   searchVault(query: string): Promise<VaultSearchResponse> {
-    return this.#runtime.searchVault(query);
+    return this.activeRuntime("search").searchVault(query);
   }
 
   async loadVaultImage(
@@ -261,7 +374,7 @@ export class WorkspaceController {
     target: string,
     expectedVaultId: string,
   ): Promise<VaultImageResponse> {
-    const runtime = this.#runtime;
+    const runtime = this.activeRuntime("load an image");
     if (runtime.vaultId !== expectedVaultId) {
       return { status: "stale-vault", vaultId: runtime.vaultId };
     }
@@ -273,11 +386,11 @@ export class WorkspaceController {
   }
 
   openNote(filePath: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.openNote(filePath);
+    return this.activeRuntime("open a note").openNote(filePath);
   }
 
   closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.closeNote(filePath, expectedVaultId);
+    return this.activeRuntime("close a note").closeNote(filePath, expectedVaultId);
   }
 
   moveNote(
@@ -287,7 +400,7 @@ export class WorkspaceController {
     expectedVaultId: string,
     confirmationId?: string,
   ): Promise<NoteMoveResponse> {
-    return this.#runtime.moveNote(
+    return this.activeRuntime("move a note").moveNote(
       filePath,
       targetPath,
       expectedRevision,
@@ -301,7 +414,11 @@ export class WorkspaceController {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteDeleteResponse> {
-    return this.#runtime.deleteNote(filePath, expectedRevision, expectedVaultId);
+    return this.activeRuntime("trash a note").deleteNote(
+      filePath,
+      expectedRevision,
+      expectedVaultId,
+    );
   }
 
   createNote(
@@ -309,7 +426,7 @@ export class WorkspaceController {
     content: string,
     expectedVaultId: string,
   ): Promise<NoteCreateResponse> {
-    return this.#runtime.createNote(filePath, content, expectedVaultId);
+    return this.activeRuntime("create a note").createNote(filePath, content, expectedVaultId);
   }
 
   createPluginNote(
@@ -317,7 +434,11 @@ export class WorkspaceController {
     content: string,
     expectedVaultId: string,
   ): Promise<NoteCreateOutcome> {
-    return this.#runtime.createPluginNote(filePath, content, expectedVaultId);
+    return this.activeRuntime("create a plugin note").createPluginNote(
+      filePath,
+      content,
+      expectedVaultId,
+    );
   }
 
   createPluginFile(
@@ -325,7 +446,11 @@ export class WorkspaceController {
     content: Uint8Array,
     expectedVaultId: string,
   ): Promise<NoteCreateOutcome> {
-    return this.#runtime.createPluginFile(filePath, content, expectedVaultId);
+    return this.activeRuntime("create a plugin file").createPluginFile(
+      filePath,
+      content,
+      expectedVaultId,
+    );
   }
 
   writePluginFile(
@@ -334,7 +459,12 @@ export class WorkspaceController {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<VaultWriteResult> {
-    return this.#runtime.writePluginFile(filePath, content, expectedRevision, expectedVaultId);
+    return this.activeRuntime("write a plugin file").writePluginFile(
+      filePath,
+      content,
+      expectedRevision,
+      expectedVaultId,
+    );
   }
 
   renamePluginFile(
@@ -343,7 +473,12 @@ export class WorkspaceController {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<VaultRenameResult> {
-    return this.#runtime.renamePluginFile(filePath, targetPath, expectedRevision, expectedVaultId);
+    return this.activeRuntime("rename a plugin file").renamePluginFile(
+      filePath,
+      targetPath,
+      expectedRevision,
+      expectedVaultId,
+    );
   }
 
   trashPluginFile(
@@ -351,14 +486,21 @@ export class WorkspaceController {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<VaultRenameResult> {
-    return this.#runtime.trashPluginFile(filePath, expectedRevision, expectedVaultId);
+    return this.activeRuntime("trash a plugin file").trashPluginFile(
+      filePath,
+      expectedRevision,
+      expectedVaultId,
+    );
   }
 
   createPluginFolder(
     folderPath: string,
     expectedVaultId: string,
   ): Promise<VaultDirectoryCreateResult> {
-    return this.#runtime.createPluginFolder(folderPath, expectedVaultId);
+    return this.activeRuntime("create a plugin folder").createPluginFolder(
+      folderPath,
+      expectedVaultId,
+    );
   }
 
   saveNote(
@@ -367,49 +509,60 @@ export class WorkspaceController {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteSaveResponse> {
-    return this.#runtime.saveNote(filePath, content, expectedRevision, expectedVaultId);
+    return this.activeRuntime("save a note").saveNote(
+      filePath,
+      content,
+      expectedRevision,
+      expectedVaultId,
+    );
   }
 
   runPluginCommand(
     commandId: string,
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
-    return this.#runtime.runPluginCommand(commandId, editorContext);
+    return this.activeRuntime("run a plugin command").runPluginCommand(commandId, editorContext);
   }
 
   markPluginLayoutReady(): Promise<RuntimeSnapshot> {
-    return this.#runtime.markPluginLayoutReady();
+    return this.activeRuntime("mark plugin layout ready").markPluginLayoutReady();
   }
 
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.openPluginSettings(pluginId);
+    return this.activeRuntime("open plugin settings").openPluginSettings(pluginId);
   }
 
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.openPluginView(viewType, filePath);
+    return this.activeRuntime("open a plugin view").openPluginView(viewType, filePath);
   }
 
   closePluginView(): Promise<RuntimeSnapshot> {
-    return this.#runtime.closePluginView();
+    return this.activeRuntime("close a plugin view").closePluginView();
   }
 
   loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.loadPlugin(pluginDirectory);
+    return this.activeRuntime("load a plugin").loadPlugin(pluginDirectory);
   }
 
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.reloadPlugin(pluginId);
+    return this.activeRuntime("reload a plugin").reloadPlugin(pluginId);
   }
 
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    return this.#runtime.unloadPlugin(pluginId);
+    return this.activeRuntime("unload a plugin").unloadPlugin(pluginId);
   }
 
   unloadAllPlugins(): Promise<RuntimeSnapshot> {
-    return this.#runtime.unloadAllPlugins();
+    return this.activeRuntime("unload plugins").unloadAllPlugins();
   }
 
   async switchVault(vaultPath: string): Promise<RuntimeSnapshot> {
+    if (this.#deferredInitialVault) {
+      this.#deferredInitialVault = null;
+      this.#controllerWarning = null;
+      this.#activationGeneration += 1;
+      this.publish(await this.getSnapshot());
+    }
     const nextRuntime = await this.#runtimeFactory(
       runtimeOptions(
         vaultPath,
@@ -426,14 +579,9 @@ export class WorkspaceController {
     try {
       const snapshot = await nextRuntime.getSnapshot();
       await this.#selectionStore.save(nextRuntime.vaultPath);
-
-      const previousRuntime = this.#runtime;
-      this.#releaseRuntimeListener();
-      this.#runtime = nextRuntime;
-      this.#releaseRuntimeListener = this.bindRuntime(nextRuntime);
+      const adoption = this.adoptRuntime(nextRuntime, snapshot);
       adopted = true;
-      this.publish(snapshot);
-      await previousRuntime.close();
+      await adoption;
       return snapshot;
     } catch (error) {
       if (!adopted) {
@@ -449,13 +597,55 @@ export class WorkspaceController {
   }
 
   async close(): Promise<void> {
+    this.#activationGeneration += 1;
+    this.#deferredInitialVault = null;
     this.#releaseRuntimeListener();
     this.#listeners.clear();
     await this.#runtime.close();
   }
 
   private bindRuntime(runtime: WorkspaceRuntimePort): () => void {
-    return runtime.onSnapshot((snapshot) => this.publish(snapshot));
+    return runtime.onSnapshot((snapshot) => this.publish(this.decorateSnapshot(snapshot)));
+  }
+
+  private activeRuntime(operation: string): WorkspaceRuntimePort {
+    if (this.#deferredInitialVault) {
+      throw new Error(
+        `Cannot ${operation} while ${basename(this.#deferredInitialVault.vaultPath)} is still opening.`,
+      );
+    }
+    return this.#runtime;
+  }
+
+  private async adoptRuntime(
+    nextRuntime: WorkspaceRuntimePort,
+    snapshot: RuntimeSnapshot,
+  ): Promise<void> {
+    const previousRuntime = this.#runtime;
+    this.#releaseRuntimeListener();
+    this.#runtime = nextRuntime;
+    this.#releaseRuntimeListener = this.bindRuntime(nextRuntime);
+    this.publish(this.decorateSnapshot(snapshot));
+    await previousRuntime.close();
+  }
+
+  private decorateSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+    const warning = this.#controllerWarning ?? snapshot.vault.warning;
+    const startup = this.#deferredInitialVault;
+    return {
+      ...snapshot,
+      vault: warning === snapshot.vault.warning ? snapshot.vault : { ...snapshot.vault, warning },
+      ...(startup
+        ? {
+            startup: {
+              phase: "opening" as const,
+              source: startup.source,
+              targetName: basename(startup.vaultPath) || startup.vaultPath,
+              targetPath: startup.vaultPath,
+            },
+          }
+        : {}),
+    };
   }
 
   private publish(snapshot: RuntimeSnapshot): void {

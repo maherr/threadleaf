@@ -390,8 +390,20 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
         },
       });
     },
+    deferInitialVault: true,
     ...(configuredPath ? { configuredVaultPath: configuredPath } : {}),
   });
+}
+
+async function activateInitialWorkspace(): Promise<void> {
+  const outcome = await workspaceController.activateDeferredInitialVault();
+  if (outcome.status === "superseded") {
+    return;
+  }
+  const expectedVaultId = outcome.snapshot.vault.id;
+  if (expectedVaultId && workspaceController.vaultId === expectedVaultId) {
+    await serializePluginOperation(() => reconcileCompatibilityPlugins(expectedVaultId));
+  }
 }
 
 function registerIpcHandlers(): void {
@@ -903,9 +915,11 @@ app.whenReady().then(async () => {
     new FileAppSettingsStore(join(app.getPath("userData"), "settings.json")),
   );
   workspaceController = await createWorkspaceController();
-  await serializePluginOperation(() => reconcileCompatibilityPlugins(workspaceController.vaultId));
   registerIpcHandlers();
   await createWindow();
+  void activateInitialWorkspace().catch((error: unknown) => {
+    console.error("Initial vault activation failed", error);
+  });
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

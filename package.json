@@ -26,6 +26,7 @@
     "start": "electron .",
     "test": "vitest run",
     "test:plugin-recovery": "pnpm run build && node scripts/check-plugin-recovery.mjs",
+    "test:startup-readiness": "pnpm run build && node scripts/check-startup-readiness.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

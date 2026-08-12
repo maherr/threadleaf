@@ -116,11 +116,15 @@ fails, Threadleaf closes the candidate and leaves the current runtime active.
 
 The selection document lives in the operating system's application-data directory, outside every
 vault. It is written atomically with private file permissions and a versioned shape. On startup,
-Threadleaf restores that path and then reconciles only the plugins explicitly selected in
-Threadleaf's private per-vault settings. A vault with no saved plugin preference starts restricted.
-An unavailable or malformed saved selection falls back to the bundled fixture with a visible
-warning and does not erase the saved path, so a temporarily unmounted vault can recover on a later
-launch.
+Threadleaf opens a small plugin-free bootstrap runtime, registers IPC, and renders the first window
+before it opens the configured or restored vault. A startup snapshot names the real target and
+disables bootstrap writes and search while the target builds its derived index. Open vault remains
+available, and a generation guard prevents a late restore from replacing a vault picked while it
+was opening. Environment overrides are never persisted. After adoption, Threadleaf reconciles only
+the plugins explicitly selected in its private per-vault settings. A vault with no saved plugin
+preference starts restricted. An unavailable or malformed saved selection falls back to the
+bundled fixture with a visible warning and does not erase the saved path, so a temporarily
+unmounted vault can recover on a later launch.
 
 Every editor draft carries the identity of the vault that produced its revision. The save boundary
 rejects a draft after the active vault changes, even if a relative note path happens to exist in

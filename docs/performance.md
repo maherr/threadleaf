@@ -34,13 +34,26 @@ query distributions across supported desktop platforms.
 
 ## Large mixed-workspace cold-start observation
 
-A manual production-path probe on 2026-08-12 pointed Threadleaf at a 54 GB mixed-content workspace
-used as a vault root. No application window became ready within 60 seconds. The current startup path
-recursively builds the complete in-memory vault index before creating the first window, so unrelated
-files and deep trees block first paint.
+The original production-path probe on 2026-08-12 pointed Threadleaf at a 54 GB mixed-content
+workspace used as a vault root. No application window became ready within 60 seconds because the
+complete watcher snapshot and metadata index both ran before window creation.
 
-This is an open performance defect, not a benchmark result and not a migration-preview failure. A
-small copied vault containing the same `.obsidian` metadata and active notes rendered the preview
-normally. The required fix is to decouple first window creation from complete indexing, publish
-progress, prioritize visible Markdown, and move the remaining crawl behind a cancellable bounded
-startup task. The public large-vault corpus and regression budget remain pending.
+Threadleaf now renders a plugin-free bootstrap workspace before opening the configured or restored
+vault in the background. The same host and workspace reached a rendered, interactive opening state
+in 3.99 to 4.11 seconds across two passing runs. A stricter 3,000 ms run failed before the renderer
+target appeared, so 3 seconds is not a supported budget. The opening surface names the target,
+shows index progress, disables writes and search against the bootstrap vault, and leaves Open vault
+available to supersede a slow or wrong target.
+
+Run the isolated production check with any representative vault:
+
+```sh
+THREADLEAF_STARTUP_PROBE_VAULT=/absolute/path/to/vault \
+  THREADLEAF_STARTUP_BUDGET_MS=5000 \
+  pnpm test:startup-readiness
+```
+
+Set `THREADLEAF_STARTUP_SCREENSHOT_DIR` to retain dark and light captures. The current result proves
+bounded first-window readiness only. Full target activation still performs two corpus passes and
+needs cancellation, progress counts, visible-note prioritization, traversal exclusions, and a
+public cross-platform regression corpus before it can claim a complete large-vault budget.

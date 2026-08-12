@@ -105,6 +105,13 @@ export interface PluginEditorUpdate {
 
 export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
 
+export interface VaultStartupSnapshot {
+  phase: "opening";
+  source: Extract<VaultSelectionSource, "environment" | "restored">;
+  targetName: string;
+  targetPath: string;
+}
+
 export interface RuntimeSnapshot {
   vault: {
     id: string | null;
@@ -115,6 +122,7 @@ export interface RuntimeSnapshot {
     source: VaultSelectionSource;
     warning: string | null;
   };
+  startup?: VaultStartupSnapshot;
   plugin: PluginSummary | null;
   plugins?: PluginSummary[];
   commands: CommandSummary[];

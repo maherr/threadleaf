@@ -117,6 +117,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Read-only Obsidian behavior migration preview for enabled and installed plugins, settings-file
   shape without private keys or values, reviewed hotkey candidates, appearance assets, and
   restorable note tabs, with bounded contained reads and exact source-byte preservation.
+- Non-blocking initial window through a plugin-free bootstrap runtime, explicit target-indexing
+  state, disabled bootstrap mutations and search, late-restore supersession, failure fallback, and
+  an isolated production startup-readiness probe with optional dark and light captures.
 - Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the
   private selected set while loading no community JavaScript or CSS.
 - Dedicated Electron compatibility renderer with Node integration isolated from the sandboxed main

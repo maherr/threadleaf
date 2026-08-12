@@ -58,6 +58,8 @@ equivalence through the real writer-to-watcher seam.
 - [x] CodeMirror source editor with dirty state, explicit Revert, revision-aware recoverable save,
       external-change detection, and keep-both conflict UI.
 - [x] Arbitrary vault picker, validated runtime swaps, and persistent workspace restoration.
+- [x] Non-blocking first window through a plugin-free bootstrap runtime, explicit target-indexing
+      state, disabled bootstrap mutations, user-switch supersession, and a production startup probe.
 - [x] Accessible command palette with shared core and compatibility-plugin actions, search,
       disabled-state explanations, and keyboard navigation.
 - [x] Versioned application settings and remappable hotkeys with collision validation, atomic

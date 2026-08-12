@@ -28,11 +28,14 @@ Markdown folder, restore the last successful selection, edit through CodeMirror,
 tags, links, and backlinks, search saved Markdown with contextual line matches, and reflect external
 changes without giving the renderer filesystem access. Search results identify the vault and index
 generation that produced them, so a late response cannot cross a vault switch or overwrite newer
-derived state. Revision-aware saves use the recoverable writer. If the file changed externally, the
-original is left untouched and the local edit becomes a clearly labeled conflict copy. Core actions
-and dynamically registered compatibility-plugin commands share a searchable, keyboard-navigable
-command palette. Versioned application settings now keep remappable keyboard shortcuts outside
-every vault, reject collisions, and persist changes before activating them. Compatibility plugins
+derived state. The first window no longer waits for a complete restored-vault scan: it names the
+target, shows indexing state, blocks bootstrap writes, and lets a user choose another vault while
+the real runtime opens in the background. Revision-aware saves use the recoverable writer. If the
+file changed externally, the original is left untouched and the local edit becomes a clearly
+labeled conflict copy. Core actions and dynamically registered compatibility-plugin commands share
+a searchable, keyboard-navigable command palette. Versioned application settings now keep remappable
+keyboard shortcuts outside every vault, reject collisions, and persist changes before activating
+them. Compatibility plugins
 in selected and restored vaults stay off by default. An explicit reading view renders the current
 editor draft through a sanitized Markdown subset, keeps unsaved text off disk, resolves internal
 links through the derived index, and provides source-line controls that return to the matching
