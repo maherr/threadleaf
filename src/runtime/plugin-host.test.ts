@@ -419,7 +419,16 @@ module.exports = class UiApiPlugin extends Plugin {
     this.registerExtensions(["drawing"], "ui-api-view");
     this.addRibbonIcon("ui-api-icon", "Open drawing", () => {});
     this.addStatusBarItem().setText("Ready");
-    this.addSettingTab(new (class extends PluginSettingTab { display() {} })(this.app, this));
+    this.addSettingTab(new (class extends PluginSettingTab {
+      display() {
+        window.__threadleafSettingsDisplays = (window.__threadleafSettingsDisplays || 0) + 1;
+        this.containerEl.textContent = "UI API settings";
+      }
+      hide() {
+        window.__threadleafSettingsHides = (window.__threadleafSettingsHides || 0) + 1;
+        super.hide();
+      }
+    })(this.app, this));
     this.registerMarkdownPostProcessor(() => {});
     this.registerEditorSuggest(new (class extends EditorSuggest {})(this.app));
     this.app.workspace.onLayoutReady(() => new Notice("Fixture layout became ready."));
@@ -438,6 +447,7 @@ module.exports = class UiApiPlugin extends Plugin {
         markdownPostProcessors: 1,
         ribbonItems: 1,
         settingTabs: 1,
+        settingTabPluginIds: ["ui-api-fixture"],
         statusBarItems: 1,
         viewTypes: ["ui-api-view"],
       });
@@ -445,6 +455,20 @@ module.exports = class UiApiPlugin extends Plugin {
 
       await host.app.workspace.markLayoutReady();
       expect((await host.getSnapshot()).notices).toContain("Fixture layout became ready.");
+
+      const settingsSnapshot = await host.openPluginSettings("ui-api-fixture");
+      expect(settingsSnapshot.pluginSurface).toEqual({
+        displayText: "UI API fixture settings",
+        filePath: null,
+        viewType: "threadleaf-plugin-settings",
+      });
+      expect(dom.window.document.querySelector(".vertical-tab-content")?.textContent).toBe(
+        "UI API settings",
+      );
+      expect(dom.window.eval("window.__threadleafSettingsDisplays")).toBe(1);
+      await host.closePluginView();
+      expect(dom.window.eval("window.__threadleafSettingsHides")).toBe(1);
+      expect(dom.window.document.querySelector("#threadleaf-plugin-surface")).toBeNull();
 
       const viewSnapshot = await host.openPluginView("ui-api-view", "Drawing.drawing");
       expect(viewSnapshot.pluginSurface).toMatchObject({
@@ -501,6 +525,7 @@ module.exports = class UiApiPlugin extends Plugin {
         markdownPostProcessors: 0,
         ribbonItems: 0,
         settingTabs: 0,
+        settingTabPluginIds: [],
         statusBarItems: 0,
         viewTypes: [],
       });

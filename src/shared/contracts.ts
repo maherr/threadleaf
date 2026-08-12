@@ -62,6 +62,7 @@ export interface PluginIntegrationSnapshot {
   markdownPostProcessors: number;
   ribbonItems: number;
   settingTabs: number;
+  settingTabPluginIds?: string[];
   statusBarItems: number;
   viewTypes: string[];
 }
@@ -390,6 +391,7 @@ export interface ThreadleafBridge {
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;
+  openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   closePluginView(): Promise<RuntimeSnapshot>;
   setPluginSurfaceBounds(bounds: PluginSurfaceBounds): Promise<void>;

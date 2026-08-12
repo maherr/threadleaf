@@ -734,6 +734,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.markPluginLayoutReady, () =>
     serializePluginOperation(() => workspaceController.markPluginLayoutReady()),
   );
+  ipcMain.handle(ipcChannels.openPluginSettings, (_event, pluginId: unknown) => {
+    if (typeof pluginId !== "string" || pluginId.length === 0) {
+      throw new Error("Opening plugin settings requires a plugin identifier.");
+    }
+    return serializePluginOperation(() => workspaceController.openPluginSettings(pluginId));
+  });
   ipcMain.handle(ipcChannels.openPluginView, (_event, viewType: unknown, filePath: unknown) => {
     if (
       typeof viewType !== "string" ||

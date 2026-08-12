@@ -310,6 +310,7 @@ let renderedPreviewVaultId: string | null = null;
 let renderedPreviewWatchSequence = -1;
 let previewImageRequest = 0;
 let pluginSurfaceRequest = 0;
+let pluginSettingsTargetId: string | null = null;
 let pluginLayoutReadyVaultId: string | null = null;
 let paletteMatches: RendererCommand[] = [];
 let paletteSelection = -1;
@@ -895,10 +896,15 @@ function renderReadingView(): void {
 function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
   const reading = hasNote && documentViewMode === "reading";
-  const plugin = hasNote && documentViewMode === "plugin";
+  const pluginSettings =
+    pluginSettingsTargetId !== null ||
+    currentSnapshot?.pluginSurface?.viewType === "threadleaf-plugin-settings";
+  const plugin = documentViewMode === "plugin" && (hasNote || pluginSettings);
   const pluginViewType = preferredPluginViewType();
-  const visiblePluginViewType =
-    pluginViewType ?? (plugin ? (currentSnapshot?.pluginSurface?.viewType ?? null) : null);
+  const visiblePluginViewType = pluginSettings
+    ? "threadleaf-plugin-settings"
+    : (pluginViewType ?? (plugin ? (currentSnapshot?.pluginSurface?.viewType ?? null) : null));
+  elements.noteEmpty.hidden = hasNote || plugin;
   elements.noteEditorShell.hidden = reading;
   elements.notePreview.hidden = !reading;
   elements.noteView.hidden = !hasNote || plugin;
@@ -906,14 +912,29 @@ function renderDocumentView(): void {
   elements.noteView.dataset.view = reading ? "reading" : "source";
   elements.editView.disabled = !hasNote || busy || saving;
   elements.readView.disabled = !hasNote || busy || saving;
-  elements.pluginView.hidden = visiblePluginViewType === null;
-  elements.pluginView.disabled = !hasNote || !pluginViewType || busy || saving || dirty;
+  elements.pluginView.hidden = visiblePluginViewType === null && !plugin;
+  elements.pluginView.disabled = plugin
+    ? busy || saving
+    : !hasNote || !pluginViewType || busy || saving || dirty;
+  elements.pluginView.textContent = pluginSettings ? "Options" : "Plugin";
   elements.editView.setAttribute("aria-pressed", String(hasNote && !reading && !plugin));
   elements.readView.setAttribute("aria-pressed", String(reading));
   elements.pluginView.setAttribute("aria-pressed", String(plugin));
-  elements.pluginView.title = visiblePluginViewType
-    ? `${plugin ? "Showing" : "Open"} ${visiblePluginViewType} community plugin view`
-    : "No community plugin view is registered";
+  elements.pluginView.title = plugin
+    ? `Close ${pluginSettings ? "plugin options" : "community plugin view"}`
+    : visiblePluginViewType
+      ? `Open ${visiblePluginViewType} community plugin view`
+      : "No community plugin view is registered";
+  if (pluginSettings && plugin) {
+    const pluginName = (currentSnapshot?.plugins ?? []).find(
+      ({ id }) => id === pluginSettingsTargetId,
+    )?.name;
+    elements.notePath.textContent =
+      currentSnapshot?.pluginSurface?.displayText ??
+      (pluginName ? `${pluginName} settings` : "Plugin settings");
+  } else {
+    elements.notePath.textContent = loadedNote?.path ?? "No note selected";
+  }
   const shortcut = shortcutFor("editor.toggle-reading-view");
   elements.editView.title = shortcut ? `Editing view (${shortcut})` : "Editing view";
   elements.readView.title = shortcut ? `Reading view (${shortcut})` : "Reading view";
@@ -960,17 +981,7 @@ async function activatePluginView(): Promise<void> {
   try {
     await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     await updatePluginSurfaceBounds();
-    const vaultId = currentSnapshot?.vault.id ?? null;
-    if (vaultId && pluginLayoutReadyVaultId !== vaultId) {
-      pluginLayoutReadyVaultId = vaultId;
-      try {
-        render(await window.threadleaf.markPluginLayoutReady());
-      } catch (error) {
-        showToast(
-          `Plugin startup reported a compatibility gap: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
+    await ensurePluginLayoutReady();
     const snapshot = await window.threadleaf.openPluginView(viewType, filePath);
     if (request !== pluginSurfaceRequest || documentViewMode !== "plugin") {
       await window.threadleaf.closePluginView();
@@ -986,13 +997,75 @@ async function activatePluginView(): Promise<void> {
   }
 }
 
+async function ensurePluginLayoutReady(): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  if (!vaultId || pluginLayoutReadyVaultId === vaultId) {
+    return;
+  }
+  pluginLayoutReadyVaultId = vaultId;
+  try {
+    render(await window.threadleaf.markPluginLayoutReady());
+  } catch (error) {
+    showToast(
+      `Plugin startup reported a compatibility gap: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function activatePluginSettings(pluginId: string): Promise<void> {
+  if (
+    busy ||
+    saving ||
+    pluginBusy ||
+    !(currentSnapshot?.integrations?.settingTabPluginIds ?? []).includes(pluginId)
+  ) {
+    return;
+  }
+  if (elements.settingsDialog.open) {
+    closeSettings(false);
+  }
+  const request = ++pluginSurfaceRequest;
+  pluginSettingsTargetId = pluginId;
+  documentViewMode = "plugin";
+  renderDocumentView();
+  setActionState(true);
+  try {
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    await updatePluginSurfaceBounds();
+    await ensurePluginLayoutReady();
+    const snapshot = await window.threadleaf.openPluginSettings(pluginId);
+    if (
+      request !== pluginSurfaceRequest ||
+      documentViewMode !== "plugin" ||
+      pluginSettingsTargetId !== pluginId
+    ) {
+      await window.threadleaf.closePluginView();
+      return;
+    }
+    render(snapshot);
+  } catch (error) {
+    pluginSettingsTargetId = null;
+    documentViewMode = "source";
+    renderDocumentView();
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    setActionState(false);
+  }
+}
+
 function setDocumentView(mode: DocumentViewMode, focus = true): void {
-  if (!loadedNote && mode === "plugin") {
+  if (
+    !loadedNote &&
+    mode === "plugin" &&
+    pluginSettingsTargetId === null &&
+    currentSnapshot?.pluginSurface?.viewType !== "threadleaf-plugin-settings"
+  ) {
     return;
   }
   const closingPlugin = documentViewMode === "plugin" && mode !== "plugin";
   documentViewMode = mode;
   if (mode !== "plugin") {
+    pluginSettingsTargetId = null;
     localStorage.setItem("threadleaf-document-view", mode);
   }
   renderDocumentView();
@@ -1008,7 +1081,11 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
     return;
   }
   if (mode === "source") {
-    editor.focus();
+    if (loadedNote) {
+      editor.focus();
+    } else {
+      elements.fileSearch.focus();
+    }
   } else if (mode === "reading") {
     elements.notePreview.focus();
   }
@@ -2266,7 +2343,18 @@ function renderPluginSettings(): void {
     toggleLabel.className = "plugin-toggle-label";
     toggleLabel.textContent = selected ? "Enabled" : "Disabled";
     toggle.append(checkbox, track, toggleLabel);
-    controls.append(runtimeState, toggle);
+    const hasSettings =
+      runtimePlugin?.state === "loaded" &&
+      (currentSnapshot?.integrations?.settingTabPluginIds ?? []).includes(plugin.id);
+    const options = document.createElement("button");
+    options.type = "button";
+    options.className = "secondary-button plugin-options-button";
+    options.textContent = "Options";
+    options.hidden = !hasSettings;
+    options.disabled = disabled || safeMode || restricted || pluginBusy || busy || saving;
+    options.ariaLabel = `Open ${plugin.name} options`;
+    options.addEventListener("click", () => void activatePluginSettings(plugin.id));
+    controls.append(runtimeState, options, toggle);
     row.append(copy, controls);
     elements.pluginList.append(row);
   }
@@ -2882,6 +2970,7 @@ function render(snapshot: RuntimeSnapshot): void {
   currentSnapshot = snapshot;
   if (previousVaultId !== snapshot.vault.id) {
     pluginSurfaceRequest += 1;
+    pluginSettingsTargetId = null;
     pluginLayoutReadyVaultId = null;
     if (documentViewMode === "plugin") {
       documentViewMode = "source";
@@ -2939,9 +3028,17 @@ function render(snapshot: RuntimeSnapshot): void {
   const displayedNote = reconcileEditor(workspace?.activeNote ?? null, snapshot.vault.id);
   applyPluginEditorUpdate(snapshot.editorUpdate);
   if (
+    pluginSettingsTargetId &&
+    snapshot.pluginSurface?.viewType !== "threadleaf-plugin-settings" &&
+    !(snapshot.integrations?.settingTabPluginIds ?? []).includes(pluginSettingsTargetId)
+  ) {
+    pluginSettingsTargetId = null;
+  }
+  if (
     documentViewMode === "plugin" &&
     !snapshot.pluginSurface &&
-    !preferredPluginViewType(snapshot)
+    !preferredPluginViewType(snapshot) &&
+    pluginSettingsTargetId === null
   ) {
     setDocumentView("source", false);
   }
@@ -3669,7 +3766,13 @@ elements.fileSearch.addEventListener("input", () => {
 
 elements.editView.addEventListener("click", () => setDocumentView("source"));
 elements.readView.addEventListener("click", () => setDocumentView("reading"));
-elements.pluginView.addEventListener("click", () => void activatePluginView());
+elements.pluginView.addEventListener("click", () => {
+  if (documentViewMode === "plugin") {
+    setDocumentView("source");
+  } else {
+    void activatePluginView();
+  }
+});
 elements.notePreview.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;

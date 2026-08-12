@@ -172,6 +172,7 @@ describe("WorkspaceRuntime", () => {
       getSnapshot: async () => pluginSnapshot(),
       loadPlugin: async () => pluginSnapshot(),
       markLayoutReady: async () => pluginSnapshot(),
+      openPluginSettings: async () => pluginSnapshot(),
       openPluginView: async () => pluginSnapshot(),
       reloadPlugin: async () => pluginSnapshot(),
       runCommand: async () => {

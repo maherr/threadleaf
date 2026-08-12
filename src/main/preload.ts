@@ -115,6 +115,8 @@ const bridge: ThreadleafBridge = {
     ipcRenderer.invoke(ipcChannels.unloadPlugin, pluginId) as Promise<RuntimeSnapshot>,
   markPluginLayoutReady: () =>
     ipcRenderer.invoke(ipcChannels.markPluginLayoutReady) as Promise<RuntimeSnapshot>,
+  openPluginSettings: (pluginId) =>
+    ipcRenderer.invoke(ipcChannels.openPluginSettings, pluginId) as Promise<RuntimeSnapshot>,
   openPluginView: (viewType, filePath) =>
     ipcRenderer.invoke(ipcChannels.openPluginView, viewType, filePath) as Promise<RuntimeSnapshot>,
   closePluginView: () =>

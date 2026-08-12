@@ -26,6 +26,7 @@ import {
   Vault,
 } from "./obsidian-compat";
 import { FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
+import type { CompatibilitySettingTab } from "./obsidian-workspace-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
 interface CommonJsModuleRecord {
@@ -73,6 +74,9 @@ export class PluginHost implements PluginRuntimePort {
   private eventSequence = 0;
   private readonly plugins = new Map<string, LoadedPluginRecord>();
   private activePluginLeaf: WorkspaceLeaf | null = null;
+  private activeSettingTab: CompatibilitySettingTab | null = null;
+  private activeSettingTabContainer: HTMLElement | null = null;
+  private activeSettingTabPluginId: string | null = null;
   private editorUpdate: PluginEditorUpdate | null = null;
   private editorUpdateSequence = 0;
   private lastPluginId: string | null = null;
@@ -294,7 +298,61 @@ export class PluginHost implements PluginRuntimePort {
     }
   }
 
+  async openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
+    await this.closePluginView();
+    if (typeof document === "undefined") {
+      throw new Error("Plugin settings require a renderer document.");
+    }
+    const record = this.plugins.get(pluginId);
+    if (record?.summary.state !== "loaded") {
+      throw new Error(`Plugin is not loaded: ${pluginId}`);
+    }
+    const settingTab = this.app.compatibility.getSettingTab(pluginId);
+    if (!settingTab) {
+      throw new Error(`Plugin does not expose a settings tab: ${pluginId}`);
+    }
+    const container = document.createElement("div");
+    container.id = "threadleaf-plugin-surface";
+    container.className = "threadleaf-plugin-surface threadleaf-plugin-settings-surface";
+    container.append(settingTab.containerEl);
+    document.body.append(container);
+    this.activeSettingTab = settingTab;
+    this.activeSettingTabContainer = container;
+    this.activeSettingTabPluginId = pluginId;
+    try {
+      await Promise.resolve(settingTab.display());
+      this.record("runtime", `Opened ${record.summary.name} settings.`);
+      return this.getSnapshot();
+    } catch (error) {
+      this.activeSettingTab = null;
+      this.activeSettingTabContainer = null;
+      this.activeSettingTabPluginId = null;
+      await Promise.resolve(settingTab.hide()).catch(() => undefined);
+      container.remove();
+      throw error;
+    }
+  }
+
   async closePluginView(): Promise<RuntimeSnapshot> {
+    const settingTab = this.activeSettingTab;
+    const settingTabContainer = this.activeSettingTabContainer;
+    const settingTabPluginId = this.activeSettingTabPluginId;
+    this.activeSettingTab = null;
+    this.activeSettingTabContainer = null;
+    this.activeSettingTabPluginId = null;
+    if (settingTab) {
+      try {
+        await Promise.resolve(settingTab.hide());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.record("error", `Plugin settings cleanup failed: ${message}`);
+      }
+      settingTabContainer?.remove();
+      const pluginName = settingTabPluginId
+        ? (this.plugins.get(settingTabPluginId)?.summary.name ?? settingTabPluginId)
+        : "Plugin";
+      this.record("runtime", `Closed ${pluginName} settings.`);
+    }
     const leaves: WorkspaceLeaf[] = [];
     this.app.workspace.iterateAllLeaves((leaf) => {
       if (leaf instanceof WorkspaceLeaf) {
@@ -413,16 +471,22 @@ export class PluginHost implements PluginRuntimePort {
       integrations: this.app.compatibility.snapshot(),
       editorUpdate: this.editorUpdate ? structuredClone(this.editorUpdate) : null,
       pluginSurface:
-        activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf
+        this.activeSettingTab && this.activeSettingTabPluginId
           ? {
-              displayText: activePluginLeaf.view.getDisplayText(),
-              filePath:
-                activePluginLeaf.view instanceof FileView && activePluginLeaf.view.file
-                  ? activePluginLeaf.view.file.path
-                  : null,
-              viewType: activePluginLeaf.view.getViewType(),
+              displayText: `${this.plugins.get(this.activeSettingTabPluginId)?.summary.name ?? this.activeSettingTabPluginId} settings`,
+              filePath: null,
+              viewType: "threadleaf-plugin-settings",
             }
-          : null,
+          : activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf
+            ? {
+                displayText: activePluginLeaf.view.getDisplayText(),
+                filePath:
+                  activePluginLeaf.view instanceof FileView && activePluginLeaf.view.file
+                    ? activePluginLeaf.view.file.path
+                    : null,
+                viewType: activePluginLeaf.view.getViewType(),
+              }
+            : null,
     };
   }
 

@@ -727,6 +727,11 @@ export class WorkspaceRuntime {
     return this.publishSnapshot();
   }
 
+  async openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
+    await this.pluginHost.openPluginSettings(pluginId);
+    return this.publishSnapshot();
+  }
+
   async openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
     await this.pluginHost.openPluginView(viewType, filePath);
     return this.publishSnapshot();

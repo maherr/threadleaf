@@ -97,6 +97,7 @@ export interface WorkspaceRuntimePort {
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;
+  openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   closePluginView(): Promise<RuntimeSnapshot>;
   loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot>;
@@ -378,6 +379,10 @@ export class WorkspaceController {
 
   markPluginLayoutReady(): Promise<RuntimeSnapshot> {
     return this.#runtime.markPluginLayoutReady();
+  }
+
+  openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
+    return this.#runtime.openPluginSettings(pluginId);
   }
 
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {

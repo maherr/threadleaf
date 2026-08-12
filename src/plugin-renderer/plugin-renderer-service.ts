@@ -139,6 +139,8 @@ export class PluginRendererService {
         return this.requireHost().unloadAllPlugins();
       case "mark-layout-ready":
         return this.requireHost().markLayoutReady();
+      case "open-settings":
+        return this.requireHost().openPluginSettings(requirePayloadString(request, "pluginId"));
       case "open-view":
         return this.requireHost().openPluginView(
           requirePayloadString(request, "viewType"),

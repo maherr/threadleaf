@@ -1277,7 +1277,7 @@ export class Plugin extends Component {
   }
 
   addSettingTab(settingTab: PluginSettingTab): void {
-    this.register(this.app.compatibility.addSettingTab(settingTab));
+    this.register(this.app.compatibility.addSettingTab(this.manifest.id, settingTab));
   }
 
   registerView(type: string, creator: (leaf: WorkspaceLeaf) => View): void {

@@ -160,3 +160,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   active-vault-validated, recovery-journaled move into `.trash` with delete-event delivery, watcher
   attribution, index convergence, stale-edit conflict detection, and exact-byte live proof in the
   unchanged Excalidraw renderer.
+- Per-plugin Options surfaces for registered `PluginSettingTab` instances, with typed Electron IPC,
+  light and dark styling, no-note operation, save and reopen behavior, deterministic hide and
+  unload cleanup, and live unchanged-Excalidraw verification across 200 setting rows.

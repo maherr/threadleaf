@@ -176,6 +176,9 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [x] Complete the Excalidraw active-view full plugin-unload fixture, including plugin-owned modal,
       leaf, command, view, extension, processor, suggester, ribbon, settings, duplicate-reload, and
       captured-error checks across two reload cycles.
+- [x] Expose plugin-owned settings tabs from the Community plugins page, including per-plugin
+      ownership, light and dark presentation, no-note operation, standard save and reopen behavior,
+      and deterministic close and unload cleanup against unchanged Excalidraw.
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
   - [x] Preserve exact Markdown, PNG, and SVG bytes through Threadleaf plugin writes, attachment

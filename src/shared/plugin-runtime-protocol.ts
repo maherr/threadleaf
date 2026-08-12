@@ -100,6 +100,7 @@ export type PluginRendererOperation =
   | "initialize"
   | "load-plugin"
   | "mark-layout-ready"
+  | "open-settings"
   | "open-view"
   | "reload-plugin"
   | "run-command"
@@ -123,6 +124,7 @@ const operations = new Set<PluginRendererOperation>([
   "initialize",
   "load-plugin",
   "mark-layout-ready",
+  "open-settings",
   "open-view",
   "reload-plugin",
   "run-command",

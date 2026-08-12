@@ -6,6 +6,7 @@ export interface PluginRuntimePort {
   getSnapshot(): Promise<RuntimeSnapshot>;
   loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot>;
   markLayoutReady(): Promise<RuntimeSnapshot>;
+  openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;

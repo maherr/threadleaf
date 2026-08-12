@@ -128,6 +128,10 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     return this.requestSnapshot("mark-layout-ready");
   }
 
+  openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("open-settings", { pluginId });
+  }
+
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
     return this.requestSnapshot("open-view", {
       viewType,

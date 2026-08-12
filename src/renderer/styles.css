@@ -2843,6 +2843,12 @@ button.inspector-item:hover {
   white-space: nowrap;
 }
 
+.plugin-options-button {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 7px;
+}
+
 .plugin-toggle {
   display: flex;
   align-items: center;
@@ -3549,6 +3555,7 @@ button.inspector-item:hover {
   background: var(--surface-raised);
   box-shadow: var(--shadow-large);
   font-size: 11px;
+  pointer-events: none;
 }
 
 ::-webkit-scrollbar {

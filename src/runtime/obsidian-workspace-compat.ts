@@ -372,13 +372,23 @@ interface ExtensionRegistration extends OwnedRegistration {
   viewType: string;
 }
 
+export interface CompatibilitySettingTab {
+  containerEl: HTMLElement;
+  display(): unknown;
+  hide(): unknown;
+}
+
+interface SettingTabRegistration extends OwnedRegistration {
+  tab: CompatibilitySettingTab;
+}
+
 export class CompatibilityIntegrationRegistry {
   private readonly editorExtensions = new Set<unknown>();
   private readonly editorSuggests = new Set<unknown>();
   private readonly extensions: ExtensionRegistration[] = [];
   private readonly markdownPostProcessors = new Set<unknown>();
   private readonly ribbonItems = new Set<HTMLElement>();
-  private readonly settingTabs = new Set<unknown>();
+  private readonly settingTabs = new Set<SettingTabRegistration>();
   private readonly statusBarItems = new Set<HTMLElement>();
   private readonly views = new Map<string, ViewRegistration>();
   private readonly icons = new Map<string, string>();
@@ -411,9 +421,17 @@ export class CompatibilityIntegrationRegistry {
     };
   }
 
-  addSettingTab(settingTab: unknown): () => void {
-    this.settingTabs.add(settingTab);
-    return () => this.settingTabs.delete(settingTab);
+  addSettingTab(ownerId: string, settingTab: CompatibilitySettingTab): () => void {
+    const registration = { ownerId, tab: settingTab };
+    this.settingTabs.add(registration);
+    return () => this.settingTabs.delete(registration);
+  }
+
+  getSettingTab(ownerId: string): CompatibilitySettingTab | null {
+    return (
+      [...this.settingTabs].reverse().find((registration) => registration.ownerId === ownerId)
+        ?.tab ?? null
+    );
   }
 
   registerEditorSuggest(editorSuggest: unknown): () => void {
@@ -488,6 +506,7 @@ export class CompatibilityIntegrationRegistry {
       markdownPostProcessors: this.markdownPostProcessors.size,
       ribbonItems: this.ribbonItems.size,
       settingTabs: this.settingTabs.size,
+      settingTabPluginIds: [...new Set([...this.settingTabs].map(({ ownerId }) => ownerId))].sort(),
       statusBarItems: this.statusBarItems.size,
       viewTypes: [...this.views.keys()].sort(),
     };

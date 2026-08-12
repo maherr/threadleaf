@@ -213,6 +213,184 @@
         flex: 1;
         overflow: hidden;
       }
+
+      .threadleaf-plugin-settings-surface {
+        overflow: auto;
+      }
+
+      .threadleaf-plugin-settings-surface > .vertical-tab-content {
+        box-sizing: border-box;
+        width: min(820px, 100%);
+        margin: 0 auto;
+        padding: 34px 42px 64px;
+        color: var(--text-normal);
+      }
+
+      .vertical-tab-content h1,
+      .vertical-tab-content h2,
+      .vertical-tab-content h3 {
+        margin: 0 0 18px;
+        color: var(--text-normal);
+        line-height: 1.25;
+      }
+
+      .vertical-tab-content h1 {
+        font-size: 24px;
+      }
+
+      .vertical-tab-content h2 {
+        font-size: 20px;
+      }
+
+      .vertical-tab-content h3 {
+        margin-top: 24px;
+        font-size: 16px;
+      }
+
+      .vertical-tab-content a {
+        color: var(--interactive-accent);
+      }
+
+      .setting-item {
+        display: flex;
+        min-height: 46px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 13px 0;
+        border-top: 1px solid var(--background-modifier-border);
+      }
+
+      .setting-item[hidden] {
+        display: none;
+      }
+
+      .setting-item-info {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .setting-item-name {
+        color: var(--text-normal);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+
+      .setting-item-description {
+        margin-top: 3px;
+        color: var(--text-muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .setting-item-control {
+        display: flex;
+        max-width: 56%;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .setting-item-heading {
+        min-height: 0;
+        align-items: end;
+        padding-top: 28px;
+        border-top: 0;
+      }
+
+      .setting-item-heading .setting-item-name {
+        font-size: 17px;
+      }
+
+      .setting-item.is-disabled {
+        opacity: 0.58;
+      }
+
+      .setting-item-control button,
+      .vertical-tab-content > button {
+        min-height: 32px;
+        padding: 5px 12px;
+        border: 1px solid var(--background-modifier-border);
+        border-radius: 7px;
+        color: var(--text-normal);
+        background: var(--interactive-normal);
+        font: 600 12px var(--font-interface-theme);
+      }
+
+      .setting-item-control button:hover,
+      .vertical-tab-content > button:hover {
+        background: var(--interactive-hover);
+      }
+
+      .setting-item-control button.mod-cta {
+        border-color: var(--interactive-accent);
+        color: var(--text-on-accent);
+        background: var(--interactive-accent);
+      }
+
+      .setting-item-control button.mod-warning {
+        border-color: var(--background-modifier-error);
+        color: var(--text-error);
+      }
+
+      .setting-item-control input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+      .setting-item-control textarea,
+      .setting-item-control select {
+        box-sizing: border-box;
+        min-height: 32px;
+        max-width: 100%;
+        padding: 5px 9px;
+        border: 1px solid var(--background-modifier-border);
+        border-radius: 6px;
+        outline: 0;
+        color: var(--text-normal);
+        background: var(--background-modifier-form-field);
+        font: 12px var(--font-interface-theme);
+      }
+
+      .setting-item-control textarea {
+        min-height: 76px;
+        resize: vertical;
+      }
+
+      .setting-item-control input:focus-visible,
+      .setting-item-control textarea:focus-visible,
+      .setting-item-control select:focus-visible,
+      .setting-item-control button:focus-visible {
+        outline: 2px solid var(--interactive-accent);
+        outline-offset: 2px;
+      }
+
+      .setting-item-control .checkbox-container {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--interactive-accent);
+      }
+
+      .setting-item-control .slider {
+        width: min(220px, 30vw);
+        accent-color: var(--interactive-accent);
+      }
+
+      @media (max-width: 680px) {
+        .threadleaf-plugin-settings-surface > .vertical-tab-content {
+          padding: 24px 20px 48px;
+        }
+
+        .setting-item {
+          align-items: stretch;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .setting-item-control {
+          width: 100%;
+          max-width: none;
+          justify-content: flex-start;
+        }
+      }
     </style>
   </head>
   <body class="threadleaf-plugin-host theme-dark">

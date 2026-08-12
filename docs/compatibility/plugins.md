@@ -38,8 +38,13 @@ the leaf, and reloads those elements from the exact persisted file. Native-edito
 and SVG/PNG vault export also reach level 4. The full unload fixture starts from an active drawing,
 removes the leaf, plugin-owned release modal, all 69 commands, and every registered integration,
 then completes two clean reload cycles with the exact original counts and no captured runtime
-error. Inline wiki-embed rendering, other export formats, and universal plugin parity are not
-implied by those results.
+error. Plugin-owned settings are now reachable through an Options control shown only for the
+loaded plugin that registered the tab. The unchanged Excalidraw tab renders 200 setting rows, 215
+inputs, 22 dropdowns, and 32 buttons in the production compatibility renderer. It works with or
+without an open note, follows Threadleaf's light and dark scheme, persists a changed option through
+the plugin's normal `saveData` path on close, restores it on reopen, and removes the settings DOM on
+close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
+not implied by those results.
 
 ## Trust model
 
@@ -65,6 +70,9 @@ or replacing the workspace unloads every instance. Catalog and lifecycle operati
 and bound to the active vault identity so a late result cannot cross a vault switch.
 Plugin-owned modals that retain a direct reference to their plugin are tracked independently, so
 targeted unload closes that plugin's transient UI without closing another plugin's modal.
+Plugin-owned settings tabs are tracked by plugin ID. Closing Options invokes the tab's `hide`
+lifecycle before removing its child surface, and disabling, reloading, or replacing the workspace
+uses the same cleanup boundary.
 
 Plugin stylesheets are applied only while the corresponding package is selected and compatibility
 mode is enabled. Imports and legacy executable CSS remain rejected. External and relative asset

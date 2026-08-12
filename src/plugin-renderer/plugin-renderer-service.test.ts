@@ -70,7 +70,7 @@ describe("PluginRendererService", () => {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { MarkdownRenderer, Notice, Plugin, TextFileView, WorkspaceSplit, moment } = require("obsidian");
+        `const { MarkdownRenderer, Notice, Plugin, PluginSettingTab, Setting, TextFileView, WorkspaceSplit, moment } = require("obsidian");
 class RendererView extends TextFileView {
   constructor(leaf) {
     super(leaf);
@@ -116,6 +116,13 @@ module.exports = class RendererFixture extends Plugin {
     });
     this.registerView("renderer-view", (leaf) => new RendererView(leaf));
     this.registerExtensions(["drawing"], "renderer-view");
+    this.addSettingTab(new (class extends PluginSettingTab {
+      display() {
+        this.containerEl.empty();
+        this.containerEl.createEl("h2", { text: "Renderer fixture settings" });
+        new Setting(this.containerEl).setName("Render links").setDesc("Keep drawing links visible.").addToggle((toggle) => toggle.setValue(true));
+      }
+    })(this.app, this));
     this.registerEditorExtension([]);
     this.registerMarkdownCodeBlockProcessor("renderer", () => {});
     this.registerEvent(this.app.vault.on("modify", () => {}));
@@ -274,11 +281,29 @@ module.exports = class RendererFixture extends Plugin {
       ]);
       expect(loaded?.integrations).toMatchObject({
         extensions: [{ extension: "drawing", viewType: "renderer-view" }],
+        settingTabPluginIds: ["renderer-fixture"],
         viewTypes: ["renderer-view"],
       });
       expect(dom.window.eval('app.plugins.plugins["renderer-fixture"].manifest.id')).toBe(
         "renderer-fixture",
       );
+
+      const settings = await service.handle(
+        request("open-settings", { pluginId: "renderer-fixture" }),
+      );
+      expect(settings?.pluginSurface).toEqual({
+        displayText: "Renderer fixture settings",
+        filePath: null,
+        viewType: "threadleaf-plugin-settings",
+      });
+      expect(dom.window.document.querySelector(".vertical-tab-content h2")?.textContent).toBe(
+        "Renderer fixture settings",
+      );
+      expect(dom.window.document.querySelector(".setting-item-name")?.textContent).toBe(
+        "Render links",
+      );
+      await service.handle(request("close-view"));
+      expect(dom.window.document.querySelector("#threadleaf-plugin-surface")).toBeNull();
 
       const opened = await service.handle(
         request("open-view", { viewType: "renderer-view", filePath: "Canvas.drawing" }),
@@ -400,9 +425,12 @@ module.exports = class RendererFixture extends Plugin {
       expect(ran?.notices).toContain("Renderer command ran.");
       expect(ran?.plugin?.compatibilityLevel).toBe(4);
 
+      await service.handle(request("open-settings", { pluginId: "renderer-fixture" }));
       const unloaded = await service.handle(request("unload-all"));
       expect(unloaded?.plugin?.state).toBe("unloaded");
+      expect(unloaded?.pluginSurface).toBeNull();
       expect(unloaded?.commands).toEqual([]);
+      expect(dom.window.document.querySelector("#threadleaf-plugin-surface")).toBeNull();
       expect(dom.window.eval('app.plugins.plugins["renderer-fixture"]')).toBeUndefined();
 
       await service.handle(request("close"));

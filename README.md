@@ -205,6 +205,8 @@ is the default for a vault with no saved Threadleaf plugin preference. Turn it o
 packages you trust. Threadleaf persists that selection outside the vault and reloads it on the next
 start. Start with `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins` to suppress every community plugin
 bundle and stylesheet for that process while keeping the catalog and saved selection visible.
+When a loaded plugin registers its own settings tab, an Options control opens that unchanged tab in
+the compatibility surface. Closing it runs the plugin's normal settings cleanup and save lifecycle.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 
