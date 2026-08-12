@@ -94,3 +94,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Shared `file=` note-name resolution across existing-note CLI commands, with optional `.md`,
   case-insensitive NFC matching, canonical resolved paths, and explicit missing or duplicate-name
   failures instead of arbitrary selection.
+- Headless `file`, `folder`, `folders`, and `wordcount` commands plus expanded `files` filters over a
+  safe visible-file inventory, including attachments, recursive sizes, Unicode counts, private-tree
+  exclusion, and contained file-symlink handling.

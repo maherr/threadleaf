@@ -63,14 +63,18 @@ Headless property commands list and read the current indexed projection, then se
 top-level YAML properties through a byte-preserving, revision-checked application service. The
 writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated
 frontmatter and body bytes, and refuses complex YAML shapes instead of reserializing them blindly.
-Headless task commands scan ordinary Markdown list checkboxes across the vault or one exact note,
+Headless task commands scan ordinary Markdown list checkboxes across the vault or one targeted note,
 filter complete, incomplete, and custom statuses, and address one task by its exact source line.
 Toggle, done, todo, and custom-status mutations replace only the checkbox character through the
 recoverable writer. Unrelated bytes remain exact, no-op requests do not write, and an external-edit
 race keeps the proposed note as a conflict copy.
 Headless alias and tag catalogs reuse the rebuildable metadata index. They can inspect the full
-vault or one exact note, retain frontmatter aliases with their source paths, distinguish unique tag
+vault or one targeted note, retain frontmatter aliases with their source paths, distinguish unique tag
 names from occurrence totals, and report every document carrying a requested tag.
+Read-only file and folder commands inventory ordinary notes, attachments, Canvas documents, and
+empty folders without exposing application-private trees. They support recursive folder and
+extension filters, metadata and byte totals, explicit duplicate-name failures, and Unicode-aware
+word and grapheme-character counts.
 Runtime-owned tabs keep one
 ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
 externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
@@ -155,7 +159,8 @@ remain loadable over `file://`. It also executes the built CLI against disposabl
 copies, validates its versioned JSON envelope, proves an exact property set/read/remove round trip,
 proves alias and tag catalog output, proves an exact task read/status/toggle round trip, and proves
 exact-byte delete and restore behavior. It also resolves a packaged `file=` command by unique note
-name so basename compatibility cannot pass only in source-level tests.
+name so basename compatibility cannot pass only in source-level tests, and exercises visible-file
+inventory plus Unicode word counting.
 
 The development CLI requires an explicit vault and never consults the desktop application's saved
 selection:
@@ -163,6 +168,11 @@ selection:
 ```sh
 pnpm cli --vault /absolute/path/to/vault vault info
 pnpm cli --vault /absolute/path/to/vault files
+pnpm cli --vault /absolute/path/to/vault file file="cover.png"
+pnpm cli --vault /absolute/path/to/vault files folder="Attachments" ext=png total
+pnpm cli --vault /absolute/path/to/vault folder path="Projects" info=size
+pnpm cli --vault /absolute/path/to/vault folders folder="Projects" total
+pnpm cli --vault /absolute/path/to/vault wordcount file="Note" words
 pnpm cli --vault /absolute/path/to/vault read "Folder/Note.md"
 pnpm cli --vault /absolute/path/to/vault --json search "quoted phrase" --limit 20
 pnpm cli --vault /absolute/path/to/vault links path="Folder/Note.md"

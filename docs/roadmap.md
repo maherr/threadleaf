@@ -108,6 +108,8 @@ equivalence through the real writer-to-watcher seam.
       occurrence totals, deterministic count sorting, and verbose source-file attribution.
 - [x] Shared Obsidian-style `file=` note-name resolution across read, metadata, refactor, recovery,
       property, and task commands, with case-insensitive NFC matching and explicit ambiguity.
+- [x] Read-only CLI file and folder inventory across ordinary vault file types plus Unicode-aware
+      word and grapheme-character counts, with private-tree and symlink containment.
 - [ ] Remaining CLI commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.
@@ -118,33 +120,94 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 
 ## Phase 3: Compatibility alpha
 
-- Build an executable same-vault behavior corpus for links, aliases, embeds, attachments,
-  frontmatter, rename semantics, JSON Canvas, and `.obsidian/` coexistence.
-- Broaden the public API based on measured plugin usage.
-- Add workspace views, Markdown processors, menus, plugin settings views, and editor extensions.
-- Import behavior with an explicit preview: enabled-plugin inventory, compatible plugin settings,
-  hotkeys, themes, CSS snippets, and workspace layout. Never require or mutate `.obsidian/`.
-- Publish a generated compatibility registry.
-- Publish benchmark vaults and regression budgets for cold start, full rebuild, watcher bursts,
-  search latency, memory use, and plugin activation.
-- Run plugin bundles through automated compatibility and security checks before distribution.
-- Verify representative open plugins, including a demanding Excalidraw workflow.
+- [ ] Build an executable same-vault behavior corpus for links, aliases, embeds, attachments,
+      frontmatter, rename semantics, JSON Canvas, and `.obsidian/` coexistence.
+- [ ] Broaden the public API from measured open-plugin usage, with one conformance fixture for each
+      supported method, event, component, and lifecycle edge.
+- [ ] Add workspace views, Markdown processors, menus, ribbons, status items, modal and setting
+      components, plugin settings views, and CodeMirror editor extensions.
+- [ ] Implement plugin discovery, install, update, enable, disable, reload, safe mode, diagnostics,
+      and per-vault configuration without requiring a running Obsidian process.
+- [ ] Import behavior with an explicit preview: enabled-plugin inventory, compatible plugin
+      settings, hotkeys, themes, CSS snippets, and workspace layout. Never require or mutate
+      `.obsidian/`.
+- [ ] Publish a generated plugin compatibility registry with supported workflows, failures,
+      required permissions, platform limits, and the last tested plugin and Threadleaf versions.
+- [ ] Publish benchmark vaults and regression budgets for cold start, full rebuild, watcher bursts,
+      search latency, memory use, editor latency, and plugin activation.
+- [ ] Run plugin bundles through automated compatibility and security checks before distribution.
+- [ ] Verify representative open plugins for queries, tasks, templates, Git, citations, calendars,
+      tables, databases, and a demanding end-to-end Excalidraw workflow.
 
 Exit gate: selected high-value plugins complete named workflows against public fixtures.
 
 ## Phase 4: Native extension platform
 
-- Stable capability vocabulary.
-- Permission declarations and review surface.
-- Versioned SDK, conformance suite, signed manifests, marketplace metadata, automated review, and
-  a rapid delisting path.
-- First-party features moved out of the kernel where practical.
+- [ ] Stable capability vocabulary for vault access, network access, subprocesses, secrets,
+      clipboard, notifications, workspace mutation, and editor extensions.
+- [ ] Permission declarations, install-time review, runtime inspection, revocation, and safe
+      degradation when a capability is unavailable.
+- [ ] Versioned SDK, type declarations, API reference, conformance suite, signed manifests,
+      marketplace metadata, automated review, compatibility CI, and a rapid delisting path.
+- [ ] Sandboxed native extensions for portable workflows and a clearly labeled trusted desktop
+      compatibility tier for plugins whose existing contracts require Node or Electron authority.
+- [ ] First-party features moved out of the kernel where practical so third-party extensions use
+      the same stable surfaces as bundled functionality.
+
+## Phase 5: Themes, workspace parity, and desktop 1.0
+
+- [ ] Versioned design tokens and a stable theme contract for light, dark, high-contrast, and
+      system-following appearances.
+- [ ] Theme and CSS snippet discovery, preview, install, update, enable, disable, conflict
+      diagnostics, and per-vault selection.
+- [ ] An Obsidian-theme compatibility layer for commonly used variables, classes, icons, and
+      component states, tested against representative open community themes in every major view.
+- [ ] Visual regression coverage for default and compatibility themes at minimum desktop size,
+      ordinary laptop size, high DPI, zoom, long translations, and moderate deuteranomaly.
+- [ ] Split groups, draggable tabs, pinned tabs, side docks, floating windows, pop-out views,
+      history, bookmarks, quick switcher, command discovery, and persistent workspace layouts.
+- [ ] Source mode, live preview, reading mode, block and heading references, embeds, callouts,
+      footnotes, tables, math, diagrams, and large-document editing with reliable IME and undo.
+- [ ] JSON Canvas editing and embedding plus first-class attachment browsing, rename, preview,
+      drag-and-drop, paste, and missing-file recovery.
+- [ ] Core daily-driver features for templates, daily notes, backlinks, outgoing links, tags,
+      properties, tasks, search, graph, outline, bookmarks, file recovery, and publish-ready export.
+- [ ] Keyboard navigation, screen-reader semantics, reduced motion, contrast, zoom, localization,
+      bidirectional text, and touch-target audits across every reachable control.
+- [ ] Signed Windows, macOS, and Linux installers; reproducible release builds; automatic updates;
+      rollback; crash recovery; opt-in diagnostics; and tested upgrade and downgrade paths.
+- [ ] Public large-vault, attachment-heavy, and plugin-heavy performance budgets with profiling
+      artifacts and regression alarms.
+
+Exit gate: a fresh user and an established Obsidian user can each adopt Threadleaf as their daily
+desktop workspace without a conversion, missing core workflow, or proprietary service dependency.
+
+## Phase 6: Ecosystem and public launch
+
+- [ ] Publish the vault behavior specification, plugin and theme compatibility specifications,
+      fixture corpus, benchmark corpus, and contribution guide under open licenses.
+- [ ] Launch an open plugin and theme directory with reproducible metadata, transparent review,
+      maintainer succession, mirrors, and exportable indexes.
+- [ ] Provide porting tools, API-difference diagnostics, starter templates, compatibility grants,
+      and automated pull-request checks for extension authors.
+- [ ] Complete independent security, accessibility, data-loss, installer, updater, and plugin-host
+      reviews; publish findings and remediation status.
+- [ ] Document governance, release authority, trademark policy, security response, API stability,
+      deprecation, succession, and fork continuity before calling the project 1.0.
+- [ ] Maintain a no-account local path, a complete export path, reproducible source releases, and
+      a self-hostable path for every network service that becomes part of the normal workflow.
+
+Exit gate: public releases are safe to recommend without maintainer caveats, and the community can
+continue the client, specifications, plugins, themes, and distribution if the original stewards
+disappear.
 
 ## Later phases
 
-- Reviewable agent operations with cited diffs.
-- Mobile clients after desktop data safety and compatibility stabilize.
-- Signed, updateable, rollback-tested Linux, macOS, and Windows releases.
+- [ ] Reviewable agent operations with cited diffs and explicit write previews.
+- [ ] Mobile clients after desktop data safety and compatibility stabilize, using the same vault
+      semantics and a deliberately capability-limited extension tier.
+- [ ] Collaboration and publish surfaces that preserve the local, offline, no-account desktop as
+      the complete base product.
 
 ## Future lane: encrypted sync service
 

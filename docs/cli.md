@@ -11,7 +11,11 @@ remembered vault.
 
 ```sh
 threadleaf --vault /path/to/vault vault info
-threadleaf --vault /path/to/vault files [--directory Folder]
+threadleaf --vault /path/to/vault file file="Note"
+threadleaf --vault /path/to/vault files [folder=Folder] [ext=png] [total]
+threadleaf --vault /path/to/vault folder path=Folder [info=files|folders|size]
+threadleaf --vault /path/to/vault folders [folder=Folder] [total]
+threadleaf --vault /path/to/vault wordcount file="Note" [words|characters]
 threadleaf --vault /path/to/vault read "Folder/Note.md"
 threadleaf --vault /path/to/vault search "quoted phrase" [--limit 20]
 threadleaf --vault /path/to/vault links "Folder/Note.md"
@@ -44,7 +48,11 @@ During development, prefix the same arguments with `pnpm cli`.
 | Command | Output | Authority |
 | --- | --- | --- |
 | `vault info` or `vault:info` | Canonical path and note, heading, tag, and link counts | Read-only kernel plus derived index |
-| `files` | Sorted Markdown paths, optionally filtered to a directory | Read-only kernel |
+| `file` | Path, name, extension, byte size, and filesystem timestamps | Safe visible-file inventory |
+| `files` | Sorted visible file paths with folder, extension, and count filters | Safe visible-file inventory |
+| `folder` | Recursive file count, folder count, and byte size | Safe visible-file inventory |
+| `folders` | Sorted visible folder paths with parent and count filters | Safe visible-file inventory |
+| `wordcount` | Unicode word and grapheme-character counts for one Markdown note | Read-only kernel |
 | `read` | UTF-8 note content | Read-only kernel |
 | `search` | Ranked paths and best context, with a bounded result count | Derived metadata and full-text index |
 | `links` | Ordered outgoing internal-link occurrences and resolution states | Derived metadata index |
@@ -71,10 +79,12 @@ During development, prefix the same arguments with `pnpm cli`.
 | `tags` | Unique tag catalog with occurrence counts across the vault or one targeted note | Derived metadata index |
 | `tag` | Occurrence total and carrying files for one tag | Derived metadata index |
 
-The note corpus excludes `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts.
-Read-only kernel opening performs path validation but creates no state directory, vault identity,
-recovery journal, or watcher. `trash list` deliberately inspects `.trash/` through a dedicated path
-without admitting its contents to files, read, search, graph, watcher, workspace, or image results.
+The visible file inventory includes ordinary attachments, Canvas documents, and other user files.
+The Markdown note corpus remains the narrower input to read, search, graph, task, property, and
+workspace behavior. Both exclude `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction
+artifacts. Read-only kernel opening performs path validation but creates no state directory, vault
+identity, recovery journal, or watcher. `trash list` deliberately inspects `.trash/` through a
+dedicated path without admitting its contents to either ordinary corpus.
 
 ## Note targets
 
@@ -88,6 +98,33 @@ This rule is shared by read, graph, outline, text mutation, move, rename, delete
 alias, and tag commands. `task ref=<path:line>` remains exact because the path and source line form
 one stable address. `restore` is also exact because it addresses the one-to-one path mapping under
 `.trash/`, not the live Markdown corpus.
+
+The `file` information command applies name lookup to every visible vault file. Supplying an
+extension matches that full basename. Omitting it compares stems, so `file=Diagram` can resolve
+`Diagram.canvas`; two visible files with the same stem fail as ambiguous rather than selecting one.
+
+## File and folder inventory
+
+`files` lists files recursively from the vault root or `folder=<path>`. `ext=<extension>` accepts a
+leading dot and compares case-insensitively. `total` changes only human output to the resulting
+count; versioned JSON retains the paths and count. The older native `--directory <path>` spelling
+remains an alias for `folder=`.
+
+`folders` lists descendant folders recursively, including empty folders, and `folder=<path>` limits
+the traversal to one visible parent. `folder path=<path>` reports recursive file count, descendant
+folder count, and total visible bytes. `info=files`, `info=folders`, or `info=size` returns one number
+in human mode while JSON retains all fields. Missing and private folder targets fail explicitly for
+`folder`; a missing list filter produces an empty `files` or `folders` result.
+
+Visible inventory follows only file symlinks whose canonical target remains inside the vault and
+outside private application trees. Broken links and links outside the boundary are omitted.
+Recursive discovery does not traverse folder symlink entries, preventing cycles and duplicate
+trees.
+
+`wordcount` counts the complete saved Markdown source after excluding a leading UTF-8 BOM. Words
+use Unicode word boundaries. Characters are Unicode grapheme clusters, so a composed accent or ZWJ
+emoji sequence counts as one visible character. `words` or `characters` returns only that number in
+human mode; JSON always includes the canonical note path and both counts.
 
 The graph commands expose the index's distinctions instead of flattening them. `links` retains
 source order and duplicate occurrences. `backlinks` groups resolved occurrences by source, while
@@ -206,7 +243,8 @@ Add `--json` anywhere before `--` to receive a versioned success envelope on sta
   "ok": true,
   "command": "files",
   "data": {
-    "directory": "",
+    "folder": "",
+    "extension": null,
     "total": 2,
     "files": ["Linked Note.md", "Welcome.md"]
   }
@@ -231,6 +269,11 @@ The public Obsidian CLI guide is behavioral input because its concise verbs alre
 scripts. Threadleaf currently accepts these aliases in addition to its native forms:
 
 ```sh
+threadleaf --vault /path/to/vault file file="Diagram.canvas"
+threadleaf --vault /path/to/vault files folder="Attachments" ext=png total
+threadleaf --vault /path/to/vault folder path="Projects" info=size
+threadleaf --vault /path/to/vault folders folder="Projects" total
+threadleaf --vault /path/to/vault wordcount file="Note" words
 threadleaf --vault /path/to/vault read file="Note"
 threadleaf --vault /path/to/vault read path="Folder/Note.md"
 threadleaf --vault /path/to/vault search query="quoted phrase"

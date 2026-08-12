@@ -28,9 +28,7 @@ export function normalizeMarkdownNotePath(input: string): string {
     );
   });
   if (privateSegment) {
-    throw new Error(
-      `Markdown notes cannot be created in private application paths: ${privateSegment}`,
-    );
+    throw new Error(`Markdown note paths cannot use private application paths: ${privateSegment}`);
   }
   return normalized;
 }

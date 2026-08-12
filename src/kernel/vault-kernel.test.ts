@@ -121,6 +121,45 @@ describe("VaultKernel path policy", () => {
     await expect(kernel.listMarkdownPaths(".trash")).resolves.toEqual([".trash/Folder/Deleted.md"]);
     await expect(kernel.listMarkdownPaths("../")).rejects.toBeInstanceOf(VaultPathError);
   });
+
+  it("lists visible files and folders without exposing private application trees", async () => {
+    await fs.mkdir(path.join(vaultPath, "Folder", "Nested"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Empty"));
+    await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, ".trash"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Root.md"), "root", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "image.PNG"), "image", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "Board.canvas"), "{}", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".obsidian", "appearance.json"), "{}", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".obsidian", "Secret.md"), "private", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".trash", "Deleted.md"), "deleted", "utf8");
+    await fs.symlink("../Root.md", path.join(vaultPath, "Folder", "root-link.txt"));
+    await fs.symlink("../.obsidian/Secret.md", path.join(vaultPath, "Folder", "private-link.md"));
+    await fs.symlink("missing.txt", path.join(vaultPath, "Folder", "broken-link.txt"));
+    const kernel = await openKernel();
+
+    await expect(kernel.listVisiblePaths()).resolves.toEqual({
+      directory: "",
+      exists: true,
+      files: ["Folder/image.PNG", "Folder/Nested/Board.canvas", "Folder/root-link.txt", "Root.md"],
+      folders: ["Empty", "Folder", "Folder/Nested"],
+    });
+    await expect(kernel.listVisiblePaths("Folder/")).resolves.toEqual({
+      directory: "Folder",
+      exists: true,
+      files: ["Folder/image.PNG", "Folder/Nested/Board.canvas", "Folder/root-link.txt"],
+      folders: ["Folder/Nested"],
+    });
+    await expect(kernel.listVisiblePaths(".obsidian")).resolves.toEqual({
+      directory: ".obsidian",
+      exists: false,
+      files: [],
+      folders: [],
+    });
+    await expect(kernel.listVisiblePaths("Missing")).resolves.toMatchObject({ exists: false });
+    await expect(kernel.listMarkdownPaths()).resolves.toEqual(["Root.md"]);
+    await expect(kernel.listVisiblePaths("../")).rejects.toBeInstanceOf(VaultPathError);
+  });
 });
 
 describe("VaultKernel writes", () => {

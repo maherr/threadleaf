@@ -192,12 +192,12 @@ source-line, and no-implicit-write guarantees.
 
 Threadleaf exposes the same vault kernel and derived metadata behavior through a native headless
 command-line interface. Human-readable output is the interactive default, while stable JSON and
-explicit exit codes are first-class automation contracts. The initial `vault info`, `files`,
-`read`, `search`, and recovery-backed `create` commands run without Electron and require an explicit
-vault path. Recovery-backed `append` and `prepend` commands extend that same headless surface for
-existing notes. `links`, `backlinks`, `unresolved`, `orphans`, `deadends`, and `outline` project the
-same rebuildable metadata snapshot used by the desktop. Their native JSON keeps link resolution
-states and occurrence counts explicit instead of deriving a second graph model.
+explicit exit codes are first-class automation contracts. `vault info`, safe file and folder
+inventory, Unicode word counts, `read`, `search`, and recovery-backed `create` run without Electron
+and require an explicit vault path. Recovery-backed `append` and `prepend` extend that same headless
+surface for existing notes. `links`, `backlinks`, `unresolved`, `orphans`, `deadends`, and `outline`
+project the same rebuildable metadata snapshot used by the desktop. Their native JSON keeps link
+resolution states and occurrence counts explicit instead of deriving a second graph model.
 
 Recoverable `delete` moves exact note bytes to the same relative path under vault-local `.trash/`.
 `trash list` exposes those entries without adding them to the ordinary note corpus, and `restore`
@@ -206,10 +206,12 @@ journaled rename. A collision at either path blocks without overwrite or an inve
 trash path itself is sufficient recovery metadata. The CLI exposes no permanent-delete path.
 
 Read-only kernel opening performs canonical path validation but creates no state directory, vault
-identity, recovery journal, or watcher. The CLI note corpus uses the same exclusions and index as
-the desktop workspace, so `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts do
-not leak into file listing, direct note reads, or search. Dedicated trash inspection is the only
-read-only exception.
+identity, recovery journal, or watcher. The CLI has a broad visible-file inventory for ordinary
+notes, attachments, Canvas documents, and empty folders, plus the narrower Markdown note corpus
+used by the desktop index. Both exclude `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction
+artifacts, including canonical targets reached through symlinks. File symlinks remain readable only
+when their targets stay inside the visible boundary; recursive discovery does not traverse folder
+symlink entries. Dedicated trash inspection is the only read-only exception.
 
 An Obsidian-style compatibility facade may accept familiar public command names and arguments, but
 it translates into Threadleaf's own typed command model. It does not make the GUI a hidden CLI

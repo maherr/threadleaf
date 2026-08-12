@@ -8,6 +8,27 @@ export class VaultPathError extends Error {
   }
 }
 
+export interface VisibleVaultPaths {
+  directory: string;
+  exists: boolean;
+  files: string[];
+  folders: string[];
+}
+
+function isPrivateVaultEntry(name: string): boolean {
+  const foldedName = name.toLocaleLowerCase("en-US");
+  return (
+    foldedName === ".obsidian" ||
+    foldedName === ".git" ||
+    foldedName === ".trash" ||
+    foldedName.startsWith(".threadleaf-")
+  );
+}
+
+function hasPrivateVaultSegment(relativePath: string): boolean {
+  return relativePath.split(/[\\/]/).some(isPrivateVaultEntry);
+}
+
 export function isPathInside(rootPath: string, candidatePath: string): boolean {
   const relative = path.relative(rootPath, candidatePath);
   return (
@@ -204,6 +225,44 @@ export class VaultPathPolicy {
     return files.sort((left, right) => left.localeCompare(right));
   }
 
+  async listVisiblePaths(relativeDirectory = ""): Promise<VisibleVaultPaths> {
+    const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
+    if (hasPrivateVaultSegment(normalizedDirectory)) {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
+    const startDirectory = normalizedDirectory
+      ? path.resolve(this.rootPath, ...normalizedDirectory.split("/"))
+      : this.rootPath;
+    let canonicalDirectory: string;
+    try {
+      canonicalDirectory = await fs.realpath(startDirectory);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+      }
+      throw error;
+    }
+    if (!isPathInside(this.rootPath, canonicalDirectory)) {
+      throw new VaultPathError(`Directory resolves outside the vault: ${relativeDirectory}`);
+    }
+    if (hasPrivateVaultSegment(path.relative(this.rootPath, canonicalDirectory))) {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
+    const stat = await fs.stat(canonicalDirectory);
+    if (!stat.isDirectory()) {
+      throw new VaultPathError(`Vault directory path is not a directory: ${relativeDirectory}`);
+    }
+    const files: string[] = [];
+    const folders: string[] = [];
+    await this.collectVisiblePaths(canonicalDirectory, normalizedDirectory, files, folders);
+    return {
+      directory: normalizedDirectory,
+      exists: true,
+      files: files.sort((left, right) => left.localeCompare(right)),
+      folders: folders.sort((left, right) => left.localeCompare(right)),
+    };
+  }
+
   private async collectMarkdownPaths(
     directory: string,
     relativeDirectory: string,
@@ -213,13 +272,7 @@ export class VaultPathPolicy {
     entries.sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of entries) {
-      const foldedName = entry.name.toLocaleLowerCase("en-US");
-      if (
-        foldedName === ".obsidian" ||
-        foldedName === ".git" ||
-        foldedName === ".trash" ||
-        foldedName.startsWith(".threadleaf-")
-      ) {
+      if (isPrivateVaultEntry(entry.name)) {
         continue;
       }
 
@@ -232,8 +285,19 @@ export class VaultPathPolicy {
       }
 
       if (entry.isSymbolicLink()) {
-        const canonicalPath = await fs.realpath(absolutePath);
-        if (!isPathInside(this.rootPath, canonicalPath)) {
+        let canonicalPath: string;
+        try {
+          canonicalPath = await fs.realpath(absolutePath);
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+            continue;
+          }
+          throw error;
+        }
+        if (
+          !isPathInside(this.rootPath, canonicalPath) ||
+          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath))
+        ) {
           continue;
         }
         const targetStat = await fs.stat(canonicalPath);
@@ -244,6 +308,54 @@ export class VaultPathPolicy {
       }
 
       if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+        files.push(relativePath);
+      }
+    }
+  }
+
+  private async collectVisiblePaths(
+    directory: string,
+    relativeDirectory: string,
+    files: string[],
+    folders: string[],
+  ): Promise<void> {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+
+    for (const entry of entries) {
+      if (isPrivateVaultEntry(entry.name)) {
+        continue;
+      }
+      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        folders.push(relativePath);
+        await this.collectVisiblePaths(absolutePath, relativePath, files, folders);
+        continue;
+      }
+      if (entry.isSymbolicLink()) {
+        let canonicalPath: string;
+        try {
+          canonicalPath = await fs.realpath(absolutePath);
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+            continue;
+          }
+          throw error;
+        }
+        if (
+          !isPathInside(this.rootPath, canonicalPath) ||
+          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath))
+        ) {
+          continue;
+        }
+        const targetStat = await fs.stat(canonicalPath);
+        if (targetStat.isFile()) {
+          files.push(relativePath);
+        }
+        continue;
+      }
+      if (entry.isFile()) {
         files.push(relativePath);
       }
     }

@@ -31,7 +31,7 @@ import {
   MetadataIndex,
   type MetadataIndexSnapshot,
 } from "../kernel/metadata-index";
-import { displayTitleFromVaultPath } from "../kernel/note-path";
+import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
 import {
   canonicalizePotentialPath,
   isPathInside,
@@ -55,7 +55,11 @@ export const cliExitCodes = {
 type CliCommandId =
   | "help"
   | "vault.info"
+  | "file"
   | "files"
+  | "folder"
+  | "folders"
+  | "wordcount"
   | "read"
   | "search"
   | "links"
@@ -101,7 +105,27 @@ interface CliVaultInfoCommand extends CliVaultCommand {
 
 interface CliFilesCommand extends CliVaultCommand {
   id: "files";
-  directory: string;
+  folder: string;
+  extension: string | null;
+  totalOnly: boolean;
+}
+
+interface CliFileCommand extends CliVaultCommand {
+  id: "file";
+  filePath: string;
+  targetKind: CliTargetKind;
+}
+
+interface CliFolderCommand extends CliVaultCommand {
+  id: "folder";
+  folder: string;
+  info: "files" | "folders" | "size" | null;
+}
+
+interface CliFoldersCommand extends CliVaultCommand {
+  id: "folders";
+  folder: string;
+  totalOnly: boolean;
 }
 
 type CliTargetKind = "path" | "file";
@@ -110,6 +134,13 @@ interface CliReadCommand extends CliVaultCommand {
   id: "read";
   filePath: string;
   targetKind: CliTargetKind;
+}
+
+interface CliWordcountCommand extends CliVaultCommand {
+  id: "wordcount";
+  filePath: string;
+  targetKind: CliTargetKind;
+  valueOnly: "words" | "characters" | null;
 }
 
 interface CliSearchCommand extends CliVaultCommand {
@@ -239,7 +270,11 @@ interface CliTagCommand extends CliVaultCommand {
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
+  | CliFileCommand
   | CliFilesCommand
+  | CliFolderCommand
+  | CliFoldersCommand
+  | CliWordcountCommand
   | CliReadCommand
   | CliSearchCommand
   | CliTargetMetadataCommand
@@ -578,9 +613,10 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     }
     return { id: "vault.info", json, vaultPath };
   }
-  if (name === "files") {
+  if (name === "file") {
     if (
-      values.length > 0 ||
+      values.length !== 1 ||
+      directory !== null ||
       limit !== null ||
       content !== null ||
       inline ||
@@ -588,9 +624,182 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       renamedName !== null ||
       updateLinks
     ) {
-      usageFailure("files accepts only the optional --directory value.");
+      usageFailure("file requires exactly one vault file target.");
     }
-    return { id: "files", json, vaultPath, directory: directory ?? "" };
+    const { filePath, targetKind } = parseCliTarget(values[0] ?? "");
+    if (!filePath) {
+      usageFailure("file requires a non-empty target.");
+    }
+    return { id: "file", json, vaultPath, filePath, targetKind };
+  }
+  if (name === "files") {
+    if (
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("files accepts folder, ext, and total arguments only.");
+    }
+    let parameterFolder: string | null = null;
+    let extension: string | null = null;
+    let totalOnly = false;
+    for (const value of values) {
+      if (value.startsWith("folder=")) {
+        if (parameterFolder !== null) {
+          usageFailure("files folder may be supplied only once.");
+        }
+        parameterFolder = value.slice("folder=".length);
+        if (!parameterFolder) {
+          usageFailure("files folder requires a value.");
+        }
+      } else if (value.startsWith("ext=")) {
+        if (extension !== null) {
+          usageFailure("files ext may be supplied only once.");
+        }
+        extension = value.slice("ext=".length).replace(/^\./, "");
+        if (!extension || extension.includes("/") || extension.includes("\\")) {
+          usageFailure("files ext requires one extension name.");
+        }
+        extension = extension.normalize("NFC").toLocaleLowerCase("en-US");
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure("files total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else {
+        usageFailure(`Unsupported files argument: ${value}`);
+      }
+    }
+    if (directory !== null && parameterFolder !== null) {
+      usageFailure("files folder may be supplied as --directory or folder=, not both.");
+    }
+    return {
+      id: "files",
+      json,
+      vaultPath,
+      folder: directory ?? parameterFolder ?? "",
+      extension,
+      totalOnly,
+    };
+  }
+  if (name === "folders") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("folders accepts folder and total arguments only.");
+    }
+    let folder = "";
+    let hasFolder = false;
+    let totalOnly = false;
+    for (const value of values) {
+      if (value.startsWith("folder=")) {
+        if (hasFolder) {
+          usageFailure("folders folder may be supplied only once.");
+        }
+        folder = value.slice("folder=".length);
+        if (!folder) {
+          usageFailure("folders folder requires a value.");
+        }
+        hasFolder = true;
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure("folders total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else {
+        usageFailure(`Unsupported folders argument: ${value}`);
+      }
+    }
+    return { id: "folders", json, vaultPath, folder, totalOnly };
+  }
+  if (name === "folder") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("folder accepts path and info arguments only.");
+    }
+    let folder: string | null = null;
+    let info: CliFolderCommand["info"] = null;
+    for (const value of values) {
+      if (value.startsWith("path=")) {
+        if (folder !== null) {
+          usageFailure("folder path may be supplied only once.");
+        }
+        folder = value.slice("path=".length);
+      } else if (value.startsWith("info=")) {
+        if (info !== null) {
+          usageFailure("folder info may be supplied only once.");
+        }
+        const requestedInfo = value.slice("info=".length);
+        if (requestedInfo !== "files" && requestedInfo !== "folders" && requestedInfo !== "size") {
+          usageFailure("folder info must be files, folders, or size.");
+        }
+        info = requestedInfo;
+      } else if (folder === null && !value.includes("=")) {
+        folder = value;
+      } else {
+        usageFailure(`Unsupported folder argument: ${value}`);
+      }
+    }
+    if (!folder) {
+      usageFailure("folder requires path=<folder>.");
+    }
+    return { id: "folder", json, vaultPath, folder, info };
+  }
+  if (name === "wordcount") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("wordcount accepts one note target and a count flag only.");
+    }
+    let filePath: string | null = null;
+    let targetKind: CliTargetKind | null = null;
+    let valueOnly: CliWordcountCommand["valueOnly"] = null;
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (filePath !== null) {
+          usageFailure("wordcount accepts only one note target.");
+        }
+        const target = parseCliTarget(value);
+        filePath = target.filePath;
+        targetKind = target.targetKind;
+      } else if (value === "words" || value === "characters") {
+        if (valueOnly !== null) {
+          usageFailure("wordcount accepts only one of words or characters.");
+        }
+        valueOnly = value;
+      } else if (filePath === null && !value.includes("=")) {
+        filePath = value;
+        targetKind = "path";
+      } else {
+        usageFailure(`Unsupported wordcount argument: ${value}`);
+      }
+    }
+    if (!filePath || targetKind === null) {
+      usageFailure("wordcount requires one Markdown note target.");
+    }
+    return { id: "wordcount", json, vaultPath, filePath, targetKind, valueOnly };
   }
   if (name === "read") {
     if (
@@ -1231,7 +1440,11 @@ export const cliHelp = `Threadleaf command line
 
 Usage:
   threadleaf --vault <path> [--json] vault info
-  threadleaf --vault <path> [--json] files [--directory <path>]
+  threadleaf --vault <path> [--json] file <vault-file>
+  threadleaf --vault <path> [--json] files [folder=<path>] [ext=<extension>] [total]
+  threadleaf --vault <path> [--json] folder path=<path> [info=files|folders|size]
+  threadleaf --vault <path> [--json] folders [folder=<path>] [total]
+  threadleaf --vault <path> [--json] wordcount <note.md> [words|characters]
   threadleaf --vault <path> [--json] read <note.md>
   threadleaf --vault <path> [--json] search <query> [--limit <count>]
   threadleaf --vault <path> [--json] links <note.md>
@@ -1259,6 +1472,11 @@ Usage:
   threadleaf --vault <path> [--json] tag name=<tag> [total|verbose]
 
 Compatibility spellings:
+  threadleaf --vault <path> file file=<name>
+  threadleaf --vault <path> files folder=<path> ext=<extension> total
+  threadleaf --vault <path> folder path=<path> info=size
+  threadleaf --vault <path> folders folder=<path> total
+  threadleaf --vault <path> wordcount file=<note-name> words
   threadleaf --vault <path> read file=<note-name>
   threadleaf --vault <path> search query=<text>
   threadleaf --vault <path> links path=<note.md>
@@ -1285,6 +1503,7 @@ Target rules:
   Positional note targets and path= are exact vault-relative paths.
   file= resolves one case-insensitive NFC-normalized Markdown basename; .md is optional.
   Missing and duplicate file= matches fail explicitly instead of choosing a note.
+  The file info command uses the same rule across every visible vault file type.
 
 Commands are headless and never require a running Electron process.
 `;
@@ -1494,7 +1713,11 @@ async function resolveCliMarkdownTarget(
   targetKind: CliTargetKind,
 ): Promise<string> {
   if (targetKind === "path") {
-    return requestedPath;
+    const normalizedPath = normalizeMarkdownNotePath(requestedPath);
+    if (!(await vault.listMarkdownPaths()).includes(normalizedPath)) {
+      throw new Error(`Markdown note is not indexed in this vault: ${normalizedPath}`);
+    }
+    return normalizedPath;
   }
   if (
     requestedPath.length > 4096 ||
@@ -1518,6 +1741,83 @@ async function resolveCliMarkdownTarget(
     throw new Error(`Ambiguous file=${requestedPath}. Matches: ${matches.join(", ")}`);
   }
   return matches[0] as string;
+}
+
+function visibleFileLookupKey(rawTarget: string): { key: string; includesExtension: boolean } {
+  const portableTarget = rawTarget.replaceAll("\\", "/");
+  const basename = path.posix.basename(portableTarget).normalize("NFC");
+  const extension = path.posix.extname(basename);
+  return {
+    key: basename.toLocaleLowerCase("en-US"),
+    includesExtension: extension.length > 0,
+  };
+}
+
+async function resolveCliVisibleFileTarget(
+  kernel: VaultKernel,
+  requestedPath: string,
+  targetKind: CliTargetKind,
+): Promise<string> {
+  const inventory = await kernel.listVisiblePaths();
+  if (targetKind === "path") {
+    const normalizedPath = normalizeVaultPath(requestedPath);
+    if (!inventory.files.includes(normalizedPath)) {
+      throw new Error(`Vault file is not visible in this vault: ${normalizedPath}`);
+    }
+    return normalizedPath;
+  }
+  if (
+    requestedPath.length > 4096 ||
+    requestedPath.includes("\0") ||
+    requestedPath.endsWith("/") ||
+    requestedPath.endsWith("\\")
+  ) {
+    throw new Error(`Invalid file= target name: ${requestedPath}`);
+  }
+  const requested = visibleFileLookupKey(requestedPath);
+  if (!requested.key) {
+    throw new Error("file= requires a non-empty vault file name.");
+  }
+  const matches = inventory.files.filter((candidatePath) => {
+    const candidateBasename = path.posix.basename(candidatePath).normalize("NFC");
+    const candidateExtension = path.posix.extname(candidateBasename);
+    const candidate = requested.includesExtension
+      ? candidateBasename
+      : candidateBasename.slice(0, candidateBasename.length - candidateExtension.length);
+    return candidate.toLocaleLowerCase("en-US") === requested.key;
+  });
+  if (matches.length === 0) {
+    throw new Error(`No vault file matches file=${requestedPath}`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Ambiguous file=${requestedPath}. Matches: ${matches.join(", ")}`);
+  }
+  return matches[0] as string;
+}
+
+async function visibleFileInfo(kernel: VaultKernel, filePath: string) {
+  const absolutePath = await kernel.paths.resolveForRead(filePath);
+  const stat = await fs.stat(absolutePath);
+  const basename = path.posix.basename(filePath);
+  const extension = path.posix.extname(basename);
+  return {
+    path: filePath,
+    name: extension ? basename.slice(0, -extension.length) : basename,
+    extension: extension.replace(/^\./, ""),
+    size: stat.size,
+    created: Math.trunc(stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.ctimeMs),
+    modified: Math.trunc(stat.mtimeMs),
+  };
+}
+
+function countSourceText(content: string): { words: number; characters: number } {
+  const source = content.startsWith("\uFEFF") ? content.slice(1) : content;
+  const words = [...new Intl.Segmenter(undefined, { granularity: "word" }).segment(source)].filter(
+    (segment) => segment.isWordLike,
+  ).length;
+  const characters = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(source)]
+    .length;
+  return { words, characters };
 }
 
 function indexedMarkdownDocument(
@@ -1850,13 +2150,64 @@ async function executeCommand(
       }
       return outcome;
     }
-    if (command.id === "files") {
-      const directory = normalizeVaultDirectoryPath(command.directory);
-      const prefix = directory ? `${directory}/` : "";
-      const files = (await kernel.listMarkdownPaths()).filter(
-        (filePath) => !prefix || filePath.startsWith(prefix),
+    if (command.id === "file") {
+      const filePath = await resolveCliVisibleFileTarget(
+        kernel,
+        command.filePath,
+        command.targetKind,
       );
-      return { directory, total: files.length, files };
+      return visibleFileInfo(kernel, filePath);
+    }
+    if (command.id === "files") {
+      const inventory = await kernel.listVisiblePaths(command.folder);
+      const files = command.extension
+        ? inventory.files.filter(
+            (filePath) =>
+              path.posix
+                .extname(filePath)
+                .replace(/^\./, "")
+                .normalize("NFC")
+                .toLocaleLowerCase("en-US") === command.extension,
+          )
+        : inventory.files;
+      return {
+        folder: inventory.directory,
+        extension: command.extension,
+        total: files.length,
+        files,
+      };
+    }
+    if (command.id === "folders") {
+      const inventory = await kernel.listVisiblePaths(command.folder);
+      return {
+        folder: inventory.directory,
+        total: inventory.folders.length,
+        folders: inventory.folders,
+      };
+    }
+    if (command.id === "folder") {
+      const folder = normalizeVaultDirectoryPath(command.folder);
+      const inventory = await kernel.listVisiblePaths(folder);
+      if (!inventory.exists) {
+        throw new Error(`Vault folder is not visible in this vault: ${folder}`);
+      }
+      const sizes = await Promise.all(
+        inventory.files.map(async (filePath) => {
+          const absolutePath = await kernel.paths.resolveForRead(filePath);
+          return (await fs.stat(absolutePath)).size;
+        }),
+      );
+      return {
+        path: folder,
+        files: inventory.files.length,
+        folders: inventory.folders.length,
+        size: sizes.reduce((total, size) => total + size, 0),
+      };
+    }
+    if (command.id === "wordcount") {
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const snapshot = await kernel.readText(filePath);
+      return { path: filePath, ...countSourceText(snapshot.content) };
     }
     if (command.id === "read") {
       const filePath = normalizeVaultPath(
@@ -2038,9 +2389,44 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "read") {
     return (data as { content: string }).content;
   }
+  if (command.id === "file") {
+    const result = data as {
+      path: string;
+      name: string;
+      extension: string;
+      size: number;
+      created: number;
+      modified: number;
+    };
+    return `path\t${result.path}\nname\t${result.name}\nextension\t${result.extension}\nsize\t${result.size}\ncreated\t${result.created}\nmodified\t${result.modified}\n`;
+  }
   if (command.id === "files") {
-    const files = (data as { files: string[] }).files;
-    return files.length > 0 ? `${files.join("\n")}\n` : "No Markdown files.\n";
+    const result = data as { total: number; files: string[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    return result.files.length > 0 ? `${result.files.join("\n")}\n` : "No vault files.\n";
+  }
+  if (command.id === "folders") {
+    const result = data as { total: number; folders: string[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    return result.folders.length > 0 ? `${result.folders.join("\n")}\n` : "No vault folders.\n";
+  }
+  if (command.id === "folder") {
+    const result = data as { path: string; files: number; folders: number; size: number };
+    if (command.info !== null) {
+      return `${result[command.info]}\n`;
+    }
+    return `path\t${result.path}\nfiles\t${result.files}\nfolders\t${result.folders}\nsize\t${result.size}\n`;
+  }
+  if (command.id === "wordcount") {
+    const result = data as { path: string; words: number; characters: number };
+    if (command.valueOnly !== null) {
+      return `${result[command.valueOnly]}\n`;
+    }
+    return `path\t${result.path}\nwords\t${result.words}\ncharacters\t${result.characters}\n`;
   }
   if (command.id === "search") {
     const results = (

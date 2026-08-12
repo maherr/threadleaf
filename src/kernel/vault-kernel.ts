@@ -29,6 +29,7 @@ import {
   isPathInside,
   normalizeVaultPath,
   VaultPathPolicy,
+  type VisibleVaultPaths,
 } from "./path-policy";
 import type {
   MoveWithWritesRequest,
@@ -225,6 +226,10 @@ export class VaultKernel implements VaultMutationPort {
 
   async listMarkdownPaths(relativeDirectory = ""): Promise<string[]> {
     return this.paths.listMarkdownPaths(relativeDirectory);
+  }
+
+  async listVisiblePaths(relativeDirectory = ""): Promise<VisibleVaultPaths> {
+    return this.paths.listVisiblePaths(relativeDirectory);
   }
 
   async readText(relativePath: string): Promise<TextFileSnapshot> {

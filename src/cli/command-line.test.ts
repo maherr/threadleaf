@@ -71,6 +71,34 @@ describe("Threadleaf CLI arguments", () => {
       id: "vault.info",
       vaultPath: "/vault",
     });
+    expect(parseCliArguments(["--vault=/vault", "file", "file=Note"])).toMatchObject({
+      id: "file",
+      filePath: "Note",
+      targetKind: "file",
+    });
+    expect(
+      parseCliArguments(["--vault=/vault", "files", "folder=Assets", "ext=.PNG", "total"]),
+    ).toMatchObject({ id: "files", folder: "Assets", extension: "png", totalOnly: true });
+    expect(
+      parseCliArguments(["--vault=/vault", "folders", "folder=Projects", "total"]),
+    ).toMatchObject({
+      id: "folders",
+      folder: "Projects",
+      totalOnly: true,
+    });
+    expect(
+      parseCliArguments(["--vault=/vault", "folder", "path=Projects", "info=size"]),
+    ).toMatchObject({
+      id: "folder",
+      folder: "Projects",
+      info: "size",
+    });
+    expect(parseCliArguments(["--vault=/vault", "wordcount", "file=Note", "words"])).toMatchObject({
+      id: "wordcount",
+      filePath: "Note",
+      targetKind: "file",
+      valueOnly: "words",
+    });
     expect(parseCliArguments(["read", "file=Folder/Note.md", "--vault=/vault"])).toMatchObject({
       id: "read",
       filePath: "Folder/Note.md",
@@ -255,6 +283,16 @@ describe("Threadleaf CLI arguments", () => {
     expect(() =>
       parseCliArguments(["--vault", "/vault", "search", "term", "--limit", "101"]),
     ).toThrow("may not exceed 100");
+    expect(() => parseCliArguments(["--vault=/vault", "file"])).toThrow("exactly one");
+    expect(() => parseCliArguments(["--vault=/vault", "files", "ext=png", "ext=md"])).toThrow(
+      "only once",
+    );
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "folder", "path=Folder", "info=unknown"]),
+    ).toThrow("files, folders, or size");
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "wordcount", "file=Note", "words", "characters"]),
+    ).toThrow("only one");
 
     const result = await invoke(["--json", "--vault", vaultPath, "unknown"]);
     expect(result.exitCode).toBe(cliExitCodes.usage);
@@ -1510,7 +1548,7 @@ describe("Threadleaf CLI read-only workflows", () => {
     await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(before);
   });
 
-  it("lists the canonical note corpus and keeps hidden application metadata excluded", async () => {
+  it("lists the visible vault corpus and keeps private application metadata excluded", async () => {
     const all = await invoke(["--vault", vaultPath, "files"]);
     expect(all).toEqual({
       exitCode: 0,
@@ -1521,11 +1559,138 @@ describe("Threadleaf CLI read-only workflows", () => {
     const nested = await invoke(["--vault", vaultPath, "--json", "files", "--directory", "Folder"]);
     expect(JSON.parse(nested.stdout)).toMatchObject({
       command: "files",
-      data: { directory: "Folder", total: 1, files: ["Folder/Beta.md"] },
+      data: { folder: "Folder", total: 1, files: ["Folder/Beta.md"] },
     });
 
     const hidden = await invoke(["--vault", vaultPath, "files", "--directory", ".obsidian"]);
-    expect(hidden.stdout).toBe("No Markdown files.\n");
+    expect(hidden.stdout).toBe("No vault files.\n");
+  });
+
+  it("lists and measures ordinary files and folders through the safe vault inventory", async () => {
+    await fs.mkdir(path.join(vaultPath, "Folder", "Nested"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Empty"));
+    await fs.mkdir(path.join(vaultPath, ".trash"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Folder", "image.PNG"), "1234", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "Board.canvas"), "{}", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".trash", "private.png"), "hidden", "utf8");
+
+    const png = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "files",
+      "folder=Folder",
+      "ext=.png",
+    ]);
+    expect(JSON.parse(png.stdout)).toMatchObject({
+      command: "files",
+      data: {
+        folder: "Folder",
+        extension: "png",
+        total: 1,
+        files: ["Folder/image.PNG"],
+      },
+    });
+    const fileTotal = await invoke(["--vault", vaultPath, "files", "folder=Folder", "total"]);
+    expect(fileTotal.stdout).toBe("3\n");
+
+    const folders = await invoke(["--json", "--vault", vaultPath, "folders"]);
+    expect(JSON.parse(folders.stdout).data).toEqual({
+      folder: "",
+      total: 3,
+      folders: ["Empty", "Folder", "Folder/Nested"],
+    });
+    const nestedFolders = await invoke(["--vault", vaultPath, "folders", "folder=Folder", "total"]);
+    expect(nestedFolders.stdout).toBe("1\n");
+
+    const folderInfo = await invoke(["--json", "--vault", vaultPath, "folder", "path=Folder"]);
+    expect(JSON.parse(folderInfo.stdout).data).toEqual({
+      path: "Folder",
+      files: 3,
+      folders: 1,
+      size: 4 + 2 + Buffer.byteLength("# Beta heading\n\nA local target.\n"),
+    });
+    const folderSize = await invoke(["--vault", vaultPath, "folder", "path=Folder", "info=size"]);
+    expect(folderSize.stdout).toBe(
+      `${4 + 2 + Buffer.byteLength("# Beta heading\n\nA local target.\n")}\n`,
+    );
+
+    const fileInfo = await invoke(["--json", "--vault", vaultPath, "file", "file=image.png"]);
+    expect(JSON.parse(fileInfo.stdout)).toMatchObject({
+      command: "file",
+      data: {
+        path: "Folder/image.PNG",
+        name: "image",
+        extension: "PNG",
+        size: 4,
+        created: expect.any(Number),
+        modified: expect.any(Number),
+      },
+    });
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails explicitly for ambiguous file info and hidden or missing folder targets", async () => {
+    await fs.writeFile(path.join(vaultPath, "Beta.png"), "image", "utf8");
+    const ambiguous = await invoke(["--json", "--vault", vaultPath, "file", "file=Beta"]);
+    expect(ambiguous.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(ambiguous.stderr)).toMatchObject({
+      command: "file",
+      error: {
+        code: "VAULT",
+        message: expect.stringMatching(/Ambiguous file=Beta.*Beta\.png.*Folder\/Beta\.md/),
+      },
+    });
+
+    const exactAttachment = await invoke(["--json", "--vault", vaultPath, "file", "file=beta.png"]);
+    expect(JSON.parse(exactAttachment.stdout).data.path).toBe("Beta.png");
+
+    for (const folder of ["Missing", ".obsidian"]) {
+      const result = await invoke(["--json", "--vault", vaultPath, "folder", `path=${folder}`]);
+      expect(result.exitCode).toBe(cliExitCodes.vault);
+      expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: "VAULT" } });
+    }
+    const hiddenFile = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "file",
+      "path=.obsidian/Hidden.md",
+    ]);
+    expect(hiddenFile.exitCode).toBe(cliExitCodes.vault);
+
+    const hiddenWordcount = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "wordcount",
+      "path=.obsidian/Hidden.md",
+    ]);
+    expect(hiddenWordcount.exitCode).toBe(cliExitCodes.vault);
+  });
+
+  it("counts Unicode words and grapheme characters from exact source text", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Stats.md"),
+      "\uFEFFHello, world! 👨‍👩‍👧‍👦\nCaf\u00e9",
+      "utf8",
+    );
+    const counted = await invoke(["--json", "--vault", vaultPath, "wordcount", "file=stats"]);
+    expect(JSON.parse(counted.stdout)).toMatchObject({
+      command: "wordcount",
+      data: { path: "Stats.md", words: 3, characters: 20 },
+    });
+    const words = await invoke(["--vault", vaultPath, "wordcount", "path=Stats.md", "words"]);
+    expect(words.stdout).toBe("3\n");
+    const characters = await invoke([
+      "--vault",
+      vaultPath,
+      "wordcount",
+      "file=Stats.md",
+      "characters",
+    ]);
+    expect(characters.stdout).toBe("20\n");
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reads exact Markdown through native and compatibility path syntax", async () => {
@@ -1554,7 +1719,7 @@ describe("Threadleaf CLI read-only workflows", () => {
 
     const hidden = await invoke(["--json", "--vault", vaultPath, "read", ".obsidian/Hidden.md"]);
     expect(hidden.exitCode).toBe(cliExitCodes.vault);
-    expect(JSON.parse(hidden.stderr).error.message).toContain("not indexed");
+    expect(JSON.parse(hidden.stderr).error.message).toContain("private application paths");
   });
 
   it("searches indexed content in human and JSON modes", async () => {

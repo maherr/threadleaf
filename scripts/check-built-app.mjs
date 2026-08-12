@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { access, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -106,7 +106,38 @@ async function verifyBuiltCliMutations() {
       "---\naliases: [Built alias]\ntags: [built, smoke]\n---\n# Metadata\n",
       "utf8",
     );
+    await mkdir(path.join(vaultPath, "Assets"));
+    await writeFile(path.join(vaultPath, "Assets", "Asset.canvas"), "{}", "utf8");
     const environment = { ...process.env, XDG_STATE_HOME: statePath };
+
+    const fileInfo = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "file", "file=asset.canvas"],
+      { encoding: "utf8", env: environment },
+    );
+    const fileInfoEnvelope = fileInfo.status === 0 ? JSON.parse(fileInfo.stdout) : null;
+    if (
+      fileInfo.stderr !== "" ||
+      fileInfoEnvelope?.command !== "file" ||
+      fileInfoEnvelope.data?.path !== "Assets/Asset.canvas" ||
+      fileInfoEnvelope.data?.extension !== "canvas" ||
+      fileInfoEnvelope.data?.size !== 2
+    ) {
+      throw new Error(
+        `Built CLI file inventory smoke test failed: ${fileInfo.stderr || `exit ${fileInfo.status}`}`,
+      );
+    }
+
+    const wordcount = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "wordcount", "file=tasks", "words"],
+      { encoding: "utf8", env: environment },
+    );
+    if (wordcount.status !== 0 || wordcount.stderr !== "" || wordcount.stdout !== "3\n") {
+      throw new Error(
+        `Built CLI wordcount smoke test failed: ${wordcount.stderr || `exit ${wordcount.status}`}`,
+      );
+    }
 
     const propertySet = spawnSync(
       process.execPath,
@@ -367,5 +398,5 @@ try {
 }
 
 console.log(
-  `Verified Electron entry points, headless CLI graph, property, alias, tag, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
+  `Verified Electron entry points, headless CLI inventory, wordcount, graph, property, alias, tag, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
 );
