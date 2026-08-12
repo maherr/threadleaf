@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
+import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
+import type { RuntimeSnapshot } from "../shared/contracts";
 import { WorkspaceRuntime } from "./workspace-runtime";
 import {
   createWorkspaceState,
@@ -132,6 +134,75 @@ describe("WorkspaceRuntime", () => {
     const commanded = await workspace.runPluginCommand("threadleaf-fixture-confirm");
     expect(commanded.notices).toContain("Fixture command crossed the compatibility bridge.");
     expect(commanded.plugin?.compatibilityLevel).toBe(4);
+  });
+
+  it("merges actions and command workflows from an external plugin runtime", async () => {
+    let compatibilityLevel: 0 | 1 | 2 | 3 | 4 = 3;
+    let closed = false;
+    const pluginSnapshot = (): RuntimeSnapshot => ({
+      vault: {
+        id: null,
+        name: "vault",
+        path: vaultPath,
+        markdownFileCount: 2,
+        mode: "synthetic-read-only",
+        source: "direct",
+        warning: null,
+      },
+      plugin: {
+        id: "external-fixture",
+        name: "External fixture",
+        version: "0.1.0",
+        state: "loaded",
+        compatibilityLevel,
+        stylesheetDiscovered: false,
+        error: null,
+      },
+      plugins: [],
+      commands: [{ id: "external-command", name: "External command", ownerId: "external-fixture" }],
+      actions: [{ id: "external-command", name: "External command", source: "plugin" }],
+      notices: compatibilityLevel === 4 ? ["External command ran."] : [],
+      events: [],
+    });
+    const externalRuntime: PluginRuntimePort = {
+      close: async () => {
+        closed = true;
+      },
+      getSnapshot: async () => pluginSnapshot(),
+      loadPlugin: async () => pluginSnapshot(),
+      reloadPlugin: async () => pluginSnapshot(),
+      runCommand: async () => {
+        compatibilityLevel = 4;
+        return pluginSnapshot();
+      },
+      unloadAllPlugins: async () => pluginSnapshot(),
+      unloadPlugin: async () => pluginSnapshot(),
+    };
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      pluginRuntimeFactory: async () => externalRuntime,
+    });
+
+    const initial = await runtime.getSnapshot();
+    expect(initial.actions).toContainEqual({
+      id: "external-command",
+      name: "External command",
+      source: "plugin",
+    });
+    expect(initial.actions).toContainEqual({
+      id: "workspace.open-note",
+      name: "Open note",
+      source: "workspace",
+    });
+
+    const commanded = await runtime.runPluginCommand("external-command");
+    expect(commanded.plugin?.compatibilityLevel).toBe(4);
+    expect(commanded.notices).toEqual(["External command ran."]);
+
+    await runtime.close();
+    runtime = undefined;
+    expect(closed).toBe(true);
   });
 
   it("opens, reuses, activates, and closes ordered note tabs", async () => {

@@ -160,8 +160,11 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [x] Run the unchanged open Excalidraw 2.25.3 bundle through discovery and `onload` activation in a
       disposable DOM realm, including view, ribbon, settings-tab, and Markdown-processor
       registration.
-- [ ] Run Excalidraw through the production compatibility renderer, command registration, drawing
-      creation, edit, embed, reopen, export, and clean unload fixtures.
+- [x] Activate the unchanged Excalidraw 2.25.3 bundle in the production Electron compatibility
+      renderer at startup, retain its level 2 registrations, and apply its stylesheet with remote
+      font URLs neutralized under a no-network policy.
+- [ ] Complete Excalidraw command registration, visible view attachment, drawing creation, edit,
+      embed, reopen, export, and clean unload fixtures.
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
 

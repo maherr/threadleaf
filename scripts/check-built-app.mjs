@@ -23,7 +23,9 @@ if (assetPaths.length < 2) {
 await Promise.all([
   access(path.join(projectRoot, "dist", "main", "cli.cjs")),
   access(path.join(projectRoot, "dist", "main", "main.cjs")),
+  access(path.join(projectRoot, "dist", "main", "plugin-renderer.cjs")),
   access(path.join(projectRoot, "dist", "main", "preload.cjs")),
+  access(path.join(projectRoot, "dist", "renderer", "plugin-host.html")),
   ...assetPaths.map((assetPath) => access(path.resolve(rendererDirectory, assetPath))),
 ]);
 

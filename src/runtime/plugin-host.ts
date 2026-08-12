@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { compileFunction } from "node:vm";
+import { pathToFileURL } from "node:url";
 import { ActionRegistry } from "../application/action-registry";
 import { isPathInside } from "../kernel/path-policy";
 import type { VaultReadPort } from "../kernel/ports";
@@ -21,6 +21,7 @@ import {
   type PluginManifest,
   Vault,
 } from "./obsidian-compat";
+import type { PluginRuntimePort } from "./plugin-runtime-port";
 
 interface CommonJsModuleRecord {
   exports: unknown;
@@ -59,7 +60,7 @@ function isCompatibilityHostModule(request: string): boolean {
   );
 }
 
-export class PluginHost {
+export class PluginHost implements PluginRuntimePort {
   readonly app: App;
   readonly vault: Vault;
 
@@ -212,6 +213,10 @@ export class PluginHost {
     return this.getSnapshot();
   }
 
+  async close(): Promise<void> {
+    await this.unloadAllPlugins();
+  }
+
   async reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
     const targetId = pluginId ?? this.lastPluginId;
     const record = targetId ? this.plugins.get(targetId) : undefined;
@@ -276,10 +281,14 @@ export class PluginHost {
     pluginRequire.extensions = nativeRequire.extensions;
     pluginRequire.main = nativeRequire.main;
 
-    const compiled = compileFunction(
-      source,
-      ["exports", "require", "module", "__filename", "__dirname"],
-      { filename: entryPath },
+    const sourceUrl = pathToFileURL(entryPath).href;
+    const compiled = new Function(
+      "exports",
+      "require",
+      "module",
+      "__filename",
+      "__dirname",
+      `${source}\n//# sourceURL=${sourceUrl}`,
     );
     compiled(moduleRecord.exports, pluginRequire, moduleRecord, entryPath, path.dirname(entryPath));
 

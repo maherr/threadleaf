@@ -113,3 +113,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   keyboard names and focus, and verified light, dark, and moderate-deuteranomaly states.
 - Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the
   private selected set while loading no community JavaScript or CSS.
+- Dedicated Electron compatibility renderer with Node integration isolated from the sandboxed main
+  renderer, typed lifecycle IPC, transient session partitions, denied permissions and navigation,
+  operation timeouts, renderer-exit attribution, and production startup activation of the unchanged
+  Excalidraw 2.25.3 bundle at measured compatibility level 2.
+- Plugin stylesheet preservation with external asset URLs replaced by inert embedded data,
+  explicit diagnostics, and live proof that Excalidraw CSS applies without network requests.

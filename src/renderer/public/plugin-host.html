@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' data: blob:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Threadleaf compatibility renderer</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body class="threadleaf-plugin-host">
+    <script src="../main/plugin-renderer.cjs"></script>
+  </body>
+</html>

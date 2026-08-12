@@ -7,6 +7,7 @@ import type { StateRootPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
+import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type {
   NoteCreateOutcome,
   NoteCreateResponse,
@@ -40,6 +41,7 @@ export interface WorkspaceRuntimeOptions {
   stateRoot: StateRootPort;
   pluginDirectory?: string;
   pluginModuleResolver?: PluginModuleResolver;
+  pluginRuntimeFactory?: PluginRuntimeFactory;
   selectionSource?: VaultSelectionSource;
   warning?: string | null;
   workspaceStateStore?: WorkspaceStateStore;
@@ -212,7 +214,7 @@ export class WorkspaceRuntime {
   readonly kernel: VaultKernel;
   readonly watcher: NodeVaultWatcher;
   readonly indexReactor: VaultIndexReactor;
-  readonly pluginHost: PluginHost;
+  readonly pluginHost: PluginRuntimePort;
   readonly selectionSource: VaultSelectionSource;
   readonly #baseWarning: string | null;
   readonly #workspaceStateStore: WorkspaceStateStore | undefined;
@@ -247,7 +249,7 @@ export class WorkspaceRuntime {
     kernel: VaultKernel,
     watcher: NodeVaultWatcher,
     indexReactor: VaultIndexReactor,
-    pluginHost: PluginHost,
+    pluginHost: PluginRuntimePort,
     selectionSource: VaultSelectionSource,
     warning: string | null,
     workspaceStateStore: WorkspaceStateStore | undefined,
@@ -318,12 +320,9 @@ export class WorkspaceRuntime {
       onError: (error) => runtime?.recordWatcherError(error),
     });
     const indexReactor = await VaultIndexReactor.open(kernel);
-    const pluginHost = new PluginHost(
-      kernel.paths.rootPath,
-      kernel,
-      actions,
-      options.pluginModuleResolver,
-    );
+    const pluginHost = options.pluginRuntimeFactory
+      ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
+      : new PluginHost(kernel.paths.rootPath, kernel, actions, options.pluginModuleResolver);
     let restoredWorkspace: PersistedWorkspaceState | null = null;
     let workspaceLoadWarning: string | null = null;
     let workspaceStateReadable = true;
@@ -394,7 +393,12 @@ export class WorkspaceRuntime {
         source: this.selectionSource,
         warning: this.warning,
       },
-      actions: this.actions.list(),
+      actions: [
+        ...this.actions.list(),
+        ...pluginSnapshot.actions.filter(
+          (pluginAction) => !this.actions.list().some((action) => action.id === pluginAction.id),
+        ),
+      ],
       workspace,
     };
   }
@@ -549,7 +553,7 @@ export class WorkspaceRuntime {
 
   async close(): Promise<void> {
     await this.watcher.close();
-    await this.pluginHost.unloadAllPlugins();
+    await this.pluginHost.close();
     for (const release of this.#releaseActions.reverse()) {
       release();
     }

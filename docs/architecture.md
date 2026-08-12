@@ -14,10 +14,14 @@ compatibility problem before optimization begins.
 
 The primary application renderer remains isolated with `contextIsolation`, no Node integration,
 and Chromium sandboxing. DOM-dependent community plugins cannot execute in the main-process host or
-inside that sanitized renderer. They will run in a separate, explicitly trusted compatibility
-renderer whose authority and lifecycle are visible to the user. The main renderer communicates
-with that realm through narrow typed messages and never receives its Node authority. Disposable
-DOM probes exercise this boundary until the production Electron realm is connected.
+inside that sanitized renderer. They run in a separate, explicitly trusted `WebContentsView` with
+Node integration, a transient session partition, denied browser permissions, blocked navigation
+and popups, and `connect-src 'none'` for browser requests. This does not sandbox Node-capable plugin
+I/O. The main process communicates with that realm through validated typed request and response
+messages, times out every operation, attributes renderer exits, and never gives the primary
+renderer Node authority. The unchanged Excalidraw 2.25.3 bundle activates in this production realm
+at measured compatibility level 2. Registered custom views are not attached to visible workspace
+leaves yet.
 
 ### Filesystem authority
 
@@ -167,10 +171,11 @@ retained as diagnostic state and does not prevent later packages from loading. R
 clean unload before activation. Workspace shutdown unloads every instance.
 
 Plugin CSS crosses a separately bounded and CSP-constrained renderer channel. It is applied only
-for selected packages while compatibility mode is enabled. `THREADLEAF_SAFE_PLUGINS=1` and
-`--safe-plugins` suppress both JavaScript and CSS without changing saved settings. Safe mode and
-restricted mode remain distinct: safe mode is a process recovery boundary, while restricted mode
-is a persisted vault preference.
+for selected packages while compatibility mode is enabled. Imports and legacy executable CSS are
+rejected. Other non-embedded asset URLs are replaced with inert data URLs and reported before the
+remaining stylesheet is applied. `THREADLEAF_SAFE_PLUGINS=1` and `--safe-plugins` suppress both
+JavaScript and CSS without changing saved settings. Safe mode and restricted mode remain distinct:
+safe mode is a process recovery boundary, while restricted mode is a persisted vault preference.
 
 The current CommonJS host is a trusted compatibility runtime, not a security sandbox. It exposes
 only the independently implemented API surface backed by executable fixtures. Installed plugins

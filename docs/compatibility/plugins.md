@@ -25,9 +25,9 @@ Compatibility means a named, executable workflow passes against a public fixture
 listed, enabled, or activated is not by itself a workflow claim. The unchanged open Excalidraw
 2.25.3 release bundle now passes discovery and `onload` activation in Threadleaf's disposable DOM
 probe. It registers its two view types, ribbon action, settings tab, and Markdown processor without
-an uncaught activation error. That is measured level 2 compatibility, not a working canvas. The
-production Electron host still needs its dedicated compatibility renderer, and Excalidraw's
-create, edit, embed, reopen, and export workflows remain unsupported.
+an uncaught activation error. The same unchanged bundle now activates at startup in Threadleaf's
+production Electron compatibility renderer. That is measured level 2 compatibility, not a working
+canvas. Excalidraw's create, edit, embed, reopen, and export workflows remain unsupported.
 
 ## Trust model
 
@@ -53,8 +53,10 @@ or replacing the workspace unloads every instance. Catalog and lifecycle operati
 and bound to the active vault identity so a late result cannot cross a vault switch.
 
 Plugin stylesheets are applied only while the corresponding package is selected and compatibility
-mode is enabled. They use the same network-blocking content-security policy and CSS validation as
-community themes.
+mode is enabled. Imports and legacy executable CSS remain rejected. External and relative asset
+URLs are replaced with inert embedded assets and reported, while data, fragment, and CSS-variable
+URLs remain intact. The primary renderer content-security policy independently blocks
+stylesheet-initiated network access.
 
 ## Loader boundaries
 
@@ -63,7 +65,8 @@ community themes.
 - Each manifest is limited to 64 KiB, each CommonJS bundle to 16 MiB, and each stylesheet to 2 MiB.
 - Active plugin CSS is limited to 4 MiB in total and catalogs to 256 entries.
 - Files must decode as UTF-8.
-- Stylesheets reject imports, direct external URLs, and legacy executable CSS constructs.
+- Stylesheets reject imports and legacy executable CSS constructs, and neutralize other asset URLs
+  before applying the remaining rules.
 - Invalid packages with a valid folder identity remain visible; invalid folder identities and
   missing selected packages are reported with explicit evidence.
 

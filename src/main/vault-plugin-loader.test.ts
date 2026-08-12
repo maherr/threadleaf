@@ -126,9 +126,13 @@ describe("vault plugin loader", () => {
     expect(catalog.warnings.join("\n")).toContain("not installed");
   });
 
-  it("rejects network-capable enabled plugin styles", async () => {
+  it("applies plugin styles while neutralizing network-capable asset URLs", async () => {
     await writePlugin("drawing", {
-      css: '.drawing-view { background: url("https://example.test/image.png"); }',
+      css: [
+        '.drawing-view { background: url("https://example.test/image.png"); }',
+        '.embedded { background: url("data:image/svg+xml,%3Csvg%3E"); }',
+        ".variable { mask: url(var(--drawing-icon)); }",
+      ].join("\n"),
     });
 
     const catalog = await loadVaultPluginCatalog({
@@ -138,7 +142,29 @@ describe("vault plugin loader", () => {
       safeMode: false,
     });
 
+    expect(catalog.css).toContain(".drawing-view");
+    expect(catalog.css).toContain("data:image/svg+xml");
+    expect(catalog.css).toContain("var(--drawing-icon)");
+    expect(catalog.css).not.toContain("https://example.test");
+    expect(catalog.warnings).toEqual([
+      "Plugin drawing stylesheet was applied with 1 external asset URL blocked.",
+    ]);
+  });
+
+  it("still rejects executable plugin CSS after URL neutralization", async () => {
+    await writePlugin("drawing", {
+      css: '@import url("https://example.test/plugin.css"); .drawing-view { color: white; }',
+    });
+
+    const catalog = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "e".repeat(64),
+      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      safeMode: false,
+    });
+
     expect(catalog.css).toBe("");
     expect(catalog.warnings[0]).toContain("stylesheet was not applied");
+    expect(catalog.warnings[0]).toContain("@import");
   });
 });

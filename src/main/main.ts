@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
 import { AppSettingsController } from "../application/app-settings-controller";
@@ -18,6 +17,7 @@ import {
   readDevelopmentPickerOverride,
   readDevelopmentVaultPath,
 } from "./development-picker-override";
+import { ElectronPluginRuntime } from "./electron-plugin-runtime";
 import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
@@ -175,7 +175,12 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
     workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
-    pluginModuleResolver: createRequire(join(app.getAppPath(), "package.json")),
+    pluginRuntimeFactory: (vaultPath) =>
+      ElectronPluginRuntime.open({
+        hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
+        packageJsonPath: join(app.getAppPath(), "package.json"),
+        vaultPath,
+      }),
     ...(configuredPath ? { configuredVaultPath: configuredPath } : {}),
   });
 }

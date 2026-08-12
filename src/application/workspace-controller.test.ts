@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
+import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -371,12 +372,16 @@ describe("WorkspaceController", () => {
       save: async (state) => state,
     };
     const pluginModuleResolver = createRequire(path.resolve("package.json"));
+    const pluginRuntimeFactory: PluginRuntimeFactory = async () => {
+      throw new Error("The controller harness should only preserve this factory.");
+    };
     const controller = await WorkspaceController.open({
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
       workspaceStateStore,
       pluginModuleResolver,
+      pluginRuntimeFactory,
       runtimeFactory: harness.runtimeFactory,
     });
     const previous = harness.runtimes[0];
@@ -395,6 +400,8 @@ describe("WorkspaceController", () => {
     expect(harness.optionsSeen[1]?.workspaceStateStore).toBe(workspaceStateStore);
     expect(harness.optionsSeen[0]?.pluginModuleResolver).toBe(pluginModuleResolver);
     expect(harness.optionsSeen[1]?.pluginModuleResolver).toBe(pluginModuleResolver);
+    expect(harness.optionsSeen[0]?.pluginRuntimeFactory).toBe(pluginRuntimeFactory);
+    expect(harness.optionsSeen[1]?.pluginRuntimeFactory).toBe(pluginRuntimeFactory);
     expect(previous?.closed).toBe(true);
     expect(observed).toEqual(["/picked/vault"]);
     harness.runtimes[1]?.emit();

@@ -12,7 +12,8 @@ Threadleaf is not affiliated with or endorsed by Obsidian.
 
 Threadleaf is pre-alpha. Its Phase 0 architecture proof loads an unchanged CommonJS fixture
 plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
-command, and exercises that command through an isolated Electron renderer. The fixture completes
+command, and exercises that command through a dedicated Electron compatibility renderer. The
+primary application renderer remains sandboxed and has no Node integration. The fixture completes
 the documented load, activation, integration, command, reload, and unload lifecycles.
 
 Phase 1 is complete. The vault kernel proves canonical path containment,
@@ -100,9 +101,15 @@ in `.obsidian/`. Multiple selected plugins reconcile independently at startup an
 disable, or reload operations. A full Settings catalog reports invalid packages and runtime load
 failures without hiding the rest of the inventory. Startup plugin safe mode preserves the saved
 selection while loading no community code or CSS. The compatibility host remains an explicitly
-trusted, unsandboxed desktop runtime. Its independently implemented DOM and UI base APIs activate
-the unchanged Excalidraw 2.25.3 release bundle in a disposable probe, but the production renderer
-realm and drawing workflow APIs are not complete yet.
+trusted desktop runtime in a separate transient Electron session with Node integration, a
+browser `connect-src 'none'` policy, denied browser permissions, blocked popups and
+navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. Its
+independently implemented DOM and UI base APIs activate the unchanged Excalidraw 2.25.3 release
+bundle in both a disposable DOM probe and the production compatibility renderer. Excalidraw
+registers two views, a ribbon action, a settings tab, and a Markdown processor at measured level 2.
+Its stylesheet is preserved while four remote font URLs are replaced with inert embedded assets.
+The runtime is still trusted: Node-capable plugin code can perform its own I/O. The drawing view and
+workflow APIs are not complete yet.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,

@@ -16,6 +16,8 @@ const maxPluginStylesheetBytes = 2 * 1024 * 1024;
 const maxCombinedPluginCssBytes = 4 * 1024 * 1024;
 const maxCatalogEntries = 256;
 const decoder = new TextDecoder("utf-8", { fatal: true });
+const blockedAssetUrl =
+  'url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")';
 
 export interface DiscoveredVaultPlugin {
   summary: PluginPackageSummary;
@@ -79,6 +81,122 @@ function formatByteLimit(maxBytes: number): string {
   return maxBytes < 1024 * 1024
     ? `${Math.floor(maxBytes / 1024)} KiB`
     : `${Math.floor(maxBytes / (1024 * 1024))} MiB`;
+}
+
+function isCssNameCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\w-]/u.test(character);
+}
+
+function cssUrlEnd(css: string, openIndex: number): number | null {
+  let depth = 1;
+  let quote: '"' | "'" | null = null;
+  for (let index = openIndex + 1; index < css.length; index += 1) {
+    const character = css[index];
+    if (character === "\\") {
+      index += 1;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "(") {
+      depth += 1;
+    } else if (character === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return null;
+}
+
+function cssUrlTarget(css: string, openIndex: number, closeIndex: number): string {
+  const raw = css.slice(openIndex + 1, closeIndex).trim();
+  if (
+    raw.length >= 2 &&
+    ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")))
+  ) {
+    return raw.slice(1, -1).trim();
+  }
+  return raw;
+}
+
+function isEmbeddedCssUrl(target: string): boolean {
+  const normalized = target.toLocaleLowerCase("en-US");
+  return normalized.startsWith("data:") || target.startsWith("#") || normalized.startsWith("var(");
+}
+
+function neutralizeExternalCssUrls(css: string): { css: string; blockedCount: number } {
+  const replacements: Array<{ start: number; end: number }> = [];
+  let index = 0;
+  while (index < css.length) {
+    if (css.startsWith("/*", index)) {
+      const commentEnd = css.indexOf("*/", index + 2);
+      index = commentEnd === -1 ? css.length : commentEnd + 2;
+      continue;
+    }
+    if (css[index] === '"' || css[index] === "'") {
+      const quote = css[index];
+      index += 1;
+      while (index < css.length) {
+        if (css[index] === "\\") {
+          index += 2;
+          continue;
+        }
+        const character = css[index];
+        index += 1;
+        if (character === quote) {
+          break;
+        }
+      }
+      continue;
+    }
+    if (
+      css.slice(index, index + 3).toLocaleLowerCase("en-US") !== "url" ||
+      isCssNameCharacter(css[index - 1]) ||
+      isCssNameCharacter(css[index + 3])
+    ) {
+      index += 1;
+      continue;
+    }
+    let openIndex = index + 3;
+    while (/\s/u.test(css[openIndex] ?? "")) {
+      openIndex += 1;
+    }
+    if (css[openIndex] !== "(") {
+      index += 3;
+      continue;
+    }
+    const closeIndex = cssUrlEnd(css, openIndex);
+    if (closeIndex === null) {
+      break;
+    }
+    if (!isEmbeddedCssUrl(cssUrlTarget(css, openIndex, closeIndex))) {
+      replacements.push({ start: index, end: closeIndex + 1 });
+    }
+    index = closeIndex + 1;
+  }
+
+  if (replacements.length === 0) {
+    return { css, blockedCount: 0 };
+  }
+  let rewritten = "";
+  let cursor = 0;
+  for (const replacement of replacements) {
+    rewritten += css.slice(cursor, replacement.start);
+    rewritten += blockedAssetUrl;
+    cursor = replacement.end;
+  }
+  rewritten += css.slice(cursor);
+  return { css: rewritten, blockedCount: replacements.length };
 }
 
 function invalidSummary(folderId: string, message: string): PluginPackageSummary {
@@ -243,15 +361,21 @@ export async function loadVaultPluginCatalog(
       continue;
     }
     try {
-      const css = validateAppearanceCss(
+      const sanitized = neutralizeExternalCssUrls(
         await readBoundedText(plugin.stylesheetPath, maxPluginStylesheetBytes),
       );
+      const css = validateAppearanceCss(sanitized.css);
       const bytes = Buffer.byteLength(css, "utf8");
       if (cssBytes + bytes > maxCombinedPluginCssBytes) {
         throw new Error("enabled plugin CSS exceeds the combined 4 MiB limit");
       }
       cssBytes += bytes;
       cssParts.push(`/* Threadleaf compatibility plugin: ${pluginId} */\n${css}`);
+      if (sanitized.blockedCount > 0) {
+        warnings.push(
+          `Plugin ${pluginId} stylesheet was applied with ${sanitized.blockedCount} external asset URL${sanitized.blockedCount === 1 ? "" : "s"} blocked.`,
+        );
+      }
     } catch (error) {
       warnings.push(`Plugin ${pluginId} stylesheet was not applied: ${errorMessage(error)}`);
     }

@@ -1,5 +1,6 @@
 import type { StateRootPort } from "../kernel/ports";
 import type { PluginModuleResolver } from "../runtime/plugin-host";
+import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -74,6 +75,7 @@ export interface WorkspaceControllerOptions {
   configuredVaultPath?: string;
   configuredPluginDirectory?: string;
   pluginModuleResolver?: PluginModuleResolver;
+  pluginRuntimeFactory?: PluginRuntimeFactory;
   runtimeFactory?: WorkspaceRuntimeFactory;
   workspaceStateStore?: WorkspaceStateStore;
 }
@@ -92,6 +94,7 @@ function runtimeOptions(
   workspaceStateStore?: WorkspaceStateStore,
   pluginDirectory?: string,
   pluginModuleResolver?: PluginModuleResolver,
+  pluginRuntimeFactory?: PluginRuntimeFactory,
 ): WorkspaceRuntimeOptions {
   return {
     vaultRoot,
@@ -101,6 +104,7 @@ function runtimeOptions(
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
     ...(pluginDirectory ? { pluginDirectory } : {}),
     ...(pluginModuleResolver ? { pluginModuleResolver } : {}),
+    ...(pluginRuntimeFactory ? { pluginRuntimeFactory } : {}),
   };
 }
 
@@ -110,6 +114,7 @@ export class WorkspaceController {
   readonly #workspaceStateStore: WorkspaceStateStore | undefined;
   readonly #runtimeFactory: WorkspaceRuntimeFactory;
   readonly #pluginModuleResolver: PluginModuleResolver | undefined;
+  readonly #pluginRuntimeFactory: PluginRuntimeFactory | undefined;
   readonly #listeners = new Set<SnapshotListener>();
   #runtime: WorkspaceRuntimePort;
   #releaseRuntimeListener: () => void;
@@ -125,6 +130,7 @@ export class WorkspaceController {
     this.#workspaceStateStore = options.workspaceStateStore;
     this.#runtimeFactory = runtimeFactory;
     this.#pluginModuleResolver = options.pluginModuleResolver;
+    this.#pluginRuntimeFactory = options.pluginRuntimeFactory;
     this.#releaseRuntimeListener = this.bindRuntime(runtime);
   }
 
@@ -140,6 +146,7 @@ export class WorkspaceController {
           options.workspaceStateStore,
           options.configuredPluginDirectory,
           options.pluginModuleResolver,
+          options.pluginRuntimeFactory,
         ),
       );
       return new WorkspaceController(runtime, options, runtimeFactory);
@@ -164,6 +171,7 @@ export class WorkspaceController {
             options.workspaceStateStore,
             undefined,
             options.pluginModuleResolver,
+            options.pluginRuntimeFactory,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory);
@@ -181,6 +189,7 @@ export class WorkspaceController {
         options.workspaceStateStore,
         options.fixturePluginDirectory,
         options.pluginModuleResolver,
+        options.pluginRuntimeFactory,
       ),
     );
     return new WorkspaceController(runtime, options, runtimeFactory);
@@ -297,6 +306,7 @@ export class WorkspaceController {
         this.#workspaceStateStore,
         undefined,
         this.#pluginModuleResolver,
+        this.#pluginRuntimeFactory,
       ),
     );
     let adopted = false;
