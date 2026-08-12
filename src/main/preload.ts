@@ -12,6 +12,10 @@ import type {
   NotePropertyRemoveResponse,
   NotePropertySetResponse,
   NoteSaveResponse,
+  NoteTemplateRenderResponse,
+  NoteWorkflowCatalogResponse,
+  NoteWorkflowUpdateResponse,
+  NoteWorkflowValueResponse,
   PluginPackageApplyResponse,
   PluginSurfaceBounds,
   PluginUpdateResponse,
@@ -26,6 +30,7 @@ import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
 import type { MigrationPreviewResponse } from "../shared/migration";
 import type { NativeMenuCommandId } from "../shared/native-menu";
+import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type {
   PluginPackageIndexResponse,
   PluginPackagePreviewRequest,
@@ -134,6 +139,32 @@ const bridge: ThreadleafBridge = {
     ) as Promise<AppSettingsSnapshot>,
   resetKeyBindings: () =>
     ipcRenderer.invoke(ipcChannels.resetKeyBindings) as Promise<AppSettingsSnapshot>,
+  getNoteWorkflows: (expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.noteWorkflows,
+      expectedVaultId,
+    ) as Promise<NoteWorkflowCatalogResponse>,
+  setNoteWorkflows: (expectedVaultId, settings: VaultNoteWorkflowSettings) =>
+    ipcRenderer.invoke(
+      ipcChannels.setNoteWorkflows,
+      expectedVaultId,
+      settings,
+    ) as Promise<NoteWorkflowUpdateResponse>,
+  openDailyNote: (expectedVaultId) =>
+    ipcRenderer.invoke(ipcChannels.openDailyNote, expectedVaultId) as Promise<NoteCreateResponse>,
+  renderNoteTemplate: (templatePath, targetPath, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.renderNoteTemplate,
+      templatePath,
+      targetPath,
+      expectedVaultId,
+    ) as Promise<NoteTemplateRenderResponse>,
+  formatNoteWorkflowValue: (value, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.formatNoteWorkflowValue,
+      value,
+      expectedVaultId,
+    ) as Promise<NoteWorkflowValueResponse>,
   chooseVault: () => ipcRenderer.invoke(ipcChannels.chooseVault) as Promise<VaultOpenResponse>,
   openNote: (filePath, paneId) =>
     ipcRenderer.invoke(ipcChannels.openNote, filePath, paneId) as Promise<RuntimeSnapshot>,

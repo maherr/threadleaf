@@ -1,3 +1,4 @@
+import moment, { type Moment } from "moment";
 import { SearchQueryError } from "../kernel/full-text-search";
 import { type DocumentMetadataSnapshot, VaultIndexReactor } from "../kernel/metadata-index";
 import { captureVaultBootstrap, NodeVaultWatcher } from "../kernel/node-vault-watcher";
@@ -40,8 +41,14 @@ import type {
   WorkspacePaneSnapshot,
   WorkspaceSplitDirection,
 } from "../shared/contracts";
+import {
+  isNoteWorkflowTemplatePath,
+  parseVaultNoteWorkflowSettings,
+  type VaultNoteWorkflowSettings,
+} from "../shared/note-workflows";
 import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
+import { type DailyNoteResult, openOrCreateDailyNote } from "./note-daily";
 import { loadVaultNoteEmbed } from "./note-embed-service";
 import { movedMarkdownPath, moveMarkdownNote } from "./note-move";
 import {
@@ -49,6 +56,12 @@ import {
   applyNotePropertySet,
   inspectMarkdownNoteProperties,
 } from "./note-properties";
+import {
+  listNoteTemplates,
+  noteTemplateTitle,
+  type RenderedNoteTemplate,
+  renderNoteTemplate,
+} from "./note-template";
 import { trashMarkdownNote, vaultTrashDirectory } from "./note-trash";
 import { loadVaultImage } from "./vault-image-service";
 import {
@@ -106,6 +119,12 @@ interface CreateNoteRequest {
   path: string;
   content: string;
   expectedVaultId: string;
+}
+
+interface OpenDailyNoteRequest {
+  expectedVaultId: string;
+  settings: VaultNoteWorkflowSettings;
+  now: Moment;
 }
 
 interface CloseNoteRequest {
@@ -312,6 +331,29 @@ function parseCreateNoteRequest(payload: unknown): CreateNoteRequest {
   };
 }
 
+function parseOpenDailyNoteRequest(payload: unknown): OpenDailyNoteRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string" ||
+    !("settings" in payload) ||
+    !("now" in payload) ||
+    typeof payload.now !== "string"
+  ) {
+    throw new Error("Open daily note requires vault, workflow settings, and timestamp values.");
+  }
+  const now = moment.parseZone(payload.now);
+  if (!now.isValid()) {
+    throw new Error("Open daily note requires a valid timestamp.");
+  }
+  return {
+    expectedVaultId: payload.expectedVaultId,
+    settings: parseVaultNoteWorkflowSettings(payload.settings),
+    now,
+  };
+}
+
 function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
   if (
     typeof payload !== "object" ||
@@ -484,6 +526,12 @@ export class WorkspaceRuntime {
         name: "Create note",
         source: "workspace",
         execute: (payload) => this.createNoteThroughKernel(parseCreateNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.open-daily-note",
+        name: "Open today's daily note",
+        source: "workspace",
+        execute: (payload) => this.openDailyNoteThroughKernel(parseOpenDailyNoteRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.open-note",
@@ -882,6 +930,65 @@ export class WorkspaceRuntime {
       expectedVaultId,
     });
     return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async openDailyNote(
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+    now: Moment = moment(),
+  ): Promise<NoteCreateResponse> {
+    const outcome = await this.actions.dispatch<DailyNoteResult>("workspace.open-daily-note", {
+      settings,
+      expectedVaultId,
+      now: now.format(),
+    });
+    return { outcome: outcome.outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async listNoteTemplates(templateFolder: string, expectedVaultId: string): Promise<string[]> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before templates could be listed.");
+    }
+    return listNoteTemplates(this.kernel, templateFolder);
+  }
+
+  async renderNoteTemplate(
+    templatePath: string,
+    targetPath: string,
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+    now: Moment = moment(),
+  ): Promise<RenderedNoteTemplate> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this template could be rendered.");
+    }
+    const normalizedSettings = parseVaultNoteWorkflowSettings(settings);
+    if (!isNoteWorkflowTemplatePath(templatePath, normalizedSettings)) {
+      throw new Error("Template insertion is limited to the configured template folder.");
+    }
+    return renderNoteTemplate(this.kernel, templatePath, {
+      title: noteTemplateTitle(targetPath),
+      now,
+      dateFormat: normalizedSettings.templateDateFormat,
+      timeFormat: normalizedSettings.templateTimeFormat,
+    });
+  }
+
+  formatNoteWorkflowValue(
+    value: "date" | "time",
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+    now: Moment = moment(),
+  ): string {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this value could be formatted.");
+    }
+    const normalizedSettings = parseVaultNoteWorkflowSettings(settings);
+    return now.format(
+      value === "date"
+        ? normalizedSettings.templateDateFormat
+        : normalizedSettings.templateTimeFormat,
+    );
   }
 
   async createPluginNote(
@@ -1645,8 +1752,35 @@ export class WorkspaceRuntime {
     }
     this.assertWritable("create notes");
     const outcome = await createMarkdownNote(this.kernel, request.path, request.content);
+    await this.integrateNoteCreateOutcome(outcome, activate, false);
+    return outcome;
+  }
+
+  private async openDailyNoteThroughKernel(
+    request: OpenDailyNoteRequest,
+  ): Promise<DailyNoteResult> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before today's daily note could be opened.");
+    }
+    this.assertWritable("open today's daily note");
+    const result = await openOrCreateDailyNote(this.kernel, request.settings, request.now);
+    await this.integrateNoteCreateOutcome(result.outcome, true, true);
+    return result;
+  }
+
+  private async integrateNoteCreateOutcome(
+    outcome: NoteCreateOutcome,
+    activate: boolean,
+    activateExisting: boolean,
+  ): Promise<void> {
     if (outcome.status === "exists") {
-      return outcome;
+      if (activate && activateExisting) {
+        await this.indexReactor.index.refresh(this.kernel, outcome.path);
+        if (this.activatePath(outcome.path)) {
+          await this.persistWorkspaceStateBestEffort();
+        }
+      }
+      return;
     }
     if (outcome.status === "committed") {
       this.watcher.operations.expect({
@@ -1659,7 +1793,7 @@ export class WorkspaceRuntime {
       if (activate && this.activatePath(outcome.path)) {
         await this.persistWorkspaceStateBestEffort();
       }
-      return outcome;
+      return;
     }
 
     const conflictCopy = await this.kernel.readText(outcome.conflictPath);
@@ -1676,7 +1810,6 @@ export class WorkspaceRuntime {
     if (activate && this.activatePath(conflictCopy.path)) {
       await this.persistWorkspaceStateBestEffort();
     }
-    return outcome;
   }
 
   private assertWritable(operation: string): void {

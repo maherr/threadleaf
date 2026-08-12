@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import moment from "moment";
 import { createMarkdownNote } from "../application/note-creation";
+import { openOrCreateDailyNote } from "../application/note-daily";
 import { movedMarkdownPath, moveMarkdownNote, renamedMarkdownPath } from "../application/note-move";
 import {
   type NotePropertyType,
@@ -17,6 +19,7 @@ import {
   mutateMarkdownTask,
   readMarkdownTask,
 } from "../application/note-task";
+import { noteTemplateTitle, renderNoteTemplate } from "../application/note-template";
 import { mutateMarkdownNoteText } from "../application/note-text-mutation";
 import {
   listTrashedMarkdownNotes,
@@ -40,6 +43,11 @@ import {
 } from "../kernel/path-policy";
 import { FixedStateRoot, type StateRootPort, type VaultReadPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
+import {
+  createDefaultVaultNoteWorkflowSettings,
+  normalizeNoteWorkflowFile,
+  normalizeNoteWorkflowFolder,
+} from "../shared/note-workflows";
 
 export const cliSchemaVersion = 1;
 
@@ -70,6 +78,7 @@ type CliCommandId =
   | "deadends"
   | "outline"
   | "create"
+  | "daily"
   | "append"
   | "prepend"
   | "move"
@@ -198,6 +207,18 @@ interface CliCreateCommand extends CliVaultCommand {
   id: "create";
   filePath: string;
   content: string;
+  templatePath: string | null;
+  dateFormat: string;
+  timeFormat: string;
+}
+
+interface CliDailyCommand extends CliVaultCommand {
+  id: "daily";
+  folder: string;
+  format: string;
+  templatePath: string | null;
+  dateFormat: string;
+  timeFormat: string;
 }
 
 interface CliTextMutationCommand extends CliVaultCommand {
@@ -318,6 +339,7 @@ export type ParsedCliCommand =
   | CliUnresolvedCommand
   | CliVaultMetadataCommand
   | CliCreateCommand
+  | CliDailyCommand
   | CliTextMutationCommand
   | CliMoveCommand
   | CliTrashMutationCommand
@@ -398,6 +420,14 @@ function parsePositiveInteger(value: string, option: string): number {
     usageFailure(`${option} is too large.`);
   }
   return parsed;
+}
+
+function parseMomentFormat(value: string, label: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 256 || /[\0\r\n]/.test(normalized)) {
+    usageFailure(`${label} must contain between 1 and 256 characters on one line.`);
+  }
+  return normalized;
 }
 
 interface CliTargetParameter {
@@ -1492,6 +1522,11 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     }
     let filePath: string | null = null;
     let parameterContent: string | null = null;
+    let templatePath: string | null = null;
+    let dateFormat = createDefaultVaultNoteWorkflowSettings().templateDateFormat;
+    let timeFormat = createDefaultVaultNoteWorkflowSettings().templateTimeFormat;
+    let dateFormatSet = false;
+    let timeFormatSet = false;
     for (const value of values) {
       if (value.startsWith("path=") || value.startsWith("name=")) {
         if (filePath !== null) {
@@ -1503,6 +1538,25 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
           usageFailure("content may be supplied only once.");
         }
         parameterContent = value.slice("content=".length);
+      } else if (value.startsWith("template=")) {
+        if (templatePath !== null) {
+          usageFailure("create template may be supplied only once.");
+        }
+        templatePath = pathArgument(() =>
+          normalizeNoteWorkflowFile(value.slice("template=".length), "Create template"),
+        );
+      } else if (value.startsWith("date-format=")) {
+        if (dateFormatSet) {
+          usageFailure("create date-format may be supplied only once.");
+        }
+        dateFormat = parseMomentFormat(value.slice("date-format=".length), "create date-format");
+        dateFormatSet = true;
+      } else if (value.startsWith("time-format=")) {
+        if (timeFormatSet) {
+          usageFailure("create time-format may be supplied only once.");
+        }
+        timeFormat = parseMomentFormat(value.slice("time-format=".length), "create time-format");
+        timeFormatSet = true;
       } else if (filePath === null && !value.includes("=")) {
         filePath = value;
       } else {
@@ -1515,12 +1569,73 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     if (content !== null && parameterContent !== null) {
       usageFailure("create content may be supplied as an option or parameter, not both.");
     }
+    if (templatePath !== null && (content !== null || parameterContent !== null)) {
+      usageFailure("create accepts template or content, not both.");
+    }
     return {
       id: "create",
       json,
       vaultPath,
       filePath,
       content: decodeContentEscapes(content ?? parameterContent ?? ""),
+      templatePath,
+      dateFormat,
+      timeFormat,
+    };
+  }
+  if (name === "daily") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("daily received an option that it does not accept.");
+    }
+    const defaults = createDefaultVaultNoteWorkflowSettings();
+    let folder = defaults.dailyNoteFolder;
+    let format = defaults.dailyNoteDateFormat;
+    let templatePath: string | null = defaults.dailyNoteTemplate;
+    let dateFormat = defaults.templateDateFormat;
+    let timeFormat = defaults.templateTimeFormat;
+    const seen = new Set<string>();
+    for (const value of values) {
+      const separator = value.indexOf("=");
+      if (separator <= 0) {
+        usageFailure(`Unsupported daily argument: ${value}`);
+      }
+      const key = value.slice(0, separator);
+      const argument = value.slice(separator + 1);
+      if (seen.has(key)) {
+        usageFailure(`daily ${key} may be supplied only once.`);
+      }
+      seen.add(key);
+      if (key === "folder") {
+        folder = pathArgument(() => normalizeNoteWorkflowFolder(argument, "Daily folder"));
+      } else if (key === "format") {
+        format = parseMomentFormat(argument, "daily format");
+      } else if (key === "template") {
+        templatePath = pathArgument(() => normalizeNoteWorkflowFile(argument, "Daily template"));
+      } else if (key === "date-format") {
+        dateFormat = parseMomentFormat(argument, "daily date-format");
+      } else if (key === "time-format") {
+        timeFormat = parseMomentFormat(argument, "daily time-format");
+      } else {
+        usageFailure(`Unsupported daily argument: ${value}`);
+      }
+    }
+    return {
+      id: "daily",
+      json,
+      vaultPath,
+      folder,
+      format,
+      templatePath,
+      dateFormat,
+      timeFormat,
     };
   }
   if (name === "append" || name === "prepend") {
@@ -1677,7 +1792,8 @@ Usage:
   threadleaf --vault <path> [--json] orphans [total]
   threadleaf --vault <path> [--json] deadends [total]
   threadleaf --vault <path> [--json] outline <note.md> [format=tree|md|json] [total]
-  threadleaf --vault <path> [--json] create <note> [--content <text>]
+  threadleaf --vault <path> [--json] create <note> [--content <text> | template=<note.md>] [date-format=<format>] [time-format=<format>]
+  threadleaf --vault <path> [--json] daily [folder=<path>] [format=<format>] [template=<note.md>] [date-format=<format>] [time-format=<format>]
   threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] move <note> --to <path> [--update-links]
@@ -1708,7 +1824,8 @@ Compatibility spellings:
   threadleaf --vault <path> backlinks file=<note-name> counts format=csv
   threadleaf --vault <path> unresolved counts verbose format=json
   threadleaf --vault <path> outline path=<note.md> format=md
-  threadleaf --vault <path> create path=<note> content=<text>
+  threadleaf --vault <path> create path=<note> [content=<text> | template=<note.md>]
+  threadleaf --vault <path> daily folder=Journal format=YYYY/MMMM/YYYY-MM-DD template=Templates/Daily.md
   threadleaf --vault <path> append path=<note> content=<text> [inline]
   threadleaf --vault <path> prepend path=<note> content=<text> [inline]
   threadleaf --vault <path> move path=<note> to=<path>
@@ -2193,6 +2310,7 @@ function deadEndNotes(snapshot: MetadataIndexSnapshot) {
 function isCliMutationCommand(command: Exclude<ParsedCliCommand, CliHelpCommand>): boolean {
   return (
     command.id === "create" ||
+    command.id === "daily" ||
     command.id === "append" ||
     command.id === "prepend" ||
     command.id === "move" ||
@@ -2214,7 +2332,17 @@ async function executeCommand(
     : await openReadOnlyKernel(command, options);
   try {
     if (command.id === "create") {
-      const outcome = await createMarkdownNote(kernel, command.filePath, command.content);
+      const content = command.templatePath
+        ? (
+            await renderNoteTemplate(kernel, command.templatePath, {
+              title: noteTemplateTitle(command.filePath),
+              now: moment(),
+              dateFormat: command.dateFormat,
+              timeFormat: command.timeFormat,
+            })
+          ).content
+        : command.content;
+      const outcome = await createMarkdownNote(kernel, command.filePath, content);
       if (outcome.status === "exists") {
         throw new CliFailure(
           "CONFLICT",
@@ -2232,6 +2360,29 @@ async function executeCommand(
         );
       }
       return outcome;
+    }
+    if (command.id === "daily") {
+      const result = await openOrCreateDailyNote(
+        kernel,
+        {
+          ...createDefaultVaultNoteWorkflowSettings(),
+          dailyNoteFolder: command.folder,
+          dailyNoteDateFormat: command.format,
+          dailyNoteTemplate: command.templatePath,
+          templateDateFormat: command.dateFormat,
+          templateTimeFormat: command.timeFormat,
+        },
+        moment(),
+      );
+      if (result.outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `Today's daily note appeared during creation. The proposed note was preserved as ${result.outcome.conflictPath}.`,
+          { details: result },
+        );
+      }
+      return result;
     }
     if (command.id === "move" || command.id === "rename") {
       const sourcePath = await resolveCliMarkdownTarget(
@@ -2820,6 +2971,13 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
   }
   if (command.id === "create") {
     return `Created ${(data as { path: string }).path}\n`;
+  }
+  if (command.id === "daily") {
+    const result = data as {
+      path: string;
+      outcome: { status: "committed" | "exists" };
+    };
+    return `${result.outcome.status === "committed" ? "Created" : "Opened"} ${result.path}\n`;
   }
   if (command.id === "append") {
     return `Appended ${(data as { path: string }).path}\n`;

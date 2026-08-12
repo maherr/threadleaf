@@ -463,10 +463,15 @@ server, copy proprietary implementation details, or create a second mutation pat
 command uses the same containment, revision, recovery-journal, conflict, and watcher contracts as
 the desktop application. See the [CLI guide](cli.md).
 
-The desktop and CLI call one note-creation service. The CLI keeps journals in an
-operating-system-owned state root and serializes its mutating invocations with a process-owned
-lock, so one headless process never recovers another live process's transaction. The portable
-no-clobber install remains the arbiter against desktop, external-editor, and sync-provider races.
+The desktop and CLI call one note-creation service. A shared bounded template reader layers exact
+`title`, `date`, and `time` expansion over that service without changing Markdown authority. Daily
+notes derive a contained Markdown path from per-vault folder and Moment-compatible date-format
+settings, read it before mutation, and never rewrite an existing note. Desktop workflow settings
+remain in private application state outside both the vault and `.obsidian/`; CLI invocations remain
+explicit. The CLI keeps journals in an operating-system-owned state root and serializes its
+mutating invocations with a process-owned lock, so one headless process never recovers another live
+process's transaction. The portable no-clobber install remains the arbiter against desktop,
+external-editor, and sync-provider races.
 
 Append and prepend use a shared text-mutation service that reads a stable note snapshot, computes
 the complete proposed file, and writes against the exact revision read. Prepend inserts after a

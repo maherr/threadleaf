@@ -46,8 +46,8 @@ describe("FileAppSettingsStore", () => {
     await fs.writeFile(settingsPath, "not json\n", "utf8");
 
     await expect(store.load()).rejects.toThrow();
-    await fs.writeFile(settingsPath, '{"version":5,"keyBindings":{}}\n', "utf8");
-    await expect(store.load()).rejects.toThrow("version 1, 2, 3, or 4");
+    await fs.writeFile(settingsPath, '{"version":6,"keyBindings":{}}\n', "utf8");
+    await expect(store.load()).rejects.toThrow("version 1, 2, 3, 4, or 5");
     await fs.writeFile(
       settingsPath,
       '{"version":1,"keyBindings":{"ui.command-palette":"Mod+O"}}\n',

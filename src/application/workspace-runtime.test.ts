@@ -1,10 +1,12 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import moment from "moment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
+import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import { WorkspaceRuntime } from "./workspace-runtime";
 import {
   createWorkspaceLayout,
@@ -187,6 +189,11 @@ describe("WorkspaceRuntime", () => {
       },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
+      {
+        id: "workspace.open-daily-note",
+        name: "Open today's daily note",
+        source: "workspace",
+      },
       {
         id: "workspace.remove-note-property",
         name: "Remove note property",
@@ -552,6 +559,85 @@ describe("WorkspaceRuntime", () => {
     expect(created.snapshot.vault.warning).toContain("workspace disk unavailable");
     await expect(fs.readFile(path.join(vaultPath, "Created.md"), "utf8")).resolves.toBe(
       "# Created\n",
+    );
+  });
+
+  it("lists and renders templates, then creates or reopens today's daily note", async () => {
+    await fs.mkdir(path.join(vaultPath, "Templates"));
+    await fs.writeFile(
+      path.join(vaultPath, "Templates", "Daily.md"),
+      "# {{title}}\n{{date}} at {{time}}\n",
+      "utf8",
+    );
+    await fs.writeFile(path.join(vaultPath, "Templates", "Meeting.md"), "## {{title}}\n", "utf8");
+    const workspace = await openRuntime();
+    const settings = {
+      ...createDefaultVaultNoteWorkflowSettings(),
+      dailyNoteFolder: "Journal",
+      dailyNoteDateFormat: "YYYY/MM/YYYY-MM-DD",
+      dailyNoteTemplate: "Templates/Daily.md",
+    };
+    const fixedNow = moment.parseZone("2026-08-12T18:07:09-04:00");
+
+    await expect(workspace.listNoteTemplates("Templates", workspace.vaultId)).resolves.toEqual([
+      "Templates/Daily.md",
+      "Templates/Meeting.md",
+    ]);
+    await expect(
+      workspace.renderNoteTemplate(
+        "Templates/Meeting.md",
+        "Projects/Kickoff.md",
+        settings,
+        workspace.vaultId,
+        fixedNow,
+      ),
+    ).resolves.toMatchObject({
+      content: "## Kickoff\n",
+      sourcePath: "Templates/Meeting.md",
+    });
+
+    const created = await workspace.openDailyNote(settings, workspace.vaultId, fixedNow);
+    expect(created.outcome).toMatchObject({
+      status: "committed",
+      path: "Journal/2026/08/2026-08-12.md",
+    });
+    expect(created.snapshot.workspace?.activeNote).toMatchObject({
+      path: "Journal/2026/08/2026-08-12.md",
+      content: "# 2026-08-12\n2026-08-12 at 18:07\n",
+    });
+    const revision = created.snapshot.workspace?.activeNote?.revision;
+    if (!revision) {
+      throw new Error("Expected the daily note revision.");
+    }
+    await workspace.saveNote(
+      "Journal/2026/08/2026-08-12.md",
+      "manual daily content",
+      revision,
+      workspace.vaultId,
+    );
+    const reopened = await workspace.openDailyNote(settings, workspace.vaultId, fixedNow);
+    expect(reopened.outcome).toMatchObject({
+      status: "exists",
+      path: "Journal/2026/08/2026-08-12.md",
+    });
+    expect(reopened.snapshot.workspace?.activeNote?.content).toBe("manual daily content");
+    await expect(fs.readFile(path.join(vaultPath, "Templates", "Daily.md"), "utf8")).resolves.toBe(
+      "# {{title}}\n{{date}} at {{time}}\n",
+    );
+  });
+
+  it("rejects stale vaults and template insertion outside the configured folder", async () => {
+    const workspace = await openRuntime();
+    const settings = createDefaultVaultNoteWorkflowSettings();
+
+    await expect(workspace.listNoteTemplates("Templates", "stale-vault")).rejects.toThrow(
+      "active vault changed",
+    );
+    await expect(
+      workspace.renderNoteTemplate("Welcome.md", "Target.md", settings, workspace.vaultId),
+    ).rejects.toThrow("configured template folder");
+    await expect(workspace.openDailyNote(settings, "stale-vault")).rejects.toThrow(
+      "active vault changed",
     );
   });
 
@@ -1501,6 +1587,11 @@ describe("WorkspaceRuntime", () => {
       },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
+      {
+        id: "workspace.open-daily-note",
+        name: "Open today's daily note",
+        source: "workspace",
+      },
       {
         id: "workspace.remove-note-property",
         name: "Remove note property",

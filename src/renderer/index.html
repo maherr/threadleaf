@@ -353,6 +353,10 @@
               <span aria-hidden="true">◐</span>
               <span>Appearance</span>
             </button>
+            <button id="settings-nav-notes" type="button" data-settings-target="notes">
+              <span aria-hidden="true">▤</span>
+              <span>Daily notes and templates</span>
+            </button>
             <button id="settings-nav-plugins" type="button" data-settings-target="plugins">
               <span aria-hidden="true">◇</span>
               <span>Community plugins</span>
@@ -458,6 +462,134 @@
             <button class="appearance-reset" id="appearance-reset" type="button">
               Disable custom theme and snippets
             </button>
+          </section>
+
+          <section
+            class="settings-page note-workflow-settings"
+            data-settings-page="notes"
+            aria-labelledby="note-workflow-heading"
+            hidden
+          >
+            <header class="settings-section-heading note-workflow-heading">
+              <span>
+                <small>Plain Markdown automation</small>
+                <strong id="note-workflow-heading">Daily notes and templates</strong>
+              </span>
+              <span class="appearance-state" id="note-workflow-state">Not scanned</span>
+            </header>
+
+            <article class="note-workflow-intro">
+              <span class="note-workflow-mark" aria-hidden="true">▤</span>
+              <span>
+                <strong>Useful structure, ordinary files</strong>
+                <small>
+                  Templates are read from your vault. Preferences stay in Threadleaf's private app
+                  data, and every created daily note uses the recoverable writer.
+                </small>
+              </span>
+            </article>
+
+            <form class="note-workflow-form" id="note-workflow-form">
+              <fieldset class="note-workflow-group">
+                <legend>Templates</legend>
+                <label class="note-workflow-field" for="workflow-template-folder">
+                  <span>
+                    <strong>Template folder</strong>
+                    <small>Vault-relative folder containing Markdown templates</small>
+                  </span>
+                  <input
+                    id="workflow-template-folder"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    maxlength="4096"
+                    placeholder="Templates"
+                  />
+                </label>
+                <div class="note-workflow-pair">
+                  <label class="note-workflow-field" for="workflow-date-format">
+                    <span>
+                      <strong>Date format</strong>
+                      <small>Used by <code>&#123;&#123;date&#125;&#125;</code></small>
+                    </span>
+                    <input
+                      id="workflow-date-format"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      maxlength="256"
+                      placeholder="YYYY-MM-DD"
+                    />
+                  </label>
+                  <label class="note-workflow-field" for="workflow-time-format">
+                    <span>
+                      <strong>Time format</strong>
+                      <small>Used by <code>&#123;&#123;time&#125;&#125;</code></small>
+                    </span>
+                    <input
+                      id="workflow-time-format"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      maxlength="256"
+                      placeholder="HH:mm"
+                    />
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="note-workflow-group">
+                <legend>Daily note</legend>
+                <label class="note-workflow-field" for="workflow-daily-folder">
+                  <span>
+                    <strong>New file location</strong>
+                    <small>Leave blank for the vault root</small>
+                  </span>
+                  <input
+                    id="workflow-daily-folder"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    maxlength="4096"
+                    placeholder="Daily"
+                  />
+                </label>
+                <label class="note-workflow-field" for="workflow-daily-format">
+                  <span>
+                    <strong>Date format</strong>
+                    <small>Slashes create subfolders, for example <code>YYYY/MM/DD</code></small>
+                  </span>
+                  <input
+                    id="workflow-daily-format"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    maxlength="256"
+                    placeholder="YYYY-MM-DD"
+                  />
+                </label>
+                <label class="note-workflow-field" for="workflow-daily-template">
+                  <span>
+                    <strong>Template file</strong>
+                    <small id="workflow-template-count">Template folder not scanned</small>
+                  </span>
+                  <select id="workflow-daily-template">
+                    <option value="">No template</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <div class="note-workflow-actions">
+                <small>
+                  Supported variables: <code>&#123;&#123;title&#125;&#125;</code>,
+                  <code>&#123;&#123;date&#125;&#125;</code>,
+                  <code>&#123;&#123;time&#125;&#125;</code>, and custom date or time formats.
+                </small>
+                <button class="primary-button" id="workflow-save" type="submit">
+                  Save preferences
+                </button>
+              </div>
+            </form>
           </section>
 
           <section
@@ -1009,6 +1141,47 @@
           <span>
             <button class="secondary-button" id="new-note-cancel" type="button">Cancel</button>
             <button class="primary-button" id="new-note-create" type="submit">Create note</button>
+          </span>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog template-picker-dialog"
+      id="template-picker-dialog"
+      aria-labelledby="template-picker-title"
+      aria-describedby="template-picker-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="template-picker-form">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">▤</span>
+          <span>
+            <small>Vault template</small>
+            <strong id="template-picker-title">Insert template</strong>
+          </span>
+          <button id="template-picker-close" type="button" aria-label="Cancel template insertion">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="template-picker-description" class="new-note-description">
+          Threadleaf expands supported variables, then inserts the result at your current selection.
+          The note is not written until you save it.
+        </p>
+        <label class="new-note-field template-picker-field" for="template-picker-select">
+          <span>Template</span>
+          <select id="template-picker-select"></select>
+        </label>
+        <p class="new-note-error" id="template-picker-error" role="alert" hidden></p>
+        <footer class="new-note-footer">
+          <span id="template-picker-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="template-picker-cancel" type="button">
+              Cancel
+            </button>
+            <button class="primary-button" id="template-picker-insert" type="submit">
+              Insert
+            </button>
           </span>
         </footer>
       </form>

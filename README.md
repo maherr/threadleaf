@@ -107,6 +107,13 @@ notes are pruned on restore, and malformed state remains available for diagnosis
 warning without rewriting its bytes. Native application menus dispatch the same saved-keybinding
 actions to the focused workspace. No workspace metadata is written into the vault or `.obsidian/`.
 
+Daily notes and templates now use the same recovery-backed note-creation path as New. Settings can
+choose a template folder, default date and time formats, daily-note folder and date format, and an
+optional daily template for each vault without writing configuration into it. Desktop commands
+open or create today's note, insert a selected template at the CodeMirror selection, and insert the
+current date or time. Existing daily notes are opened without rewriting them. The native CLI offers
+the same explicit template expansion and daily-note behavior for headless workflows.
+
 Vault appearance support now discovers standard `.obsidian/themes/<name>/theme.css` packages and
 `.obsidian/snippets/*.css` files without changing them. A per-vault selection, base color scheme,
 and enabled snippet order are stored in Threadleaf's private application settings. Custom CSS is
@@ -346,6 +353,15 @@ recovery, and clean saved bytes:
 pnpm run test:editor-reliability
 ```
 
+The daily-note and template gate runs Electron on an isolated X11 virtual display with private app
+state, a disposable vault, and CDP-routed pointer and keyboard input. It verifies settings
+persistence, exact template/date/time insertion, draft-only insertion before save, recoverable
+daily-note creation, no-rewrite reopening, layout containment, and light and dark captures:
+
+```sh
+pnpm run test:note-workflows
+```
+
 The packaged desktop gate opens both the bundled read-only demo and a disposable writable vault.
 It drives typed property add, edit, and remove controls through the real Electron bridge, checks
 exact unrelated Markdown bytes, verifies keyboard focus and command-palette reachability, and
@@ -398,6 +414,8 @@ pnpm cli --vault /absolute/path/to/vault unresolved counts verbose format=json
 pnpm cli --vault /absolute/path/to/vault outline path="Folder/Note.md" format=md
 pnpm cli --vault /absolute/path/to/vault create "Inbox/New thought"
 pnpm cli --vault /absolute/path/to/vault create path="Projects/Brief" content="# Brief\n"
+pnpm cli --vault /absolute/path/to/vault create path="Projects/Brief" template="Templates/Project.md"
+pnpm cli --vault /absolute/path/to/vault daily folder="Journal" format="YYYY/MMMM/YYYY-MM-DD" template="Templates/Daily.md"
 pnpm cli --vault /absolute/path/to/vault append path="Daily/Today" content="- [ ] Follow up"
 pnpm cli --vault /absolute/path/to/vault prepend "Projects/Brief.md" --content="Draft context"
 pnpm cli --vault /absolute/path/to/vault move "Inbox/Thought.md" --to "Archive/Thought.md" --update-links

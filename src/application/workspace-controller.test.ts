@@ -273,6 +273,35 @@ class FakeRuntime implements WorkspaceRuntimePort {
     };
   }
 
+  async openDailyNote(): Promise<NoteCreateResponse> {
+    return {
+      outcome: {
+        status: "committed",
+        path: "2026-08-12.md",
+        revision: "a".repeat(64),
+        transactionId: "daily",
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async listNoteTemplates(): Promise<string[]> {
+    return ["Templates/Daily.md"];
+  }
+
+  async renderNoteTemplate() {
+    return {
+      content: "rendered template",
+      sourcePath: "Templates/Daily.md",
+      sourceRevision: "a".repeat(64),
+      size: 17,
+    };
+  }
+
+  formatNoteWorkflowValue(value: "date" | "time"): string {
+    return value === "date" ? "2026-08-12" : "18:07";
+  }
+
   async createPluginNote(
     filePath: string,
     content: string,

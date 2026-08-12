@@ -183,6 +183,7 @@ export function createSupportBundleData(input: SupportBundleInput) {
       customBindingCount: customBindingCount(settings),
       savedAppearanceVaultCount: Object.keys(settings.settings.appearanceByVault).length,
       savedPluginVaultCount: Object.keys(settings.settings.pluginsByVault).length,
+      savedNoteWorkflowVaultCount: Object.keys(settings.settings.noteWorkflowsByVault).length,
       currentPluginMode: pluginPreferences.compatibilityMode,
       enabledPluginCount: pluginPreferences.enabledPluginIds.length,
       pluginGrantCount: Object.keys(pluginPreferences.capabilityGrantsByPlugin).length,

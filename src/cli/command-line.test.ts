@@ -160,6 +160,43 @@ describe("Threadleaf CLI arguments", () => {
     expect(
       parseCliArguments([
         "--vault=/vault",
+        "create",
+        "Inbox/Templated",
+        "template=Templates/Meeting",
+        "date-format=YYYY.MM.DD",
+      ]),
+    ).toMatchObject({
+      id: "create",
+      filePath: "Inbox/Templated",
+      templatePath: "Templates/Meeting.md",
+      dateFormat: "YYYY.MM.DD",
+    });
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
+        "daily",
+        "folder=Journal",
+        "format=YYYY/MMMM/YYYY-MM-DD",
+        "template=Templates/Daily",
+      ]),
+    ).toMatchObject({
+      id: "daily",
+      folder: "Journal",
+      format: "YYYY/MMMM/YYYY-MM-DD",
+      templatePath: "Templates/Daily.md",
+    });
+    expect(() =>
+      parseCliArguments([
+        "--vault=/vault",
+        "create",
+        "Mixed",
+        "content=body",
+        "template=Templates/Note",
+      ]),
+    ).toThrow("template or content");
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
         "rename",
         "Folder/Old.md",
         "--name=New",
@@ -610,6 +647,71 @@ describe("Threadleaf CLI create workflow", () => {
     const byName = await invoke(["--vault", vaultPath, "create", "name=Root note"]);
     expect(byName.stdout).toBe("Created Root note.md\n");
     await expect(fs.readFile(path.join(vaultPath, "Root note.md"), "utf8")).resolves.toBe("");
+  });
+
+  it("creates notes from bounded templates without modifying the source", async () => {
+    await fs.mkdir(path.join(vaultPath, "Templates"));
+    const template = "# {{title}}\n{{date}} {{time}}\n{{unknown}}\n";
+    await fs.writeFile(path.join(vaultPath, "Templates", "Meeting.md"), template, "utf8");
+
+    const result = await invoke([
+      "--vault",
+      vaultPath,
+      "create",
+      "Projects/Kickoff",
+      "template=Templates/Meeting.md",
+      "date-format=[DATE]",
+      "time-format=[TIME]",
+    ]);
+
+    expect(result).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Created Projects/Kickoff.md\n",
+      stderr: "",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Projects", "Kickoff.md"), "utf8")).resolves.toBe(
+      "# Kickoff\nDATE TIME\n{{unknown}}\n",
+    );
+    await expect(
+      fs.readFile(path.join(vaultPath, "Templates", "Meeting.md"), "utf8"),
+    ).resolves.toBe(template);
+  });
+
+  it("creates then reopens a daily note without rewriting user content", async () => {
+    await fs.mkdir(path.join(vaultPath, "Templates"));
+    const template = "# {{title}}\n{{date}} {{time}}\n";
+    await fs.writeFile(path.join(vaultPath, "Templates", "Daily.md"), template, "utf8");
+    const command = [
+      "--vault",
+      vaultPath,
+      "daily",
+      "folder=Journal",
+      "format=[Today]",
+      "template=Templates/Daily.md",
+      "date-format=[DATE]",
+      "time-format=[TIME]",
+    ];
+
+    const created = await invoke(command);
+    expect(created).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Created Journal/Today.md\n",
+      stderr: "",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Journal", "Today.md"), "utf8")).resolves.toBe(
+      "# Today\nDATE TIME\n",
+    );
+    await fs.writeFile(path.join(vaultPath, "Journal", "Today.md"), "manual content", "utf8");
+
+    const reopened = await invoke(command);
+    expect(reopened).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Opened Journal/Today.md\n",
+      stderr: "",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Journal", "Today.md"), "utf8")).resolves.toBe(
+      "manual content",
+    );
   });
 
   it("returns a stable conflict error without overwriting an existing note", async () => {

@@ -144,4 +144,31 @@ describe("AppSettingsController", () => {
     });
     expect(store.saved).toEqual([snapshot.settings]);
   });
+
+  it("persists private per-vault daily note and template preferences", async () => {
+    const store = new MemorySettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const vaultId = "d".repeat(64);
+
+    const snapshot = await controller.setVaultNoteWorkflows(vaultId, {
+      templateFolder: "Work/Templates/",
+      templateDateFormat: "YYYY.MM.DD",
+      templateTimeFormat: "HH-mm",
+      dailyNoteFolder: "Journal",
+      dailyNoteDateFormat: "YYYY/MMMM/YYYY-MM-DD",
+      dailyNoteTemplate: "Work/Templates/Daily",
+    });
+
+    expect(snapshot.settings.appearanceByVault).toEqual({});
+    expect(snapshot.settings.pluginsByVault).toEqual({});
+    expect(controller.getVaultNoteWorkflows(vaultId)).toEqual({
+      templateFolder: "Work/Templates",
+      templateDateFormat: "YYYY.MM.DD",
+      templateTimeFormat: "HH-mm",
+      dailyNoteFolder: "Journal",
+      dailyNoteDateFormat: "YYYY/MMMM/YYYY-MM-DD",
+      dailyNoteTemplate: "Work/Templates/Daily.md",
+    });
+    expect(store.saved).toEqual([snapshot.settings]);
+  });
 });

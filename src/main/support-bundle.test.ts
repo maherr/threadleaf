@@ -248,7 +248,7 @@ function runtimeFixture(): RuntimeSnapshot {
 function settingsFixture(): AppSettingsSnapshot {
   return {
     settings: {
-      version: 4,
+      version: 5,
       keyBindings: {
         ...defaultKeyBindings,
         "ui.command-palette": "Mod+Shift+P",
@@ -271,6 +271,16 @@ function settingsFixture(): AppSettingsSnapshot {
               capabilities: ["vault-read", "workspace-ui"],
             },
           },
+        },
+      },
+      noteWorkflowsByVault: {
+        [vaultId]: {
+          templateFolder: "PRIVATE_TEMPLATE_FOLDER",
+          templateDateFormat: "PRIVATE_DATE_FORMAT",
+          templateTimeFormat: "PRIVATE_TIME_FORMAT",
+          dailyNoteFolder: "PRIVATE_DAILY_FOLDER",
+          dailyNoteDateFormat: "PRIVATE_DAILY_FORMAT",
+          dailyNoteTemplate: "PRIVATE_DAILY_TEMPLATE.md",
         },
       },
     },
@@ -417,11 +427,12 @@ describe("support bundle", () => {
         enabledSnippetCount: 1,
       },
       preferences: {
-        schemaVersion: 4,
+        schemaVersion: 5,
         warningObserved: true,
         customBindingCount: 2,
         savedAppearanceVaultCount: 1,
         savedPluginVaultCount: 1,
+        savedNoteWorkflowVaultCount: 1,
         currentPluginMode: "enabled",
         enabledPluginCount: 1,
         pluginGrantCount: 1,

@@ -49,16 +49,24 @@ describe("application menu", () => {
       "help",
     ]);
     expect(item(template, "File", "New Note").accelerator).toBe("Alt+N");
+    expect(item(template, "File", "Open Today's Daily Note").accelerator).toBeUndefined();
     expect(item(template, "File", "Save Note").accelerator).toBe("CmdOrCtrl+S");
-    expect(submenu(template, "Edit").map(({ role, type }) => role ?? type)).toEqual([
-      "undo",
-      "redo",
-      "separator",
-      "cut",
-      "copy",
-      "paste",
-      "selectAll",
-    ]);
+    expect(submenu(template, "Edit").map(({ label, role, type }) => label ?? role ?? type)).toEqual(
+      [
+        "undo",
+        "redo",
+        "separator",
+        "cut",
+        "copy",
+        "paste",
+        "selectAll",
+        "separator",
+        "Insert Template…",
+        "Insert Current Date",
+        "Insert Current Time",
+      ],
+    );
+    expect(item(template, "Edit", "Insert Template…").accelerator).toBeUndefined();
     expect(item(template, "Workspace", "Split Right").accelerator).toBeUndefined();
 
     item(template, "Workspace", "Split Right").click?.({} as never, undefined, {} as never);

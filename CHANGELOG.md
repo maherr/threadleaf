@@ -253,6 +253,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   stale-vault guards.
 - Bounded whole-vault move planning that reuses the current metadata snapshot and reads full bytes
   only for the source and documents whose links require rewriting.
+- Recovery-backed daily notes and templates across the desktop and native CLI, with exact title,
+  date, and time expansion; private per-vault workflow settings; no-rewrite opening of an existing
+  daily note; insertion at the CodeMirror selection; native menus and commands; and isolated X11
+  virtual-input verification in light and dark themes.
 
 ### Fixed
 

@@ -3,6 +3,7 @@ import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } 
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
 import type { MigrationPreviewResponse } from "./migration";
 import type { NativeMenuCommandId } from "./native-menu";
+import type { VaultNoteWorkflowSettings } from "./note-workflows";
 import type {
   PluginPackageApplyOutcome,
   PluginPackageIndexResponse,
@@ -408,6 +409,40 @@ export interface NoteCreateResponse {
   snapshot: RuntimeSnapshot;
 }
 
+export type NoteWorkflowCatalogResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      settings: VaultNoteWorkflowSettings;
+      templates: string[];
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type NoteWorkflowUpdateResponse =
+  | {
+      status: "updated";
+      vaultId: string;
+      appSettings: AppSettingsSnapshot;
+      settings: VaultNoteWorkflowSettings;
+      templates: string[];
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type NoteTemplateRenderResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      content: string;
+      sourcePath: string;
+      sourceRevision: string;
+      size: number;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type NoteWorkflowValueResponse =
+  | { status: "ready"; vaultId: string; value: string }
+  | { status: "stale-vault"; vaultId: string };
+
 export interface NoteMoveLinkResolution {
   status: "resolved" | "unresolved" | "ambiguous";
   path?: string;
@@ -612,6 +647,21 @@ export interface ThreadleafBridge {
   ): Promise<VaultNoteEmbedResponse>;
   setKeyBinding(targetId: ShortcutTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
   resetKeyBindings(): Promise<AppSettingsSnapshot>;
+  getNoteWorkflows(expectedVaultId: string): Promise<NoteWorkflowCatalogResponse>;
+  setNoteWorkflows(
+    expectedVaultId: string,
+    settings: VaultNoteWorkflowSettings,
+  ): Promise<NoteWorkflowUpdateResponse>;
+  openDailyNote(expectedVaultId: string): Promise<NoteCreateResponse>;
+  renderNoteTemplate(
+    templatePath: string,
+    targetPath: string,
+    expectedVaultId: string,
+  ): Promise<NoteTemplateRenderResponse>;
+  formatNoteWorkflowValue(
+    value: "date" | "time",
+    expectedVaultId: string,
+  ): Promise<NoteWorkflowValueResponse>;
   chooseVault(): Promise<VaultOpenResponse>;
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;

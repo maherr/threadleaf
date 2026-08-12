@@ -25,6 +25,8 @@ import type {
   WorkspacePaneId,
   WorkspaceSplitDirection,
 } from "../shared/contracts";
+import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
+import type { RenderedNoteTemplate } from "./note-template";
 import { WorkspaceRuntime, type WorkspaceRuntimeOptions } from "./workspace-runtime";
 import type { WorkspaceStateStore } from "./workspace-state";
 
@@ -84,6 +86,22 @@ export interface WorkspaceRuntimePort {
     content: string,
     expectedVaultId: string,
   ): Promise<NoteCreateResponse>;
+  openDailyNote(
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+  ): Promise<NoteCreateResponse>;
+  listNoteTemplates(templateFolder: string, expectedVaultId: string): Promise<string[]>;
+  renderNoteTemplate(
+    templatePath: string,
+    targetPath: string,
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+  ): Promise<RenderedNoteTemplate>;
+  formatNoteWorkflowValue(
+    value: "date" | "time",
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+  ): string;
   createPluginNote(
     filePath: string,
     content: string,
@@ -524,6 +542,46 @@ export class WorkspaceController {
     expectedVaultId: string,
   ): Promise<NoteCreateResponse> {
     return this.activeRuntime("create a note").createNote(filePath, content, expectedVaultId);
+  }
+
+  openDailyNote(
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+  ): Promise<NoteCreateResponse> {
+    return this.activeRuntime("open today's daily note").openDailyNote(settings, expectedVaultId);
+  }
+
+  listNoteTemplates(templateFolder: string, expectedVaultId: string): Promise<string[]> {
+    return this.activeRuntime("list note templates").listNoteTemplates(
+      templateFolder,
+      expectedVaultId,
+    );
+  }
+
+  renderNoteTemplate(
+    templatePath: string,
+    targetPath: string,
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+  ): Promise<RenderedNoteTemplate> {
+    return this.activeRuntime("render a note template").renderNoteTemplate(
+      templatePath,
+      targetPath,
+      settings,
+      expectedVaultId,
+    );
+  }
+
+  formatNoteWorkflowValue(
+    value: "date" | "time",
+    settings: VaultNoteWorkflowSettings,
+    expectedVaultId: string,
+  ): string {
+    return this.activeRuntime("format a template value").formatNoteWorkflowValue(
+      value,
+      settings,
+      expectedVaultId,
+    );
   }
 
   createPluginNote(

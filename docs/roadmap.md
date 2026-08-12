@@ -86,6 +86,9 @@ equivalence through the real writer-to-watcher seam.
 - [x] Recovery-backed desktop and CLI note creation with nested paths, no-overwrite preflight,
       create-race conflict preservation, interruption recovery, process serialization, stable JSON,
       and tested `path=`, `name=`, and `content=` compatibility spellings.
+- [x] Recovery-backed daily-note opening and template-backed creation, with exact title, date, and
+      time variables, private per-vault workflow settings, desktop insertion, native commands, and
+      headless CLI coverage.
 - [x] Recovery-backed CLI append and prepend with required existing-note targets, frontmatter-aware
       prepend, LF/CRLF separators, inline mode, and full-proposal conflict preservation.
 - [x] Recovery-backed CLI move and rename with destination no-clobber behavior, whole-vault
@@ -296,8 +299,9 @@ Exit gate: selected high-value plugins complete named workflows against public f
       large-document editing with reliable IME and undo.
 - [ ] JSON Canvas editing and embedding plus first-class attachment browsing, rename, preview,
       drag-and-drop, paste, and missing-file recovery.
-- [ ] Core daily-driver features for templates, daily notes, backlinks, outgoing links, tags,
-      properties, tasks, search, graph, outline, bookmarks, file recovery, and publish-ready export.
+- [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
+      search, and outline.
+- [ ] Graph view, bookmarks, desktop file recovery, and publish-ready export.
 - [ ] Keyboard navigation, screen-reader semantics, reduced motion, contrast, zoom, localization,
       bidirectional text, and touch-target audits across every reachable control.
 - [x] Unsigned Linux x64 AppImage and RPM artifacts with a stable application identity, complete

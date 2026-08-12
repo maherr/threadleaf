@@ -25,7 +25,8 @@ threadleaf --vault /path/to/vault unresolved [counts] [total] [verbose] [format=
 threadleaf --vault /path/to/vault orphans [total]
 threadleaf --vault /path/to/vault deadends [total]
 threadleaf --vault /path/to/vault outline "Folder/Note.md" [format=tree|md|json] [total]
-threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n"]
+threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n" | template="Templates/Note.md"] [date-format="YYYY-MM-DD"] [time-format="HH:mm"]
+threadleaf --vault /path/to/vault daily [folder=Journal] [format="YYYY-MM-DD"] [template="Templates/Daily.md"] [date-format="YYYY-MM-DD"] [time-format="HH:mm"]
 threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text" [--inline]
 threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
 threadleaf --vault /path/to/vault move "Folder/Note.md" --to "Archive/Note.md" [--update-links]
@@ -63,7 +64,8 @@ During development, prefix the same arguments with `pnpm cli`.
 | `orphans` | Notes with no resolved incoming source | Derived metadata index |
 | `deadends` | Notes with no parsed outgoing internal-link occurrence | Derived metadata index |
 | `outline` | Ordered headings in tree, Markdown, JSON, total, or rich source-line form | Derived metadata index |
-| `create` | Created Markdown path and revision | Recoverable no-clobber writer |
+| `create` | Created Markdown path and revision, optionally rendered from a template | Recoverable no-clobber writer plus bounded template reader |
+| `daily` | Opened or created daily-note path, outcome, and selected template | Read-before-create plus recoverable no-clobber writer |
 | `append` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `move` | Preview or committed source, destination, rewrites, and written revisions | Whole-vault proof plus compound recovery journal |
@@ -156,8 +158,12 @@ an empty stdout stream, making shell pipelines deterministic.
 
 `create` is the first mutating command. It accepts a vault-relative note name or path, adds `.md`
 when omitted, creates missing folders, and accepts empty content. `--content` interprets `\n`, `\t`,
-and `\\` so multiline scripts do not need a temporary file. The same application service backs the
-desktop New action and CLI command.
+and `\\` so multiline scripts do not need a temporary file. Alternatively, `template=` reads one
+contained UTF-8 Markdown file of at most 1 MiB and expands `{{title}}`, `{{date}}`, `{{time}}`,
+`{{date:FORMAT}}`, and `{{time:FORMAT}}`. The default date and time formats are `YYYY-MM-DD` and
+`HH:mm`; `date-format=` and `time-format=` change the unqualified variables for that invocation.
+Unknown variables and a formatted `title` remain literal. Content and template input cannot be
+combined. The same application service backs the desktop New action and CLI command.
 
 Creation first checks for an ordinary existing note and returns conflict exit 5 without touching
 it. The kernel then stages the proposed bytes and commits only if the target still does not exist.
@@ -166,6 +172,15 @@ a labeled conflict note and reports its path. Recovery completes a staged new-fi
 requested path after interruption when that name remains free. All CLI mutation journals live in
 Threadleaf's operating-system state directory outside the vault. A process-owned lock serializes
 CLI mutations, rejects a live concurrent invocation, and permits takeover from a dead process.
+
+`daily` computes one note path from `folder=` and the Moment-compatible `format=` value. Slashes in
+the result create nested folders. It reads that exact path first: an existing daily note is opened
+without changing any byte, while an absent note is created through the same recoverable writer.
+When `template=` is present, the initial content uses the same bounded template reader and variable
+expansion as `create`; `{{title}}` is the resulting daily-note basename. The human result starts
+with `Opened` or `Created`, and versioned JSON retains the exact outcome. Desktop defaults are saved
+per vault outside both the vault and `.obsidian/`; the headless CLI remains explicit and does not
+read remembered desktop settings.
 
 `append` and `prepend` require an existing Markdown note and non-empty content. Without `inline`,
 Threadleaf adds one separator using the note's existing LF or CRLF convention. With `inline`, it
@@ -336,8 +351,10 @@ Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberat
 `permanent` flag. Move and rename support explicit compound link rewriting through Threadleaf's
 native `--update-links` confirmation flag. Threadleaf accepts the public property command names and
 parameter spellings, but its lossless frontmatter subset and native JSON contract are narrower than
-a complete compatibility claim. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or
-template parameters or active-file defaults. Search and graph flags are executable compatibility
+a complete compatibility claim. Threadleaf does not yet accept Obsidian's `open`, `overwrite`,
+template parameter maps, or active-file defaults. Its `create template=` and `daily` behavior cover
+the documented title, date, time, folder, date-format, and template workflows through Threadleaf's
+native contract. Search and graph flags are executable compatibility
 targets, but ranked query grammar and exact byte-for-byte formatting still require a live reference
 corpus. The task subset does not yet support `active`, `daily`, or alternate `format` output. Alias
 and tag commands do not yet support `active` or alternate `format` output.

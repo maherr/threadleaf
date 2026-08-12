@@ -4,6 +4,11 @@ import {
   type VaultAppearanceSettings,
 } from "./appearance";
 import {
+  createDefaultVaultNoteWorkflowSettings,
+  parseVaultNoteWorkflowSettings,
+  type VaultNoteWorkflowSettings,
+} from "./note-workflows";
+import {
   createDefaultVaultPluginSettings,
   parseVaultPluginSettings,
   type VaultPluginSettings,
@@ -14,6 +19,7 @@ export const shortcutTargetIds = [
   "settings.open-keybindings",
   "workspace.open-vault",
   "workspace.create-note",
+  "workspace.open-daily-note",
   "workspace.move-note",
   "workspace.delete-note",
   "workspace.close-tab",
@@ -24,6 +30,9 @@ export const shortcutTargetIds = [
   "editor.revert-note",
   "editor.toggle-reading-view",
   "editor.toggle-source-mode",
+  "editor.insert-template",
+  "editor.insert-current-date",
+  "editor.insert-current-time",
   "appearance.toggle-theme",
   "appearance.reload-custom-css",
   "appearance.disable-custom-css",
@@ -32,10 +41,11 @@ export const shortcutTargetIds = [
 export type ShortcutTargetId = (typeof shortcutTargetIds)[number];
 
 export interface AppSettings {
-  version: 4;
+  version: 5;
   keyBindings: Record<string, string | null>;
   appearanceByVault: Record<string, VaultAppearanceSettings>;
   pluginsByVault: Record<string, VaultPluginSettings>;
+  noteWorkflowsByVault: Record<string, VaultNoteWorkflowSettings>;
 }
 
 export interface AppSettingsSnapshot {
@@ -56,6 +66,7 @@ export const defaultKeyBindings: Readonly<Record<ShortcutTargetId, string | null
   "settings.open-keybindings": "Mod+Comma",
   "workspace.open-vault": "Mod+O",
   "workspace.create-note": "Mod+N",
+  "workspace.open-daily-note": null,
   "workspace.move-note": "Mod+Shift+M",
   "workspace.delete-note": null,
   "workspace.close-tab": "Mod+W",
@@ -66,6 +77,9 @@ export const defaultKeyBindings: Readonly<Record<ShortcutTargetId, string | null
   "editor.revert-note": null,
   "editor.toggle-reading-view": "Mod+E",
   "editor.toggle-source-mode": null,
+  "editor.insert-template": null,
+  "editor.insert-current-date": null,
+  "editor.insert-current-time": null,
   "appearance.toggle-theme": "Mod+Shift+L",
   "appearance.reload-custom-css": null,
   "appearance.disable-custom-css": "Mod+Alt+L",
@@ -159,6 +173,24 @@ function parsePluginsByVault(value: unknown): Record<string, VaultPluginSettings
   return pluginsByVault;
 }
 
+function parseNoteWorkflowsByVault(value: unknown): Record<string, VaultNoteWorkflowSettings> {
+  if (!isRecord(value)) {
+    throw new Error("Settings noteWorkflowsByVault must be an object.");
+  }
+  const entries = Object.entries(value);
+  if (entries.length > 128) {
+    throw new Error("Settings contain note workflow preferences for too many vaults.");
+  }
+  const noteWorkflowsByVault: Record<string, VaultNoteWorkflowSettings> = {};
+  for (const [vaultId, noteWorkflows] of entries) {
+    if (!vaultIdPattern.test(vaultId)) {
+      throw new Error("Note workflow preferences require lowercase SHA-256 vault identities.");
+    }
+    noteWorkflowsByVault[vaultId] = parseVaultNoteWorkflowSettings(noteWorkflows);
+  }
+  return noteWorkflowsByVault;
+}
+
 function normalizeKey(value: string): string {
   const trimmed = eventKeyNames[value.trim()] ?? value.trim();
   if (/^[a-z0-9]$/i.test(trimmed)) {
@@ -206,20 +238,25 @@ export function normalizeKeyBinding(value: string): string {
 
 export function createDefaultAppSettings(): AppSettings {
   return {
-    version: 4,
+    version: 5,
     keyBindings: { ...defaultKeyBindings },
     appearanceByVault: {},
     pluginsByVault: {},
+    noteWorkflowsByVault: {},
   };
 }
 
 export function parseAppSettings(value: unknown): AppSettings {
   if (
     !isRecord(value) ||
-    (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) ||
+    (value.version !== 1 &&
+      value.version !== 2 &&
+      value.version !== 3 &&
+      value.version !== 4 &&
+      value.version !== 5) ||
     !isRecord(value.keyBindings)
   ) {
-    throw new Error("Settings must contain version 1, 2, 3, or 4 and a keyBindings object.");
+    throw new Error("Settings must contain version 1, 2, 3, 4, or 5 and a keyBindings object.");
   }
   const entries = Object.entries(value.keyBindings);
   if (entries.length > 512) {
@@ -239,8 +276,12 @@ export function parseAppSettings(value: unknown): AppSettings {
   const appearanceByVault =
     value.version === 1 ? {} : parseAppearanceByVault(value.appearanceByVault);
   const pluginsByVault =
-    value.version === 3 || value.version === 4 ? parsePluginsByVault(value.pluginsByVault) : {};
-  return { version: 4, keyBindings, appearanceByVault, pluginsByVault };
+    value.version === 3 || value.version === 4 || value.version === 5
+      ? parsePluginsByVault(value.pluginsByVault)
+      : {};
+  const noteWorkflowsByVault =
+    value.version === 5 ? parseNoteWorkflowsByVault(value.noteWorkflowsByVault) : {};
+  return { version: 5, keyBindings, appearanceByVault, pluginsByVault, noteWorkflowsByVault };
 }
 
 export function isShortcutTargetId(value: string): value is ShortcutTargetId {
@@ -324,6 +365,41 @@ export function updateVaultPlugins(
     ...settings,
     pluginsByVault: {
       ...settings.pluginsByVault,
+      [vaultId]: normalized,
+    },
+  };
+}
+
+export function noteWorkflowsForVault(
+  settings: AppSettings,
+  vaultId: string,
+): VaultNoteWorkflowSettings {
+  const noteWorkflows = settings.noteWorkflowsByVault[vaultId];
+  return noteWorkflows
+    ? {
+        templateFolder: noteWorkflows.templateFolder,
+        templateDateFormat: noteWorkflows.templateDateFormat,
+        templateTimeFormat: noteWorkflows.templateTimeFormat,
+        dailyNoteFolder: noteWorkflows.dailyNoteFolder,
+        dailyNoteDateFormat: noteWorkflows.dailyNoteDateFormat,
+        dailyNoteTemplate: noteWorkflows.dailyNoteTemplate,
+      }
+    : createDefaultVaultNoteWorkflowSettings();
+}
+
+export function updateVaultNoteWorkflows(
+  settings: AppSettings,
+  vaultId: string,
+  noteWorkflows: VaultNoteWorkflowSettings,
+): AppSettings {
+  if (!vaultIdPattern.test(vaultId)) {
+    throw new Error("Note workflow preferences require a lowercase SHA-256 vault identity.");
+  }
+  const normalized = parseVaultNoteWorkflowSettings(noteWorkflows);
+  return {
+    ...settings,
+    noteWorkflowsByVault: {
+      ...settings.noteWorkflowsByVault,
       [vaultId]: normalized,
     },
   };

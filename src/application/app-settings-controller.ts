@@ -5,12 +5,15 @@ import {
   appearanceForVault,
   createDefaultAppSettings,
   defaultKeyBindings,
+  noteWorkflowsForVault,
   pluginsForVault,
   type ShortcutTargetId,
   updateKeyBinding,
   updateVaultAppearance,
+  updateVaultNoteWorkflows,
   updateVaultPlugins,
 } from "../shared/key-bindings";
+import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type { VaultPluginSettings } from "../shared/plugins";
 
 export interface AppSettingsStore {
@@ -89,6 +92,19 @@ export class AppSettingsController {
     plugins: VaultPluginSettings,
   ): Promise<AppSettingsSnapshot> {
     const candidate = updateVaultPlugins(this.#snapshot.settings, vaultId, plugins);
+    const settings = await this.#store.save(candidate);
+    return this.adopt(settings);
+  }
+
+  getVaultNoteWorkflows(vaultId: string): VaultNoteWorkflowSettings {
+    return noteWorkflowsForVault(this.#snapshot.settings, vaultId);
+  }
+
+  async setVaultNoteWorkflows(
+    vaultId: string,
+    noteWorkflows: VaultNoteWorkflowSettings,
+  ): Promise<AppSettingsSnapshot> {
+    const candidate = updateVaultNoteWorkflows(this.#snapshot.settings, vaultId, noteWorkflows);
     const settings = await this.#store.save(candidate);
     return this.adopt(settings);
   }

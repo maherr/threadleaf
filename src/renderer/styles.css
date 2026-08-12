@@ -3079,6 +3079,7 @@ button.inspector-item:hover {
 }
 
 .appearance-settings,
+.note-workflow-settings,
 .plugin-settings,
 .migration-settings,
 .app-update-settings,
@@ -3099,6 +3100,188 @@ button.inspector-item:hover {
       transparent 44%
     ),
     var(--surface);
+}
+
+.note-workflow-settings {
+  display: grid;
+  align-content: start;
+  gap: 17px;
+  background:
+    radial-gradient(
+      circle at 92% 3%,
+      color-mix(in srgb, var(--accent-soft) 72%, transparent),
+      transparent 30%
+    ),
+    var(--surface);
+}
+
+.note-workflow-intro {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.note-workflow-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 10px 4px 10px 4px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font: 800 18px / 1 var(--mono);
+}
+
+.note-workflow-intro > span:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.note-workflow-intro strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16px;
+}
+
+.note-workflow-intro small {
+  color: var(--ink-soft);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.note-workflow-form {
+  display: grid;
+  gap: 13px;
+}
+
+.note-workflow-group {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.note-workflow-group legend {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--line);
+  color: var(--accent-strong);
+  background: var(--surface-sunken);
+  font: 850 8px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.note-workflow-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.note-workflow-group > .note-workflow-field:last-child {
+  border-bottom: 0;
+}
+
+.note-workflow-field > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.note-workflow-field strong {
+  font-size: 10px;
+}
+
+.note-workflow-field small {
+  color: var(--ink-muted);
+  font: 8px / 1.4 var(--mono);
+}
+
+.note-workflow-field code,
+.note-workflow-actions code {
+  color: var(--accent-strong);
+  font: inherit;
+}
+
+.note-workflow-field input,
+.note-workflow-field select {
+  flex: 0 1 330px;
+  width: min(330px, 44vw);
+  min-width: 0;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface-sunken);
+  font: 9px var(--mono);
+}
+
+.note-workflow-field input:focus-visible,
+.note-workflow-field select:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.note-workflow-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.note-workflow-pair .note-workflow-field {
+  align-items: stretch;
+  flex-direction: column;
+  border-bottom: 0;
+}
+
+.note-workflow-pair .note-workflow-field + .note-workflow-field {
+  border-left: 1px solid var(--line);
+}
+
+.note-workflow-pair .note-workflow-field input {
+  flex: none;
+  width: 100%;
+}
+
+.note-workflow-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 13px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+
+.note-workflow-actions > small {
+  color: var(--ink-muted);
+  font: 8px / 1.55 var(--mono);
+}
+
+.note-workflow-actions button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 9px;
 }
 
 .app-update-settings {
@@ -5070,6 +5253,29 @@ button.inspector-item:hover {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+.template-picker-dialog {
+  width: min(610px, calc(100vw - 32px));
+}
+
+.template-picker-field select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  outline: 0;
+  color: var(--ink);
+  background: var(--surface-raised);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.template-picker-field select:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
 .property-dialog {
   width: min(590px, calc(100vw - 32px));
 }
@@ -5454,6 +5660,7 @@ button.inspector-item:hover {
   }
 
   .appearance-settings,
+  .note-workflow-settings,
   .plugin-settings,
   .migration-settings,
   .app-update-settings,
@@ -5478,6 +5685,31 @@ button.inspector-item:hover {
 
   .appearance-select-field select {
     width: 100%;
+  }
+
+  .note-workflow-field,
+  .note-workflow-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .note-workflow-field input,
+  .note-workflow-field select {
+    flex: none;
+    width: 100%;
+  }
+
+  .note-workflow-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .note-workflow-pair .note-workflow-field + .note-workflow-field {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .note-workflow-actions button {
+    align-self: start;
   }
 
   .snippet-list {

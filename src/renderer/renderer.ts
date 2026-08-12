@@ -19,6 +19,7 @@ import type {
   NoteMoveResponse,
   NoteMoveRewritePreview,
   NotePropertyType,
+  NoteWorkflowCatalogResponse,
   PluginEditorContext,
   PluginEditorUpdate,
   RuntimeSnapshot,
@@ -39,11 +40,16 @@ import {
   bindingFromKeyboardEvent,
   createDefaultAppSettings,
   displayKeyBinding,
+  noteWorkflowsForVault,
   pluginsForVault,
   type ShortcutTargetId,
   shortcutTargetForEvent,
 } from "../shared/key-bindings";
 import type { ObsidianMigrationPreview } from "../shared/migration";
+import {
+  createDefaultVaultNoteWorkflowSettings,
+  type VaultNoteWorkflowSettings,
+} from "../shared/note-workflows";
 import type {
   ManagedPluginPackageSummary,
   PluginPackageIndexSnapshot,
@@ -164,6 +170,7 @@ const elements = {
   settingsPageEyebrow: getElement("settings-page-eyebrow"),
   settingsPageTitle: getElement("settings-page-title"),
   settingsNavAppearance: getButton("settings-nav-appearance"),
+  settingsNavNotes: getButton("settings-nav-notes"),
   settingsNavPlugins: getButton("settings-nav-plugins"),
   settingsNavMigration: getButton("settings-nav-migration"),
   settingsNavUpdates: getButton("settings-nav-updates"),
@@ -220,6 +227,16 @@ const elements = {
   schemeDark: getInput("scheme-dark"),
   settingsList: getElement("key-binding-list"),
   settingsStatus: getElement("settings-status"),
+  noteWorkflowState: getElement("note-workflow-state"),
+  noteWorkflowForm: getForm("note-workflow-form"),
+  workflowTemplateFolder: getInput("workflow-template-folder"),
+  workflowDateFormat: getInput("workflow-date-format"),
+  workflowTimeFormat: getInput("workflow-time-format"),
+  workflowDailyFolder: getInput("workflow-daily-folder"),
+  workflowDailyFormat: getInput("workflow-daily-format"),
+  workflowDailyTemplate: getSelect("workflow-daily-template"),
+  workflowTemplateCount: getElement("workflow-template-count"),
+  workflowSave: getButton("workflow-save"),
   newNoteDialog: getDialog("new-note-dialog"),
   newNoteForm: getForm("new-note-form"),
   newNotePath: getInput("new-note-path"),
@@ -228,6 +245,14 @@ const elements = {
   newNoteCreate: getButton("new-note-create"),
   newNoteError: getElement("new-note-error"),
   newNoteVault: getElement("new-note-vault"),
+  templatePickerDialog: getDialog("template-picker-dialog"),
+  templatePickerForm: getForm("template-picker-form"),
+  templatePickerSelect: getSelect("template-picker-select"),
+  templatePickerClose: getButton("template-picker-close"),
+  templatePickerCancel: getButton("template-picker-cancel"),
+  templatePickerInsert: getButton("template-picker-insert"),
+  templatePickerError: getElement("template-picker-error"),
+  templatePickerVault: getElement("template-picker-vault"),
   propertyDialog: getDialog("property-dialog"),
   propertyForm: getForm("property-form"),
   propertyDialogOperation: getElement("property-dialog-operation"),
@@ -438,7 +463,7 @@ interface ShortcutTargetDefinition {
 
 type EditingViewMode = "live" | "source";
 type DocumentViewMode = EditingViewMode | "reading" | "plugin";
-type SettingsPage = "appearance" | "plugins" | "migration" | "updates" | "hotkeys";
+type SettingsPage = "appearance" | "notes" | "plugins" | "migration" | "updates" | "hotkeys";
 
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   {
@@ -460,6 +485,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.create-note",
     label: "Create new note",
     description: "Create and open a Markdown note through the recoverable writer.",
+  },
+  {
+    id: "workspace.open-daily-note",
+    label: "Open today's daily note",
+    description: "Open today's note or create it through the recoverable writer.",
   },
   {
     id: "workspace.move-note",
@@ -500,6 +530,21 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "editor.revert-note",
     label: "Revert current note",
     description: "Discard the current editor draft and accept the disk version.",
+  },
+  {
+    id: "editor.insert-template",
+    label: "Insert template",
+    description: "Expand a configured Markdown template at the current editor selection.",
+  },
+  {
+    id: "editor.insert-current-date",
+    label: "Insert current date",
+    description: "Insert the current date using this vault's template format.",
+  },
+  {
+    id: "editor.insert-current-time",
+    label: "Insert current time",
+    description: "Insert the current time using this vault's template format.",
   },
   {
     id: "editor.toggle-reading-view",
@@ -575,6 +620,13 @@ let settingsMessage = "Select a command, then press its new shortcut.";
 let settingsMessageKind: "info" | "saved" | "error" = "info";
 let lastSettingsWarning: string | null = null;
 let settingsLoaded = false;
+type ReadyNoteWorkflowCatalog = Extract<NoteWorkflowCatalogResponse, { status: "ready" }>;
+let noteWorkflowCatalog: ReadyNoteWorkflowCatalog | null = null;
+let noteWorkflowBusy = false;
+let noteWorkflowRequest = 0;
+let noteWorkflowMessage = "Discovering templates and daily-note preferences in this vault.";
+let noteWorkflowMessageKind: "info" | "saved" | "error" = "info";
+let noteWorkflowDraft: VaultNoteWorkflowSettings | null = null;
 let appearanceSnapshot: AppearanceSnapshot | null = null;
 let appearanceBusy = false;
 let appearanceRequest = 0;
@@ -618,6 +670,10 @@ let lastVirtualActivePath: string | null = null;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
 let newNoteVaultId: string | null = null;
+let templatePickerRestoreFocus: HTMLElement | null = null;
+let templatePickerBusy = false;
+let templatePickerVaultId: string | null = null;
+let templatePickerNotePath: string | null = null;
 type PropertyDialogMode = "add" | "edit" | "remove";
 let propertyDialogMode: PropertyDialogMode = "add";
 let propertyDialogRestoreFocus: HTMLElement | null = null;
@@ -1094,6 +1150,24 @@ function commandCatalog(): RendererCommand[] {
       run: openNewNoteDialog,
     },
     {
+      id: "workspace.open-daily-note",
+      label: "Open today's daily note",
+      category: "Workspace",
+      keywords: ["daily", "today", "journal", "template", "date"],
+      shortcut: shortcutFor("workspace.open-daily-note"),
+      enabled: Boolean(
+        currentSnapshot?.vault.id && !opening && !readOnly && !busy && !paneSaving && !paneDirty,
+      ),
+      disabledReason: opening
+        ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
+        : readOnly
+          ? "Open a local vault before using daily notes."
+          : paneDirty
+            ? "Save or revert drafts before opening today's note."
+            : "Threadleaf is finishing another action.",
+      run: openTodaysDailyNote,
+    },
+    {
       id: "workspace.move-note",
       label: "Move or rename current note",
       category: "Workspace",
@@ -1288,6 +1362,48 @@ function commandCatalog(): RendererCommand[] {
           ? "The current note has no unsaved changes."
           : "Threadleaf is finishing another action.",
       run: revertActiveNote,
+    },
+    {
+      id: "editor.insert-template",
+      label: "Insert template",
+      category: "Editor",
+      keywords: ["template", "insert", "snippet", "boilerplate"],
+      shortcut: shortcutFor("editor.insert-template"),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : readOnly
+          ? "Open a local vault before editing notes."
+          : "Threadleaf is finishing another action.",
+      run: openTemplatePicker,
+    },
+    {
+      id: "editor.insert-current-date",
+      label: "Insert current date",
+      category: "Editor",
+      keywords: ["date", "today", "insert", "template"],
+      shortcut: shortcutFor("editor.insert-current-date"),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : readOnly
+          ? "Open a local vault before editing notes."
+          : "Threadleaf is finishing another action.",
+      run: () => insertFormattedWorkflowValue("date"),
+    },
+    {
+      id: "editor.insert-current-time",
+      label: "Insert current time",
+      category: "Editor",
+      keywords: ["time", "clock", "insert", "template"],
+      shortcut: shortcutFor("editor.insert-current-time"),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : readOnly
+          ? "Open a local vault before editing notes."
+          : "Threadleaf is finishing another action.",
+      run: () => insertFormattedWorkflowValue("time"),
     },
     {
       id: "editor.toggle-reading-view",
@@ -2050,6 +2166,9 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   const previousPlugins = vaultId
     ? pluginsForVault(settingsSnapshot.settings, vaultId)
     : createDefaultVaultPluginSettings();
+  const previousNoteWorkflows = vaultId
+    ? noteWorkflowsForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultNoteWorkflowSettings();
   settingsSnapshot = snapshot;
   settingsLoaded = true;
   updateShortcutLabels();
@@ -2060,6 +2179,7 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   lastSettingsWarning = snapshot.warning;
   const nextAppearance = currentAppearancePreference();
   const nextPlugins = currentPluginPreference();
+  const nextNoteWorkflows = currentNoteWorkflowPreference();
   applyColorScheme(nextAppearance.colorScheme);
   if (
     vaultId &&
@@ -2078,6 +2198,15 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
       !pluginPreferencesEqual(pluginCatalog.preference, nextPlugins))
   ) {
     void refreshPlugins();
+  }
+  if (
+    vaultId &&
+    !noteWorkflowBusy &&
+    (!noteWorkflowPreferencesEqual(previousNoteWorkflows, nextNoteWorkflows) ||
+      noteWorkflowCatalog?.vaultId !== vaultId ||
+      !noteWorkflowPreferencesEqual(noteWorkflowCatalog.settings, nextNoteWorkflows))
+  ) {
+    void refreshNoteWorkflows();
   }
   renderSettings();
   renderPaletteResults();
@@ -2223,6 +2352,230 @@ async function createNewNote(): Promise<void> {
     showToast(`Created ${response.outcome.path}`);
   }
   window.setTimeout(() => editor.focus(), 0);
+}
+
+async function openTodaysDailyNote(): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (
+    !expectedVaultId ||
+    readOnlyVault() ||
+    vaultOpening() ||
+    busy ||
+    anyPaneSaving() ||
+    anyPaneDirty()
+  ) {
+    if (anyPaneDirty()) {
+      showToast("Save or revert drafts before opening today's note.");
+    }
+    return;
+  }
+  setActionState(true);
+  try {
+    const response = await window.threadleaf.openDailyNote(expectedVaultId);
+    render(response.snapshot);
+    setDocumentView(editingViewMode, false);
+    if (response.outcome.status === "committed") {
+      showToast(`Created today's note: ${response.outcome.path}`);
+    } else if (response.outcome.status === "exists") {
+      showToast(`Opened today's note: ${response.outcome.path}`);
+    } else {
+      setEditNotice({
+        kind: "conflict",
+        title: "Today's note appeared during creation",
+        message: `The existing note was not overwritten. Your new note is ${response.outcome.conflictPath}.`,
+      });
+      showToast(`Preserved as ${response.outcome.conflictPath}`);
+    }
+    window.requestAnimationFrame(() => editor.focus());
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    setActionState(false);
+  }
+}
+
+function insertEditorText(content: string): void {
+  if (!loadedNote || readOnlyVault() || busy || saving) {
+    return;
+  }
+  if (documentViewMode !== "live" && documentViewMode !== "source") {
+    setDocumentView(editingViewMode, false);
+  }
+  const selection = editor.state.selection.main;
+  editor.dispatch({
+    changes: { from: selection.from, to: selection.to, insert: content },
+    selection: { anchor: selection.from + content.length },
+    scrollIntoView: true,
+  });
+  editor.focus();
+}
+
+function renderTemplatePickerDialog(): void {
+  const staleVault = Boolean(
+    templatePickerVaultId &&
+      currentSnapshot?.vault.id &&
+      templatePickerVaultId !== currentSnapshot.vault.id,
+  );
+  if (staleVault && !elements.templatePickerError.textContent) {
+    elements.templatePickerError.textContent =
+      "The active vault changed. Cancel and reopen Insert template.";
+  }
+  const catalog =
+    noteWorkflowCatalog?.vaultId === templatePickerVaultId ? noteWorkflowCatalog : null;
+  const selected = elements.templatePickerSelect.value;
+  elements.templatePickerSelect.replaceChildren();
+  for (const templatePath of catalog?.templates ?? []) {
+    const option = document.createElement("option");
+    option.value = templatePath;
+    option.textContent = templatePath;
+    elements.templatePickerSelect.append(option);
+  }
+  if (selected && (catalog?.templates ?? []).includes(selected)) {
+    elements.templatePickerSelect.value = selected;
+  }
+  const hasTemplates = (catalog?.templates.length ?? 0) > 0;
+  if (!hasTemplates && !elements.templatePickerError.textContent) {
+    elements.templatePickerError.textContent = catalog
+      ? `No Markdown templates were found in ${catalog.settings.templateFolder || "the vault root"}.`
+      : "Templates are not available for this vault.";
+  }
+  const message = elements.templatePickerError.textContent ?? "";
+  elements.templatePickerError.hidden = message.length === 0;
+  elements.templatePickerSelect.disabled = templatePickerBusy || !hasTemplates;
+  elements.templatePickerClose.disabled = templatePickerBusy;
+  elements.templatePickerCancel.disabled = templatePickerBusy;
+  elements.templatePickerInsert.disabled = templatePickerBusy || staleVault || !hasTemplates;
+  elements.templatePickerInsert.textContent = templatePickerBusy ? "Expanding…" : "Insert";
+  elements.templatePickerForm.setAttribute("aria-busy", String(templatePickerBusy));
+  elements.templatePickerVault.textContent = staleVault
+    ? "Vault changed"
+    : currentSnapshot
+      ? `Into ${currentSnapshot.vault.name}`
+      : "Active vault";
+}
+
+async function openTemplatePicker(): Promise<void> {
+  const expectedVaultId = loadedVaultId;
+  const notePath = loadedNote?.path;
+  if (!expectedVaultId || !notePath || readOnlyVault() || busy || saving) {
+    return;
+  }
+  if (elements.templatePickerDialog.open) {
+    elements.templatePickerSelect.focus();
+    return;
+  }
+  if (elements.commandPalette.open) {
+    closeCommandPalette(false);
+  }
+  try {
+    const catalog = await refreshNoteWorkflows();
+    if (!catalog || loadedVaultId !== expectedVaultId || loadedNote?.path !== notePath) {
+      showToast(
+        catalog
+          ? "The vault or active note changed before templates could be opened."
+          : noteWorkflowMessage,
+      );
+      return;
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+    return;
+  }
+  templatePickerRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  templatePickerBusy = false;
+  templatePickerVaultId = expectedVaultId;
+  templatePickerNotePath = notePath;
+  elements.templatePickerError.textContent = "";
+  elements.templatePickerDialog.showModal();
+  renderTemplatePickerDialog();
+  window.requestAnimationFrame(() => {
+    if (elements.templatePickerSelect.disabled) {
+      elements.templatePickerCancel.focus();
+    } else {
+      elements.templatePickerSelect.focus();
+    }
+  });
+}
+
+function closeTemplatePicker(restoreFocus = true): void {
+  if (!elements.templatePickerDialog.open || templatePickerBusy) {
+    return;
+  }
+  elements.templatePickerDialog.close();
+  templatePickerVaultId = null;
+  templatePickerNotePath = null;
+  const restoreTarget = templatePickerRestoreFocus;
+  templatePickerRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function insertSelectedTemplate(): Promise<void> {
+  const expectedVaultId = templatePickerVaultId;
+  const notePath = templatePickerNotePath;
+  const templatePath = elements.templatePickerSelect.value;
+  if (!expectedVaultId || !notePath || !templatePath || templatePickerBusy) {
+    return;
+  }
+  templatePickerBusy = true;
+  elements.templatePickerError.textContent = "";
+  renderTemplatePickerDialog();
+  try {
+    const response = await window.threadleaf.renderNoteTemplate(
+      templatePath,
+      notePath,
+      expectedVaultId,
+    );
+    if (
+      response.status !== "ready" ||
+      loadedVaultId !== expectedVaultId ||
+      loadedNote?.path !== notePath
+    ) {
+      elements.templatePickerError.textContent =
+        "The vault or active note changed before the template could be inserted.";
+      return;
+    }
+    templatePickerBusy = false;
+    closeTemplatePicker(false);
+    insertEditorText(response.content);
+    showToast(`Inserted ${response.sourcePath}`);
+  } catch (error) {
+    elements.templatePickerError.textContent =
+      error instanceof Error ? error.message : String(error);
+  } finally {
+    templatePickerBusy = false;
+    if (elements.templatePickerDialog.open) {
+      renderTemplatePickerDialog();
+    }
+  }
+}
+
+async function insertFormattedWorkflowValue(value: "date" | "time"): Promise<void> {
+  const expectedVaultId = loadedVaultId;
+  const notePath = loadedNote?.path;
+  if (!expectedVaultId || !notePath || readOnlyVault() || busy || saving) {
+    return;
+  }
+  setActionState(true);
+  try {
+    const response = await window.threadleaf.formatNoteWorkflowValue(value, expectedVaultId);
+    if (
+      response.status !== "ready" ||
+      loadedVaultId !== expectedVaultId ||
+      loadedNote?.path !== notePath
+    ) {
+      showToast(`The vault or active note changed before the ${value} could be inserted.`);
+      return;
+    }
+    setActionState(false);
+    insertEditorText(response.value);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    setActionState(false);
+  }
 }
 
 function selectedPropertyType(): NotePropertyType {
@@ -2929,7 +3282,179 @@ async function deleteCurrentNote(): Promise<void> {
 }
 
 function settingsOperationBusy(): boolean {
-  return settingsBusy || appearanceBusy || pluginBusy || migrationBusy || supportBundleBusy;
+  return (
+    settingsBusy ||
+    noteWorkflowBusy ||
+    appearanceBusy ||
+    pluginBusy ||
+    migrationBusy ||
+    supportBundleBusy
+  );
+}
+
+function currentNoteWorkflowPreference(): VaultNoteWorkflowSettings {
+  const vaultId = currentSnapshot?.vault.id;
+  return vaultId
+    ? noteWorkflowsForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultNoteWorkflowSettings();
+}
+
+function noteWorkflowPreferencesEqual(
+  left: VaultNoteWorkflowSettings,
+  right: VaultNoteWorkflowSettings,
+): boolean {
+  return (
+    left.templateFolder === right.templateFolder &&
+    left.templateDateFormat === right.templateDateFormat &&
+    left.templateTimeFormat === right.templateTimeFormat &&
+    left.dailyNoteFolder === right.dailyNoteFolder &&
+    left.dailyNoteDateFormat === right.dailyNoteDateFormat &&
+    left.dailyNoteTemplate === right.dailyNoteTemplate
+  );
+}
+
+async function refreshNoteWorkflows(
+  successMessage?: string,
+): Promise<ReadyNoteWorkflowCatalog | null> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || vaultOpening()) {
+    return null;
+  }
+  const request = ++noteWorkflowRequest;
+  noteWorkflowBusy = true;
+  noteWorkflowMessage = "Discovering templates and daily-note preferences in this vault.";
+  noteWorkflowMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.getNoteWorkflows(expectedVaultId);
+    if (request !== noteWorkflowRequest || response.status !== "ready") {
+      return null;
+    }
+    noteWorkflowCatalog = response;
+    noteWorkflowMessage =
+      successMessage ??
+      `${response.templates.length} Markdown template${response.templates.length === 1 ? "" : "s"} available.`;
+    noteWorkflowMessageKind = successMessage ? "saved" : "info";
+    return response;
+  } catch (error) {
+    if (request === noteWorkflowRequest) {
+      noteWorkflowCatalog = null;
+      noteWorkflowMessage = error instanceof Error ? error.message : String(error);
+      noteWorkflowMessageKind = "error";
+    }
+    return null;
+  } finally {
+    if (request === noteWorkflowRequest) {
+      noteWorkflowBusy = false;
+      renderSettings();
+    }
+  }
+}
+
+function renderNoteWorkflowSettings(): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  const catalog = noteWorkflowCatalog?.vaultId === vaultId ? noteWorkflowCatalog : null;
+  const settings = noteWorkflowDraft ?? catalog?.settings ?? currentNoteWorkflowPreference();
+  const disabled = !vaultId || vaultOpening() || noteWorkflowBusy;
+  elements.workflowTemplateFolder.value = settings.templateFolder;
+  elements.workflowDateFormat.value = settings.templateDateFormat;
+  elements.workflowTimeFormat.value = settings.templateTimeFormat;
+  elements.workflowDailyFolder.value = settings.dailyNoteFolder;
+  elements.workflowDailyFormat.value = settings.dailyNoteDateFormat;
+
+  elements.workflowDailyTemplate.replaceChildren();
+  const noTemplate = document.createElement("option");
+  noTemplate.value = "";
+  noTemplate.textContent = "No template";
+  elements.workflowDailyTemplate.append(noTemplate);
+  for (const templatePath of catalog?.templates ?? []) {
+    const option = document.createElement("option");
+    option.value = templatePath;
+    option.textContent = templatePath;
+    elements.workflowDailyTemplate.append(option);
+  }
+  if (
+    settings.dailyNoteTemplate &&
+    !(catalog?.templates ?? []).includes(settings.dailyNoteTemplate)
+  ) {
+    const missing = document.createElement("option");
+    missing.value = settings.dailyNoteTemplate;
+    missing.textContent = `Unavailable: ${settings.dailyNoteTemplate}`;
+    elements.workflowDailyTemplate.append(missing);
+  }
+  elements.workflowDailyTemplate.value = settings.dailyNoteTemplate ?? "";
+
+  for (const control of [
+    elements.workflowTemplateFolder,
+    elements.workflowDateFormat,
+    elements.workflowTimeFormat,
+    elements.workflowDailyFolder,
+    elements.workflowDailyFormat,
+    elements.workflowDailyTemplate,
+  ]) {
+    control.disabled = disabled;
+  }
+  elements.workflowSave.disabled = disabled;
+  elements.workflowSave.textContent = noteWorkflowBusy ? "Saving…" : "Save preferences";
+  elements.noteWorkflowForm.setAttribute("aria-busy", String(noteWorkflowBusy));
+  elements.noteWorkflowState.textContent = noteWorkflowBusy
+    ? "Loading"
+    : catalog
+      ? "Ready"
+      : "Not scanned";
+  elements.noteWorkflowState.dataset.state = catalog ? "active" : "";
+  elements.workflowTemplateCount.textContent = catalog
+    ? `${catalog.templates.length} template${catalog.templates.length === 1 ? "" : "s"} found`
+    : "Template folder not scanned";
+}
+
+async function saveNoteWorkflows(): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || vaultOpening() || noteWorkflowBusy) {
+    return;
+  }
+  const requestedSettings = captureNoteWorkflowDraft();
+  noteWorkflowBusy = true;
+  noteWorkflowMessage = "Saving note workflow preferences.";
+  noteWorkflowMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.setNoteWorkflows(expectedVaultId, requestedSettings);
+    if (response.status !== "updated") {
+      noteWorkflowMessage = "The active vault changed. Review these preferences and save again.";
+      noteWorkflowMessageKind = "error";
+      return;
+    }
+    noteWorkflowCatalog = {
+      status: "ready",
+      vaultId: response.vaultId,
+      settings: response.settings,
+      templates: response.templates,
+    };
+    noteWorkflowDraft = { ...response.settings };
+    applySettingsSnapshot(response.appSettings);
+    noteWorkflowMessage = `Preferences saved. ${response.templates.length} template${response.templates.length === 1 ? "" : "s"} found.`;
+    noteWorkflowMessageKind = "saved";
+  } catch (error) {
+    noteWorkflowMessage = error instanceof Error ? error.message : String(error);
+    noteWorkflowMessageKind = "error";
+  } finally {
+    noteWorkflowBusy = false;
+    renderSettings();
+  }
+}
+
+function captureNoteWorkflowDraft(): VaultNoteWorkflowSettings {
+  const draft = {
+    templateFolder: elements.workflowTemplateFolder.value,
+    templateDateFormat: elements.workflowDateFormat.value,
+    templateTimeFormat: elements.workflowTimeFormat.value,
+    dailyNoteFolder: elements.workflowDailyFolder.value,
+    dailyNoteDateFormat: elements.workflowDailyFormat.value,
+    dailyNoteTemplate: elements.workflowDailyTemplate.value || null,
+  };
+  noteWorkflowDraft = draft;
+  return draft;
 }
 
 function currentAppearancePreference(): VaultAppearanceSettings {
@@ -4708,6 +5233,7 @@ function openSettings(): void {
   settingsRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
   recordingShortcut = null;
+  noteWorkflowDraft = null;
   settingsMessage = "Select a command, then press its new shortcut.";
   settingsMessageKind = "info";
   elements.settingsDialog.showModal();
@@ -4715,6 +5241,9 @@ function openSettings(): void {
   elements.settingsClose.focus();
   if (!appearanceSnapshot || appearanceSnapshot.vaultId !== currentSnapshot?.vault.id) {
     void refreshAppearance();
+  }
+  if (!noteWorkflowCatalog || noteWorkflowCatalog.vaultId !== currentSnapshot?.vault.id) {
+    void refreshNoteWorkflows();
   }
   if (!pluginCatalog || pluginCatalog.vaultId !== currentSnapshot?.vault.id) {
     void refreshPlugins();
@@ -4735,6 +5264,7 @@ function closeSettings(restoreFocus = true): void {
     return;
   }
   recordingShortcut = null;
+  noteWorkflowDraft = null;
   elements.settingsDialog.close();
   const restoreTarget = settingsRestoreFocus;
   settingsRestoreFocus = null;
@@ -4854,18 +5384,23 @@ function captureShortcut(event: KeyboardEvent, targetId: ShortcutTargetId): void
 function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
   settingsPage = page;
   recordingShortcut = null;
+  if (page === "notes" && noteWorkflowDraft === null) {
+    noteWorkflowDraft = { ...currentNoteWorkflowPreference() };
+  }
   renderSettings();
   if (focusNavigation) {
     const target =
       page === "appearance"
         ? elements.settingsNavAppearance
-        : page === "plugins"
-          ? elements.settingsNavPlugins
-          : page === "migration"
-            ? elements.settingsNavMigration
-            : page === "updates"
-              ? elements.settingsNavUpdates
-              : elements.settingsNavHotkeys;
+        : page === "notes"
+          ? elements.settingsNavNotes
+          : page === "plugins"
+            ? elements.settingsNavPlugins
+            : page === "migration"
+              ? elements.settingsNavMigration
+              : page === "updates"
+                ? elements.settingsNavUpdates
+                : elements.settingsNavHotkeys;
     target.focus();
   }
 }
@@ -4873,6 +5408,7 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
 function renderSettingsNavigation(): void {
   const pageDetails: Record<SettingsPage, { eyebrow: string; title: string }> = {
     appearance: { eyebrow: "Options", title: "Appearance" },
+    notes: { eyebrow: "Core workflows", title: "Daily notes and templates" },
     plugins: { eyebrow: "Trusted runtime", title: "Community plugins" },
     migration: { eyebrow: "Migration bridge", title: "Migration preview" },
     updates: { eyebrow: "Release safety", title: "About and updates" },
@@ -4882,6 +5418,7 @@ function renderSettingsNavigation(): void {
   elements.settingsPageTitle.textContent = pageDetails[settingsPage].title;
   for (const [page, button] of [
     ["appearance", elements.settingsNavAppearance],
+    ["notes", elements.settingsNavNotes],
     ["plugins", elements.settingsNavPlugins],
     ["migration", elements.settingsNavMigration],
     ["updates", elements.settingsNavUpdates],
@@ -4909,21 +5446,23 @@ function renderSettings(): void {
   const [statusMessage, statusKind] =
     settingsPage === "appearance"
       ? [appearanceMessage, appearanceMessageKind]
-      : settingsPage === "plugins"
-        ? [pluginMessage, pluginMessageKind]
-        : settingsPage === "migration"
-          ? [migrationMessage, migrationMessageKind]
-          : settingsPage === "updates"
-            ? [
-                appUpdateSnapshot?.message ?? "Reading the local package update policy.",
-                appUpdateSnapshot?.phase === "error"
-                  ? "error"
-                  : appUpdateSnapshot?.phase === "downloaded" ||
-                      appUpdateSnapshot?.phase === "up-to-date"
-                    ? "saved"
-                    : "info",
-              ]
-            : [settingsMessage, settingsMessageKind];
+      : settingsPage === "notes"
+        ? [noteWorkflowMessage, noteWorkflowMessageKind]
+        : settingsPage === "plugins"
+          ? [pluginMessage, pluginMessageKind]
+          : settingsPage === "migration"
+            ? [migrationMessage, migrationMessageKind]
+            : settingsPage === "updates"
+              ? [
+                  appUpdateSnapshot?.message ?? "Reading the local package update policy.",
+                  appUpdateSnapshot?.phase === "error"
+                    ? "error"
+                    : appUpdateSnapshot?.phase === "downloaded" ||
+                        appUpdateSnapshot?.phase === "up-to-date"
+                      ? "saved"
+                      : "info",
+                ]
+              : [settingsMessage, settingsMessageKind];
   elements.settingsStatus.textContent =
     statusKind === "error" ? `Error: ${statusMessage}` : statusMessage;
   elements.settingsStatus.dataset.kind = statusKind;
@@ -4933,6 +5472,7 @@ function renderSettings(): void {
   elements.settingsReset.disabled = operationBusy;
   renderSettingsNavigation();
   renderAppearanceSettings();
+  renderNoteWorkflowSettings();
   renderPluginSettings();
   renderMigrationSettings();
   renderAppUpdateSettings();
@@ -5305,6 +5845,12 @@ function render(snapshot: RuntimeSnapshot): void {
     appearanceSnapshot = null;
     appearanceStyle.textContent = "";
     lastAppearanceWarning = "";
+    noteWorkflowRequest += 1;
+    noteWorkflowBusy = false;
+    noteWorkflowCatalog = null;
+    noteWorkflowDraft = null;
+    noteWorkflowMessage = "Discovering templates and daily-note preferences in this vault.";
+    noteWorkflowMessageKind = "info";
     pluginRequest += 1;
     pluginPackageRequest += 1;
     pluginBusy = false;
@@ -5327,6 +5873,7 @@ function render(snapshot: RuntimeSnapshot): void {
     lastPluginEditorUpdateId = null;
     applyColorScheme(currentAppearancePreference().colorScheme);
     void refreshAppearance();
+    void refreshNoteWorkflows();
     void refreshPlugins();
     void refreshMigrationPreview();
     void maybeMigrateLegacyTheme();
@@ -5414,6 +5961,9 @@ function render(snapshot: RuntimeSnapshot): void {
     opening || readOnlyVault() || busy || anyPaneSaving() || anyPaneDirty();
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
+  }
+  if (elements.templatePickerDialog.open) {
+    renderTemplatePickerDialog();
   }
   if (elements.propertyDialog.open) {
     renderPropertyDialog();
@@ -6971,6 +7521,7 @@ elements.settingsClose.addEventListener("click", () => closeSettings());
 elements.settingsDone.addEventListener("click", () => closeSettings());
 elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
 elements.settingsNavAppearance.addEventListener("click", () => setSettingsPage("appearance"));
+elements.settingsNavNotes.addEventListener("click", () => setSettingsPage("notes"));
 elements.settingsNavPlugins.addEventListener("click", () => setSettingsPage("plugins"));
 elements.settingsNavMigration.addEventListener("click", () => setSettingsPage("migration"));
 elements.settingsNavUpdates.addEventListener("click", () => setSettingsPage("updates"));
@@ -6979,6 +7530,13 @@ elements.appUpdateCheck.addEventListener("click", () => void runAppUpdateAction(
 elements.appUpdateDownload.addEventListener("click", () => void runAppUpdateAction("download"));
 elements.appUpdateInstall.addEventListener("click", () => void runAppUpdateAction("install"));
 elements.supportBundleExport.addEventListener("click", () => void exportSupportBundle());
+elements.noteWorkflowForm.addEventListener("input", () => {
+  captureNoteWorkflowDraft();
+});
+elements.noteWorkflowForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveNoteWorkflows();
+});
 elements.migrationRefresh.addEventListener("click", () => {
   void refreshMigrationPreview("Read-only migration preview refreshed. Nothing was changed.");
 });
@@ -7091,6 +7649,21 @@ elements.newNoteDialog.addEventListener("click", (event) => {
     closeNewNoteDialog();
   }
 });
+elements.templatePickerForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void insertSelectedTemplate();
+});
+elements.templatePickerClose.addEventListener("click", () => closeTemplatePicker());
+elements.templatePickerCancel.addEventListener("click", () => closeTemplatePicker());
+elements.templatePickerDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeTemplatePicker();
+});
+elements.templatePickerDialog.addEventListener("click", (event) => {
+  if (event.target === elements.templatePickerDialog) {
+    closeTemplatePicker();
+  }
+});
 
 elements.propertyType.addEventListener("change", configurePropertyValueInput);
 elements.propertyForm.addEventListener("submit", (event) => {
@@ -7161,6 +7734,7 @@ document.addEventListener("keydown", (event) => {
     if (
       elements.settingsDialog.open ||
       elements.newNoteDialog.open ||
+      elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
@@ -7180,6 +7754,7 @@ document.addEventListener("keydown", (event) => {
   if (targetId === "settings.open-keybindings") {
     if (
       elements.newNoteDialog.open ||
+      elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
@@ -7200,6 +7775,7 @@ document.addEventListener("keydown", (event) => {
     elements.commandPalette.open ||
     elements.settingsDialog.open ||
     elements.newNoteDialog.open ||
+    elements.templatePickerDialog.open ||
     elements.propertyDialog.open ||
     elements.moveNoteDialog.open ||
     elements.deleteNoteDialog.open ||

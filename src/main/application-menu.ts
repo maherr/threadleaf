@@ -54,6 +54,7 @@ export function createApplicationMenuTemplate(
   };
   const fileMenu: MenuItemConstructorOptions[] = [
     action("New Note", "workspace.create-note"),
+    action("Open Today's Daily Note", "workspace.open-daily-note"),
     action("Open Vault…", "workspace.open-vault"),
     { type: "separator" },
     action("Save Note", "editor.save-note"),
@@ -98,6 +99,10 @@ export function createApplicationMenuTemplate(
         { role: "copy" },
         { role: "paste" },
         { role: "selectAll" },
+        { type: "separator" },
+        action("Insert Template…", "editor.insert-template"),
+        action("Insert Current Date", "editor.insert-current-date"),
+        action("Insert Current Time", "editor.insert-current-time"),
       ],
     },
     {

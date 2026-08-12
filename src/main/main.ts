@@ -31,6 +31,7 @@ import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettings } from "../shared/key-bindings";
 import { isShortcutTargetId } from "../shared/key-bindings";
 import type { NativeMenuCommandId } from "../shared/native-menu";
+import { parseVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import { parsePluginPackagePreviewRequest } from "../shared/plugin-packages";
 import {
   parsePluginEditorContext,
@@ -1093,6 +1094,104 @@ function registerIpcHandlers(): void {
     return settingsController.setKeyBinding(targetId, binding);
   });
   ipcMain.handle(ipcChannels.resetKeyBindings, () => settingsController.resetKeyBindings());
+  ipcMain.handle(ipcChannels.noteWorkflows, async (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Note workflow loading requires a string vault identity.");
+    }
+    if (workspaceController.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+    }
+    const settings = settingsController.getVaultNoteWorkflows(expectedVaultId);
+    const templates = await workspaceController.listNoteTemplates(
+      settings.templateFolder,
+      expectedVaultId,
+    );
+    return workspaceController.vaultId === expectedVaultId
+      ? ({ status: "ready", vaultId: expectedVaultId, settings, templates } as const)
+      : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
+  });
+  ipcMain.handle(
+    ipcChannels.setNoteWorkflows,
+    async (_event, expectedVaultId: unknown, settingsValue: unknown) => {
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Note workflow updates require a string vault identity.");
+      }
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      const settings = parseVaultNoteWorkflowSettings(settingsValue);
+      const appSettings = await settingsController.setVaultNoteWorkflows(expectedVaultId, settings);
+      const templates = await workspaceController.listNoteTemplates(
+        settings.templateFolder,
+        expectedVaultId,
+      );
+      return workspaceController.vaultId === expectedVaultId
+        ? ({
+            status: "updated",
+            vaultId: expectedVaultId,
+            appSettings,
+            settings,
+            templates,
+          } as const)
+        : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
+    },
+  );
+  ipcMain.handle(ipcChannels.openDailyNote, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Opening today's daily note requires a string vault identity.");
+    }
+    return workspaceController.openDailyNote(
+      settingsController.getVaultNoteWorkflows(expectedVaultId),
+      expectedVaultId,
+    );
+  });
+  ipcMain.handle(
+    ipcChannels.renderNoteTemplate,
+    (_event, templatePath: unknown, targetPath: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof templatePath !== "string" ||
+        typeof targetPath !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Template rendering requires template, target, and vault strings.");
+      }
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      return workspaceController
+        .renderNoteTemplate(
+          templatePath,
+          targetPath,
+          settingsController.getVaultNoteWorkflows(expectedVaultId),
+          expectedVaultId,
+        )
+        .then((rendered) => ({
+          status: "ready" as const,
+          vaultId: expectedVaultId,
+          ...rendered,
+        }));
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.formatNoteWorkflowValue,
+    (_event, value: unknown, expectedVaultId: unknown) => {
+      if ((value !== "date" && value !== "time") || typeof expectedVaultId !== "string") {
+        throw new Error("Template value formatting requires date or time and a vault string.");
+      }
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      return {
+        status: "ready" as const,
+        vaultId: expectedVaultId,
+        value: workspaceController.formatNoteWorkflowValue(
+          value,
+          settingsController.getVaultNoteWorkflows(expectedVaultId),
+          expectedVaultId,
+        ),
+      };
+    },
+  );
   ipcMain.handle(ipcChannels.chooseVault, async () => {
     const developmentOverride = readDevelopmentPickerOverride(app.isPackaged, process.env);
     if (developmentOverride?.status === "cancelled") {

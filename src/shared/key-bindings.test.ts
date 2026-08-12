@@ -50,9 +50,10 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
-    expect(parsed.version).toBe(4);
+    expect(parsed.version).toBe(5);
     expect(parsed.appearanceByVault).toEqual({});
     expect(parsed.pluginsByVault).toEqual({});
+    expect(parsed.noteWorkflowsByVault).toEqual({});
     expect(() =>
       parseAppSettings({
         version: 1,
