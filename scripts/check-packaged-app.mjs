@@ -170,9 +170,76 @@ async function captureTheme(theme) {
     await evaluate("document.querySelector('#theme-toggle').click(); true");
     await waitForTheme(theme, Date.now() + 5_000);
   }
-  const capture = await cdp.send("Page.captureScreenshot", { format: "png" });
+  const capture = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+  });
   const destination = path.join(screenshotDirectory, `packaged-linux-${theme}.png`);
   await fs.writeFile(destination, Buffer.from(capture.data, "base64"));
+  return destination;
+}
+
+async function openUpdateSettings() {
+  await evaluate(`(() => {
+    document.querySelector('#settings-trigger')?.click();
+    document.querySelector('#settings-nav-updates')?.click();
+    return true;
+  })()`);
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const state = await evaluate(`(() => ({
+      dialogOpen: document.querySelector('#shortcut-settings')?.open ?? false,
+      pageHidden: document.querySelector('[data-settings-page="updates"]')?.hidden ?? true,
+      updateState: document.querySelector('#app-update-state')?.textContent ?? '',
+    }))()`);
+    if (state.dialogOpen && !state.pageHidden && state.updateState !== "Loading") {
+      return;
+    }
+    await delay(50);
+  }
+  throw new Error("The packaged update settings page did not become ready.");
+}
+
+async function captureUpdateSettings(theme, suffix = "") {
+  await openUpdateSettings();
+  const capture = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+  });
+  const destination = path.join(
+    screenshotDirectory,
+    `packaged-linux-updates-${theme}${suffix}.png`,
+  );
+  await fs.writeFile(destination, Buffer.from(capture.data, "base64"));
+  await evaluate("document.querySelector('#settings-close')?.click(); true");
+  return destination;
+}
+
+async function captureVisualPositiveControl() {
+  await openUpdateSettings();
+  const outlined = await evaluate(`(() => {
+    const card = document.querySelector('.app-update-card');
+    if (!(card instanceof HTMLElement)) return false;
+    card.style.outline = '12px solid rgb(255, 0, 255)';
+    card.style.outlineOffset = '-12px';
+    return getComputedStyle(card).outlineColor === 'rgb(255, 0, 255)';
+  })()`);
+  assert(outlined, "The visual positive control did not reach the update card.");
+  const capture = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+  });
+  const destination = path.join(screenshotDirectory, "packaged-linux-updates-positive-control.png");
+  await fs.writeFile(destination, Buffer.from(capture.data, "base64"));
+  await evaluate(`(() => {
+    const card = document.querySelector('.app-update-card');
+    if (card instanceof HTMLElement) {
+      card.style.removeProperty('outline');
+      card.style.removeProperty('outline-offset');
+    }
+    document.querySelector('#settings-close')?.click();
+    return true;
+  })()`);
   return destination;
 }
 
@@ -295,10 +362,75 @@ try {
     "Rejected bundled mutation still created a note.",
   );
 
+  await openUpdateSettings();
+  const updateControls = await evaluate(`(async () => ({
+    snapshot: await window.threadleaf.getAppUpdate(),
+    heading: document.querySelector('#settings-page-title')?.textContent ?? '',
+    state: document.querySelector('#app-update-state')?.textContent ?? '',
+    message: document.querySelector('#app-update-message')?.textContent ?? '',
+    policy: document.querySelector('#app-update-policy')?.textContent ?? '',
+    installedVersion: document.querySelector('#app-update-current-version')?.textContent ?? '',
+    checkDisabled: document.querySelector('#app-update-check')?.disabled,
+    progressHidden: document.querySelector('#app-update-progress')?.hidden,
+  }))()`);
+  assert(updateControls.heading === "About and updates", "Update settings heading is incorrect.");
+  assert(updateControls.state === "Disabled", "Linux update policy is not visibly disabled.");
+  assert(
+    updateControls.message.includes("Linux package manager"),
+    "Linux update guidance is missing.",
+  );
+  assert(updateControls.policy === "System package manager", "Linux update policy is incorrect.");
+  assert(
+    updateControls.installedVersion === packageData.version,
+    "Update settings version differs from package.json.",
+  );
+  assert(
+    updateControls.snapshot?.disabledReason === "unsupported-platform" &&
+      updateControls.snapshot?.canCheck === false,
+    "Packaged Linux updater did not fail closed.",
+  );
+  assert(updateControls.checkDisabled, "Disabled updater exposed an enabled network action.");
+  assert(updateControls.progressHidden, "Inactive updater exposed a progress indicator.");
+  await evaluate("document.querySelector('#settings-close')?.click(); true");
+
   let screenshots = [];
   if (screenshotDirectory) {
     await fs.mkdir(screenshotDirectory, { recursive: true });
-    screenshots = [await captureTheme("dark"), await captureTheme("light")];
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 1180,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(150);
+    const fullViewport = await evaluate("({ width: innerWidth, height: innerHeight })");
+    assert(
+      fullViewport.width === 1180 && fullViewport.height === 820,
+      `Full window bounds were not applied: ${JSON.stringify(fullViewport)}`,
+    );
+    screenshots = [
+      await captureTheme("dark"),
+      await captureUpdateSettings("dark"),
+      await captureVisualPositiveControl(),
+      await captureTheme("light"),
+      await captureUpdateSettings("light"),
+    ];
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 860,
+      height: 640,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(150);
+    const compactViewport = await evaluate("({ width: innerWidth, height: innerHeight })");
+    assert(
+      compactViewport.width === 860 && compactViewport.height === 640,
+      `Compact window bounds were not applied: ${JSON.stringify(compactViewport)}`,
+    );
+    screenshots.push(await captureUpdateSettings("light", "-compact"));
+    await evaluate("document.querySelector('#theme-toggle').click(); true");
+    await waitForTheme("dark", Date.now() + 5_000);
+    screenshots.push(await captureUpdateSettings("dark", "-compact"));
   }
 
   await evaluate("setTimeout(() => window.close(), 0); true");

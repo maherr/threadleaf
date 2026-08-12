@@ -106,6 +106,12 @@ for (const requiredPath of [
 const version = command(executablePath, ["--version"]);
 assert(version.stderr === "", `macOS --version wrote stderr: ${version.stderr}`);
 assert(version.stdout === `${packageData.version}\n`, "macOS version differs from package.json.");
+const updateTrust = command(executablePath, ["--update-trust"]);
+assert(updateTrust.stderr === "", `macOS --update-trust wrote stderr: ${updateTrust.stderr}`);
+assert(
+  updateTrust.stdout === `${requireSigned ? "signed-release-v1" : "none"}\n`,
+  "macOS package has the wrong update trust marker.",
+);
 
 const plistPath = path.join(contentsPath, "Info.plist");
 const bundleId = command("plutil", [

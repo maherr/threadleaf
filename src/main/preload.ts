@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { AppearanceResponse } from "../shared/appearance";
 import type {
   AppearanceUpdateResponse,
@@ -26,6 +27,13 @@ import type {
 import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
 
 const bridge: ThreadleafBridge = {
+  getAppUpdate: () => ipcRenderer.invoke(ipcChannels.appUpdate) as Promise<AppUpdateSnapshot>,
+  checkForAppUpdate: () =>
+    ipcRenderer.invoke(ipcChannels.checkForAppUpdate) as Promise<AppUpdateSnapshot>,
+  downloadAppUpdate: () =>
+    ipcRenderer.invoke(ipcChannels.downloadAppUpdate) as Promise<AppUpdateSnapshot>,
+  installAppUpdate: () =>
+    ipcRenderer.invoke(ipcChannels.installAppUpdate) as Promise<AppUpdateSnapshot>,
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
   getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
   getAppearance: (expectedVaultId) =>
@@ -176,6 +184,13 @@ const bridge: ThreadleafBridge = {
     };
     ipcRenderer.on(ipcChannels.settingsChanged, subscription);
     return () => ipcRenderer.removeListener(ipcChannels.settingsChanged, subscription);
+  },
+  onAppUpdate: (listener) => {
+    const subscription = (_event: Electron.IpcRendererEvent, snapshot: AppUpdateSnapshot) => {
+      listener(snapshot);
+    };
+    ipcRenderer.on(ipcChannels.appUpdateChanged, subscription);
+    return () => ipcRenderer.removeListener(ipcChannels.appUpdateChanged, subscription);
   },
 };
 

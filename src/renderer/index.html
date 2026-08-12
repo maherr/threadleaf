@@ -328,6 +328,10 @@
               <span aria-hidden="true">⇄</span>
               <span>Migration preview</span>
             </button>
+            <button id="settings-nav-updates" type="button" data-settings-target="updates">
+              <span aria-hidden="true">↥</span>
+              <span>About and updates</span>
+            </button>
             <button id="settings-nav-hotkeys" type="button" data-settings-target="hotkeys">
               <span aria-hidden="true">⌨</span>
               <span>Hotkeys</span>
@@ -609,6 +613,84 @@
               </p>
               <ul id="plugin-warnings" aria-label="Plugin diagnostics"></ul>
             </div>
+          </section>
+
+          <section
+            class="settings-page app-update-settings"
+            data-settings-page="updates"
+            aria-labelledby="app-update-heading"
+            hidden
+          >
+            <header class="settings-section-heading app-update-heading">
+              <span>
+                <small>Release safety</small>
+                <strong id="app-update-heading">About and updates</strong>
+              </span>
+              <span class="appearance-state" id="app-update-state">Loading</span>
+            </header>
+
+            <article class="app-update-card">
+              <span class="app-update-mark" aria-hidden="true">↥</span>
+              <span class="app-update-copy">
+                <strong id="app-update-title">Threadleaf</strong>
+                <small id="app-update-message">
+                  Reading the local package update policy. No network request starts automatically.
+                </small>
+              </span>
+            </article>
+
+            <dl class="app-update-facts">
+              <div>
+                <dt>Installed version</dt>
+                <dd id="app-update-current-version">Loading</dd>
+              </div>
+              <div>
+                <dt>Available version</dt>
+                <dd id="app-update-available-version">Not checked</dd>
+              </div>
+              <div>
+                <dt>Update policy</dt>
+                <dd id="app-update-policy">Manual and signed</dd>
+              </div>
+              <div>
+                <dt>Last checked</dt>
+                <dd id="app-update-checked-at">Never</dd>
+              </div>
+            </dl>
+
+            <div
+              class="app-update-progress"
+              id="app-update-progress"
+              role="progressbar"
+              aria-label="Update download progress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              hidden
+            >
+              <span class="app-update-progress-track" aria-hidden="true">
+                <span id="app-update-progress-bar"></span>
+              </span>
+              <span id="app-update-progress-detail">0% downloaded</span>
+            </div>
+
+            <div class="app-update-actions">
+              <button class="secondary-button" id="app-update-check" type="button">
+                Check for updates
+              </button>
+              <button class="secondary-button" id="app-update-download" type="button" hidden>
+                Download update
+              </button>
+              <button class="primary-button" id="app-update-install" type="button" hidden>
+                Restart and install
+              </button>
+            </div>
+
+            <p class="app-update-note">
+              Threadleaf never checks in the background. Only signed release packages can use this
+              channel. Downloads are verified by the release manifest and platform signature before
+              installation. Linux remains with the system package manager until its signing gate is
+              complete.
+            </p>
           </section>
 
           <section

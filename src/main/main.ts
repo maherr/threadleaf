@@ -9,6 +9,7 @@ import {
   type WebContentsView,
 } from "electron";
 import { AppSettingsController } from "../application/app-settings-controller";
+import { AppUpdateController } from "../application/app-update-controller";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
@@ -49,6 +50,7 @@ import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { createGracefulShutdownHandler } from "./graceful-shutdown";
 import { loadObsidianMigrationPreview } from "./obsidian-migration-loader";
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
+import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
 import { PluginPackageManager } from "./plugin-package-manager";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
@@ -63,10 +65,15 @@ if (process.argv.includes("--version")) {
   process.stdout.write(`${app.getVersion()}\n`);
   app.exit(0);
 }
+if (process.argv.includes("--update-trust")) {
+  process.stdout.write(`${readPackageUpdateTrust(app.getAppPath()) ?? "none"}\n`);
+  app.exit(0);
+}
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
+let appUpdateController: AppUpdateController;
 let pluginPackageManager: PluginPackageManager;
 let pluginOperationTail: Promise<void> = Promise.resolve();
 let attachedPluginView: WebContentsView | null = null;
@@ -444,7 +451,34 @@ async function activateInitialWorkspace(): Promise<void> {
   }
 }
 
+async function createAppUpdateController(): Promise<AppUpdateController> {
+  const currentVersion = app.getVersion();
+  const disabledReason = appUpdateDisabledReason({
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    updateTrust: readPackageUpdateTrust(app.getAppPath()),
+  });
+  if (disabledReason) {
+    return new AppUpdateController({ currentVersion, disabledReason });
+  }
+  try {
+    const { createElectronUpdateProvider } = await import("./electron-update-provider");
+    return new AppUpdateController({
+      currentVersion,
+      provider: createElectronUpdateProvider(),
+      reportError: (error) => console.error("Threadleaf update operation failed:", error),
+    });
+  } catch (error) {
+    console.error("Threadleaf update service initialization failed:", error);
+    return new AppUpdateController({ currentVersion, disabledReason: "updater-unavailable" });
+  }
+}
+
 function registerIpcHandlers(): void {
+  ipcMain.handle(ipcChannels.appUpdate, () => appUpdateController.getSnapshot());
+  ipcMain.handle(ipcChannels.checkForAppUpdate, () => appUpdateController.checkForUpdates());
+  ipcMain.handle(ipcChannels.downloadAppUpdate, () => appUpdateController.downloadUpdate());
+  ipcMain.handle(ipcChannels.installAppUpdate, () => appUpdateController.installUpdate());
   ipcMain.handle(pluginRendererChannels.vaultCreate, async (event, value: unknown) => {
     const pluginWebContents = compatibilityPluginWebContents;
     if (
@@ -1021,6 +1055,11 @@ function registerIpcHandlers(): void {
       window.webContents.send(ipcChannels.settingsChanged, snapshot);
     }
   });
+  appUpdateController.onSnapshot((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(ipcChannels.appUpdateChanged, snapshot);
+    }
+  });
 }
 
 async function createWindow(): Promise<void> {
@@ -1069,6 +1108,7 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
 });
 
 app.whenReady().then(async () => {
+  appUpdateController = await createAppUpdateController();
   pluginPackageManager = new PluginPackageManager(
     join(app.getPath("userData"), "plugin-packages"),
     new OpenPluginPackageSource(),

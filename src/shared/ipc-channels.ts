@@ -1,4 +1,9 @@
 export const ipcChannels = {
+  appUpdate: "threadleaf:app-update",
+  appUpdateChanged: "threadleaf:app-update-changed",
+  checkForAppUpdate: "threadleaf:check-for-app-update",
+  downloadAppUpdate: "threadleaf:download-app-update",
+  installAppUpdate: "threadleaf:install-app-update",
   snapshot: "threadleaf:snapshot",
   snapshotChanged: "threadleaf:snapshot-changed",
   settings: "threadleaf:settings",

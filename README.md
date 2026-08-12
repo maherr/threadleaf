@@ -174,6 +174,13 @@ signing workflow now cover Linux, macOS ARM64 and Intel, and Windows x64. The In
 lanes still need their first hosted run. These are contributor artifacts, not a signed public
 release.
 
+Settings now has an About and updates page that performs no startup or background network check.
+Only signed macOS and Windows release packages can initialize the updater, and checking,
+downloading, and restarting to install are three explicit user actions. Development builds,
+unsigned contributor packages, and Linux packages fail closed with a visible local policy; Linux
+continues to use its system package manager until native package signing is complete. The signed
+release feed still needs its first end-to-end rehearsal against published draft artifacts.
+
 ## Product promises
 
 - Open an existing Markdown vault without converting its content.

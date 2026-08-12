@@ -103,6 +103,31 @@ stapling, and Gatekeeper checks all fail closed. Windows `forceCodeSigning` and 
 do the same. Linux artifacts are reproducible and provenance-attested in this workflow, but Linux
 native-container signing remains an open release gate.
 
+## Manual signed updates
+
+Threadleaf never checks for updates in the background. Opening Settings > About and updates reads
+only local package policy. On an eligible release, the user separately chooses Check for updates,
+Download update, and Restart and install. Download and install never begin merely because the app
+started, opened Settings, or found a newer version.
+
+The updater is fail-closed:
+
+- Development builds do not initialize the update provider.
+- Unsigned contributor packages do not initialize the update provider.
+- Linux packages direct the user to the system package manager until Linux signing is complete.
+- Only signed macOS and Windows release commands embed the exact
+  `threadleafUpdateTrust=signed-release-v1` marker.
+- Package verifiers run `--update-trust` and require signed candidates to report that marker while
+  contributor packages report `none`.
+- Raw provider failures stay in main-process diagnostics. The renderer receives a generic,
+  retryable state and never receives a release URL, stack trace, or credential material.
+
+Eligible packages use the generated GitHub release metadata through `electron-updater` 6.8.9 with
+automatic download, install-on-quit, downgrade, and Windows web-installer behavior disabled. The
+controller has unit coverage for explicit check, download, install, retry, duplicate-check
+coalescing, progress normalization, and fail-closed eligibility. A real signed feed rehearsal still
+requires a public remote and signed draft artifacts.
+
 ## Build and verify
 
 The Linux lane requires Node.js 22 or newer, pnpm, Electron's Linux runtime dependencies,
@@ -133,7 +158,10 @@ The smoke check proves all of the following against the packaged executable:
 - The demo is visibly read-only and CodeMirror is not content-editable.
 - Note, move, trash, save, and plugin-package controls are disabled.
 - A direct preload `createNote` request is rejected by the workspace backend and writes no file.
-- The application renders both dark and light appearances and exits cleanly.
+- About and updates reports the installed version and the correct fail-closed platform policy.
+- A disabled update policy exposes no enabled network action or inactive progress indicator.
+- The application renders both dark and light appearances, including update settings at 1180x820
+  and the minimum 860x640 viewport, and exits cleanly.
 
 The bundled resource is intentionally read-only. It is a safe first-run tour, not a starter vault.
 The user must explicitly open a local folder before Threadleaf permits writes or plugin-package
@@ -158,6 +186,6 @@ entry validation must also exit successfully.
 ## Remaining release gates
 
 Public releases still require the first hosted Intel macOS and Windows runs, real signing authority,
-a successful signed release rehearsal, Linux native-container signing, secure in-app update UX,
-upgrade and downgrade tests, rollback, and published support and security-response procedures.
-Until those gates pass, every local package remains clearly labeled pre-alpha and unsigned.
+a successful signed release and update-feed rehearsal, Linux native-container signing, upgrade and
+downgrade tests, rollback, and published support and security-response procedures. Until those
+gates pass, every local package remains clearly labeled pre-alpha and unsigned.

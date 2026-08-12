@@ -3,6 +3,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
+import type { AppUpdateSnapshot } from "../shared/app-updates";
 import {
   type AppearanceSnapshot,
   type ColorSchemePreference,
@@ -141,6 +142,7 @@ const elements = {
   settingsNavAppearance: getButton("settings-nav-appearance"),
   settingsNavPlugins: getButton("settings-nav-plugins"),
   settingsNavMigration: getButton("settings-nav-migration"),
+  settingsNavUpdates: getButton("settings-nav-updates"),
   settingsNavHotkeys: getButton("settings-nav-hotkeys"),
   settingsWarning: getElement("settings-warning"),
   appearanceState: getElement("appearance-state"),
@@ -174,6 +176,19 @@ const elements = {
   migrationAppearance: getElement("migration-appearance"),
   migrationWorkspace: getElement("migration-workspace"),
   migrationWarnings: getElement("migration-warnings"),
+  appUpdateState: getElement("app-update-state"),
+  appUpdateTitle: getElement("app-update-title"),
+  appUpdateMessage: getElement("app-update-message"),
+  appUpdateCurrentVersion: getElement("app-update-current-version"),
+  appUpdateAvailableVersion: getElement("app-update-available-version"),
+  appUpdatePolicy: getElement("app-update-policy"),
+  appUpdateCheckedAt: getElement("app-update-checked-at"),
+  appUpdateProgress: getElement("app-update-progress"),
+  appUpdateProgressBar: getElement("app-update-progress-bar"),
+  appUpdateProgressDetail: getElement("app-update-progress-detail"),
+  appUpdateCheck: getButton("app-update-check"),
+  appUpdateDownload: getButton("app-update-download"),
+  appUpdateInstall: getButton("app-update-install"),
   schemeSystem: getInput("scheme-system"),
   schemeLight: getInput("scheme-light"),
   schemeDark: getInput("scheme-dark"),
@@ -242,7 +257,7 @@ interface ShortcutTargetDefinition {
 }
 
 type DocumentViewMode = "source" | "reading" | "plugin";
-type SettingsPage = "appearance" | "plugins" | "migration" | "hotkeys";
+type SettingsPage = "appearance" | "plugins" | "migration" | "updates" | "hotkeys";
 
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   {
@@ -385,6 +400,8 @@ let migrationBusy = false;
 let migrationRequest = 0;
 let migrationMessage = "Open the preview to inspect existing Obsidian behavior.";
 let migrationMessageKind: "info" | "saved" | "warning" | "error" = "info";
+let appUpdateSnapshot: AppUpdateSnapshot | null = null;
+let appUpdateActionBusy = false;
 let lastPluginEditorUpdateId: string | null = null;
 let pluginSurfacePresentationVisible = true;
 let legacyThemeMigrationAttempted = false;
@@ -3366,6 +3383,140 @@ function renderAppearanceSettings(): void {
       : "default";
 }
 
+function renderAppUpdateSettings(): void {
+  const snapshot = appUpdateSnapshot;
+  if (!snapshot) {
+    elements.appUpdateState.textContent = "Loading";
+    elements.appUpdateTitle.textContent = "Threadleaf";
+    elements.appUpdateMessage.textContent =
+      "Reading the local package update policy. No network request starts automatically.";
+    elements.appUpdateCurrentVersion.textContent = "Loading";
+    elements.appUpdateAvailableVersion.textContent = "Not checked";
+    elements.appUpdatePolicy.textContent = "Manual and signed";
+    elements.appUpdateCheckedAt.textContent = "Never";
+    elements.appUpdateProgress.hidden = true;
+    elements.appUpdateCheck.disabled = true;
+    elements.appUpdateDownload.hidden = true;
+    elements.appUpdateInstall.hidden = true;
+    return;
+  }
+
+  const phaseLabels: Record<AppUpdateSnapshot["phase"], string> = {
+    disabled: "Disabled",
+    idle: "Ready",
+    checking: "Checking",
+    available: "Available",
+    downloading: "Downloading",
+    downloaded: "Ready to install",
+    installing: "Installing",
+    "up-to-date": "Up to date",
+    error: "Try again",
+  };
+  elements.appUpdateState.textContent = phaseLabels[snapshot.phase];
+  elements.appUpdateState.dataset.state = snapshot.phase;
+  elements.appUpdateTitle.textContent = `Threadleaf ${snapshot.currentVersion}`;
+  elements.appUpdateMessage.textContent = snapshot.message;
+  elements.appUpdateCurrentVersion.textContent = snapshot.currentVersion;
+  elements.appUpdateAvailableVersion.textContent = snapshot.availableVersion ?? "None found";
+  elements.appUpdateCheckedAt.textContent = snapshot.checkedAt
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(snapshot.checkedAt),
+      )
+    : "Never";
+  elements.appUpdatePolicy.textContent = updatePolicyLabel(snapshot);
+
+  const progress = snapshot.progress;
+  elements.appUpdateProgress.hidden = snapshot.phase !== "downloading" || progress === null;
+  if (progress) {
+    const progressDetail = `${Math.round(progress.percent)}% · ${formatByteCount(progress.transferred)} of ${formatByteCount(progress.total)}`;
+    elements.appUpdateProgressBar.style.width = `${progress.percent}%`;
+    elements.appUpdateProgressDetail.textContent = progressDetail;
+    elements.appUpdateProgress.setAttribute("aria-valuenow", String(Math.round(progress.percent)));
+    elements.appUpdateProgress.setAttribute("aria-valuetext", progressDetail);
+  } else {
+    elements.appUpdateProgressBar.style.width = "0%";
+    elements.appUpdateProgress.removeAttribute("aria-valuenow");
+    elements.appUpdateProgress.removeAttribute("aria-valuetext");
+  }
+
+  const operationBusy =
+    appUpdateActionBusy || ["checking", "downloading", "installing"].includes(snapshot.phase);
+  elements.appUpdateCheck.hidden = false;
+  elements.appUpdateCheck.disabled = operationBusy || !snapshot.canCheck;
+  elements.appUpdateCheck.textContent =
+    snapshot.phase === "checking" ? "Checking…" : "Check for updates";
+  elements.appUpdateDownload.hidden = !snapshot.canDownload && snapshot.phase !== "downloading";
+  elements.appUpdateDownload.disabled = operationBusy || !snapshot.canDownload;
+  elements.appUpdateDownload.textContent =
+    snapshot.phase === "downloading" ? "Downloading…" : "Download update";
+  elements.appUpdateInstall.hidden = !snapshot.canInstall && snapshot.phase !== "installing";
+  elements.appUpdateInstall.disabled = operationBusy || !snapshot.canInstall;
+  elements.appUpdateInstall.textContent =
+    snapshot.phase === "installing" ? "Installing…" : "Restart and install";
+}
+
+function updatePolicyLabel(snapshot: AppUpdateSnapshot): string {
+  switch (snapshot.disabledReason) {
+    case "development-build":
+      return "Disabled · development build";
+    case "unsupported-platform":
+      return "System package manager";
+    case "unsigned-package":
+      return "Disabled · unsigned package";
+    case "updater-unavailable":
+      return "Disabled · updater unavailable";
+    default:
+      return "Manual · signed releases only";
+  }
+}
+
+function formatByteCount(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB"] as const;
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** unitIndex;
+  return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function applyAppUpdateSnapshot(snapshot: AppUpdateSnapshot): void {
+  appUpdateSnapshot = snapshot;
+  renderSettings();
+}
+
+async function runAppUpdateAction(action: "check" | "download" | "install"): Promise<void> {
+  if (appUpdateActionBusy) {
+    return;
+  }
+  appUpdateActionBusy = true;
+  renderAppUpdateSettings();
+  try {
+    const snapshot =
+      action === "check"
+        ? await window.threadleaf.checkForAppUpdate()
+        : action === "download"
+          ? await window.threadleaf.downloadAppUpdate()
+          : await window.threadleaf.installAppUpdate();
+    applyAppUpdateSnapshot(snapshot);
+  } catch {
+    if (appUpdateSnapshot) {
+      appUpdateSnapshot = {
+        ...appUpdateSnapshot,
+        phase: "error",
+        message: "The update service became unavailable. Your installation was not changed.",
+        progress: null,
+        canCheck: appUpdateSnapshot.disabledReason === null,
+        canDownload: false,
+        canInstall: false,
+      };
+    }
+  } finally {
+    appUpdateActionBusy = false;
+    renderSettings();
+  }
+}
+
 function openSettings(): void {
   if (elements.settingsDialog.open) {
     elements.settingsClose.focus();
@@ -3393,6 +3544,12 @@ function openSettings(): void {
   }
   if (!migrationPreview || migrationPreview.vaultId !== currentSnapshot?.vault.id) {
     void refreshMigrationPreview();
+  }
+  if (!appUpdateSnapshot) {
+    void window.threadleaf
+      .getAppUpdate()
+      .then(applyAppUpdateSnapshot)
+      .catch(() => undefined);
   }
 }
 
@@ -3529,7 +3686,9 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
           ? elements.settingsNavPlugins
           : page === "migration"
             ? elements.settingsNavMigration
-            : elements.settingsNavHotkeys;
+            : page === "updates"
+              ? elements.settingsNavUpdates
+              : elements.settingsNavHotkeys;
     target.focus();
   }
 }
@@ -3539,6 +3698,7 @@ function renderSettingsNavigation(): void {
     appearance: { eyebrow: "Options", title: "Appearance" },
     plugins: { eyebrow: "Trusted runtime", title: "Community plugins" },
     migration: { eyebrow: "Migration bridge", title: "Migration preview" },
+    updates: { eyebrow: "Release safety", title: "About and updates" },
     hotkeys: { eyebrow: "Keyboard", title: "Hotkeys" },
   };
   elements.settingsPageEyebrow.textContent = pageDetails[settingsPage].eyebrow;
@@ -3547,6 +3707,7 @@ function renderSettingsNavigation(): void {
     ["appearance", elements.settingsNavAppearance],
     ["plugins", elements.settingsNavPlugins],
     ["migration", elements.settingsNavMigration],
+    ["updates", elements.settingsNavUpdates],
     ["hotkeys", elements.settingsNavHotkeys],
   ] as const) {
     const active = page === settingsPage;
@@ -3575,7 +3736,17 @@ function renderSettings(): void {
         ? [pluginMessage, pluginMessageKind]
         : settingsPage === "migration"
           ? [migrationMessage, migrationMessageKind]
-          : [settingsMessage, settingsMessageKind];
+          : settingsPage === "updates"
+            ? [
+                appUpdateSnapshot?.message ?? "Reading the local package update policy.",
+                appUpdateSnapshot?.phase === "error"
+                  ? "error"
+                  : appUpdateSnapshot?.phase === "downloaded" ||
+                      appUpdateSnapshot?.phase === "up-to-date"
+                    ? "saved"
+                    : "info",
+              ]
+            : [settingsMessage, settingsMessageKind];
   elements.settingsStatus.textContent =
     statusKind === "error" ? `Error: ${statusMessage}` : statusMessage;
   elements.settingsStatus.dataset.kind = statusKind;
@@ -3587,6 +3758,7 @@ function renderSettings(): void {
   renderAppearanceSettings();
   renderPluginSettings();
   renderMigrationSettings();
+  renderAppUpdateSettings();
   if (!elements.settingsDialog.open) {
     return;
   }
@@ -4902,7 +5074,11 @@ elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
 elements.settingsNavAppearance.addEventListener("click", () => setSettingsPage("appearance"));
 elements.settingsNavPlugins.addEventListener("click", () => setSettingsPage("plugins"));
 elements.settingsNavMigration.addEventListener("click", () => setSettingsPage("migration"));
+elements.settingsNavUpdates.addEventListener("click", () => setSettingsPage("updates"));
 elements.settingsNavHotkeys.addEventListener("click", () => setSettingsPage("hotkeys"));
+elements.appUpdateCheck.addEventListener("click", () => void runAppUpdateAction("check"));
+elements.appUpdateDownload.addEventListener("click", () => void runAppUpdateAction("download"));
+elements.appUpdateInstall.addEventListener("click", () => void runAppUpdateAction("install"));
 elements.migrationRefresh.addEventListener("click", () => {
   void refreshMigrationPreview("Read-only migration preview refreshed. Nothing was changed.");
 });
@@ -5113,6 +5289,7 @@ systemColorScheme.addEventListener("change", handleSystemColorSchemeChange);
 
 const unsubscribe = window.threadleaf.onSnapshot(render);
 const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
+const unsubscribeAppUpdate = window.threadleaf.onAppUpdate(applyAppUpdateSnapshot);
 const pluginSurfaceResizeObserver = new ResizeObserver(() => {
   if (documentViewMode === "plugin") {
     void updatePluginSurfaceBounds();
@@ -5133,6 +5310,7 @@ window.addEventListener(
     }
     unsubscribe();
     unsubscribeSettings();
+    unsubscribeAppUpdate();
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
     pluginSurfaceResizeObserver.disconnect();
     editor.destroy();
@@ -5147,3 +5325,7 @@ void window.threadleaf
   .getSettings()
   .then(applySettingsSnapshot)
   .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
+void window.threadleaf
+  .getAppUpdate()
+  .then(applyAppUpdateSnapshot)
+  .catch(() => undefined);

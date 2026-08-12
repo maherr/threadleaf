@@ -202,6 +202,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Exact AppImage end-to-end smoke coverage, RPM metadata and payload inspection, installed-RPM
   verification, and a two-build reproducibility proof for unpacked application trees and normalized
   tar.xz archives with complete file manifests.
+- Manual signed-release update support with no startup or background checks, explicit check,
+  download, and restart-to-install actions, fail-closed package trust markers, sanitized errors,
+  Linux package-manager guidance, and packaged light, dark, and minimum-viewport Settings proof.
 
 ### Fixed
 

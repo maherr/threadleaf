@@ -1,3 +1,4 @@
+import type { AppUpdateSnapshot } from "./app-updates";
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
 import type { MigrationPreviewResponse } from "./migration";
@@ -385,6 +386,10 @@ export type VaultOpenResponse =
   | { status: "failed"; message: string; snapshot: RuntimeSnapshot };
 
 export interface ThreadleafBridge {
+  getAppUpdate(): Promise<AppUpdateSnapshot>;
+  checkForAppUpdate(): Promise<AppUpdateSnapshot>;
+  downloadAppUpdate(): Promise<AppUpdateSnapshot>;
+  installAppUpdate(): Promise<AppUpdateSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
   getSettings(): Promise<AppSettingsSnapshot>;
   getAppearance(expectedVaultId: string): Promise<AppearanceResponse>;
@@ -456,4 +461,5 @@ export interface ThreadleafBridge {
   ): Promise<NoteSaveResponse>;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   onSettings(listener: (snapshot: AppSettingsSnapshot) => void): () => void;
+  onAppUpdate(listener: (snapshot: AppUpdateSnapshot) => void): () => void;
 }

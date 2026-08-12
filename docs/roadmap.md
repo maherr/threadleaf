@@ -264,9 +264,12 @@ Exit gate: selected high-value plugins complete named workflows against public f
       archive, disk-image, update-metadata, and checksum verification on an M4 Mac.
 - [ ] Complete the first pinned hosted Intel macOS and Windows installer lifecycle runs after the
       public repository exists.
+- [x] Manual, no-background-check update controller and Settings surface for eligible signed macOS
+      and Windows packages, with explicit check, download, and install actions; exact package trust
+      markers; sanitized failures; Linux package-manager guidance; and packaged viewport coverage.
 - [ ] Signed Windows, macOS, and Linux installers; native-container reproducibility; notarization;
-      automatic updates; rollback; crash recovery; opt-in diagnostics; and tested upgrade and
-      downgrade paths.
+      a published signed update-feed rehearsal; rollback; crash recovery; opt-in diagnostics; and
+      tested upgrade and downgrade paths.
 - [ ] Public large-vault, attachment-heavy, and plugin-heavy performance budgets with profiling
       artifacts and regression alarms.
 
