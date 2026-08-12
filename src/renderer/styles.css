@@ -989,7 +989,8 @@ h2 {
 
 .document-view-switch {
   display: inline-grid;
-  grid-template-columns: repeat(3, auto);
+  grid-auto-columns: max-content;
+  grid-auto-flow: column;
   flex: 0 0 auto;
   gap: 2px;
   min-width: 0;
@@ -1381,6 +1382,253 @@ h2 {
 .note-editor .cm-cursor,
 .note-editor .cm-dropCursor {
   border-left-color: var(--signal);
+}
+
+.note-editor-shell[data-editor-mode="live"] .cm-scroller {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16px;
+  line-height: 1.72;
+}
+
+.note-editor-shell[data-editor-mode="live"] .cm-gutters {
+  display: none;
+}
+
+.note-editor-shell[data-editor-mode="live"] .cm-content {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: 28px 40px 88px;
+}
+
+.note-editor-shell[data-editor-mode="live"] .cm-activeLine {
+  background: color-mix(in srgb, var(--accent-soft) 34%, transparent);
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-heading {
+  color: var(--ink);
+  font-weight: 760;
+  line-height: 1.18;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-heading-1 {
+  padding-top: 0.34em;
+  font-size: clamp(30px, 3.5vw, 42px);
+  letter-spacing: -0.025em;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-heading-2 {
+  margin-top: 0.25em;
+  padding-top: 0.25em;
+  padding-bottom: 0.12em;
+  border-bottom: 1px solid var(--line);
+  font-size: clamp(24px, 2.8vw, 32px);
+  letter-spacing: -0.015em;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-heading-3 {
+  padding-top: 0.2em;
+  font-size: 22px;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-heading-4 {
+  font-size: 19px;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-heading-5,
+.note-editor-shell[data-editor-mode="live"] .tl-live-heading-6 {
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.tl-live-strong {
+  color: var(--ink);
+  font-weight: 760;
+}
+
+.tl-live-emphasis {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.tl-live-strikethrough {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+}
+
+.tl-live-inline-code {
+  padding: 0.08em 0.32em;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 4px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-soft) 46%, transparent);
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+
+.tl-live-link,
+.tl-live-embed,
+.tl-live-image,
+.tl-live-callout {
+  cursor: pointer;
+}
+
+.tl-live-link {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 56%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+.tl-live-link-external::after {
+  content: " ↗";
+  font-family: var(--mono);
+  font-size: 0.72em;
+  text-decoration: none;
+}
+
+.tl-live-link:focus-visible,
+.tl-live-embed:focus-visible,
+.tl-live-image:focus-visible,
+.tl-live-callout:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tl-live-tag {
+  padding: 0.08em 0.32em;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 52%, transparent);
+  font-family: var(--mono);
+  font-size: 0.82em;
+}
+
+.tl-live-embed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42em;
+  max-width: 100%;
+  padding: 0.18em 0.52em;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  border-left: 4px solid var(--accent);
+  border-radius: 4px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  font-family: var(--mono);
+  font-size: 0.82em;
+}
+
+.tl-live-embed-mark {
+  color: var(--accent-strong);
+}
+
+.tl-live-image {
+  display: inline-flex;
+  max-width: min(100%, 680px);
+  margin: 0.35em 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  vertical-align: middle;
+}
+
+.tl-live-image-content {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.tl-live-image-placeholder {
+  padding: 0.5em 0.7em;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 0.78em;
+}
+
+.tl-live-bullet {
+  display: inline-block;
+  width: 1.15em;
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  text-align: center;
+}
+
+.tl-live-task {
+  width: 1em;
+  height: 1em;
+  margin: 0 0.46em 0 0;
+  accent-color: var(--accent);
+  vertical-align: -0.08em;
+  cursor: pointer;
+}
+
+.tl-live-task:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-blockquote-line {
+  padding-left: 0.85em;
+  border-left: 4px solid var(--accent);
+  color: var(--ink-muted);
+}
+
+.tl-live-callout {
+  display: inline-block;
+  margin-right: 0.45em;
+  padding: 0.08em 0.44em;
+  border: 1px solid color-mix(in srgb, var(--signal) 38%, var(--line));
+  border-radius: 3px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--signal-soft) 62%, transparent);
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-callout-line {
+  border-left-style: double;
+  border-left-width: 6px;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-code-line {
+  padding-right: 0.75em;
+  padding-left: 0.75em;
+  border-right: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  color: var(--ink-soft);
+  background: var(--surface-sunken);
+  font-family: var(--mono);
+  font-size: 0.82em;
+  line-height: 1.62;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-line,
+.note-editor-shell[data-editor-mode="live"] .tl-live-frontmatter-line {
+  color: var(--ink-muted);
+  background: color-mix(in srgb, var(--surface-sunken) 74%, transparent);
+  font-family: var(--mono);
+  font-size: 0.78em;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-frontmatter-line {
+  padding-right: 0.7em;
+  padding-left: 0.7em;
+  border-left: 3px solid var(--line-strong);
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-rule-line {
+  margin: 0.75em 0;
+  border-top: 1px solid var(--line-strong);
+  color: var(--ink-muted);
 }
 
 .note-editor .cm-panels {

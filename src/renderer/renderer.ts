@@ -1,4 +1,4 @@
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
@@ -64,6 +64,11 @@ import {
   type PaletteCommandDescriptor,
 } from "./command-palette-model";
 import {
+  createLivePreviewExtension,
+  type LivePreviewLink,
+  type LivePreviewOptions,
+} from "./live-preview";
+import {
   addPreviewSourceControls,
   hydrateMarkdownPreview,
   renderMarkdownPreview,
@@ -102,6 +107,7 @@ const elements = {
   noteStats: getElement("note-stats"),
   noteTags: getElement("note-tags"),
   editView: getButton("edit-view"),
+  sourceView: getButton("source-view"),
   readView: getButton("read-view"),
   pluginView: getButton("plugin-view"),
   pluginSurfaceHost: getElement("plugin-surface-host"),
@@ -303,6 +309,7 @@ const paneElementKeys = [
   "noteStats",
   "noteTags",
   "editView",
+  "sourceView",
   "readView",
   "pluginView",
   "pluginSurfaceHost",
@@ -387,6 +394,7 @@ function paneElementsFor(
     noteStats: element("note-stats"),
     noteTags: element("note-tags"),
     editView: button("edit-view"),
+    sourceView: button("source-view"),
     readView: button("read-view"),
     pluginView: button("plugin-view"),
     pluginSurfaceHost: element("plugin-surface-host"),
@@ -428,7 +436,8 @@ interface ShortcutTargetDefinition {
   description: string;
 }
 
-type DocumentViewMode = "source" | "reading" | "plugin";
+type EditingViewMode = "live" | "source";
+type DocumentViewMode = EditingViewMode | "reading" | "plugin";
 type SettingsPage = "appearance" | "plugins" | "migration" | "updates" | "hotkeys";
 
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
@@ -498,6 +507,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     description: "Preview the current draft or return to its Markdown source.",
   },
   {
+    id: "editor.toggle-source-mode",
+    label: "Toggle Live Preview or Source mode",
+    description: "Switch the editor between rendered Markdown and exact source.",
+  },
+  {
     id: "appearance.toggle-theme",
     label: "Toggle light or dark theme",
     description: "Switch the current Threadleaf color scheme.",
@@ -536,7 +550,8 @@ let editorDraftPersistenceError: string | null = null;
 let editorDraftCheckedVaultId: string | null = null;
 let editorDraftRestoreRequest = 0;
 let pendingCleanDiskAcceptance = false;
-let documentViewMode: DocumentViewMode = "source";
+let documentViewMode: DocumentViewMode = "live";
+let editingViewMode: EditingViewMode = "live";
 let renderedPreviewPath: string | null = null;
 let renderedPreviewSource: string | null = null;
 let renderedPreviewVaultId: string | null = null;
@@ -667,6 +682,7 @@ interface WorkspacePaneSession {
   editorDraftRestoreRequest: number;
   pendingCleanDiskAcceptance: boolean;
   documentViewMode: DocumentViewMode;
+  editingViewMode: EditingViewMode;
   renderedPreviewPath: string | null;
   renderedPreviewSource: string | null;
   renderedPreviewVaultId: string | null;
@@ -695,7 +711,8 @@ function createWorkspacePaneSession(): WorkspacePaneSession {
     editorDraftCheckedVaultId: null,
     editorDraftRestoreRequest: 0,
     pendingCleanDiskAcceptance: false,
-    documentViewMode: "source",
+    documentViewMode: "live",
+    editingViewMode: "live",
     renderedPreviewPath: null,
     renderedPreviewSource: null,
     renderedPreviewVaultId: null,
@@ -745,6 +762,7 @@ function captureActivePaneSession(): void {
   session.editorDraftRestoreRequest = editorDraftRestoreRequest;
   session.pendingCleanDiskAcceptance = pendingCleanDiskAcceptance;
   session.documentViewMode = documentViewMode;
+  session.editingViewMode = editingViewMode;
   session.renderedPreviewPath = renderedPreviewPath;
   session.renderedPreviewSource = renderedPreviewSource;
   session.renderedPreviewVaultId = renderedPreviewVaultId;
@@ -789,6 +807,7 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
   editorDraftRestoreRequest = session.editorDraftRestoreRequest;
   pendingCleanDiskAcceptance = session.pendingCleanDiskAcceptance;
   documentViewMode = session.documentViewMode;
+  editingViewMode = session.editingViewMode;
   renderedPreviewPath = session.renderedPreviewPath;
   renderedPreviewSource = session.renderedPreviewSource;
   renderedPreviewVaultId = session.renderedPreviewVaultId;
@@ -848,21 +867,43 @@ const sourceHighlight = HighlightStyle.define([
   { tag: tags.comment, color: "var(--ink-muted)" },
 ]);
 const editorAccess = new Compartment();
+const editorPresentation = new Compartment();
 let editorReadOnly = false;
+
+function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
+  const session = paneSession(paneId);
+  const sourceNotePath =
+    (paneId === activePaneContextId ? loadedNote : session.loadedNote)?.path ?? null;
+  const expectedVaultId = paneId === activePaneContextId ? loadedVaultId : session.loadedVaultId;
+  return {
+    sourceNotePath: () => sourceNotePath,
+    expectedVaultId: () => expectedVaultId,
+    activateLink: (link) => {
+      runInPaneContext(paneId, () => void activateLivePreviewLink(link));
+    },
+    loadImage: (sourceNotePath, target, expectedVaultId) =>
+      window.threadleaf.loadVaultImage(sourceNotePath, target, expectedVaultId),
+  };
+}
+
+function editorPresentationExtension(paneId: WorkspacePaneId) {
+  return editingViewMode === "live" ? createLivePreviewExtension(livePreviewOptions(paneId)) : [];
+}
 
 function editorExtensions(paneId: WorkspacePaneId) {
   return [
     basicSetup,
-    markdown(),
+    markdown({ base: markdownLanguage }),
     EditorView.lineWrapping,
     EditorView.cspNonce.of(editorStyleNonce),
     editorAccess.of([
       EditorState.readOnly.of(editorReadOnly),
       EditorView.editable.of(!editorReadOnly),
     ]),
+    editorPresentation.of(editorPresentationExtension(paneId)),
     syntaxHighlighting(sourceHighlight),
     EditorView.contentAttributes.of({
-      "aria-label": "Markdown source editor",
+      "aria-label": "Markdown editor",
       "aria-multiline": "true",
       spellcheck: "true",
     }),
@@ -1015,6 +1056,13 @@ function syncEditorAccess(): void {
     editorReadOnly = readOnly;
   }
   elements.noteEditor.dataset.readOnly = String(readOnly);
+}
+
+function syncEditorPresentation(): void {
+  editor.dispatch({
+    effects: editorPresentation.reconfigure(editorPresentationExtension(activePaneContextId)),
+  });
+  elements.noteEditorShell.dataset.editorMode = editingViewMode;
 }
 
 function commandCatalog(): RendererCommand[] {
@@ -1250,6 +1298,16 @@ function commandCatalog(): RendererCommand[] {
       enabled: Boolean(loadedNote && !busy && !saving),
       disabledReason: loadedNote ? "Threadleaf is finishing another action." : "No note is open.",
       run: toggleDocumentView,
+    },
+    {
+      id: "editor.toggle-source-mode",
+      label: editingViewMode === "live" ? "Switch to Source mode" : "Switch to Live Preview",
+      category: "Editor",
+      keywords: ["live preview", "source", "markdown", "edit"],
+      shortcut: shortcutFor("editor.toggle-source-mode"),
+      enabled: Boolean(loadedNote && !busy && !saving),
+      disabledReason: loadedNote ? "Threadleaf is finishing another action." : "No note is open.",
+      run: toggleEditingView,
     },
     {
       id: "appearance.toggle-theme",
@@ -1541,6 +1599,8 @@ function renderReadingView(): void {
 function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
   const reading = hasNote && documentViewMode === "reading";
+  const live = hasNote && documentViewMode === "live";
+  const source = hasNote && documentViewMode === "source";
   const pluginSettings =
     pluginSettingsTargetId !== null ||
     currentSnapshot?.pluginSurface?.viewType === "threadleaf-plugin-settings";
@@ -1554,15 +1614,19 @@ function renderDocumentView(): void {
   elements.notePreview.hidden = !reading;
   elements.noteView.hidden = !hasNote || plugin;
   elements.pluginSurfaceHost.hidden = !plugin;
-  elements.noteView.dataset.view = reading ? "reading" : "source";
+  elements.noteView.dataset.view = reading ? "reading" : documentViewMode;
+  elements.noteEditorShell.dataset.editorMode = editingViewMode;
+  elements.noteEditorShell.classList.toggle("is-live-preview", editingViewMode === "live");
   elements.editView.disabled = !hasNote || busy || saving;
+  elements.sourceView.disabled = !hasNote || busy || saving;
   elements.readView.disabled = !hasNote || busy || saving;
   elements.pluginView.hidden = visiblePluginViewType === null && !plugin;
   elements.pluginView.disabled = plugin
     ? busy || saving
     : !hasNote || !pluginViewType || busy || saving || dirty;
   elements.pluginView.textContent = pluginSettings ? "Options" : "Plugin";
-  elements.editView.setAttribute("aria-pressed", String(hasNote && !reading && !plugin));
+  elements.editView.setAttribute("aria-pressed", String(live));
+  elements.sourceView.setAttribute("aria-pressed", String(source));
   elements.readView.setAttribute("aria-pressed", String(reading));
   elements.pluginView.setAttribute("aria-pressed", String(plugin));
   elements.pluginView.title = plugin
@@ -1581,7 +1645,8 @@ function renderDocumentView(): void {
     elements.notePath.textContent = loadedNote?.path ?? "No note selected";
   }
   const shortcut = shortcutFor("editor.toggle-reading-view");
-  elements.editView.title = shortcut ? `Editing view (${shortcut})` : "Editing view";
+  elements.editView.title = "Live Preview editing mode";
+  elements.sourceView.title = "Source editing mode";
   elements.readView.title = shortcut ? `Reading view (${shortcut})` : "Reading view";
   if (reading) {
     renderReadingView();
@@ -1634,7 +1699,7 @@ async function activatePluginView(): Promise<void> {
     }
     render(snapshot);
   } catch (error) {
-    documentViewMode = "source";
+    documentViewMode = editingViewMode;
     renderDocumentView();
     showToast(error instanceof Error ? error.message : String(error));
   } finally {
@@ -1690,7 +1755,7 @@ async function activatePluginSettings(pluginId: string): Promise<void> {
     render(snapshot);
   } catch (error) {
     pluginSettingsTargetId = null;
-    documentViewMode = "source";
+    documentViewMode = editingViewMode;
     renderDocumentView();
     showToast(error instanceof Error ? error.message : String(error));
   } finally {
@@ -1708,10 +1773,20 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
     return;
   }
   const closingPlugin = documentViewMode === "plugin" && mode !== "plugin";
+  const editingModeChanged = (mode === "live" || mode === "source") && editingViewMode !== mode;
+  if (mode === "live" || mode === "source") {
+    editingViewMode = mode;
+  }
   documentViewMode = mode;
   if (mode !== "plugin") {
     pluginSettingsTargetId = null;
     localStorage.setItem("threadleaf-document-view", mode);
+    if (mode === "live" || mode === "source") {
+      localStorage.setItem("threadleaf-editing-view", mode);
+    }
+  }
+  if (editingModeChanged) {
+    syncEditorPresentation();
   }
   renderDocumentView();
   renderPaletteResults();
@@ -1725,7 +1800,7 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
   if (!focus) {
     return;
   }
-  if (mode === "source") {
+  if (mode === "live" || mode === "source") {
     if (loadedNote) {
       editor.focus();
     } else {
@@ -1737,7 +1812,11 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
 }
 
 function toggleDocumentView(): void {
-  setDocumentView(documentViewMode === "reading" ? "source" : "reading");
+  setDocumentView(documentViewMode === "reading" ? editingViewMode : "reading");
+}
+
+function toggleEditingView(): void {
+  setDocumentView(editingViewMode === "live" ? "source" : "live");
 }
 
 function scrollToDocumentLine(line: number): void {
@@ -1778,6 +1857,40 @@ async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
   if (line) {
     scrollToDocumentLine(line);
   } else if (identity?.subpath?.startsWith("^")) {
+    showToast("Block-anchor navigation is not available yet.");
+  }
+}
+
+async function activateLivePreviewLink(identity: LivePreviewLink): Promise<void> {
+  if (identity.external) {
+    showToast("External link opening is disabled in this beta.");
+    return;
+  }
+  if (!loadedNote) {
+    return;
+  }
+  const link =
+    loadedNote.outgoing.find(
+      (candidate) =>
+        candidate.syntax === identity.syntax &&
+        candidate.target === identity.target &&
+        (candidate.subpath ?? null) === identity.subpath,
+    ) ?? null;
+  if (link?.status !== "resolved" || !link.path) {
+    showToast(
+      link?.status === "ambiguous"
+        ? "That link has more than one possible destination."
+        : "That link does not resolve to a note in this vault.",
+    );
+    return;
+  }
+  if (!(await openNote(link.path))) {
+    return;
+  }
+  const line = sourceLineForSubpath(loadedNote, identity.subpath);
+  if (line) {
+    scrollToDocumentLine(line);
+  } else if (identity.subpath?.startsWith("^")) {
     showToast("Block-anchor navigation is not available yet.");
   }
 }
@@ -2032,7 +2145,7 @@ function openNewNoteDialog(): void {
     closeCommandPalette(false);
   }
   if (documentViewMode === "plugin") {
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
   }
   newNoteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -2098,7 +2211,7 @@ async function createNewNote(): Promise<void> {
     return;
   }
   closeNewNoteDialog(false);
-  setDocumentView("source", false);
+  setDocumentView(editingViewMode, false);
   if (response.outcome.status === "conflict") {
     setEditNotice({
       kind: "conflict",
@@ -2243,7 +2356,7 @@ function openPropertyDialog(mode: PropertyDialogMode, property?: WorkspaceProper
     closeCommandPalette(false);
   }
   if (documentViewMode === "plugin") {
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
   }
   propertyDialogRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -2495,7 +2608,7 @@ function openMoveNoteDialog(): void {
     closeCommandPalette(false);
   }
   if (documentViewMode === "plugin") {
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
   }
   moveNoteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -2646,7 +2759,7 @@ async function moveCurrentNote(): Promise<void> {
 
   if (committedPath) {
     closeMoveNoteDialog(false);
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
     showToast(
       committedRewriteCount > 0
         ? `Moved note to ${committedPath} and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
@@ -2722,7 +2835,7 @@ function openDeleteNoteDialog(): void {
     closeCommandPalette(false);
   }
   if (documentViewMode === "plugin") {
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
   }
   deleteNoteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -2803,7 +2916,7 @@ async function deleteCurrentNote(): Promise<void> {
 
   if (committed) {
     closeDeleteNoteDialog(false);
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
     showToast(`Moved ${sourcePath} to recoverable trash.`);
     window.setTimeout(() => {
       if (loadedNote) {
@@ -4590,7 +4703,7 @@ function openSettings(): void {
     closeCommandPalette(false);
   }
   if (documentViewMode === "plugin") {
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
   }
   settingsRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -5155,7 +5268,7 @@ function renderWorkspacePanes(
     activatePaneContext(paneId);
     syncEditorAccess();
     if (paneId !== activePaneId && documentViewMode === "plugin") {
-      documentViewMode = "source";
+      documentViewMode = editingViewMode;
     }
     const displayedNote = reconcileEditor(pane.activeNote, snapshot.vault.id);
     displayedNotes.set(paneId, displayedNote);
@@ -5177,7 +5290,7 @@ function render(snapshot: RuntimeSnapshot): void {
         editorDraftRestoreRequest += 1;
         editorDraftCheckedVaultId = null;
         if (documentViewMode === "plugin") {
-          documentViewMode = "source";
+          documentViewMode = editingViewMode;
         }
       });
     }
@@ -5279,7 +5392,7 @@ function render(snapshot: RuntimeSnapshot): void {
     !preferredPluginViewType(snapshot) &&
     pluginSettingsTargetId === null
   ) {
-    setDocumentView("source", false);
+    setDocumentView(editingViewMode, false);
   }
   reconcileVaultSearch(snapshot);
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
@@ -5838,6 +5951,7 @@ function replaceEditorDocument(
   }
   loadedNote = note;
   loadedVaultId = note ? vaultId : null;
+  syncEditorPresentation();
   previewHydrationRequest += 1;
   renderedPreviewPath = null;
   renderedPreviewSource = null;
@@ -6081,6 +6195,7 @@ async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): 
     }
     loadedNote = restoredNote;
     loadedVaultId = draft.vaultId;
+    syncEditorPresentation();
     editorDraftId = draft.draftId;
     editorDraftPersistenceState = "saved";
     editorDraftPersistenceError = null;
@@ -6537,7 +6652,7 @@ function activateWorkspacePaneLocally(paneId: WorkspacePaneId): void {
   const previousPaneId = activePaneContextId;
   if (previousPaneId !== paneId && documentViewMode === "plugin") {
     pluginSurfaceRequest += 1;
-    documentViewMode = "source";
+    documentViewMode = editingViewMode;
     renderDocumentView();
     void window.threadleaf.closePluginView().catch(() => undefined);
   }
@@ -6706,6 +6821,10 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   });
   pane.editView.addEventListener("click", () => {
     activate();
+    setDocumentView("live");
+  });
+  pane.sourceView.addEventListener("click", () => {
+    activate();
     setDocumentView("source");
   });
   pane.readView.addEventListener("click", () => {
@@ -6715,7 +6834,7 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   pane.pluginView.addEventListener("click", () => {
     activate();
     if (documentViewMode === "plugin") {
-      setDocumentView("source");
+      setDocumentView(editingViewMode);
     } else {
       void activatePluginView();
     }
@@ -7101,9 +7220,18 @@ document.addEventListener("keydown", (event) => {
 updateShortcutLabels();
 
 const storedDocumentView = localStorage.getItem("threadleaf-document-view");
+const storedEditingView = localStorage.getItem("threadleaf-editing-view");
 for (const paneId of ["primary", "secondary"] as const) {
   runInPaneContext(paneId, () => {
-    documentViewMode = storedDocumentView === "reading" ? "reading" : "source";
+    editingViewMode =
+      storedEditingView === "source" || storedDocumentView === "source" ? "source" : "live";
+    documentViewMode =
+      storedDocumentView === "reading"
+        ? "reading"
+        : storedDocumentView === "source" || storedDocumentView === "live"
+          ? storedDocumentView
+          : editingViewMode;
+    syncEditorPresentation();
   });
 }
 activatePaneContext("primary");

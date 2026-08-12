@@ -1,6 +1,6 @@
 {
   "name": "threadleaf",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "private": true,
   "type": "module",
   "description": "An open runtime for local Markdown vaults and community plugins.",
@@ -45,6 +45,7 @@
     "test": "vitest run",
     "test:packaged": "pnpm run pack:dir && xvfb-run -a node scripts/check-packaged-app.mjs && xvfb-run -a node scripts/check-packaged-properties.mjs",
     "test:linux-packages": "node scripts/check-linux-packages.mjs",
+    "test:live-preview": "pnpm run build && node scripts/check-live-preview.mjs",
     "test:macos-package": "node scripts/check-macos-package.mjs",
     "test:package-reproducible": "pnpm run build && node scripts/package-reproducible-linux.mjs",
     "test:plugin-index-live": "THREADLEAF_LIVE_PLUGIN_INDEX=1 vitest run src/main/open-plugin-package-source.live.test.ts",

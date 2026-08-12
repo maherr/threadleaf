@@ -14,6 +14,7 @@ export const nativeMenuCommandIds = [
   "editor.save-note",
   "editor.revert-note",
   "editor.toggle-reading-view",
+  "editor.toggle-source-mode",
   "appearance.toggle-theme",
   "appearance.reload-custom-css",
   "support.export-bundle",

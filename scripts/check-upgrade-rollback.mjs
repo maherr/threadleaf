@@ -234,6 +234,7 @@ async function launchPackage(executablePath, expectedVersion) {
     [
       "-a",
       executablePath,
+      "--ozone-platform=x11",
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
@@ -422,9 +423,13 @@ async function soleAppImage(directory) {
 }
 
 async function assertPackageVersion(executablePath, expectedVersion) {
-  const result = await capture("xvfb-run", ["-a", executablePath, "--version"], {
-    env: { ELECTRON_OZONE_PLATFORM_HINT: "x11" },
-  });
+  const result = await capture(
+    "xvfb-run",
+    ["-a", executablePath, "--ozone-platform=x11", "--version"],
+    {
+      env: { ELECTRON_OZONE_PLATFORM_HINT: "x11" },
+    },
+  );
   assert(
     result.stdout === `${expectedVersion}\n`,
     `AppImage version was ${JSON.stringify(result.stdout.trim())}, expected ${expectedVersion}.`,

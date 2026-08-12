@@ -378,7 +378,21 @@ rare-query, and deliberately broad-query behavior over a deterministic 10,000-no
 inverted or SQLite FTS index must be earned by those measurements and preserve the same rebuildable
 contract, rather than adding canonical database state speculatively.
 
-### Reading view and source mapping
+### Live Preview, Source, Reading, and source mapping
+
+Live Preview and Source are two presentations of the same CodeMirror document. A fresh install
+starts in Live Preview, while each pane retains its current mode and the preferred editing mode is
+stored as private application state outside the vault. Switching modes reconfigures decorations;
+it does not replace the document, write the vault, or reset undo history.
+
+The Live Preview layer derives decorations from the CodeMirror syntax tree. Presentation markers
+are hidden only on lines outside the cursor or selection. Every selected line exposes exact source,
+and clicking a rendered token moves the cursor into its source range before revealing it. Common
+headings, emphasis, links, tasks, lists, quotes, callouts, code blocks, tags, local raster images,
+and source-backed note-embed cards are covered by an isolated virtual-input corpus. Frontmatter,
+tables, HTML, math, malformed or ambiguous constructs, and unsupported nesting stay visible as
+source rather than becoming a lossy rendering. Task controls dispatch an exact source transaction,
+so dirty state, undo, drafts, saves, conflicts, and recovery remain one path.
 
 Reading view is an explicit document mode, not an implicit write or a second source of truth. It
 renders the current CodeMirror draft, including unsaved changes, without crossing the main-process
@@ -411,9 +425,10 @@ identities, but the derived metadata index remains authoritative for resolution 
 paths. Dirty-note navigation is blocked and preserves the draft; no preview action silently saves
 or discards text.
 
-This is reading preview, not inline live preview. Precise cursor-to-decoration mapping inside one
-mixed source/rendered editor remains later Phase 2 work and must preserve the same sanitizer,
-source-line, and no-implicit-write guarantees.
+Live Preview currently maps at source-token and line granularity. Fine-grained cursor mapping inside
+aliases and other compound tokens, full inline note transclusion, and richer complex-syntax
+projections remain later work. They must preserve the same exact-source, bounded-read, and
+no-implicit-write guarantees.
 
 ### Command-line boundary
 
@@ -682,7 +697,7 @@ Capability host ---> native Threadleaf extension
 ## Decisions still to make
 
 - Native extension SDK license and capability vocabulary.
-- Inline live-preview editor architecture and fine-grained cursor mapping.
+- Fine-grained intra-token cursor mapping and complex-syntax projection in Live Preview.
 - Metadata schema and migration strategy.
 - Behavior-import apply, rollback, and conflict semantics for the existing preview schema.
 - Public benchmark corpora, target devices, and regression budgets.

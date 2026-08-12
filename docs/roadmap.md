@@ -131,7 +131,11 @@ equivalence through the real writer-to-watcher seam.
 - [x] Two independently editable panes, horizontal and vertical splits, tab transfer, pane
       collapse, focused-pane commands, private layout restoration, and native application menus.
 - [ ] Broader workspace settings.
-- [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
+- [x] Default Live Preview plus explicit Source and Read modes, line-proximate exact-source reveal,
+      common Markdown presentation, editable tasks, bounded local images, honest source fallback,
+      pane-local state, and isolated virtual-input coverage in both themes.
+- [ ] Fine-grained intra-token cursor mapping, inline note transclusion, and richer complex-syntax
+      projection in Live Preview.
 - [x] Bounded whole-note, heading, and block-ID transclusions in Reading view, with recursive
       rendering, exact source controls, nested links and raster images, and explicit safety limits.
 - [x] Ordered desktop top-level property inspection and typed add, edit, and remove controls for
@@ -167,7 +171,7 @@ conversion.
       including independent undo and drafts, full-process crash recovery, tab transfer, collapse,
       clean restart, and non-destructive malformed-layout fallback.
 
-Exit gate passed: Threadleaf 0.1.0-beta.2 is ready for maintainer-led daily-drive testing with a
+Exit gate passed: Threadleaf 0.1.0-beta.3 is ready for maintainer-led daily-drive testing with a
 normal external vault backup and the privacy-safe feedback workflow.
 
 ## Phase 3: Compatibility alpha
@@ -287,8 +291,9 @@ Exit gate: selected high-value plugins complete named workflows against public f
       translations, reduced motion, high contrast, and representative open community themes.
 - [ ] Split groups, draggable tabs, pinned tabs, side docks, floating windows, pop-out views,
       history, bookmarks, quick switcher, command discovery, and persistent workspace layouts.
-- [ ] Source mode, live preview, reading mode, block and heading references, embeds, callouts,
-      footnotes, tables, math, diagrams, and large-document editing with reliable IME and undo.
+- [ ] Complete the existing Source, Live Preview, and Reading modes with fine-grained mapping,
+      inline block and heading transclusion, footnotes, rendered tables, math, diagrams, and
+      large-document editing with reliable IME and undo.
 - [ ] JSON Canvas editing and embedding plus first-class attachment browsing, rename, preview,
       drag-and-drop, paste, and missing-file recovery.
 - [ ] Core daily-driver features for templates, daily notes, backlinks, outgoing links, tags,

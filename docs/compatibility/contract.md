@@ -67,8 +67,10 @@ links and images resolve relative to the embedded note. It also proves explicit 
 missing and ambiguous targets, invalid subpaths, private and out-of-vault paths, invalid UTF-8,
 oversized notes, stale vault responses, depth, count, and aggregate-byte limits. Current limits are
 2 MiB per source note, 32 expanded fragments, 8 MiB of returned Markdown, and four recursive
-levels. This evidence does not claim inline live-preview parity, block-range embeds, SVG rendering,
-or arbitrary plugin-defined embed processors.
+levels. This transclusion fixture does not claim rendered note transclusion inside Live Preview,
+block-range embeds, SVG rendering, or arbitrary plugin-defined embed processors. Live Preview's
+separate bounded corpus and explicit exclusions are documented in
+[Live Preview compatibility](live-preview.md).
 
 ## Phase 0 fixture
 

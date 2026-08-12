@@ -56,6 +56,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Explicit Ctrl/Cmd+E reading view that safely renders the current editor draft, sanitizes raw HTML,
   preserves source-line navigation, resolves internal links through indexed metadata, blocks dirty
   note navigation, and leaves unsupported external links and attachments inert.
+- Default Live Preview plus explicit Source and Read modes, with pane-local presentation state,
+  exact source reveal on cursor and selection lines, common Markdown styling, contained raster
+  images, source-backed note-embed cards, editable task markers, internal-link activation, and
+  honest source fallback for unsupported syntax.
 - Headless `threadleaf` CLI with explicit vault selection, human and versioned JSON output,
   documented exit codes, `vault info`, `files`, `read`, and `search`, plus tested `file=` and
   `query=` argument compatibility without requiring a running Electron process.

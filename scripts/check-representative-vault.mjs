@@ -426,6 +426,7 @@ async function launchProbe() {
     [
       "-a",
       electronPath,
+      "--ozone-platform=x11",
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
@@ -499,14 +500,18 @@ async function waitForRenderedTarget(probe) {
 }
 
 async function waitForReady(probe, expectedCount, timeoutMs = 90_000) {
-  await waitFor(
-    async () => {
-      const state = await evaluate(probe, renderedStateExpression());
-      return state.ready && state.count === expectedCount ? state : null;
-    },
-    "The copied vault did not reach the exact ready note count",
-    timeoutMs,
-    250,
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await evaluate(probe, renderedStateExpression());
+    if (last.ready && last.count === expectedCount) {
+      break;
+    }
+    await delay(250);
+  }
+  assert(
+    last?.ready && last.count === expectedCount,
+    `The copied vault did not reach the exact ready note count ${expectedCount}. Last observation: ${JSON.stringify(last)}`,
   );
   return evaluate(
     probe,

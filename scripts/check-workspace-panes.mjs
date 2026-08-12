@@ -165,6 +165,7 @@ async function launchApplication() {
       "-s",
       "-screen 0 1440x840x24 -nolisten tcp",
       electronPath,
+      "--ozone-platform=x11",
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",

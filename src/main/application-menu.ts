@@ -119,6 +119,7 @@ export function createApplicationMenuTemplate(
       label: "View",
       submenu: [
         action("Toggle Reading View", "editor.toggle-reading-view"),
+        action("Toggle Live Preview or Source", "editor.toggle-source-mode"),
         action("Toggle Light or Dark Theme", "appearance.toggle-theme"),
         action("Reload Themes and CSS Snippets", "appearance.reload-custom-css"),
         { type: "separator" },

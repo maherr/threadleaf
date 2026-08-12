@@ -402,7 +402,12 @@ try {
   const port = await availablePort();
   child = spawn(
     executablePath,
-    [`--remote-debugging-port=${port}`, `--user-data-dir=${userDataPath}`, "--disable-gpu"],
+    [
+      "--ozone-platform=x11",
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userDataPath}`,
+      "--disable-gpu",
+    ],
     {
       cwd: appRoot,
       env: {

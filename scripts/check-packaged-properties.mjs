@@ -463,7 +463,12 @@ try {
   const port = await availablePort();
   child = spawn(
     executablePath,
-    [`--remote-debugging-port=${port}`, `--user-data-dir=${userDataPath}`, "--disable-gpu"],
+    [
+      "--ozone-platform=x11",
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userDataPath}`,
+      "--disable-gpu",
+    ],
     {
       cwd: appRoot,
       env: { ...process.env, ELECTRON_OZONE_PLATFORM_HINT: "x11" },

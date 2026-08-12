@@ -258,6 +258,7 @@ try {
     [
       "-a",
       electronPath,
+      "--ozone-platform=x11",
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",

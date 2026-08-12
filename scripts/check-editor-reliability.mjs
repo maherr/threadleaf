@@ -362,6 +362,7 @@ try {
     [
       "-a",
       electronPath,
+      "--ozone-platform=x11",
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
@@ -401,6 +402,17 @@ try {
     const snapshot = await evaluate("window.threadleaf.getSnapshot()");
     return snapshot?.workspace?.state === "ready" && snapshot?.vault?.path === canonicalVaultPath;
   }, "The writable fixture vault did not become ready");
+  await evaluate(`(() => {
+    const source = document.querySelector("#source-view");
+    if (!(source instanceof HTMLButtonElement)) {
+      throw new Error("Source mode control is unavailable.");
+    }
+    source.click();
+  })()`);
+  await waitFor(
+    () => evaluate('document.querySelector("#note-view")?.getAttribute("data-view") === "source"'),
+    "The editor reliability corpus could not enter exact Source mode",
+  );
 
   phase = "Unicode composition";
   await openNote("Welcome.md");

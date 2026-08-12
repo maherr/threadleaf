@@ -10,7 +10,7 @@ Threadleaf is not affiliated with or endorsed by Obsidian.
 
 ## Status
 
-Threadleaf 0.1.0-beta.2 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
+Threadleaf 0.1.0-beta.3 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
 proof loads an unchanged CommonJS fixture
 plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
 command, and exercises that command through a dedicated Electron compatibility renderer. The
@@ -42,10 +42,14 @@ conflict-copy path. Core actions and dynamically registered compatibility-plugin
 a searchable, keyboard-navigable command palette. Versioned application settings now keep remappable
 keyboard shortcuts outside every vault, reject collisions, and persist changes before activating
 them. Compatibility plugins
-in selected and restored vaults stay off by default. An explicit reading view renders the current
-editor draft through a sanitized Markdown subset, keeps unsaved text off disk, resolves internal
-links through the derived index, and provides source-line controls that return to the matching
-CodeMirror line. Sniffed local PNG, JPEG, GIF, and WebP attachments now render through a
+in selected and restored vaults stay off by default. Live Preview is the fresh-install editing
+default, with explicit Live, Source, and Read modes in each pane. It keeps canonical Markdown and
+the existing CodeMirror undo, draft, save, and conflict paths, reveals exact source on cursor and
+selection lines, renders common Markdown presentation elsewhere, and edits task markers through
+normal source transactions. An explicit reading view renders the current editor draft through a
+sanitized Markdown subset, keeps unsaved text off disk, resolves internal links through the derived
+index, and provides source-line controls that return to the matching CodeMirror line. Sniffed local
+PNG, JPEG, GIF, and WebP attachments now render through a
 vault-scoped, size-bounded main-process service; external, oversized, unsupported, private, and
 out-of-vault targets stay explicit placeholders. Whole-note, heading, and block-ID note embeds now
 render recursively through a separate read-only service with exact source controls and explicit
@@ -182,8 +186,9 @@ effect of opening a vault.
 The current Linux build has crossed the daily-drive beta handoff: real-scale copied-vault use,
 editor and crash recovery, isolated compatibility plugins, unchanged Excalidraw workflows,
 installable packages, privacy-safe feedback, and a distinct-package upgrade and rollback sequence
-all pass. Keep an ordinary external backup while field testing. Threadleaf still lacks inline live
-preview and note transclusion, and broad community-plugin compatibility remains measured per plugin
+all pass. Keep an ordinary external backup while field testing. Live Preview deliberately leaves
+complex or ambiguous constructs as visible source; fine-grained intra-token mapping and richer
+inline transclusion remain open. Broad community-plugin compatibility remains measured per plugin
 rather than assumed.
 
 Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather
