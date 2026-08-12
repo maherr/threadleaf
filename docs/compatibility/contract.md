@@ -39,6 +39,20 @@ measured level and named scope. A different release remains level 0 and names th
 version only as context. An otherwise valid unknown package is discovered at level 0 until a
 production-path fixture raises it.
 
+## Migration evidence
+
+Opening a vault is not authorization to copy behavior. Threadleaf's Migration preview reads only a
+fixed, bounded, contained set of existing `.obsidian` metadata and does not load plugin code or
+write any source or destination setting. It reports exact-version plugin evidence, private settings
+shape without keys or values, reviewed hotkey mappings, available appearance assets, and restorable
+note tabs. Unsupported and missing behavior remains explicit.
+
+The preview is covered by malformed-input, oversized-input, containment, private-value
+non-disclosure, and exact-byte preservation fixtures. The production Electron surface is checked in
+light and dark schemes against a copied real-world Obsidian configuration. These checks establish a
+safe preview boundary, not completed import behavior. See the
+[migration contract](migration.md) for the source limits and candidate rules.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

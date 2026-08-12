@@ -9,6 +9,7 @@ export const ipcChannels = {
   setCompatibilityMode: "threadleaf:set-compatibility-mode",
   setPluginEnabled: "threadleaf:set-plugin-enabled",
   reloadPlugins: "threadleaf:reload-plugins",
+  migrationPreview: "threadleaf:migration-preview",
   searchVault: "threadleaf:search-vault",
   loadVaultImage: "threadleaf:load-vault-image",
   setKeyBinding: "threadleaf:set-key-binding",

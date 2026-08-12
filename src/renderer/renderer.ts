@@ -35,6 +35,7 @@ import {
   type ShortcutTargetId,
   shortcutTargetForEvent,
 } from "../shared/key-bindings";
+import type { ObsidianMigrationPreview } from "../shared/migration";
 import {
   createDefaultVaultPluginSettings,
   type PluginCatalogSnapshot,
@@ -131,6 +132,7 @@ const elements = {
   settingsPageTitle: getElement("settings-page-title"),
   settingsNavAppearance: getButton("settings-nav-appearance"),
   settingsNavPlugins: getButton("settings-nav-plugins"),
+  settingsNavMigration: getButton("settings-nav-migration"),
   settingsNavHotkeys: getButton("settings-nav-hotkeys"),
   settingsWarning: getElement("settings-warning"),
   appearanceState: getElement("appearance-state"),
@@ -149,6 +151,15 @@ const elements = {
   pluginList: getElement("plugin-list"),
   pluginStatus: getElement("plugin-status"),
   pluginWarnings: getElement("plugin-warnings"),
+  migrationState: getElement("migration-state"),
+  migrationRefresh: getButton("migration-refresh"),
+  migrationOverview: getElement("migration-overview"),
+  migrationSourceList: getElement("migration-source-list"),
+  migrationPluginList: getElement("migration-plugin-list"),
+  migrationHotkeyList: getElement("migration-hotkey-list"),
+  migrationAppearance: getElement("migration-appearance"),
+  migrationWorkspace: getElement("migration-workspace"),
+  migrationWarnings: getElement("migration-warnings"),
   schemeSystem: getInput("scheme-system"),
   schemeLight: getInput("scheme-light"),
   schemeDark: getInput("scheme-dark"),
@@ -205,7 +216,7 @@ interface ShortcutTargetDefinition {
 }
 
 type DocumentViewMode = "source" | "reading" | "plugin";
-type SettingsPage = "appearance" | "plugins" | "hotkeys";
+type SettingsPage = "appearance" | "plugins" | "migration" | "hotkeys";
 
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   {
@@ -339,6 +350,11 @@ let pluginRequest = 0;
 let pluginMessage = "Discovering installed plugins in this vault.";
 let pluginMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let lastPluginWarning = "";
+let migrationPreview: ObsidianMigrationPreview | null = null;
+let migrationBusy = false;
+let migrationRequest = 0;
+let migrationMessage = "Open the preview to inspect existing Obsidian behavior.";
+let migrationMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let lastPluginEditorUpdateId: string | null = null;
 let pluginSurfacePresentationVisible = true;
 let legacyThemeMigrationAttempted = false;
@@ -683,8 +699,8 @@ function commandCatalog(): RendererCommand[] {
         "preferences",
       ],
       shortcut: shortcutFor("settings.open-keybindings"),
-      enabled: !settingsOperationBusy(),
-      disabledReason: settingsOperationBusy() ? "Threadleaf is saving application settings." : null,
+      enabled: true,
+      disabledReason: null,
       run: openSettings,
     },
   ];
@@ -1891,7 +1907,7 @@ async function deleteCurrentNote(): Promise<void> {
 }
 
 function settingsOperationBusy(): boolean {
-  return settingsBusy || appearanceBusy || pluginBusy;
+  return settingsBusy || appearanceBusy || pluginBusy || migrationBusy;
 }
 
 function currentAppearancePreference(): VaultAppearanceSettings {
@@ -2196,6 +2212,8 @@ async function updatePlugins(
       response.catalog.warnings.length > 0 || runtimePluginWarnings(response.snapshot).length > 0
         ? "warning"
         : "saved";
+    migrationPreview = null;
+    void refreshMigrationPreview("Migration preview refreshed after the plugin change.");
     return true;
   } catch (error) {
     if (request === pluginRequest) {
@@ -2239,6 +2257,321 @@ async function reloadPlugins(): Promise<void> {
     "Reloading enabled community plugins…",
     "Enabled community plugins reloaded.",
   );
+}
+
+async function refreshMigrationPreview(successMessage?: string): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId) {
+    migrationPreview = null;
+    migrationMessage = "Open a writable vault to inspect existing Obsidian behavior.";
+    migrationMessageKind = "info";
+    renderSettings();
+    return;
+  }
+  const request = ++migrationRequest;
+  migrationBusy = true;
+  migrationMessage = "Reading bounded .obsidian metadata without changing it…";
+  migrationMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.getMigrationPreview(vaultId);
+    if (request !== migrationRequest || vaultId !== currentSnapshot?.vault.id) {
+      return;
+    }
+    if (response.status === "stale-vault") {
+      migrationMessage = "The active vault changed before the migration preview completed.";
+      migrationMessageKind = "info";
+      return;
+    }
+    migrationPreview = response.preview;
+    migrationMessage =
+      successMessage ??
+      (response.preview.detected
+        ? "Read-only migration preview is current. Nothing was imported or changed."
+        : "No Obsidian behavior metadata was found. Nothing was changed.");
+    migrationMessageKind = response.preview.warnings.length > 0 ? "warning" : "saved";
+  } catch (error) {
+    if (request !== migrationRequest) {
+      return;
+    }
+    migrationMessage = error instanceof Error ? error.message : String(error);
+    migrationMessageKind = "error";
+  } finally {
+    if (request === migrationRequest) {
+      migrationBusy = false;
+      renderSettings();
+    }
+  }
+}
+
+function appendMigrationEmpty(target: HTMLElement, message: string): void {
+  const empty = document.createElement("p");
+  empty.className = "migration-empty";
+  empty.textContent = message;
+  target.append(empty);
+}
+
+function migrationBadge(text: string, state: string): HTMLSpanElement {
+  const badge = document.createElement("span");
+  badge.className = "migration-badge";
+  badge.dataset.state = state;
+  badge.textContent = text;
+  return badge;
+}
+
+function formatMigrationBytes(byteLength: number | null): string {
+  if (byteLength === null) {
+    return "No file";
+  }
+  if (byteLength < 1024) {
+    return `${byteLength} B`;
+  }
+  if (byteLength < 1024 * 1024) {
+    return `${(byteLength / 1024).toFixed(byteLength < 10 * 1024 ? 1 : 0)} KiB`;
+  }
+  return `${(byteLength / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function appendMigrationFact(target: HTMLElement, label: string, value: string): void {
+  const row = document.createElement("span");
+  row.className = "migration-fact";
+  const term = document.createElement("small");
+  term.textContent = label;
+  const detail = document.createElement("strong");
+  detail.textContent = value;
+  row.append(term, detail);
+  target.append(row);
+}
+
+function renderMigrationSettings(): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  const preview = migrationPreview?.vaultId === vaultId ? migrationPreview : null;
+  elements.migrationRefresh.disabled = migrationBusy || !vaultId;
+  elements.migrationState.textContent = migrationBusy
+    ? "Scanning"
+    : preview?.detected
+      ? "Detected"
+      : preview
+        ? "No state"
+        : "Not scanned";
+  elements.migrationState.dataset.state = migrationBusy
+    ? "safe"
+    : preview?.detected
+      ? "active"
+      : "default";
+
+  for (const target of [
+    elements.migrationOverview,
+    elements.migrationSourceList,
+    elements.migrationPluginList,
+    elements.migrationHotkeyList,
+    elements.migrationAppearance,
+    elements.migrationWorkspace,
+    elements.migrationWarnings,
+  ]) {
+    target.replaceChildren();
+  }
+
+  if (!preview) {
+    appendMigrationEmpty(
+      elements.migrationOverview,
+      migrationBusy
+        ? "Inspecting known metadata files and plugin setting shapes…"
+        : "Refresh to build a read-only behavior migration preview.",
+    );
+    appendMigrationEmpty(elements.migrationSourceList, "Source files have not been scanned.");
+    appendMigrationEmpty(elements.migrationPluginList, "Plugin inventory has not been scanned.");
+    appendMigrationEmpty(elements.migrationHotkeyList, "Hotkey overrides have not been scanned.");
+    appendMigrationEmpty(elements.migrationAppearance, "Appearance has not been scanned.");
+    appendMigrationEmpty(elements.migrationWorkspace, "Workspace layout has not been scanned.");
+    return;
+  }
+
+  const overviewCards = [
+    [
+      String(preview.plugins.filter((plugin) => plugin.enabledInObsidian).length),
+      "enabled Obsidian plugins",
+    ],
+    [
+      String(preview.plugins.filter((plugin) => plugin.settings.state === "shared").length),
+      "settings files shared in place",
+    ],
+    [
+      String(preview.hotkeys.filter((hotkey) => hotkey.state === "ready").length),
+      "reviewed hotkey candidates",
+    ],
+    [String(preview.workspace.restorablePaths.length), "restorable workspace tabs"],
+  ] as const;
+  for (const [value, label] of overviewCards) {
+    const card = document.createElement("span");
+    card.className = "migration-overview-card";
+    const count = document.createElement("strong");
+    count.textContent = value;
+    const copy = document.createElement("small");
+    copy.textContent = label;
+    card.append(count, copy);
+    elements.migrationOverview.append(card);
+  }
+
+  const sourceLabels = {
+    ready: "◆ Read",
+    absent: "◇ Absent",
+    invalid: "× Invalid",
+    oversized: "△ Too large",
+  } as const;
+  for (const source of preview.sources) {
+    const row = document.createElement("span");
+    row.className = "migration-row migration-source-row";
+    const copy = document.createElement("span");
+    const sourcePath = document.createElement("code");
+    sourcePath.textContent = source.path;
+    const detail = document.createElement("small");
+    detail.textContent = source.message ?? formatMigrationBytes(source.byteLength);
+    copy.append(sourcePath, detail);
+    row.append(copy, migrationBadge(sourceLabels[source.state], source.state));
+    elements.migrationSourceList.append(row);
+  }
+
+  for (const plugin of preview.plugins) {
+    const row = document.createElement("article");
+    row.className = "migration-row migration-plugin-row";
+    row.dataset.packageState = plugin.packageState;
+    const copy = document.createElement("span");
+    const nameLine = document.createElement("span");
+    nameLine.className = "migration-name-line";
+    const name = document.createElement("strong");
+    name.textContent = plugin.name;
+    const identity = document.createElement("code");
+    identity.textContent = plugin.version ? `${plugin.id} · ${plugin.version}` : plugin.id;
+    nameLine.append(name, identity);
+    const detail = document.createElement("small");
+    detail.textContent = plugin.message;
+    const settings = document.createElement("small");
+    settings.className = "migration-private-shape";
+    settings.textContent =
+      plugin.settings.state === "shared"
+        ? `Settings shape: ${plugin.settings.rootKind}, ${plugin.settings.topLevelEntryCount ?? 0} top-level entries, ${formatMigrationBytes(plugin.settings.byteLength)}. Values are hidden.`
+        : plugin.settings.message;
+    copy.append(nameLine, detail, settings);
+    const badges = document.createElement("span");
+    badges.className = "migration-badges";
+    badges.append(
+      migrationBadge(
+        plugin.enabledInObsidian ? "◆ Enabled in Obsidian" : "◇ Installed only",
+        plugin.enabledInObsidian ? "ready" : "absent",
+      ),
+      migrationBadge(
+        plugin.packageState === "ready"
+          ? "◆ Package valid"
+          : plugin.packageState === "missing"
+            ? "× Package missing"
+            : "× Package invalid",
+        plugin.packageState === "ready" ? "ready" : "invalid",
+      ),
+    );
+    if (plugin.selectedInThreadleaf) {
+      badges.append(migrationBadge("◆ Selected in Threadleaf", "selected"));
+    }
+    if (plugin.compatibility) {
+      badges.append(
+        migrationBadge(
+          plugin.compatibility.status === "verified"
+            ? `◆ Exact L${plugin.compatibility.level}`
+            : plugin.compatibility.status === "different-version"
+              ? "△ Version untested"
+              : "◇ Workflow unverified",
+          plugin.compatibility.status,
+        ),
+      );
+    }
+    row.append(copy, badges);
+    elements.migrationPluginList.append(row);
+  }
+  if (preview.plugins.length === 0) {
+    appendMigrationEmpty(
+      elements.migrationPluginList,
+      "No installed or enabled community plugins were found.",
+    );
+  }
+
+  for (const hotkey of preview.hotkeys) {
+    const row = document.createElement("span");
+    row.className = "migration-row migration-hotkey-row";
+    const copy = document.createElement("span");
+    const identity = document.createElement("code");
+    identity.textContent = hotkey.commandId;
+    const binding = document.createElement("strong");
+    binding.textContent = hotkey.bindings.join(" or ") || "No binding";
+    const detail = document.createElement("small");
+    detail.textContent = hotkey.message;
+    copy.append(identity, binding, detail);
+    row.append(
+      copy,
+      migrationBadge(
+        hotkey.state === "ready" ? "◆ Candidate ready" : "△ Review required",
+        hotkey.state,
+      ),
+    );
+    elements.migrationHotkeyList.append(row);
+  }
+  if (preview.hotkeys.length === 0) {
+    appendMigrationEmpty(elements.migrationHotkeyList, "No Obsidian hotkey overrides were found.");
+  }
+
+  appendMigrationFact(
+    elements.migrationAppearance,
+    "Base scheme",
+    preview.appearance.colorSchemeCandidate
+      ? `${preview.appearance.sourceColorScheme ?? "Default"} → ${preview.appearance.colorSchemeCandidate}`
+      : preview.appearance.sourceColorScheme
+        ? `${preview.appearance.sourceColorScheme} needs review`
+        : "No override",
+  );
+  appendMigrationFact(
+    elements.migrationAppearance,
+    "Community theme",
+    preview.appearance.sourceThemeName
+      ? preview.appearance.themeAvailable
+        ? `${preview.appearance.sourceThemeName} is available`
+        : `${preview.appearance.sourceThemeName} is missing`
+      : "No selection",
+  );
+  appendMigrationFact(
+    elements.migrationAppearance,
+    "CSS snippets",
+    `${preview.appearance.snippetIdsCandidate.length} available · ${preview.appearance.missingSnippetNames.length} missing`,
+  );
+
+  appendMigrationFact(
+    elements.migrationWorkspace,
+    "Layout source",
+    preview.workspace.sourcePath ?? "No workspace file",
+  );
+  appendMigrationFact(
+    elements.migrationWorkspace,
+    "Note tabs",
+    `${preview.workspace.restorablePaths.length} restorable · ${preview.workspace.missingPaths.length} missing`,
+  );
+  appendMigrationFact(
+    elements.migrationWorkspace,
+    "Active note",
+    preview.workspace.activePath ?? "No restorable active tab",
+  );
+  appendMigrationFact(
+    elements.migrationWorkspace,
+    "Other views",
+    preview.workspace.unsupportedViewTypes.length > 0
+      ? preview.workspace.unsupportedViewTypes
+          .map((view) => `${view.type} ×${view.count}`)
+          .join(" · ")
+      : "None detected",
+  );
+
+  for (const warning of preview.warnings) {
+    const item = document.createElement("li");
+    item.textContent = warning;
+    elements.migrationWarnings.append(item);
+  }
 }
 
 function renderPluginSettings(): void {
@@ -2549,6 +2882,9 @@ function openSettings(): void {
   if (!pluginCatalog || pluginCatalog.vaultId !== currentSnapshot?.vault.id) {
     void refreshPlugins();
   }
+  if (!migrationPreview || migrationPreview.vaultId !== currentSnapshot?.vault.id) {
+    void refreshMigrationPreview();
+  }
 }
 
 function closeSettings(restoreFocus = true): void {
@@ -2682,7 +3018,9 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
         ? elements.settingsNavAppearance
         : page === "plugins"
           ? elements.settingsNavPlugins
-          : elements.settingsNavHotkeys;
+          : page === "migration"
+            ? elements.settingsNavMigration
+            : elements.settingsNavHotkeys;
     target.focus();
   }
 }
@@ -2691,6 +3029,7 @@ function renderSettingsNavigation(): void {
   const pageDetails: Record<SettingsPage, { eyebrow: string; title: string }> = {
     appearance: { eyebrow: "Options", title: "Appearance" },
     plugins: { eyebrow: "Trusted runtime", title: "Community plugins" },
+    migration: { eyebrow: "Migration bridge", title: "Migration preview" },
     hotkeys: { eyebrow: "Keyboard", title: "Hotkeys" },
   };
   elements.settingsPageEyebrow.textContent = pageDetails[settingsPage].eyebrow;
@@ -2698,6 +3037,7 @@ function renderSettingsNavigation(): void {
   for (const [page, button] of [
     ["appearance", elements.settingsNavAppearance],
     ["plugins", elements.settingsNavPlugins],
+    ["migration", elements.settingsNavMigration],
     ["hotkeys", elements.settingsNavHotkeys],
   ] as const) {
     const active = page === settingsPage;
@@ -2724,7 +3064,9 @@ function renderSettings(): void {
       ? [appearanceMessage, appearanceMessageKind]
       : settingsPage === "plugins"
         ? [pluginMessage, pluginMessageKind]
-        : [settingsMessage, settingsMessageKind];
+        : settingsPage === "migration"
+          ? [migrationMessage, migrationMessageKind]
+          : [settingsMessage, settingsMessageKind];
   elements.settingsStatus.textContent =
     statusKind === "error" ? `Error: ${statusMessage}` : statusMessage;
   elements.settingsStatus.dataset.kind = statusKind;
@@ -2735,6 +3077,7 @@ function renderSettings(): void {
   renderSettingsNavigation();
   renderAppearanceSettings();
   renderPluginSettings();
+  renderMigrationSettings();
   if (!elements.settingsDialog.open) {
     return;
   }
@@ -3023,10 +3366,16 @@ function render(snapshot: RuntimeSnapshot): void {
     pluginCatalog = null;
     pluginStyle.textContent = "";
     lastPluginWarning = "";
+    migrationRequest += 1;
+    migrationBusy = false;
+    migrationPreview = null;
+    migrationMessage = "Inspecting existing Obsidian behavior for this vault.";
+    migrationMessageKind = "info";
     lastPluginEditorUpdateId = null;
     applyColorScheme(currentAppearancePreference().colorScheme);
     void refreshAppearance();
     void refreshPlugins();
+    void refreshMigrationPreview();
     void maybeMigrateLegacyTheme();
   }
   const workspace = snapshot.workspace;
@@ -3912,7 +4261,11 @@ elements.settingsDone.addEventListener("click", () => closeSettings());
 elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
 elements.settingsNavAppearance.addEventListener("click", () => setSettingsPage("appearance"));
 elements.settingsNavPlugins.addEventListener("click", () => setSettingsPage("plugins"));
+elements.settingsNavMigration.addEventListener("click", () => setSettingsPage("migration"));
 elements.settingsNavHotkeys.addEventListener("click", () => setSettingsPage("hotkeys"));
+elements.migrationRefresh.addEventListener("click", () => {
+  void refreshMigrationPreview("Read-only migration preview refreshed. Nothing was changed.");
+});
 elements.pluginModeToggle.addEventListener("click", () => {
   void setCompatibilityMode(
     currentPluginPreference().compatibilityMode === "restricted" ? "enabled" : "restricted",

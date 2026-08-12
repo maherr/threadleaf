@@ -134,6 +134,13 @@ light/dark chrome also render, and its stylesheet is preserved while four remote
 replaced with inert embedded assets. The runtime is still trusted:
 Node-capable plugin code can perform its own I/O.
 
+Settings now includes a read-only Migration preview for existing Obsidian behavior. It reports
+enabled and installed plugins, private settings-file shape without keys or values, reviewed hotkey
+candidates, appearance assets, and restorable note tabs through bounded contained reads. Refreshing
+the preview does not load plugins or change Threadleaf settings, `.obsidian/`, or vault files. There
+is no Apply action yet; behavior import remains an explicit future transaction rather than a side
+effect of opening a vault.
+
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
 or release-grade backup and restore workflow.
@@ -158,6 +165,7 @@ or release-grade backup and restore workflow.
 - [Compatibility contract](docs/compatibility/contract.md)
 - [Theme and CSS compatibility](docs/compatibility/themes.md)
 - [Community plugin compatibility](docs/compatibility/plugins.md)
+- [Obsidian behavior migration](docs/compatibility/migration.md)
 - [Roadmap](docs/roadmap.md)
 - [Performance baselines](docs/performance.md)
 - [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
@@ -214,6 +222,12 @@ start. Start with `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins` to suppress ev
 bundle and stylesheet for that process while keeping the catalog and saved selection visible.
 When a loaded plugin registers its own settings tab, an Options control opens that unchanged tab in
 the compatibility surface. Closing it runs the plugin's normal settings cleanup and save lifecycle.
+
+The Migration preview section reads known `.obsidian` metadata without loading community code. It
+shows what could be carried into Threadleaf and what still needs review. Plugin settings values stay
+hidden, Obsidian-enabled plugins remain disabled until explicitly selected in Community plugins,
+and Refresh performs no import. See the [migration contract](docs/compatibility/migration.md) for
+source limits and candidate rules.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

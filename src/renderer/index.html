@@ -324,6 +324,10 @@
               <span aria-hidden="true">◇</span>
               <span>Community plugins</span>
             </button>
+            <button id="settings-nav-migration" type="button" data-settings-target="migration">
+              <span aria-hidden="true">⇄</span>
+              <span>Migration preview</span>
+            </button>
             <button id="settings-nav-hotkeys" type="button" data-settings-target="hotkeys">
               <span aria-hidden="true">⌨</span>
               <span>Hotkeys</span>
@@ -416,6 +420,93 @@
             <button class="appearance-reset" id="appearance-reset" type="button">
               Disable custom theme and snippets
             </button>
+          </section>
+
+          <section
+            class="settings-page migration-settings"
+            data-settings-page="migration"
+            aria-labelledby="migration-heading"
+            hidden
+          >
+            <header class="settings-section-heading migration-heading">
+              <span>
+                <small>Existing Obsidian behavior</small>
+                <strong id="migration-heading">Migration preview</strong>
+              </span>
+              <span class="appearance-state" id="migration-state">Not scanned</span>
+            </header>
+
+            <article class="migration-safety-card">
+              <span class="migration-safety-mark" aria-hidden="true">◎</span>
+              <span>
+                <strong>Read-only preview, no import action yet</strong>
+                <small>
+                  Threadleaf inspects known <code>.obsidian/</code> metadata without loading plugins,
+                  copying private values, or changing any vault file. This screen proposes no
+                  automatic writes.
+                </small>
+              </span>
+              <button class="secondary-button" id="migration-refresh" type="button">
+                Refresh preview
+              </button>
+            </article>
+
+            <div class="migration-overview" id="migration-overview"></div>
+
+            <section class="migration-group" aria-labelledby="migration-sources-heading">
+              <header>
+                <span>
+                  <strong id="migration-sources-heading">Source files</strong>
+                  <small>Bounded, contained, read-only JSON inspection</small>
+                </span>
+              </header>
+              <div class="migration-list" id="migration-source-list"></div>
+            </section>
+
+            <section class="migration-group" aria-labelledby="migration-plugins-heading">
+              <header>
+                <span>
+                  <strong id="migration-plugins-heading">Plugins and private settings</strong>
+                  <small>Enablement inventory plus data.json shape, never values</small>
+                </span>
+              </header>
+              <div class="migration-list migration-plugin-list" id="migration-plugin-list"></div>
+            </section>
+
+            <section class="migration-group" aria-labelledby="migration-hotkeys-heading">
+              <header>
+                <span>
+                  <strong id="migration-hotkeys-heading">Hotkeys</strong>
+                  <small>Only behavior-tested command mappings can become candidates</small>
+                </span>
+              </header>
+              <div class="migration-list" id="migration-hotkey-list"></div>
+            </section>
+
+            <section class="migration-two-column">
+              <article class="migration-group" aria-labelledby="migration-appearance-heading">
+                <header>
+                  <span>
+                    <strong id="migration-appearance-heading">Appearance</strong>
+                    <small>Scheme, theme, and snippet candidates</small>
+                  </span>
+                </header>
+                <div class="migration-detail" id="migration-appearance"></div>
+              </article>
+              <article class="migration-group" aria-labelledby="migration-workspace-heading">
+                <header>
+                  <span>
+                    <strong id="migration-workspace-heading">Workspace</strong>
+                    <small>Restorable note tabs and unsupported views</small>
+                  </span>
+                </header>
+                <div class="migration-detail" id="migration-workspace"></div>
+              </article>
+            </section>
+
+            <div class="migration-diagnostics">
+              <ul id="migration-warnings" aria-label="Migration preview diagnostics"></ul>
+            </div>
           </section>
 
           <section

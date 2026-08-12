@@ -16,6 +16,7 @@ import type {
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
+import type { MigrationPreviewResponse } from "../shared/migration";
 import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
 
 const bridge: ThreadleafBridge = {
@@ -46,6 +47,11 @@ const bridge: ThreadleafBridge = {
     ) as Promise<PluginUpdateResponse>,
   reloadPlugins: (expectedVaultId) =>
     ipcRenderer.invoke(ipcChannels.reloadPlugins, expectedVaultId) as Promise<PluginUpdateResponse>,
+  getMigrationPreview: (expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.migrationPreview,
+      expectedVaultId,
+    ) as Promise<MigrationPreviewResponse>,
   searchVault: (query) =>
     ipcRenderer.invoke(ipcChannels.searchVault, query) as Promise<VaultSearchResponse>,
   loadVaultImage: (sourceNotePath, target, expectedVaultId) =>

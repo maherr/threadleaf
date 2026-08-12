@@ -68,6 +68,18 @@ compatibility fixture report their measured level 4 workflows. Another Excalidra
 the tested 2.25.3 reference but remains unverified at level 0. Every unknown valid package starts at
 discovered level 0. Invalid packages explain that validation stopped before a workflow could run.
 
+## Existing vault migration
+
+The Settings Migration preview combines Obsidian's enabled-plugin inventory with this installed
+package catalog and exact-version evidence. It does not select or execute a plugin. A bounded
+`data.json` inspection reports only file size, JSON root kind, and top-level entry count; keys and
+values never enter the application renderer. The settings file remains shared in place, so a plugin
+the user later enables can still use its normal `loadData` and `saveData` lifecycle.
+
+Plugin selection remains a separate explicit action in Community plugins. The broader
+[behavior migration contract](migration.md) covers hotkeys, appearance, snippets, and workspace
+tabs as well as plugin inventory.
+
 Vault resources now expose contained browser URLs through `Vault.getResourcePath`. The compatible
 desktop `FileSystemAdapter` provides `basePath`, `url.pathToFileURL`, `getBasePath`, `getFilePath`,
 `getResourcePath`, `exists`, `stat`, `list`, `read`, and `readBinary`. It can read hidden files as
@@ -172,7 +184,7 @@ starting normally restores the persisted preference.
 
 - Per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
 - Static capability and permission reporting before enablement.
-- An explicit import preview for existing enabled-plugin inventory, settings, hotkeys, and layout.
+- Explicit apply, rollback, and conflict handling for reviewed migration candidates.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
 - Broader workspace, editor, settings-control, conversion, adapter-mutation, file, and

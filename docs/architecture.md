@@ -62,6 +62,23 @@ compatibility input when needed but is never Threadleaf's state directory. The v
 the state root through a port so tests can isolate it and each operating system can use its standard
 application-data location.
 
+### Behavior migration boundary
+
+Migration is separate from vault opening and plugin discovery. A read-only main-process loader
+inspects a fixed set of bounded `.obsidian` JSON sources through realpath containment, then returns
+only typed summaries to the sandboxed application renderer. Plugin settings summaries contain byte
+length, JSON root kind, and top-level entry count, never keys or values. Plugin JavaScript is not
+loaded. Malformed parser details are reduced to generic diagnostics so source fragments cannot be
+reflected into the UI.
+
+The preview combines Obsidian-enabled plugin IDs with Threadleaf's independently discovered package
+catalog and exact-version workflow evidence. Hotkeys, appearance, and workspace paths become
+candidates only through reviewed mappings and contained file checks. Main-area Markdown and
+Excalidraw note tabs are previewable; every unsupported workspace view remains an explicit count.
+The loader has no write port, and the renderer exposes no Apply action. A future apply transaction
+will write only Threadleaf's private versioned settings after per-item review. The full source,
+candidate, and limit contract is documented in [Obsidian behavior migration](compatibility/migration.md).
+
 ### Compatibility module
 
 Existing plugin bundles request `require("obsidian")`. Threadleaf supplies an independently
@@ -521,7 +538,7 @@ Capability host ---> native Threadleaf extension
 - Native extension SDK license and capability vocabulary.
 - Inline live-preview editor architecture and fine-grained cursor mapping.
 - Metadata schema and migration strategy.
-- Behavior-import schema for hotkeys, themes, CSS, plugin settings, and workspace layout.
+- Behavior-import apply, rollback, and conflict semantics for the existing preview schema.
 - Public benchmark corpora, target devices, and regression budgets.
 - Packaging, signing, and update channels.
 - Encrypted object format, key hierarchy, recovery model, and residual-metadata budget.

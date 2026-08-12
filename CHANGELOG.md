@@ -114,6 +114,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Pre-enablement plugin reports with the declared Obsidian API baseline, desktop-only flag,
   standard bundled-dependency model, and exact-version compatibility evidence. Unknown versions
   remain visibly discovered at level 0 instead of inheriting another release's test result.
+- Read-only Obsidian behavior migration preview for enabled and installed plugins, settings-file
+  shape without private keys or values, reviewed hotkey candidates, appearance assets, and
+  restorable note tabs, with bounded contained reads and exact source-byte preservation.
 - Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the
   private selected set while loading no community JavaScript or CSS.
 - Dedicated Electron compatibility renderer with Node integration isolated from the sandboxed main
@@ -181,6 +184,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Settings now opens during startup background scans, so a clickable Settings control cannot fail
+  silently while plugin and appearance catalogs are still loading.
 - Electron shutdown now waits for watcher and plugin cleanup, coalesces repeated quit events, and
   still reaches the final quit when cleanup reports an error.
 - Compatibility views now await public `onOpen` and `onClose` hooks around state and component

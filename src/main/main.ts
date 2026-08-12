@@ -42,6 +42,7 @@ import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { createGracefulShutdownHandler } from "./graceful-shutdown";
+import { loadObsidianMigrationPreview } from "./obsidian-migration-loader";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
@@ -245,6 +246,25 @@ async function currentPluginCatalog(expectedVaultId: string): Promise<PluginCata
     return { status: "stale-vault", vaultId: workspaceController.vaultId };
   }
   return { status: "ready", catalog };
+}
+
+async function currentMigrationPreview(expectedVaultId: string) {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+  }
+  const vaultPath = workspaceController.vaultPath;
+  const preview = await loadObsidianMigrationPreview({
+    vaultPath,
+    vaultId: expectedVaultId,
+    selectedPluginIds: settingsController.getVaultPlugins(expectedVaultId).enabledPluginIds,
+  });
+  if (
+    workspaceController.vaultId !== expectedVaultId ||
+    workspaceController.vaultPath !== vaultPath
+  ) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+  }
+  return { status: "ready", preview } as const;
 }
 
 async function reconcileCompatibilityPlugins(expectedVaultId: string, forceReload = false) {
@@ -602,6 +622,12 @@ function registerIpcHandlers(): void {
     return serializePluginOperation(() =>
       pluginUpdateResponse(expectedVaultId, settingsController.getSnapshot(), true),
     );
+  });
+  ipcMain.handle(ipcChannels.migrationPreview, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Migration preview requires a string vault identity.");
+    }
+    return currentMigrationPreview(expectedVaultId);
   });
   ipcMain.handle(ipcChannels.searchVault, (_event, query: unknown) => {
     if (typeof query !== "string") {

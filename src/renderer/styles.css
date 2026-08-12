@@ -2369,6 +2369,7 @@ button.inspector-item:hover {
 
 .appearance-settings,
 .plugin-settings,
+.migration-settings,
 .keyboard-settings {
   width: min(100%, 760px);
   box-sizing: border-box;
@@ -3021,6 +3022,283 @@ button.inspector-item:hover {
 }
 
 #plugin-warnings li {
+  padding: 7px 9px;
+  border-left: 3px dashed var(--signal);
+  color: var(--ink-soft);
+  background: var(--signal-soft);
+  font-size: 8px;
+}
+
+.migration-settings {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.migration-safety-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-left: 4px double var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+
+.migration-safety-mark {
+  color: var(--accent-strong);
+  font-size: 22px;
+}
+
+.migration-safety-card > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.migration-safety-card strong {
+  font-size: 11px;
+}
+
+.migration-safety-card small {
+  color: var(--ink-soft);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.migration-safety-card code {
+  font-family: var(--mono);
+  font-size: 0.95em;
+}
+
+.migration-safety-card .secondary-button {
+  min-height: 32px;
+  flex: 0 0 auto;
+  padding: 0 11px;
+  font-size: 8px;
+}
+
+.migration-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.migration-overview-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+}
+
+.migration-overview-card strong {
+  min-width: 24px;
+  color: var(--accent-strong);
+  font: 800 17px var(--mono);
+  text-align: center;
+}
+
+.migration-overview-card small {
+  color: var(--ink-soft);
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.migration-group {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.migration-group > header {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.migration-group > header > span {
+  display: grid;
+  gap: 2px;
+}
+
+.migration-group > header strong {
+  font-size: 10px;
+}
+
+.migration-group > header small {
+  color: var(--ink-muted);
+  font-size: 7px;
+}
+
+.migration-list {
+  display: grid;
+}
+
+.migration-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.migration-row:last-child {
+  border-bottom: 0;
+}
+
+.migration-row > span:first-child,
+.migration-plugin-row > span:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.migration-row code,
+.migration-name-line code {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font: 7px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.migration-row small {
+  color: var(--ink-soft);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.migration-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.migration-name-line strong {
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.migration-private-shape {
+  padding-left: 7px;
+  border-left: 2px dotted var(--accent);
+  font-family: var(--mono);
+}
+
+.migration-badges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  width: min(235px, 35vw);
+}
+
+.migration-badge {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: var(--surface-sunken);
+  font: 750 7px var(--mono);
+  white-space: nowrap;
+}
+
+.migration-badge[data-state="ready"],
+.migration-badge[data-state="verified"],
+.migration-badge[data-state="selected"] {
+  border-style: double;
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.migration-badge[data-state="review"],
+.migration-badge[data-state="different-version"],
+.migration-badge[data-state="oversized"] {
+  border-style: dashed;
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.migration-badge[data-state="invalid"] {
+  border: 2px dashed var(--signal);
+  color: var(--signal);
+}
+
+.migration-hotkey-row strong {
+  font: 800 9px var(--mono);
+}
+
+.migration-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.migration-detail {
+  display: grid;
+  padding: 3px 10px 8px;
+}
+
+.migration-fact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 1px;
+  border-bottom: 1px dotted var(--line-strong);
+}
+
+.migration-fact:last-child {
+  border-bottom: 0;
+}
+
+.migration-fact small {
+  color: var(--ink-muted);
+  font: 7px var(--mono);
+  text-transform: uppercase;
+}
+
+.migration-fact strong {
+  overflow-wrap: anywhere;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.migration-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 13px 11px;
+  color: var(--ink-muted);
+  font-size: 8px;
+  text-align: center;
+}
+
+.migration-diagnostics ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.migration-diagnostics li {
   padding: 7px 9px;
   border-left: 3px dashed var(--signal);
   color: var(--ink-soft);
@@ -3728,6 +4006,7 @@ button.inspector-item:hover {
 
   .appearance-settings,
   .plugin-settings,
+  .migration-settings,
   .keyboard-settings {
     padding-right: 16px;
     padding-left: 16px;
@@ -3756,9 +4035,28 @@ button.inspector-item:hover {
   }
 
   .plugin-mode-card,
-  .plugin-summary-row {
+  .plugin-summary-row,
+  .migration-safety-card {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .migration-safety-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .migration-safety-card .secondary-button {
+    grid-column: 1 / -1;
+  }
+
+  .migration-row,
+  .migration-two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .migration-badges {
+    justify-content: flex-start;
+    width: auto;
   }
 
   .plugin-mode-card .secondary-button,

@@ -31,3 +31,16 @@ need. Any replacement remains disposable and exactly rebuildable from canonical 
 Phase 3 expands this microbenchmark into public filesystem-backed corpora covering cold startup,
 index rebuilds, watcher bursts, attachments, memory pressure, plugin activation, and representative
 query distributions across supported desktop platforms.
+
+## Large mixed-workspace cold-start observation
+
+A manual production-path probe on 2026-08-12 pointed Threadleaf at a 54 GB mixed-content workspace
+used as a vault root. No application window became ready within 60 seconds. The current startup path
+recursively builds the complete in-memory vault index before creating the first window, so unrelated
+files and deep trees block first paint.
+
+This is an open performance defect, not a benchmark result and not a migration-preview failure. A
+small copied vault containing the same `.obsidian` metadata and active notes rendered the preview
+normally. The required fix is to decouple first window creation from complete indexing, publish
+progress, prioritize visible Markdown, and move the remaining crawl behind a cancellable bounded
+startup task. The public large-vault corpus and regression budget remain pending.

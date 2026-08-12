@@ -139,7 +139,9 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       contained bounded reads, with deterministic identity and explicit invalid-package evidence.
 - [x] Keep Threadleaf's enabled-plugin set in private per-vault settings without treating existing
       Obsidian configuration as authority.
-- [ ] Add capability grants and an explicit migration preview for existing plugin enablement.
+- [ ] Add capability grants before plugin enablement.
+- [x] Add a read-only migration preview for existing plugin enablement, settings-file shape,
+      exact-version compatibility evidence, and missing packages without loading or selecting code.
 - [x] Implement enable, disable, reload, startup safe mode, lifecycle diagnostics, independent
       failure retention, and clean unload for every discovered compatibility plugin.
 - [x] Add renderer-wide operation deadlines, forced termination, crash attribution, clean runtime
@@ -150,9 +152,11 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [x] Add minimum-app-version, desktop-only, standard bundled-dependency-model, and exact-version
       compatibility-level reporting before a plugin can be enabled.
 - [ ] Add static capability and permission reporting before enablement.
-- [ ] Import behavior with an explicit preview: enabled-plugin inventory, compatible plugin
-      settings, hotkeys, themes, CSS snippets, and workspace layout. Never require or mutate
-      `.obsidian/`.
+- [x] Preview enabled-plugin inventory, settings-file shape without private values, reviewed hotkey
+      mappings, themes, CSS snippets, and restorable workspace note tabs through bounded contained
+      reads. Never require or mutate `.obsidian/`.
+- [ ] Apply only explicitly reviewed behavior candidates to Threadleaf's private settings, with
+      per-item selection, conflict reporting, rollback, and no `.obsidian/` writes.
 - [ ] Publish a generated plugin compatibility registry with supported workflows, failures,
       required permissions, platform limits, and the last tested plugin and Threadleaf versions.
 - [ ] Publish benchmark vaults and regression budgets for cold start, full rebuild, watcher bursts,

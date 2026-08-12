@@ -1,5 +1,6 @@
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
+import type { MigrationPreviewResponse } from "./migration";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 
 export type AppearanceUpdateResponse =
@@ -378,6 +379,7 @@ export interface ThreadleafBridge {
     enabled: boolean,
   ): Promise<PluginUpdateResponse>;
   reloadPlugins(expectedVaultId: string): Promise<PluginUpdateResponse>;
+  getMigrationPreview(expectedVaultId: string): Promise<MigrationPreviewResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   loadVaultImage(
     sourceNotePath: string,
