@@ -200,6 +200,22 @@ describe("Threadleaf CLI arguments", () => {
       filePath: "Folder/Note.md",
       propertyName: "priority",
     });
+    expect(
+      parseCliArguments(["--vault=/vault", "tasks", "path=Folder/Note.md", "todo", "verbose"]),
+    ).toMatchObject({
+      id: "tasks",
+      filePath: "Folder/Note.md",
+      filter: { kind: "todo" },
+      verbose: true,
+    });
+    expect(
+      parseCliArguments(["--vault=/vault", "task", "ref=Folder/Note.md:12", "status=?"]),
+    ).toMatchObject({
+      id: "task",
+      filePath: "Folder/Note.md",
+      line: 12,
+      mutation: { kind: "set", status: "?" },
+    });
     for (const name of ["links", "backlinks", "outline"] as const) {
       expect(parseCliArguments(["--vault=/vault", name, "path=Folder/Note.md"])).toMatchObject({
         id: name,
@@ -264,6 +280,13 @@ describe("Threadleaf CLI arguments", () => {
     expect(() => parseCliArguments(["--vault=/vault", "property:remove", "path=Note.md"])).toThrow(
       "requires name=<name>",
     );
+    expect(() => parseCliArguments(["--vault=/vault", "tasks", "done", "status=x"])).toThrow(
+      "only one of done",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "task", "ref=Note.md"])).toThrow("path:line");
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "task", "path=Note.md", "line=1", "status=xx"]),
+    ).toThrow("one character");
   });
 
   it("shows help without requiring a vault", async () => {
@@ -443,6 +466,20 @@ describe("Threadleaf CLI create workflow", () => {
     ]);
     expect(propertyResult.exitCode).toBe(cliExitCodes.conflict);
     expect(JSON.parse(propertyResult.stderr)).toMatchObject({
+      error: { code: "CONFLICT", details: { status: "busy" } },
+    });
+
+    const taskResult = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "task",
+      "path=Alpha.md",
+      "line=1",
+      "toggle",
+    ]);
+    expect(taskResult.exitCode).toBe(cliExitCodes.conflict);
+    expect(JSON.parse(taskResult.stderr)).toMatchObject({
       error: { code: "CONFLICT", details: { status: "busy" } },
     });
     await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(alphaBefore);
@@ -1056,6 +1093,126 @@ describe("Threadleaf CLI property workflows", () => {
     expect(privatePath.exitCode).toBe(cliExitCodes.vault);
     expect(JSON.parse(privatePath.stderr)).toMatchObject({
       command: "property.remove",
+      error: { code: "VAULT" },
+    });
+  });
+});
+
+describe("Threadleaf CLI task workflows", () => {
+  it("lists exact task records with status filters, totals, and verbose locations", async () => {
+    await fs.appendFile(
+      path.join(vaultPath, "Alpha.md"),
+      "\n- [ ] first\n- [x] done\n- [?] waiting\n",
+      "utf8",
+    );
+    await fs.appendFile(path.join(vaultPath, "Folder", "Beta.md"), "- [X] other done\n", "utf8");
+
+    const todo = await invoke(["--json", "--vault", vaultPath, "tasks", "todo"]);
+    expect(todo.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(todo.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "tasks",
+      data: {
+        filter: { kind: "todo" },
+        total: 2,
+        tasks: [
+          { path: "Alpha.md", line: 8, status: " ", completed: false, text: "first" },
+          { path: "Alpha.md", line: 10, status: "?", completed: false, text: "waiting" },
+        ],
+      },
+    });
+
+    const custom = await invoke([
+      "--vault",
+      vaultPath,
+      "tasks",
+      "path=Alpha.md",
+      "status=?",
+      "verbose",
+    ]);
+    expect(custom).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Alpha.md:10\t- [?] waiting\n",
+      stderr: "",
+    });
+
+    const doneTotal = await invoke(["--vault", vaultPath, "tasks", "done", "total"]);
+    expect(doneTotal.stdout).toBe("2\n");
+  });
+
+  it("reads and recovery-writes exact path:line task statuses without normalizing other bytes", async () => {
+    const before = "\ufeff- [ ] first  \r\n- [?] waiting `code`\r\n- [X] done\r\n";
+    await fs.writeFile(path.join(vaultPath, "Tasks.md"), before, "utf8");
+
+    const read = await invoke(["--vault", vaultPath, "task", "ref=Tasks.md:2"]);
+    expect(read).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Tasks.md:2\t- [?] waiting `code`\n",
+      stderr: "",
+    });
+
+    const done = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "task",
+      "path=Tasks.md",
+      "line=1",
+      "done",
+    ]);
+    expect(JSON.parse(done.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "task",
+      data: {
+        status: "committed",
+        task: { path: "Tasks.md", line: 1, status: "x", completed: true, text: "first" },
+        revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+
+    const unchanged = await invoke(["--vault", vaultPath, "task", "ref=Tasks.md:1", "done"]);
+    expect(unchanged.stdout).toBe("Task already has that status: Tasks.md:1\t- [x] first\n");
+
+    const custom = await invoke(["--vault", vaultPath, "task", "ref=Tasks.md:2", "status=🟡"]);
+    expect(custom.stdout).toBe("Updated task: Tasks.md:2\t- [🟡] waiting `code`\n");
+
+    const toggled = await invoke(["--vault", vaultPath, "task", "ref=Tasks.md:3", "toggle"]);
+    expect(toggled.stdout).toBe("Updated task: Tasks.md:3\t- [ ] done\n");
+    await expect(fs.readFile(path.join(vaultPath, "Tasks.md"), "utf8")).resolves.toBe(
+      before.replace("[ ]", "[x]").replace("[?]", "[🟡]").replace("[X]", "[ ]"),
+    );
+  });
+
+  it("fails closed for a non-task line or private application path", async () => {
+    const before = await fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8");
+    const missing = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "task",
+      "path=Alpha.md",
+      "line=5",
+      "toggle",
+    ]);
+    expect(missing.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(missing.stderr)).toMatchObject({
+      command: "task",
+      error: { code: "VAULT", message: expect.stringContaining("No Markdown task") },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Alpha.md"), "utf8")).resolves.toBe(before);
+
+    const privatePath = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "tasks",
+      "path=.obsidian/Hidden.md",
+    ]);
+    expect(privatePath.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(privatePath.stderr)).toMatchObject({
+      command: "tasks",
       error: { code: "VAULT" },
     });
   });

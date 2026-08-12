@@ -63,6 +63,11 @@ Headless property commands list and read the current indexed projection, then se
 top-level YAML properties through a byte-preserving, revision-checked application service. The
 writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated
 frontmatter and body bytes, and refuses complex YAML shapes instead of reserializing them blindly.
+Headless task commands scan ordinary Markdown list checkboxes across the vault or one exact note,
+filter complete, incomplete, and custom statuses, and address one task by its exact source line.
+Toggle, done, todo, and custom-status mutations replace only the checkbox character through the
+recoverable writer. Unrelated bytes remain exact, no-op requests do not write, and an external-edit
+race keeps the proposed note as a conflict copy.
 Runtime-owned tabs keep one
 ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
 externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
@@ -145,7 +150,8 @@ This non-packaged development override is not persisted and is ignored by packag
 `pnpm check` gate verifies the packaged Electron entry points and confirms that renderer assets
 remain loadable over `file://`. It also executes the built CLI against disposable synthetic-vault
 copies, validates its versioned JSON envelope, proves an exact property set/read/remove round trip,
-and proves exact-byte delete and restore behavior.
+proves an exact task read/status/toggle round trip, and proves exact-byte delete and restore
+behavior.
 
 The development CLI requires an explicit vault and never consults the desktop application's saved
 selection:
@@ -173,6 +179,9 @@ pnpm cli --vault /absolute/path/to/vault property:read path="Projects/Brief.md" 
 pnpm cli --vault /absolute/path/to/vault property:set path="Projects/Brief.md" name=status value=review
 pnpm cli --vault /absolute/path/to/vault property:set path="Projects/Brief.md" name=aliases 'value=["Brief","Overview"]' type=list
 pnpm cli --vault /absolute/path/to/vault property:remove path="Projects/Brief.md" name=status
+pnpm cli --vault /absolute/path/to/vault tasks todo verbose
+pnpm cli --vault /absolute/path/to/vault task ref="Daily/Today.md:12" done
+pnpm cli --vault /absolute/path/to/vault task path="Daily/Today.md" line=12 status="?"
 ```
 
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported

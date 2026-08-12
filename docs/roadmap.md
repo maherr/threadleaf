@@ -102,6 +102,8 @@ equivalence through the real writer-to-watcher seam.
       alias and anchor retention, relative Markdown paths, ambiguity refusal, and final-index proof.
 - [x] Crash-recoverable compound note moves that apply validated link rewrites and rename under one
       parent journal, with reverse rollback, conflict copies, and desktop and CLI confirmation.
+- [x] Headless task listing and exact `path:line` reads plus recovery-backed toggle, done, todo, and
+      custom-status mutation, with code and comment exclusion, no-op detection, and conflict copies.
 - [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.

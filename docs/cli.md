@@ -32,6 +32,8 @@ threadleaf --vault /path/to/vault properties path="Folder/Note.md"
 threadleaf --vault /path/to/vault property:read path="Folder/Note.md" name=status
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status value=review
 threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
+threadleaf --vault /path/to/vault tasks [path="Folder/Note.md"] [done|todo|status="?"] [total|verbose]
+threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" [toggle|done|todo|status="?"]
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
@@ -60,6 +62,8 @@ During development, prefix the same arguments with `pnpm cli`.
 | `property:read` | One indexed property value or an explicit absent result | Derived metadata index |
 | `property:set` | Typed property value, note revision, and transaction | Revision-checked recoverable writer |
 | `property:remove` | Committed removal or explicit no-write missing result | Revision-checked recoverable writer |
+| `tasks` | Vault-wide or exact-note Markdown tasks with status filters and optional count/location output | Read-only kernel plus Markdown task scanner |
+| `task` | One exact `path:line` task, optionally with a new checkbox status | Read-only scanner or revision-checked recoverable writer |
 
 The note corpus excludes `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts.
 Read-only kernel opening performs path validation but creates no state directory, vault identity,
@@ -144,6 +148,21 @@ keys, JSON frontmatter, nested mappings, and block scalars are refused before an
 first patcher cannot yet preserve them losslessly. A revision race keeps the external winner at the
 requested path, stores the complete proposed file as a conflict copy, and returns exit 5.
 
+`tasks` scans every indexed Markdown note or one exact `path=` or `file=` target. With no filter it
+returns all recognized tasks. `done` means status `x` or `X`; `todo` means every other status, so
+custom statuses remain visible. `status=<char>` matches one exact Unicode character. Human output
+is checkbox text by default, `verbose` prefixes `path:line`, and `total` prints only the matching
+count. Versioned JSON always includes the full matching records and their count.
+
+`task` reads or mutates one task addressed by `ref=<path:line>` or by exact `path=` plus `line=`.
+`toggle` changes `x` or `X` to a space and every other status to `x`; `done` sets `x`, `todo` sets a
+space, and `status=<char>` sets one custom character. The scanner recognizes unordered and ordered
+list checkboxes, including nested and quoted tasks, while excluding fenced code, inline code, and
+HTML comments. Mutation changes only the status range and preserves the BOM, LF or CRLF endings,
+task text, indentation, and all unrelated bytes. Setting the current status succeeds without a
+write. A revision race keeps the external winner, stores the complete proposed note as a conflict
+copy, and returns exit 5.
+
 ## JSON contract
 
 Add `--json` anywhere before `--` to receive a versioned success envelope on standard output:
@@ -171,7 +190,7 @@ shape with `ok: false` and a stable error code. Without it, standard error recei
 | 2 | `USAGE` | Invalid command, option, or argument |
 | 3 | `VAULT` | Vault, path, UTF-8, or indexed-note failure |
 | 4 | `QUERY` | Search query exceeds the documented bounds |
-| 5 | `CONFLICT` | A target exists, a write race was preserved, link updates need confirmation, link integrity blocks a move, trash recovery collides, or another CLI mutation is active |
+| 5 | `CONFLICT` | A target exists, a write or task race was preserved, link updates need confirmation, link integrity blocks a move, trash recovery collides, or another CLI mutation is active |
 
 ## Compatibility spellings
 
@@ -198,6 +217,9 @@ threadleaf --vault /path/to/vault property:read path="Folder/Note.md" name=statu
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status value=review
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=aliases 'value=["First","Second"]' type=list
 threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
+threadleaf --vault /path/to/vault tasks file="Folder/Note.md" todo verbose
+threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" toggle
+threadleaf --vault /path/to/vault task path="Folder/Note.md" line=12 status="?"
 ```
 
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
@@ -215,8 +237,9 @@ native `--update-links` confirmation flag. Threadleaf accepts the public propert
 parameter spellings, but its lossless frontmatter
 subset and native JSON contract are narrower than a complete compatibility claim. Threadleaf does
 not yet accept Obsidian's `open`, `overwrite`, or template parameters, active-file defaults,
-basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags. `trash list`,
-`trash:list`, and `restore` are native Threadleaf recovery commands rather than claimed Obsidian CLI
-compatibility.
+basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags. The task
+subset does not yet support `active`, `daily`, basename-based `file=` resolution, or alternate
+`format` output. `trash list`, `trash:list`, and `restore` are native Threadleaf recovery commands
+rather than claimed Obsidian CLI compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).

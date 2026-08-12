@@ -200,13 +200,17 @@ function maskInlineCode(mask: string[]): void {
   }
 }
 
-export function parseMarkdownLinks(content: string): ParsedMarkdownLink[] {
-  const links: ParsedMarkdownLink[] = [];
+export function maskMarkdownCodeAndComments(content: string): string {
   const mask = content.split("");
   maskFencedCode(content, mask);
   maskHtmlComments(mask);
   maskInlineCode(mask);
-  const searchable = mask.join("");
+  return mask.join("");
+}
+
+export function parseMarkdownLinks(content: string): ParsedMarkdownLink[] {
+  const links: ParsedMarkdownLink[] = [];
+  const searchable = maskMarkdownCodeAndComments(content);
   const lines = content.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
   const searchableLines = searchable.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
   let offset = 0;

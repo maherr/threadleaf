@@ -236,6 +236,13 @@ number, checkbox, date, and datetime inputs are validated before a proposal exis
 quoted or spaced keys, JSON frontmatter, nested mappings, and block scalars fail closed in this
 initial boundary. A revision race preserves the complete proposed file as a conflict copy.
 
+Task inspection uses a shared Markdown scanner over the authoritative note bytes. It recognizes
+unordered and ordered list checkboxes, retains one-based source lines and exact status ranges, and
+uses the link parser's masking pass to exclude fenced code, inline code, and HTML comments. A task
+mutation replaces only that status range against the revision that was read. A matching requested
+status returns without invoking the writer; a revision race preserves the complete proposed note
+as a conflict copy.
+
 Move and rename add a link-integrity preflight in front of the recoverable rename primitive. The
 service snapshots the Markdown corpus, builds the current metadata index, projects the source at
 its proposed destination, and builds the projected index from the same bytes. Every parsed wiki and

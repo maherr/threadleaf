@@ -10,6 +10,13 @@ import {
   removeMarkdownNoteProperty,
   setMarkdownNoteProperty,
 } from "../application/note-properties";
+import {
+  listMarkdownTasks,
+  type MarkdownTaskMutation,
+  type MarkdownTaskRecord,
+  mutateMarkdownTask,
+  readMarkdownTask,
+} from "../application/note-task";
 import { mutateMarkdownNoteText } from "../application/note-text-mutation";
 import {
   listTrashedMarkdownNotes,
@@ -17,6 +24,7 @@ import {
   trashMarkdownNote,
 } from "../application/note-trash";
 import { maxSearchResults, SearchQueryError } from "../kernel/full-text-search";
+import { normalizeMarkdownTaskStatus } from "../kernel/markdown-tasks";
 import {
   type DocumentMetadataSnapshot,
   type LinkMetadata,
@@ -67,7 +75,9 @@ type CliCommandId =
   | "properties"
   | "property.read"
   | "property.set"
-  | "property.remove";
+  | "property.remove"
+  | "tasks"
+  | "task";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -165,6 +175,27 @@ interface CliPropertyRemoveCommand extends CliVaultCommand {
   propertyName: string;
 }
 
+type CliTaskFilter =
+  | { kind: "all" }
+  | { kind: "done" }
+  | { kind: "todo" }
+  | { kind: "status"; status: string };
+
+interface CliTasksCommand extends CliVaultCommand {
+  id: "tasks";
+  filePath: string | null;
+  filter: CliTaskFilter;
+  totalOnly: boolean;
+  verbose: boolean;
+}
+
+interface CliTaskCommand extends CliVaultCommand {
+  id: "task";
+  filePath: string;
+  line: number;
+  mutation: MarkdownTaskMutation | null;
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
@@ -181,7 +212,9 @@ export type ParsedCliCommand =
   | CliPropertiesCommand
   | CliPropertyReadCommand
   | CliPropertySetCommand
-  | CliPropertyRemoveCommand;
+  | CliPropertyRemoveCommand
+  | CliTasksCommand
+  | CliTaskCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -317,6 +350,25 @@ function requiredPropertyName(parameters: PropertyParameters, commandName: strin
     );
   }
   return parameters.name;
+}
+
+function parseTaskReference(value: string): { filePath: string; line: number } {
+  const match = /^(.*):([1-9][0-9]*)$/.exec(value);
+  if (!match?.[1] || !match[2]) {
+    usageFailure("task ref requires an exact path:line value.");
+  }
+  return {
+    filePath: match[1],
+    line: parsePositiveInteger(match[2], "line"),
+  };
+}
+
+function taskStatusArgument(value: string): string {
+  try {
+    return normalizeMarkdownTaskStatus(value);
+  } catch (error) {
+    usageFailure(error instanceof Error ? error.message : String(error));
+  }
 }
 
 export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
@@ -535,6 +587,131 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure(`${name} requires a non-empty Markdown path.`);
     }
     return { id: name, json, vaultPath, filePath };
+  }
+  if (name === "tasks") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("tasks accepts parameter=value arguments and task flags only.");
+    }
+    let filePath: string | null = null;
+    let filter: CliTaskFilter = { kind: "all" };
+    let totalOnly = false;
+    let verbose = false;
+    const setFilter = (next: CliTaskFilter): void => {
+      if (filter.kind !== "all") {
+        usageFailure("tasks accepts only one of done, todo, or status=<char>.");
+      }
+      filter = next;
+    };
+    for (const value of values) {
+      if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (filePath !== null) {
+          usageFailure("tasks accepts only one note path.");
+        }
+        filePath = value.slice(value.indexOf("=") + 1);
+        if (!filePath) {
+          usageFailure("tasks path requires a value.");
+        }
+      } else if (value.startsWith("status=")) {
+        setFilter({ kind: "status", status: taskStatusArgument(value.slice("status=".length)) });
+      } else if (value === "done") {
+        setFilter({ kind: "done" });
+      } else if (value === "todo") {
+        setFilter({ kind: "todo" });
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure("tasks total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else if (value === "verbose") {
+        if (verbose) {
+          usageFailure("tasks verbose may be supplied only once.");
+        }
+        verbose = true;
+      } else if (value === "active" || value === "daily") {
+        usageFailure(`tasks ${value} is not available in the headless native subset yet.`);
+      } else {
+        usageFailure(`Unsupported tasks argument: ${value}`);
+      }
+    }
+    return { id: "tasks", json, vaultPath, filePath, filter, totalOnly, verbose };
+  }
+  if (name === "task") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("task accepts path, line, ref, and one mutation flag only.");
+    }
+    let filePath: string | null = null;
+    let line: number | null = null;
+    let reference: { filePath: string; line: number } | null = null;
+    let mutation: MarkdownTaskMutation | null = null;
+    const setMutation = (next: MarkdownTaskMutation): void => {
+      if (mutation !== null) {
+        usageFailure("task accepts only one of toggle, done, todo, or status=<char>.");
+      }
+      mutation = next;
+    };
+    for (const value of values) {
+      if (value.startsWith("ref=")) {
+        if (reference !== null) {
+          usageFailure("task ref may be supplied only once.");
+        }
+        reference = parseTaskReference(value.slice("ref=".length));
+      } else if (value.startsWith("path=") || value.startsWith("file=")) {
+        if (filePath !== null) {
+          usageFailure("task accepts only one note path.");
+        }
+        filePath = value.slice(value.indexOf("=") + 1);
+        if (!filePath) {
+          usageFailure("task path requires a value.");
+        }
+      } else if (value.startsWith("line=")) {
+        if (line !== null) {
+          usageFailure("task line may be supplied only once.");
+        }
+        line = parsePositiveInteger(value.slice("line=".length), "line");
+      } else if (value.startsWith("status=")) {
+        setMutation({
+          kind: "set",
+          status: taskStatusArgument(value.slice("status=".length)),
+        });
+      } else if (value === "toggle") {
+        setMutation({ kind: "toggle" });
+      } else if (value === "done") {
+        setMutation({ kind: "set", status: "x" });
+      } else if (value === "todo") {
+        setMutation({ kind: "set", status: " " });
+      } else if (value === "daily") {
+        usageFailure("task daily is not available in the headless native subset yet.");
+      } else {
+        usageFailure(`Unsupported task argument: ${value}`);
+      }
+    }
+    if (reference !== null) {
+      if (filePath !== null || line !== null) {
+        usageFailure("task accepts ref or path plus line, not both.");
+      }
+      filePath = reference.filePath;
+      line = reference.line;
+    }
+    if (!filePath || line === null) {
+      usageFailure("task requires ref=<path:line> or path=<note.md> line=<n>.");
+    }
+    return { id: "task", json, vaultPath, filePath, line, mutation };
   }
   if (
     name === "properties" ||
@@ -841,6 +1018,8 @@ Usage:
   threadleaf --vault <path> [--json] property:read path=<note.md> name=<name>
   threadleaf --vault <path> [--json] property:set path=<note.md> name=<name> value=<value> [type=<type>]
   threadleaf --vault <path> [--json] property:remove path=<note.md> name=<name>
+  threadleaf --vault <path> [--json] tasks [path=<note.md>] [done|todo|status=<char>] [total|verbose]
+  threadleaf --vault <path> [--json] task ref=<note.md:line> [toggle|done|todo|status=<char>]
 
 Compatibility spellings:
   threadleaf --vault <path> read file=<note.md>
@@ -859,6 +1038,8 @@ Compatibility spellings:
   threadleaf --vault <path> property:read path=<note.md> name=<name>
   threadleaf --vault <path> property:set path=<note.md> name=<name> value=<value> [type=<type>]
   threadleaf --vault <path> property:remove path=<note.md> name=<name>
+  threadleaf --vault <path> tasks [path=<note.md>] [done|todo|status=<char>] [total|verbose]
+  threadleaf --vault <path> task path=<note.md> line=<n> [toggle|done|todo|status=<char>]
 
 Commands are headless and never require a running Electron process.
 `;
@@ -1120,11 +1301,8 @@ function deadEndNotes(snapshot: MetadataIndexSnapshot) {
   return { total: files.length, files };
 }
 
-async function executeCommand(
-  command: Exclude<ParsedCliCommand, CliHelpCommand>,
-  options: CliRunOptions,
-): Promise<unknown> {
-  const kernel =
+function isCliMutationCommand(command: Exclude<ParsedCliCommand, CliHelpCommand>): boolean {
+  return (
     command.id === "create" ||
     command.id === "append" ||
     command.id === "prepend" ||
@@ -1133,9 +1311,18 @@ async function executeCommand(
     command.id === "delete" ||
     command.id === "restore" ||
     command.id === "property.set" ||
-    command.id === "property.remove"
-      ? await openWritableKernel(command, options)
-      : await openReadOnlyKernel(command, options);
+    command.id === "property.remove" ||
+    (command.id === "task" && command.mutation !== null)
+  );
+}
+
+async function executeCommand(
+  command: Exclude<ParsedCliCommand, CliHelpCommand>,
+  options: CliRunOptions,
+): Promise<unknown> {
+  const kernel = isCliMutationCommand(command)
+    ? await openWritableKernel(command, options)
+    : await openReadOnlyKernel(command, options);
   try {
     if (command.id === "create") {
       const outcome = await createMarkdownNote(kernel, command.filePath, command.content);
@@ -1254,6 +1441,47 @@ async function executeCommand(
           "CONFLICT",
           cliExitCodes.conflict,
           `The note changed while removing ${command.propertyName}. The proposed version was preserved as ${outcome.conflictPath}.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
+    }
+    if (command.id === "tasks") {
+      const tasks = await listMarkdownTasks(kernel, command.filePath ?? undefined);
+      const filtered = tasks.filter((task) => {
+        if (command.filter.kind === "done") {
+          return task.completed;
+        }
+        if (command.filter.kind === "todo") {
+          return !task.completed;
+        }
+        if (command.filter.kind === "status") {
+          return task.status === command.filter.status;
+        }
+        return true;
+      });
+      return {
+        path: command.filePath,
+        filter: command.filter,
+        total: filtered.length,
+        tasks: filtered,
+      };
+    }
+    if (command.id === "task") {
+      if (command.mutation === null) {
+        return readMarkdownTask(kernel, command.filePath, command.line);
+      }
+      const outcome = await mutateMarkdownTask(
+        kernel,
+        command.filePath,
+        command.line,
+        command.mutation,
+      );
+      if (outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The note changed while updating ${outcome.task.path}:${outcome.task.line}. The proposed version was preserved as ${outcome.conflictPath}.`,
           { details: outcome },
         );
       }
@@ -1380,17 +1608,7 @@ async function executeWithCommandState(
   command: Exclude<ParsedCliCommand, CliHelpCommand>,
   options: CliRunOptions,
 ): Promise<unknown> {
-  if (
-    command.id !== "create" &&
-    command.id !== "append" &&
-    command.id !== "prepend" &&
-    command.id !== "move" &&
-    command.id !== "rename" &&
-    command.id !== "delete" &&
-    command.id !== "restore" &&
-    command.id !== "property.set" &&
-    command.id !== "property.remove"
-  ) {
+  if (!isCliMutationCommand(command)) {
     return executeCommand(command, options);
   }
   const stateRoot = options.stateRoot ?? defaultWritableStateRoot();
@@ -1417,6 +1635,10 @@ async function executeWithCommandState(
 
 function humanPropertyValue(value: string | string[]): string {
   return Array.isArray(value) ? JSON.stringify(value) : value;
+}
+
+function humanTask(task: MarkdownTaskRecord): string {
+  return `- [${task.status}]${task.text ? ` ${task.text}` : ""}`;
 }
 
 function humanOutput(command: ParsedCliCommand, data: unknown): string {
@@ -1524,6 +1746,33 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     return entries.length > 0
       ? `Recoverable trash:\n${entries.map((entry) => `${entry.path} <- ${entry.trashPath}`).join("\n")}\n`
       : "Recoverable trash is empty.\n";
+  }
+  if (command.id === "tasks") {
+    const result = data as { total: number; tasks: MarkdownTaskRecord[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    if (result.tasks.length === 0) {
+      return "No tasks.\n";
+    }
+    return `${result.tasks
+      .map((task) =>
+        command.verbose ? `${task.path}:${task.line}\t${humanTask(task)}` : humanTask(task),
+      )
+      .join("\n")}\n`;
+  }
+  if (command.id === "task") {
+    const result = data as {
+      status?: "committed" | "unchanged";
+      task: MarkdownTaskRecord;
+    };
+    const rendered = `${result.task.path}:${result.task.line}\t${humanTask(result.task)}`;
+    if (command.mutation === null) {
+      return `${rendered}\n`;
+    }
+    return result.status === "unchanged"
+      ? `Task already has that status: ${rendered}\n`
+      : `Updated task: ${rendered}\n`;
   }
   if (command.id === "properties") {
     const result = data as { path: string; properties: Record<string, string | string[]> };

@@ -85,3 +85,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Crash-recoverable compound note moves with exact rewrite previews, SHA-256-bound desktop
   confirmation, explicit CLI `--update-links`, child-first recovery, reverse rollback, conflict
   copies, affected-index refresh, and compound watcher attribution.
+- Headless `tasks` and `task` commands with vault-wide or exact-note scanning, completed, incomplete,
+  and custom-status filters, exact `path:line` addressing, source-range-only status mutation,
+  no-op detection, recovery-backed conflicts, and code and comment exclusion.

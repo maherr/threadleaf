@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -98,6 +98,9 @@ async function verifyBuiltCliMutations() {
     const original = await readFile(originalPath);
     const propertyPath = path.join(vaultPath, "Welcome.md");
     const propertyOriginal = await readFile(propertyPath);
+    const taskPath = path.join(vaultPath, "Tasks.md");
+    const taskOriginal = Buffer.from("\ufeff# Tasks\r\n\r\n- [ ] built smoke\r\n", "utf8");
+    await writeFile(taskPath, taskOriginal);
     const environment = { ...process.env, XDG_STATE_HOME: statePath };
 
     const propertySet = spawnSync(
@@ -162,6 +165,73 @@ async function verifyBuiltCliMutations() {
     ) {
       throw new Error(
         `Built CLI property-remove smoke test failed: ${propertyRemove.stderr || `exit ${propertyRemove.status}`}`,
+      );
+    }
+
+    const tasks = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "tasks", "path=Tasks.md", "todo", "verbose"],
+      { encoding: "utf8", env: environment },
+    );
+    const tasksEnvelope = tasks.status === 0 ? JSON.parse(tasks.stdout) : null;
+    if (
+      tasks.stderr !== "" ||
+      tasksEnvelope?.command !== "tasks" ||
+      tasksEnvelope.data?.total !== 1 ||
+      tasksEnvelope.data?.tasks?.[0]?.line !== 3 ||
+      tasksEnvelope.data?.tasks?.[0]?.status !== " "
+    ) {
+      throw new Error(
+        `Built CLI task-list smoke test failed: ${tasks.stderr || `exit ${tasks.status}`}`,
+      );
+    }
+
+    const taskDone = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "task", "ref=Tasks.md:3", "done"],
+      { encoding: "utf8", env: environment },
+    );
+    const taskDoneEnvelope = taskDone.status === 0 ? JSON.parse(taskDone.stdout) : null;
+    if (
+      taskDone.stderr !== "" ||
+      taskDoneEnvelope?.command !== "task" ||
+      taskDoneEnvelope.data?.status !== "committed" ||
+      taskDoneEnvelope.data?.task?.status !== "x"
+    ) {
+      throw new Error(
+        `Built CLI task-done smoke test failed: ${taskDone.stderr || `exit ${taskDone.status}`}`,
+      );
+    }
+
+    const taskRead = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "task", "path=Tasks.md", "line=3"],
+      { encoding: "utf8", env: environment },
+    );
+    const taskReadEnvelope = taskRead.status === 0 ? JSON.parse(taskRead.stdout) : null;
+    if (
+      taskRead.stderr !== "" ||
+      taskReadEnvelope?.data?.task?.line !== 3 ||
+      taskReadEnvelope.data?.task?.status !== "x" ||
+      taskReadEnvelope.data?.task?.text !== "built smoke"
+    ) {
+      throw new Error(
+        `Built CLI task-read smoke test failed: ${taskRead.stderr || `exit ${taskRead.status}`}`,
+      );
+    }
+
+    const taskToggle = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "task", "ref=Tasks.md:3", "toggle"],
+      { encoding: "utf8", env: environment },
+    );
+    if (
+      taskToggle.status !== 0 ||
+      taskToggle.stderr !== "" ||
+      !taskOriginal.equals(await readFile(taskPath))
+    ) {
+      throw new Error(
+        `Built CLI task-toggle smoke test failed: ${taskToggle.stderr || `exit ${taskToggle.status}`}`,
       );
     }
 
@@ -243,5 +313,5 @@ try {
 }
 
 console.log(
-  `Verified Electron entry points, headless CLI graph, property, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
+  `Verified Electron entry points, headless CLI graph, property, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
 );
