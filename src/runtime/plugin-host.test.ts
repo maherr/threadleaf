@@ -274,19 +274,25 @@ module.exports = class HostModulePlugin extends Plugin {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         `const {
-  BaseComponent, Component, EditorSuggest, FileView, FuzzySuggestModal, ItemView,
-  MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Scope, SettingTab,
-  SuggestModal, TextFileView, View, Workspace, WorkspaceLeaf, addIcon, normalizePath
+  BaseComponent, ButtonComponent, Component, DropdownComponent, EditorSuggest, FileView,
+  FuzzySuggestModal, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab,
+  Scope, Setting, SettingTab, SliderComponent, SuggestModal, TextFileView,
+  ToggleComponent, View, Workspace, WorkspaceLeaf, addIcon, normalizePath, sanitizeHTMLToDom
 } = require("obsidian");
-if (![BaseComponent, Component, EditorSuggest, FileView, FuzzySuggestModal, ItemView,
-  MarkdownView, Modal, PluginSettingTab, Scope, SettingTab, SuggestModal,
-  TextFileView, View, Workspace, WorkspaceLeaf].every((value) => typeof value === "function")) {
+if (![BaseComponent, ButtonComponent, Component, DropdownComponent, EditorSuggest, FileView,
+  FuzzySuggestModal, ItemView, MarkdownView, Modal, PluginSettingTab, Scope, Setting,
+  SettingTab, SliderComponent, SuggestModal, TextFileView, ToggleComponent, View,
+  Workspace, WorkspaceLeaf].every((value) => typeof value === "function")) {
   throw new Error("UI base class export missing");
 }
 module.exports = class UiApiPlugin extends Plugin {
   async onload() {
     if (normalizePath("/Folder\\\\Note.md") !== "Folder/Note.md") throw new Error("normalizePath failed");
     if (normalizePath("") !== "") throw new Error("normalizePath root failed");
+    const safe = sanitizeHTMLToDom("<strong>safe</strong><script>unsafe()</script><a href='javascript:unsafe()'>link</a>");
+    if (safe.querySelector("script") || safe.querySelector("a").hasAttribute("href") || safe.textContent !== "safelink") {
+      throw new Error("sanitizeHTMLToDom failed");
+    }
     addIcon("ui-api-icon", "<path d='M0 0h1v1z'/>");
     this.registerView("ui-api-view", (leaf) => new ItemView(leaf));
     this.registerExtensions(["drawing"], "ui-api-view");

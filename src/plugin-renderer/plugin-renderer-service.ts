@@ -4,12 +4,23 @@ import { PluginHost } from "../runtime/plugin-host";
 import {
   optionalPayloadString,
   type PluginRendererRequest,
+  type PluginVaultWriteRequest,
+  type PluginVaultWriteResponse,
   requirePayloadString,
 } from "../shared/plugin-runtime-protocol";
+
+export type PluginRendererVaultWriter = (
+  request: PluginVaultWriteRequest,
+) => Promise<PluginVaultWriteResponse>;
 
 export class PluginRendererService {
   private host: PluginHost | null = null;
   private restoreGlobalApp: (() => void) | null = null;
+  private readonly writeVaultText: PluginRendererVaultWriter | undefined;
+
+  constructor(writeVaultText?: PluginRendererVaultWriter) {
+    this.writeVaultText = writeVaultText;
+  }
 
   async handle(request: PluginRendererRequest) {
     switch (request.operation) {
@@ -20,7 +31,24 @@ export class PluginRendererService {
           throw new Error("Plugin renderer initialization requires absolute paths.");
         }
         await this.close();
-        this.host = new PluginHost(vaultPath, undefined, undefined, createRequire(packageJsonPath));
+        const writeVaultText = this.writeVaultText;
+        this.host = new PluginHost(
+          vaultPath,
+          undefined,
+          undefined,
+          createRequire(packageJsonPath),
+          writeVaultText
+            ? {
+                writeText: (filePath, content, expectedRevision) =>
+                  writeVaultText({
+                    vaultPath,
+                    filePath,
+                    content,
+                    expectedRevision,
+                  }),
+              }
+            : undefined,
+        );
         this.restoreGlobalApp = this.installGlobalApp(this.host);
         return this.host.getSnapshot();
       }

@@ -28,9 +28,11 @@ probe. It registers its two view types, ribbon action, settings tab, and Markdow
 an uncaught activation error. The same unchanged bundle now activates at startup in Threadleaf's
 production Electron compatibility renderer. Its registered drawing view attaches to a visible
 workspace leaf with the filename header, plugin action icons, release-notes modal, and real loaded
-Excalidraw canvas. Opening an existing Excalidraw Markdown document is measured level 4 for that
-named read-only workflow. Drawing creation, edit persistence, save, embed, reopen-after-write, and
-export remain unsupported and are not implied by that result.
+Excalidraw canvas. Its plugin-owned header replaces the normal Markdown editor header for that leaf.
+Opening an existing drawing, mutating its scene, saving through the revision-bound compatibility
+vault, fully detaching the view on close, and reopening the exact persisted scene is measured level
+4 for that named workflow. Drawing creation, embed, export, and full plugin unload remain
+unsupported and are not implied by that result.
 
 ## Trust model
 
@@ -97,5 +99,4 @@ starting normally restores the persisted preference.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
 - Broader workspace, editor, menu, settings-control, file, and metadata APIs.
-- Complete Excalidraw create, edit, save, embed, reopen-after-write, export, unload, and
-  byte-preservation workflows.
+- Complete Excalidraw create, embed, export, full-plugin-unload, and byte-preservation workflows.

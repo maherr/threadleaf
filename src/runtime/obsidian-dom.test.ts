@@ -31,9 +31,15 @@ describe("Obsidian DOM compatibility", () => {
     const dom = new JSDOM("<!doctype html><body><div id='root'></div></body>", {
       url: "https://threadleaf.invalid/",
     });
-    installObsidianDomCompatibility(dom.window);
-    installObsidianDomCompatibility(dom.window);
+    const executionGlobal = {};
+    installObsidianDomCompatibility(dom.window, executionGlobal);
+    installObsidianDomCompatibility(dom.window, executionGlobal);
     const root = dom.window.document.querySelector<TestElement>("#root");
+    const globals = dom.window as unknown as {
+      createDiv(options?: { text?: string }): HTMLDivElement;
+      createFragment(callback?: (fragment: DocumentFragment) => void): DocumentFragment;
+    };
+    const runtimeGlobals = executionGlobal as typeof globals;
     expect(root).not.toBeNull();
 
     root?.addClass("alpha beta");
@@ -54,6 +60,25 @@ describe("Obsidian DOM compatibility", () => {
     root?.prepend(prepended ?? "");
     expect(root?.getText()).toBe("firstexistingcard");
     expect(appended?.className).toBe("card active");
+    expect(globals.createDiv({ text: "global" }).textContent).toBe("global");
+    const fragment = globals.createFragment((value) => value.append("fragment"));
+    expect(fragment.textContent).toBe("fragment");
+    expect(runtimeGlobals.createDiv({ text: "runtime global" }).textContent).toBe("runtime global");
+    expect(runtimeGlobals.createFragment((value) => value.append("runtime")).textContent).toBe(
+      "runtime",
+    );
+    const realmArray = dom.window.Array.from(["alpha", "beta"]) as string[] & {
+      contains(value: string): boolean;
+      first(): string | undefined;
+      last(): string | undefined;
+    };
+    expect(realmArray.contains("beta")).toBe(true);
+    expect(realmArray.first()).toBe("alpha");
+    expect(realmArray.last()).toBe("beta");
+    const stringContains = (
+      dom.window.String.prototype as string & { contains(value: string): boolean }
+    ).contains;
+    expect(stringContains.call("Threadleaf", "leaf")).toBe(true);
     root?.empty();
     expect(root?.childElementCount).toBe(0);
   });

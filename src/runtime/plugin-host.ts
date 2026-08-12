@@ -15,6 +15,7 @@ import { maxPluginBundleBytes, parsePluginManifest } from "../shared/plugins";
 import {
   App,
   CommandRegistry,
+  type CompatibilityVaultWritePort,
   createObsidianCompatibilityModule,
   NoticeBus,
   Plugin,
@@ -78,8 +79,9 @@ export class PluginHost implements PluginRuntimePort {
     reader?: VaultReadPort,
     actions = new ActionRegistry(),
     pluginModuleResolver?: PluginModuleResolver,
+    writer?: CompatibilityVaultWritePort,
   ) {
-    this.vault = new Vault(vaultPath, reader);
+    this.vault = new Vault(vaultPath, reader, writer);
     this.pluginModuleResolver = pluginModuleResolver;
     const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));

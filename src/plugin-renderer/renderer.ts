@@ -2,14 +2,21 @@ import { ipcRenderer } from "electron";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import {
   type PluginRendererResponse,
+  type PluginVaultWriteResponse,
   parsePluginRendererRequest,
   pluginRendererChannels,
 } from "../shared/plugin-runtime-protocol";
 import { PluginRendererService } from "./plugin-renderer-service";
 
-installObsidianDomCompatibility(window);
+installObsidianDomCompatibility(window, globalThis);
 
-const service = new PluginRendererService();
+const service = new PluginRendererService(
+  (request) =>
+    ipcRenderer.invoke(
+      pluginRendererChannels.vaultWrite,
+      request,
+    ) as Promise<PluginVaultWriteResponse>,
+);
 
 ipcRenderer.on(pluginRendererChannels.request, async (_event, value: unknown) => {
   let response: PluginRendererResponse;

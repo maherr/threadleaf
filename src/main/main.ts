@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   app,
   BrowserWindow,
@@ -14,6 +14,10 @@ import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared
 import type { PluginSurfaceBounds, PluginUpdateResponse } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
+import {
+  parsePluginVaultWriteRequest,
+  pluginRendererChannels,
+} from "../shared/plugin-runtime-protocol";
 import {
   type CompatibilityMode,
   compatibilityModes,
@@ -290,6 +294,27 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.handle(pluginRendererChannels.vaultWrite, async (event, value: unknown) => {
+    const pluginView = compatibilityPluginView;
+    if (
+      !pluginView ||
+      pluginView.webContents.isDestroyed() ||
+      event.sender !== pluginView.webContents
+    ) {
+      throw new Error("Plugin vault writes require the active compatibility renderer.");
+    }
+    const request = parsePluginVaultWriteRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin edit could be saved.");
+    }
+    const response = await workspaceController.saveNote(
+      request.filePath,
+      request.content,
+      request.expectedRevision,
+      workspaceController.vaultId,
+    );
+    return response.outcome;
+  });
   ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
   ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
   ipcMain.handle(ipcChannels.appearance, (_event, expectedVaultId: unknown) => {

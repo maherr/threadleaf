@@ -22,9 +22,15 @@ messages, times out every operation, attributes renderer exits, and never gives 
 renderer Node authority. The unchanged Excalidraw 2.25.3 bundle activates in this production realm
 and its registered `ItemView` now attaches to a bounded visible workspace leaf. The plugin owns the
 leaf content, filename header, action icons, modal content, and canvas lifecycle; Threadleaf owns
-the surrounding layout and propagates its light/dark chrome. Opening an existing Excalidraw
-Markdown document reaches the plugin's loaded canvas at measured level 4 for that named read-only
-workflow. Plugin-initiated vault writes remain outside the current compatibility boundary.
+the surrounding layout and propagates its light/dark chrome. The normal Markdown header is not
+mounted inside a plugin-owned view. Text-file reads cache the revision delivered by the main
+process. A compatibility `Vault.modify` request must name a file from that vault and present the
+cached revision; validated requests cross narrow IPC, bind to the still-active vault identity, and
+enter the same workspace controller and recovery-backed writer as native edits. Conflicts leave the
+original untouched and retain the plugin's proposed bytes as a labeled conflict file. Opening an
+existing Excalidraw Markdown document, mutating its scene, explicitly saving, closing the drawing
+leaf, and reopening the persisted scene reaches measured level 4 for that named workflow. Creating
+a new file from plugin code remains outside the current compatibility boundary.
 
 ### Filesystem authority
 

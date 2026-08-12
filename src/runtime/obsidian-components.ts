@@ -8,15 +8,15 @@ type DisposableEventRef =
   | { emitter: { offref(ref: unknown): void } };
 
 export class Component {
+  _loaded = false;
   private readonly children: Component[] = [];
   private readonly registrations: Array<() => void> = [];
-  private loaded = false;
 
   load(): void {
-    if (this.loaded) {
+    if (this._loaded) {
       return;
     }
-    this.loaded = true;
+    this._loaded = true;
     this.onload();
     for (const child of this.children) {
       child.load();
@@ -26,7 +26,7 @@ export class Component {
   onload(): void {}
 
   unload(): void {
-    if (!this.loaded && this.children.length === 0 && this.registrations.length === 0) {
+    if (!this._loaded && this.children.length === 0 && this.registrations.length === 0) {
       return;
     }
 
@@ -38,7 +38,7 @@ export class Component {
     }
     const releaseFailure = this.releaseComponentResources();
     failure ??= releaseFailure;
-    this.loaded = false;
+    this._loaded = false;
     if (failure) {
       throw failure;
     }
@@ -51,7 +51,7 @@ export class Component {
       return component;
     }
     this.children.push(component);
-    if (this.loaded) {
+    if (this._loaded) {
       component.load();
     }
     return component;

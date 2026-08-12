@@ -4,7 +4,25 @@ export const pluginRendererChannels = {
   ready: "threadleaf:plugin-renderer-ready",
   request: "threadleaf:plugin-renderer-request",
   response: "threadleaf:plugin-renderer-response",
+  vaultWrite: "threadleaf:plugin-renderer-vault-write",
 } as const;
+
+export interface PluginVaultWriteRequest {
+  content: string;
+  expectedRevision: string;
+  filePath: string;
+  vaultPath: string;
+}
+
+export type PluginVaultWriteResponse =
+  | { status: "committed"; path: string; revision: string; transactionId: string }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+    };
 
 export type PluginRendererOperation =
   | "close"
@@ -91,6 +109,32 @@ export function parsePluginRendererResponse(value: unknown): PluginRendererRespo
     throw new Error("Plugin renderer failure response has no error message.");
   }
   return { id: candidate.id, ok: false, error: candidate.error };
+}
+
+export function parsePluginVaultWriteRequest(value: unknown): PluginVaultWriteRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin vault write request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.filePath !== "string" ||
+    candidate.filePath.length === 0 ||
+    typeof candidate.content !== "string" ||
+    typeof candidate.expectedRevision !== "string" ||
+    !/^[0-9a-f]{64}$/.test(candidate.expectedRevision)
+  ) {
+    throw new Error(
+      "Plugin vault writes require vault, file, content, and SHA-256 revision strings.",
+    );
+  }
+  return {
+    vaultPath: candidate.vaultPath,
+    filePath: candidate.filePath,
+    content: candidate.content,
+    expectedRevision: candidate.expectedRevision,
+  };
 }
 
 export function requirePayloadString(request: PluginRendererRequest, key: string): string {

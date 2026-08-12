@@ -34,11 +34,15 @@ describe("Obsidian component compatibility", () => {
     parent.load();
     button.click();
     expect(calls).toEqual(["load", "load"]);
+    expect(parent._loaded).toBe(true);
+    expect(child._loaded).toBe(true);
     expect(clicked).toHaveBeenCalledTimes(1);
 
     parent.unload();
     button.click();
     expect(calls).toEqual(["load", "load", "unload", "unload"]);
+    expect(parent._loaded).toBe(false);
+    expect(child._loaded).toBe(false);
     expect(clicked).toHaveBeenCalledTimes(1);
     expect(clearInterval).toHaveBeenCalledWith(42);
     expect(eventRef.off).toHaveBeenCalledTimes(1);

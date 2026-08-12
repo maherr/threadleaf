@@ -9,6 +9,615 @@ function currentDocument(): Document {
   return document;
 }
 
+function replaceElementContent(element: HTMLElement, value: string | DocumentFragment): void {
+  if (typeof value === "string") {
+    element.textContent = value;
+  } else {
+    element.replaceChildren(value);
+  }
+}
+
+function setElementIcon(element: HTMLElement, icon: string): void {
+  element.replaceChildren();
+  const iconElement = createCompatibleIcon(element.ownerDocument, icon, null);
+  if (iconElement) {
+    element.append(iconElement);
+  } else {
+    element.dataset.icon = icon;
+  }
+}
+
+export abstract class ValueComponent<T> extends BaseComponent {
+  registerOptionListener(_listeners: Record<string, (value?: T) => T>, _key: string): this {
+    return this;
+  }
+
+  abstract getValue(): T;
+
+  abstract setValue(value: T): this;
+}
+
+export class AbstractTextComponent<
+  T extends HTMLInputElement | HTMLTextAreaElement,
+> extends ValueComponent<string> {
+  readonly inputEl: T;
+  private readonly changeCallbacks: Array<(value: string) => unknown> = [];
+
+  constructor(inputEl: T) {
+    super();
+    this.inputEl = inputEl;
+    this.inputEl.addEventListener("input", () => this.onChanged());
+  }
+
+  override setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.inputEl.disabled = disabled;
+    return this;
+  }
+
+  getValue(): string {
+    return this.inputEl.value;
+  }
+
+  setValue(value: string): this {
+    this.inputEl.value = value;
+    return this;
+  }
+
+  setPlaceholder(placeholder: string): this {
+    this.inputEl.placeholder = placeholder;
+    return this;
+  }
+
+  onChanged(): void {
+    const value = this.getValue();
+    for (const callback of this.changeCallbacks) {
+      callback(value);
+    }
+  }
+
+  onChange(callback: (value: string) => unknown): this {
+    this.changeCallbacks.push(callback);
+    return this;
+  }
+}
+
+export class TextComponent extends AbstractTextComponent<HTMLInputElement> {
+  constructor(containerEl: HTMLElement) {
+    const input = containerEl.ownerDocument.createElement("input");
+    input.type = "text";
+    input.className = "text-input";
+    containerEl.append(input);
+    super(input);
+  }
+}
+
+export class TextAreaComponent extends AbstractTextComponent<HTMLTextAreaElement> {
+  constructor(containerEl: HTMLElement) {
+    const input = containerEl.ownerDocument.createElement("textarea");
+    input.className = "text-input mod-textarea";
+    containerEl.append(input);
+    super(input);
+  }
+}
+
+export class SearchComponent extends AbstractTextComponent<HTMLInputElement> {
+  readonly clearButtonEl: HTMLButtonElement;
+
+  constructor(containerEl: HTMLElement) {
+    const wrapper = containerEl.ownerDocument.createElement("div");
+    wrapper.className = "search-input-container";
+    const input = containerEl.ownerDocument.createElement("input");
+    input.type = "search";
+    input.className = "search-input";
+    const clearButton = containerEl.ownerDocument.createElement("button");
+    clearButton.type = "button";
+    clearButton.className = "search-input-clear-button";
+    clearButton.setAttribute("aria-label", "Clear search");
+    setElementIcon(clearButton, "x");
+    wrapper.append(input, clearButton);
+    containerEl.append(wrapper);
+    super(input);
+    this.clearButtonEl = clearButton;
+    clearButton.addEventListener("click", () => {
+      this.setValue("");
+      this.onChanged();
+      this.inputEl.focus();
+    });
+  }
+}
+
+export class DropdownComponent extends ValueComponent<string> {
+  readonly selectEl: HTMLSelectElement;
+  private readonly changeCallbacks: Array<(value: string) => unknown> = [];
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.selectEl = containerEl.ownerDocument.createElement("select");
+    this.selectEl.className = "dropdown";
+    this.selectEl.addEventListener("change", () => {
+      const value = this.getValue();
+      for (const callback of this.changeCallbacks) {
+        callback(value);
+      }
+    });
+    containerEl.append(this.selectEl);
+  }
+
+  override setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.selectEl.disabled = disabled;
+    return this;
+  }
+
+  addOption(value: string, display: string): this {
+    const option = this.selectEl.ownerDocument.createElement("option");
+    option.value = value;
+    option.textContent = display;
+    this.selectEl.append(option);
+    return this;
+  }
+
+  addOptions(options: Record<string, string>): this {
+    for (const [value, display] of Object.entries(options)) {
+      this.addOption(value, display);
+    }
+    return this;
+  }
+
+  getValue(): string {
+    return this.selectEl.value;
+  }
+
+  setValue(value: string): this {
+    this.selectEl.value = value;
+    return this;
+  }
+
+  onChange(callback: (value: string) => unknown): this {
+    this.changeCallbacks.push(callback);
+    return this;
+  }
+}
+
+export class ToggleComponent extends ValueComponent<boolean> {
+  readonly toggleEl: HTMLInputElement;
+  private readonly changeCallbacks: Array<(value: boolean) => unknown> = [];
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.toggleEl = containerEl.ownerDocument.createElement("input");
+    this.toggleEl.type = "checkbox";
+    this.toggleEl.className = "checkbox-container";
+    this.toggleEl.addEventListener("change", () => {
+      const value = this.getValue();
+      for (const callback of this.changeCallbacks) {
+        callback(value);
+      }
+    });
+    containerEl.append(this.toggleEl);
+  }
+
+  override setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.toggleEl.disabled = disabled;
+    return this;
+  }
+
+  getValue(): boolean {
+    return this.toggleEl.checked;
+  }
+
+  setValue(on: boolean): this {
+    this.toggleEl.checked = on;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.toggleEl.title = tooltip;
+    return this;
+  }
+
+  onClick(): void {
+    this.toggleEl.click();
+  }
+
+  onChange(callback: (value: boolean) => unknown): this {
+    this.changeCallbacks.push(callback);
+    return this;
+  }
+}
+
+export class SliderComponent extends ValueComponent<number> {
+  readonly sliderEl: HTMLInputElement;
+  private readonly changeCallbacks: Array<(value: number) => unknown> = [];
+  private instant = true;
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.sliderEl = containerEl.ownerDocument.createElement("input");
+    this.sliderEl.type = "range";
+    this.sliderEl.className = "slider";
+    this.sliderEl.addEventListener("input", () => {
+      if (this.instant) {
+        this.emitChange();
+      }
+    });
+    this.sliderEl.addEventListener("change", () => {
+      if (!this.instant) {
+        this.emitChange();
+      }
+    });
+    containerEl.append(this.sliderEl);
+  }
+
+  override setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.sliderEl.disabled = disabled;
+    return this;
+  }
+
+  setInstant(instant: boolean): this {
+    this.instant = instant;
+    return this;
+  }
+
+  setLimits(min: number, max: number, step: number | "any"): this {
+    this.sliderEl.min = String(min);
+    this.sliderEl.max = String(max);
+    this.sliderEl.step = String(step);
+    return this;
+  }
+
+  getValue(): number {
+    return this.sliderEl.valueAsNumber;
+  }
+
+  setValue(value: number): this {
+    this.sliderEl.value = String(value);
+    return this;
+  }
+
+  getValuePretty(): string {
+    return String(this.getValue());
+  }
+
+  setDynamicTooltip(): this {
+    this.sliderEl.title = this.getValuePretty();
+    return this;
+  }
+
+  showTooltip(): void {
+    this.sliderEl.title = this.getValuePretty();
+  }
+
+  onChange(callback: (value: number) => unknown): this {
+    this.changeCallbacks.push(callback);
+    return this;
+  }
+
+  private emitChange(): void {
+    const value = this.getValue();
+    for (const callback of this.changeCallbacks) {
+      callback(value);
+    }
+  }
+}
+
+export class ButtonComponent extends BaseComponent {
+  readonly buttonEl: HTMLButtonElement;
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.buttonEl = containerEl.ownerDocument.createElement("button");
+    this.buttonEl.type = "button";
+    containerEl.append(this.buttonEl);
+  }
+
+  override setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.buttonEl.disabled = disabled;
+    return this;
+  }
+
+  setCta(): this {
+    this.buttonEl.classList.add("mod-cta");
+    return this;
+  }
+
+  removeCta(): this {
+    this.buttonEl.classList.remove("mod-cta");
+    return this;
+  }
+
+  setWarning(): this {
+    this.buttonEl.classList.add("mod-warning");
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.buttonEl.title = tooltip;
+    return this;
+  }
+
+  setButtonText(name: string): this {
+    this.buttonEl.textContent = name;
+    return this;
+  }
+
+  setIcon(icon: string): this {
+    setElementIcon(this.buttonEl, icon);
+    return this;
+  }
+
+  setClass(className: string): this {
+    this.buttonEl.classList.add(...className.split(/\s+/).filter(Boolean));
+    return this;
+  }
+
+  onClick(callback: (event: MouseEvent) => unknown): this {
+    this.buttonEl.addEventListener("click", callback);
+    return this;
+  }
+}
+
+export class ExtraButtonComponent extends BaseComponent {
+  readonly extraSettingsEl: HTMLButtonElement;
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.extraSettingsEl = containerEl.ownerDocument.createElement("button");
+    this.extraSettingsEl.type = "button";
+    this.extraSettingsEl.className = "clickable-icon extra-setting-button";
+    containerEl.append(this.extraSettingsEl);
+  }
+
+  override setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.extraSettingsEl.disabled = disabled;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.extraSettingsEl.title = tooltip;
+    return this;
+  }
+
+  setIcon(icon: string): this {
+    setElementIcon(this.extraSettingsEl, icon);
+    return this;
+  }
+
+  onClick(callback: () => unknown): this {
+    this.extraSettingsEl.addEventListener("click", callback);
+    return this;
+  }
+}
+
+export class ColorComponent extends ValueComponent<string> {
+  readonly colorPickerEl: HTMLInputElement;
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.colorPickerEl = containerEl.ownerDocument.createElement("input");
+    this.colorPickerEl.type = "color";
+    this.colorPickerEl.className = "color-input";
+    containerEl.append(this.colorPickerEl);
+  }
+
+  override setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.colorPickerEl.disabled = disabled;
+    return this;
+  }
+
+  getValue(): string {
+    return this.colorPickerEl.value;
+  }
+
+  setValue(value: string): this {
+    this.colorPickerEl.value = value;
+    return this;
+  }
+
+  onChange(callback: (value: string) => unknown): this {
+    this.colorPickerEl.addEventListener("input", () => callback(this.getValue()));
+    return this;
+  }
+}
+
+export class ProgressBarComponent extends ValueComponent<number> {
+  readonly progressBarEl: HTMLProgressElement;
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.progressBarEl = containerEl.ownerDocument.createElement("progress");
+    this.progressBarEl.className = "setting-progress-bar";
+    this.progressBarEl.max = 100;
+    containerEl.append(this.progressBarEl);
+  }
+
+  getValue(): number {
+    return this.progressBarEl.value;
+  }
+
+  setValue(value: number): this {
+    this.progressBarEl.value = value;
+    return this;
+  }
+}
+
+export class MomentFormatComponent extends TextComponent {
+  sampleEl: HTMLElement;
+  private defaultFormat = "";
+
+  constructor(containerEl: HTMLElement) {
+    super(containerEl);
+    this.sampleEl = containerEl.ownerDocument.createElement("span");
+    this.sampleEl.className = "moment-format-example";
+    containerEl.append(this.sampleEl);
+  }
+
+  setDefaultFormat(defaultFormat: string): this {
+    this.defaultFormat = defaultFormat;
+    this.setPlaceholder(defaultFormat);
+    this.updateSample();
+    return this;
+  }
+
+  setSampleEl(sampleEl: HTMLElement): this {
+    this.sampleEl.replaceWith(sampleEl);
+    this.sampleEl = sampleEl;
+    return this;
+  }
+
+  override setValue(value: string): this {
+    super.setValue(value);
+    this.updateSample();
+    return this;
+  }
+
+  override onChanged(): void {
+    super.onChanged();
+    this.updateSample();
+  }
+
+  updateSample(): void {
+    this.sampleEl.textContent = this.getValue() || this.defaultFormat;
+  }
+}
+
+export class Setting {
+  readonly settingEl: HTMLElement;
+  readonly infoEl: HTMLElement;
+  readonly nameEl: HTMLElement;
+  readonly descEl: HTMLElement;
+  readonly controlEl: HTMLElement;
+  readonly components: BaseComponent[] = [];
+
+  constructor(containerEl: HTMLElement) {
+    const doc = containerEl.ownerDocument;
+    this.settingEl = doc.createElement("div");
+    this.settingEl.className = "setting-item";
+    this.infoEl = doc.createElement("div");
+    this.infoEl.className = "setting-item-info";
+    this.nameEl = doc.createElement("div");
+    this.nameEl.className = "setting-item-name";
+    this.descEl = doc.createElement("div");
+    this.descEl.className = "setting-item-description";
+    this.controlEl = doc.createElement("div");
+    this.controlEl.className = "setting-item-control";
+    this.infoEl.append(this.nameEl, this.descEl);
+    this.settingEl.append(this.infoEl, this.controlEl);
+    containerEl.append(this.settingEl);
+  }
+
+  setName(name: string | DocumentFragment): this {
+    replaceElementContent(this.nameEl, name);
+    return this;
+  }
+
+  setDesc(description: string | DocumentFragment): this {
+    replaceElementContent(this.descEl, description);
+    return this;
+  }
+
+  setClass(className: string): this {
+    this.settingEl.classList.add(...className.split(/\s+/).filter(Boolean));
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.settingEl.title = tooltip;
+    return this;
+  }
+
+  setHeading(): this {
+    this.settingEl.classList.add("setting-item-heading");
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.settingEl.classList.toggle("is-disabled", disabled);
+    for (const component of this.components) {
+      component.setDisabled(disabled);
+    }
+    return this;
+  }
+
+  setVisibility(visible: boolean): this {
+    this.settingEl.hidden = !visible;
+    return this;
+  }
+
+  addButton(callback: (component: ButtonComponent) => unknown): this {
+    return this.addComponent(new ButtonComponent(this.controlEl), callback);
+  }
+
+  addExtraButton(callback: (component: ExtraButtonComponent) => unknown): this {
+    return this.addComponent(new ExtraButtonComponent(this.controlEl), callback);
+  }
+
+  addToggle(callback: (component: ToggleComponent) => unknown): this {
+    return this.addComponent(new ToggleComponent(this.controlEl), callback);
+  }
+
+  addText(callback: (component: TextComponent) => unknown): this {
+    return this.addComponent(new TextComponent(this.controlEl), callback);
+  }
+
+  addSearch(callback: (component: SearchComponent) => unknown): this {
+    return this.addComponent(new SearchComponent(this.controlEl), callback);
+  }
+
+  addTextArea(callback: (component: TextAreaComponent) => unknown): this {
+    return this.addComponent(new TextAreaComponent(this.controlEl), callback);
+  }
+
+  addMomentFormat(callback: (component: MomentFormatComponent) => unknown): this {
+    return this.addComponent(new MomentFormatComponent(this.controlEl), callback);
+  }
+
+  addDropdown(callback: (component: DropdownComponent) => unknown): this {
+    return this.addComponent(new DropdownComponent(this.controlEl), callback);
+  }
+
+  addColorPicker(callback: (component: ColorComponent) => unknown): this {
+    return this.addComponent(new ColorComponent(this.controlEl), callback);
+  }
+
+  addProgressBar(callback: (component: ProgressBarComponent) => unknown): this {
+    return this.addComponent(new ProgressBarComponent(this.controlEl), callback);
+  }
+
+  addSlider(callback: (component: SliderComponent) => unknown): this {
+    return this.addComponent(new SliderComponent(this.controlEl), callback);
+  }
+
+  // biome-ignore lint/suspicious/noThenProperty: Required by Obsidian's public Setting API.
+  then(callback: (setting: this) => unknown): this {
+    callback(this);
+    return this;
+  }
+
+  clear(): this {
+    this.components.length = 0;
+    this.nameEl.replaceChildren();
+    this.descEl.replaceChildren();
+    this.controlEl.replaceChildren();
+    return this;
+  }
+
+  private addComponent<T extends BaseComponent>(
+    component: T,
+    callback: (component: T) => unknown,
+  ): this {
+    this.components.push(component);
+    callback(component);
+    return this;
+  }
+}
+
 export interface Instruction {
   command: string;
   purpose: string;
@@ -587,8 +1196,16 @@ export class TextFileView extends FileView {
     this.file = null;
   }
 
-  async save(_clear?: boolean): Promise<void> {
-    throw new Error("Plugin view saves are not available in the read-only compatibility runtime.");
+  async save(clear = false): Promise<void> {
+    if (!this.file) {
+      return;
+    }
+    const data = this.getViewData();
+    await this.app.vault.modify(this.file, data);
+    this.data = data;
+    if (clear) {
+      this.clear();
+    }
   }
 
   getViewData(): string {

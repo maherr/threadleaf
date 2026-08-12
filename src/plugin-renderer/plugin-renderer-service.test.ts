@@ -3,8 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it } from "vitest";
+import { revisionOf } from "../kernel/durability";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
-import type { PluginRendererRequest } from "../shared/plugin-runtime-protocol";
+import type {
+  PluginRendererRequest,
+  PluginVaultWriteRequest,
+} from "../shared/plugin-runtime-protocol";
 import { PluginRendererService } from "./plugin-renderer-service";
 
 const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
@@ -122,7 +126,18 @@ module.exports = class RendererFixture extends Plugin {
         "utf8",
       );
 
-      const service = new PluginRendererService();
+      const writes: PluginVaultWriteRequest[] = [];
+      const service = new PluginRendererService(async (writeRequest) => {
+        writes.push({ ...writeRequest });
+        const absolutePath = path.join(writeRequest.vaultPath, writeRequest.filePath);
+        await fs.writeFile(absolutePath, writeRequest.content, "utf8");
+        return {
+          status: "committed",
+          path: writeRequest.filePath,
+          revision: revisionOf(Buffer.from(writeRequest.content, "utf8")),
+          transactionId: "renderer-test-write",
+        };
+      });
       const initialized = await service.handle(
         request("initialize", {
           vaultPath,
@@ -181,6 +196,32 @@ module.exports = class RendererFixture extends Plugin {
         dom.window.document.querySelector("#renderer-markdown .release-callout")?.textContent,
       ).toBe("Welcome");
       expect(opened?.events.at(-1)?.message).toContain("Opened plugin view renderer-view");
+
+      const view = dom.window.eval('app.workspace.getLeavesOfType("renderer-view")[0].view') as {
+        save(): Promise<void>;
+        setViewData(data: string, clear: boolean): void;
+      };
+      view.setViewData("saved renderer surface", false);
+      await view.save();
+      expect(writes).toEqual([
+        {
+          vaultPath,
+          filePath: "Canvas.drawing",
+          content: "saved renderer surface",
+          expectedRevision: revisionOf(Buffer.from("renderer surface content", "utf8")),
+        },
+      ]);
+      expect(await fs.readFile(path.join(vaultPath, "Canvas.drawing"), "utf8")).toBe(
+        "saved renderer surface",
+      );
+
+      await service.handle(request("close-view"));
+      await service.handle(
+        request("open-view", { viewType: "renderer-view", filePath: "Canvas.drawing" }),
+      );
+      expect(dom.window.document.querySelector(".view-content")?.textContent).toBe(
+        "saved renderer surface",
+      );
 
       const ready = await service.handle(request("mark-layout-ready"));
       expect(ready?.notices).toContain("Renderer layout ready.");

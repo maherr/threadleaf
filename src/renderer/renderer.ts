@@ -49,6 +49,7 @@ import {
   hydrateMarkdownPreviewImages,
   renderMarkdownPreview,
 } from "./markdown-preview";
+import { pluginViewTypeForPath } from "./plugin-view-model";
 import "./styles.css";
 
 const elements = {
@@ -921,22 +922,7 @@ function renderDocumentView(): void {
 function preferredPluginViewType(
   snapshot: RuntimeSnapshot | null = currentSnapshot,
 ): string | null {
-  const viewTypes = snapshot?.integrations?.viewTypes ?? [];
-  if (!loadedNote || viewTypes.length === 0) {
-    return null;
-  }
-  const lowerPath = loadedNote.path.toLowerCase();
-  if (lowerPath.endsWith(".excalidraw.md") && viewTypes.includes("excalidraw")) {
-    return "excalidraw";
-  }
-  const extension = lowerPath.includes(".") ? (lowerPath.split(".").at(-1) ?? "") : "";
-  const extensionView = snapshot?.integrations?.extensions.find(
-    (registration) => registration.extension === extension,
-  )?.viewType;
-  if (extensionView && viewTypes.includes(extensionView)) {
-    return extensionView;
-  }
-  return viewTypes.find((viewType) => !viewType.includes("sidepanel")) ?? viewTypes[0] ?? null;
+  return loadedNote ? pluginViewTypeForPath(loadedNote.path, snapshot?.integrations) : null;
 }
 
 async function updatePluginSurfaceBounds(): Promise<void> {
@@ -995,7 +981,7 @@ async function activatePluginView(): Promise<void> {
 }
 
 function setDocumentView(mode: DocumentViewMode, focus = true): void {
-  if (!loadedNote) {
+  if (!loadedNote && mode === "plugin") {
     return;
   }
   const closingPlugin = documentViewMode === "plugin" && mode !== "plugin";
@@ -2883,7 +2869,7 @@ function render(snapshot: RuntimeSnapshot): void {
 
   const displayedNote = reconcileEditor(workspace?.activeNote ?? null, snapshot.vault.id);
   if (documentViewMode === "plugin" && !preferredPluginViewType(snapshot)) {
-    documentViewMode = "source";
+    setDocumentView("source", false);
   }
   reconcileVaultSearch(snapshot);
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);

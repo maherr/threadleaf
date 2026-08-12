@@ -3,24 +3,39 @@ import path from "node:path";
 import MarkdownIt from "markdown-it";
 import { parse as parseYaml } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
-import type { VaultReadPort } from "../kernel/ports";
+import { revisionOf } from "../kernel/durability";
+import type { VaultReadPort, VaultWriteResult } from "../kernel/ports";
 import type { CommandSummary } from "../shared/contracts";
 import { Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
 import {
+  AbstractTextComponent,
   BaseComponent,
+  ButtonComponent,
+  ColorComponent,
+  DropdownComponent,
   EditorSuggest,
+  ExtraButtonComponent,
   FileView,
   FuzzySuggestModal,
   ItemView,
   Keymap,
   MarkdownView,
   Modal,
+  MomentFormatComponent,
   PluginSettingTab,
+  ProgressBarComponent,
   Scope,
+  SearchComponent,
+  Setting,
   SettingTab,
+  SliderComponent,
   SuggestModal,
+  TextAreaComponent,
+  TextComponent,
   TextFileView,
+  ToggleComponent,
+  ValueComponent,
   View,
   WorkspaceLeaf,
 } from "./obsidian-ui-compat";
@@ -71,6 +86,14 @@ export interface FileStats {
   ctime: number;
   mtime: number;
   size: number;
+}
+
+export interface CompatibilityVaultWritePort {
+  writeText(
+    relativePath: string,
+    content: string,
+    expectedRevision: string,
+  ): Promise<VaultWriteResult>;
 }
 
 export class TAbstractFile {
@@ -125,11 +148,14 @@ export class Vault {
   readonly configDir = ".obsidian";
   readonly rootPath: string;
   readonly #reader: VaultReadPort | undefined;
+  readonly #writer: CompatibilityVaultWritePort | undefined;
   private readonly listeners = new Map<string, Set<VaultEventCallback>>();
+  private readonly revisions = new Map<string, string>();
 
-  constructor(rootPath: string, reader?: VaultReadPort) {
+  constructor(rootPath: string, reader?: VaultReadPort, writer?: CompatibilityVaultWritePort) {
     this.rootPath = path.resolve(rootPath);
     this.#reader = reader;
+    this.#writer = writer;
   }
 
   getName(): string {
@@ -208,10 +234,13 @@ export class Vault {
 
   async read(file: TFile): Promise<string> {
     if (this.#reader) {
-      return (await this.#reader.readText(file.path)).content;
+      const snapshot = await this.#reader.readText(file.path);
+      this.revisions.set(file.path, snapshot.revision);
+      return snapshot.content;
     }
-    const absolutePath = this.resolveVaultPath(file.path);
-    return fs.readFile(absolutePath, "utf8");
+    const bytes = await fs.readFile(this.resolveVaultPath(file.path));
+    this.revisions.set(file.path, revisionOf(bytes));
+    return bytes.toString("utf8");
   }
 
   cachedRead(file: TFile): Promise<string> {
@@ -220,7 +249,38 @@ export class Vault {
 
   async readBinary(file: TFile): Promise<ArrayBuffer> {
     const bytes = await fs.readFile(this.resolveVaultPath(file.path));
+    this.revisions.set(file.path, revisionOf(bytes));
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  }
+
+  async modify(file: TFile, content: string): Promise<void> {
+    if (!this.#writer) {
+      throw new Error(
+        "Plugin view saves are not available in the read-only compatibility runtime.",
+      );
+    }
+    if (file.vault !== this) {
+      throw new Error("Plugin vault writes require a file from the active compatibility vault.");
+    }
+    const normalized = normalizePath(file.path);
+    let expectedRevision = this.revisions.get(normalized);
+    if (!expectedRevision) {
+      await this.read(file);
+      expectedRevision = this.revisions.get(normalized);
+    }
+    if (!expectedRevision) {
+      throw new Error(`Could not establish the current revision for ${normalized}.`);
+    }
+    const outcome = await this.#writer.writeText(normalized, content, expectedRevision);
+    if (outcome.status === "conflict") {
+      throw new Error(
+        `Plugin save conflict for ${normalized}; the proposed bytes were preserved at ${outcome.conflictPath}.`,
+      );
+    }
+    this.revisions.set(normalized, outcome.revision);
+    file.stat.mtime = Date.now();
+    file.stat.size = Buffer.byteLength(content, "utf8");
+    this.trigger("modify", file);
   }
 
   resolveVaultPath(relativePath: string): string {
@@ -708,6 +768,18 @@ export class App {
   createFile(filePath: string): TFile {
     return this.vault.getFileByPath(filePath) ?? new TFile(filePath, this.vault);
   }
+
+  getAccentColor(): string {
+    if (typeof document === "undefined") {
+      return "#0072b2";
+    }
+    const probe = document.createElement("span");
+    probe.style.color = "var(--interactive-accent, #0072b2)";
+    document.body.append(probe);
+    const color = document.defaultView?.getComputedStyle(probe).color.trim();
+    probe.remove();
+    return color || "#0072b2";
+  }
 }
 
 export class Plugin extends Component {
@@ -821,10 +893,15 @@ export class Plugin extends Component {
 }
 
 export interface ObsidianCompatibilityModule {
+  AbstractTextComponent: typeof AbstractTextComponent;
   App: typeof App;
   BaseComponent: typeof BaseComponent;
+  ButtonComponent: typeof ButtonComponent;
+  ColorComponent: typeof ColorComponent;
   Component: typeof Component;
+  DropdownComponent: typeof DropdownComponent;
   EditorSuggest: typeof EditorSuggest;
+  ExtraButtonComponent: typeof ExtraButtonComponent;
   FileView: typeof FileView;
   FuzzySuggestModal: typeof FuzzySuggestModal;
   getLanguage: typeof getLanguage;
@@ -834,16 +911,25 @@ export interface ObsidianCompatibilityModule {
   MarkdownRenderer: typeof MarkdownRenderer;
   MetadataCache: typeof MetadataCache;
   Modal: typeof Modal;
+  MomentFormatComponent: typeof MomentFormatComponent;
   Notice: new (message: string, timeout?: number) => object;
   Plugin: typeof Plugin;
   PluginSettingTab: typeof PluginSettingTab;
+  ProgressBarComponent: typeof ProgressBarComponent;
   Scope: typeof Scope;
+  SearchComponent: typeof SearchComponent;
+  Setting: typeof Setting;
   SettingTab: typeof SettingTab;
+  SliderComponent: typeof SliderComponent;
   SuggestModal: typeof SuggestModal;
   TFile: typeof TFile;
   TAbstractFile: typeof TAbstractFile;
   TFolder: typeof TFolder;
   TextFileView: typeof TextFileView;
+  TextAreaComponent: typeof TextAreaComponent;
+  TextComponent: typeof TextComponent;
+  ToggleComponent: typeof ToggleComponent;
+  ValueComponent: typeof ValueComponent;
   View: typeof View;
   Vault: typeof Vault;
   Workspace: typeof Workspace;
@@ -853,6 +939,7 @@ export interface ObsidianCompatibilityModule {
   getIcon(id: string): SVGSVGElement | null;
   normalizePath(filePath: string): string;
   requireApiVersion(version: string): boolean;
+  sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
   sleep(milliseconds: number): Promise<void>;
 }
@@ -864,6 +951,32 @@ export function getLanguage(): string {
 
 export function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => globalThis.setTimeout(resolve, Math.max(0, milliseconds)));
+}
+
+export function sanitizeHTMLToDom(html: string): DocumentFragment {
+  const template = requireCompatibilityDocument().createElement("template");
+  template.innerHTML = html;
+  for (const unsafeElement of template.content.querySelectorAll(
+    "script, iframe, object, embed, form, meta, base",
+  )) {
+    unsafeElement.remove();
+  }
+  for (const candidate of template.content.querySelectorAll<HTMLElement>("*")) {
+    for (const attribute of [...candidate.attributes]) {
+      const name = attribute.name.toLowerCase();
+      if (name.startsWith("on")) {
+        candidate.removeAttribute(attribute.name);
+        continue;
+      }
+      if (
+        ["href", "src", "xlink:href", "formaction"].includes(name) &&
+        /^\s*(?:javascript|vbscript|data\s*:\s*text\/html)/i.test(attribute.value)
+      ) {
+        candidate.removeAttribute(attribute.name);
+      }
+    }
+  }
+  return template.content;
 }
 
 function requireCompatibilityDocument(): Document {
@@ -910,10 +1023,15 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
   };
 
   return {
+    AbstractTextComponent,
     App,
     BaseComponent,
+    ButtonComponent,
+    ColorComponent,
     Component,
+    DropdownComponent,
     EditorSuggest,
+    ExtraButtonComponent,
     FileView,
     FuzzySuggestModal,
     ItemView,
@@ -922,16 +1040,25 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     MarkdownRenderer,
     MetadataCache,
     Modal,
+    MomentFormatComponent,
     Notice,
     Plugin,
     PluginSettingTab,
+    ProgressBarComponent,
     Scope,
+    SearchComponent,
+    Setting,
     SettingTab,
+    SliderComponent,
     SuggestModal,
     TFile,
     TAbstractFile,
     TFolder,
     TextFileView,
+    TextAreaComponent,
+    TextComponent,
+    ToggleComponent,
+    ValueComponent,
     Vault,
     View,
     Workspace,
@@ -942,6 +1069,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     getLanguage,
     normalizePath,
     requireApiVersion: () => true,
+    sanitizeHTMLToDom,
     setIcon,
     sleep,
   };

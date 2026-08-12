@@ -44,6 +44,7 @@ The acceptance test must exercise the bundle through the same loader used by Ele
 The production renderer fixture registers an `ItemView`, opens it through the shared workspace
 model, and proves that its title, content, action icon, layout bounds, theme, and close lifecycle
 cross the main-renderer and compatibility-renderer seam. The unchanged Excalidraw 2.25.3 bundle is
-then sampled through that same path. A loaded canvas is evidence only for opening an existing
-Excalidraw Markdown document; it does not imply that create, edit, save, embed, reopen-after-write,
-or export workflows pass.
+then sampled through that same path. Its verified workflow opens an existing Excalidraw Markdown
+document, mutates the scene, saves with the file revision through the recoverable writer, closes and
+detaches the plugin leaf, and reopens the exact persisted scene. This does not imply that drawing
+creation, embeds, export, or full plugin unload pass.

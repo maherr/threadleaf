@@ -62,6 +62,7 @@ interface ObsidianDomElement extends Element {
 
 interface DomCompatibilityWindow {
   Element: typeof Element;
+  document: Document;
 }
 
 const delegatedListeners = new WeakMap<
@@ -82,6 +83,117 @@ function defineMethod(
     writable: true,
     value: implementation,
   });
+}
+
+function defineGlobal(
+  target: object,
+  name: string,
+  implementation: (...args: never[]) => unknown,
+): void {
+  const globals = target as unknown as Record<string, unknown>;
+  if (typeof globals[name] === "function") {
+    return;
+  }
+  Object.defineProperty(target, name, {
+    configurable: true,
+    writable: true,
+    value: implementation,
+  });
+}
+
+function defineCompatibilityValue(target: object, name: PropertyKey, value: unknown): void {
+  if (name in target) {
+    return;
+  }
+  Object.defineProperty(target, name, {
+    configurable: true,
+    writable: true,
+    value,
+  });
+}
+
+function installJavaScriptCompatibility(realm: object): void {
+  const constructors = realm as Record<string, unknown>;
+  const ArrayType = constructors.Array as ArrayConstructor | undefined;
+  const StringType = constructors.String as StringConstructor | undefined;
+  const NumberType = constructors.Number as NumberConstructor | undefined;
+  const ObjectType = constructors.Object as ObjectConstructor | undefined;
+  const MathObject = constructors.Math as Math | undefined;
+
+  if (ArrayType) {
+    const prototype = ArrayType.prototype as unknown as Record<PropertyKey, unknown>;
+    defineCompatibilityValue(prototype, "first", function (this: unknown[]) {
+      return this[0];
+    });
+    defineCompatibilityValue(prototype, "last", function (this: unknown[]) {
+      return this.at(-1);
+    });
+    defineCompatibilityValue(prototype, "contains", function (this: unknown[], target: unknown) {
+      return this.includes(target);
+    });
+    defineCompatibilityValue(prototype, "remove", function (this: unknown[], target: unknown) {
+      const index = this.indexOf(target);
+      if (index >= 0) {
+        this.splice(index, 1);
+      }
+    });
+    defineCompatibilityValue(prototype, "shuffle", function (this: unknown[]) {
+      for (let index = this.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [this[index], this[swapIndex]] = [this[swapIndex], this[index]];
+      }
+      return this;
+    });
+    defineCompatibilityValue(prototype, "unique", function (this: unknown[]) {
+      return [...new Set(this)];
+    });
+    defineCompatibilityValue(ArrayType, "combine", (arrays: unknown[][]) => arrays.flat());
+  }
+
+  if (StringType) {
+    const prototype = StringType.prototype as unknown as Record<PropertyKey, unknown>;
+    defineCompatibilityValue(prototype, "contains", function (this: string, target: string) {
+      return this.includes(target);
+    });
+    defineCompatibilityValue(prototype, "format", function (this: string, ...values: string[]) {
+      return this.replace(/\{(\d+)\}/g, (match, index: string) => values[Number(index)] ?? match);
+    });
+    defineCompatibilityValue(StringType, "isString", (value: unknown) => typeof value === "string");
+  }
+
+  if (NumberType) {
+    defineCompatibilityValue(NumberType, "isNumber", (value: unknown) => typeof value === "number");
+  }
+  if (ObjectType) {
+    defineCompatibilityValue(
+      ObjectType,
+      "isEmpty",
+      (value: Record<string, unknown>) => Object.keys(value).length === 0,
+    );
+    defineCompatibilityValue(
+      ObjectType,
+      "each",
+      (
+        value: Record<string, unknown>,
+        callback: (item: unknown, key: string) => unknown,
+        context?: unknown,
+      ) => {
+        for (const [key, item] of Object.entries(value)) {
+          if (callback.call(context, item, key) === false) {
+            return false;
+          }
+        }
+        return true;
+      },
+    );
+  }
+  if (MathObject) {
+    defineCompatibilityValue(MathObject, "clamp", (value: number, min: number, max: number) =>
+      Math.min(max, Math.max(min, value)),
+    );
+    defineCompatibilityValue(MathObject, "square", (value: number) => value * value);
+  }
+  defineCompatibilityValue(realm, "isBoolean", (value: unknown) => typeof value === "boolean");
 }
 
 function normalizedClasses(classes: string[]): string[] {
@@ -106,7 +218,12 @@ function applyElementOptions(element: ObsidianDomElement, value: DomElementOptio
   }
 }
 
-export function installObsidianDomCompatibility(targetWindow: DomCompatibilityWindow): void {
+export function installObsidianDomCompatibility(
+  targetWindow: DomCompatibilityWindow,
+  executionGlobal: object = targetWindow,
+): void {
+  installJavaScriptCompatibility(targetWindow);
+  installJavaScriptCompatibility(executionGlobal);
   const prototype = targetWindow.Element.prototype as unknown as ObsidianDomElement;
 
   defineMethod(prototype, "addClass", function (this: Element, ...classes: string[]) {
@@ -303,4 +420,62 @@ export function installObsidianDomCompatibility(targetWindow: DomCompatibilityWi
       Object.assign(this.style, styles);
     },
   );
+
+  const globalTargets = new Set<object>([targetWindow, executionGlobal]);
+  for (const target of globalTargets) {
+    defineGlobal(
+      target,
+      "createEl",
+      <K extends keyof HTMLElementTagNameMap>(
+        tagName: K,
+        options?: DomElementOptions | string | null,
+        callback?: (element: HTMLElementTagNameMap[K]) => void,
+      ) => {
+        const element = targetWindow.document.createElement(tagName) as HTMLElementTagNameMap[K] &
+          ObsidianDomElement;
+        if (options) {
+          applyElementOptions(element, options);
+        }
+        callback?.(element);
+        return element;
+      },
+    );
+    defineGlobal(
+      target,
+      "createDiv",
+      (
+        options?: DomElementOptions | string | null,
+        callback?: (element: HTMLDivElement) => void,
+      ) => {
+        const element = targetWindow.document.createElement("div") as HTMLDivElement &
+          ObsidianDomElement;
+        if (options) {
+          applyElementOptions(element, options);
+        }
+        callback?.(element);
+        return element;
+      },
+    );
+    defineGlobal(
+      target,
+      "createSpan",
+      (
+        options?: DomElementOptions | string | null,
+        callback?: (element: HTMLSpanElement) => void,
+      ) => {
+        const element = targetWindow.document.createElement("span") as HTMLSpanElement &
+          ObsidianDomElement;
+        if (options) {
+          applyElementOptions(element, options);
+        }
+        callback?.(element);
+        return element;
+      },
+    );
+    defineGlobal(target, "createFragment", (callback?: (fragment: DocumentFragment) => void) => {
+      const fragment = targetWindow.document.createDocumentFragment();
+      callback?.(fragment);
+      return fragment;
+    });
+  }
 }

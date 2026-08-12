@@ -3,6 +3,7 @@ import {
   optionalPayloadString,
   parsePluginRendererRequest,
   parsePluginRendererResponse,
+  parsePluginVaultWriteRequest,
   requirePayloadString,
 } from "./plugin-runtime-protocol";
 
@@ -53,5 +54,30 @@ describe("plugin renderer protocol", () => {
     expect(() => requirePayloadString(request, "commandId")).toThrow(
       "run-command requires a non-empty commandId string",
     );
+  });
+
+  it("validates revision-bound plugin vault write requests", () => {
+    const revision = "a".repeat(64);
+    expect(
+      parsePluginVaultWriteRequest({
+        vaultPath: "/vault",
+        filePath: "Drawing.excalidraw.md",
+        content: "drawing bytes",
+        expectedRevision: revision,
+      }),
+    ).toEqual({
+      vaultPath: "/vault",
+      filePath: "Drawing.excalidraw.md",
+      content: "drawing bytes",
+      expectedRevision: revision,
+    });
+    expect(() =>
+      parsePluginVaultWriteRequest({
+        vaultPath: "/vault",
+        filePath: "Drawing.excalidraw.md",
+        content: "drawing bytes",
+        expectedRevision: "stale",
+      }),
+    ).toThrow("SHA-256 revision");
   });
 });

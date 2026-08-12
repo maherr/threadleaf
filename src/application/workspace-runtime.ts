@@ -322,7 +322,13 @@ export class WorkspaceRuntime {
     const indexReactor = await VaultIndexReactor.open(kernel);
     const pluginHost = options.pluginRuntimeFactory
       ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
-      : new PluginHost(kernel.paths.rootPath, kernel, actions, options.pluginModuleResolver);
+      : new PluginHost(
+          kernel.paths.rootPath,
+          kernel,
+          actions,
+          options.pluginModuleResolver,
+          kernel,
+        );
     let restoredWorkspace: PersistedWorkspaceState | null = null;
     let workspaceLoadWarning: string | null = null;
     let workspaceStateReadable = true;

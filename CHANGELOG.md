@@ -121,7 +121,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   headers, plugin action icons, light/dark chrome propagation, view lifecycle, and layout snapshots.
 - Compatibility implementations for workspace view factories, metadata and frontmatter caches,
   Markdown rendering, modal structure, and open Lucide icons, with executable synthetic fixtures.
-- A measured level 4 read-only workflow for opening an existing Excalidraw Markdown document as the
-  unchanged plugin's real loaded canvas in the production Electron host.
+- Baseline Obsidian-compatible settings controls, global DOM element factories, JavaScript utility
+  aliases, component load state, accent-color lookup, and sanitized HTML-to-DOM conversion used by
+  the unchanged Excalidraw bundle.
+- Revision-bound compatibility-plugin writes for existing files, validated against the active vault
+  and routed through the workspace controller and recovery-backed writer with explicit conflict
+  retention.
+- A measured level 4 workflow for opening an existing Excalidraw Markdown document, mutating its
+  scene, saving it through the compatibility vault, closing its plugin-owned leaf, and reopening the
+  exact persisted scene in the production Electron host.
+- Document-view selection and teardown rules that reserve Excalidraw views for supported files,
+  keep ordinary Markdown in the native editor, and remove the child plugin surface on leaf close.
 - Plugin stylesheet preservation with external asset URLs replaced by inert embedded data,
   explicit diagnostics, and live proof that Excalidraw CSS applies without network requests.
