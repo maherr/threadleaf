@@ -157,7 +157,7 @@ through public `Vault.rename`, `FileManager.renameFile`, and `FileManager.trashF
 unchanged Excalidraw plugin has moved and trashed real binary fixtures through those paths while
 preserving their exact SHA-256 digests, and recovery fixtures cover interrupted renames plus
 external-edit conflicts without replacing either side. The corresponding official Obsidian
-same-vault roundtrip is still pending. Inline wiki-embed rendering, untested export formats, and
+same-vault roundtrip is still pending. Non-image note transclusion, untested export formats, and
 universal plugin parity remain unsupported. Excalidraw's release-notes modal and Threadleaf
 light/dark chrome also render, and its stylesheet is preserved while four remote font URLs are
 replaced with inert embedded assets. The runtime is still trusted:
@@ -171,8 +171,8 @@ is no Apply action yet; behavior import remains an explicit future transaction r
 effect of opening a vault.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
-functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
-or release-grade backup and restore workflow.
+functional, but Threadleaf is still pre-alpha and has no inline live preview, note transclusion, or
+completed beta upgrade, rollback, and diagnostic workflow.
 
 Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather
 than a development server. A fresh package opens an external, read-only demo vault, keeps the
@@ -246,13 +246,13 @@ Open-tab order and the active note restore separately for each vault. Closing ev
 persisted choice, while paths that no longer exist are removed from the saved workspace on the
 next successful launch.
 Reading view previews the current draft without saving it; clicking a source-line control returns
-to the exact source line. Relative and vault-rooted local raster images render without exposing
-filesystem paths or general file access to the renderer. Ctrl/Cmd+N opens the New note dialog and
-selects the resulting empty Markdown note for editing. Ctrl/Cmd+Shift+M opens Move for the active
-clean note. Threadleaf commits only when the projected whole-vault index preserves every internal
-link resolution. It presents the exact rewrite count before enabling confirmation; for unusually
-large moves, the dialog names the first 100 target updates and reports the full count. Unsafe
-ambiguous changes stay visibly blocked and write nothing. Trash has no
+to the exact source line. Relative and vault-rooted Markdown images plus Obsidian-style raster wiki
+embeds render without exposing filesystem paths or general file access to the renderer. Ctrl/Cmd+N
+opens the New note dialog and selects the resulting empty Markdown note for editing.
+Ctrl/Cmd+Shift+M opens Move for the active clean note. Threadleaf commits only when the projected
+vault resolver preserves every internal-link meaning. It presents the exact rewrite count before
+enabling confirmation; for unusually large moves, the dialog names the first 100 target updates
+and reports the full count. Unsafe ambiguous changes stay visibly blocked and write nothing. Trash has no
 default shortcut, but it is available from the note toolbar and command palette and can be assigned
 one in keyboard settings. Its confirmation moves the exact current revision to
 `.trash/<original-path>`, warns when indexed incoming links will become unresolved, and never
@@ -307,6 +307,14 @@ recovery, and clean saved bytes:
 
 ```sh
 pnpm run test:editor-reliability
+```
+
+The representative-vault gate makes a private temporary copy, runs the packaged desktop behavior
+against that copy, verifies the source bytes stayed unchanged, and prints aggregate counts and
+timings without note names, content, paths, or hashes:
+
+```sh
+pnpm run test:representative-vault -- --source /absolute/path/to/vault
 ```
 
 The development CLI requires an explicit vault and never consults the desktop application's saved

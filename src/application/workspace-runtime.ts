@@ -336,7 +336,7 @@ export class WorkspaceRuntime {
     const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, bootstrap.snapshot, {
       onError: (error) => runtime?.recordWatcherError(error),
     });
-    const indexReactor = VaultIndexReactor.fromSnapshots(kernel, bootstrap.documents);
+    const indexReactor = await VaultIndexReactor.fromSnapshotsAsync(kernel, bootstrap.documents);
     bootstrap.documents.length = 0;
     const pluginHost = options.pluginRuntimeFactory
       ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
@@ -940,7 +940,10 @@ export class WorkspaceRuntime {
       sourcePath,
       targetPath,
       request.expectedRevision,
-      request.confirmationId ? { confirmationId: request.confirmationId } : undefined,
+      {
+        ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+        indexSnapshot: this.indexReactor.index.snapshot(),
+      },
     );
     if (outcome.status !== "committed") {
       return outcome;

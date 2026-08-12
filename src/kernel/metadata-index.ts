@@ -215,6 +215,70 @@ function safeCandidate(value: string): string | null {
   return withoutMarkdownExtension(normalized);
 }
 
+export class VaultLinkResolver {
+  readonly #byPath = new Map<string, string[]>();
+  readonly #byName = new Map<string, string[]>();
+
+  constructor(paths: Iterable<string>) {
+    for (const filePath of paths) {
+      const withoutExtension = withoutMarkdownExtension(filePath);
+      const pathKey = normalizeKey(withoutExtension);
+      const nameKey = normalizeKey(path.posix.basename(withoutExtension));
+      this.#byPath.set(pathKey, [...(this.#byPath.get(pathKey) ?? []), filePath]);
+      this.#byName.set(nameKey, [...(this.#byName.get(nameKey) ?? []), filePath]);
+    }
+  }
+
+  resolve(sourcePath: string, rawTarget: string): LinkResolution {
+    if (rawTarget === "") {
+      return { status: "resolved", path: sourcePath };
+    }
+    const rootedOnly = rawTarget.startsWith("/");
+    const target = withoutMarkdownExtension(rawTarget.replace(/^\//, ""));
+    const candidates: string[] = [];
+    const relative = safeCandidate(path.posix.join(path.posix.dirname(sourcePath), target));
+    const rooted = safeCandidate(target);
+    for (const candidate of rootedOnly ? [rooted] : [relative, rooted]) {
+      if (!candidate) {
+        continue;
+      }
+      for (const match of this.#byPath.get(normalizeKey(candidate)) ?? []) {
+        if (!candidates.includes(match)) {
+          candidates.push(match);
+        }
+      }
+      if (candidates.length > 0) {
+        break;
+      }
+    }
+    if (candidates.length === 0 && !target.includes("/")) {
+      candidates.push(...(this.#byName.get(normalizeKey(path.posix.basename(target))) ?? []));
+    }
+    candidates.sort();
+    const resolved = candidates.length === 1 ? candidates[0] : undefined;
+    if (resolved) {
+      return { status: "resolved", path: resolved };
+    }
+    if (candidates.length > 1) {
+      return { status: "ambiguous", candidates };
+    }
+    return { status: "unresolved" };
+  }
+
+  duplicateNames(): Array<{ name: string; paths: string[] }> {
+    return [...this.#byName.entries()]
+      .filter(([, paths]) => paths.length > 1)
+      .map(([name, paths]) => ({ name, paths: [...paths].sort() }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+}
+
+const snapshotBuildYieldInterval = 32;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 export class MetadataIndex {
   readonly #documents = new Map<string, ParsedDocument>();
   readonly #searchIndex = new FullTextSearchIndex();
@@ -241,6 +305,24 @@ export class MetadataIndex {
       searchDocuments.push(toSearchDocument(document, snapshot.content));
     }
     index.replaceDocuments(documents, searchDocuments);
+    return index;
+  }
+
+  static async fromSnapshotsAsync(snapshots: readonly VaultTextSnapshot[]): Promise<MetadataIndex> {
+    const index = new MetadataIndex();
+    for (let cursor = 0; cursor < snapshots.length; cursor += 1) {
+      const snapshot = snapshots[cursor];
+      if (!snapshot) {
+        continue;
+      }
+      const document = parseDocument(snapshot);
+      index.#documents.set(snapshot.path, document);
+      index.#searchIndex.upsert(toSearchDocument(document, snapshot.content));
+      if ((cursor + 1) % snapshotBuildYieldInterval === 0) {
+        await yieldToEventLoop();
+      }
+    }
+    index.#generation += 1;
     return index;
   }
 
@@ -323,15 +405,7 @@ export class MetadataIndex {
     const documents = [...this.#documents.values()].sort((left, right) =>
       left.path.localeCompare(right.path),
     );
-    const byPath = new Map<string, string[]>();
-    const byName = new Map<string, string[]>();
-    for (const document of documents) {
-      const withoutExtension = withoutMarkdownExtension(document.path);
-      const pathKey = normalizeKey(withoutExtension);
-      const nameKey = normalizeKey(path.posix.basename(withoutExtension));
-      byPath.set(pathKey, [...(byPath.get(pathKey) ?? []), document.path]);
-      byName.set(nameKey, [...(byName.get(nameKey) ?? []), document.path]);
-    }
+    const resolver = new VaultLinkResolver(documents.map((document) => document.path));
 
     const backlinks = new Map<string, Set<string>>();
     const documentSnapshots: DocumentMetadataSnapshot[] = documents.map((document) => ({
@@ -342,7 +416,7 @@ export class MetadataIndex {
       tagCounts: document.tagCounts,
       properties: document.properties,
       links: document.links.map((link) => {
-        const resolution = this.resolveLink(document.path, link.target, byPath, byName);
+        const resolution = resolver.resolve(document.path, link.target);
         if (resolution.status === "resolved" && resolution.path) {
           const sources = backlinks.get(resolution.path) ?? new Set<string>();
           sources.add(document.path);
@@ -359,10 +433,7 @@ export class MetadataIndex {
       }),
     }));
 
-    const duplicateNames = [...byName.entries()]
-      .filter(([, paths]) => paths.length > 1)
-      .map(([name, paths]) => ({ name, paths: [...paths].sort() }))
-      .sort((left, right) => left.name.localeCompare(right.name));
+    const duplicateNames = resolver.duplicateNames();
     const backlinkSnapshot = documents.map((document) => ({
       path: document.path,
       sources: [...(backlinks.get(document.path) ?? [])].sort(),
@@ -374,47 +445,6 @@ export class MetadataIndex {
     };
     this.#snapshotCache = { generation: this.#generation, snapshot };
     return snapshot;
-  }
-
-  private resolveLink(
-    sourcePath: string,
-    rawTarget: string,
-    byPath: Map<string, string[]>,
-    byName: Map<string, string[]>,
-  ): LinkResolution {
-    if (rawTarget === "") {
-      return { status: "resolved", path: sourcePath };
-    }
-    const rootedOnly = rawTarget.startsWith("/");
-    const target = withoutMarkdownExtension(rawTarget.replace(/^\//, ""));
-    const candidates: string[] = [];
-    const relative = safeCandidate(path.posix.join(path.posix.dirname(sourcePath), target));
-    const rooted = safeCandidate(target);
-    for (const candidate of rootedOnly ? [rooted] : [relative, rooted]) {
-      if (!candidate) {
-        continue;
-      }
-      for (const match of byPath.get(normalizeKey(candidate)) ?? []) {
-        if (!candidates.includes(match)) {
-          candidates.push(match);
-        }
-      }
-      if (candidates.length > 0) {
-        break;
-      }
-    }
-    if (candidates.length === 0 && !target.includes("/")) {
-      candidates.push(...(byName.get(normalizeKey(path.posix.basename(target))) ?? []));
-    }
-    candidates.sort();
-    const resolved = candidates.length === 1 ? candidates[0] : undefined;
-    if (resolved) {
-      return { status: "resolved", path: resolved };
-    }
-    if (candidates.length > 1) {
-      return { status: "ambiguous", candidates };
-    }
-    return { status: "unresolved" };
   }
 
   private replaceDocuments(
@@ -450,6 +480,13 @@ export class VaultIndexReactor {
     snapshots: readonly VaultTextSnapshot[],
   ): VaultIndexReactor {
     return new VaultIndexReactor(source, MetadataIndex.fromSnapshots(snapshots));
+  }
+
+  static async fromSnapshotsAsync(
+    source: VaultReadPort,
+    snapshots: readonly VaultTextSnapshot[],
+  ): Promise<VaultIndexReactor> {
+    return new VaultIndexReactor(source, await MetadataIndex.fromSnapshotsAsync(snapshots));
   }
 
   async accept(batch: VaultChangeBatch): Promise<IndexUpdateResult> {

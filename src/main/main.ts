@@ -82,6 +82,7 @@ let appUpdateController: AppUpdateController;
 let editorDraftStore: FileEditorDraftStore;
 let pluginPackageManager: PluginPackageManager;
 let pluginOperationTail: Promise<void> = Promise.resolve();
+let initialWorkspaceActivation: Promise<void> | null = null;
 let attachedPluginView: WebContentsView | null = null;
 const compatibilityPluginViews = new Set<WebContentsView>();
 const compatibilityPluginWebContents = new Set<WebContents>();
@@ -500,6 +501,15 @@ async function activateInitialWorkspace(): Promise<void> {
   }
 }
 
+function startInitialWorkspaceActivation(): void {
+  if (initialWorkspaceActivation) {
+    return;
+  }
+  initialWorkspaceActivation = activateInitialWorkspace().catch((error: unknown) => {
+    console.error("Initial vault activation failed", error);
+  });
+}
+
 async function createAppUpdateController(): Promise<AppUpdateController> {
   const currentVersion = app.getVersion();
   const disabledReason = appUpdateDisabledReason({
@@ -626,6 +636,17 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
+  ipcMain.on(ipcChannels.startupShellReady, (event) => {
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      mainWindow.webContents.isDestroyed() ||
+      event.sender !== mainWindow.webContents
+    ) {
+      return;
+    }
+    startInitialWorkspaceActivation();
+  });
   ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
   ipcMain.handle(ipcChannels.appearance, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
@@ -1282,9 +1303,6 @@ app.whenReady().then(async () => {
   workspaceController = await createWorkspaceController();
   registerIpcHandlers();
   await createWindow();
-  void activateInitialWorkspace().catch((error: unknown) => {
-    console.error("Initial vault activation failed", error);
-  });
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

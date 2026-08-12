@@ -217,6 +217,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Manual signed-release update support with no startup or background checks, explicit check,
   download, and restart-to-install actions, fail-closed package trust markers, sanitized errors,
   Linux package-manager guidance, and packaged light, dark, and minimum-viewport Settings proof.
+- A privacy-safe representative-vault desktop gate that copies a real corpus into private
+  temporary storage, exercises large-note editing, raster attachments, external and burst edits,
+  link-updating rename, restart recovery, and source-byte preservation, then reports aggregates
+  without note names, content, paths, or hashes.
+- A renderer-to-main startup handshake that paints the opening workspace before restored-vault
+  activation begins, plus cooperative metadata construction that yields during large corpus builds.
+- Obsidian-style raster wiki-image embeds through the existing contained, MIME-sniffed, bounded
+  preview authority.
+- Bounded whole-vault move planning that reuses the current metadata snapshot and reads full bytes
+  only for the source and documents whose links require rewriting.
 
 ### Fixed
 

@@ -5928,7 +5928,10 @@ window.addEventListener(
 );
 void window.threadleaf
   .getSnapshot()
-  .then(render)
+  .then((snapshot) => {
+    render(snapshot);
+    window.requestAnimationFrame(() => window.threadleaf.markStartupShellReady());
+  })
   .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
 void window.threadleaf
   .getSettings()

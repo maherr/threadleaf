@@ -112,6 +112,29 @@ describe("MetadataIndex", () => {
     expect(vault.readPaths).toEqual([]);
   });
 
+  it("yields to the event loop while building a snapshot-backed index", async () => {
+    const snapshots = Array.from({ length: 64 }, (_, index): VaultTextSnapshot => {
+      const content = `# Note ${index}\nsearchable body`;
+      const bytes = Buffer.from(content);
+      return {
+        path: `Note ${String(index).padStart(2, "0")}.md`,
+        content,
+        revision: revisionOf(bytes),
+        size: bytes.length,
+      };
+    });
+    let eventLoopAdvanced = false;
+    setImmediate(() => {
+      eventLoopAdvanced = true;
+    });
+
+    const index = await MetadataIndex.fromSnapshotsAsync(snapshots);
+
+    expect(eventLoopAdvanced).toBe(true);
+    expect(index.snapshot().documents).toHaveLength(64);
+    expect(index.search("searchable").total).toBe(64);
+  });
+
   it("reuses an immutable-generation snapshot and invalidates it after an index change", async () => {
     const vault = new MemoryVault();
     vault.set("A.md", "before");

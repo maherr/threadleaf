@@ -138,6 +138,34 @@ describe("Markdown reading view", () => {
     expect(placeholder?.dataset.threadleafAlt).toBe("Architecture");
   });
 
+  it("uses the same bounded image path for wiki-style image embeds", async () => {
+    const rendered = preview("![[assets/architecture.PNG|Architecture]]");
+    const requests: string[][] = [];
+
+    await hydrateMarkdownPreviewImages(rendered, {
+      sourceNotePath: "Notes/Current.md",
+      expectedVaultId: "vault-a",
+      loadImage: async (sourceNotePath, target, expectedVaultId) => {
+        requests.push([sourceNotePath, target, expectedVaultId]);
+        return {
+          status: "ready",
+          vaultId: "vault-a",
+          path: "Notes/assets/architecture.PNG",
+          mimeType: "image/png",
+          size: 4,
+          revision: "d".repeat(64),
+          base64: "iVBORw==",
+        };
+      },
+    });
+
+    expect(requests).toEqual([["Notes/Current.md", "assets/architecture.PNG", "vault-a"]]);
+    expect(rendered.querySelector<HTMLImageElement>("img.preview-local-image")?.alt).toBe(
+      "Architecture",
+    );
+    expect(rendered.querySelector("a.preview-embed-link")).toBeNull();
+  });
+
   it("hydrates a supported local image without exposing a navigable filesystem URL", async () => {
     const rendered = preview("![Architecture](assets/architecture.png)");
     const requests: string[][] = [];

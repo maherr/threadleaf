@@ -172,6 +172,9 @@ markdown.renderer.rules.threadleaf_wikilink = (tokens, index) => {
   }
   const fallback = `${link.target}${link.subpath ?? ""}`;
   const label = link.alias ?? fallback;
+  if (link.embed && /\.(?:gif|jpe?g|png|webp)$/iu.test(link.target)) {
+    return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(link.target)}" data-threadleaf-alt="${escapeAttribute(link.alias ?? "")}">Image: ${escapeText(label)}</span>`;
+  }
   const classes = link.embed ? "internal-link preview-embed-link" : "internal-link";
   return `<a href="#" class="${classes}" data-threadleaf-link="wiki" data-threadleaf-target="${escapeAttribute(link.target)}" data-threadleaf-subpath="${escapeAttribute(link.subpath ?? "")}" data-threadleaf-embed="${String(link.embed)}">${escapeText(label)}</a>`;
 };

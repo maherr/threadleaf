@@ -415,6 +415,7 @@ export interface ThreadleafBridge {
   downloadAppUpdate(): Promise<AppUpdateSnapshot>;
   installAppUpdate(): Promise<AppUpdateSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  markStartupShellReady(): void;
   getSettings(): Promise<AppSettingsSnapshot>;
   getAppearance(expectedVaultId: string): Promise<AppearanceResponse>;
   setVaultAppearance(

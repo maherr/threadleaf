@@ -6,6 +6,7 @@ export const ipcChannels = {
   installAppUpdate: "threadleaf:install-app-update",
   snapshot: "threadleaf:snapshot",
   snapshotChanged: "threadleaf:snapshot-changed",
+  startupShellReady: "threadleaf:startup-shell-ready",
   settings: "threadleaf:settings",
   settingsChanged: "threadleaf:settings-changed",
   appearance: "threadleaf:appearance",

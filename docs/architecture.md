@@ -120,15 +120,18 @@ vault. It is written atomically with private file permissions and a versioned sh
 Threadleaf opens a small plugin-free bootstrap runtime, registers IPC, and renders the first window
 before it opens the configured or restored vault. A startup snapshot names the real target and
 disables bootstrap writes and search while the target builds its derived index. Open vault remains
-available, and a generation guard prevents a late restore from replacing a vault picked while it
-was opening. The target bootstrap reads each visible Markdown file once and uses the same stable
-byte snapshots to seed both watcher state and the derived metadata index. The watcher starts from
-that exact observation and reconciles later filesystem events instead of repeating the initial
-corpus read. Environment overrides are never persisted. After adoption, Threadleaf reconciles only
-the plugins explicitly selected in its private per-vault settings. A vault with no saved plugin
-preference starts restricted. An unavailable or malformed saved selection falls back to the
-bundled fixture with a visible warning and does not erase the saved path, so a temporarily
-unmounted vault can recover on a later launch.
+available. After the first bootstrap render, the sandboxed renderer sends a one-way shell-ready
+signal; only then may the main process begin restored-vault activation. A generation guard prevents
+a late restore from replacing a vault picked while it was opening. The target bootstrap reads each
+visible Markdown file once and uses the same stable byte snapshots to seed both watcher state and
+the derived metadata index. Metadata construction yields to the event loop at bounded intervals so
+window and IPC work remain serviceable during a large build. The watcher starts from that exact
+observation and reconciles later filesystem events instead of repeating the initial corpus read.
+Environment overrides are never persisted. After adoption, Threadleaf reconciles only the plugins
+explicitly selected in its private per-vault settings. A vault with no saved plugin preference
+starts restricted. An unavailable or malformed saved selection falls back to the bundled fixture
+with a visible warning and does not erase the saved path, so a temporarily unmounted vault can
+recover on a later launch.
 
 Every editor draft carries the identity of the vault that produced its revision. The save boundary
 rejects a draft after the active vault changes, even if a relative note path happens to exist in
@@ -369,16 +372,17 @@ write boundary. Switching modes stores only an application preference outside th
 
 The first renderer uses Markdown-it for deterministic block parsing and DOMPurify with a narrow
 element and attribute allowlist. Raw HTML is accepted only after sanitization. Scripts, event
-handlers, forms, styles, media elements, and active URLs are removed. Markdown images and wiki
-embeds first become inert placeholders. A dedicated read-only service may then replace Markdown
-image placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. The renderer supplies the source
-note, raw target, and expected vault identity; the main process resolves note-relative and
-vault-rooted paths, follows symlinks only within the vault, excludes `.obsidian/`, `.git/`, and
+handlers, forms, styles, media elements, and active URLs are removed. Markdown images and
+Obsidian-style wiki image embeds first become inert placeholders. A dedicated read-only service may
+then replace those placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. The renderer supplies
+the source note, raw target, and expected vault identity; the main process resolves note-relative
+and vault-rooted paths, follows symlinks only within the vault, excludes `.obsidian/`, `.git/`, and
 transaction artifacts, rechecks the active runtime after asynchronous reads, and never returns a
 filesystem URL. Reads are stable and limited to 10 MiB per image. One preview accepts at most 128
 images and 64 MiB of decoded input. Oversized, missing, external, malformed, unsupported, and
-out-of-vault targets remain labeled placeholders. SVG and wiki embeds remain inert. External links
-also stay inert during pre-alpha rather than broadening IPC for shell access prematurely.
+out-of-vault targets remain labeled placeholders. SVG and non-image wiki embeds remain inert.
+External links also stay inert during pre-alpha rather than broadening IPC for shell access
+prematurely.
 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized
@@ -457,19 +461,22 @@ aliases retain their source path, tag totals sum occurrences, and verbose tag in
 each carrying document once.
 
 Move and rename add a link-integrity preflight in front of the recoverable rename primitive. The
-service snapshots the Markdown corpus, builds the current metadata index, projects the source at
-its proposed destination, and builds the projected index from the same bytes. Every parsed wiki and
-Markdown link must retain the same resolved, unresolved, or ambiguous meaning after remapping the
-moved note's identity.
+desktop service reuses the current generation-bound metadata snapshot; a standalone caller builds
+that disposable index once. A lightweight projected resolver remaps the source path to its proposed
+destination without cloning every note body or constructing another complete index. The planner
+reads full bytes only for the source and documents whose indexed link meaning would change. Every
+parsed wiki and Markdown link must retain the same resolved, unresolved, or ambiguous meaning after
+remapping the moved note's identity.
 
 The shared link parser retains exact source and target ranges while excluding fenced code, inline
 code, and HTML comments. When a currently resolved link would change meaning, the move planner
 replaces only its target slice: wiki links receive an escaped vault path without `.md`, while
 Markdown links receive an escaped path relative to the linking note's projected location. Anchors,
 aliases, labels, titles, surrounding whitespace, BOM, line endings, and all unrelated bytes remain
-untouched. Replacements are applied from the end of each file, then the complete projected vault is
-indexed again. A proposal is valid only when every occurrence resolves to its original logical
-target after remapping the moved note's identity. Unresolved or ambiguous links are never guessed.
+untouched. Replacements are applied from the end of each affected file. The projected resolver then
+validates every indexed occurrence against its expected logical target. A proposal is valid only
+when every occurrence preserves its meaning after remapping the moved note's identity. Unresolved
+or ambiguous links are never guessed.
 
 When rewrites are safe and necessary, the service hashes the source and destination, source
 revision, exact rewrite preview, affected file revisions, and proposed content revisions into a

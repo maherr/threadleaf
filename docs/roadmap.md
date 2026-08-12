@@ -130,7 +130,8 @@ equivalence through the real writer-to-watcher seam.
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
-- [ ] Rich property views and editing, broader attachment types, and wiki embeds.
+- [ ] Rich property views and editing, broader attachment types, note transclusions, and
+      non-raster wiki embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
 
@@ -140,7 +141,7 @@ Threadleaf will be presented as ready for maintainer-led daily-drive testing onl
 unchecked item here is closed. The first handoff uses a copy of the live vault and never requires
 conversion.
 
-- [ ] Exercise a representative copy of the live vault at real scale, including large notes,
+- [x] Exercise a representative copy of the live vault at real scale, including large notes,
       attachments, external edits, sync-style event bursts, rename refactors, and restart recovery.
 - [x] Complete the editor reliability pass for IME, undo and redo, selections, dirty navigation,
       save conflicts, crash recovery, and no-loss reopen behavior.

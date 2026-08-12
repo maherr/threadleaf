@@ -38,6 +38,7 @@ const bridge: ThreadleafBridge = {
   installAppUpdate: () =>
     ipcRenderer.invoke(ipcChannels.installAppUpdate) as Promise<AppUpdateSnapshot>,
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
+  markStartupShellReady: () => ipcRenderer.send(ipcChannels.startupShellReady),
   getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
   getAppearance: (expectedVaultId) =>
     ipcRenderer.invoke(ipcChannels.appearance, expectedVaultId) as Promise<AppearanceResponse>,

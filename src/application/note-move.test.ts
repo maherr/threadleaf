@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MetadataIndex } from "../kernel/metadata-index";
-import { FixedStateRoot, type VaultMutationPort } from "../kernel/ports";
+import { FixedStateRoot, type VaultMutationPort, type VaultReadPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import {
   movedMarkdownPath,
@@ -48,6 +48,38 @@ describe("note move paths", () => {
 });
 
 describe("link-safe note moves", () => {
+  it("reuses the current index and reads only the source plus affected documents", async () => {
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, "Target.md"), "# Target\n", "utf8"),
+      fs.writeFile(path.join(vaultPath, "Linker.md"), "[[Target]]\n", "utf8"),
+      ...Array.from({ length: 128 }, (_, index) =>
+        fs.writeFile(path.join(vaultPath, `Filler-${index}.md`), `# Filler ${index}\n`, "utf8"),
+      ),
+    ]);
+    const kernel = await openKernel();
+    const index = (await MetadataIndex.build(kernel)).snapshot();
+    const reads: string[] = [];
+    const trackedVault: VaultReadPort = {
+      getName: () => kernel.getName(),
+      listMarkdownPaths: (directory) => kernel.listMarkdownPaths(directory),
+      readText: async (relativePath) => {
+        reads.push(relativePath);
+        return kernel.readText(relativePath);
+      },
+    };
+
+    const plan = await planMarkdownNoteMove(
+      trackedVault,
+      "Target.md",
+      "Renamed.md",
+      undefined,
+      index,
+    );
+
+    expect(plan.status).toBe("planned");
+    expect(reads.sort()).toEqual(["Linker.md", "Target.md"]);
+  });
+
   it("plans a backlink rewrite without touching its alias, anchor, spacing, or body", async () => {
     await fs.writeFile(path.join(vaultPath, "Target.md"), "# Target\n", "utf8");
     const linker = "Before [[ Target#Heading | visible ]] after\n";

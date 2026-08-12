@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { parseMarkdownLinks } from "../kernel/markdown-links";
-import { type LinkResolution, MetadataIndex } from "../kernel/metadata-index";
+import {
+  type LinkResolution,
+  MetadataIndex,
+  type MetadataIndexSnapshot,
+  VaultLinkResolver,
+} from "../kernel/metadata-index";
 import { normalizeMarkdownNotePath } from "../kernel/note-path";
 import type { VaultMutationPort, VaultReadPort, VaultTextSnapshot } from "../kernel/ports";
 import type { NoteMoveBlocker, NoteMoveOutcome, NoteMoveRewritePreview } from "../shared/contracts";
@@ -39,6 +44,7 @@ export type NoteMovePlan =
 export interface NoteMoveOptions {
   confirmationId?: string;
   acceptCurrentRewrites?: boolean;
+  indexSnapshot?: MetadataIndexSnapshot;
 }
 
 interface InternalRewrite {
@@ -46,34 +52,6 @@ interface InternalRewrite {
   start: number;
   end: number;
   rewrite: NoteMoveRewrite;
-}
-
-class SnapshotVault implements VaultReadPort {
-  readonly #name: string;
-  readonly #snapshots: Map<string, VaultTextSnapshot>;
-
-  constructor(name: string, snapshots: Iterable<VaultTextSnapshot>) {
-    this.#name = name;
-    this.#snapshots = new Map([...snapshots].map((snapshot) => [snapshot.path, snapshot]));
-  }
-
-  getName(): string {
-    return this.#name;
-  }
-
-  async listMarkdownPaths(): Promise<string[]> {
-    return [...this.#snapshots.keys()].sort((left, right) => left.localeCompare(right));
-  }
-
-  async readText(relativePath: string): Promise<VaultTextSnapshot> {
-    const snapshot = this.#snapshots.get(relativePath);
-    if (!snapshot) {
-      const error = new Error(`File does not exist: ${relativePath}`);
-      Object.assign(error, { code: "ENOENT" });
-      throw error;
-    }
-    return snapshot;
-  }
 }
 
 function remapResolution(
@@ -183,6 +161,7 @@ export async function planMarkdownNoteMove(
   requestedSourcePath: string,
   requestedTargetPath: string,
   expectedSourceRevision?: string,
+  suppliedIndex?: MetadataIndexSnapshot,
 ): Promise<NoteMovePlan> {
   const sourcePath = normalizeMarkdownNotePath(requestedSourcePath);
   const targetPath = normalizeMarkdownNotePath(requestedTargetPath);
@@ -190,7 +169,8 @@ export async function planMarkdownNoteMove(
     throw new Error("Move source and destination must be different.");
   }
 
-  const paths = await vault.listMarkdownPaths();
+  const currentIndex = suppliedIndex ?? (await MetadataIndex.build(vault)).snapshot();
+  const paths = currentIndex.documents.map((document) => document.path);
   if (!paths.includes(sourcePath)) {
     throw new Error(`Markdown note is not indexed in this vault: ${sourcePath}`);
   }
@@ -198,12 +178,10 @@ export async function planMarkdownNoteMove(
     return { status: "conflict", from: sourcePath, to: targetPath, reason: "target-exists" };
   }
 
-  const snapshots = await Promise.all(paths.map((filePath) => vault.readText(filePath)));
-  const snapshotsByPath = new Map(snapshots.map((snapshot) => [snapshot.path, snapshot]));
-  const source = snapshotsByPath.get(sourcePath);
-  if (!source) {
-    throw new Error(`Move preflight lost its source snapshot: ${sourcePath}`);
-  }
+  const currentDocuments = new Map(
+    currentIndex.documents.map((document) => [document.path, document]),
+  );
+  const source = await vault.readText(sourcePath);
   if (expectedSourceRevision && source.revision !== expectedSourceRevision) {
     return {
       status: "conflict",
@@ -212,53 +190,30 @@ export async function planMarkdownNoteMove(
       reason: "source-revision-changed",
     };
   }
+  if (currentDocuments.get(sourcePath)?.revision !== source.revision) {
+    throw new Error(
+      "The vault index changed while preparing this move. Wait for indexing and retry.",
+    );
+  }
 
-  const currentVault = new SnapshotVault(vault.getName(), snapshots);
-  const initiallyProjectedSnapshots = snapshots.map((snapshot) =>
-    snapshot.path === sourcePath ? { ...snapshot, path: targetPath } : snapshot,
-  );
-  const initiallyProjectedVault = new SnapshotVault(vault.getName(), initiallyProjectedSnapshots);
-  const [currentIndex, initiallyProjectedIndex] = await Promise.all([
-    MetadataIndex.build(currentVault),
-    MetadataIndex.build(initiallyProjectedVault),
-  ]);
-  const currentDocuments = new Map(
-    currentIndex.snapshot().documents.map((document) => [document.path, document]),
-  );
-  const initiallyProjectedDocuments = new Map(
-    initiallyProjectedIndex.snapshot().documents.map((document) => [document.path, document]),
-  );
+  const projectedPaths = paths.map((filePath) => (filePath === sourcePath ? targetPath : filePath));
+  const projectedResolver = new VaultLinkResolver(projectedPaths);
   const expectedByOccurrence = new Map<string, LinkResolution>();
   const blockersByOccurrence = new Map<string, NoteMoveBlocker>();
-  const candidates: InternalRewrite[] = [];
+  const candidateIndexesByPath = new Map<string, number[]>();
 
   for (const [documentPath, currentDocument] of currentDocuments) {
-    const snapshot = snapshotsByPath.get(documentPath);
-    if (!snapshot) {
-      throw new Error(`Move preflight lost the document snapshot for ${documentPath}.`);
-    }
-    const parsedLinks = parseMarkdownLinks(snapshot.content);
     const resultPath = documentPath === sourcePath ? targetPath : documentPath;
-    const initiallyProjectedDocument = initiallyProjectedDocuments.get(resultPath);
-    if (
-      !initiallyProjectedDocument ||
-      initiallyProjectedDocument.links.length !== currentDocument.links.length ||
-      parsedLinks.length !== currentDocument.links.length
-    ) {
-      throw new Error(`Move preflight could not compare links for ${documentPath}.`);
-    }
-
     for (let index = 0; index < currentDocument.links.length; index += 1) {
       const key = `${documentPath}\0${index}`;
       const currentLink = currentDocument.links[index];
-      const initiallyProjectedLink = initiallyProjectedDocument.links[index];
-      const parsedLink = parsedLinks[index];
-      if (!currentLink || !initiallyProjectedLink || !parsedLink) {
+      if (!currentLink) {
         throw new Error(`Move preflight lost link ${index + 1} in ${documentPath}.`);
       }
       const expectedResolution = remapResolution(currentLink.resolution, sourcePath, targetPath);
       expectedByOccurrence.set(key, expectedResolution);
-      if (resolutionsEqual(expectedResolution, initiallyProjectedLink.resolution)) {
+      const projectedResolution = projectedResolver.resolve(resultPath, currentLink.target);
+      if (resolutionsEqual(expectedResolution, projectedResolution)) {
         continue;
       }
       if (currentLink.resolution.status !== "resolved" || !currentLink.resolution.path) {
@@ -269,14 +224,55 @@ export async function planMarkdownNoteMove(
             currentLink.target,
             currentLink.syntax,
             currentLink.resolution,
-            initiallyProjectedLink.resolution,
+            projectedResolution,
           ),
         );
         continue;
       }
+      const candidateIndexes = candidateIndexesByPath.get(documentPath) ?? [];
+      candidateIndexes.push(index);
+      candidateIndexesByPath.set(documentPath, candidateIndexes);
+    }
+  }
+
+  const snapshotsByPath = new Map<string, VaultTextSnapshot>([[sourcePath, source]]);
+  const candidatesByPath = new Map<string, InternalRewrite[]>();
+  for (const [documentPath, indexes] of candidateIndexesByPath) {
+    const currentDocument = currentDocuments.get(documentPath);
+    if (!currentDocument) {
+      throw new Error(`Move preflight lost indexed metadata for ${documentPath}.`);
+    }
+    const snapshot = snapshotsByPath.get(documentPath) ?? (await vault.readText(documentPath));
+    snapshotsByPath.set(documentPath, snapshot);
+    if (snapshot.revision !== currentDocument.revision) {
+      throw new Error(
+        "The vault index changed while preparing this move. Wait for indexing and retry.",
+      );
+    }
+    const parsedLinks = parseMarkdownLinks(snapshot.content);
+    if (parsedLinks.length !== currentDocument.links.length) {
+      throw new Error(`Move preflight could not compare links for ${documentPath}.`);
+    }
+    const resultPath = documentPath === sourcePath ? targetPath : documentPath;
+    const entries: InternalRewrite[] = [];
+    for (const index of indexes) {
+      const key = `${documentPath}\0${index}`;
+      const currentLink = currentDocument.links[index];
+      const parsedLink = parsedLinks[index];
+      if (
+        !currentLink ||
+        !parsedLink ||
+        currentLink.syntax !== parsedLink.syntax ||
+        currentLink.target !== parsedLink.target
+      ) {
+        throw new Error(`Move preflight lost link ${index + 1} in ${documentPath}.`);
+      }
       const resolvedTargetPath =
         currentLink.resolution.path === sourcePath ? targetPath : currentLink.resolution.path;
-      candidates.push({
+      if (!resolvedTargetPath) {
+        throw new Error(`Move preflight lost a resolved target in ${documentPath}.`);
+      }
+      entries.push({
         key,
         start: parsedLink.targetStart,
         end: parsedLink.targetEnd,
@@ -288,17 +284,11 @@ export async function planMarkdownNoteMove(
           beforeTarget: snapshot.content.slice(parsedLink.targetStart, parsedLink.targetEnd),
           afterTarget: replacementTarget(currentLink.syntax, resultPath, resolvedTargetPath),
           before: currentLink.resolution,
-          after: initiallyProjectedLink.resolution,
+          after: projectedResolver.resolve(resultPath, currentLink.target),
         },
       });
     }
-  }
-
-  const candidatesByPath = new Map<string, InternalRewrite[]>();
-  for (const candidate of candidates) {
-    const entries = candidatesByPath.get(candidate.rewrite.documentPath) ?? [];
-    entries.push(candidate);
-    candidatesByPath.set(candidate.rewrite.documentPath, entries);
+    candidatesByPath.set(documentPath, entries);
   }
 
   const applicable: InternalRewrite[] = [];
@@ -346,37 +336,26 @@ export async function planMarkdownNoteMove(
     rewrittenContent.set(documentPath, applyRewrites(snapshot.content, entries));
   }
 
-  const finalProjectedSnapshots = snapshots.map((snapshot) => {
-    const content = rewrittenContent.get(snapshot.path) ?? snapshot.content;
-    const resultPath = snapshot.path === sourcePath ? targetPath : snapshot.path;
-    return {
-      ...snapshot,
-      path: resultPath,
-      content,
-      size: Buffer.byteLength(content),
-    };
-  });
-  const finalIndex = await MetadataIndex.build(
-    new SnapshotVault(vault.getName(), finalProjectedSnapshots),
-  );
-  const finalDocuments = new Map(
-    finalIndex.snapshot().documents.map((document) => [document.path, document]),
-  );
+  const applicableByKey = new Map(applicable.map((candidate) => [candidate.key, candidate]));
   for (const [documentPath, currentDocument] of currentDocuments) {
     const resultPath = documentPath === sourcePath ? targetPath : documentPath;
-    const finalDocument = finalDocuments.get(resultPath);
-    if (!finalDocument || finalDocument.links.length !== currentDocument.links.length) {
-      throw new Error(`Move rewrite validation could not compare links for ${documentPath}.`);
-    }
     for (let index = 0; index < currentDocument.links.length; index += 1) {
       const key = `${documentPath}\0${index}`;
       const currentLink = currentDocument.links[index];
-      const finalLink = finalDocument.links[index];
       const expectedResolution = expectedByOccurrence.get(key);
-      if (!currentLink || !finalLink || !expectedResolution) {
+      if (!currentLink || !expectedResolution) {
         throw new Error(`Move rewrite validation lost link ${index + 1} in ${documentPath}.`);
       }
-      if (!resolutionsEqual(expectedResolution, finalLink.resolution)) {
+      const replacement = applicableByKey.get(key);
+      const finalTarget = replacement
+        ? (parseMarkdownLinks(
+            replacement.rewrite.syntax === "wiki"
+              ? `[[${replacement.rewrite.afterTarget}]]`
+              : `[link](${replacement.rewrite.afterTarget})`,
+          )[0]?.target ?? replacement.rewrite.afterTarget)
+        : currentLink.target;
+      const finalResolution = projectedResolver.resolve(resultPath, finalTarget);
+      if (!resolutionsEqual(expectedResolution, finalResolution)) {
         blockersByOccurrence.set(
           key,
           blockerFor(
@@ -384,7 +363,7 @@ export async function planMarkdownNoteMove(
             currentLink.target,
             currentLink.syntax,
             currentLink.resolution,
-            finalLink.resolution,
+            finalResolution,
           ),
         );
       }
@@ -457,6 +436,7 @@ export async function moveMarkdownNote(
     requestedSourcePath,
     requestedTargetPath,
     expectedSourceRevision,
+    options.indexSnapshot,
   );
   if (plan.status === "conflict") {
     return plan;

@@ -65,3 +65,34 @@ gate first-window and full-target readiness, and the probe also requires a clean
 Peak main-process resident memory remained about 2.6 GB during the traced large-workspace run.
 Progress counts, visible-note prioritization, lower memory use, cancellation, and public
 cross-platform regression corpora remain required before this observation becomes a release budget.
+
+## Representative copied-vault desktop trial
+
+The broader production-path trial on 2026-08-12 copied a private working vault into mode-0700
+temporary storage and exercised only the copy. The source held 20,623 visible Markdown notes,
+363,118,069 note bytes, a 1,181,533-byte largest note, and four sampled raster attachments totaling
+26,747,878 bytes. The harness does not print source note names, content, paths, or hashes.
+
+| Operation | Observed time |
+| --- | ---: |
+| Render interactive opening workspace | 4.37 s |
+| Complete initial index and reach ready | 32.05 s |
+| Open the largest copied note | 343 ms |
+| Edit and save that note | 1.34 s |
+| Render sampled PNG, JPEG, GIF, and WebP wiki embeds | 599 ms |
+| Converge after an external atomic replacement | 2.59 s |
+| Converge after 200 creates, 100 updates, 50 renames, and 50 deletes | 9.87 s |
+| Preview and commit a link-updating note rename | 6.30 s |
+| Restart, reindex, and restore the active tab | 30.12 s |
+
+The final copied vault contained the exact expected 20,777 notes. The watcher remained healthy,
+the restored tab was correct, the source corpus and sampled source attachments retained their exact
+pre-trial hashes, and Electron exited cleanly. The move planner completed without the earlier
+multi-index memory exhaustion by reusing the current metadata snapshot and reading full bytes only
+for affected notes. These are one-host observations, not release budgets.
+
+Run the same aggregate-only gate with:
+
+```sh
+pnpm run test:representative-vault -- --source /absolute/path/to/vault
+```
