@@ -39,6 +39,7 @@ import { ElectronPluginRuntime } from "./electron-plugin-runtime";
 import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
+import { createGracefulShutdownHandler } from "./graceful-shutdown";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
@@ -840,9 +841,20 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on("will-quit", () => {
-  void workspaceController?.close();
-});
+app.on(
+  "before-quit",
+  createGracefulShutdownHandler({
+    prepare: detachPluginView,
+    close: () => workspaceController?.close(),
+    finalize: () => {
+      compatibilityPluginView = null;
+      pluginSurfaceCssView = null;
+      pluginSurfaceCssKey = null;
+    },
+    quit: () => app.quit(),
+    reportError: (error) => console.error("Threadleaf shutdown cleanup failed:", error),
+  }),
+);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

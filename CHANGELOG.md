@@ -169,3 +169,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Public `prepareFuzzySearch` with deterministic higher-is-better scoring and UTF-16 highlight
   ranges, plus DOM and string `htmlToMarkdown` conversion backed by the MIT-licensed Turndown
   library, both exercised through the unchanged CommonJS plugin bridge.
+
+### Fixed
+
+- Electron shutdown now waits for watcher and plugin cleanup, coalesces repeated quit events, and
+  still reaches the final quit when cleanup reports an error.
