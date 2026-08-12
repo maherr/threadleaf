@@ -154,22 +154,29 @@ creates and loads a replacement window before retiring the failed window. The re
 the exact private draft and selection. A changed or missing disk revision remains untouched and a
 later save uses the ordinary conflict-copy boundary.
 
-### Workspace tabs and draft ownership
+### Workspace panes, tabs, and draft ownership
 
-The workspace runtime owns an ordered, deduplicated list of open Markdown paths and one active
-path. Opening an existing entry reactivates it. Closing the active entry selects the next entry to
-its right, then the nearest entry to its left. Incremental watcher moves remap open paths and
-deletions remove them, while every published snapshot filters the list against the current derived
-index. Each close request carries the expected vault identity, so a delayed renderer action cannot
-close a similarly named note after a vault switch.
+The workspace runtime owns one or two panes. Each pane has an ordered, deduplicated list of open
+Markdown paths and one active path; the layout also records the focused pane and a horizontal or
+vertical split direction. Opening an existing entry reactivates it in that pane. Closing the active
+entry selects the next entry to its right, then the nearest entry to its left. Tabs move explicitly
+between panes, and closing the secondary pane transfers its remaining tabs without discarding an
+unsaved draft. Incremental watcher moves remap open paths and deletions remove them, while every
+published snapshot filters both lists against the current derived index. Each navigation request
+carries the expected vault identity, so a delayed renderer action cannot target a similarly named
+note after a vault switch.
 
-Tabs are derived workspace state stored per vault in a versioned document under the operating
-system's application-data directory. The store keys documents by vault identity, validates and
-normalizes every path, writes atomically with private file permissions, and never writes layout
-files into the vault or `.obsidian/`. A valid document restores exact tab order and its active
-path. Missing notes are pruned and the repaired state is persisted. An explicit empty document
-restores an empty workspace instead of falling back to the first note. Malformed state fails
-visibly without rewriting the invalid bytes.
+Panes and tabs are derived workspace state stored per vault in a versioned document under the
+operating system's application-data directory. The store keys documents by vault identity,
+validates and normalizes every path, writes atomically with private file permissions, and never
+writes layout files into the vault or `.obsidian/`. Its in-memory version 2 model restores exact tab
+order, active notes, focused pane, and split direction. The on-disk document uses a version 1
+envelope whose ordered tabs and active path are an exact projection of the focused pane, plus a
+`layoutVersion: 2` extension containing the complete layout. This lets the previous daily-driver
+build reopen the focused-pane projection during rollback while the current build rejects any
+mismatched projection or malformed extension. Missing notes are pruned and repaired state is
+persisted. An explicit empty document restores an empty workspace instead of falling back to the
+first note. Malformed state fails visibly without rewriting the invalid bytes.
 
 The renderer retains the complete ordered file projection for filtering and navigation, but mounts
 only the visible fixed-height rows plus a small overscan window. Spacer geometry preserves native
@@ -178,13 +185,20 @@ technology. Active-note navigation moves the virtual window to the nearest requi
 than creating one DOM node per vault file.
 
 Pure navigation changes persist before the runtime adopts them, so a failed write cannot create
-tab state that silently disappears after restart. A vault mutation that already committed remains
-committed even if the following workspace-state update fails; the runtime adopts the real vault
-result and reports the persistence warning instead of falsely reporting that the vault write
-failed. The renderer owns one CodeMirror draft rather than a hidden unsaved draft per tab. A dirty
-active draft therefore blocks tab activation, active-tab closure, and vault switching until it is
-saved or reverted. Closing an inactive tab remains safe because it cannot discard the current
+layout state that silently disappears after restart. A vault mutation that already committed
+remains committed even if the following workspace-state update fails; the runtime adopts the real
+vault result and reports the persistence warning instead of falsely reporting that the vault write
+failed. The renderer owns one mounted CodeMirror editor and one private draft identity per pane,
+rather than hidden unsaved drafts for every tab. A dirty pane therefore blocks actions that would
+replace or discard that pane's active document, while the other pane retains independent
+selection, history, and draft recovery. Vault switching remains blocked until every dirty pane is
+saved or reverted. Closing an inactive tab remains safe because it cannot discard either mounted
 draft.
+
+The native application menu is constructed in the main process with platform roles for ordinary
+editing and window behavior. Product commands and accelerators are derived from the same saved key
+bindings as renderer controls, then dispatched over the narrow bridge to the focused workspace.
+The menu therefore adds an operating-system entry point without creating a second command model.
 
 ### Application settings and key bindings
 

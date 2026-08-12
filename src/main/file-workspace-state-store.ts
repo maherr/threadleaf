@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { PersistedWorkspaceState, WorkspaceStateStore } from "../application/workspace-state";
-import { parseWorkspaceState } from "../application/workspace-state";
+import { createWorkspaceStateDocument, parseWorkspaceState } from "../application/workspace-state";
 import { atomicWriteFile, readStableFile } from "../kernel/durability";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -23,7 +23,8 @@ export class FileWorkspaceStateStore implements WorkspaceStateStore {
 
   async save(state: PersistedWorkspaceState): Promise<PersistedWorkspaceState> {
     const normalized = parseWorkspaceState(state, state.vaultId);
-    const bytes = Buffer.from(`${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+    const document = createWorkspaceStateDocument(normalized);
+    const bytes = Buffer.from(`${JSON.stringify(document, null, 2)}\n`, "utf8");
     const filePath = this.filePath(normalized.vaultId);
     const write = this.#writeTail
       .catch(() => undefined)

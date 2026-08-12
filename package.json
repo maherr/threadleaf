@@ -1,6 +1,6 @@
 {
   "name": "threadleaf",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "private": true,
   "type": "module",
   "description": "An open runtime for local Markdown vaults and community plugins.",
@@ -55,6 +55,7 @@
     "test:startup-readiness": "pnpm run build && node scripts/check-startup-readiness.mjs",
     "test:support-bundle": "pnpm run build && node scripts/check-support-bundle.mjs",
     "test:upgrade-rollback": "node scripts/check-upgrade-rollback.mjs",
+    "test:workspace-panes": "pnpm run build && node scripts/check-workspace-panes.mjs",
     "test:windows-package": "node scripts/check-windows-package.mjs",
     "typecheck": "tsc --noEmit"
   },

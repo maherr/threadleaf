@@ -36,6 +36,9 @@ import type {
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
+  WorkspacePaneId,
+  WorkspacePaneSnapshot,
+  WorkspaceSplitDirection,
 } from "../shared/contracts";
 import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
@@ -49,7 +52,9 @@ import {
 import { trashMarkdownNote, vaultTrashDirectory } from "./note-trash";
 import { loadVaultImage } from "./vault-image-service";
 import {
-  createWorkspaceState,
+  activeWorkspacePane,
+  createWorkspaceLayout,
+  type PersistedWorkspacePane,
   type PersistedWorkspaceState,
   type WorkspaceStateStore,
 } from "./workspace-state";
@@ -105,6 +110,29 @@ interface CreateNoteRequest {
 
 interface CloseNoteRequest {
   path: string;
+  expectedVaultId: string;
+  paneId?: WorkspacePaneId;
+}
+
+interface OpenNoteRequest {
+  path: string;
+  paneId?: WorkspacePaneId;
+}
+
+interface SplitWorkspaceRequest {
+  direction: WorkspaceSplitDirection;
+  expectedVaultId: string;
+}
+
+interface PaneRequest {
+  paneId: WorkspacePaneId;
+  expectedVaultId: string;
+}
+
+interface MoveNoteToPaneRequest {
+  path: string;
+  fromPaneId: WorkspacePaneId;
+  toPaneId: WorkspacePaneId;
   expectedVaultId: string;
 }
 
@@ -180,11 +208,88 @@ function parseCloseNoteRequest(payload: unknown): CloseNoteRequest {
     !("path" in payload) ||
     typeof payload.path !== "string" ||
     !("expectedVaultId" in payload) ||
-    typeof payload.expectedVaultId !== "string"
+    typeof payload.expectedVaultId !== "string" ||
+    ("paneId" in payload && payload.paneId !== "primary" && payload.paneId !== "secondary")
   ) {
     throw new Error("Close note requires string path and vault values.");
   }
-  return { path: payload.path, expectedVaultId: payload.expectedVaultId };
+  const paneId = "paneId" in payload ? payload.paneId : undefined;
+  return {
+    path: payload.path,
+    expectedVaultId: payload.expectedVaultId,
+    ...(paneId === "primary" || paneId === "secondary" ? { paneId } : {}),
+  };
+}
+
+function parseOpenNoteRequest(payload: unknown): OpenNoteRequest {
+  if (typeof payload === "string") {
+    return { path: payload };
+  }
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    ("paneId" in payload && payload.paneId !== "primary" && payload.paneId !== "secondary")
+  ) {
+    throw new Error("Open note requires a vault-relative Markdown path and optional pane ID.");
+  }
+  const paneId = "paneId" in payload ? payload.paneId : undefined;
+  return {
+    path: payload.path,
+    ...(paneId === "primary" || paneId === "secondary" ? { paneId } : {}),
+  };
+}
+
+function parseSplitWorkspaceRequest(payload: unknown): SplitWorkspaceRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("direction" in payload) ||
+    (payload.direction !== "horizontal" && payload.direction !== "vertical") ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Split workspace requires a direction and vault identity.");
+  }
+  return { direction: payload.direction, expectedVaultId: payload.expectedVaultId };
+}
+
+function parsePaneRequest(payload: unknown): PaneRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("paneId" in payload) ||
+    (payload.paneId !== "primary" && payload.paneId !== "secondary") ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Workspace pane actions require a pane and vault identity.");
+  }
+  return { paneId: payload.paneId, expectedVaultId: payload.expectedVaultId };
+}
+
+function parseMoveNoteToPaneRequest(payload: unknown): MoveNoteToPaneRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("fromPaneId" in payload) ||
+    (payload.fromPaneId !== "primary" && payload.fromPaneId !== "secondary") ||
+    !("toPaneId" in payload) ||
+    (payload.toPaneId !== "primary" && payload.toPaneId !== "secondary") ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Move tab requires a path, source pane, target pane, and vault identity.");
+  }
+  return {
+    path: payload.path,
+    fromPaneId: payload.fromPaneId,
+    toPaneId: payload.toPaneId,
+    expectedVaultId: payload.expectedVaultId,
+  };
 }
 
 function parseCreateNoteRequest(payload: unknown): CreateNoteRequest {
@@ -298,9 +403,19 @@ function workspaceStatesEqual(
 ): boolean {
   return (
     left.vaultId === right.vaultId &&
-    left.activePath === right.activePath &&
-    left.openPaths.length === right.openPaths.length &&
-    left.openPaths.every((filePath, index) => filePath === right.openPaths[index])
+    left.activePaneId === right.activePaneId &&
+    left.splitDirection === right.splitDirection &&
+    left.panes.length === right.panes.length &&
+    left.panes.every((pane, paneIndex) => {
+      const other = right.panes[paneIndex];
+      return (
+        other !== undefined &&
+        pane.id === other.id &&
+        pane.activePath === other.activePath &&
+        pane.openPaths.length === other.openPaths.length &&
+        pane.openPaths.every((filePath, pathIndex) => filePath === other.openPaths[pathIndex])
+      );
+    })
   );
 }
 
@@ -315,8 +430,9 @@ export class WorkspaceRuntime {
   readonly #baseWarning: string | null;
   readonly #workspaceStateStore: WorkspaceStateStore | undefined;
 
-  #activePath: string | null = null;
-  #openPaths: string[] = [];
+  #panes: PersistedWorkspacePane[] = [{ id: "primary", openPaths: [], activePath: null }];
+  #activePaneId: WorkspacePaneId = "primary";
+  #splitDirection: WorkspaceSplitDirection | null = null;
   #workspaceLoadWarning: string | null;
   #workspaceSaveWarning: string | null = null;
   #watcherError: string | null = null;
@@ -373,18 +489,37 @@ export class WorkspaceRuntime {
         id: "workspace.open-note",
         name: "Open note",
         source: "workspace",
-        execute: async (payload) => {
-          if (typeof payload !== "string") {
-            throw new Error("Open note requires a vault-relative Markdown path.");
-          }
-          await this.selectNote(payload);
-        },
+        execute: (payload) => this.selectNote(parseOpenNoteRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.close-note",
         name: "Close note",
         source: "workspace",
         execute: (payload) => this.closeNoteThroughWorkspace(parseCloseNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.split",
+        name: "Split workspace",
+        source: "workspace",
+        execute: (payload) => this.splitWorkspaceThroughState(parseSplitWorkspaceRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.focus-pane",
+        name: "Focus workspace pane",
+        source: "workspace",
+        execute: (payload) => this.focusPaneThroughState(parsePaneRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.close-pane",
+        name: "Close workspace pane",
+        source: "workspace",
+        execute: (payload) => this.closePaneThroughState(parsePaneRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.move-note-to-pane",
+        name: "Move note to workspace pane",
+        source: "workspace",
+        execute: (payload) => this.moveNoteToPaneThroughState(parseMoveNoteToPaneRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.move-note",
@@ -470,14 +605,23 @@ export class WorkspaceRuntime {
       const availablePaths = new Set(
         indexReactor.index.snapshot().documents.map((document) => document.path),
       );
-      const openPaths = restoredWorkspace.openPaths.filter((filePath) =>
-        availablePaths.has(filePath),
+      const panes = restoredWorkspace.panes.map((pane) => {
+        const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
+        return {
+          id: pane.id,
+          openPaths,
+          activePath:
+            pane.activePath && openPaths.includes(pane.activePath)
+              ? pane.activePath
+              : (openPaths.at(-1) ?? null),
+        };
+      });
+      const restored = createWorkspaceLayout(
+        kernel.vaultId,
+        panes,
+        restoredWorkspace.activePaneId,
+        restoredWorkspace.splitDirection,
       );
-      const activePath =
-        restoredWorkspace.activePath && openPaths.includes(restoredWorkspace.activePath)
-          ? restoredWorkspace.activePath
-          : (openPaths.at(-1) ?? null);
-      const restored = createWorkspaceState(kernel.vaultId, openPaths, activePath);
       runtime.applyWorkspaceState(restored);
       if (!workspaceStatesEqual(restoredWorkspace, restored)) {
         await runtime.persistWorkspaceStateBestEffort();
@@ -527,14 +671,61 @@ export class WorkspaceRuntime {
     };
   }
 
-  async openNote(filePath: string): Promise<RuntimeSnapshot> {
-    await this.actions.dispatch("workspace.open-note", filePath);
+  async openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.open-note", {
+      path: filePath,
+      ...(paneId ? { paneId } : {}),
+    });
     return this.publishSnapshot();
   }
 
-  async closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
+  async closeNote(
+    filePath: string,
+    expectedVaultId: string,
+    paneId?: WorkspacePaneId,
+  ): Promise<RuntimeSnapshot> {
     await this.actions.dispatch("workspace.close-note", {
       path: filePath,
+      expectedVaultId,
+      ...(paneId ? { paneId } : {}),
+    });
+    return this.publishSnapshot();
+  }
+
+  async splitWorkspace(
+    direction: WorkspaceSplitDirection,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.split", { direction, expectedVaultId });
+    return this.publishSnapshot();
+  }
+
+  async focusWorkspacePane(
+    paneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.focus-pane", { paneId, expectedVaultId });
+    return this.publishSnapshot();
+  }
+
+  async closeWorkspacePane(
+    paneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.close-pane", { paneId, expectedVaultId });
+    return this.publishSnapshot();
+  }
+
+  async moveNoteToWorkspacePane(
+    filePath: string,
+    fromPaneId: WorkspacePaneId,
+    toPaneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.move-note-to-pane", {
+      path: filePath,
+      fromPaneId,
+      toPaneId,
       expectedVaultId,
     });
     return this.publishSnapshot();
@@ -954,12 +1145,30 @@ export class WorkspaceRuntime {
   }
 
   private currentWorkspaceState(): PersistedWorkspaceState {
-    return createWorkspaceState(this.kernel.vaultId, this.#openPaths, this.#activePath);
+    return createWorkspaceLayout(
+      this.kernel.vaultId,
+      this.#panes,
+      this.#activePaneId,
+      this.#splitDirection,
+    );
   }
 
   private applyWorkspaceState(state: PersistedWorkspaceState): void {
-    this.#openPaths = [...state.openPaths];
-    this.#activePath = state.activePath;
+    this.#panes = state.panes.map((pane) => ({
+      id: pane.id,
+      openPaths: [...pane.openPaths],
+      activePath: pane.activePath,
+    }));
+    this.#activePaneId = state.activePaneId;
+    this.#splitDirection = state.splitDirection;
+  }
+
+  private workspacePane(paneId: WorkspacePaneId): PersistedWorkspacePane {
+    const pane = this.#panes.find(({ id }) => id === paneId);
+    if (!pane) {
+      throw new Error(`Workspace pane is not open: ${paneId}`);
+    }
+    return pane;
   }
 
   private async adoptWorkspaceState(
@@ -1003,7 +1212,8 @@ export class WorkspaceRuntime {
     }
   }
 
-  private async selectNote(filePath: string): Promise<void> {
+  private async selectNote(request: OpenNoteRequest): Promise<void> {
+    const filePath = normalizeVaultPath(request.path);
     const exists = this.indexReactor.index
       .snapshot()
       .documents.some((document) => document.path === filePath);
@@ -1011,53 +1221,70 @@ export class WorkspaceRuntime {
       throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
     }
     await this.kernel.readText(filePath);
-    const openPaths = this.#openPaths.includes(filePath)
-      ? [...this.#openPaths]
-      : [...this.#openPaths, filePath];
+    const paneId = request.paneId ?? this.#activePaneId;
+    this.workspacePane(paneId);
+    const state = this.currentWorkspaceState();
+    const pane = state.panes.find(({ id }) => id === paneId);
+    if (!pane) {
+      throw new Error(`Workspace pane is not open: ${paneId}`);
+    }
+    if (!pane.openPaths.includes(filePath)) {
+      pane.openPaths.push(filePath);
+    }
+    pane.activePath = filePath;
     await this.adoptWorkspaceState(
-      createWorkspaceState(this.kernel.vaultId, openPaths, filePath),
+      createWorkspaceLayout(this.kernel.vaultId, state.panes, paneId, state.splitDirection),
       true,
     );
   }
 
-  private activatePath(filePath: string): boolean {
-    const wasActive = this.#activePath === filePath;
-    let changed = !wasActive;
-    if (!this.#openPaths.includes(filePath)) {
-      this.#openPaths.push(filePath);
+  private activatePath(filePath: string, paneId = this.#activePaneId): boolean {
+    const pane = this.workspacePane(paneId);
+    let changed = this.#activePaneId !== paneId || pane.activePath !== filePath;
+    if (!pane.openPaths.includes(filePath)) {
+      pane.openPaths.push(filePath);
       changed = true;
     }
-    this.#activePath = filePath;
+    pane.activePath = filePath;
+    this.#activePaneId = paneId;
     return changed;
   }
 
   private removeOpenPath(filePath: string): boolean {
-    const index = this.#openPaths.indexOf(filePath);
-    if (index === -1) {
-      return false;
+    let changed = false;
+    for (const pane of this.#panes) {
+      const index = pane.openPaths.indexOf(filePath);
+      if (index === -1) {
+        continue;
+      }
+      pane.openPaths.splice(index, 1);
+      if (pane.activePath === filePath) {
+        pane.activePath = pane.openPaths[index] ?? pane.openPaths[index - 1] ?? null;
+      }
+      changed = true;
     }
-    this.#openPaths.splice(index, 1);
-    if (this.#activePath === filePath) {
-      this.#activePath = this.#openPaths[index] ?? this.#openPaths[index - 1] ?? null;
-    }
-    return true;
+    return changed;
   }
 
   private moveOpenPath(from: string, to: string): boolean {
-    const sourceIndex = this.#openPaths.indexOf(from);
-    if (sourceIndex === -1) {
-      return false;
+    let changed = false;
+    for (const pane of this.#panes) {
+      const sourceIndex = pane.openPaths.indexOf(from);
+      if (sourceIndex === -1) {
+        continue;
+      }
+      const targetIndex = pane.openPaths.indexOf(to);
+      if (targetIndex === -1) {
+        pane.openPaths[sourceIndex] = to;
+      } else {
+        pane.openPaths.splice(sourceIndex, 1);
+      }
+      if (pane.activePath === from) {
+        pane.activePath = to;
+      }
+      changed = true;
     }
-    const targetIndex = this.#openPaths.indexOf(to);
-    if (targetIndex === -1) {
-      this.#openPaths[sourceIndex] = to;
-    } else {
-      this.#openPaths.splice(sourceIndex, 1);
-    }
-    if (this.#activePath === from) {
-      this.#activePath = to;
-    }
-    return true;
+    return changed;
   }
 
   private async closeNoteThroughWorkspace(request: CloseNoteRequest): Promise<void> {
@@ -1065,17 +1292,142 @@ export class WorkspaceRuntime {
       throw new Error("The active vault changed before this tab could be closed.");
     }
     const normalizedPath = normalizeVaultPath(request.path);
-    const index = this.#openPaths.indexOf(normalizedPath);
+    const paneId = request.paneId ?? this.#activePaneId;
+    const pane = this.workspacePane(paneId);
+    const index = pane.openPaths.indexOf(normalizedPath);
     if (index === -1) {
       return;
     }
-    const openPaths = this.#openPaths.filter((filePath) => filePath !== normalizedPath);
-    const activePath =
-      this.#activePath === normalizedPath
+    const state = this.currentWorkspaceState();
+    const nextPane = state.panes.find(({ id }) => id === paneId);
+    if (!nextPane) {
+      throw new Error(`Workspace pane is not open: ${paneId}`);
+    }
+    const openPaths = nextPane.openPaths.filter((filePath) => filePath !== normalizedPath);
+    nextPane.openPaths = openPaths;
+    nextPane.activePath =
+      nextPane.activePath === normalizedPath
         ? (openPaths[index] ?? openPaths[index - 1] ?? null)
-        : this.#activePath;
+        : nextPane.activePath;
     await this.adoptWorkspaceState(
-      createWorkspaceState(this.kernel.vaultId, openPaths, activePath),
+      createWorkspaceLayout(
+        this.kernel.vaultId,
+        state.panes,
+        state.activePaneId,
+        state.splitDirection,
+      ),
+      true,
+    );
+  }
+
+  private async splitWorkspaceThroughState(request: SplitWorkspaceRequest): Promise<void> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before the workspace could be split.");
+    }
+    const state = this.currentWorkspaceState();
+    if (state.panes.length === 2) {
+      await this.adoptWorkspaceState(
+        createWorkspaceLayout(
+          this.kernel.vaultId,
+          state.panes,
+          state.activePaneId,
+          request.direction,
+        ),
+        true,
+      );
+      return;
+    }
+    const sourcePane = activeWorkspacePane(state);
+    const activePath = sourcePane.activePath;
+    state.panes.push({
+      id: "secondary",
+      openPaths: activePath ? [activePath] : [],
+      activePath,
+    });
+    await this.adoptWorkspaceState(
+      createWorkspaceLayout(this.kernel.vaultId, state.panes, "secondary", request.direction),
+      true,
+    );
+  }
+
+  private async focusPaneThroughState(request: PaneRequest): Promise<void> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this pane could be focused.");
+    }
+    this.workspacePane(request.paneId);
+    const state = this.currentWorkspaceState();
+    await this.adoptWorkspaceState(
+      createWorkspaceLayout(this.kernel.vaultId, state.panes, request.paneId, state.splitDirection),
+      true,
+    );
+  }
+
+  private async closePaneThroughState(request: PaneRequest): Promise<void> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this pane could be closed.");
+    }
+    this.workspacePane(request.paneId);
+    const state = this.currentWorkspaceState();
+    if (state.panes.length === 1) {
+      return;
+    }
+    const survivor = state.panes.find(({ id }) => id !== request.paneId);
+    if (!survivor) {
+      throw new Error("The remaining workspace pane is missing.");
+    }
+    await this.adoptWorkspaceState(
+      createWorkspaceLayout(
+        this.kernel.vaultId,
+        [
+          {
+            id: "primary",
+            openPaths: [...survivor.openPaths],
+            activePath: survivor.activePath,
+          },
+        ],
+        "primary",
+        null,
+      ),
+      true,
+    );
+  }
+
+  private async moveNoteToPaneThroughState(request: MoveNoteToPaneRequest): Promise<void> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this tab could be moved.");
+    }
+    if (request.fromPaneId === request.toPaneId) {
+      return;
+    }
+    const normalizedPath = normalizeVaultPath(request.path);
+    this.workspacePane(request.fromPaneId);
+    this.workspacePane(request.toPaneId);
+    const state = this.currentWorkspaceState();
+    const source = state.panes.find(({ id }) => id === request.fromPaneId);
+    const target = state.panes.find(({ id }) => id === request.toPaneId);
+    if (!source || !target) {
+      throw new Error("The source or target workspace pane is missing.");
+    }
+    const sourceIndex = source.openPaths.indexOf(normalizedPath);
+    if (sourceIndex === -1) {
+      throw new Error(`The source pane does not contain this tab: ${normalizedPath}`);
+    }
+    source.openPaths.splice(sourceIndex, 1);
+    if (source.activePath === normalizedPath) {
+      source.activePath =
+        source.openPaths[sourceIndex] ?? source.openPaths[sourceIndex - 1] ?? null;
+    }
+    if (!target.openPaths.includes(normalizedPath)) {
+      target.openPaths.push(normalizedPath);
+    }
+    target.activePath = normalizedPath;
+    await this.adoptWorkspaceState(
+      createWorkspaceLayout(
+        this.kernel.vaultId,
+        state.panes,
+        request.toPaneId,
+        state.splitDirection,
+      ),
       true,
     );
   }
@@ -1395,58 +1747,94 @@ export class WorkspaceRuntime {
       this.#indexProjection = projection;
     }
     const { documents, backlinks, files } = projection;
-    const openPaths = this.#openPaths.filter((filePath) => documents.has(filePath));
-    const activePath =
-      this.#activePath && openPaths.includes(this.#activePath)
-        ? this.#activePath
-        : (openPaths.at(-1) ?? null);
-    const reconciledState = createWorkspaceState(this.kernel.vaultId, openPaths, activePath);
+    const reconciledPanes = this.#panes.map((pane) => {
+      const openPaths = pane.openPaths.filter((filePath) => documents.has(filePath));
+      return {
+        id: pane.id,
+        openPaths,
+        activePath:
+          pane.activePath && openPaths.includes(pane.activePath)
+            ? pane.activePath
+            : (openPaths.at(-1) ?? null),
+      };
+    });
+    const reconciledState = createWorkspaceLayout(
+      this.kernel.vaultId,
+      reconciledPanes,
+      this.#activePaneId,
+      this.#splitDirection,
+    );
     if (!workspaceStatesEqual(this.currentWorkspaceState(), reconciledState)) {
       this.applyWorkspaceState(reconciledState);
       await this.persistWorkspaceStateBestEffort();
     }
 
-    let activeNote: WorkspaceNoteSnapshot | null = null;
-    const activeMetadata = this.#activePath ? documents.get(this.#activePath) : undefined;
-    if (this.#activePath && activeMetadata) {
-      const note = await this.kernel.readText(this.#activePath);
-      const propertyInspection = inspectMarkdownNoteProperties(
-        note.content,
-        activeMetadata.properties,
-      );
-      activeNote = {
-        path: note.path,
-        title: displayTitleFromVaultPath(note.path),
-        content: note.content,
-        revision: note.revision,
-        tags: activeMetadata.tags,
-        headings: activeMetadata.headings,
-        outgoing: activeMetadata.links.filter(isWorkspaceNoteLink).map(
-          (link): WorkspaceLinkSummary => ({
-            label: link.alias ?? `${link.target}${link.subpath ?? ""}`,
-            status: link.resolution.status,
-            target: link.target,
-            subpath: link.subpath,
-            embed: link.embed,
-            syntax: link.syntax,
-            ...(link.resolution.path ? { path: link.resolution.path } : {}),
-          }),
-        ),
-        backlinks: backlinks.get(note.path) ?? [],
-        properties: propertyInspection.properties,
-        propertyEditor: propertyInspection.editor,
-      };
+    const noteSnapshots = new Map<string, Promise<WorkspaceNoteSnapshot>>();
+    const loadNoteSnapshot = (filePath: string): Promise<WorkspaceNoteSnapshot> => {
+      const cached = noteSnapshots.get(filePath);
+      if (cached) {
+        return cached;
+      }
+      const activeMetadata = documents.get(filePath);
+      if (!activeMetadata) {
+        throw new Error(`Active workspace note is not indexed: ${filePath}`);
+      }
+      const pending = this.kernel.readText(filePath).then((note) => {
+        const propertyInspection = inspectMarkdownNoteProperties(
+          note.content,
+          activeMetadata.properties,
+        );
+        return {
+          path: note.path,
+          title: displayTitleFromVaultPath(note.path),
+          content: note.content,
+          revision: note.revision,
+          tags: activeMetadata.tags,
+          headings: activeMetadata.headings,
+          outgoing: activeMetadata.links.filter(isWorkspaceNoteLink).map(
+            (link): WorkspaceLinkSummary => ({
+              label: link.alias ?? `${link.target}${link.subpath ?? ""}`,
+              status: link.resolution.status,
+              target: link.target,
+              subpath: link.subpath,
+              embed: link.embed,
+              syntax: link.syntax,
+              ...(link.resolution.path ? { path: link.resolution.path } : {}),
+            }),
+          ),
+          backlinks: backlinks.get(note.path) ?? [],
+          properties: propertyInspection.properties,
+          propertyEditor: propertyInspection.editor,
+        };
+      });
+      noteSnapshots.set(filePath, pending);
+      return pending;
+    };
+    const panes: WorkspacePaneSnapshot[] = await Promise.all(
+      this.#panes.map(async (pane) => ({
+        id: pane.id,
+        active: pane.id === this.#activePaneId,
+        tabs: pane.openPaths.map((filePath) => ({
+          path: filePath,
+          title: displayTitleFromVaultPath(filePath),
+          active: filePath === pane.activePath,
+        })),
+        activeNote: pane.activePath ? await loadNoteSnapshot(pane.activePath) : null,
+      })),
+    );
+    const activePane = panes.find(({ id }) => id === this.#activePaneId);
+    if (!activePane) {
+      throw new Error("The active workspace pane is missing from its snapshot.");
     }
     return {
       state: this.#watcherError ? "degraded" : "ready",
       indexGeneration: this.indexReactor.index.generation,
       files,
-      tabs: this.#openPaths.map((filePath) => ({
-        path: filePath,
-        title: displayTitleFromVaultPath(filePath),
-        active: filePath === this.#activePath,
-      })),
-      activeNote,
+      panes,
+      activePaneId: this.#activePaneId,
+      splitDirection: this.#splitDirection,
+      tabs: activePane.tabs,
+      activeNote: activePane.activeNote,
       recoveryActionCount: this.kernel.startupRecoveryActions.length,
       watcher: {
         lastSequence: this.#lastWatchSequence,

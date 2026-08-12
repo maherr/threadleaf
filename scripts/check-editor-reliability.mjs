@@ -238,17 +238,21 @@ async function waitFor(probe, message, timeoutMs = 10_000) {
   throw new Error(`${message}. Last observation: ${JSON.stringify(last)}`);
 }
 
-const editorStateExpression = `(() => ({
-  path: document.querySelector("#note-path")?.textContent ?? "",
-  text: [...document.querySelectorAll(".cm-content .cm-line")]
-    .map((line) => line.textContent ?? "")
-    .join("\\n"),
-  editState: document.querySelector("#edit-state")?.textContent ?? "",
-  draftState: document.querySelector("#edit-state")?.getAttribute("data-draft-state") ?? "",
-  noticeTitle: document.querySelector("#edit-notice-title")?.textContent ?? "",
-  theme: document.documentElement.dataset.theme ?? "",
-  ready: document.querySelector("#runtime-state")?.textContent === "Ready",
-}))()`;
+const editorStateExpression = `(() => {
+  const root = document.querySelector('[data-pane-id="primary"]');
+  if (!(root instanceof HTMLElement)) return null;
+  return {
+    path: root.querySelector('[id^="note-path"]')?.textContent ?? "",
+    text: [...root.querySelectorAll(".cm-content .cm-line")]
+      .map((line) => line.textContent ?? "")
+      .join("\\n"),
+    editState: root.querySelector('[id^="edit-state"]')?.textContent ?? "",
+    draftState: root.querySelector('[id^="edit-state"]')?.getAttribute("data-draft-state") ?? "",
+    noticeTitle: root.querySelector('[id^="edit-notice-title"]')?.textContent ?? "",
+    theme: document.documentElement.dataset.theme ?? "",
+    ready: document.querySelector("#runtime-state")?.textContent === "Ready",
+  };
+})()`;
 
 async function editorState() {
   return evaluate(editorStateExpression);
@@ -268,7 +272,7 @@ async function openNote(notePath) {
 
 async function focusEditor() {
   await evaluate(`(() => {
-    const editor = document.querySelector(".cm-content");
+    const editor = document.querySelector('[data-pane-id="primary"] .cm-content');
     if (!(editor instanceof HTMLElement)) throw new Error("CodeMirror content is unavailable.");
     editor.focus();
   })()`);

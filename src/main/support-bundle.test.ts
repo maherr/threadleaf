@@ -175,6 +175,40 @@ function runtimeFixture(): RuntimeSnapshot {
           unresolvedCount: 1,
         },
       ],
+      panes: [
+        {
+          id: "primary",
+          active: true,
+          tabs: [{ path: "PRIVATE_NOTE_PATH.md", title: "PRIVATE_NOTE_TITLE", active: true }],
+          activeNote: {
+            path: "PRIVATE_NOTE_PATH.md",
+            title: "PRIVATE_NOTE_TITLE",
+            content: "PRIVATE_NOTE_CONTENT",
+            revision: "PRIVATE_NOTE_REVISION",
+            tags: ["PRIVATE_TAG"],
+            headings: [{ level: 1, text: "PRIVATE_HEADING", line: 1 }],
+            outgoing: [
+              {
+                label: "PRIVATE_LINK_LABEL",
+                status: "unresolved",
+                target: "PRIVATE_LINK_TARGET",
+              },
+            ],
+            backlinks: ["PRIVATE_BACKLINK.md"],
+            properties: [
+              {
+                name: "PRIVATE_PROPERTY",
+                type: "text",
+                value: "PRIVATE_PROPERTY_VALUE",
+                rawValue: "PRIVATE_PROPERTY_VALUE",
+              },
+            ],
+            propertyEditor: { editable: false, message: "PRIVATE_PROPERTY_MESSAGE" },
+          },
+        },
+      ],
+      activePaneId: "primary",
+      splitDirection: null,
       tabs: [{ path: "PRIVATE_NOTE_PATH.md", title: "PRIVATE_NOTE_TITLE", active: true }],
       activeNote: {
         path: "PRIVATE_NOTE_PATH.md",

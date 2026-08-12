@@ -7,8 +7,10 @@ import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { WorkspaceRuntime } from "./workspace-runtime";
 import {
+  createWorkspaceLayout,
   createWorkspaceState,
   type PersistedWorkspaceState,
+  parseWorkspaceState,
   type WorkspaceStateStore,
 } from "./workspace-state";
 
@@ -23,9 +25,9 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
   readonly saved: PersistedWorkspaceState[] = [];
   loadError: Error | null = null;
   saveError: Error | null = null;
-  readonly #initial: Pick<PersistedWorkspaceState, "openPaths" | "activePath"> | null;
+  readonly #initial: { openPaths: string[]; activePath: string | null } | null;
 
-  constructor(initial: Pick<PersistedWorkspaceState, "openPaths" | "activePath"> | null = null) {
+  constructor(initial: { openPaths: string[]; activePath: string | null } | null = null) {
     this.#initial = initial;
   }
 
@@ -34,7 +36,7 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
       throw this.loadError;
     }
     if (this.value) {
-      return createWorkspaceState(vaultId, this.value.openPaths, this.value.activePath);
+      return parseWorkspaceState(this.value, vaultId);
     }
     return this.#initial
       ? createWorkspaceState(vaultId, this.#initial.openPaths, this.#initial.activePath)
@@ -45,7 +47,12 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
     if (this.saveError) {
       throw this.saveError;
     }
-    const normalized = createWorkspaceState(state.vaultId, state.openPaths, state.activePath);
+    const normalized = createWorkspaceLayout(
+      state.vaultId,
+      state.panes,
+      state.activePaneId,
+      state.splitDirection,
+    );
     this.value = normalized;
     this.saved.push(normalized);
     return normalized;
@@ -164,13 +171,20 @@ describe("WorkspaceRuntime", () => {
     });
     expect(initial.actions).toEqual([
       { id: "workspace.close-note", name: "Close note", source: "workspace" },
+      { id: "workspace.close-pane", name: "Close workspace pane", source: "workspace" },
       {
         id: "threadleaf-fixture-confirm",
         name: "Confirm compatibility bridge",
         source: "plugin",
       },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
+      { id: "workspace.focus-pane", name: "Focus workspace pane", source: "workspace" },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
+      {
+        id: "workspace.move-note-to-pane",
+        name: "Move note to workspace pane",
+        source: "workspace",
+      },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       {
@@ -184,6 +198,7 @@ describe("WorkspaceRuntime", () => {
         name: "Set note property",
         source: "workspace",
       },
+      { id: "workspace.split", name: "Split workspace", source: "workspace" },
     ]);
 
     const opened = await workspace.openNote("Welcome.md");
@@ -321,6 +336,113 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
+  it("splits into independent panes, focuses them, moves tabs, and closes a pane", async () => {
+    const workspace = await openRuntime();
+
+    const split = await workspace.splitWorkspace("vertical", workspace.vaultId);
+    expect(split.workspace).toMatchObject({
+      activePaneId: "secondary",
+      splitDirection: "vertical",
+      panes: [
+        {
+          id: "primary",
+          active: false,
+          tabs: [{ path: "Linked Note.md", active: true }],
+          activeNote: { path: "Linked Note.md" },
+        },
+        {
+          id: "secondary",
+          active: true,
+          tabs: [{ path: "Linked Note.md", active: true }],
+          activeNote: { path: "Linked Note.md" },
+        },
+      ],
+      tabs: [{ path: "Linked Note.md", active: true }],
+      activeNote: { path: "Linked Note.md" },
+    });
+
+    const secondary = await workspace.openNote("Welcome.md", "secondary");
+    expect(secondary.workspace?.panes[1]).toMatchObject({
+      id: "secondary",
+      tabs: [
+        { path: "Linked Note.md", active: false },
+        { path: "Welcome.md", active: true },
+      ],
+      activeNote: { path: "Welcome.md" },
+    });
+
+    const primary = await workspace.focusWorkspacePane("primary", workspace.vaultId);
+    expect(primary.workspace).toMatchObject({
+      activePaneId: "primary",
+      activeNote: { path: "Linked Note.md" },
+    });
+
+    await workspace.openNote("Welcome.md", "primary");
+    const moved = await workspace.moveNoteToWorkspacePane(
+      "Welcome.md",
+      "primary",
+      "secondary",
+      workspace.vaultId,
+    );
+    expect(moved.workspace).toMatchObject({
+      activePaneId: "secondary",
+      panes: [
+        {
+          id: "primary",
+          tabs: [{ path: "Linked Note.md", active: true }],
+          activeNote: { path: "Linked Note.md" },
+        },
+        {
+          id: "secondary",
+          tabs: [
+            { path: "Linked Note.md", active: false },
+            { path: "Welcome.md", active: true },
+          ],
+          activeNote: { path: "Welcome.md" },
+        },
+      ],
+    });
+
+    const closed = await workspace.closeWorkspacePane("secondary", workspace.vaultId);
+    expect(closed.workspace).toMatchObject({
+      activePaneId: "primary",
+      splitDirection: null,
+      panes: [
+        {
+          id: "primary",
+          active: true,
+          tabs: [{ path: "Linked Note.md", active: true }],
+        },
+      ],
+    });
+    await expect(workspace.focusWorkspacePane("secondary", workspace.vaultId)).rejects.toThrow(
+      "not open",
+    );
+    await expect(workspace.splitWorkspace("horizontal", "stale-vault")).rejects.toThrow(
+      "active vault changed",
+    );
+  });
+
+  it("restores both panes, their active tabs, focus, and split direction", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let workspace = await openRuntime(store);
+    await workspace.splitWorkspace("horizontal", workspace.vaultId);
+    await workspace.openNote("Welcome.md", "secondary");
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+    await workspace.close();
+    runtime = undefined;
+
+    workspace = await openRuntime(store);
+    expect((await workspace.getSnapshot()).workspace).toMatchObject({
+      activePaneId: "primary",
+      splitDirection: "horizontal",
+      panes: [
+        { id: "primary", activeNote: { path: "Linked Note.md" } },
+        { id: "secondary", activeNote: { path: "Welcome.md" } },
+      ],
+    });
+  });
+
   it("reuses the unchanged derived file projection across snapshots", async () => {
     const workspace = await openRuntime();
 
@@ -347,8 +469,12 @@ describe("WorkspaceRuntime", () => {
       activeNote: { path: "Linked Note.md" },
     });
     expect(store.saved.at(-1)).toMatchObject({
-      openPaths: ["Welcome.md", "Linked Note.md"],
-      activePath: "Linked Note.md",
+      panes: [
+        {
+          openPaths: ["Welcome.md", "Linked Note.md"],
+          activePath: "Linked Note.md",
+        },
+      ],
     });
     expect(snapshot.vault.warning).toBeNull();
   });
@@ -600,8 +726,7 @@ describe("WorkspaceRuntime", () => {
       },
     });
     expect(store.saved.at(-1)).toMatchObject({
-      openPaths: ["Welcome.md"],
-      activePath: "Welcome.md",
+      panes: [{ openPaths: ["Welcome.md"], activePath: "Welcome.md" }],
     });
     await expect(fs.stat(path.join(vaultPath, "Linked Note.md"))).rejects.toMatchObject({
       code: "ENOENT",
@@ -1365,8 +1490,15 @@ describe("WorkspaceRuntime", () => {
     expect(unloaded.commands).toEqual([]);
     expect(unloaded.actions).toEqual([
       { id: "workspace.close-note", name: "Close note", source: "workspace" },
+      { id: "workspace.close-pane", name: "Close workspace pane", source: "workspace" },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
+      { id: "workspace.focus-pane", name: "Focus workspace pane", source: "workspace" },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
+      {
+        id: "workspace.move-note-to-pane",
+        name: "Move note to workspace pane",
+        source: "workspace",
+      },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
       {
@@ -1380,6 +1512,7 @@ describe("WorkspaceRuntime", () => {
         name: "Set note property",
         source: "workspace",
       },
+      { id: "workspace.split", name: "Split workspace", source: "workspace" },
     ]);
     await expect(workspace.openNote("Welcome.md")).resolves.toMatchObject({
       workspace: { activeNote: { path: "Welcome.md" } },

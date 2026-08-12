@@ -2,6 +2,7 @@ import type { AppUpdateSnapshot } from "./app-updates";
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
 import type { MigrationPreviewResponse } from "./migration";
+import type { NativeMenuCommandId } from "./native-menu";
 import type {
   PluginPackageApplyOutcome,
   PluginPackageIndexResponse,
@@ -168,6 +169,9 @@ export interface WorkspaceTabSummary {
   active: boolean;
 }
 
+export type WorkspacePaneId = "primary" | "secondary";
+export type WorkspaceSplitDirection = "horizontal" | "vertical";
+
 export interface WorkspaceLinkSummary {
   label: string;
   status: "resolved" | "unresolved" | "ambiguous";
@@ -216,9 +220,10 @@ export interface WorkspaceNoteSnapshot {
 }
 
 export interface EditorDraftSnapshot {
-  version: 1;
+  version: 2;
   draftId: string;
   vaultId: string;
+  paneId: WorkspacePaneId;
   path: string;
   baseRevision: string;
   content: string;
@@ -270,7 +275,12 @@ export interface WorkspaceSnapshot {
   state: "ready" | "degraded";
   indexGeneration: number;
   files: WorkspaceFileSummary[];
+  panes: WorkspacePaneSnapshot[];
+  activePaneId: WorkspacePaneId;
+  splitDirection: WorkspaceSplitDirection | null;
+  /** Active-pane projection retained for one-pane consumers and compatibility plugins. */
   tabs: WorkspaceTabSummary[];
+  /** Active-pane projection retained for one-pane consumers and compatibility plugins. */
   activeNote: WorkspaceNoteSnapshot | null;
   recoveryActionCount: number;
   watcher: {
@@ -278,6 +288,13 @@ export interface WorkspaceSnapshot {
     lastRescanReason: string | null;
     error: string | null;
   };
+}
+
+export interface WorkspacePaneSnapshot {
+  id: WorkspacePaneId;
+  active: boolean;
+  tabs: WorkspaceTabSummary[];
+  activeNote: WorkspaceNoteSnapshot | null;
 }
 
 export type NoteSaveOutcome =
@@ -606,8 +623,24 @@ export interface ThreadleafBridge {
   setPluginSurfaceBounds(bounds: PluginSurfaceBounds): Promise<void>;
   setPluginSurfaceVisible(visible: boolean): Promise<void>;
   setPluginSurfaceTheme(theme: "dark" | "light"): Promise<void>;
-  openNote(path: string): Promise<RuntimeSnapshot>;
-  closeNote(path: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  openNote(path: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
+  closeNote(
+    path: string,
+    expectedVaultId: string,
+    paneId?: WorkspacePaneId,
+  ): Promise<RuntimeSnapshot>;
+  splitWorkspace(
+    direction: WorkspaceSplitDirection,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
+  focusWorkspacePane(paneId: WorkspacePaneId, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  closeWorkspacePane(paneId: WorkspacePaneId, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  moveNoteToWorkspacePane(
+    path: string,
+    fromPaneId: WorkspacePaneId,
+    toPaneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
   moveNote(
     path: string,
     targetPath: string,
@@ -641,9 +674,17 @@ export interface ThreadleafBridge {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NotePropertyRemoveResponse>;
-  getEditorDraft(expectedVaultId: string): Promise<EditorDraftReadResponse>;
+  getEditorDraft(
+    expectedVaultId: string,
+    paneId?: WorkspacePaneId,
+  ): Promise<EditorDraftReadResponse>;
   saveEditorDraft(draft: EditorDraftSnapshot): Promise<EditorDraftSaveResponse>;
-  clearEditorDraft(expectedVaultId: string, draftId: string): Promise<EditorDraftClearResponse>;
+  clearEditorDraft(
+    expectedVaultId: string,
+    draftId: string,
+    paneId?: WorkspacePaneId,
+  ): Promise<EditorDraftClearResponse>;
+  onMenuCommand(listener: (commandId: NativeMenuCommandId) => void): () => void;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   onSettings(listener: (snapshot: AppSettingsSnapshot) => void): () => void;
   onAppUpdate(listener: (snapshot: AppUpdateSnapshot) => void): () => void;

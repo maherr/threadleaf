@@ -11,9 +11,10 @@ const vaultId = "a".repeat(64);
 
 function draft(draftId = "9ee6115a-d87e-4c87-8cb8-b444695200cf"): PersistedEditorDraft {
   return {
-    version: 1,
+    version: 2,
     draftId,
     vaultId,
+    paneId: "primary",
     path: "Active.md",
     baseRevision: "b".repeat(64),
     content: "unsaved text",
@@ -64,6 +65,25 @@ describe("FileEditorDraftStore", () => {
     await expect(store.load(vaultId)).resolves.toEqual(draft());
     await expect(store.clear(vaultId, draft().draftId)).resolves.toBe(true);
     await expect(store.load(vaultId)).resolves.toBeNull();
+  });
+
+  it("keeps primary and secondary pane drafts independent", async () => {
+    const store = new FileEditorDraftStore(draftDirectory);
+    const secondary = {
+      ...draft("27fe59f8-2e21-46bf-a01f-58935f6b4f1d"),
+      paneId: "secondary" as const,
+      path: "Other.md",
+      content: "secondary text",
+      selection: { anchor: 4, head: 4 },
+    };
+    await store.save(draft());
+    await store.save(secondary);
+
+    await expect(store.load(vaultId, "primary")).resolves.toEqual(draft());
+    await expect(store.load(vaultId, "secondary")).resolves.toEqual(secondary);
+    await expect(store.clear(vaultId, secondary.draftId, "secondary")).resolves.toBe(true);
+    await expect(store.load(vaultId, "secondary")).resolves.toBeNull();
+    await expect(store.load(vaultId, "primary")).resolves.toEqual(draft());
   });
 
   it("preserves malformed bytes for diagnosis", async () => {

@@ -22,6 +22,8 @@ import type {
   VaultNoteEmbedResponse,
   VaultSearchResponse,
   VaultSelectionSource,
+  WorkspacePaneId,
+  WorkspaceSplitDirection,
 } from "../shared/contracts";
 import { WorkspaceRuntime, type WorkspaceRuntimeOptions } from "./workspace-runtime";
 import type { WorkspaceStateStore } from "./workspace-state";
@@ -47,8 +49,24 @@ export interface WorkspaceRuntimePort {
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse>;
-  openNote(filePath: string): Promise<RuntimeSnapshot>;
-  closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
+  closeNote(
+    filePath: string,
+    expectedVaultId: string,
+    paneId?: WorkspacePaneId,
+  ): Promise<RuntimeSnapshot>;
+  splitWorkspace(
+    direction: WorkspaceSplitDirection,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
+  focusWorkspacePane(paneId: WorkspacePaneId, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  closeWorkspacePane(paneId: WorkspacePaneId, expectedVaultId: string): Promise<RuntimeSnapshot>;
+  moveNoteToWorkspacePane(
+    filePath: string,
+    fromPaneId: WorkspacePaneId,
+    toPaneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
   moveNote(
     filePath: string,
     targetPath: string,
@@ -431,12 +449,45 @@ export class WorkspaceController {
     return response;
   }
 
-  openNote(filePath: string): Promise<RuntimeSnapshot> {
-    return this.activeRuntime("open a note").openNote(filePath);
+  openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("open a note").openNote(filePath, paneId);
   }
 
-  closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
-    return this.activeRuntime("close a note").closeNote(filePath, expectedVaultId);
+  closeNote(
+    filePath: string,
+    expectedVaultId: string,
+    paneId?: WorkspacePaneId,
+  ): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("close a note").closeNote(filePath, expectedVaultId, paneId);
+  }
+
+  splitWorkspace(
+    direction: WorkspaceSplitDirection,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("split the workspace").splitWorkspace(direction, expectedVaultId);
+  }
+
+  focusWorkspacePane(paneId: WorkspacePaneId, expectedVaultId: string): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("focus a workspace pane").focusWorkspacePane(paneId, expectedVaultId);
+  }
+
+  closeWorkspacePane(paneId: WorkspacePaneId, expectedVaultId: string): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("close a workspace pane").closeWorkspacePane(paneId, expectedVaultId);
+  }
+
+  moveNoteToWorkspacePane(
+    filePath: string,
+    fromPaneId: WorkspacePaneId,
+    toPaneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("move a tab between panes").moveNoteToWorkspacePane(
+      filePath,
+      fromPaneId,
+      toPaneId,
+      expectedVaultId,
+    );
   }
 
   moveNote(

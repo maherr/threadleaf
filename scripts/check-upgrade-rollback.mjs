@@ -322,7 +322,9 @@ async function appendAndSave(probe, marker, expectedBytes) {
   await evaluate(
     probe,
     `(() => {
-    const editor = document.querySelector('.cm-content');
+    const editor =
+      document.querySelector('[data-pane-id="primary"] .cm-content') ??
+      document.querySelector('.cm-content');
     if (!(editor instanceof HTMLElement)) throw new Error('CodeMirror content is unavailable.');
     editor.focus();
     return true;

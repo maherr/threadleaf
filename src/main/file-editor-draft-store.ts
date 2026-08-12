@@ -19,8 +19,11 @@ export class FileEditorDraftStore implements EditorDraftStore {
     this.#directoryPath = path.resolve(directoryPath);
   }
 
-  load(vaultId: string): Promise<PersistedEditorDraft | null> {
-    return this.#writeTail.catch(() => undefined).then(() => this.loadCurrent(vaultId));
+  load(
+    vaultId: string,
+    paneId: "primary" | "secondary" = "primary",
+  ): Promise<PersistedEditorDraft | null> {
+    return this.#writeTail.catch(() => undefined).then(() => this.loadCurrent(vaultId, paneId));
   }
 
   async save(draft: PersistedEditorDraft): Promise<PersistedEditorDraft> {
@@ -28,7 +31,7 @@ export class FileEditorDraftStore implements EditorDraftStore {
     const bytes = Buffer.from(`${JSON.stringify(normalized, null, 2)}\n`, "utf8");
     const write = this.#writeTail
       .catch(() => undefined)
-      .then(() => atomicWriteFile(this.filePath(normalized.vaultId), bytes));
+      .then(() => atomicWriteFile(this.filePath(normalized.vaultId, normalized.paneId), bytes));
     this.#writeTail = write.then(
       () => undefined,
       () => undefined,
@@ -37,7 +40,11 @@ export class FileEditorDraftStore implements EditorDraftStore {
     return normalized;
   }
 
-  async clear(vaultId: string, draftId: string): Promise<boolean> {
+  async clear(
+    vaultId: string,
+    draftId: string,
+    paneId: "primary" | "secondary" = "primary",
+  ): Promise<boolean> {
     if (typeof draftId !== "string" || draftId.length > 128) {
       throw new Error("Editor draft clearing requires a bounded draft identity.");
     }
@@ -45,11 +52,11 @@ export class FileEditorDraftStore implements EditorDraftStore {
     const write = this.#writeTail
       .catch(() => undefined)
       .then(async () => {
-        const current = await this.loadCurrent(vaultId);
+        const current = await this.loadCurrent(vaultId, paneId);
         if (!current || current.draftId !== draftId) {
           return;
         }
-        await removeIfPresent(this.filePath(vaultId));
+        await removeIfPresent(this.filePath(vaultId, paneId));
         await syncDirectory(this.#directoryPath);
         cleared = true;
       });
@@ -61,15 +68,21 @@ export class FileEditorDraftStore implements EditorDraftStore {
     return cleared;
   }
 
-  private async loadCurrent(vaultId: string): Promise<PersistedEditorDraft | null> {
-    const snapshot = await readStableFile(this.filePath(vaultId));
+  private async loadCurrent(
+    vaultId: string,
+    paneId: "primary" | "secondary",
+  ): Promise<PersistedEditorDraft | null> {
+    const snapshot = await readStableFile(this.filePath(vaultId, paneId));
     return snapshot ? parseEditorDraft(JSON.parse(decoder.decode(snapshot.bytes)), vaultId) : null;
   }
 
-  private filePath(vaultId: string): string {
+  private filePath(vaultId: string, paneId: "primary" | "secondary"): string {
     if (!vaultIdPattern.test(vaultId)) {
       throw new Error("Editor draft filenames require a lowercase SHA-256 vault identity.");
     }
-    return path.join(this.#directoryPath, `${vaultId}.json`);
+    return path.join(
+      this.#directoryPath,
+      paneId === "primary" ? `${vaultId}.json` : `${vaultId}.secondary.json`,
+    );
   }
 }

@@ -108,8 +108,23 @@
         </aside>
 
         <main class="note-stage workspace-split mod-root" id="main-content">
+          <div class="workspace-panes" id="workspace-panes" data-split-direction="none">
+            <section
+              class="workspace-pane"
+              id="workspace-pane-primary"
+              data-pane-id="primary"
+              data-active="true"
+              aria-label="Primary editor pane"
+            >
           <div class="note-tabs-shell workspace-tabs">
             <div class="note-tabs" id="note-tabs" role="tablist" aria-label="Open notes"></div>
+            <fieldset class="pane-layout-actions">
+              <legend class="sr-only">Pane layout</legend>
+              <button id="split-pane-right" type="button" aria-label="Split editor right" title="Split right">◫</button>
+              <button id="split-pane-down" type="button" aria-label="Split editor down" title="Split down">⬒</button>
+              <button id="move-tab-pane" type="button" aria-label="Move current tab to other pane" title="Move tab to other pane" hidden>⇥</button>
+              <button id="close-pane" type="button" aria-label="Close this editor pane" title="Close pane" hidden>×</button>
+            </fieldset>
           </div>
           <div class="note-toolbar">
             <div class="note-location">
@@ -190,6 +205,8 @@
           >
             <span class="plugin-surface-loading">Opening plugin view…</span>
           </section>
+            </section>
+          </div>
         </main>
 
         <aside

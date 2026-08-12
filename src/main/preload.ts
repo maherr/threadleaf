@@ -25,6 +25,7 @@ import type {
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
 import type { MigrationPreviewResponse } from "../shared/migration";
+import type { NativeMenuCommandId } from "../shared/native-menu";
 import type {
   PluginPackageIndexResponse,
   PluginPackagePreviewRequest,
@@ -134,12 +135,39 @@ const bridge: ThreadleafBridge = {
   resetKeyBindings: () =>
     ipcRenderer.invoke(ipcChannels.resetKeyBindings) as Promise<AppSettingsSnapshot>,
   chooseVault: () => ipcRenderer.invoke(ipcChannels.chooseVault) as Promise<VaultOpenResponse>,
-  openNote: (filePath) =>
-    ipcRenderer.invoke(ipcChannels.openNote, filePath) as Promise<RuntimeSnapshot>,
-  closeNote: (filePath, expectedVaultId) =>
+  openNote: (filePath, paneId) =>
+    ipcRenderer.invoke(ipcChannels.openNote, filePath, paneId) as Promise<RuntimeSnapshot>,
+  closeNote: (filePath, expectedVaultId, paneId) =>
     ipcRenderer.invoke(
       ipcChannels.closeNote,
       filePath,
+      expectedVaultId,
+      paneId,
+    ) as Promise<RuntimeSnapshot>,
+  splitWorkspace: (direction, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.splitWorkspace,
+      direction,
+      expectedVaultId,
+    ) as Promise<RuntimeSnapshot>,
+  focusWorkspacePane: (paneId, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.focusWorkspacePane,
+      paneId,
+      expectedVaultId,
+    ) as Promise<RuntimeSnapshot>,
+  closeWorkspacePane: (paneId, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.closeWorkspacePane,
+      paneId,
+      expectedVaultId,
+    ) as Promise<RuntimeSnapshot>,
+  moveNoteToWorkspacePane: (filePath, fromPaneId, toPaneId, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.moveNoteToWorkspacePane,
+      filePath,
+      fromPaneId,
+      toPaneId,
       expectedVaultId,
     ) as Promise<RuntimeSnapshot>,
   moveNote: (filePath, targetPath, expectedRevision, expectedVaultId, confirmationId) =>
@@ -191,19 +219,28 @@ const bridge: ThreadleafBridge = {
       expectedRevision,
       expectedVaultId,
     ) as Promise<NotePropertyRemoveResponse>,
-  getEditorDraft: (expectedVaultId) =>
+  getEditorDraft: (expectedVaultId, paneId) =>
     ipcRenderer.invoke(
       ipcChannels.getEditorDraft,
       expectedVaultId,
+      paneId,
     ) as Promise<EditorDraftReadResponse>,
   saveEditorDraft: (draft) =>
     ipcRenderer.invoke(ipcChannels.saveEditorDraft, draft) as Promise<EditorDraftSaveResponse>,
-  clearEditorDraft: (expectedVaultId, draftId) =>
+  clearEditorDraft: (expectedVaultId, draftId, paneId) =>
     ipcRenderer.invoke(
       ipcChannels.clearEditorDraft,
       expectedVaultId,
       draftId,
+      paneId,
     ) as Promise<EditorDraftClearResponse>,
+  onMenuCommand: (listener) => {
+    const subscription = (_event: Electron.IpcRendererEvent, commandId: NativeMenuCommandId) => {
+      listener(commandId);
+    };
+    ipcRenderer.on(ipcChannels.menuCommand, subscription);
+    return () => ipcRenderer.removeListener(ipcChannels.menuCommand, subscription);
+  },
   runCommand: (commandId, editorContext) =>
     ipcRenderer.invoke(
       ipcChannels.runCommand,

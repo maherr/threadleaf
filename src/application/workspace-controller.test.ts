@@ -197,6 +197,22 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return this.#snapshot;
   }
 
+  async splitWorkspace(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async focusWorkspacePane(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async closeWorkspacePane(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async moveNoteToWorkspacePane(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
   async moveNote(
     filePath: string,
     targetPath: string,

@@ -10,7 +10,7 @@ Threadleaf is not affiliated with or endorsed by Obsidian.
 
 ## Status
 
-Threadleaf 0.1.0-beta.1 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
+Threadleaf 0.1.0-beta.2 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
 proof loads an unchanged CommonJS fixture
 plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
 command, and exercises that command through a dedicated Electron compatibility renderer. The
@@ -92,13 +92,16 @@ Read-only file and folder commands inventory ordinary notes, attachments, Canvas
 empty folders without exposing application-private trees. They support recursive folder and
 extension filters, metadata and byte totals, explicit duplicate-name failures, and Unicode-aware
 word and grapheme-character counts.
-Runtime-owned tabs keep one
-ordered entry per open note, reactivate an existing entry instead of duplicating it, follow
-externally renamed notes, and remove externally deleted notes. Closing an active tab selects its
-right neighbor, then its left neighbor. Their order and active note restore per vault from
-versioned private application data. An intentionally empty workspace stays empty, missing notes
-are pruned on restore, and malformed state remains available for diagnosis behind a visible
-warning. No workspace metadata is written into the vault or `.obsidian/`.
+Runtime-owned panes keep one ordered entry per open note in each pane, reactivate an existing entry
+instead of duplicating it, follow externally renamed notes, and remove externally deleted notes.
+The workspace can split right or down, move the active tab between panes, collapse back to one
+pane, and keep independent CodeMirror selection, undo, and protected crash-draft state in both.
+Tab order, active notes, focused pane, and split direction restore per vault from versioned private
+application data. The stored document also retains a validated one-pane projection that the prior
+daily-driver build can read during rollback. An intentionally empty workspace stays empty, missing
+notes are pruned on restore, and malformed state remains available for diagnosis behind a visible
+warning without rewriting its bytes. Native application menus dispatch the same saved-keybinding
+actions to the focused workspace. No workspace metadata is written into the vault or `.obsidian/`.
 
 Vault appearance support now discovers standard `.obsidian/themes/<name>/theme.css` packages and
 `.obsidian/snippets/*.css` files without changing them. A per-vault selection, base color scheme,

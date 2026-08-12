@@ -556,11 +556,14 @@ async function closeProbe(probe) {
   } catch {
     // A clean close can race the final CDP response.
   }
+  // Begin the WebSocket close handshake while the renderer can still answer it.
+  // Closing only after Electron exits leaves Node's WebSocket client waiting for
+  // its transport timeout even though every product assertion has completed.
+  probe.cdp.close();
   const exit = await Promise.race([
     probe.exited,
     delay(15_000).then(() => ({ code: null, signal: "timeout" })),
   ]);
-  probe.cdp.close();
   assert(exit.code === 0, `Electron did not exit cleanly: ${JSON.stringify(exit)}`);
   activeProbe = null;
 }
@@ -632,7 +635,10 @@ try {
   const largeOpenStartedAt = Date.now();
   await openNote(activeProbe, largestNote.relativePath, 20_000);
   const largeOpenMs = Date.now() - largeOpenStartedAt;
-  await evaluate(activeProbe, `document.querySelector(".cm-content")?.focus(); true`);
+  await evaluate(
+    activeProbe,
+    `document.querySelector('[data-pane-id="primary"] .cm-content')?.focus(); true`,
+  );
   await pressKey(activeProbe, "End", "End", 2);
   const largeMarker = "\n\n<!-- threadleaf representative large-note save -->";
   await activeProbe.cdp.send("Input.insertText", { text: largeMarker });
@@ -687,8 +693,11 @@ try {
     async () =>
       evaluate(
         activeProbe,
-        `(() => [...document.querySelectorAll(".cm-content .cm-line")]
-          .map((line) => line.textContent ?? "").join("\\n") === ${JSON.stringify(externalContent)})()`,
+        `(() => {
+          const root = document.querySelector('[data-pane-id="primary"]');
+          return root && [...root.querySelectorAll(".cm-content .cm-line")]
+            .map((line) => line.textContent ?? "").join("\\n") === ${JSON.stringify(externalContent)};
+        })()`,
       ),
     "The active editor did not converge to an external atomic replacement",
     20_000,
@@ -869,4 +878,13 @@ try {
   if (!succeeded && keepTrial) {
     console.error("The retained trial contains a private source copy; do not publish it.");
   }
+}
+
+// Node's built-in WebSocket client retains its transport timeout after both
+// renderer connections have closed. At this point the marked process set is
+// empty, the private trial is removed, and source immutability is verified, so
+// flush the report and end the one-shot harness instead of idling for a minute.
+if (succeeded) {
+  await new Promise((resolve) => process.stdout.write("", resolve));
+  process.exit(0);
 }

@@ -5,6 +5,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   type OpenDialogOptions,
   type SaveDialogOptions,
   type WebContents,
@@ -27,7 +28,9 @@ import {
   type PluginUpdateResponse,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
+import type { AppSettings } from "../shared/key-bindings";
 import { isShortcutTargetId } from "../shared/key-bindings";
+import type { NativeMenuCommandId } from "../shared/native-menu";
 import { parsePluginPackagePreviewRequest } from "../shared/plugin-packages";
 import {
   parsePluginEditorContext,
@@ -48,6 +51,7 @@ import {
   pluginCapabilityGrantMatches,
 } from "../shared/plugins";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
+import { createApplicationMenuTemplate } from "./application-menu";
 import {
   readDevelopmentPickerOverride,
   readDevelopmentVaultPath,
@@ -248,6 +252,26 @@ function isMainRendererSender(webContents: WebContents): boolean {
       !mainWindow.isDestroyed() &&
       !mainWindow.webContents.isDestroyed() &&
       webContents === mainWindow.webContents,
+  );
+}
+
+function dispatchApplicationMenuCommand(commandId: NativeMenuCommandId): void {
+  const targetWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  if (!targetWindow || targetWindow.isDestroyed() || targetWindow.webContents.isDestroyed()) {
+    return;
+  }
+  targetWindow.webContents.send(ipcChannels.menuCommand, commandId);
+}
+
+function installApplicationMenu(settings: AppSettings): void {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      createApplicationMenuTemplate({
+        dispatch: dispatchApplicationMenuCommand,
+        platform: process.platform,
+        settings,
+      }),
+    ),
   );
 }
 
@@ -1106,18 +1130,83 @@ function registerIpcHandlers(): void {
       } as const;
     }
   });
-  ipcMain.handle(ipcChannels.openNote, (_event, filePath: unknown) => {
-    if (typeof filePath !== "string") {
-      throw new Error("Open note requires a string path.");
+  ipcMain.handle(ipcChannels.openNote, (_event, filePath: unknown, paneId: unknown) => {
+    if (
+      typeof filePath !== "string" ||
+      !(paneId === undefined || paneId === "primary" || paneId === "secondary")
+    ) {
+      throw new Error("Open note requires a string path and optional pane ID.");
     }
-    return workspaceController.openNote(filePath);
+    return workspaceController.openNote(filePath, paneId);
   });
-  ipcMain.handle(ipcChannels.closeNote, (_event, filePath: unknown, expectedVaultId: unknown) => {
-    if (typeof filePath !== "string" || typeof expectedVaultId !== "string") {
-      throw new Error("Close note requires string path and vault values.");
-    }
-    return workspaceController.closeNote(filePath, expectedVaultId);
-  });
+  ipcMain.handle(
+    ipcChannels.closeNote,
+    (_event, filePath: unknown, expectedVaultId: unknown, paneId: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof expectedVaultId !== "string" ||
+        !(paneId === undefined || paneId === "primary" || paneId === "secondary")
+      ) {
+        throw new Error("Close note requires string path, vault, and optional pane ID values.");
+      }
+      return workspaceController.closeNote(filePath, expectedVaultId, paneId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.splitWorkspace,
+    (_event, direction: unknown, expectedVaultId: unknown) => {
+      if (
+        (direction !== "horizontal" && direction !== "vertical") ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Split workspace requires a direction and vault identity.");
+      }
+      return workspaceController.splitWorkspace(direction, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.focusWorkspacePane,
+    (_event, paneId: unknown, expectedVaultId: unknown) => {
+      if ((paneId !== "primary" && paneId !== "secondary") || typeof expectedVaultId !== "string") {
+        throw new Error("Focus workspace pane requires a pane and vault identity.");
+      }
+      return workspaceController.focusWorkspacePane(paneId, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.closeWorkspacePane,
+    (_event, paneId: unknown, expectedVaultId: unknown) => {
+      if ((paneId !== "primary" && paneId !== "secondary") || typeof expectedVaultId !== "string") {
+        throw new Error("Close workspace pane requires a pane and vault identity.");
+      }
+      return workspaceController.closeWorkspacePane(paneId, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.moveNoteToWorkspacePane,
+    (
+      _event,
+      filePath: unknown,
+      fromPaneId: unknown,
+      toPaneId: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof filePath !== "string" ||
+        (fromPaneId !== "primary" && fromPaneId !== "secondary") ||
+        (toPaneId !== "primary" && toPaneId !== "secondary") ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Move tab requires a path, source pane, target pane, and vault identity.");
+      }
+      return workspaceController.moveNoteToWorkspacePane(
+        filePath,
+        fromPaneId,
+        toPaneId,
+        expectedVaultId,
+      );
+    },
+  );
   ipcMain.handle(
     ipcChannels.moveNote,
     (
@@ -1253,17 +1342,23 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(ipcChannels.getEditorDraft, async (_event, expectedVaultId: unknown) => {
-    if (typeof expectedVaultId !== "string") {
-      throw new Error("Load editor draft requires a string vault identity.");
-    }
-    const vaultId = workspaceController.vaultId;
-    if (expectedVaultId !== vaultId) {
-      return { status: "stale-vault", vaultId } as const;
-    }
-    const draft = await editorDraftStore.load(vaultId);
-    return draft ? ({ status: "ready", draft } as const) : ({ status: "empty" } as const);
-  });
+  ipcMain.handle(
+    ipcChannels.getEditorDraft,
+    async (_event, expectedVaultId: unknown, paneId: unknown) => {
+      if (
+        typeof expectedVaultId !== "string" ||
+        !(paneId === undefined || paneId === "primary" || paneId === "secondary")
+      ) {
+        throw new Error("Load editor draft requires a string vault and optional pane identity.");
+      }
+      const vaultId = workspaceController.vaultId;
+      if (expectedVaultId !== vaultId) {
+        return { status: "stale-vault", vaultId } as const;
+      }
+      const draft = await editorDraftStore.load(vaultId, paneId);
+      return draft ? ({ status: "ready", draft } as const) : ({ status: "empty" } as const);
+    },
+  );
   ipcMain.handle(ipcChannels.saveEditorDraft, async (_event, value: unknown) => {
     if (
       typeof value !== "object" ||
@@ -1282,9 +1377,15 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle(
     ipcChannels.clearEditorDraft,
-    async (_event, expectedVaultId: unknown, draftId: unknown) => {
-      if (typeof expectedVaultId !== "string" || typeof draftId !== "string") {
-        throw new Error("Clear editor draft requires string vault and draft identities.");
+    async (_event, expectedVaultId: unknown, draftId: unknown, paneId: unknown) => {
+      if (
+        typeof expectedVaultId !== "string" ||
+        typeof draftId !== "string" ||
+        !(paneId === undefined || paneId === "primary" || paneId === "secondary")
+      ) {
+        throw new Error(
+          "Clear editor draft requires string vault, draft, and optional pane identities.",
+        );
       }
       const vaultId = workspaceController.vaultId;
       if (expectedVaultId !== vaultId) {
@@ -1292,7 +1393,7 @@ function registerIpcHandlers(): void {
       }
       return {
         status: "cleared",
-        cleared: await editorDraftStore.clear(vaultId, draftId),
+        cleared: await editorDraftStore.clear(vaultId, draftId, paneId),
       } as const;
     },
   );
@@ -1381,6 +1482,7 @@ function registerIpcHandlers(): void {
     }
   });
   settingsController.onSnapshot((snapshot) => {
+    installApplicationMenu(snapshot.settings);
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(ipcChannels.settingsChanged, snapshot);
     }
@@ -1469,6 +1571,7 @@ app.whenReady().then(async () => {
   settingsController = await AppSettingsController.open(
     new FileAppSettingsStore(join(app.getPath("userData"), "settings.json")),
   );
+  installApplicationMenu(settingsController.getSnapshot().settings);
   editorDraftStore = new FileEditorDraftStore(join(app.getPath("userData"), "editor-drafts"));
   workspaceController = await createWorkspaceController();
   registerIpcHandlers();

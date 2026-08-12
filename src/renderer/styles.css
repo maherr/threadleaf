@@ -694,8 +694,40 @@ h2 {
 }
 
 .note-stage {
+  display: block;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.workspace-panes {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  gap: 1px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.workspace-panes[data-split-direction="none"] {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+.workspace-panes[data-split-direction="vertical"] {
+  grid-template: minmax(0, 1fr) / repeat(2, minmax(0, 1fr));
+}
+
+.workspace-panes[data-split-direction="horizontal"] {
+  grid-template: repeat(2, minmax(0, 1fr)) / minmax(0, 1fr);
+}
+
+.workspace-pane {
+  position: relative;
   display: grid;
   grid-template-rows: 34px 42px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   background:
     linear-gradient(
@@ -705,13 +737,119 @@ h2 {
       transparent 49px
     ),
     var(--surface-raised);
+  container-type: inline-size;
+}
+
+.workspace-pane[hidden] {
+  display: none;
+}
+
+.workspace-pane[data-active="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 64%, var(--line));
+}
+
+.workspace-pane[data-active="true"]::after {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  content: "";
+  background: var(--accent);
+  pointer-events: none;
 }
 
 .note-tabs-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
   overflow: hidden;
   border-bottom: 1px solid var(--line);
   background: var(--surface-sunken);
+}
+
+.pane-layout-actions {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+}
+
+.pane-layout-actions button {
+  display: grid;
+  width: 29px;
+  min-width: 0;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  color: var(--ink-muted);
+  background: var(--surface-sunken);
+  font: 13px / 1 var(--mono);
+  cursor: pointer;
+}
+
+.pane-layout-actions button:hover:not(:disabled),
+.pane-layout-actions button:focus-visible {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.pane-layout-actions button[aria-pressed="true"] {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.pane-layout-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.34;
+}
+
+@container (max-width: 650px) {
+  .workspace-pane .note-toolbar {
+    gap: 6px;
+    padding-right: 7px;
+    padding-left: 9px;
+  }
+
+  .workspace-pane .note-location {
+    max-width: 34%;
+  }
+
+  .workspace-pane .editor-controls {
+    gap: 4px;
+  }
+
+  .workspace-pane .toolbar-button {
+    min-width: 28px;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .workspace-pane .save-button kbd,
+  .workspace-pane .toolbar-action-label {
+    display: none;
+  }
+}
+
+@container (max-width: 490px) {
+  .workspace-pane .note-location {
+    display: none;
+  }
+
+  .workspace-pane .note-toolbar {
+    justify-content: flex-end;
+  }
+
+  .workspace-pane .edit-state {
+    max-width: 76px;
+  }
 }
 
 .note-tabs {

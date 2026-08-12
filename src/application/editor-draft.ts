@@ -6,9 +6,9 @@ export const maximumEditorDraftBytes = 64 * 1024 * 1024;
 export type PersistedEditorDraft = EditorDraftSnapshot;
 
 export interface EditorDraftStore {
-  load(vaultId: string): Promise<PersistedEditorDraft | null>;
+  load(vaultId: string, paneId?: "primary" | "secondary"): Promise<PersistedEditorDraft | null>;
   save(draft: PersistedEditorDraft): Promise<PersistedEditorDraft>;
-  clear(vaultId: string, draftId: string): Promise<boolean>;
+  clear(vaultId: string, draftId: string, paneId?: "primary" | "secondary"): Promise<boolean>;
 }
 
 const sha256Pattern = /^[a-f0-9]{64}$/;
@@ -38,7 +38,7 @@ export function parseEditorDraft(value: unknown, expectedVaultId: string): Persi
   }
   if (
     !isRecord(value) ||
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     value.vaultId !== expectedVaultId ||
     typeof value.draftId !== "string" ||
     !draftIdPattern.test(value.draftId) ||
@@ -51,8 +51,12 @@ export function parseEditorDraft(value: unknown, expectedVaultId: string): Persi
     typeof value.updatedAt !== "string"
   ) {
     throw new Error(
-      "Editor drafts require version 1, exact vault and revision identities, content, selection, and an update time.",
+      "Editor drafts require version 1 or 2, exact vault and revision identities, content, selection, and an update time.",
     );
+  }
+  const paneId = value.version === 1 ? "primary" : value.paneId;
+  if (paneId !== "primary" && paneId !== "secondary") {
+    throw new Error("Version 2 editor drafts require a workspace pane identity.");
   }
 
   const path = normalizeMarkdownPath(value.path);
@@ -71,9 +75,10 @@ export function parseEditorDraft(value: unknown, expectedVaultId: string): Persi
   }
 
   return {
-    version: 1,
+    version: 2,
     draftId: value.draftId,
     vaultId: expectedVaultId,
+    paneId,
     path,
     baseRevision: value.baseRevision,
     content: value.content,

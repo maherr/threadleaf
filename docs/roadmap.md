@@ -128,7 +128,9 @@ equivalence through the real writer-to-watcher seam.
       deuteranomaly.
 - [ ] Remaining CLI commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
-- [ ] Split panes, application menus, and broader workspace settings.
+- [x] Two independently editable panes, horizontal and vertical splits, tab transfer, pane
+      collapse, focused-pane commands, private layout restoration, and native application menus.
+- [ ] Broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
 - [x] Bounded whole-note, heading, and block-ID transclusions in Reading view, with recursive
       rendering, exact source controls, nested links and raster images, and explicit safety limits.
@@ -143,7 +145,7 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 ### Daily-drive beta handoff
 
 Threadleaf will be presented as ready for maintainer-led daily-drive testing only when every
-unchecked item here is closed. The first handoff uses a copy of the live vault and never requires
+unchecked item here is closed. The handoff uses a copy of the live vault and never requires
 conversion.
 
 - [x] Exercise a representative copy of the live vault at real scale, including large notes,
@@ -161,8 +163,11 @@ conversion.
       preserving exact vault bytes, selected vault, private settings, hotkeys, appearance, and
       workspace tabs, then prove the rolled-back package remains writable without adding private
       application state to the vault.
+- [x] Exercise two panes with virtual keyboard and pointer input on an isolated Xvfb display,
+      including independent undo and drafts, full-process crash recovery, tab transfer, collapse,
+      clean restart, and non-destructive malformed-layout fallback.
 
-Exit gate passed: Threadleaf 0.1.0-beta.1 is ready for maintainer-led daily-drive testing with a
+Exit gate passed: Threadleaf 0.1.0-beta.2 is ready for maintainer-led daily-drive testing with a
 normal external vault backup and the privacy-safe feedback workflow.
 
 ## Phase 3: Compatibility alpha

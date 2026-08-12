@@ -27,7 +27,10 @@ import type {
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
+  WorkspacePaneId,
+  WorkspacePaneSnapshot,
   WorkspacePropertySummary,
+  WorkspaceSplitDirection,
   WorkspaceTabSummary,
 } from "../shared/contracts";
 import {
@@ -85,7 +88,13 @@ const elements = {
   fileList: getElement("file-list"),
   indexStatus: getElement("index-status"),
   recoveryCount: getElement("recovery-count"),
+  workspacePanes: getElement("workspace-panes"),
+  workspacePane: getElement("workspace-pane-primary"),
   noteTabs: getElement("note-tabs"),
+  splitPaneRight: getButton("split-pane-right"),
+  splitPaneDown: getButton("split-pane-down"),
+  moveTabPane: getButton("move-tab-pane"),
+  closePane: getButton("close-pane"),
   notePath: getElement("note-path"),
   noteEmpty: getElement("note-empty"),
   noteView: getElement("note-view"),
@@ -279,6 +288,129 @@ const elements = {
   pluginAuthorityReviewGrant: getButton("plugin-authority-review-grant"),
   toast: getElement("toast"),
 };
+
+const paneElementKeys = [
+  "workspacePane",
+  "noteTabs",
+  "splitPaneRight",
+  "splitPaneDown",
+  "moveTabPane",
+  "closePane",
+  "notePath",
+  "noteEmpty",
+  "noteView",
+  "noteTitle",
+  "noteStats",
+  "noteTags",
+  "editView",
+  "readView",
+  "pluginView",
+  "pluginSurfaceHost",
+  "noteEditorShell",
+  "noteEditor",
+  "notePreview",
+  "editState",
+  "moveNote",
+  "deleteNote",
+  "saveNote",
+  "saveShortcut",
+  "revertNote",
+  "editNotice",
+  "editNoticeTitle",
+  "editNoticeMessage",
+  "dismissEditNotice",
+] as const;
+
+type PaneElementKey = (typeof paneElementKeys)[number];
+type WorkspacePaneElements = Pick<typeof elements, PaneElementKey>;
+
+function cloneSecondaryPane(): HTMLElement {
+  const clone = elements.workspacePane.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) {
+    throw new Error("The secondary workspace pane could not be created.");
+  }
+  const idMap = new Map<string, string>();
+  for (const element of [clone, ...clone.querySelectorAll<HTMLElement>("[id]")]) {
+    if (!element.id) {
+      continue;
+    }
+    const nextId = element === clone ? "workspace-pane-secondary" : `${element.id}-secondary`;
+    idMap.set(element.id, nextId);
+    element.id = nextId;
+  }
+  for (const element of [clone, ...clone.querySelectorAll<HTMLElement>("*")]) {
+    for (const attribute of [
+      "for",
+      "aria-controls",
+      "aria-labelledby",
+      "aria-describedby",
+    ] as const) {
+      const value = element.getAttribute(attribute);
+      if (!value) {
+        continue;
+      }
+      element.setAttribute(
+        attribute,
+        value
+          .split(/\s+/u)
+          .map((id) => idMap.get(id) ?? id)
+          .join(" "),
+      );
+    }
+  }
+  clone.dataset.paneId = "secondary";
+  clone.dataset.active = "false";
+  clone.ariaLabel = "Secondary editor pane";
+  clone.hidden = true;
+  elements.workspacePanes.append(clone);
+  return clone;
+}
+
+function paneElementsFor(
+  paneId: WorkspacePaneId,
+  workspacePane: HTMLElement,
+): WorkspacePaneElements {
+  const suffix = paneId === "primary" ? "" : "-secondary";
+  const element = (id: string): HTMLElement => getElement(`${id}${suffix}`);
+  const button = (id: string): HTMLButtonElement => getButton(`${id}${suffix}`);
+  return {
+    workspacePane,
+    noteTabs: element("note-tabs"),
+    splitPaneRight: button("split-pane-right"),
+    splitPaneDown: button("split-pane-down"),
+    moveTabPane: button("move-tab-pane"),
+    closePane: button("close-pane"),
+    notePath: element("note-path"),
+    noteEmpty: element("note-empty"),
+    noteView: element("note-view"),
+    noteTitle: element("note-title"),
+    noteStats: element("note-stats"),
+    noteTags: element("note-tags"),
+    editView: button("edit-view"),
+    readView: button("read-view"),
+    pluginView: button("plugin-view"),
+    pluginSurfaceHost: element("plugin-surface-host"),
+    noteEditorShell: element("note-editor-shell"),
+    noteEditor: element("note-editor"),
+    notePreview: element("note-preview"),
+    editState: element("edit-state"),
+    moveNote: button("move-note"),
+    deleteNote: button("delete-note"),
+    saveNote: button("save-note"),
+    saveShortcut: element("save-shortcut"),
+    revertNote: button("revert-note"),
+    editNotice: element("edit-notice"),
+    editNoticeTitle: element("edit-notice-title"),
+    editNoticeMessage: element("edit-notice-message"),
+    dismissEditNotice: button("dismiss-edit-notice"),
+  };
+}
+
+const secondaryPaneRoot = cloneSecondaryPane();
+const paneElements = new Map<WorkspacePaneId, WorkspacePaneElements>([
+  ["primary", paneElementsFor("primary", elements.workspacePane)],
+  ["secondary", paneElementsFor("secondary", secondaryPaneRoot)],
+]);
 
 interface EditNoticeState {
   kind: "external" | "conflict";
@@ -512,6 +644,185 @@ type VaultSearchState =
 let vaultSearchState: VaultSearchState = { status: "idle" };
 let vaultSearchTimer: number | undefined;
 let vaultSearchRequest = 0;
+let paneFocusRequest = 0;
+let paneFocusTail: Promise<void> = Promise.resolve();
+
+interface WorkspacePaneSession {
+  editor: EditorView | null;
+  loadedNote: WorkspaceNoteSnapshot | null;
+  loadedVaultId: string | null;
+  pendingDiskNote: WorkspaceNoteSnapshot | null;
+  diskChanged: boolean;
+  editNoticeState: EditNoticeState | null;
+  saving: boolean;
+  savingContent: string | null;
+  dirty: boolean;
+  syncingEditor: boolean;
+  editorDraftId: string | null;
+  editorDraftTimer: number | undefined;
+  editorDraftPersistenceTail: Promise<void>;
+  editorDraftPersistenceState: "idle" | "pending" | "saved" | "error";
+  editorDraftPersistenceError: string | null;
+  editorDraftCheckedVaultId: string | null;
+  editorDraftRestoreRequest: number;
+  pendingCleanDiskAcceptance: boolean;
+  documentViewMode: DocumentViewMode;
+  renderedPreviewPath: string | null;
+  renderedPreviewSource: string | null;
+  renderedPreviewVaultId: string | null;
+  renderedPreviewWatchSequence: number;
+  previewHydrationRequest: number;
+  editorReadOnly: boolean;
+}
+
+function createWorkspacePaneSession(): WorkspacePaneSession {
+  return {
+    editor: null,
+    loadedNote: null,
+    loadedVaultId: null,
+    pendingDiskNote: null,
+    diskChanged: false,
+    editNoticeState: null,
+    saving: false,
+    savingContent: null,
+    dirty: false,
+    syncingEditor: false,
+    editorDraftId: null,
+    editorDraftTimer: undefined,
+    editorDraftPersistenceTail: Promise.resolve(),
+    editorDraftPersistenceState: "idle",
+    editorDraftPersistenceError: null,
+    editorDraftCheckedVaultId: null,
+    editorDraftRestoreRequest: 0,
+    pendingCleanDiskAcceptance: false,
+    documentViewMode: "source",
+    renderedPreviewPath: null,
+    renderedPreviewSource: null,
+    renderedPreviewVaultId: null,
+    renderedPreviewWatchSequence: -1,
+    previewHydrationRequest: 0,
+    editorReadOnly: false,
+  };
+}
+
+const paneSessions = new Map<WorkspacePaneId, WorkspacePaneSession>([
+  ["primary", createWorkspacePaneSession()],
+  ["secondary", createWorkspacePaneSession()],
+]);
+let activePaneContextId: WorkspacePaneId = "primary";
+let editorsReady = false;
+let editor: EditorView;
+
+function paneSession(paneId: WorkspacePaneId): WorkspacePaneSession {
+  const session = paneSessions.get(paneId);
+  if (!session) {
+    throw new Error(`Missing workspace pane session: ${paneId}`);
+  }
+  return session;
+}
+
+function captureActivePaneSession(): void {
+  if (!editorsReady) {
+    return;
+  }
+  const session = paneSession(activePaneContextId);
+  session.editor = editor;
+  session.loadedNote = loadedNote;
+  session.loadedVaultId = loadedVaultId;
+  session.pendingDiskNote = pendingDiskNote;
+  session.diskChanged = diskChanged;
+  session.editNoticeState = editNoticeState;
+  session.saving = saving;
+  session.savingContent = savingContent;
+  session.dirty = dirty;
+  session.syncingEditor = syncingEditor;
+  session.editorDraftId = editorDraftId;
+  session.editorDraftTimer = editorDraftTimer;
+  session.editorDraftPersistenceTail = editorDraftPersistenceTail;
+  session.editorDraftPersistenceState = editorDraftPersistenceState;
+  session.editorDraftPersistenceError = editorDraftPersistenceError;
+  session.editorDraftCheckedVaultId = editorDraftCheckedVaultId;
+  session.editorDraftRestoreRequest = editorDraftRestoreRequest;
+  session.pendingCleanDiskAcceptance = pendingCleanDiskAcceptance;
+  session.documentViewMode = documentViewMode;
+  session.renderedPreviewPath = renderedPreviewPath;
+  session.renderedPreviewSource = renderedPreviewSource;
+  session.renderedPreviewVaultId = renderedPreviewVaultId;
+  session.renderedPreviewWatchSequence = renderedPreviewWatchSequence;
+  session.previewHydrationRequest = previewHydrationRequest;
+  session.editorReadOnly = editorReadOnly;
+}
+
+function activatePaneContext(paneId: WorkspacePaneId): void {
+  if (editorsReady && paneId === activePaneContextId) {
+    return;
+  }
+  captureActivePaneSession();
+  const session = paneSession(paneId);
+  const nextElements = paneElements.get(paneId);
+  if (!nextElements) {
+    throw new Error(`Missing workspace pane elements: ${paneId}`);
+  }
+  Object.assign(elements, nextElements);
+  activePaneContextId = paneId;
+  if (editorsReady) {
+    if (!session.editor) {
+      throw new Error(`Workspace pane editor is not ready: ${paneId}`);
+    }
+    editor = session.editor;
+  }
+  loadedNote = session.loadedNote;
+  loadedVaultId = session.loadedVaultId;
+  pendingDiskNote = session.pendingDiskNote;
+  diskChanged = session.diskChanged;
+  editNoticeState = session.editNoticeState;
+  saving = session.saving;
+  savingContent = session.savingContent;
+  dirty = session.dirty;
+  syncingEditor = session.syncingEditor;
+  editorDraftId = session.editorDraftId;
+  editorDraftTimer = session.editorDraftTimer;
+  editorDraftPersistenceTail = session.editorDraftPersistenceTail;
+  editorDraftPersistenceState = session.editorDraftPersistenceState;
+  editorDraftPersistenceError = session.editorDraftPersistenceError;
+  editorDraftCheckedVaultId = session.editorDraftCheckedVaultId;
+  editorDraftRestoreRequest = session.editorDraftRestoreRequest;
+  pendingCleanDiskAcceptance = session.pendingCleanDiskAcceptance;
+  documentViewMode = session.documentViewMode;
+  renderedPreviewPath = session.renderedPreviewPath;
+  renderedPreviewSource = session.renderedPreviewSource;
+  renderedPreviewVaultId = session.renderedPreviewVaultId;
+  renderedPreviewWatchSequence = session.renderedPreviewWatchSequence;
+  previewHydrationRequest = session.previewHydrationRequest;
+  editorReadOnly = session.editorReadOnly;
+}
+
+function runInPaneContext<T>(paneId: WorkspacePaneId, operation: () => T): T {
+  const previousPaneId = activePaneContextId;
+  activatePaneContext(paneId);
+  try {
+    return operation();
+  } finally {
+    activatePaneContext(previousPaneId);
+  }
+}
+
+function workspacePaneSnapshot(
+  paneId: WorkspacePaneId = activePaneContextId,
+  snapshot: RuntimeSnapshot | null = currentSnapshot,
+): WorkspacePaneSnapshot | null {
+  return snapshot?.workspace?.panes.find((pane) => pane.id === paneId) ?? null;
+}
+
+function anyPaneDirty(): boolean {
+  captureActivePaneSession();
+  return [...paneSessions.values()].some((session) => session.dirty);
+}
+
+function anyPaneSaving(): boolean {
+  captureActivePaneSession();
+  return [...paneSessions.values()].some((session) => session.saving);
+}
 
 const editorStyleNonce = "threadleaf-codemirror";
 const appearanceStyle = document.createElement("style");
@@ -539,7 +850,7 @@ const sourceHighlight = HighlightStyle.define([
 const editorAccess = new Compartment();
 let editorReadOnly = false;
 
-function editorExtensions() {
+function editorExtensions(paneId: WorkspacePaneId) {
   return [
     basicSetup,
     markdown(),
@@ -556,24 +867,26 @@ function editorExtensions() {
       spellcheck: "true",
     }),
     EditorView.updateListener.of((update) => {
-      if (syncingEditor) {
-        return;
-      }
-      if (update.docChanged) {
-        const wasDirty = dirty;
-        dirty = loadedNote !== null && update.state.doc.toString() !== loadedNote.content;
-        if (dirty) {
-          scheduleEditorDraftPersistence();
-        } else if (wasDirty) {
-          clearCurrentEditorDraft();
-          schedulePendingDiskAcceptance();
+      runInPaneContext(paneId, () => {
+        if (syncingEditor) {
+          return;
         }
-        renderEditControls();
-        return;
-      }
-      if (dirty && update.selectionSet) {
-        scheduleEditorDraftPersistence();
-      }
+        if (update.docChanged) {
+          const wasDirty = dirty;
+          dirty = loadedNote !== null && update.state.doc.toString() !== loadedNote.content;
+          if (dirty) {
+            scheduleEditorDraftPersistence();
+          } else if (wasDirty) {
+            clearCurrentEditorDraft();
+            schedulePendingDiskAcceptance();
+          }
+          renderEditControls();
+          return;
+        }
+        if (dirty && update.selectionSet) {
+          scheduleEditorDraftPersistence();
+        }
+      });
     }),
   ];
 }
@@ -581,20 +894,30 @@ function editorExtensions() {
 function createEditorState(
   content: string,
   selection: { anchor: number; head?: number } = { anchor: 0 },
+  paneId: WorkspacePaneId = activePaneContextId,
 ): EditorState {
   const anchor = Math.max(0, Math.min(selection.anchor, content.length));
   const head = Math.max(0, Math.min(selection.head ?? anchor, content.length));
   return EditorState.create({
     doc: content,
     selection: { anchor, head },
-    extensions: editorExtensions(),
+    extensions: editorExtensions(paneId),
   });
 }
 
-const editor = new EditorView({
-  state: createEditorState(""),
-  parent: elements.noteEditor,
-});
+for (const paneId of ["primary", "secondary"] as const) {
+  const pane = paneElements.get(paneId);
+  if (!pane) {
+    throw new Error(`Missing workspace pane editor host: ${paneId}`);
+  }
+  paneSession(paneId).editor = new EditorView({
+    state: createEditorState("", { anchor: 0 }, paneId),
+    parent: pane.noteEditor,
+  });
+}
+editor = paneSession("primary").editor as EditorView;
+editorsReady = true;
+captureActivePaneSession();
 
 function getElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -697,7 +1020,10 @@ function syncEditorAccess(): void {
 function commandCatalog(): RendererCommand[] {
   const opening = vaultOpening();
   const readOnly = readOnlyVault();
-  const tabs = opening ? [] : (currentSnapshot?.workspace?.tabs ?? []);
+  const tabs = opening ? [] : (workspacePaneSnapshot()?.tabs ?? []);
+  const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
+  const paneDirty = anyPaneDirty();
+  const paneSaving = anyPaneSaving();
   const commands: RendererCommand[] = [
     {
       id: "workspace.create-note",
@@ -706,14 +1032,14 @@ function commandCatalog(): RendererCommand[] {
       keywords: ["new", "file", "markdown", "note"],
       shortcut: shortcutFor("workspace.create-note"),
       enabled: Boolean(
-        currentSnapshot?.vault.id && !opening && !readOnly && !busy && !saving && !dirty,
+        currentSnapshot?.vault.id && !opening && !readOnly && !busy && !paneSaving && !paneDirty,
       ),
       disabledReason: opening
         ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
         : readOnly
           ? "Open a local vault before creating notes."
-          : dirty
-            ? "Save or revert the open note before creating another."
+          : paneDirty
+            ? "Save or revert drafts before creating another note."
             : currentSnapshot?.vault.id
               ? "Threadleaf is finishing another action."
               : "No writable vault is active.",
@@ -776,6 +1102,60 @@ function commandCatalog(): RendererCommand[] {
       run: closeActiveTab,
     },
     {
+      id: "workspace.split-right",
+      label: paneCount < 2 ? "Split editor right" : "Arrange panes side by side",
+      category: "Workspace",
+      keywords: ["split", "pane", "right", "vertical", "side by side"],
+      shortcut: null,
+      enabled: !opening && !busy && !paneSaving && (paneCount > 1 || !paneDirty),
+      disabledReason: paneDirty
+        ? "Save or revert the open draft before creating another pane."
+        : "Threadleaf is finishing another action.",
+      run: () => splitWorkspace("vertical"),
+    },
+    {
+      id: "workspace.split-down",
+      label: paneCount < 2 ? "Split editor down" : "Stack editor panes",
+      category: "Workspace",
+      keywords: ["split", "pane", "down", "horizontal", "stack"],
+      shortcut: null,
+      enabled: !opening && !busy && !paneSaving && (paneCount > 1 || !paneDirty),
+      disabledReason: paneDirty
+        ? "Save or revert the open draft before creating another pane."
+        : "Threadleaf is finishing another action.",
+      run: () => splitWorkspace("horizontal"),
+    },
+    {
+      id: "workspace.move-tab-to-other-pane",
+      label: "Move current tab to other pane",
+      category: "Workspace",
+      keywords: ["move", "tab", "pane", "split"],
+      shortcut: null,
+      enabled: paneCount > 1 && Boolean(loadedNote) && !busy && !paneSaving && !paneDirty,
+      disabledReason:
+        paneCount < 2
+          ? "Split the editor before moving a tab."
+          : paneDirty
+            ? "Save or revert drafts before moving a tab."
+            : "Threadleaf is finishing another action.",
+      run: moveActiveTabToOtherPane,
+    },
+    {
+      id: "workspace.close-pane",
+      label: "Close current editor pane",
+      category: "Workspace",
+      keywords: ["close", "pane", "split", "collapse"],
+      shortcut: null,
+      enabled: paneCount > 1 && !busy && !paneSaving && !paneDirty,
+      disabledReason:
+        paneCount < 2
+          ? "Only one editor pane is open."
+          : paneDirty
+            ? "Save or revert drafts before closing a pane."
+            : "Threadleaf is finishing another action.",
+      run: closeActiveWorkspacePane,
+    },
+    {
       id: "workspace.next-tab",
       label: "Activate next tab",
       category: "Workspace",
@@ -811,10 +1191,10 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["folder", "switch", "choose"],
       shortcut: shortcutFor("workspace.open-vault"),
-      enabled: !busy && !saving && !dirty,
-      disabledReason: dirty
-        ? "Save or revert the open note before switching vaults."
-        : busy || saving
+      enabled: !busy && !paneSaving && !paneDirty,
+      disabledReason: paneDirty
+        ? "Save or revert drafts before switching vaults."
+        : busy || paneSaving
           ? "Threadleaf is finishing another action."
           : null,
       run: chooseVault,
@@ -4724,22 +5104,89 @@ function reconcileVaultSearch(snapshot: RuntimeSnapshot): void {
   }
 }
 
+function workspacePaneIdsInRenderOrder(activePaneId: WorkspacePaneId): readonly WorkspacePaneId[] {
+  return activePaneId === "primary" ? ["secondary", "primary"] : ["primary", "secondary"];
+}
+
+function renderWorkspacePanes(
+  snapshot: RuntimeSnapshot,
+  workspace: RuntimeSnapshot["workspace"],
+): WorkspaceNoteSnapshot | null {
+  const availablePaneIds = new Set(workspace?.panes.map((pane) => pane.id) ?? ["primary"]);
+  const activePaneId = workspace?.activePaneId ?? "primary";
+  const paneCount = availablePaneIds.size;
+  elements.workspacePanes.dataset.splitDirection = workspace?.splitDirection ?? "none";
+
+  for (const paneId of ["primary", "secondary"] as const) {
+    const pane = paneElements.get(paneId);
+    if (!pane) {
+      continue;
+    }
+    const available = availablePaneIds.has(paneId);
+    pane.workspacePane.hidden = !available;
+    pane.workspacePane.dataset.active = String(available && paneId === activePaneId);
+    pane.workspacePane.setAttribute(
+      "aria-label",
+      `${paneId === "primary" ? "Primary" : "Secondary"} editor pane${paneId === activePaneId ? ", active" : ""}`,
+    );
+    pane.moveTabPane.hidden = paneCount < 2;
+    pane.closePane.hidden = paneCount < 2;
+    pane.splitPaneRight.setAttribute(
+      "aria-pressed",
+      String(paneCount > 1 && workspace?.splitDirection === "vertical"),
+    );
+    pane.splitPaneDown.setAttribute(
+      "aria-pressed",
+      String(paneCount > 1 && workspace?.splitDirection === "horizontal"),
+    );
+  }
+
+  const displayedNotes = new Map<WorkspacePaneId, WorkspaceNoteSnapshot | null>();
+  for (const paneId of workspacePaneIdsInRenderOrder(activePaneId)) {
+    const pane = workspace?.panes.find((candidate) => candidate.id === paneId);
+    if (!pane) {
+      runInPaneContext(paneId, () => {
+        if (!dirty && loadedNote) {
+          replaceEditorDocument(null, null);
+        }
+      });
+      continue;
+    }
+    activatePaneContext(paneId);
+    syncEditorAccess();
+    if (paneId !== activePaneId && documentViewMode === "plugin") {
+      documentViewMode = "source";
+    }
+    const displayedNote = reconcileEditor(pane.activeNote, snapshot.vault.id);
+    displayedNotes.set(paneId, displayedNote);
+    renderNote(displayedNote);
+  }
+
+  activatePaneContext(activePaneId);
+  const displayedNote = displayedNotes.get(activePaneId) ?? null;
+  renderNote(displayedNote);
+  return displayedNote;
+}
+
 function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
-  syncEditorAccess();
   if (previousVaultId !== snapshot.vault.id) {
-    editorDraftRestoreRequest += 1;
-    editorDraftCheckedVaultId = null;
+    for (const paneId of ["primary", "secondary"] as const) {
+      runInPaneContext(paneId, () => {
+        editorDraftRestoreRequest += 1;
+        editorDraftCheckedVaultId = null;
+        if (documentViewMode === "plugin") {
+          documentViewMode = "source";
+        }
+      });
+    }
     elements.fileList.scrollTop = 0;
     lastVirtualActivePath = null;
     virtualFileRenderKey = "";
     pluginSurfaceRequest += 1;
     pluginSettingsTargetId = null;
     pluginLayoutReadyVaultId = null;
-    if (documentViewMode === "plugin") {
-      documentViewMode = "source";
-    }
     appearanceRequest += 1;
     appearanceBusy = false;
     appearanceSnapshot = null;
@@ -4817,7 +5264,7 @@ function render(snapshot: RuntimeSnapshot): void {
   }
   lastVaultWarning = snapshot.vault.warning;
 
-  const displayedNote = reconcileEditor(workspace?.activeNote ?? null, snapshot.vault.id);
+  const displayedNote = renderWorkspacePanes(snapshot, workspace);
   applyPluginEditorUpdate(snapshot.editorUpdate);
   if (
     pluginSettingsTargetId &&
@@ -4836,7 +5283,6 @@ function render(snapshot: RuntimeSnapshot): void {
   }
   reconcileVaultSearch(snapshot);
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
-  renderNote(displayedNote);
 
   elements.pluginState.textContent = plugin?.state ?? "empty";
   elements.pluginState.dataset.state = plugin?.state ?? "empty";
@@ -4850,8 +5296,9 @@ function render(snapshot: RuntimeSnapshot): void {
   renderEvents(snapshot);
   setActionState(busy);
   elements.fileSearch.disabled = opening;
-  elements.openVault.disabled = busy || saving;
-  elements.newNote.disabled = opening || readOnlyVault() || busy || saving || dirty;
+  elements.openVault.disabled = busy || anyPaneSaving();
+  elements.newNote.disabled =
+    opening || readOnlyVault() || busy || anyPaneSaving() || anyPaneDirty();
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
   }
@@ -4864,7 +5311,10 @@ function render(snapshot: RuntimeSnapshot): void {
   if (elements.deleteNoteDialog.open) {
     renderDeleteNoteDialog();
   }
-  maybeRestoreEditorDraft(snapshot);
+  for (const pane of workspace?.panes ?? []) {
+    runInPaneContext(pane.id, () => maybeRestoreEditorDraft(snapshot));
+  }
+  activatePaneContext(workspace?.activePaneId ?? "primary");
 }
 
 function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): void {
@@ -4890,7 +5340,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     activate.className = "note-tab-activate";
     activate.setAttribute("role", "tab");
     activate.setAttribute("aria-selected", String(isActive));
-    activate.setAttribute("aria-controls", "note-view");
+    activate.setAttribute("aria-controls", elements.noteView.id);
     activate.tabIndex = isActive || (!displayedPath && tab.path === runtimeActivePath) ? 0 : -1;
     activate.title = tab.path;
     activate.ariaLabel = `${isActive ? "Current note" : "Open note"}: ${tab.path}`;
@@ -4906,13 +5356,14 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     if (isActive) {
       activeTab = wrapper;
     }
-    activate.addEventListener("click", () => void openNote(tab.path));
+    const paneId = activePaneContextId;
+    activate.addEventListener("click", () => void openNote(tab.path, undefined, paneId));
     activate.addEventListener("keydown", (event) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
         return;
       }
       event.preventDefault();
-      void cycleTab(event.key === "ArrowRight" ? 1 : -1);
+      void cycleTab(event.key === "ArrowRight" ? 1 : -1, paneId);
     });
 
     const close = document.createElement("button");
@@ -4925,7 +5376,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
       isActive && dirty ? "Save or revert this note before closing it" : `Close ${tab.path}`;
     close.addEventListener("click", (event) => {
       event.stopPropagation();
-      void closeTab(tab.path);
+      void closeTab(tab.path, paneId);
     });
 
     wrapper.append(activate, close);
@@ -5426,9 +5877,10 @@ function currentEditorDraft(): EditorDraftSnapshot | null {
   editorDraftId ??= window.crypto.randomUUID();
   const selection = editor.state.selection.main;
   return {
-    version: 1,
+    version: 2,
     draftId: editorDraftId,
     vaultId: loadedVaultId,
+    paneId: activePaneContextId,
     path: loadedNote.path,
     baseRevision: loadedNote.revision,
     content: editor.state.doc.toString(),
@@ -5438,6 +5890,7 @@ function currentEditorDraft(): EditorDraftSnapshot | null {
 }
 
 async function persistCurrentEditorDraft(): Promise<void> {
+  const paneId = activePaneContextId;
   const draft = currentEditorDraft();
   if (!draft) {
     return;
@@ -5451,13 +5904,15 @@ async function persistCurrentEditorDraft(): Promise<void> {
         throw new Error("the active vault changed before the private draft was stored");
       }
     });
-    if (editorDraftId === draft.draftId) {
-      editorDraftPersistenceState = "saved";
-      editorDraftPersistenceError = null;
-      renderEditControls();
-    }
+    runInPaneContext(paneId, () => {
+      if (editorDraftId === draft.draftId) {
+        editorDraftPersistenceState = "saved";
+        editorDraftPersistenceError = null;
+        renderEditControls();
+      }
+    });
   } catch (error) {
-    reportEditorDraftPersistenceError(error);
+    runInPaneContext(paneId, () => reportEditorDraftPersistenceError(error));
   }
 }
 
@@ -5468,10 +5923,13 @@ function scheduleEditorDraftPersistence(delayMs = 180): void {
   if (editorDraftTimer !== undefined) {
     window.clearTimeout(editorDraftTimer);
   }
+  const paneId = activePaneContextId;
   editorDraftPersistenceState = "pending";
   editorDraftTimer = window.setTimeout(() => {
-    editorDraftTimer = undefined;
-    void persistCurrentEditorDraft();
+    runInPaneContext(paneId, () => {
+      editorDraftTimer = undefined;
+      void persistCurrentEditorDraft();
+    });
   }, delayMs);
 }
 
@@ -5484,13 +5942,22 @@ async function flushEditorDraftPersistence(): Promise<void> {
   await editorDraftPersistenceTail;
 }
 
-function clearPersistedEditorDraft(vaultId: string, draftId: string): void {
-  void enqueueEditorDraftOperation(async () => {
-    const response = await window.threadleaf.clearEditorDraft(vaultId, draftId);
-    if (response.status === "stale-vault") {
-      return;
-    }
-  }).catch(reportEditorDraftPersistenceError);
+function clearPersistedEditorDraft(
+  vaultId: string,
+  draftId: string,
+  paneId: WorkspacePaneId = activePaneContextId,
+): void {
+  const operation = runInPaneContext(paneId, () =>
+    enqueueEditorDraftOperation(async () => {
+      const response = await window.threadleaf.clearEditorDraft(vaultId, draftId, paneId);
+      if (response.status === "stale-vault") {
+        return;
+      }
+    }),
+  );
+  void operation.catch((error: unknown) => {
+    runInPaneContext(paneId, () => reportEditorDraftPersistenceError(error));
+  });
 }
 
 function clearCurrentEditorDraft(): void {
@@ -5512,24 +5979,27 @@ function schedulePendingDiskAcceptance(): void {
   if (!diskChanged || pendingCleanDiskAcceptance) {
     return;
   }
+  const paneId = activePaneContextId;
   pendingCleanDiskAcceptance = true;
   queueMicrotask(() => {
-    pendingCleanDiskAcceptance = false;
-    if (dirty || !diskChanged) {
-      return;
-    }
-    const selection = editor.state.selection.main;
-    const diskNote = pendingDiskNote ?? currentSnapshot?.workspace?.activeNote ?? null;
-    replaceEditorDocument(diskNote, currentSnapshot?.vault.id ?? null, {
-      anchor: selection.anchor,
-      head: selection.head,
+    runInPaneContext(paneId, () => {
+      pendingCleanDiskAcceptance = false;
+      if (dirty || !diskChanged) {
+        return;
+      }
+      const selection = editor.state.selection.main;
+      const diskNote = pendingDiskNote ?? workspacePaneSnapshot(paneId)?.activeNote ?? null;
+      replaceEditorDocument(diskNote, currentSnapshot?.vault.id ?? null, {
+        anchor: selection.anchor,
+        head: selection.head,
+      });
+      if (currentSnapshot) {
+        render(currentSnapshot);
+      } else {
+        renderNote(diskNote);
+      }
+      showToast(diskNote ? "Accepted the current disk version." : "Accepted the disk deletion.");
     });
-    if (currentSnapshot) {
-      render(currentSnapshot);
-    } else {
-      renderNote(diskNote);
-    }
-    showToast(diskNote ? "Accepted the current disk version." : "Accepted the disk deletion.");
   });
 }
 
@@ -5556,66 +6026,86 @@ function recoveredDraftNote(
 }
 
 async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): Promise<void> {
-  if (
-    request !== editorDraftRestoreRequest ||
-    currentSnapshot?.vault.id !== draft.vaultId ||
-    dirty ||
-    readOnlyVault()
-  ) {
+  const paneId = draft.paneId;
+  const canRestore = (): boolean =>
+    runInPaneContext(
+      paneId,
+      () =>
+        request === editorDraftRestoreRequest &&
+        currentSnapshot?.vault.id === draft.vaultId &&
+        !dirty &&
+        !readOnlyVault(),
+    );
+  if (!canRestore()) {
     return;
   }
 
-  let diskNote = currentSnapshot.workspace?.activeNote ?? null;
+  let snapshot = currentSnapshot;
+  if (!snapshot) {
+    return;
+  }
+  const originallyActivePaneId = snapshot.workspace?.activePaneId ?? "primary";
+  let diskNote = workspacePaneSnapshot(paneId, snapshot)?.activeNote ?? null;
   if (diskNote?.path !== draft.path) {
-    const exists =
-      currentSnapshot.workspace?.files.some(({ path }) => path === draft.path) ?? false;
+    const exists = snapshot.workspace?.files.some(({ path }) => path === draft.path) ?? false;
     if (exists) {
-      const opened = await window.threadleaf.openNote(draft.path);
-      if (request !== editorDraftRestoreRequest || opened.vault.id !== draft.vaultId || dirty) {
+      const opened = await window.threadleaf.openNote(draft.path, paneId);
+      if (!canRestore() || opened.vault.id !== draft.vaultId) {
         return;
       }
-      render(opened);
-      diskNote = opened.workspace?.activeNote ?? null;
+      snapshot =
+        originallyActivePaneId === paneId
+          ? opened
+          : await window.threadleaf.focusWorkspacePane(originallyActivePaneId, draft.vaultId);
+      if (!canRestore() || snapshot.vault.id !== draft.vaultId) {
+        return;
+      }
+      diskNote = workspacePaneSnapshot(paneId, snapshot)?.activeNote ?? null;
     } else {
       diskNote = null;
     }
   }
 
   if (diskNote?.content === draft.content) {
-    clearPersistedEditorDraft(draft.vaultId, draft.draftId);
+    clearPersistedEditorDraft(draft.vaultId, draft.draftId, paneId);
     return;
   }
 
   const restoredNote = recoveredDraftNote(draft, diskNote);
-  syncingEditor = true;
-  try {
-    editor.setState(createEditorState(draft.content, draft.selection));
-  } finally {
-    syncingEditor = false;
-  }
-  loadedNote = restoredNote;
-  loadedVaultId = draft.vaultId;
-  editorDraftId = draft.draftId;
-  editorDraftPersistenceState = "saved";
-  editorDraftPersistenceError = null;
-  pendingDiskNote = diskNote;
-  diskChanged = diskNote === null || diskNote.revision !== draft.baseRevision;
-  dirty = true;
-  setEditNotice({
-    kind: diskChanged ? "conflict" : "external",
-    title: diskChanged ? "Recovered draft, disk changed" : "Recovered unsaved draft",
-    message: diskChanged
-      ? "Threadleaf restored your private draft without overwriting the changed or missing vault note. Save to preserve it through the conflict path, or Revert to accept disk state."
-      : "Threadleaf restored the exact private draft and selection from before the renderer stopped. Save it to the vault or Revert to discard it.",
+  runInPaneContext(paneId, () => {
+    syncingEditor = true;
+    try {
+      editor.setState(createEditorState(draft.content, draft.selection, paneId));
+    } finally {
+      syncingEditor = false;
+    }
+    loadedNote = restoredNote;
+    loadedVaultId = draft.vaultId;
+    editorDraftId = draft.draftId;
+    editorDraftPersistenceState = "saved";
+    editorDraftPersistenceError = null;
+    pendingDiskNote = diskNote;
+    diskChanged = diskNote === null || diskNote.revision !== draft.baseRevision;
+    dirty = true;
+    setEditNotice({
+      kind: diskChanged ? "conflict" : "external",
+      title: diskChanged ? "Recovered draft, disk changed" : "Recovered unsaved draft",
+      message: diskChanged
+        ? "Threadleaf restored your private draft without overwriting the changed or missing vault note. Save to preserve it through the conflict path, or Revert to accept disk state."
+        : "Threadleaf restored the exact private draft and selection from before the renderer stopped. Save it to the vault or Revert to discard it.",
+    });
   });
-  renderFiles(currentSnapshot.workspace?.files ?? [], restoredNote.path);
-  renderNote(restoredNote);
-  setActionState(busy);
-  setDocumentView("source", false);
-  window.requestAnimationFrame(() => editor.focus());
+  render(snapshot);
+  if (snapshot.workspace?.activePaneId === paneId) {
+    runInPaneContext(paneId, () => {
+      setDocumentView("source", false);
+      window.requestAnimationFrame(() => editor.focus());
+    });
+  }
 }
 
 function maybeRestoreEditorDraft(snapshot: RuntimeSnapshot): void {
+  const paneId = activePaneContextId;
   const vaultId = snapshot.vault.id;
   if (
     snapshot.startup?.phase === "opening" ||
@@ -5628,14 +6118,16 @@ function maybeRestoreEditorDraft(snapshot: RuntimeSnapshot): void {
   editorDraftCheckedVaultId = vaultId;
   const request = ++editorDraftRestoreRequest;
   void window.threadleaf
-    .getEditorDraft(vaultId)
+    .getEditorDraft(vaultId, paneId)
     .then((response) => {
-      if (response.status === "ready") {
+      if (response.status === "ready" && response.draft.paneId === paneId) {
         return restoreEditorDraft(response.draft, request);
       }
       return undefined;
     })
-    .catch((error: unknown) => reportEditorDraftPersistenceError(error));
+    .catch((error: unknown) => {
+      runInPaneContext(paneId, () => reportEditorDraftPersistenceError(error));
+    });
 }
 
 function renderConnections(container: HTMLElement, links: WorkspaceLinkSummary[]): void {
@@ -5743,6 +6235,8 @@ function renderEditControls(): void {
         : "";
   const opening = vaultOpening();
   const readOnly = readOnlyVault();
+  const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
+  const splitBlocked = busy || anyPaneSaving() || (paneCount < 2 && anyPaneDirty());
   elements.newNote.disabled = opening || readOnly || busy || saving || dirty;
   elements.moveNote.disabled = readOnly || busy || saving || dirty || !loadedNote || !loadedVaultId;
   elements.deleteNote.disabled =
@@ -5750,7 +6244,27 @@ function renderEditControls(): void {
   elements.saveNote.disabled =
     readOnly || busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
-  renderTabs(opening ? [] : (currentSnapshot?.workspace?.tabs ?? []), loadedNote?.path ?? null);
+  elements.splitPaneRight.disabled = opening || splitBlocked;
+  elements.splitPaneDown.disabled = opening || splitBlocked;
+  elements.moveTabPane.disabled =
+    opening || paneCount < 2 || busy || anyPaneSaving() || anyPaneDirty() || !loadedNote;
+  elements.closePane.disabled =
+    opening || paneCount < 2 || busy || anyPaneSaving() || anyPaneDirty();
+  elements.splitPaneRight.title =
+    paneCount < 2 && anyPaneDirty()
+      ? "Save or revert the open draft before creating another pane"
+      : "Split editor right";
+  elements.splitPaneDown.title =
+    paneCount < 2 && anyPaneDirty()
+      ? "Save or revert the open draft before creating another pane"
+      : "Split editor down";
+  elements.moveTabPane.title = anyPaneDirty()
+    ? "Save or revert drafts before moving a tab between panes"
+    : "Move current tab to the other pane";
+  elements.closePane.title = anyPaneDirty()
+    ? "Save or revert drafts before closing a pane"
+    : "Close this editor pane";
+  renderTabs(opening ? [] : (workspacePaneSnapshot()?.tabs ?? []), loadedNote?.path ?? null);
   renderEditNotice();
   renderDocumentView();
   renderPropertyControls();
@@ -5784,7 +6298,11 @@ function scrollToSourceLine(line: number): void {
   editor.focus();
 }
 
-async function closeTab(filePath: string): Promise<void> {
+async function closeTab(
+  filePath: string,
+  paneId: WorkspacePaneId = activePaneContextId,
+): Promise<void> {
+  activatePaneContext(paneId);
   if (busy || saving) {
     return;
   }
@@ -5798,7 +6316,7 @@ async function closeTab(filePath: string): Promise<void> {
   if (!expectedVaultId) {
     return;
   }
-  await runAction(() => window.threadleaf.closeNote(filePath, expectedVaultId));
+  await runAction(() => window.threadleaf.closeNote(filePath, expectedVaultId, paneId));
   window.requestAnimationFrame(() => {
     if (loadedNote) {
       if (documentViewMode === "reading") {
@@ -5813,11 +6331,15 @@ async function closeTab(filePath: string): Promise<void> {
 }
 
 function closeActiveTab(): Promise<void> {
-  return loadedNote ? closeTab(loadedNote.path) : Promise.resolve();
+  return loadedNote ? closeTab(loadedNote.path, activePaneContextId) : Promise.resolve();
 }
 
-async function cycleTab(direction: -1 | 1): Promise<void> {
-  const tabs = currentSnapshot?.workspace?.tabs ?? [];
+async function cycleTab(
+  direction: -1 | 1,
+  paneId: WorkspacePaneId = activePaneContextId,
+): Promise<void> {
+  activatePaneContext(paneId);
+  const tabs = workspacePaneSnapshot(paneId)?.tabs ?? [];
   if (tabs.length < 2 || busy || saving) {
     return;
   }
@@ -5832,11 +6354,16 @@ async function cycleTab(direction: -1 | 1): Promise<void> {
   const nextIndex = (Math.max(0, activeIndex) + direction + tabs.length) % tabs.length;
   const nextTab = tabs[nextIndex];
   if (nextTab) {
-    await openNote(nextTab.path);
+    await openNote(nextTab.path, undefined, paneId);
   }
 }
 
-async function openNote(filePath: string, line?: number): Promise<boolean> {
+async function openNote(
+  filePath: string,
+  line?: number,
+  paneId: WorkspacePaneId = activePaneContextId,
+): Promise<boolean> {
+  activatePaneContext(paneId);
   if (busy) {
     return false;
   }
@@ -5846,7 +6373,7 @@ async function openNote(filePath: string, line?: number): Promise<boolean> {
     editor.focus();
     return false;
   }
-  await runAction(() => window.threadleaf.openNote(filePath));
+  await runAction(() => window.threadleaf.openNote(filePath, paneId));
   if (line && loadedNote?.path === filePath) {
     scrollToDocumentLine(line);
   }
@@ -5866,8 +6393,8 @@ async function chooseVault(): Promise<void> {
   if (busy) {
     return;
   }
-  if (dirty || saving) {
-    showToast("Save or revert the open note before switching vaults.");
+  if (anyPaneDirty() || anyPaneSaving()) {
+    showToast("Save or revert drafts in every pane before switching vaults.");
     editor.focus();
     return;
   }
@@ -5953,7 +6480,7 @@ function revertActiveNote(): void {
     return;
   }
   const diskNote = diskChanged
-    ? (pendingDiskNote ?? currentSnapshot?.workspace?.activeNote ?? null)
+    ? (pendingDiskNote ?? workspacePaneSnapshot()?.activeNote ?? null)
     : loadedNote;
   const discardedDraftId = editorDraftId;
   const discardedVaultId = loadedVaultId;
@@ -5998,15 +6525,142 @@ async function runAction(action: () => Promise<RuntimeSnapshot>): Promise<void> 
   }
 }
 
+function otherWorkspacePaneId(paneId: WorkspacePaneId): WorkspacePaneId {
+  return paneId === "primary" ? "secondary" : "primary";
+}
+
+function activateWorkspacePaneLocally(paneId: WorkspacePaneId): void {
+  const pane = workspacePaneSnapshot(paneId);
+  if (!pane) {
+    return;
+  }
+  const previousPaneId = activePaneContextId;
+  if (previousPaneId !== paneId && documentViewMode === "plugin") {
+    pluginSurfaceRequest += 1;
+    documentViewMode = "source";
+    renderDocumentView();
+    void window.threadleaf.closePluginView().catch(() => undefined);
+  }
+  activatePaneContext(paneId);
+  for (const [candidateId, candidateElements] of paneElements) {
+    candidateElements.workspacePane.dataset.active = String(candidateId === paneId);
+    candidateElements.workspacePane.setAttribute(
+      "aria-label",
+      `${candidateId === "primary" ? "Primary" : "Secondary"} editor pane${candidateId === paneId ? ", active" : ""}`,
+    );
+  }
+  renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+  renderNote(loadedNote);
+  setActionState(busy);
+}
+
+function requestWorkspacePaneFocus(paneId: WorkspacePaneId): void {
+  if (!workspacePaneSnapshot(paneId) || busy || anyPaneSaving()) {
+    return;
+  }
+  activateWorkspacePaneLocally(paneId);
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId) {
+    return;
+  }
+  const request = ++paneFocusRequest;
+  paneFocusTail = paneFocusTail
+    .then(async () => {
+      const snapshot = await window.threadleaf.focusWorkspacePane(paneId, expectedVaultId);
+      if (
+        request === paneFocusRequest &&
+        currentSnapshot?.vault.id === expectedVaultId &&
+        snapshot.vault.id === expectedVaultId
+      ) {
+        render(snapshot);
+      }
+    })
+    .catch((error: unknown) => {
+      if (request === paneFocusRequest) {
+        showToast(error instanceof Error ? error.message : String(error));
+      }
+    });
+}
+
+async function splitWorkspace(direction: WorkspaceSplitDirection): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
+  if (!expectedVaultId || busy || anyPaneSaving() || (paneCount < 2 && anyPaneDirty())) {
+    if (paneCount < 2 && anyPaneDirty()) {
+      showToast("Save or revert the open draft before creating another pane.");
+    }
+    return;
+  }
+  await runAction(() => window.threadleaf.splitWorkspace(direction, expectedVaultId));
+  window.requestAnimationFrame(() => editor.focus());
+}
+
+async function moveActiveTabToOtherPane(): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  const filePath = loadedNote?.path;
+  const fromPaneId = activePaneContextId;
+  const toPaneId = otherWorkspacePaneId(fromPaneId);
+  if (
+    !expectedVaultId ||
+    !filePath ||
+    !workspacePaneSnapshot(toPaneId) ||
+    busy ||
+    anyPaneSaving() ||
+    anyPaneDirty()
+  ) {
+    if (anyPaneDirty()) {
+      showToast("Save or revert drafts before moving a tab between panes.");
+    }
+    return;
+  }
+  await runAction(() =>
+    window.threadleaf.moveNoteToWorkspacePane(filePath, fromPaneId, toPaneId, expectedVaultId),
+  );
+  window.requestAnimationFrame(() => editor.focus());
+}
+
+async function closeActiveWorkspacePane(): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  const paneId = activePaneContextId;
+  if (
+    !expectedVaultId ||
+    (currentSnapshot?.workspace?.panes.length ?? 0) < 2 ||
+    busy ||
+    anyPaneSaving() ||
+    anyPaneDirty()
+  ) {
+    if (anyPaneDirty()) {
+      showToast("Save or revert drafts before closing a pane.");
+    }
+    return;
+  }
+  await runAction(() => window.threadleaf.closeWorkspacePane(paneId, expectedVaultId));
+  window.requestAnimationFrame(() => editor.focus());
+}
+
+function renderAllPaneEditControls(): void {
+  const activePaneId = activePaneContextId;
+  for (const paneId of workspacePaneIdsInRenderOrder(activePaneId)) {
+    if (!workspacePaneSnapshot(paneId)) {
+      continue;
+    }
+    activatePaneContext(paneId);
+    renderEditControls();
+  }
+  activatePaneContext(activePaneId);
+}
+
 function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
   const opening = vaultOpening();
-  elements.openVault.disabled = busy || saving;
-  elements.newNote.disabled = opening || readOnlyVault() || busy || saving || dirty;
+  const paneSaving = anyPaneSaving();
+  const paneDirty = anyPaneDirty();
+  elements.openVault.disabled = busy || paneSaving;
+  elements.newNote.disabled = opening || readOnlyVault() || busy || paneSaving || paneDirty;
   elements.reloadPlugin.disabled =
     opening ||
     busy ||
-    saving ||
+    paneSaving ||
     pluginBusy ||
     pluginSafeModeActive() ||
     currentPluginPreference().compatibilityMode === "restricted" ||
@@ -6014,13 +6668,13 @@ function setActionState(nextBusy: boolean): void {
   elements.unloadPlugin.disabled =
     opening ||
     busy ||
-    saving ||
+    paneSaving ||
     pluginBusy ||
     pluginSafeModeActive() ||
     currentPluginPreference().compatibilityMode === "restricted";
   elements.runCommand.disabled =
-    opening || busy || saving || (currentSnapshot?.commands.length ?? 0) === 0;
-  renderEditControls();
+    opening || busy || paneSaving || (currentSnapshot?.commands.length ?? 0) === 0;
+  renderAllPaneEditControls();
 }
 
 elements.fileSearch.addEventListener("input", () => {
@@ -6029,35 +6683,105 @@ elements.fileSearch.addEventListener("input", () => {
 elements.fileList.addEventListener("scroll", scheduleVirtualFileRender, { passive: true });
 window.addEventListener("resize", scheduleVirtualFileRender);
 
-elements.editView.addEventListener("click", () => setDocumentView("source"));
-elements.readView.addEventListener("click", () => setDocumentView("reading"));
-elements.pluginView.addEventListener("click", () => {
-  if (documentViewMode === "plugin") {
+function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneElements): void {
+  const activate = (): void => activateWorkspacePaneLocally(paneId);
+  pane.workspacePane.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.button !== 0 || paneId === activePaneContextId) {
+        return;
+      }
+      if (busy || anyPaneSaving()) {
+        event.preventDefault();
+        return;
+      }
+      requestWorkspacePaneFocus(paneId);
+    },
+    { capture: true },
+  );
+  pane.workspacePane.addEventListener("focusin", () => {
+    if (paneId !== activePaneContextId && !busy && !anyPaneSaving()) {
+      requestWorkspacePaneFocus(paneId);
+    }
+  });
+  pane.editView.addEventListener("click", () => {
+    activate();
     setDocumentView("source");
-  } else {
-    void activatePluginView();
-  }
-});
-elements.notePreview.addEventListener("click", (event) => {
-  if (!(event.target instanceof Element)) {
-    return;
-  }
-  const sourceAction = event.target.closest<HTMLButtonElement>(".preview-source-action");
-  if (sourceAction) {
-    void activatePreviewSourceAction(sourceAction);
-    return;
-  }
-  const embedOpen = event.target.closest<HTMLButtonElement>(".preview-note-embed-open");
-  if (embedOpen) {
-    void activatePreviewEmbed(embedOpen);
-    return;
-  }
-  const anchor = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-link]");
-  if (anchor) {
-    event.preventDefault();
-    void activatePreviewLink(anchor);
-  }
-});
+  });
+  pane.readView.addEventListener("click", () => {
+    activate();
+    setDocumentView("reading");
+  });
+  pane.pluginView.addEventListener("click", () => {
+    activate();
+    if (documentViewMode === "plugin") {
+      setDocumentView("source");
+    } else {
+      void activatePluginView();
+    }
+  });
+  pane.notePreview.addEventListener("click", (event) => {
+    activate();
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const sourceAction = event.target.closest<HTMLButtonElement>(".preview-source-action");
+    if (sourceAction) {
+      void activatePreviewSourceAction(sourceAction);
+      return;
+    }
+    const embedOpen = event.target.closest<HTMLButtonElement>(".preview-note-embed-open");
+    if (embedOpen) {
+      void activatePreviewEmbed(embedOpen);
+      return;
+    }
+    const anchor = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-link]");
+    if (anchor) {
+      event.preventDefault();
+      void activatePreviewLink(anchor);
+    }
+  });
+  pane.splitPaneRight.addEventListener("click", () => {
+    activate();
+    void splitWorkspace("vertical");
+  });
+  pane.splitPaneDown.addEventListener("click", () => {
+    activate();
+    void splitWorkspace("horizontal");
+  });
+  pane.moveTabPane.addEventListener("click", () => {
+    activate();
+    void moveActiveTabToOtherPane();
+  });
+  pane.closePane.addEventListener("click", () => {
+    activate();
+    void closeActiveWorkspacePane();
+  });
+  pane.moveNote.addEventListener("click", () => {
+    activate();
+    void executeRendererCommand("workspace.move-note");
+  });
+  pane.deleteNote.addEventListener("click", () => {
+    activate();
+    void executeRendererCommand("workspace.delete-note");
+  });
+  pane.saveNote.addEventListener("click", () => {
+    activate();
+    void executeRendererCommand("editor.save-note");
+  });
+  pane.revertNote.addEventListener("click", () => {
+    activate();
+    void executeRendererCommand("editor.revert-note");
+  });
+  pane.dismissEditNotice.addEventListener("click", () => {
+    activate();
+    clearEditNotice();
+  });
+}
+
+for (const [paneId, pane] of paneElements) {
+  bindWorkspacePaneEvents(paneId, pane);
+}
 
 elements.commandTrigger.addEventListener("click", openCommandPalette);
 elements.settingsTrigger.addEventListener(
@@ -6079,20 +6803,6 @@ elements.newNote.addEventListener(
 elements.propertyAdd.addEventListener("click", () => {
   void executeRendererCommand("workspace.manage-properties");
 });
-elements.moveNote.addEventListener(
-  "click",
-  () => void executeRendererCommand("workspace.move-note"),
-);
-elements.deleteNote.addEventListener(
-  "click",
-  () => void executeRendererCommand("workspace.delete-note"),
-);
-elements.saveNote.addEventListener("click", () => void executeRendererCommand("editor.save-note"));
-elements.revertNote.addEventListener(
-  "click",
-  () => void executeRendererCommand("editor.revert-note"),
-);
-elements.dismissEditNotice.addEventListener("click", clearEditNotice);
 
 elements.runCommand.addEventListener("click", () => {
   const command = currentSnapshot?.commands[0];
@@ -6391,7 +7101,12 @@ document.addEventListener("keydown", (event) => {
 updateShortcutLabels();
 
 const storedDocumentView = localStorage.getItem("threadleaf-document-view");
-documentViewMode = storedDocumentView === "reading" ? "reading" : "source";
+for (const paneId of ["primary", "secondary"] as const) {
+  runInPaneContext(paneId, () => {
+    documentViewMode = storedDocumentView === "reading" ? "reading" : "source";
+  });
+}
+activatePaneContext("primary");
 
 applyColorScheme("system");
 const handleSystemColorSchemeChange = (): void => {
@@ -6405,19 +7120,56 @@ systemColorScheme.addEventListener("change", handleSystemColorSchemeChange);
 const unsubscribe = window.threadleaf.onSnapshot(render);
 const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
 const unsubscribeAppUpdate = window.threadleaf.onAppUpdate(applyAppUpdateSnapshot);
+const unsubscribeMenuCommand = window.threadleaf.onMenuCommand((commandId) => {
+  const openDialog = document.querySelector<HTMLDialogElement>("dialog[open]");
+  if (commandId === "ui.command-palette") {
+    if (openDialog && openDialog !== elements.commandPalette) {
+      return;
+    }
+    openCommandPalette();
+    return;
+  }
+  if (commandId === "settings.open-keybindings") {
+    if (
+      openDialog &&
+      openDialog !== elements.commandPalette &&
+      openDialog !== elements.settingsDialog
+    ) {
+      return;
+    }
+    if (elements.settingsDialog.open) {
+      elements.settingsDialog.focus();
+      return;
+    }
+  } else if (openDialog) {
+    return;
+  }
+  void executeRendererCommand(commandId);
+});
 const pluginSurfaceResizeObserver = new ResizeObserver(() => {
   if (documentViewMode === "plugin") {
     void updatePluginSurfaceBounds();
   }
 });
-pluginSurfaceResizeObserver.observe(elements.pluginSurfaceHost);
+for (const pane of paneElements.values()) {
+  pluginSurfaceResizeObserver.observe(pane.pluginSurfaceHost);
+}
 window.addEventListener("beforeunload", (event) => {
-  if (dirty) {
-    if (editorDraftTimer !== undefined) {
-      window.clearTimeout(editorDraftTimer);
-      editorDraftTimer = undefined;
-    }
-    void persistCurrentEditorDraft();
+  let hasDirtyPane = false;
+  for (const paneId of ["primary", "secondary"] as const) {
+    runInPaneContext(paneId, () => {
+      if (!dirty) {
+        return;
+      }
+      hasDirtyPane = true;
+      if (editorDraftTimer !== undefined) {
+        window.clearTimeout(editorDraftTimer);
+        editorDraftTimer = undefined;
+      }
+      void persistCurrentEditorDraft();
+    });
+  }
+  if (hasDirtyPane) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -6428,15 +7180,23 @@ window.addEventListener(
     if (vaultSearchTimer !== undefined) {
       window.clearTimeout(vaultSearchTimer);
     }
-    if (editorDraftTimer !== undefined) {
-      window.clearTimeout(editorDraftTimer);
+    for (const paneId of ["primary", "secondary"] as const) {
+      runInPaneContext(paneId, () => {
+        if (editorDraftTimer !== undefined) {
+          window.clearTimeout(editorDraftTimer);
+          editorDraftTimer = undefined;
+        }
+      });
     }
     unsubscribe();
     unsubscribeSettings();
     unsubscribeAppUpdate();
+    unsubscribeMenuCommand();
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
     pluginSurfaceResizeObserver.disconnect();
-    editor.destroy();
+    for (const session of paneSessions.values()) {
+      session.editor?.destroy();
+    }
   },
   { once: true },
 );
