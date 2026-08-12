@@ -1,0 +1,58 @@
+appId: org.threadleaf.Threadleaf
+productName: Threadleaf
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - dist/**/*
+  - build/icon.svg
+  - LICENSE
+  - package.json
+
+extraResources:
+  - from: fixtures/vaults/basic
+    to: bundled-vault
+    filter:
+      - "**/*"
+  - from: LICENSE
+    to: LICENSE.threadleaf.txt
+
+asar: true
+compression: normal
+npmRebuild: false
+removePackageScripts: true
+
+linux:
+  category: Office
+  executableName: threadleaf
+  icon: build/icon.svg
+  maintainer: Threadleaf contributors
+  syncDesktopName: true
+  synopsis: Open local Markdown vaults on an open runtime
+  target:
+    - AppImage
+    - rpm
+
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  icon: build/icon.svg
+  target:
+    - dmg
+    - zip
+
+win:
+  icon: build/icon.svg
+  target:
+    - nsis
+    - zip
+
+nsis:
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  deleteAppDataOnUninstall: false
+  oneClick: false
+  perMachine: false

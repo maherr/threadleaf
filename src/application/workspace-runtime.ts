@@ -229,6 +229,7 @@ export class WorkspaceRuntime {
   readonly indexReactor: VaultIndexReactor;
   readonly pluginHost: PluginRuntimePort;
   readonly selectionSource: VaultSelectionSource;
+  readonly readOnly: boolean;
   readonly #baseWarning: string | null;
   readonly #workspaceStateStore: WorkspaceStateStore | undefined;
 
@@ -275,6 +276,7 @@ export class WorkspaceRuntime {
     this.indexReactor = indexReactor;
     this.pluginHost = pluginHost;
     this.selectionSource = selectionSource;
+    this.readOnly = selectionSource === "bundled";
     this.#baseWarning = warning;
     this.#workspaceStateStore = workspaceStateStore;
     this.#workspaceLoadWarning = workspaceLoadWarning;
@@ -396,7 +398,9 @@ export class WorkspaceRuntime {
     if (options.pluginDirectory) {
       await pluginHost.loadPlugin(options.pluginDirectory);
     }
-    watcher.start((batch) => runtime?.handleWatchBatch(batch));
+    if (!runtime.readOnly) {
+      watcher.start((batch) => runtime?.handleWatchBatch(batch));
+    }
     return runtime;
   }
 
@@ -411,8 +415,9 @@ export class WorkspaceRuntime {
       vault: {
         ...pluginSnapshot.vault,
         id: this.kernel.vaultId,
+        name: this.readOnly ? "Threadleaf Demo" : pluginSnapshot.vault.name,
         path: this.kernel.paths.rootPath,
-        mode: "kernel-backed",
+        mode: this.readOnly ? "synthetic-read-only" : "kernel-backed",
         source: this.selectionSource,
         warning: this.warning,
       },
@@ -557,6 +562,7 @@ export class WorkspaceRuntime {
     if (expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this plugin file could be created.");
     }
+    this.assertWritable("create plugin files");
     const normalizedPath = normalizeVaultPath(filePath);
     if (hasPrivateVaultSegment(normalizedPath)) {
       throw new Error(`Plugin file creation cannot target private application paths: ${filePath}`);
@@ -603,6 +609,7 @@ export class WorkspaceRuntime {
     if (expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this plugin file could be saved.");
     }
+    this.assertWritable("save plugin files");
     const normalizedPath = normalizeVaultPath(filePath);
     if (hasPrivateVaultSegment(normalizedPath)) {
       throw new Error(`Plugin file saves cannot target private application paths: ${filePath}`);
@@ -649,6 +656,7 @@ export class WorkspaceRuntime {
     if (expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this plugin file could be renamed.");
     }
+    this.assertWritable("rename plugin files");
     const normalizedSource = normalizeVaultPath(filePath);
     const normalizedTarget = normalizeVaultPath(targetPath);
     if (hasPrivateVaultSegment(normalizedSource) || hasPrivateVaultSegment(normalizedTarget)) {
@@ -689,6 +697,7 @@ export class WorkspaceRuntime {
     if (expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this plugin file could be moved to trash.");
     }
+    this.assertWritable("move plugin files to trash");
     const normalizedSource = normalizeVaultPath(filePath);
     if (hasPrivateVaultSegment(normalizedSource)) {
       throw new Error(`Plugin trash cannot target private application paths: ${filePath}`);
@@ -722,6 +731,7 @@ export class WorkspaceRuntime {
     if (expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this folder could be created.");
     }
+    this.assertWritable("create plugin folders");
     return this.kernel.createDirectory(folderPath);
   }
 
@@ -917,6 +927,7 @@ export class WorkspaceRuntime {
     if (request.expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this note could be moved.");
     }
+    this.assertWritable("move notes");
     const sourcePath = normalizeVaultPath(request.path);
     const targetPath = movedMarkdownPath(sourcePath, request.targetPath);
     const outcome = await moveMarkdownNote(
@@ -968,6 +979,7 @@ export class WorkspaceRuntime {
     if (request.expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this note could be moved to trash.");
     }
+    this.assertWritable("move notes to trash");
     const outcome = await trashMarkdownNote(this.kernel, request.path, request.expectedRevision);
     if (outcome.status !== "committed") {
       return outcome;
@@ -989,6 +1001,7 @@ export class WorkspaceRuntime {
     if (request.expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this edit could be saved.");
     }
+    this.assertWritable("save notes");
     const normalizedPath = normalizeVaultPath(request.path);
     if (!normalizedPath.toLowerCase().endsWith(".md")) {
       throw new Error("The workspace editor can save only Markdown notes.");
@@ -1040,6 +1053,7 @@ export class WorkspaceRuntime {
     if (request.expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this note could be created.");
     }
+    this.assertWritable("create notes");
     const outcome = await createMarkdownNote(this.kernel, request.path, request.content);
     if (outcome.status === "exists") {
       return outcome;
@@ -1073,6 +1087,12 @@ export class WorkspaceRuntime {
       await this.persistWorkspaceStateBestEffort();
     }
     return outcome;
+  }
+
+  private assertWritable(operation: string): void {
+    if (this.readOnly) {
+      throw new Error(`Open a local vault before you can ${operation}.`);
+    }
   }
 
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {

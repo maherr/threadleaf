@@ -1,5 +1,6 @@
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { Compartment, EditorState } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 import {
@@ -456,6 +457,8 @@ const sourceHighlight = HighlightStyle.define([
   { tag: [tags.monospace, tags.string], color: "var(--ink)" },
   { tag: tags.comment, color: "var(--ink-muted)" },
 ]);
+const editorAccess = new Compartment();
+let editorReadOnly = false;
 
 const editor = new EditorView({
   doc: "",
@@ -465,6 +468,7 @@ const editor = new EditorView({
     markdown(),
     EditorView.lineWrapping,
     EditorView.cspNonce.of(editorStyleNonce),
+    editorAccess.of([EditorState.readOnly.of(false), EditorView.editable.of(true)]),
     syntaxHighlighting(sourceHighlight),
     EditorView.contentAttributes.of({
       "aria-label": "Markdown source editor",
@@ -541,8 +545,27 @@ function vaultOpening(): boolean {
   return currentSnapshot?.startup?.phase === "opening";
 }
 
+function readOnlyVault(): boolean {
+  return currentSnapshot?.vault.mode === "synthetic-read-only";
+}
+
+function syncEditorAccess(): void {
+  const readOnly = readOnlyVault();
+  if (readOnly !== editorReadOnly) {
+    editor.dispatch({
+      effects: editorAccess.reconfigure([
+        EditorState.readOnly.of(readOnly),
+        EditorView.editable.of(!readOnly),
+      ]),
+    });
+    editorReadOnly = readOnly;
+  }
+  elements.noteEditor.dataset.readOnly = String(readOnly);
+}
+
 function commandCatalog(): RendererCommand[] {
   const opening = vaultOpening();
+  const readOnly = readOnlyVault();
   const tabs = opening ? [] : (currentSnapshot?.workspace?.tabs ?? []);
   const commands: RendererCommand[] = [
     {
@@ -551,14 +574,18 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["new", "file", "markdown", "note"],
       shortcut: shortcutFor("workspace.create-note"),
-      enabled: Boolean(currentSnapshot?.vault.id && !opening && !busy && !saving && !dirty),
+      enabled: Boolean(
+        currentSnapshot?.vault.id && !opening && !readOnly && !busy && !saving && !dirty,
+      ),
       disabledReason: opening
         ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
-        : dirty
-          ? "Save or revert the open note before creating another."
-          : currentSnapshot?.vault.id
-            ? "Threadleaf is finishing another action."
-            : "No writable vault is active.",
+        : readOnly
+          ? "Open a local vault before creating notes."
+          : dirty
+            ? "Save or revert the open note before creating another."
+            : currentSnapshot?.vault.id
+              ? "Threadleaf is finishing another action."
+              : "No writable vault is active.",
       run: openNewNoteDialog,
     },
     {
@@ -567,12 +594,14 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["move", "rename", "path", "file", "refactor"],
       shortcut: shortcutFor("workspace.move-note"),
-      enabled: Boolean(loadedNote && loadedVaultId && !busy && !saving && !dirty),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving && !dirty),
       disabledReason: !loadedNote
         ? "No note is open."
-        : dirty
-          ? "Save or revert the current note before moving it."
-          : "Threadleaf is finishing another action.",
+        : readOnly
+          ? "Open a local vault before moving notes."
+          : dirty
+            ? "Save or revert the current note before moving it."
+            : "Threadleaf is finishing another action.",
       run: openMoveNoteDialog,
     },
     {
@@ -581,12 +610,14 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["delete", "remove", "trash", "recover", "file"],
       shortcut: shortcutFor("workspace.delete-note"),
-      enabled: Boolean(loadedNote && loadedVaultId && !busy && !saving && !dirty),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving && !dirty),
       disabledReason: !loadedNote
         ? "No note is open."
-        : dirty
-          ? "Save or revert the current note before moving it to trash."
-          : "Threadleaf is finishing another action.",
+        : readOnly
+          ? "Open a local vault before moving notes to trash."
+          : dirty
+            ? "Save or revert the current note before moving it to trash."
+            : "Threadleaf is finishing another action.",
       run: openDeleteNoteDialog,
     },
     {
@@ -665,12 +696,14 @@ function commandCatalog(): RendererCommand[] {
       category: "Editor",
       keywords: ["write", "commit"],
       shortcut: shortcutFor("editor.save-note"),
-      enabled: Boolean(loadedNote && loadedVaultId && dirty && !busy && !saving),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && dirty && !busy && !saving),
       disabledReason: !loadedNote
         ? "No note is open."
-        : !dirty
-          ? "The current note has no unsaved changes."
-          : "Threadleaf is finishing another action.",
+        : readOnly
+          ? "Open a local vault before saving notes."
+          : !dirty
+            ? "The current note has no unsaved changes."
+            : "Threadleaf is finishing another action.",
       run: saveActiveNote,
     },
     {
@@ -1397,7 +1430,7 @@ function renderNewNoteDialog(): void {
   elements.newNotePath.disabled = newNoteBusy;
   elements.newNoteClose.disabled = newNoteBusy;
   elements.newNoteCancel.disabled = newNoteBusy;
-  elements.newNoteCreate.disabled = newNoteBusy || staleVault;
+  elements.newNoteCreate.disabled = newNoteBusy || staleVault || readOnlyVault();
   elements.newNoteCreate.textContent = newNoteBusy ? "Creating…" : "Create note";
   elements.newNoteForm.setAttribute("aria-busy", String(newNoteBusy));
   elements.newNoteVault.textContent = staleVault
@@ -1413,11 +1446,13 @@ function openNewNoteDialog(): void {
     elements.newNotePath.select();
     return;
   }
-  if (!currentSnapshot?.vault.id || busy || saving || dirty) {
+  if (!currentSnapshot?.vault.id || readOnlyVault() || busy || saving || dirty) {
     showToast(
-      dirty
-        ? "Save or revert the open note before creating another."
-        : "A writable vault must be ready before creating a note.",
+      readOnlyVault()
+        ? "Open a local vault before creating notes."
+        : dirty
+          ? "Save or revert the open note before creating another."
+          : "A writable vault must be ready before creating a note.",
     );
     return;
   }
@@ -1546,7 +1581,7 @@ function renderMoveNoteDialog(): void {
   elements.moveNoteTarget.disabled = moveNoteBusy;
   elements.moveNoteClose.disabled = moveNoteBusy;
   elements.moveNoteCancel.disabled = moveNoteBusy;
-  elements.moveNoteSubmit.disabled = moveNoteBusy || staleVault || staleNote;
+  elements.moveNoteSubmit.disabled = moveNoteBusy || staleVault || staleNote || readOnlyVault();
   elements.moveNoteSubmit.textContent = moveNoteBusy
     ? moveNoteConfirmationId
       ? "Applying…"
@@ -1627,13 +1662,15 @@ function openMoveNoteDialog(): void {
     elements.moveNoteTarget.select();
     return;
   }
-  if (!loadedNote || !loadedVaultId || busy || saving || dirty) {
+  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy || saving || dirty) {
     showToast(
-      dirty
-        ? "Save or revert the current note before moving it."
-        : loadedNote
-          ? "Threadleaf is finishing another action."
-          : "Open a note before moving or renaming it.",
+      readOnlyVault()
+        ? "Open a local vault before moving notes."
+        : dirty
+          ? "Save or revert the current note before moving it."
+          : loadedNote
+            ? "Threadleaf is finishing another action."
+            : "Open a note before moving or renaming it.",
     );
     return;
   }
@@ -1837,7 +1874,7 @@ function renderDeleteNoteDialog(): void {
       : `${deleteNoteBacklinkCount} indexed incoming link${deleteNoteBacklinkCount === 1 ? "" : "s"} will become unresolved. Restore this file later from .trash/.`;
   elements.deleteNoteClose.disabled = deleteNoteBusy;
   elements.deleteNoteCancel.disabled = deleteNoteBusy;
-  elements.deleteNoteSubmit.disabled = deleteNoteBusy || staleVault || staleNote;
+  elements.deleteNoteSubmit.disabled = deleteNoteBusy || staleVault || staleNote || readOnlyVault();
   elements.deleteNoteSubmit.textContent = deleteNoteBusy ? "Moving…" : "Move to trash";
   elements.deleteNoteForm.setAttribute("aria-busy", String(deleteNoteBusy));
   elements.deleteNoteVault.textContent = staleVault
@@ -1852,13 +1889,15 @@ function openDeleteNoteDialog(): void {
     elements.deleteNoteCancel.focus();
     return;
   }
-  if (!loadedNote || !loadedVaultId || busy || saving || dirty) {
+  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy || saving || dirty) {
     showToast(
-      dirty
-        ? "Save or revert the current note before moving it to trash."
-        : loadedNote
-          ? "Threadleaf is finishing another action."
-          : "Open a note before moving it to trash.",
+      readOnlyVault()
+        ? "Open a local vault before moving notes to trash."
+        : dirty
+          ? "Save or revert the current note before moving it to trash."
+          : loadedNote
+            ? "Threadleaf is finishing another action."
+            : "Open a note before moving it to trash.",
     );
     return;
   }
@@ -2435,7 +2474,7 @@ function openPluginPackageReview(review: PluginPackageReview): void {
   }
   elements.pluginPackageReviewError.hidden = true;
   elements.pluginPackageReviewError.textContent = "";
-  elements.pluginPackageReviewApply.disabled = false;
+  elements.pluginPackageReviewApply.disabled = readOnlyVault();
   elements.pluginPackageReviewCancel.disabled = false;
   elements.pluginPackageReviewClose.disabled = false;
   if (!elements.pluginPackageReviewDialog.open) {
@@ -2505,6 +2544,10 @@ async function applyPluginPackageReview(): Promise<void> {
   if (!review || !vaultId || review.vaultId !== vaultId || pluginBusy) {
     return;
   }
+  if (readOnlyVault()) {
+    showToast("Open a local vault before changing plugin packages.");
+    return;
+  }
   const request = ++pluginPackageRequest;
   pluginBusy = true;
   elements.pluginPackageReviewApply.disabled = true;
@@ -2546,7 +2589,7 @@ async function applyPluginPackageReview(): Promise<void> {
     if (request === pluginPackageRequest) {
       pluginBusy = false;
       if (pluginPackageReview) {
-        elements.pluginPackageReviewApply.disabled = false;
+        elements.pluginPackageReviewApply.disabled = readOnlyVault();
         elements.pluginPackageReviewCancel.disabled = false;
         elements.pluginPackageReviewClose.disabled = false;
       } else if (elements.pluginPackageReviewDialog.open) {
@@ -2906,7 +2949,9 @@ function renderOpenPluginIndex(vaultId: string | null, disabled: boolean): void 
   if (!index) {
     const empty = document.createElement("p");
     empty.className = "plugin-empty";
-    empty.textContent = "Search the public registry to review installable packages.";
+    empty.textContent = readOnlyVault()
+      ? "Open a local vault to review and install plugin packages."
+      : "Search the public registry to review installable packages.";
     elements.pluginIndexList.append(empty);
     return;
   }
@@ -2996,7 +3041,7 @@ function renderPluginSettings(): void {
   const preference = currentPluginPreference();
   const safeMode = catalog?.safeMode ?? false;
   const restricted = preference.compatibilityMode === "restricted";
-  const disabled = pluginBusy || !vaultId;
+  const disabled = pluginBusy || !vaultId || readOnlyVault();
   const installed = catalog?.plugins ?? [];
   const managedPackages = catalog?.managedPackages ?? [];
   const managedById = new Map(managedPackages.map((managed) => [managed.pluginId, managed]));
@@ -3825,6 +3870,7 @@ function reconcileVaultSearch(snapshot: RuntimeSnapshot): void {
 function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
+  syncEditorAccess();
   if (previousVaultId !== snapshot.vault.id) {
     elements.fileList.scrollTop = 0;
     lastVirtualActivePath = null;
@@ -3875,7 +3921,7 @@ function render(snapshot: RuntimeSnapshot): void {
       ? "Restoring vault"
       : "Configured vault"
     : snapshot.vault.source === "bundled"
-      ? "Bundled vault"
+      ? "Bundled read-only demo"
       : snapshot.vault.source === "environment"
         ? "Development vault"
         : snapshot.vault.source === "restored"
@@ -3943,7 +3989,7 @@ function render(snapshot: RuntimeSnapshot): void {
   setActionState(busy);
   elements.fileSearch.disabled = opening;
   elements.openVault.disabled = busy || saving;
-  elements.newNote.disabled = opening || busy || saving || dirty;
+  elements.newNote.disabled = opening || readOnlyVault() || busy || saving || dirty;
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
   }
@@ -4483,15 +4529,18 @@ function renderEditControls(): void {
     label = "Unsaved";
   } else if (loadedNote) {
     state = "saved";
-    label = "Saved";
+    label = readOnlyVault() ? "Read only" : "Saved";
   }
   elements.editState.dataset.state = state;
   elements.editState.textContent = label;
   const opening = vaultOpening();
-  elements.newNote.disabled = opening || busy || saving || dirty;
-  elements.moveNote.disabled = busy || saving || dirty || !loadedNote || !loadedVaultId;
-  elements.deleteNote.disabled = busy || saving || dirty || !loadedNote || !loadedVaultId;
-  elements.saveNote.disabled = busy || saving || !dirty || !loadedNote || !loadedVaultId;
+  const readOnly = readOnlyVault();
+  elements.newNote.disabled = opening || readOnly || busy || saving || dirty;
+  elements.moveNote.disabled = readOnly || busy || saving || dirty || !loadedNote || !loadedVaultId;
+  elements.deleteNote.disabled =
+    readOnly || busy || saving || dirty || !loadedNote || !loadedVaultId;
+  elements.saveNote.disabled =
+    readOnly || busy || saving || !dirty || !loadedNote || !loadedVaultId;
   elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
   renderTabs(opening ? [] : (currentSnapshot?.workspace?.tabs ?? []), loadedNote?.path ?? null);
   renderEditNotice();
@@ -4715,7 +4764,7 @@ function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
   const opening = vaultOpening();
   elements.openVault.disabled = busy || saving;
-  elements.newNote.disabled = opening || busy || saving || dirty;
+  elements.newNote.disabled = opening || readOnlyVault() || busy || saving || dirty;
   elements.reloadPlugin.disabled =
     opening ||
     busy ||

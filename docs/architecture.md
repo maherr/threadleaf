@@ -510,6 +510,29 @@ Restart completes pending entries, recognizes versions already installed, and tu
 into keep-both conflicts. Proposal blobs remain as recovery evidence until a later, explicit
 retention policy can remove them.
 
+### Packaging and first-run boundary
+
+The desktop package has one stable application identity, `org.threadleaf.Threadleaf`, and contains
+only built renderer and main-process output, package metadata, the Threadleaf license, and required
+Electron resources. The source fixture used for first launch is copied to
+`resources/bundled-vault` instead of being placed inside `app.asar`. Filesystem code therefore sees
+an ordinary directory rather than an archive-backed path with incomplete watcher or stat behavior.
+
+That bundled workspace is a demo, not a writable starter vault. The runtime classifies it as
+`synthetic-read-only`, does not start a watcher, and rejects note, folder, binary, rename, trash,
+save, and plugin-package mutations before they reach the filesystem. The renderer independently
+marks the demo read-only, makes CodeMirror non-editable, and disables mutation controls. Package
+smoke tests also call the preload mutation API directly, proving that a forged renderer request is
+rejected by the backend and leaves the resource bytes unchanged.
+
+The initial Linux release lane produces unsigned x64 AppImage and RPM artifacts. It launches the
+exact AppImage through the packaged smoke contract, inspects the RPM identity, dependencies, and
+payload, and emits SHA-256 checksums for both. A separate reproducibility proof builds the unpacked
+application twice, compares every file, symlink, mode, and hash, then produces byte-identical
+normalized tar.xz archives from the two trees. It does not yet claim that electron-builder's native
+AppImage or RPM containers are bit-for-bit reproducible. Signing, notarization, native container
+reproducibility, and automatic update authorities remain later release gates.
+
 ### Cross-platform boundary
 
 Desktop compatibility and portable product semantics are separate concerns. Electron and Node.js
@@ -585,5 +608,5 @@ Capability host ---> native Threadleaf extension
 - Metadata schema and migration strategy.
 - Behavior-import apply, rollback, and conflict semantics for the existing preview schema.
 - Public benchmark corpora, target devices, and regression budgets.
-- Packaging, signing, and update channels.
+- Signing, notarization, native-package reproducibility, and automatic-update channels.
 - Encrypted object format, key hierarchy, recovery model, and residual-metadata budget.

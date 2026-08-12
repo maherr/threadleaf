@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Threadleaf">
+  <rect width="1024" height="1024" rx="224" fill="#111923"/>
+  <path
+    d="M260 84h566c63 0 114 51 114 114v566c0 97-79 176-176 176H198c-63 0-114-51-114-114V260c0-97 79-176 176-176Z"
+    fill="#71c5ef"
+  />
+  <path d="M286 260h452v116H570v394H454V376H286V260Z" fill="#10202c"/>
+  <path d="M754 708h142v28H754zM754 768h142v28H754z" fill="#e69f00"/>
+</svg>

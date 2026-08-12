@@ -194,6 +194,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Public desktop `Platform` flags, cancellable `debounce`, tooltip metadata, and accessible DOM
   `Menu` behavior with custom icons, labels, checked, disabled, warning, section, separator, click,
   outside-dismissal, Escape, and keyboard-focus states.
+- Unsigned Linux x64 AppImage and RPM packaging with a stable application identity, desktop entry,
+  scalable icon, complete project metadata, bundled AGPL license, and SHA-256 artifact checksums.
+- A packaged first-run demo copied outside `app.asar`, classified as read-only by the backend and
+  renderer, protected from development vault overrides, and smoke-tested against a forged preload
+  mutation as well as visible light and dark states.
+- Exact AppImage end-to-end smoke coverage, RPM metadata and payload inspection, installed-RPM
+  verification, and a two-build reproducibility proof for unpacked application trees and normalized
+  tar.xz archives with complete file manifests.
 
 ### Fixed
 

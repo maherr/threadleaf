@@ -1,9 +1,19 @@
 {
   "name": "threadleaf",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
   "description": "An open runtime for local Markdown vaults and community plugins.",
+  "author": "Threadleaf contributors",
+  "homepage": "https://github.com/maherr/threadleaf",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maherr/threadleaf.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maherr/threadleaf/issues"
+  },
+  "desktopName": "threadleaf.desktop",
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@11.21.0",
   "engines": {
@@ -23,8 +33,14 @@
     "cli": "pnpm run build:main && node dist/main/cli.cjs",
     "format": "biome check --write .",
     "format:check": "biome check .",
+    "pack:dir": "pnpm run build && electron-builder --linux dir --x64 --publish never",
+    "pack:linux": "pnpm run build && electron-builder --linux AppImage rpm --x64 --publish never",
+    "release:linux": "pnpm run check && pnpm run pack:linux && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write",
     "start": "electron .",
     "test": "vitest run",
+    "test:packaged": "pnpm run pack:dir && xvfb-run -a node scripts/check-packaged-app.mjs",
+    "test:linux-packages": "node scripts/check-linux-packages.mjs",
+    "test:package-reproducible": "pnpm run build && node scripts/package-reproducible-linux.mjs",
     "test:plugin-index-live": "THREADLEAF_LIVE_PLUGIN_INDEX=1 vitest run src/main/open-plugin-package-source.live.test.ts",
     "test:plugin-packages-e2e": "pnpm run build && node scripts/check-plugin-packages-e2e.mjs",
     "test:plugin-recovery": "pnpm run build && node scripts/check-plugin-recovery.mjs",
@@ -37,6 +53,7 @@
     "@types/node": "22.20.1",
     "@types/turndown": "5.0.6",
     "electron": "43.3.0",
+    "electron-builder": "26.15.3",
     "jsdom": "30.0.1",
     "tsup": "8.5.1",
     "typescript": "7.0.2",

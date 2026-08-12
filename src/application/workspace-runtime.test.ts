@@ -76,6 +76,56 @@ async function openRuntime(workspaceStateStore?: WorkspaceStateStore): Promise<W
 }
 
 describe("WorkspaceRuntime", () => {
+  it("keeps the bundled demo vault read-only across native and plugin mutation paths", async () => {
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      selectionSource: "bundled",
+    });
+    const snapshot = await runtime.getSnapshot();
+    const note = snapshot.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected the bundled fixture to open an active note.");
+    }
+    const before = await fs.readFile(path.join(vaultPath, note.path), "utf8");
+
+    expect(runtime.readOnly).toBe(true);
+    expect(snapshot.vault).toMatchObject({
+      name: "Threadleaf Demo",
+      mode: "synthetic-read-only",
+      source: "bundled",
+    });
+    await expect(runtime.createNote("Blocked.md", "blocked", runtime.vaultId)).rejects.toThrow(
+      "Open a local vault",
+    );
+    await expect(
+      runtime.saveNote(note.path, "blocked", note.revision, runtime.vaultId),
+    ).rejects.toThrow("Open a local vault");
+    await expect(
+      runtime.moveNote(note.path, "Moved.md", note.revision, runtime.vaultId),
+    ).rejects.toThrow("Open a local vault");
+    await expect(runtime.deleteNote(note.path, note.revision, runtime.vaultId)).rejects.toThrow(
+      "Open a local vault",
+    );
+    await expect(
+      runtime.createPluginFile("Blocked.png", Uint8Array.of(1, 2, 3), runtime.vaultId),
+    ).rejects.toThrow("Open a local vault");
+    await expect(runtime.createPluginFolder("Blocked", runtime.vaultId)).rejects.toThrow(
+      "Open a local vault",
+    );
+
+    await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(before);
+    await expect(fs.stat(path.join(vaultPath, "Blocked.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.stat(path.join(vaultPath, "Blocked.png"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.stat(path.join(vaultPath, "Blocked"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("composes the kernel, metadata, shared actions, and compatibility host", async () => {
     const workspace = await openRuntime();
 

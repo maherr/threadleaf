@@ -162,6 +162,14 @@ Do not use the current build with an important vault. The picker and recoverable
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
 or release-grade backup and restore workflow.
 
+Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather
+than a development server. A fresh package opens an external, read-only demo vault, keeps the
+license beside the application resources, rejects forged demo-vault mutations in the backend, and
+ignores development-only vault overrides. The package checks launch the AppImage end to end,
+inspect the RPM metadata and payload, and write SHA-256 checksums. A separate proof compares two
+independent unpacked application trees and normalized archives byte for byte. These are contributor
+artifacts, not a signed public release.
+
 ## Product promises
 
 - Open an existing Markdown vault without converting its content.
@@ -183,6 +191,7 @@ or release-grade backup and restore workflow.
 - [Theme and CSS compatibility](docs/compatibility/themes.md)
 - [Community plugin compatibility](docs/compatibility/plugins.md)
 - [Obsidian behavior migration](docs/compatibility/migration.md)
+- [Release engineering](docs/releases.md)
 - [Roadmap](docs/roadmap.md)
 - [Performance baselines](docs/performance.md)
 - [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
@@ -199,9 +208,11 @@ pnpm check
 pnpm start
 ```
 
-On first launch, the executable build opens the bundled synthetic vault. Use the Open control or
+On first launch, a packaged executable opens the bundled read-only demo. Use the Open control or
 Ctrl/Cmd+O to select a Markdown folder. Threadleaf validates and persists a successful selection,
-restores it on the next launch, and does not automatically run its compatibility plugins.
+restores it on the next launch, and does not automatically run its compatibility plugins. The demo
+is an external package resource rather than an archive-backed pseudo-filesystem, and both the
+renderer and workspace runtime reject writes to it.
 Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P searches saved content, paths, headings, tags, and
 properties; Ctrl/Cmd+, opens application settings. Search terms use AND semantics and quoted text is
 matched as a phrase. Every listed shortcut can be reassigned or cleared, and Reset defaults

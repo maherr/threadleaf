@@ -255,8 +255,14 @@ Exit gate: selected high-value plugins complete named workflows against public f
       properties, tasks, search, graph, outline, bookmarks, file recovery, and publish-ready export.
 - [ ] Keyboard navigation, screen-reader semantics, reduced motion, contrast, zoom, localization,
       bidirectional text, and touch-target audits across every reachable control.
-- [ ] Signed Windows, macOS, and Linux installers; reproducible release builds; automatic updates;
-      rollback; crash recovery; opt-in diagnostics; and tested upgrade and downgrade paths.
+- [x] Unsigned Linux x64 AppImage and RPM artifacts with a stable application identity, complete
+      license and desktop metadata, an external read-only demo vault, exact-artifact checksums,
+      AppImage end-to-end smoke coverage, RPM payload inspection, and installed-RPM verification.
+- [x] Reproducible unpacked Linux application trees and normalized tar.xz archives, with exact file,
+      symlink, mode, size, and SHA-256 manifests from two independent builds.
+- [ ] Signed Windows, macOS, and Linux installers; native-container reproducibility; notarization;
+      automatic updates; rollback; crash recovery; opt-in diagnostics; and tested upgrade and
+      downgrade paths.
 - [ ] Public large-vault, attachment-heavy, and plugin-heavy performance budgets with profiling
       artifacts and regression alarms.
 

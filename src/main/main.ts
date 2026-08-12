@@ -53,6 +53,17 @@ import { PluginPackageManager } from "./plugin-package-manager";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
+const applicationId = "org.threadleaf.Threadleaf";
+
+app.setName("Threadleaf");
+if (process.platform === "win32") {
+  app.setAppUserModelId(applicationId);
+}
+if (process.argv.includes("--version")) {
+  process.stdout.write(`${app.getVersion()}\n`);
+  app.exit(0);
+}
+
 let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
@@ -367,7 +378,9 @@ async function pluginUpdateResponse(
 
 async function createWorkspaceController(): Promise<WorkspaceController> {
   const configuredPath = readDevelopmentVaultPath(app.isPackaged, process.env);
-  const fixtureVaultPath = join(app.getAppPath(), "fixtures", "vaults", "basic");
+  const fixtureVaultPath = app.isPackaged
+    ? join(process.resourcesPath, "bundled-vault")
+    : join(app.getAppPath(), "fixtures", "vaults", "basic");
   const userDataPath = app.getPath("userData");
   return WorkspaceController.open({
     fixtureVaultPath,
@@ -625,6 +638,10 @@ function registerIpcHandlers(): void {
         if (workspaceController.vaultId !== expectedVaultId) {
           return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
         }
+        const activeSnapshot = await workspaceController.getSnapshot();
+        if (activeSnapshot.vault.mode === "synthetic-read-only") {
+          throw new Error("Open a local vault before changing plugin packages.");
+        }
         const vaultPath = workspaceController.vaultPath;
         const review = await pluginPackageManager.preview(vaultPath, expectedVaultId, request);
         return workspaceController.vaultId === expectedVaultId &&
@@ -643,6 +660,10 @@ function registerIpcHandlers(): void {
       return serializePluginOperation(async () => {
         if (workspaceController.vaultId !== expectedVaultId) {
           return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const activeSnapshot = await workspaceController.getSnapshot();
+        if (activeSnapshot.vault.mode === "synthetic-read-only") {
+          throw new Error("Open a local vault before changing plugin packages.");
         }
         const vaultPath = workspaceController.vaultPath;
         const review = pluginPackageManager.reviewForApply(expectedVaultId, reviewId);
