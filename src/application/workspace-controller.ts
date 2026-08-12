@@ -101,7 +101,7 @@ export interface WorkspaceRuntimePort {
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   closePluginView(): Promise<RuntimeSnapshot>;
-  loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot>;
+  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;
@@ -540,8 +540,8 @@ export class WorkspaceController {
     return this.activeRuntime("close a plugin view").closePluginView();
   }
 
-  loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
-    return this.activeRuntime("load a plugin").loadPlugin(pluginDirectory);
+  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("load a plugin").loadPlugin(pluginDirectory, expectedBundleSha256);
   }
 
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {

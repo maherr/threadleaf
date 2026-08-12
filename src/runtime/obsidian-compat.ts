@@ -26,6 +26,7 @@ import { Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
 import { Menu, MenuItem, MenuSeparator } from "./obsidian-menu-compat";
 import {
+  AbstractInputSuggest,
   AbstractTextComponent,
   BaseComponent,
   ButtonComponent,
@@ -42,6 +43,7 @@ import {
   Modal,
   MomentFormatComponent,
   PluginSettingTab,
+  PopoverSuggest,
   ProgressBarComponent,
   Scope,
   SearchComponent,
@@ -1522,6 +1524,7 @@ export class Plugin extends Component {
 }
 
 export interface ObsidianCompatibilityModule {
+  AbstractInputSuggest: typeof AbstractInputSuggest;
   AbstractTextComponent: typeof AbstractTextComponent;
   App: typeof App;
   arrayBufferToBase64: typeof arrayBufferToBase64;
@@ -1555,6 +1558,7 @@ export interface ObsidianCompatibilityModule {
   Notice: new (message: string, timeout?: number) => object;
   Plugin: typeof Plugin;
   PluginSettingTab: typeof PluginSettingTab;
+  PopoverSuggest: typeof PopoverSuggest;
   ProgressBarComponent: typeof ProgressBarComponent;
   Scope: typeof Scope;
   SearchComponent: typeof SearchComponent;
@@ -1946,6 +1950,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
   }
 
   return {
+    AbstractInputSuggest,
     AbstractTextComponent,
     App,
     arrayBufferToBase64,
@@ -1978,6 +1983,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Notice,
     Plugin,
     PluginSettingTab,
+    PopoverSuggest,
     ProgressBarComponent,
     Scope,
     SearchComponent,

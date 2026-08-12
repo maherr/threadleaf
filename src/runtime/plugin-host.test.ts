@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -80,6 +81,36 @@ describe("PluginHost", () => {
 
     const after = await readFixtureBytes();
     expect(after).toEqual(before);
+  });
+
+  it("rechecks the exact bundle bytes immediately before plugin execution", async () => {
+    const bundleBytes = await fs.readFile(path.join(fixturePlugin, "main.js"));
+    const bundleSha256 = createHash("sha256").update(bundleBytes).digest("hex");
+    const blockedHost = new PluginHost(fixtureVault);
+
+    await expect(blockedHost.loadPlugin(fixturePlugin, "0".repeat(64))).rejects.toThrow(
+      "Plugin main.js changed after authority review and was blocked before execution.",
+    );
+    const blocked = await blockedHost.getSnapshot();
+    expect(blocked.plugin).toMatchObject({
+      id: "threadleaf-fixture",
+      state: "failed",
+      compatibilityLevel: 0,
+      error: "Plugin main.js changed after authority review and was blocked before execution.",
+    });
+    expect(blocked.commands).toEqual([]);
+    expect(blocked.notices).toEqual([]);
+    expect(blocked.events.some(({ message }) => message.includes("Injected"))).toBe(false);
+    await blockedHost.close();
+
+    const allowedHost = new PluginHost(fixtureVault);
+    const allowed = await allowedHost.loadPlugin(fixturePlugin, bundleSha256);
+    expect(allowed.plugin).toMatchObject({
+      id: "threadleaf-fixture",
+      state: "loaded",
+      compatibilityLevel: 3,
+    });
+    await allowedHost.close();
   });
 
   it("releases command registrations on unload and recreates them on reload", async () => {
@@ -395,14 +426,14 @@ module.exports = class HostModulePlugin extends Plugin {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         `const {
-  BaseComponent, ButtonComponent, Component, DropdownComponent, EditorSuggest, FileView,
+  AbstractInputSuggest, BaseComponent, ButtonComponent, Component, DropdownComponent, EditorSuggest, FileView,
   FuzzySuggestModal, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab,
-  Scope, Setting, SettingTab, SliderComponent, SuggestModal, TextFileView,
+  PopoverSuggest, Scope, Setting, SettingTab, SliderComponent, SuggestModal, TextFileView,
   ToggleComponent, View, Workspace, WorkspaceLeaf, addIcon, normalizePath, sanitizeHTMLToDom
 } = require("obsidian");
-if (![BaseComponent, ButtonComponent, Component, DropdownComponent, EditorSuggest, FileView,
+if (![AbstractInputSuggest, BaseComponent, ButtonComponent, Component, DropdownComponent, EditorSuggest, FileView,
   FuzzySuggestModal, ItemView, MarkdownView, Modal, PluginSettingTab, Scope, Setting,
-  SettingTab, SliderComponent, SuggestModal, TextFileView, ToggleComponent, View,
+  PopoverSuggest, SettingTab, SliderComponent, SuggestModal, TextFileView, ToggleComponent, View,
   Workspace, WorkspaceLeaf].every((value) => typeof value === "function")) {
   throw new Error("UI base class export missing");
 }

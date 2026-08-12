@@ -60,6 +60,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   private lastFailureId: string | null = null;
   private lastPluginId: string | null = null;
   private lastSnapshot: RuntimeSnapshot | null = null;
+  private readonly knownBundleHashes = new Map<string, string>();
   private readonly knownDirectories = new Map<string, string>();
   private operationTail: Promise<void> = Promise.resolve();
   private readonly seenRuntimeEventSequences = new Set<number>();
@@ -93,13 +94,22 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     return this.runSnapshot({ operation: "close-view" }, (runtime) => runtime.closePluginView());
   }
 
-  loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
+  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot> {
     const fallback = fallbackDescriptor(pluginDirectory);
     this.knownDirectories.set(fallback.id, pluginDirectory);
+    if (expectedBundleSha256) {
+      this.knownBundleHashes.set(fallback.id, expectedBundleSha256);
+    }
     return this.runSnapshot(
       { operation: "load-plugin", pluginDirectory, pluginId: fallback.id },
-      (runtime) => runtime.loadPlugin(pluginDirectory),
-      (snapshot) => this.trackLoadedPlugin(snapshot, pluginDirectory),
+      (runtime) => runtime.loadPlugin(pluginDirectory, expectedBundleSha256),
+      (snapshot) => {
+        this.trackLoadedPlugin(snapshot, pluginDirectory);
+        const loadedId = snapshot.plugin?.id ?? path.basename(pluginDirectory);
+        if (expectedBundleSha256) {
+          this.knownBundleHashes.set(loadedId, expectedBundleSha256);
+        }
+      },
     );
   }
 
@@ -124,11 +134,12 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
     const targetId = pluginId ?? this.lastPluginId ?? undefined;
     const knownDirectory = targetId ? this.knownDirectories.get(targetId) : undefined;
+    const knownBundleSha256 = targetId ? this.knownBundleHashes.get(targetId) : undefined;
     return this.runSnapshot(
       { operation: "reload-plugin", ...(targetId ? { pluginId: targetId } : {}) },
       (runtime) =>
         targetId && !this.activePlugins.has(targetId) && knownDirectory
-          ? runtime.loadPlugin(knownDirectory)
+          ? runtime.loadPlugin(knownDirectory, knownBundleSha256)
           : runtime.reloadPlugin(targetId),
       (snapshot) => {
         if (knownDirectory) {

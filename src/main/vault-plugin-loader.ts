@@ -8,8 +8,10 @@ import {
   parsePluginId,
   parsePluginManifest,
   parseVaultPluginSettings,
+  pluginCapabilityGrantState,
   type VaultPluginSettings,
 } from "../shared/plugins";
+import { scanPluginCapabilities } from "./plugin-capability-scanner";
 import { validateAppearanceCss } from "./vault-appearance-loader";
 
 const maxManifestBytes = 64 * 1024;
@@ -64,7 +66,7 @@ async function canonicalContainedPath(rootPath: string, candidatePath: string): 
   return canonicalCandidate;
 }
 
-async function readBoundedText(filePath: string, maxBytes: number): Promise<string> {
+async function readBoundedBytes(filePath: string, maxBytes: number): Promise<Buffer> {
   const stat = await fs.stat(filePath);
   if (!stat.isFile()) {
     throw new Error("not a regular file");
@@ -76,7 +78,11 @@ async function readBoundedText(filePath: string, maxBytes: number): Promise<stri
   if (bytes.byteLength > maxBytes) {
     throw new Error("file grew beyond its size limit while reading");
   }
-  return decoder.decode(bytes);
+  return bytes;
+}
+
+async function readBoundedText(filePath: string, maxBytes: number): Promise<string> {
+  return decoder.decode(await readBoundedBytes(filePath, maxBytes));
 }
 
 function formatByteLimit(maxBytes: number): string {
@@ -220,6 +226,8 @@ function invalidSummary(folderId: string, message: string): PluginPackageSummary
       testedVersion: null,
       summary: "Package validation failed before a compatibility workflow could run.",
     },
+    capabilityReport: null,
+    capabilityGrantState: "unavailable",
     error: message,
   };
 }
@@ -270,6 +278,9 @@ async function inspectPlugin(
     if (!mainPath) {
       throw new Error("main.js is missing");
     }
+    const capabilityReport = scanPluginCapabilities(
+      await readBoundedBytes(mainPath, maxPluginBundleBytes),
+    );
     const stylesheetPath = await optionalContainedFile(
       directoryPath,
       "styles.css",
@@ -282,6 +293,8 @@ async function inspectPlugin(
         packageState: "ready",
         stylesheetDiscovered: stylesheetPath !== null,
         compatibility: createPluginCompatibilityReport(manifest),
+        capabilityReport,
+        capabilityGrantState: "required",
         error: null,
       },
       directoryPath,
@@ -371,6 +384,19 @@ export async function loadVaultPluginCatalog(
     );
   }
 
+  for (const plugin of discovery.plugins) {
+    plugin.summary = {
+      ...plugin.summary,
+      capabilityGrantState:
+        plugin.summary.packageState === "ready"
+          ? pluginCapabilityGrantState(
+              plugin.summary.capabilityReport,
+              preference.capabilityGrantsByPlugin[plugin.summary.id],
+            )
+          : "unavailable",
+    };
+  }
+
   for (const pluginId of preference.enabledPluginIds) {
     const plugin = packagesById.get(pluginId);
     if (!plugin) {
@@ -379,6 +405,12 @@ export async function loadVaultPluginCatalog(
     }
     if (plugin.summary.packageState !== "ready") {
       warnings.push(`Enabled plugin ${pluginId} has an invalid package and was not loaded.`);
+      continue;
+    }
+    if (plugin.summary.capabilityGrantState !== "granted") {
+      warnings.push(
+        `Enabled plugin ${pluginId} was blocked because its exact bundle authority review is ${plugin.summary.capabilityGrantState === "stale" ? "stale" : "missing"}.`,
+      );
       continue;
     }
     if (

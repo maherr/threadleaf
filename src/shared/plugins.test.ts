@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultVaultPluginSettings,
   createPluginCompatibilityReport,
+  type PluginCapabilityGrant,
+  type PluginCapabilityReport,
   parsePluginManifest,
   parseVaultPluginSettings,
+  pluginCapabilityGrantMatches,
+  pluginCapabilityGrantState,
 } from "./plugins";
 
 describe("plugin compatibility settings", () => {
@@ -11,6 +15,7 @@ describe("plugin compatibility settings", () => {
     expect(createDefaultVaultPluginSettings()).toEqual({
       compatibilityMode: "restricted",
       enabledPluginIds: [],
+      capabilityGrantsByPlugin: {},
     });
   });
 
@@ -81,5 +86,66 @@ describe("plugin compatibility settings", () => {
       summary:
         "Package structure is valid. No production-path workflow is verified for this exact plugin version.",
     });
+  });
+
+  it("parses exact-bundle capability grants and migrates legacy settings closed", () => {
+    expect(
+      parseVaultPluginSettings({
+        compatibilityMode: "enabled",
+        enabledPluginIds: ["fixture"],
+      }),
+    ).toEqual({
+      compatibilityMode: "enabled",
+      enabledPluginIds: ["fixture"],
+      capabilityGrantsByPlugin: {},
+    });
+    const parsed = parseVaultPluginSettings({
+      compatibilityMode: "enabled",
+      enabledPluginIds: ["fixture"],
+      capabilityGrantsByPlugin: {
+        fixture: {
+          bundleSha256: "a".repeat(64),
+          capabilities: ["vault-read", "network"],
+        },
+      },
+    });
+    expect(parsed.capabilityGrantsByPlugin.fixture).toEqual({
+      bundleSha256: "a".repeat(64),
+      capabilities: ["vault-read", "network"],
+    });
+    expect(() =>
+      parseVaultPluginSettings({
+        compatibilityMode: "enabled",
+        enabledPluginIds: [],
+        capabilityGrantsByPlugin: {
+          fixture: { bundleSha256: "not-a-hash", capabilities: [] },
+        },
+      }),
+    ).toThrow("malformed");
+  });
+
+  it("requires the grant to match both exact bytes and the observed authority list", () => {
+    const report: PluginCapabilityReport = {
+      scannerVersion: 1,
+      bundleSha256: "b".repeat(64),
+      capabilities: ["vault-read", "network"],
+      findings: [],
+      staticOnly: true,
+    };
+    const exactGrant: PluginCapabilityGrant = {
+      bundleSha256: "b".repeat(64),
+      capabilities: ["vault-read", "network"],
+    };
+
+    expect(pluginCapabilityGrantMatches(report, exactGrant)).toBe(true);
+    expect(pluginCapabilityGrantState(report, exactGrant)).toBe("granted");
+    expect(
+      pluginCapabilityGrantState(report, {
+        ...exactGrant,
+        bundleSha256: "c".repeat(64),
+      }),
+    ).toBe("stale");
+    expect(pluginCapabilityGrantState(report, undefined)).toBe("required");
+    expect(pluginCapabilityGrantState(null, undefined)).toBe("unavailable");
   });
 });

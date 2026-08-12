@@ -6,6 +6,7 @@ import {
   eventMatchesKeyBinding,
   normalizeKeyBinding,
   parseAppSettings,
+  pluginsForVault,
   shortcutTargetForEvent,
   updateKeyBinding,
   updateVaultPlugins,
@@ -49,7 +50,7 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
-    expect(parsed.version).toBe(3);
+    expect(parsed.version).toBe(4);
     expect(parsed.appearanceByVault).toEqual({});
     expect(parsed.pluginsByVault).toEqual({});
     expect(() =>
@@ -93,7 +94,7 @@ describe("key bindings", () => {
     expect(updated.pluginsByVault).toEqual({});
   });
 
-  it("loads version 3 plugin settings and updates one vault immutably", () => {
+  it("migrates version 3 plugin settings closed and updates one vault immutably", () => {
     const firstVaultId = "b".repeat(64);
     const secondVaultId = "c".repeat(64);
     const parsed = parseAppSettings({
@@ -110,16 +111,59 @@ describe("key bindings", () => {
     const updated = updateVaultPlugins(parsed, secondVaultId, {
       compatibilityMode: "restricted",
       enabledPluginIds: ["omnisearch"],
+      capabilityGrantsByPlugin: {
+        omnisearch: {
+          bundleSha256: "d".repeat(64),
+          capabilities: ["vault-read"],
+        },
+      },
     });
 
     expect(parsed.pluginsByVault[secondVaultId]).toBeUndefined();
     expect(updated.pluginsByVault[firstVaultId]?.enabledPluginIds).toEqual([
       "obsidian-excalidraw-plugin",
     ]);
+    expect(updated.pluginsByVault[firstVaultId]?.capabilityGrantsByPlugin).toEqual({});
     expect(updated.pluginsByVault[secondVaultId]).toEqual({
       compatibilityMode: "restricted",
       enabledPluginIds: ["omnisearch"],
+      capabilityGrantsByPlugin: {
+        omnisearch: {
+          bundleSha256: "d".repeat(64),
+          capabilities: ["vault-read"],
+        },
+      },
     });
+  });
+
+  it("loads version 4 exact-bundle grants and returns defensive copies", () => {
+    const vaultId = "d".repeat(64);
+    const parsed = parseAppSettings({
+      version: 4,
+      keyBindings: {},
+      appearanceByVault: {},
+      pluginsByVault: {
+        [vaultId]: {
+          compatibilityMode: "enabled",
+          enabledPluginIds: ["fixture"],
+          capabilityGrantsByPlugin: {
+            fixture: {
+              bundleSha256: "e".repeat(64),
+              capabilities: ["vault-read", "network"],
+            },
+          },
+        },
+      },
+    });
+
+    const preference = pluginsForVault(parsed, vaultId);
+    preference.enabledPluginIds.push("local-only");
+    preference.capabilityGrantsByPlugin.fixture?.capabilities.push("clipboard");
+    expect(parsed.pluginsByVault[vaultId]?.enabledPluginIds).toEqual(["fixture"]);
+    expect(parsed.pluginsByVault[vaultId]?.capabilityGrantsByPlugin.fixture?.capabilities).toEqual([
+      "vault-read",
+      "network",
+    ]);
   });
 
   it("captures portable bindings and matches the platform primary modifier exactly", () => {

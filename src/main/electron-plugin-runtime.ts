@@ -112,8 +112,11 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     return this.requestSnapshot("close-view");
   }
 
-  loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
-    return this.requestSnapshot("load-plugin", { pluginDirectory });
+  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("load-plugin", {
+      pluginDirectory,
+      ...(expectedBundleSha256 ? { expectedBundleSha256 } : {}),
+    });
   }
 
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {

@@ -114,6 +114,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Pre-enablement plugin reports with the declared Obsidian API baseline, desktop-only flag,
   standard bundled-dependency model, and exact-version compatibility evidence. Unknown versions
   remain visibly discovered at level 0 instead of inheriting another release's test result.
+- Version 4 private plugin settings with conservative static authority reports and explicit
+  per-vault grants bound to the exact raw `main.js` SHA-256 digest. Ungranted or byte-changed
+  bundles and their stylesheets stay blocked, direct IPC enablement fails closed, and revocation
+  disables and unloads the plugin. The execution renderer rechecks raw bytes immediately before
+  compilation to close replacement races. Version 3 settings migrate without inherited grants.
 - Reviewable plugin install, update, reinstall, rollback, uninstall, and restore through a
   replaceable package-source interface, with exact GitHub release pins, retained license and
   SHA-256 evidence, disabled-by-default apply, data-preserving updates, five-version private
@@ -194,6 +199,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Public desktop `Platform` flags, cancellable `debounce`, tooltip metadata, and accessible DOM
   `Menu` behavior with custom icons, labels, checked, disabled, warning, section, separator, click,
   outside-dismissal, Escape, and keyboard-focus states.
+- Public `PopoverSuggest` and `AbstractInputSuggest` compatibility, including bounded asynchronous
+  type-ahead results, pointer and keyboard selection, and the current Excalidraw release's vault
+  path suggester superclass.
 - Unsigned Linux x64 AppImage and RPM packaging with a stable application identity, desktop entry,
   scalable icon, complete project metadata, bundled AGPL license, and SHA-256 artifact checksums.
 - A packaged first-run demo copied outside `app.asar`, classified as read-only by the backend and

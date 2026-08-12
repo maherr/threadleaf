@@ -220,15 +220,21 @@ mode boundaries. See the [theme compatibility contract](compatibility/themes.md)
 Threadleaf treats `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` as
 read-only compatibility input. Discovery validates identity, UTF-8 text, file type, realpath
 containment, and byte limits before a package is eligible to run. Installed inventory does not
-imply enablement. The enabled IDs and restricted-mode choice live in version 3 private application
-settings under the vault identity.
+imply enablement. The enabled IDs, restricted-mode choice, and exact-bundle authority grants live in
+version 4 private application settings under the vault identity. Version 3 settings migrate without
+grants, so previously selected bundles remain blocked until reviewed.
 
 Discovery also creates a pre-enablement report. It presents the manifest's minimum Obsidian API
 version and desktop-only flag, explains that the standard package model bundles external
 dependencies into `main.js` rather than declaring a cross-plugin dependency graph, and attaches
-only exact-version workflow evidence. A plugin or version without a production-path fixture stays
-at level 0. Evidence from another release is shown as historical context, not inherited as a
-compatibility claim.
+only exact-version workflow evidence. The same bounded read computes an exact raw-byte bundle
+digest and a conservative static report over observed authority classes. A grant binds that digest
+and report to one vault. Any bundle-byte change makes it stale. JavaScript and CSS remain blocked
+without a current grant, and the main process enforces the gate independently of renderer controls.
+The execution renderer re-hashes those bounded raw bytes immediately before compilation, closing
+the path-replacement window between discovery and execution. A plugin or version without a
+production-path fixture stays at level 0. Evidence from another release is shown as historical
+context, not inherited as a compatibility claim.
 
 Package acquisition is a separate two-step boundary. A replaceable source adapter currently reads
 the public compatibility registry and exact GitHub release assets, requires a repository license at
@@ -275,16 +281,19 @@ owned modals and views before releasing its remaining registrations. Reload must
 same inventory without duplicates; a second plugin's modal is an explicit negative control.
 
 Plugin CSS crosses a separately bounded and CSP-constrained renderer channel. It is applied only
-for selected packages while compatibility mode is enabled. Imports and legacy executable CSS are
-rejected. Other non-embedded asset URLs are replaced with inert data URLs and reported before the
-remaining stylesheet is applied. `THREADLEAF_SAFE_PLUGINS=1` and `--safe-plugins` suppress both
-JavaScript and CSS without changing saved settings. Safe mode and restricted mode remain distinct:
-safe mode is a process recovery boundary, while restricted mode is a persisted vault preference.
+for selected packages while compatibility mode is enabled and the exact bundle grant is current.
+Imports and legacy executable CSS are rejected. Other non-embedded asset URLs are replaced with
+inert data URLs and reported before the remaining stylesheet is applied.
+`THREADLEAF_SAFE_PLUGINS=1` and `--safe-plugins` suppress both JavaScript and CSS without changing
+saved settings. Safe mode and restricted mode remain distinct: safe mode is a process recovery
+boundary, while restricted mode is a persisted vault preference.
 
-The current CommonJS host is a trusted compatibility runtime, not a security sandbox. It exposes
-only the independently implemented API surface backed by executable fixtures. Installed plugins
-outside that surface can fail during activation and are not claimed compatible merely because
-discovery succeeds. See the [community plugin compatibility contract](compatibility/plugins.md).
+The current CommonJS host is a trusted compatibility runtime, not a security sandbox. Static
+authority reporting makes trust reviewable and revocable but does not enforce runtime permissions.
+The host exposes only the independently implemented API surface backed by executable fixtures.
+Installed plugins outside that surface can fail during activation and are not claimed compatible
+merely because discovery succeeds. See the
+[community plugin compatibility contract](compatibility/plugins.md).
 
 ### Watcher and index model
 

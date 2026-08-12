@@ -18,7 +18,7 @@ export function isFatalPluginRuntimeError(error: unknown): error is FatalPluginR
 export interface PluginRuntimePort {
   closePluginView(): Promise<RuntimeSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
-  loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot>;
+  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot>;
   markLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;

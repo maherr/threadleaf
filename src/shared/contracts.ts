@@ -412,6 +412,12 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
     mode: CompatibilityMode,
   ): Promise<PluginUpdateResponse>;
+  setPluginCapabilityGrant(
+    expectedVaultId: string,
+    pluginId: string,
+    expectedBundleSha256: string,
+    granted: boolean,
+  ): Promise<PluginUpdateResponse>;
   setPluginEnabled(
     expectedVaultId: string,
     pluginId: string,

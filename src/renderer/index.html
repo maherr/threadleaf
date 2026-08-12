@@ -775,6 +775,57 @@
     </dialog>
 
     <dialog
+      class="new-note-dialog plugin-package-review-dialog"
+      id="plugin-authority-review-dialog"
+      aria-labelledby="plugin-authority-review-title"
+      aria-describedby="plugin-authority-review-summary"
+      aria-modal="true"
+    >
+      <div class="new-note-shell plugin-package-review-shell">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">◇</span>
+          <span>
+            <small>Exact-bundle authority review</small>
+            <strong id="plugin-authority-review-title">Review plugin authority</strong>
+          </span>
+          <button id="plugin-authority-review-close" type="button" aria-label="Close authority review">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <div class="plugin-package-review-body plugin-authority-review-body">
+          <p id="plugin-authority-review-summary"></p>
+          <dl class="plugin-package-facts" id="plugin-authority-review-facts"></dl>
+          <section aria-labelledby="plugin-authority-list-heading">
+            <strong id="plugin-authority-list-heading">Observed bundle references</strong>
+            <div class="plugin-authority-review-list" id="plugin-authority-review-list"></div>
+          </section>
+          <ul class="plugin-package-warnings" id="plugin-authority-review-warnings">
+            <li>
+              This is a conservative static report, not a sandbox. Trusted compatibility plugins
+              can still use authority the scanner did not recognize.
+            </li>
+            <li>
+              The grant applies only to this SHA-256. Any change to main.js blocks the plugin and
+              its stylesheet until the new bundle is reviewed.
+            </li>
+          </ul>
+          <p class="new-note-error" id="plugin-authority-review-error" role="alert" hidden></p>
+        </div>
+        <footer class="new-note-footer plugin-package-review-footer">
+          <span>Per-vault review gate, exact bytes only</span>
+          <span>
+            <button class="secondary-button" id="plugin-authority-review-cancel" type="button">
+              Cancel
+            </button>
+            <button class="primary-button" id="plugin-authority-review-grant" type="button">
+              Grant exact bundle
+            </button>
+          </span>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog
       class="new-note-dialog"
       id="new-note-dialog"
       aria-labelledby="new-note-title"

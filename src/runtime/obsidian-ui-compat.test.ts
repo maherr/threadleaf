@@ -1,6 +1,7 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import {
+  AbstractInputSuggest,
   type ButtonComponent,
   type DropdownComponent,
   Editor,
@@ -146,6 +147,46 @@ describe("Obsidian settings compatibility", () => {
     expect(toggleControl.toggleEl.disabled).toBe(true);
     expect(textControl.inputEl.disabled).toBe(true);
     expect(buttonControl.buttonEl.disabled).toBe(true);
+    dom.window.close();
+  });
+});
+
+describe("Obsidian input suggestion compatibility", () => {
+  it("renders, navigates, selects, and closes type-ahead suggestions", async () => {
+    const dom = new JSDOM("<!doctype html><body><input></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const input = dom.window.document.querySelector("input");
+    expect(input).not.toBeNull();
+    if (!input) {
+      return;
+    }
+    const selected = vi.fn();
+    class FixtureSuggest extends AbstractInputSuggest<string> {
+      protected override getSuggestions(query: string): string[] {
+        return ["Alpha", "Alpine", "Beta"].filter((value) =>
+          value.toLowerCase().startsWith(query.toLowerCase()),
+        );
+      }
+
+      override renderSuggestion(value: string, element: HTMLElement): void {
+        element.textContent = value;
+      }
+    }
+    const suggest = new FixtureSuggest({} as never, input).onSelect(selected);
+    suggest.limit = 2;
+    suggest.setValue("Al");
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await Promise.resolve();
+
+    const suggestionItems = [...dom.window.document.querySelectorAll(".suggestion-item")];
+    expect(suggestionItems.map((element) => element.textContent)).toEqual(["Alpha", "Alpine"]);
+    expect(suggestionItems[0]?.classList.contains("is-selected")).toBe(true);
+
+    input.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown" }));
+    input.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter" }));
+    expect(selected).toHaveBeenCalledWith("Alpine", expect.any(dom.window.KeyboardEvent));
+    expect(dom.window.document.querySelector(".suggestion-container")).toBeNull();
     dom.window.close();
   });
 });

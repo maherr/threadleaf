@@ -123,12 +123,24 @@ describe("AppSettingsController", () => {
     const snapshot = await controller.setVaultPlugins(vaultId, {
       compatibilityMode: "enabled",
       enabledPluginIds: ["obsidian-excalidraw-plugin"],
+      capabilityGrantsByPlugin: {
+        "obsidian-excalidraw-plugin": {
+          bundleSha256: "e".repeat(64),
+          capabilities: ["vault-read", "vault-write"],
+        },
+      },
     });
 
     expect(snapshot.settings.appearanceByVault).toEqual({});
     expect(controller.getVaultPlugins(vaultId)).toEqual({
       compatibilityMode: "enabled",
       enabledPluginIds: ["obsidian-excalidraw-plugin"],
+      capabilityGrantsByPlugin: {
+        "obsidian-excalidraw-plugin": {
+          bundleSha256: "e".repeat(64),
+          capabilities: ["vault-read", "vault-write"],
+        },
+      },
     });
     expect(store.saved).toEqual([snapshot.settings]);
   });

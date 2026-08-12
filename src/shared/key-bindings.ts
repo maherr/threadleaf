@@ -31,7 +31,7 @@ export const shortcutTargetIds = [
 export type ShortcutTargetId = (typeof shortcutTargetIds)[number];
 
 export interface AppSettings {
-  version: 3;
+  version: 4;
   keyBindings: Record<string, string | null>;
   appearanceByVault: Record<string, VaultAppearanceSettings>;
   pluginsByVault: Record<string, VaultPluginSettings>;
@@ -204,7 +204,7 @@ export function normalizeKeyBinding(value: string): string {
 
 export function createDefaultAppSettings(): AppSettings {
   return {
-    version: 3,
+    version: 4,
     keyBindings: { ...defaultKeyBindings },
     appearanceByVault: {},
     pluginsByVault: {},
@@ -214,10 +214,10 @@ export function createDefaultAppSettings(): AppSettings {
 export function parseAppSettings(value: unknown): AppSettings {
   if (
     !isRecord(value) ||
-    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) ||
     !isRecord(value.keyBindings)
   ) {
-    throw new Error("Settings must contain version 1, 2, or 3 and a keyBindings object.");
+    throw new Error("Settings must contain version 1, 2, 3, or 4 and a keyBindings object.");
   }
   const entries = Object.entries(value.keyBindings);
   if (entries.length > 512) {
@@ -236,8 +236,9 @@ export function parseAppSettings(value: unknown): AppSettings {
   assertNoKeyBindingCollisions(keyBindings);
   const appearanceByVault =
     value.version === 1 ? {} : parseAppearanceByVault(value.appearanceByVault);
-  const pluginsByVault = value.version === 3 ? parsePluginsByVault(value.pluginsByVault) : {};
-  return { version: 3, keyBindings, appearanceByVault, pluginsByVault };
+  const pluginsByVault =
+    value.version === 3 || value.version === 4 ? parsePluginsByVault(value.pluginsByVault) : {};
+  return { version: 4, keyBindings, appearanceByVault, pluginsByVault };
 }
 
 export function isShortcutTargetId(value: string): value is ShortcutTargetId {
@@ -295,6 +296,15 @@ export function pluginsForVault(settings: AppSettings, vaultId: string): VaultPl
     ? {
         compatibilityMode: plugins.compatibilityMode,
         enabledPluginIds: [...plugins.enabledPluginIds],
+        capabilityGrantsByPlugin: Object.fromEntries(
+          Object.entries(plugins.capabilityGrantsByPlugin).map(([pluginId, grant]) => [
+            pluginId,
+            {
+              bundleSha256: grant.bundleSha256,
+              capabilities: [...grant.capabilities],
+            },
+          ]),
+        ),
       }
     : createDefaultVaultPluginSettings();
 }

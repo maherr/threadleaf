@@ -47,6 +47,8 @@ import type {
 import {
   createDefaultVaultPluginSettings,
   type PluginCatalogSnapshot,
+  type PluginPackageSummary,
+  pluginCapabilityDefinitions,
   type VaultPluginSettings,
 } from "../shared/plugins";
 import {
@@ -237,6 +239,15 @@ const elements = {
   pluginPackageReviewClose: getButton("plugin-package-review-close"),
   pluginPackageReviewCancel: getButton("plugin-package-review-cancel"),
   pluginPackageReviewApply: getButton("plugin-package-review-apply"),
+  pluginAuthorityReviewDialog: getDialog("plugin-authority-review-dialog"),
+  pluginAuthorityReviewTitle: getElement("plugin-authority-review-title"),
+  pluginAuthorityReviewSummary: getElement("plugin-authority-review-summary"),
+  pluginAuthorityReviewFacts: getElement("plugin-authority-review-facts"),
+  pluginAuthorityReviewList: getElement("plugin-authority-review-list"),
+  pluginAuthorityReviewError: getElement("plugin-authority-review-error"),
+  pluginAuthorityReviewClose: getButton("plugin-authority-review-close"),
+  pluginAuthorityReviewCancel: getButton("plugin-authority-review-cancel"),
+  pluginAuthorityReviewGrant: getButton("plugin-authority-review-grant"),
   toast: getElement("toast"),
 };
 
@@ -393,8 +404,10 @@ let pluginMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let lastPluginWarning = "";
 let pluginPackageIndex: PluginPackageIndexSnapshot | null = null;
 let pluginPackageReview: PluginPackageReview | null = null;
+let pluginAuthorityReview: PluginPackageSummary | null = null;
 let pluginPackageRequest = 0;
 let pluginPackageRestoreFocus: HTMLElement | null = null;
+let pluginAuthorityRestoreFocus: HTMLElement | null = null;
 let migrationPreview: ObsidianMigrationPreview | null = null;
 let migrationBusy = false;
 let migrationRequest = 0;
@@ -2048,10 +2061,33 @@ function pluginSafeModeActive(): boolean {
 }
 
 function pluginPreferencesEqual(left: VaultPluginSettings, right: VaultPluginSettings): boolean {
+  const leftGrantIds = Object.keys(left.capabilityGrantsByPlugin).sort((first, second) =>
+    first.localeCompare(second, "en-US"),
+  );
+  const rightGrantIds = Object.keys(right.capabilityGrantsByPlugin).sort((first, second) =>
+    first.localeCompare(second, "en-US"),
+  );
   return (
     left.compatibilityMode === right.compatibilityMode &&
     left.enabledPluginIds.length === right.enabledPluginIds.length &&
-    left.enabledPluginIds.every((id, index) => id === right.enabledPluginIds[index])
+    left.enabledPluginIds.every((id, index) => id === right.enabledPluginIds[index]) &&
+    leftGrantIds.length === rightGrantIds.length &&
+    leftGrantIds.every((pluginId, index) => {
+      if (pluginId !== rightGrantIds[index]) {
+        return false;
+      }
+      const leftGrant = left.capabilityGrantsByPlugin[pluginId];
+      const rightGrant = right.capabilityGrantsByPlugin[pluginId];
+      return (
+        leftGrant !== undefined &&
+        rightGrant !== undefined &&
+        leftGrant.bundleSha256 === rightGrant.bundleSha256 &&
+        leftGrant.capabilities.length === rightGrant.capabilities.length &&
+        leftGrant.capabilities.every(
+          (capability, capabilityIndex) => capability === rightGrant.capabilities[capabilityIndex],
+        )
+      );
+    })
   );
 }
 
@@ -2360,6 +2396,38 @@ async function setPluginEnabled(pluginId: string, enabled: boolean): Promise<voi
   );
 }
 
+async function setPluginCapabilityGrant(
+  plugin: PluginPackageSummary,
+  granted: boolean,
+): Promise<boolean> {
+  const report = plugin.capabilityReport;
+  if (!report) {
+    showToast(`${plugin.name} has no reviewable bundle report.`);
+    return false;
+  }
+  const wasSelected = currentPluginPreference().enabledPluginIds.includes(plugin.id);
+  const changed = await updatePlugins(
+    (vaultId) =>
+      window.threadleaf.setPluginCapabilityGrant(vaultId, plugin.id, report.bundleSha256, granted),
+    `${granted ? "Granting" : "Revoking"} exact-bundle authority for ${plugin.id}…`,
+    granted
+      ? wasSelected
+        ? `${plugin.id} exact bundle granted. Its saved selection can now load when compatibility mode permits.`
+        : `${plugin.id} exact bundle granted. It remains disabled until you enable it.`
+      : `${plugin.id} grant revoked and plugin disabled.`,
+  );
+  if (changed) {
+    showToast(
+      granted
+        ? wasSelected
+          ? `${plugin.name} exact bundle granted for its saved selection.`
+          : `${plugin.name} exact bundle granted.`
+        : `${plugin.name} grant revoked and plugin disabled.`,
+    );
+  }
+  return changed;
+}
+
 async function reloadPlugins(): Promise<void> {
   await updatePlugins(
     (vaultId) => window.threadleaf.reloadPlugins(vaultId),
@@ -2432,12 +2500,117 @@ async function searchOpenPluginIndex(): Promise<void> {
   }
 }
 
-function appendPackageFact(label: string, value: string): void {
+function appendDefinitionListFact(container: HTMLElement, label: string, value: string): void {
   const term = document.createElement("dt");
   term.textContent = label;
   const description = document.createElement("dd");
   description.textContent = value;
-  elements.pluginPackageFacts.append(term, description);
+  container.append(term, description);
+}
+
+function appendPackageFact(label: string, value: string): void {
+  appendDefinitionListFact(elements.pluginPackageFacts, label, value);
+}
+
+function openPluginAuthorityReview(plugin: PluginPackageSummary): void {
+  const report = plugin.capabilityReport;
+  if (!report || plugin.packageState !== "ready") {
+    showToast(`${plugin.name} does not have a valid reviewable bundle.`);
+    return;
+  }
+  pluginAuthorityReview = plugin;
+  pluginAuthorityRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  elements.pluginAuthorityReviewTitle.textContent = plugin.name;
+  elements.pluginAuthorityReviewSummary.textContent =
+    report.capabilities.length === 0
+      ? "The scanner found no known authority references in this exact bundle. That is not proof that the plugin has no authority."
+      : `The scanner found ${report.capabilities.length} authority class${report.capabilities.length === 1 ? "" : "es"} in this exact bundle. Review each reference before granting it for this vault.`;
+  elements.pluginAuthorityReviewFacts.replaceChildren();
+  appendDefinitionListFact(elements.pluginAuthorityReviewFacts, "Plugin", plugin.id);
+  appendDefinitionListFact(elements.pluginAuthorityReviewFacts, "Version", plugin.version);
+  appendDefinitionListFact(
+    elements.pluginAuthorityReviewFacts,
+    "Scanner",
+    "Threadleaf static authority scan v1",
+  );
+  appendDefinitionListFact(
+    elements.pluginAuthorityReviewFacts,
+    "main.js SHA-256",
+    report.bundleSha256,
+  );
+  elements.pluginAuthorityReviewList.replaceChildren();
+  if (report.findings.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "plugin-authority-review-empty";
+    empty.textContent = "◇ No known authority references observed";
+    elements.pluginAuthorityReviewList.append(empty);
+  } else {
+    for (const finding of report.findings) {
+      const definition = pluginCapabilityDefinitions[finding.capability];
+      const item = document.createElement("article");
+      item.className = "plugin-authority-review-item";
+      const heading = document.createElement("strong");
+      heading.textContent = `◇ ${definition.label}`;
+      const description = document.createElement("p");
+      description.textContent = definition.description;
+      const evidence = document.createElement("small");
+      evidence.textContent = `Observed: ${finding.evidence.join("; ")}`;
+      item.append(heading, description, evidence);
+      elements.pluginAuthorityReviewList.append(item);
+    }
+  }
+  elements.pluginAuthorityReviewError.hidden = true;
+  elements.pluginAuthorityReviewError.textContent = "";
+  elements.pluginAuthorityReviewGrant.disabled = readOnlyVault() || pluginBusy;
+  elements.pluginAuthorityReviewGrant.textContent = "Grant exact bundle";
+  elements.pluginAuthorityReviewCancel.disabled = false;
+  elements.pluginAuthorityReviewClose.disabled = false;
+  if (!elements.pluginAuthorityReviewDialog.open) {
+    elements.pluginAuthorityReviewDialog.showModal();
+  }
+  elements.pluginAuthorityReviewClose.focus();
+}
+
+function closePluginAuthorityReview(restoreFocus = true): void {
+  if (!elements.pluginAuthorityReviewDialog.open || pluginBusy) {
+    return;
+  }
+  pluginAuthorityReview = null;
+  elements.pluginAuthorityReviewDialog.close();
+  const restoreTarget = pluginAuthorityRestoreFocus;
+  pluginAuthorityRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function applyPluginAuthorityReview(): Promise<void> {
+  const plugin = pluginAuthorityReview;
+  if (!plugin || pluginBusy) {
+    return;
+  }
+  elements.pluginAuthorityReviewGrant.disabled = true;
+  elements.pluginAuthorityReviewCancel.disabled = true;
+  elements.pluginAuthorityReviewClose.disabled = true;
+  elements.pluginAuthorityReviewError.hidden = true;
+  const changed = await setPluginCapabilityGrant(plugin, true);
+  if (changed) {
+    pluginAuthorityReview = null;
+    elements.pluginAuthorityReviewDialog.close();
+    const restoreTarget = pluginAuthorityRestoreFocus;
+    pluginAuthorityRestoreFocus = null;
+    if (restoreTarget?.isConnected) {
+      restoreTarget.focus();
+    }
+    return;
+  }
+  elements.pluginAuthorityReviewError.textContent =
+    pluginMessageKind === "error" ? pluginMessage : "The exact-bundle grant was not changed.";
+  elements.pluginAuthorityReviewError.hidden = false;
+  elements.pluginAuthorityReviewGrant.disabled = readOnlyVault();
+  elements.pluginAuthorityReviewCancel.disabled = false;
+  elements.pluginAuthorityReviewClose.disabled = false;
 }
 
 function openPluginPackageReview(review: PluginPackageReview): void {
@@ -2587,6 +2760,7 @@ async function applyPluginPackageReview(): Promise<void> {
     applyPluginCatalog(response.catalog);
     pluginPackageIndex = null;
     pluginPackageReview = null;
+    pluginAuthorityReview = null;
     elements.pluginPackageReviewDialog.close();
     pluginMessage = `${response.outcome.pluginId} ${response.outcome.operation} completed and remains disabled.`;
     pluginMessageKind = response.catalog.warnings.length > 0 ? "warning" : "saved";
@@ -3088,6 +3262,9 @@ function renderPluginSettings(): void {
       plugin.minAppVersion ?? "",
       plugin.isDesktopOnly ? "desktop only" : "",
       plugin.compatibility.summary,
+      ...(plugin.capabilityReport?.capabilities.map(
+        (capability) => pluginCapabilityDefinitions[capability].label,
+      ) ?? []),
     ]
       .join(" ")
       .toLocaleLowerCase("en-US")
@@ -3154,10 +3331,34 @@ function renderPluginSettings(): void {
     const compatibilityEvidence = document.createElement("small");
     compatibilityEvidence.className = "plugin-compatibility-evidence";
     compatibilityEvidence.textContent = `Evidence: ${plugin.compatibility.summary}`;
+    const authority = document.createElement("span");
+    authority.className = "plugin-authority-summary";
+    authority.dataset.state = plugin.capabilityGrantState;
+    const authorityState = document.createElement("strong");
+    authorityState.textContent =
+      plugin.capabilityGrantState === "granted"
+        ? "◆ Exact bundle granted"
+        : plugin.capabilityGrantState === "stale"
+          ? "△ Bundle changed, review again"
+          : plugin.capabilityGrantState === "required"
+            ? "◇ Authority review required"
+            : "× Authority report unavailable";
+    const authorityCapabilities = document.createElement("small");
+    const capabilityLabels =
+      plugin.capabilityReport?.capabilities.map(
+        (capability) => pluginCapabilityDefinitions[capability].label,
+      ) ?? [];
+    authorityCapabilities.textContent =
+      capabilityLabels.length > 0
+        ? capabilityLabels.join(" · ")
+        : plugin.capabilityReport
+          ? "No known references observed; trusted runtime remains unsandboxed."
+          : "Bundle validation failed before static authority inspection.";
+    authority.append(authorityState, authorityCapabilities);
     const author = document.createElement("small");
     author.className = "plugin-author";
     author.textContent = plugin.author ? `By ${plugin.author}` : plugin.id;
-    copy.append(nameLine, description, preflight, compatibilityEvidence, author);
+    copy.append(nameLine, description, preflight, compatibilityEvidence, authority, author);
 
     const controls = document.createElement("span");
     controls.className = "plugin-row-controls";
@@ -3204,21 +3405,46 @@ function renderPluginSettings(): void {
         ? "Integrity changed"
         : plugin.packageState === "invalid"
           ? "Invalid package"
-          : safeMode
-            ? selected
-              ? "Selected · safe"
-              : "Disabled"
-            : restricted
+          : plugin.capabilityGrantState === "stale"
+            ? "Review stale"
+            : plugin.capabilityGrantState === "required"
               ? selected
-                ? "Selected"
-                : "Disabled"
-              : runtimePlugin?.state === "failed"
-                ? "Load failed"
-                : selected
-                  ? runtimePlugin?.state === "loaded"
-                    ? `Active · L${runtimePlugin.compatibilityLevel}`
-                    : "Enabled"
-                  : "Disabled";
+                ? "Blocked · review"
+                : "Review required"
+              : safeMode
+                ? selected
+                  ? "Selected · safe"
+                  : "Disabled"
+                : restricted
+                  ? selected
+                    ? "Selected"
+                    : "Disabled"
+                  : runtimePlugin?.state === "failed"
+                    ? "Load failed"
+                    : selected
+                      ? runtimePlugin?.state === "loaded"
+                        ? `Active · L${runtimePlugin.compatibilityLevel}`
+                        : "Enabled"
+                      : "Disabled";
+
+    const authorityAction = document.createElement("button");
+    authorityAction.type = "button";
+    authorityAction.className = "secondary-button plugin-authority-action";
+    authorityAction.textContent =
+      plugin.capabilityGrantState === "granted" ? "Revoke grant" : "Review authority";
+    authorityAction.disabled =
+      disabled || plugin.packageState === "invalid" || plugin.capabilityReport === null;
+    authorityAction.ariaLabel =
+      plugin.capabilityGrantState === "granted"
+        ? `Revoke exact-bundle authority for ${plugin.name}`
+        : `Review exact-bundle authority for ${plugin.name}`;
+    authorityAction.addEventListener("click", () => {
+      if (plugin.capabilityGrantState === "granted") {
+        void setPluginCapabilityGrant(plugin, false);
+      } else {
+        openPluginAuthorityReview(plugin);
+      }
+    });
 
     const toggle = document.createElement("label");
     toggle.className = "plugin-toggle";
@@ -3226,7 +3452,12 @@ function renderPluginSettings(): void {
     checkbox.type = "checkbox";
     checkbox.role = "switch";
     checkbox.checked = selected;
-    checkbox.disabled = disabled || safeMode || restricted || plugin.packageState === "invalid";
+    checkbox.disabled =
+      disabled ||
+      safeMode ||
+      restricted ||
+      plugin.packageState === "invalid" ||
+      plugin.capabilityGrantState !== "granted";
     checkbox.ariaLabel = `${selected ? "Disable" : "Enable"} ${plugin.name}`;
     checkbox.addEventListener("change", () => {
       void setPluginEnabled(plugin.id, checkbox.checked);
@@ -3236,7 +3467,12 @@ function renderPluginSettings(): void {
     track.ariaHidden = "true";
     const toggleLabel = document.createElement("span");
     toggleLabel.className = "plugin-toggle-label";
-    toggleLabel.textContent = selected ? "Enabled" : "Disabled";
+    toggleLabel.textContent =
+      selected && plugin.capabilityGrantState !== "granted"
+        ? "Blocked"
+        : selected
+          ? "Enabled"
+          : "Disabled";
     toggle.append(checkbox, track, toggleLabel);
     const hasSettings =
       runtimePlugin?.state === "loaded" &&
@@ -3249,7 +3485,7 @@ function renderPluginSettings(): void {
     options.disabled = disabled || safeMode || restricted || pluginBusy || busy || saving;
     options.ariaLabel = `Open ${plugin.name} options`;
     options.addEventListener("click", () => void activatePluginSettings(plugin.id));
-    controls.append(runtimeState, packageControls, options, toggle);
+    controls.append(runtimeState, packageControls, authorityAction, options, toggle);
     row.append(copy, controls);
     elements.pluginList.append(row);
   }
@@ -4066,6 +4302,9 @@ function render(snapshot: RuntimeSnapshot): void {
     pluginPackageReview = null;
     if (elements.pluginPackageReviewDialog.open) {
       elements.pluginPackageReviewDialog.close();
+    }
+    if (elements.pluginAuthorityReviewDialog.open) {
+      elements.pluginAuthorityReviewDialog.close();
     }
     pluginStyle.textContent = "";
     lastPluginWarning = "";
@@ -5114,6 +5353,24 @@ elements.pluginPackageReviewDialog.addEventListener("click", (event) => {
     void closePluginPackageReview();
   }
 });
+elements.pluginAuthorityReviewClose.addEventListener("click", () => {
+  closePluginAuthorityReview();
+});
+elements.pluginAuthorityReviewCancel.addEventListener("click", () => {
+  closePluginAuthorityReview();
+});
+elements.pluginAuthorityReviewGrant.addEventListener("click", () => {
+  void applyPluginAuthorityReview();
+});
+elements.pluginAuthorityReviewDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closePluginAuthorityReview();
+});
+elements.pluginAuthorityReviewDialog.addEventListener("click", (event) => {
+  if (event.target === elements.pluginAuthorityReviewDialog) {
+    closePluginAuthorityReview();
+  }
+});
 for (const [input, colorScheme] of [
   [elements.schemeSystem, "system"],
   [elements.schemeLight, "light"],
@@ -5227,7 +5484,9 @@ document.addEventListener("keydown", (event) => {
       elements.settingsDialog.open ||
       elements.newNoteDialog.open ||
       elements.moveNoteDialog.open ||
-      elements.deleteNoteDialog.open
+      elements.deleteNoteDialog.open ||
+      elements.pluginPackageReviewDialog.open ||
+      elements.pluginAuthorityReviewDialog.open
     ) {
       return;
     }
@@ -5243,7 +5502,9 @@ document.addEventListener("keydown", (event) => {
     if (
       elements.newNoteDialog.open ||
       elements.moveNoteDialog.open ||
-      elements.deleteNoteDialog.open
+      elements.deleteNoteDialog.open ||
+      elements.pluginPackageReviewDialog.open ||
+      elements.pluginAuthorityReviewDialog.open
     ) {
       return;
     }
@@ -5260,7 +5521,9 @@ document.addEventListener("keydown", (event) => {
     elements.settingsDialog.open ||
     elements.newNoteDialog.open ||
     elements.moveNoteDialog.open ||
-    elements.deleteNoteDialog.open
+    elements.deleteNoteDialog.open ||
+    elements.pluginPackageReviewDialog.open ||
+    elements.pluginAuthorityReviewDialog.open
   ) {
     return;
   }

@@ -93,6 +93,8 @@ final-swap race, and externally changed-byte fixtures exercise this boundary.
 Settings shows a read-only preflight before a package can be selected. Each row includes:
 
 - the exact installed plugin version;
+- the exact installed `main.js` SHA-256 digest and whether that bundle has a current per-vault
+  authority grant;
 - `minAppVersion` as the plugin's declared Obsidian API baseline, without pretending that the
   number is a Threadleaf version;
 - the `isDesktopOnly` flag, or an explicit statement that no desktop-only flag was declared;
@@ -102,8 +104,24 @@ Settings shows a read-only preflight before a package can be selected. Each row 
 The [standard Obsidian manifest](https://docs.obsidian.md/Reference/Manifest) has no cross-plugin
 dependency field. The [official plugin structure](https://github.com/obsidianmd/obsidian-api#plugin-structure)
 expects external packages to be bundled into `main.js`, so Threadleaf does not invent a dependency
-graph from plugin descriptions or filenames. Static module and capability inspection remains
-separate future work.
+graph from plugin descriptions or filenames.
+
+Threadleaf statically inspects the exact bundle before enablement and reports symbolic evidence for
+observed vault reads, vault changes, networking, direct filesystem access, subprocesses, host
+environment access, clipboard access, external navigation, editor extensions, workspace UI, and
+dynamic code evaluation. It does not copy source snippets into private settings or the application
+renderer. The report is conservative and explicitly not a sandbox: an omitted reference is not
+proof that the bundle lacks that authority, and a reported reference does not prove harmful use.
+
+Granting stores the exact bundle digest and observed authority classes in Threadleaf's private
+per-vault settings. JavaScript and plugin CSS remain blocked until that grant matches the current
+raw `main.js` bytes. Any byte change, including an otherwise invisible UTF-8 byte-order mark, makes
+the grant stale and requires a new review. Revocation removes the grant, disables the plugin, and
+unloads its runtime. The main process independently enforces the same gate, so renderer IPC cannot
+bypass it. The execution renderer re-hashes the bounded raw bytes immediately before CommonJS
+compilation, so replacing `main.js` after discovery also fails closed. Older version 3 settings
+migrate to version 4 without inherited grants and therefore fail closed until each selected bundle
+is reviewed.
 
 Evidence never transfers silently between releases. Excalidraw 2.25.3 and Threadleaf's 0.1.0
 compatibility fixture report their measured level 4 workflows. Another Excalidraw version reports
@@ -151,8 +169,10 @@ popup.
 ## Trust model
 
 Existing community bundles run in the trusted desktop compatibility runtime. This is not a
-security sandbox. Enabled JavaScript can use the authority available to that host, including the
-Node.js behavior many existing desktop plugins expect. Enable only code you trust.
+security sandbox or runtime permission boundary. The exact-bundle authority report and grant make
+trust explicit and revocable, but enabled JavaScript can still use the authority available to that
+host, including the Node.js behavior many existing desktop plugins expect. Enable only code you
+trust.
 
 Threadleaf's future native extension runtime is a separate capability-based design. Tightening that
 runtime will not be represented as retroactive sandboxing of arbitrary existing bundles.
@@ -188,11 +208,11 @@ new activation. A production-path disposable fixture verifies an infinite-loopin
 replacement renderer creation, visible failure state, native-workspace responsiveness, and clean
 reload. Run the Linux production-path fixture with `pnpm test:plugin-recovery`.
 
-Plugin stylesheets are applied only while the corresponding package is selected and compatibility
-mode is enabled. Imports and legacy executable CSS remain rejected. External and relative asset
-URLs are replaced with inert embedded assets and reported, while data, fragment, and CSS-variable
-URLs remain intact. The primary renderer content-security policy independently blocks
-stylesheet-initiated network access.
+Plugin stylesheets are applied only while the corresponding package is selected, compatibility
+mode is enabled, and the exact bundle grant remains current. Imports and legacy executable CSS
+remain rejected. External and relative asset URLs are replaced with inert embedded assets and
+reported, while data, fragment, and CSS-variable URLs remain intact. The primary renderer
+content-security policy independently blocks stylesheet-initiated network access.
 
 ## Loader boundaries
 
@@ -231,7 +251,6 @@ place for manual review.
 ## Remaining work
 
 - Per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
-- Static capability and permission reporting before enablement.
 - Explicit apply, rollback, and conflict handling for reviewed migration candidates.
 - A Threadleaf-owned, open-licensed package and compatibility registry backed by public workflow
   fixtures.

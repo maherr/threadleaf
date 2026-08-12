@@ -270,6 +270,14 @@ async function applyReview() {
   );
 }
 
+async function openAuthorityReview(containerSelector) {
+  await clickRowAction(containerSelector, "Review authority");
+  await waitFor(
+    'document.querySelector("#plugin-authority-review-dialog")?.open === true',
+    "The exact-bundle authority review did not open.",
+  );
+}
+
 try {
   if (process.platform !== "linux") {
     throw new Error("The plugin package E2E check currently requires Linux and Xvfb.");
@@ -417,13 +425,24 @@ try {
       text: row?.textContent ?? "",
       checked: row?.querySelector('input[type="checkbox"]')?.checked ?? null,
       runtimeState: row?.querySelector(".plugin-runtime-state")?.textContent ?? "",
+      authorityState: row?.querySelector(".plugin-authority-summary strong")?.textContent ?? "",
+      authorityAction: [...(row?.querySelectorAll("button") ?? [])].find((button) =>
+        button.textContent?.trim() === "Review authority"
+      )?.textContent?.trim() ?? "",
+      toggleDisabled: row?.querySelector('input[type="checkbox"]')?.disabled ?? null,
       loaded: (snapshot.plugins ?? []).some((plugin) => plugin.id === ${JSON.stringify(pluginId)} && plugin.state === "loaded"),
     };
   })()`);
   assert(installedState.checked === false, "A newly installed plugin was silently enabled.");
   assert(
-    installedState.runtimeState === "Disabled",
-    "The installed plugin was not visibly disabled.",
+    installedState.runtimeState === "Review required",
+    "The installed plugin did not visibly require authority review.",
+  );
+  assert(
+    installedState.authorityState.includes("Authority review required") &&
+      installedState.authorityAction === "Review authority" &&
+      installedState.toggleDisabled === true,
+    "The exact-bundle review gate relied on color or left the enable toggle reachable.",
   );
   assert(installedState.loaded === false, "A newly installed bundle executed without enablement.");
   const receipt = JSON.parse(
@@ -445,6 +464,190 @@ try {
       await screenshot("package-installed", "dark"),
       await screenshot("package-installed", "light"),
     ].filter(Boolean),
+  );
+
+  await click("#plugin-mode-toggle");
+  await waitFor(
+    'document.querySelector("#plugin-mode-state")?.textContent === "Enabled"',
+    "Compatibility mode did not enable for the authority probe.",
+  );
+  const rejectedWithoutGrant = await evaluate(`window.threadleaf
+    .setPluginEnabled(${JSON.stringify(await evaluate("window.threadleaf.getSnapshot().then((snapshot) => snapshot.vault.id)"))}, ${JSON.stringify(pluginId)}, true)
+    .then(() => "unexpected-success", (error) => String(error))`);
+  assert(
+    rejectedWithoutGrant.includes("requires a current exact-bundle authority grant"),
+    "Direct renderer IPC bypassed the main-process exact-bundle grant gate.",
+  );
+  await openAuthorityReview(installedRow);
+  const authorityReview = await evaluate(`(() => ({
+    title: document.querySelector("#plugin-authority-review-title")?.textContent ?? "",
+    summary: document.querySelector("#plugin-authority-review-summary")?.textContent ?? "",
+    hash: [...document.querySelectorAll("#plugin-authority-review-facts dt")].find(
+      (term) => term.textContent === "main.js SHA-256"
+    )?.nextElementSibling?.textContent ?? "",
+    items: [...document.querySelectorAll("#plugin-authority-review-list .plugin-authority-review-item")].map(
+      (item) => item.textContent ?? ""
+    ),
+    warnings: [...document.querySelectorAll("#plugin-authority-review-warnings li")].map(
+      (item) => item.textContent ?? ""
+    ),
+    action: document.querySelector("#plugin-authority-review-grant")?.textContent?.trim() ?? "",
+    overflow: [...document.querySelectorAll("#plugin-authority-review-facts, #plugin-authority-review-list")]
+      .filter((element) => element.scrollWidth > element.clientWidth + 1)
+      .map((element) => element.id),
+  }))()`);
+  assert(authorityReview.title === "Excalidraw", "Authority review omitted the plugin name.");
+  assert(
+    /^[a-f0-9]{64}$/u.test(authorityReview.hash),
+    "Authority review omitted the exact bundle hash.",
+  );
+  assert(
+    authorityReview.items.length > 0,
+    "Authority review omitted observed authority references.",
+  );
+  assert(
+    authorityReview.warnings.some((warning) => warning.includes("not a sandbox")) &&
+      authorityReview.warnings.some((warning) => warning.includes("blocks the plugin")),
+    "Authority review omitted its static-scan and byte-change limits.",
+  );
+  assert(authorityReview.action === "Grant exact bundle", "Authority grant action was ambiguous.");
+  assert(
+    authorityReview.overflow.length === 0,
+    `Authority review overflowed: ${authorityReview.overflow.join(", ")}`,
+  );
+  screenshots.push(
+    ...[
+      await screenshot("plugin-authority-review", "dark"),
+      await screenshot("plugin-authority-review", "light"),
+    ].filter(Boolean),
+  );
+  const minimumViewport = await evaluate("({ width: innerWidth, height: innerHeight })");
+  assert(
+    minimumViewport.width === 860 && minimumViewport.height === 640,
+    `Authority review was not exercised at the supported 860x640 minimum: ${JSON.stringify(minimumViewport)}`,
+  );
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1180,
+    height: 820,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitFor("innerWidth === 1180 && innerHeight === 820", "The wide viewport did not apply.");
+  const wideOverflow = await evaluate(`[
+    ...document.querySelectorAll("#plugin-authority-review-facts, #plugin-authority-review-list"),
+  ].some((element) => element.scrollWidth > element.clientWidth + 1)`);
+  assert(wideOverflow === false, "Authority review overflowed at the standard desktop viewport.");
+  screenshots.push(
+    ...[
+      await screenshot("plugin-authority-review-wide", "dark"),
+      await screenshot("plugin-authority-review-wide", "light"),
+    ].filter(Boolean),
+  );
+  if (screenshotDirectory) {
+    const positiveControl = await evaluate(`(() => {
+      const target = document.querySelector("#plugin-authority-review-list .plugin-authority-review-item");
+      if (!(target instanceof HTMLElement)) {
+        throw new Error("Authority positive-control target is missing.");
+      }
+      target.dataset.visualPositiveControl = "true";
+      target.style.outline = "8px solid rgb(255, 0, 255)";
+      target.style.outlineOffset = "-8px";
+      return {
+        marked: document.querySelectorAll('[data-visual-positive-control="true"]').length,
+        outline: getComputedStyle(target).outlineColor,
+      };
+    })()`);
+    assert(
+      positiveControl.marked === 1 && positiveControl.outline === "rgb(255, 0, 255)",
+      `Authority visual positive control did not reach exactly one target: ${JSON.stringify(positiveControl)}`,
+    );
+    screenshots.push(await screenshot("plugin-authority-positive-control", "dark"));
+    const positiveControlCleared = await evaluate(`(() => {
+      const target = document.querySelector('[data-visual-positive-control="true"]');
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+      target.style.removeProperty("outline");
+      target.style.removeProperty("outline-offset");
+      delete target.dataset.visualPositiveControl;
+      return document.querySelectorAll('[data-visual-positive-control="true"]').length === 0;
+    })()`);
+    assert(positiveControlCleared, "Authority visual positive control did not cleanly revert.");
+  }
+  await cdp.send("Emulation.clearDeviceMetricsOverride");
+  await waitFor(
+    "innerWidth === 860 && innerHeight === 640",
+    "The minimum viewport did not restore.",
+  );
+  await click("#plugin-authority-review-grant");
+  await waitFor(
+    'document.querySelector("#plugin-authority-review-dialog")?.open === false',
+    "The exact-bundle authority grant did not finish.",
+  );
+  await waitFor(
+    `document.querySelector(${JSON.stringify(installedRow)})?.textContent?.includes("Exact bundle granted")`,
+    "The installed row did not expose its granted exact bundle.",
+  );
+  const enabledAfterGrant = await evaluate(`(async () => {
+    const row = document.querySelector(${JSON.stringify(installedRow)});
+    const toggle = row?.querySelector('input[type="checkbox"]');
+    if (!(toggle instanceof HTMLInputElement) || toggle.disabled) {
+      throw new Error("The plugin toggle remained unreachable after an exact-bundle grant.");
+    }
+    toggle.click();
+    const deadline = Date.now() + 60000;
+    let snapshot = await window.threadleaf.getSnapshot();
+    while (Date.now() < deadline) {
+      snapshot = await window.threadleaf.getSnapshot();
+      if ((snapshot.plugins ?? []).some((plugin) =>
+        plugin.id === ${JSON.stringify(pluginId)} &&
+        plugin.state === "loaded" &&
+        plugin.compatibilityLevel >= 2
+      )) {
+        return { loaded: true, snapshot };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return {
+      loaded: false,
+      snapshot,
+      rowText: document.querySelector(${JSON.stringify(installedRow)})?.textContent ?? "",
+      status: document.querySelector("#plugin-status")?.textContent ?? "",
+    };
+  })()`);
+  assert(
+    enabledAfterGrant.loaded === true,
+    `A granted exact bundle did not load through the real runtime: ${JSON.stringify(enabledAfterGrant)}`,
+  );
+  await waitFor(
+    `(() => {
+      const row = document.querySelector(${JSON.stringify(installedRow)});
+      const action = [...(row?.querySelectorAll("button") ?? [])].find(
+        (button) => button.textContent?.trim() === "Revoke grant",
+      );
+      return action instanceof HTMLButtonElement && !action.disabled;
+    })()`,
+    "The authority controls did not settle after plugin activation.",
+  );
+  await clickRowAction(installedRow, "Revoke grant");
+  await waitFor(
+    `document.querySelector(${JSON.stringify(installedRow)})?.textContent?.includes("Authority review required")`,
+    "Revoking authority did not return the plugin to review-required state.",
+  );
+  const revokedState = await evaluate(`(async () => {
+    const row = document.querySelector(${JSON.stringify(installedRow)});
+    const snapshot = await window.threadleaf.getSnapshot();
+    return {
+      checked: row?.querySelector('input[type="checkbox"]')?.checked ?? null,
+      disabled: row?.querySelector('input[type="checkbox"]')?.disabled ?? null,
+      loaded: (snapshot.plugins ?? []).some((plugin) => plugin.id === ${JSON.stringify(pluginId)} && plugin.state === "loaded"),
+    };
+  })()`);
+  assert(
+    revokedState.checked === false &&
+      revokedState.disabled === true &&
+      revokedState.loaded === false,
+    "Revoking the grant did not disable, unload, and lock the plugin.",
   );
 
   await openReviewFrom(installedRow, "Review update");
@@ -484,11 +687,6 @@ try {
     "The failed package review could not be closed.",
   );
 
-  await click("#plugin-mode-toggle");
-  await waitFor(
-    'document.querySelector("#plugin-mode-state")?.textContent === "Enabled"',
-    "Compatibility mode did not enable for the refresh probe.",
-  );
   await fs.appendFile(
     path.join(pluginPath, "main.js"),
     "\n/* external integrity probe */\n",
@@ -575,13 +773,14 @@ try {
       version: reviewedVersion,
       reviewAssets: review.assets.length,
       integrityRaceBlocked: true,
+      authorityGateVerified: true,
       installedDisabled: true,
       uninstallRestored: true,
       liveThemeColors,
       screenshots,
     }),
   );
-  await evaluate("setTimeout(() => window.close(), 0); true");
+  await evaluate("setTimeout(() => window.close(), 1000); true");
   const exit = await Promise.race([
     exited,
     delay(10_000).then(() => ({ code: null, signal: "timeout" })),

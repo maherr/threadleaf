@@ -663,6 +663,154 @@ export class Keymap {
   }
 }
 
+export abstract class PopoverSuggest<T> {
+  readonly app: App;
+  readonly scope: Scope;
+  protected readonly suggestEl: HTMLElement;
+  private openState = false;
+
+  constructor(app: App, scope = new Scope(), ownerDocument = currentDocument()) {
+    this.app = app;
+    this.scope = scope;
+    this.suggestEl = ownerDocument.createElement("div");
+    this.suggestEl.className = "suggestion-container mod-search-suggestion";
+  }
+
+  open(): void {
+    if (this.openState) {
+      return;
+    }
+    this.openState = true;
+    this.suggestEl.ownerDocument.body.append(this.suggestEl);
+  }
+
+  close(): void {
+    this.openState = false;
+    this.suggestEl.remove();
+  }
+
+  abstract renderSuggestion(value: T, element: HTMLElement): void;
+
+  abstract selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void;
+}
+
+export abstract class AbstractInputSuggest<T> extends PopoverSuggest<T> {
+  limit = 100;
+  private activeIndex = 0;
+  private readonly inputEl: HTMLInputElement | HTMLDivElement;
+  private readonly selectCallbacks: Array<
+    (value: T, event: MouseEvent | KeyboardEvent) => unknown
+  > = [];
+  private suggestions: T[] = [];
+  private updateSequence = 0;
+
+  constructor(app: App, textInputEl: HTMLInputElement | HTMLDivElement) {
+    super(app, new Scope(), textInputEl.ownerDocument);
+    this.inputEl = textInputEl;
+    this.inputEl.addEventListener("input", () => void this.refreshSuggestions());
+    this.inputEl.addEventListener("focus", () => void this.refreshSuggestions());
+    this.inputEl.addEventListener("keydown", (event) => this.onKeyDown(event as KeyboardEvent));
+    this.inputEl.addEventListener("blur", () => {
+      this.inputEl.ownerDocument.defaultView?.setTimeout(() => this.close(), 0);
+    });
+  }
+
+  setValue(value: string): void {
+    if (this.inputEl.tagName === "INPUT") {
+      (this.inputEl as HTMLInputElement).value = value;
+    } else {
+      this.inputEl.textContent = value;
+    }
+  }
+
+  getValue(): string {
+    if (this.inputEl.tagName === "INPUT") {
+      return (this.inputEl as HTMLInputElement).value;
+    }
+    return this.inputEl.textContent ?? "";
+  }
+
+  override selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void {
+    for (const callback of this.selectCallbacks) {
+      callback(value, event);
+    }
+    this.close();
+  }
+
+  onSelect(callback: (value: T, event: MouseEvent | KeyboardEvent) => unknown): this {
+    this.selectCallbacks.push(callback);
+    return this;
+  }
+
+  protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
+
+  private onKeyDown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      this.close();
+      return;
+    }
+    if (this.suggestions.length === 0) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      this.activeIndex = (this.activeIndex + 1) % this.suggestions.length;
+      this.renderActiveSuggestion();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      this.activeIndex = (this.activeIndex - 1 + this.suggestions.length) % this.suggestions.length;
+      this.renderActiveSuggestion();
+      return;
+    }
+    if (event.key === "Enter") {
+      const selected = this.suggestions[this.activeIndex];
+      if (selected !== undefined) {
+        event.preventDefault();
+        this.selectSuggestion(selected, event);
+      }
+    }
+  }
+
+  private async refreshSuggestions(): Promise<void> {
+    const sequence = ++this.updateSequence;
+    const values = await this.getSuggestions(this.getValue());
+    if (sequence !== this.updateSequence) {
+      return;
+    }
+    this.suggestions = this.limit === 0 ? [...values] : values.slice(0, this.limit);
+    this.activeIndex = 0;
+    this.suggestEl.replaceChildren();
+    if (this.suggestions.length === 0) {
+      this.close();
+      return;
+    }
+    for (const [index, suggestion] of this.suggestions.entries()) {
+      const element = this.suggestEl.ownerDocument.createElement("div");
+      element.className = "suggestion-item";
+      this.renderSuggestion(suggestion, element);
+      element.addEventListener("mouseenter", () => {
+        this.activeIndex = index;
+        this.renderActiveSuggestion();
+      });
+      element.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        this.selectSuggestion(suggestion, event);
+      });
+      this.suggestEl.append(element);
+    }
+    this.renderActiveSuggestion();
+    this.open();
+  }
+
+  private renderActiveSuggestion(): void {
+    for (const [index, element] of [...this.suggestEl.children].entries()) {
+      element.classList.toggle("is-selected", index === this.activeIndex);
+    }
+  }
+}
+
 export class Modal {
   readonly app: App;
   readonly scope = new Scope();

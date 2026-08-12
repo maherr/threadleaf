@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { VaultPluginSettings } from "../shared/plugins";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
 let sandboxPath: string;
@@ -48,6 +49,32 @@ async function writePlugin(
   }
 }
 
+async function grantedPreference(
+  enabledPluginIds: string[],
+  compatibilityMode: VaultPluginSettings["compatibilityMode"] = "enabled",
+): Promise<VaultPluginSettings> {
+  const discovery = await discoverVaultPlugins(vaultPath);
+  return {
+    compatibilityMode,
+    enabledPluginIds,
+    capabilityGrantsByPlugin: Object.fromEntries(
+      discovery.plugins.flatMap((plugin) =>
+        plugin.summary.capabilityReport
+          ? [
+              [
+                plugin.summary.id,
+                {
+                  bundleSha256: plugin.summary.capabilityReport.bundleSha256,
+                  capabilities: plugin.summary.capabilityReport.capabilities,
+                },
+              ] as const,
+            ]
+          : [],
+      ),
+    ),
+  };
+}
+
 describe("vault plugin loader", () => {
   it("discovers standard Obsidian packages without reading enabled state from the vault", async () => {
     await writePlugin("drawing", { css: ".drawing-view { color: #123456; }" });
@@ -66,6 +93,12 @@ describe("vault plugin loader", () => {
         status: "unverified",
         testedVersion: null,
       },
+      capabilityReport: {
+        scannerVersion: 1,
+        capabilities: [],
+        staticOnly: true,
+      },
+      capabilityGrantState: "required",
     });
     expect(discovery.warnings).toEqual([]);
   });
@@ -77,7 +110,7 @@ describe("vault plugin loader", () => {
     const catalog = await loadVaultPluginCatalog({
       vaultPath,
       vaultId: "a".repeat(64),
-      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      preference: await grantedPreference(["drawing"]),
       safeMode: false,
     });
 
@@ -86,19 +119,57 @@ describe("vault plugin loader", () => {
     expect(catalog.warnings).toEqual([]);
   });
 
+  it("blocks plugin code and CSS until the exact bundle authority report is granted", async () => {
+    await writePlugin("drawing", {
+      main: "app.vault.cachedRead(file); fetch(endpoint);",
+      css: ".drawing-view { --drawing-ready: 1; }",
+    });
+
+    const missing = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "9".repeat(64),
+      preference: {
+        compatibilityMode: "enabled",
+        enabledPluginIds: ["drawing"],
+        capabilityGrantsByPlugin: {},
+      },
+      safeMode: false,
+    });
+    const stale = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "9".repeat(64),
+      preference: {
+        compatibilityMode: "enabled",
+        enabledPluginIds: ["drawing"],
+        capabilityGrantsByPlugin: {
+          drawing: { bundleSha256: "0".repeat(64), capabilities: ["vault-read", "network"] },
+        },
+      },
+      safeMode: false,
+    });
+
+    expect(missing.plugins[0]?.capabilityReport?.capabilities).toEqual(["vault-read", "network"]);
+    expect(missing.plugins[0]?.capabilityGrantState).toBe("required");
+    expect(missing.css).toBe("");
+    expect(missing.warnings.join("\n")).toContain("review is missing");
+    expect(stale.plugins[0]?.capabilityGrantState).toBe("stale");
+    expect(stale.css).toBe("");
+    expect(stale.warnings.join("\n")).toContain("review is stale");
+  });
+
   it("keeps discovery visible while restricted and safe modes suppress plugin CSS", async () => {
     await writePlugin("drawing", { css: ".drawing-view { --drawing-ready: 1; }" });
 
     const restricted = await loadVaultPluginCatalog({
       vaultPath,
       vaultId: "b".repeat(64),
-      preference: { compatibilityMode: "restricted", enabledPluginIds: ["drawing"] },
+      preference: await grantedPreference(["drawing"], "restricted"),
       safeMode: false,
     });
     const safe = await loadVaultPluginCatalog({
       vaultPath,
       vaultId: "b".repeat(64),
-      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      preference: await grantedPreference(["drawing"]),
       safeMode: true,
     });
 
@@ -115,7 +186,7 @@ describe("vault plugin loader", () => {
     const catalog = await loadVaultPluginCatalog({
       vaultPath,
       vaultId: "f".repeat(64),
-      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      preference: await grantedPreference(["drawing"]),
       safeMode: false,
       blockedPluginIds: new Set(["drawing"]),
     });
@@ -140,6 +211,7 @@ describe("vault plugin loader", () => {
       preference: {
         compatibilityMode: "enabled",
         enabledPluginIds: ["valid", "not-installed"],
+        capabilityGrantsByPlugin: (await grantedPreference(["valid"])).capabilityGrantsByPlugin,
       },
       safeMode: false,
     });
@@ -168,7 +240,7 @@ describe("vault plugin loader", () => {
     const catalog = await loadVaultPluginCatalog({
       vaultPath,
       vaultId: "d".repeat(64),
-      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      preference: await grantedPreference(["drawing"]),
       safeMode: false,
     });
 
@@ -189,7 +261,7 @@ describe("vault plugin loader", () => {
     const catalog = await loadVaultPluginCatalog({
       vaultPath,
       vaultId: "e".repeat(64),
-      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      preference: await grantedPreference(["drawing"]),
       safeMode: false,
     });
 

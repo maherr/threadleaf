@@ -76,6 +76,14 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       mode,
     ) as Promise<PluginUpdateResponse>,
+  setPluginCapabilityGrant: (expectedVaultId, pluginId, expectedBundleSha256, granted) =>
+    ipcRenderer.invoke(
+      ipcChannels.setPluginCapabilityGrant,
+      expectedVaultId,
+      pluginId,
+      expectedBundleSha256,
+      granted,
+    ) as Promise<PluginUpdateResponse>,
   setPluginEnabled: (expectedVaultId, pluginId, enabled) =>
     ipcRenderer.invoke(
       ipcChannels.setPluginEnabled,

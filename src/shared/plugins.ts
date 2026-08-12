@@ -1,11 +1,100 @@
 export const compatibilityModes = ["restricted", "enabled"] as const;
 export const maxPluginBundleBytes = 16 * 1024 * 1024;
+export const pluginCapabilityIds = [
+  "vault-read",
+  "vault-write",
+  "network",
+  "filesystem",
+  "subprocess",
+  "host-environment",
+  "clipboard",
+  "external-navigation",
+  "editor-extension",
+  "workspace-ui",
+  "dynamic-code",
+] as const;
 
 export type CompatibilityMode = (typeof compatibilityModes)[number];
+export type PluginCapabilityId = (typeof pluginCapabilityIds)[number];
+
+export interface PluginCapabilityDefinition {
+  label: string;
+  description: string;
+}
+
+export const pluginCapabilityDefinitions: Readonly<
+  Record<PluginCapabilityId, PluginCapabilityDefinition>
+> = {
+  "vault-read": {
+    label: "Read vault content",
+    description: "References APIs that can inspect notes, attachments, or vault metadata.",
+  },
+  "vault-write": {
+    label: "Change vault content",
+    description: "References APIs that can create, edit, move, rename, or delete vault files.",
+  },
+  network: {
+    label: "Use the network",
+    description: "References browser or Node networking APIs that can contact remote services.",
+  },
+  filesystem: {
+    label: "Access the host filesystem",
+    description: "References Node filesystem APIs outside Threadleaf's vault abstraction.",
+  },
+  subprocess: {
+    label: "Run host processes",
+    description: "References Node child-process APIs that can launch programs or shell commands.",
+  },
+  "host-environment": {
+    label: "Inspect the host environment",
+    description: "References environment, operating-system, or home-directory information.",
+  },
+  clipboard: {
+    label: "Read or change the clipboard",
+    description: "References browser or Electron clipboard APIs.",
+  },
+  "external-navigation": {
+    label: "Open external destinations",
+    description: "References APIs that can open a browser, application, or external URL.",
+  },
+  "editor-extension": {
+    label: "Extend the editor",
+    description: "References CodeMirror or Obsidian editor-extension APIs.",
+  },
+  "workspace-ui": {
+    label: "Change workspace UI",
+    description: "References commands, views, settings, ribbon, status, or Markdown render hooks.",
+  },
+  "dynamic-code": {
+    label: "Evaluate dynamic code",
+    description: "References runtime code evaluation or dynamically selected modules.",
+  },
+};
+
+export interface PluginCapabilityFinding {
+  capability: PluginCapabilityId;
+  evidence: string[];
+}
+
+export interface PluginCapabilityReport {
+  scannerVersion: 1;
+  bundleSha256: string;
+  capabilities: PluginCapabilityId[];
+  findings: PluginCapabilityFinding[];
+  staticOnly: true;
+}
+
+export interface PluginCapabilityGrant {
+  bundleSha256: string;
+  capabilities: PluginCapabilityId[];
+}
+
+export type PluginCapabilityGrantState = "unavailable" | "required" | "granted" | "stale";
 
 export interface VaultPluginSettings {
   compatibilityMode: CompatibilityMode;
   enabledPluginIds: string[];
+  capabilityGrantsByPlugin: Record<string, PluginCapabilityGrant>;
 }
 
 export interface PluginManifestData {
@@ -35,6 +124,8 @@ export interface PluginPackageSummary extends PluginManifestData {
   packageState: PluginPackageState;
   stylesheetDiscovered: boolean;
   compatibility: PluginCompatibilityReport;
+  capabilityReport: PluginCapabilityReport | null;
+  capabilityGrantState: PluginCapabilityGrantState;
   error: string | null;
 }
 
@@ -55,6 +146,7 @@ export type PluginCatalogResponse =
 export const defaultVaultPluginSettings: Readonly<VaultPluginSettings> = {
   compatibilityMode: "restricted",
   enabledPluginIds: [],
+  capabilityGrantsByPlugin: {},
 };
 
 const pluginIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -176,12 +268,71 @@ export function parseVaultPluginSettings(value: unknown): VaultPluginSettings {
   if (new Set(enabledPluginIds).size !== enabledPluginIds.length) {
     throw new Error("Enabled plugin identifiers must be unique.");
   }
+  const rawGrants = value.capabilityGrantsByPlugin ?? {};
+  if (!isRecord(rawGrants) || Object.keys(rawGrants).length > 128) {
+    throw new Error("Vault plugin settings may retain grants for at most 128 plugins.");
+  }
+  const capabilityGrantsByPlugin: Record<string, PluginCapabilityGrant> = {};
+  for (const [rawPluginId, rawGrant] of Object.entries(rawGrants)) {
+    const pluginId = parsePluginId(rawPluginId);
+    if (
+      !isRecord(rawGrant) ||
+      typeof rawGrant.bundleSha256 !== "string" ||
+      !/^[a-f0-9]{64}$/u.test(rawGrant.bundleSha256) ||
+      !Array.isArray(rawGrant.capabilities) ||
+      rawGrant.capabilities.length > pluginCapabilityIds.length
+    ) {
+      throw new Error(`Capability grant for ${pluginId} is malformed.`);
+    }
+    const capabilities = rawGrant.capabilities.map((capability) => {
+      if (
+        typeof capability !== "string" ||
+        !pluginCapabilityIds.includes(capability as PluginCapabilityId)
+      ) {
+        throw new Error(`Capability grant for ${pluginId} contains an unknown authority.`);
+      }
+      return capability as PluginCapabilityId;
+    });
+    if (new Set(capabilities).size !== capabilities.length) {
+      throw new Error(`Capability grant for ${pluginId} contains duplicate authorities.`);
+    }
+    capabilityGrantsByPlugin[pluginId] = {
+      bundleSha256: rawGrant.bundleSha256,
+      capabilities,
+    };
+  }
   return {
     compatibilityMode: value.compatibilityMode as CompatibilityMode,
     enabledPluginIds,
+    capabilityGrantsByPlugin,
   };
 }
 
 export function createDefaultVaultPluginSettings(): VaultPluginSettings {
-  return { compatibilityMode: "restricted", enabledPluginIds: [] };
+  return { compatibilityMode: "restricted", enabledPluginIds: [], capabilityGrantsByPlugin: {} };
+}
+
+export function pluginCapabilityGrantMatches(
+  report: PluginCapabilityReport,
+  grant: PluginCapabilityGrant | undefined,
+): boolean {
+  return (
+    grant !== undefined &&
+    grant.bundleSha256 === report.bundleSha256 &&
+    grant.capabilities.length === report.capabilities.length &&
+    grant.capabilities.every((capability, index) => capability === report.capabilities[index])
+  );
+}
+
+export function pluginCapabilityGrantState(
+  report: PluginCapabilityReport | null,
+  grant: PluginCapabilityGrant | undefined,
+): PluginCapabilityGrantState {
+  if (!report) {
+    return "unavailable";
+  }
+  if (!grant) {
+    return "required";
+  }
+  return pluginCapabilityGrantMatches(report, grant) ? "granted" : "stale";
 }

@@ -38,6 +38,7 @@ import {
   compatibilityModes,
   type PluginCatalogResponse,
   parsePluginId,
+  pluginCapabilityGrantMatches,
 } from "../shared/plugins";
 import {
   readDevelopmentPickerOverride,
@@ -302,7 +303,11 @@ async function currentMigrationPreview(expectedVaultId: string) {
   return { status: "ready", preview } as const;
 }
 
-async function reconcileCompatibilityPlugins(expectedVaultId: string, forceReload = false) {
+async function reconcileCompatibilityPlugins(
+  expectedVaultId: string,
+  forceReload = false,
+  reloadPluginId?: string,
+) {
   if (workspaceController.vaultId !== expectedVaultId) {
     throw new Error("The active vault changed before plugin reconciliation.");
   }
@@ -319,11 +324,17 @@ async function reconcileCompatibilityPlugins(expectedVaultId: string, forceReloa
   const pluginsAllowed = preference.compatibilityMode === "enabled" && !pluginSafeMode();
   const targetIds = new Set(
     pluginsAllowed
-      ? preference.enabledPluginIds.filter(
-          (pluginId) =>
+      ? preference.enabledPluginIds.filter((pluginId) => {
+          const plugin = packagesById.get(pluginId);
+          const report = plugin?.summary.capabilityReport;
+          return (
             !changedManagedIds.has(pluginId) &&
-            packagesById.get(pluginId)?.summary.packageState === "ready",
-        )
+            plugin?.summary.packageState === "ready" &&
+            report !== null &&
+            report !== undefined &&
+            pluginCapabilityGrantMatches(report, preference.capabilityGrantsByPlugin[pluginId])
+          );
+        })
       : [],
   );
 
@@ -340,15 +351,20 @@ async function reconcileCompatibilityPlugins(expectedVaultId: string, forceReloa
       continue;
     }
     const installed = packagesById.get(pluginId);
-    if (!installed) {
+    const report = installed?.summary.capabilityReport;
+    if (!installed || !report) {
       continue;
     }
     const runtimePlugin = (snapshot.plugins ?? []).find((plugin) => plugin.id === pluginId);
-    if (!forceReload && runtimePlugin?.state === "loaded") {
+    const reloadThisPlugin = forceReload && (!reloadPluginId || reloadPluginId === pluginId);
+    if (runtimePlugin?.state === "loaded" && !reloadThisPlugin) {
+      continue;
+    }
+    if (reloadPluginId && reloadPluginId !== pluginId) {
       continue;
     }
     try {
-      snapshot = await workspaceController.loadPlugin(installed.directoryPath);
+      snapshot = await workspaceController.loadPlugin(installed.directoryPath, report.bundleSha256);
     } catch {
       snapshot = await workspaceController.getSnapshot();
     }
@@ -756,6 +772,74 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.setPluginCapabilityGrant,
+    (
+      _event,
+      expectedVaultId: unknown,
+      pluginIdValue: unknown,
+      expectedBundleSha256: unknown,
+      granted: unknown,
+    ) => {
+      if (
+        typeof expectedVaultId !== "string" ||
+        typeof pluginIdValue !== "string" ||
+        typeof expectedBundleSha256 !== "string" ||
+        !/^[a-f0-9]{64}$/u.test(expectedBundleSha256) ||
+        typeof granted !== "boolean"
+      ) {
+        throw new Error(
+          "Plugin authority review requires vault, plugin, exact bundle SHA-256, and decision values.",
+        );
+      }
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const pluginId = parsePluginId(pluginIdValue);
+        const current = settingsController.getVaultPlugins(expectedVaultId);
+        const capabilityGrantsByPlugin = { ...current.capabilityGrantsByPlugin };
+        let enabledPluginIds = [...current.enabledPluginIds];
+        if (granted) {
+          const changedManagedPackage = (
+            await pluginPackageManager.getManagedPackages(
+              workspaceController.vaultPath,
+              expectedVaultId,
+            )
+          ).find((managed) => managed.pluginId === pluginId && managed.integrity === "changed");
+          if (changedManagedPackage) {
+            throw new Error(
+              `Managed plugin ${pluginId} changed after its recorded SHA-256 review and cannot receive an authority grant.`,
+            );
+          }
+          const discovery = await discoverVaultPlugins(workspaceController.vaultPath);
+          const plugin = discovery.plugins.find((candidate) => candidate.summary.id === pluginId);
+          const report = plugin?.summary.capabilityReport;
+          if (plugin?.summary.packageState !== "ready" || !report) {
+            throw new Error(`Plugin ${pluginId} is not installed as a valid reviewable package.`);
+          }
+          if (report.bundleSha256 !== expectedBundleSha256) {
+            throw new Error(
+              `Plugin ${pluginId} changed after the authority report opened. Review the current exact bundle.`,
+            );
+          }
+          capabilityGrantsByPlugin[pluginId] = {
+            bundleSha256: report.bundleSha256,
+            capabilities: [...report.capabilities],
+          };
+        } else {
+          delete capabilityGrantsByPlugin[pluginId];
+          enabledPluginIds = enabledPluginIds.filter((candidate) => candidate !== pluginId);
+        }
+        const settings = await settingsController.setVaultPlugins(expectedVaultId, {
+          ...current,
+          enabledPluginIds,
+          capabilityGrantsByPlugin,
+        });
+        return pluginUpdateResponse(expectedVaultId, settings);
+      });
+    },
+  );
+  ipcMain.handle(
     ipcChannels.setPluginEnabled,
     (_event, expectedVaultId: unknown, pluginIdValue: unknown, enabled: unknown) => {
       if (
@@ -770,6 +854,7 @@ function registerIpcHandlers(): void {
           return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
         }
         const pluginId = parsePluginId(pluginIdValue);
+        const current = settingsController.getVaultPlugins(expectedVaultId);
         if (enabled) {
           const changedManagedPackage = (
             await pluginPackageManager.getManagedPackages(
@@ -787,8 +872,18 @@ function registerIpcHandlers(): void {
           if (plugin?.summary.packageState !== "ready") {
             throw new Error(`Plugin ${pluginId} is not installed as a valid package.`);
           }
+          if (
+            !plugin.summary.capabilityReport ||
+            !pluginCapabilityGrantMatches(
+              plugin.summary.capabilityReport,
+              current.capabilityGrantsByPlugin[pluginId],
+            )
+          ) {
+            throw new Error(
+              `Plugin ${pluginId} requires a current exact-bundle authority grant before enablement.`,
+            );
+          }
         }
-        const current = settingsController.getVaultPlugins(expectedVaultId);
         const enabledPluginIds = enabled
           ? [...new Set([...current.enabledPluginIds, pluginId])]
           : current.enabledPluginIds.filter((candidate) => candidate !== pluginId);
@@ -982,7 +1077,10 @@ function registerIpcHandlers(): void {
     if (pluginId !== undefined && typeof pluginId !== "string") {
       throw new Error("Plugin reload requires an optional string identifier.");
     }
-    return serializePluginOperation(() => workspaceController.reloadPlugin(pluginId));
+    const parsedPluginId = pluginId === undefined ? undefined : parsePluginId(pluginId);
+    return serializePluginOperation(() =>
+      reconcileCompatibilityPlugins(workspaceController.vaultId, true, parsedPluginId),
+    );
   });
   ipcMain.handle(ipcChannels.unloadPlugin, (_event, pluginId: unknown) => {
     if (pluginId !== undefined && typeof pluginId !== "string") {

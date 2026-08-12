@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -37,6 +38,7 @@ type PluginConstructor = new (app: App, manifest: PluginManifest) => Plugin;
 
 interface LoadedPluginRecord {
   directoryPath: string;
+  expectedBundleSha256: string | undefined;
   instance: Plugin | null;
   summary: PluginSummary;
 }
@@ -101,7 +103,13 @@ export class PluginHost implements PluginRuntimePort {
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
   }
 
-  async loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
+  async loadPlugin(
+    pluginDirectory: string,
+    expectedBundleSha256?: string,
+  ): Promise<RuntimeSnapshot> {
+    if (expectedBundleSha256 && !/^[a-f0-9]{64}$/u.test(expectedBundleSha256)) {
+      throw new Error("Plugin execution requires a lowercase SHA-256 bundle digest.");
+    }
     const resolvedDirectory = await this.assertInsideVault(pluginDirectory);
     const manifestPath = await this.canonicalPluginFile(resolvedDirectory, "manifest.json");
     const entryPath = await this.canonicalPluginFile(resolvedDirectory, "main.js");
@@ -121,6 +129,7 @@ export class PluginHost implements PluginRuntimePort {
 
     const record: LoadedPluginRecord = {
       directoryPath: resolvedDirectory,
+      expectedBundleSha256,
       instance: null,
       summary: {
         id: manifest.id,
@@ -138,7 +147,7 @@ export class PluginHost implements PluginRuntimePort {
 
     let instance: Plugin | null = null;
     try {
-      const PluginClass = await this.evaluatePlugin(entryPath);
+      const PluginClass = await this.evaluatePlugin(entryPath, expectedBundleSha256);
       instance = new PluginClass(this.app, manifest);
       if (!(instance instanceof Plugin)) {
         throw new Error("Plugin export does not extend the compatibility Plugin class.");
@@ -438,7 +447,7 @@ export class PluginHost implements PluginRuntimePort {
     if (!record) {
       throw new Error("No plugin has been loaded yet.");
     }
-    return this.loadPlugin(record.directoryPath);
+    return this.loadPlugin(record.directoryPath, record.expectedBundleSha256);
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
@@ -490,8 +499,20 @@ export class PluginHost implements PluginRuntimePort {
     };
   }
 
-  private async evaluatePlugin(entryPath: string): Promise<PluginConstructor> {
-    const source = await this.readBoundedText(entryPath, maxPluginBundleBytes);
+  private async evaluatePlugin(
+    entryPath: string,
+    expectedBundleSha256?: string,
+  ): Promise<PluginConstructor> {
+    const bundleBytes = await this.readBoundedBytes(entryPath, maxPluginBundleBytes);
+    if (expectedBundleSha256) {
+      const actualBundleSha256 = createHash("sha256").update(bundleBytes).digest("hex");
+      if (actualBundleSha256 !== expectedBundleSha256) {
+        throw new Error(
+          "Plugin main.js changed after authority review and was blocked before execution.",
+        );
+      }
+    }
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(bundleBytes);
     const nativeRequire = createRequire(entryPath);
     const compatibilityModule = createObsidianCompatibilityModule(this.app);
     const moduleRecord: CommonJsModuleRecord = { exports: {} };
@@ -603,7 +624,7 @@ export class PluginHost implements PluginRuntimePort {
     return candidatePath;
   }
 
-  private async readBoundedText(filePath: string, maxBytes: number): Promise<string> {
+  private async readBoundedBytes(filePath: string, maxBytes: number): Promise<Buffer> {
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) {
       throw new Error(`${path.basename(filePath)} is not a regular file.`);
@@ -615,7 +636,13 @@ export class PluginHost implements PluginRuntimePort {
     if (bytes.byteLength > maxBytes) {
       throw new Error(`${path.basename(filePath)} grew beyond its size limit while reading.`);
     }
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return bytes;
+  }
+
+  private async readBoundedText(filePath: string, maxBytes: number): Promise<string> {
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      await this.readBoundedBytes(filePath, maxBytes),
+    );
   }
 
   private async fileExists(filePath: string, directoryPath: string): Promise<boolean> {

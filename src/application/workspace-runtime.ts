@@ -758,8 +758,13 @@ export class WorkspaceRuntime {
     return this.publishSnapshot(await this.pluginHost.closePluginView());
   }
 
-  async loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
-    return this.publishSnapshot(await this.pluginHost.loadPlugin(pluginDirectory));
+  async loadPlugin(
+    pluginDirectory: string,
+    expectedBundleSha256?: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.publishSnapshot(
+      await this.pluginHost.loadPlugin(pluginDirectory, expectedBundleSha256),
+    );
   }
 
   async reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {

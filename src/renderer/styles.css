@@ -3191,6 +3191,45 @@ button.inspector-item:hover {
   -webkit-line-clamp: 2;
 }
 
+.plugin-authority-summary {
+  display: grid;
+  gap: 2px;
+  margin-top: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-left: 4px double var(--accent-strong);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent-soft) 26%, var(--surface-sunken));
+}
+
+.plugin-authority-summary[data-state="required"],
+.plugin-authority-summary[data-state="stale"] {
+  border-left-style: dashed;
+  border-left-color: var(--signal);
+  background: color-mix(in srgb, var(--signal-soft) 42%, var(--surface-sunken));
+}
+
+.plugin-authority-summary[data-state="unavailable"] {
+  border-left-style: solid;
+  border-left-color: var(--ink-muted);
+  background: var(--surface-sunken);
+}
+
+.plugin-authority-summary strong {
+  color: var(--ink);
+  font: 800 8px / 1.35 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.plugin-authority-summary small {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font: 7px / 1.45 var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .plugin-author {
   color: var(--ink-soft);
 }
@@ -3206,6 +3245,13 @@ button.inspector-item:hover {
 .plugin-runtime-state,
 .plugin-package-controls {
   grid-column: 1 / -1;
+}
+
+.plugin-authority-action {
+  grid-column: 1 / -1;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 7px;
 }
 
 .plugin-package-controls {
@@ -3494,6 +3540,57 @@ button.inspector-item:hover {
   background: var(--signal-soft);
   font-size: 8px;
   line-height: 1.45;
+}
+
+.plugin-authority-review-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.plugin-authority-review-item,
+.plugin-authority-review-empty {
+  min-width: 0;
+  margin: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-left: 4px double var(--accent-strong);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+}
+
+.plugin-authority-review-item {
+  display: grid;
+  gap: 4px;
+}
+
+.plugin-authority-review-item strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.plugin-authority-review-item p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.plugin-authority-review-item small {
+  color: var(--ink-muted);
+  font: 7px / 1.45 var(--mono);
+}
+
+.plugin-authority-review-empty {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font: 8px / 1.5 var(--mono);
+}
+
+@media (max-width: 620px) {
+  .plugin-authority-review-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .migration-settings {

@@ -146,7 +146,8 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       contained bounded reads, with deterministic identity and explicit invalid-package evidence.
 - [x] Keep Threadleaf's enabled-plugin set in private per-vault settings without treating existing
       Obsidian configuration as authority.
-- [ ] Add capability grants before plugin enablement.
+- [x] Add explicit per-vault grants before plugin enablement, bound to the exact raw `main.js`
+      digest and invalidated by any bundle-byte change.
 - [x] Add a read-only migration preview for existing plugin enablement, settings-file shape,
       exact-version compatibility evidence, and missing packages without loading or selecting code.
 - [x] Implement enable, disable, reload, startup safe mode, lifecycle diagnostics, independent
@@ -160,7 +161,9 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       recovery, changed-byte lockout, and no silent bundle execution.
 - [x] Add minimum-app-version, desktop-only, standard bundled-dependency-model, and exact-version
       compatibility-level reporting before a plugin can be enabled.
-- [ ] Add static capability and permission reporting before enablement.
+- [x] Add conservative static authority reporting before enablement for vault reads and changes,
+      network, filesystem, subprocess, host environment, clipboard, external navigation, editor,
+      workspace UI, and dynamic code references, with an explicit not-a-sandbox warning.
 - [x] Preview enabled-plugin inventory, settings-file shape without private values, reviewed hotkey
       mappings, themes, CSS snippets, and restorable workspace note tabs through bounded contained
       reads. Never require or mutate `.obsidian/`.

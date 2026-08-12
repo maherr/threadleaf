@@ -124,7 +124,10 @@ export class PluginRendererService {
         return this.requireHost().getSnapshot();
       case "load-plugin":
         await this.requireHost().closePluginView();
-        return this.requireHost().loadPlugin(requirePayloadString(request, "pluginDirectory"));
+        return this.requireHost().loadPlugin(
+          requirePayloadString(request, "pluginDirectory"),
+          optionalPayloadString(request, "expectedBundleSha256"),
+        );
       case "reload-plugin":
         await this.requireHost().closePluginView();
         return this.requireHost().reloadPlugin(optionalPayloadString(request, "pluginId"));

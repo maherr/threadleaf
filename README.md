@@ -106,8 +106,14 @@ failures without hiding the rest of the inventory. Before enablement, each packa
 declared Obsidian API baseline, desktop-only flag, standard bundled-dependency model, and measured
 compatibility evidence. Evidence is exact to the tested plugin version: Excalidraw 2.25.3 reports
 its named level 4 workflows, a different release remains unverified, and an unknown plugin starts
-at discovered level 0. The same page searches the public compatibility registry without downloading
-plugin code. Opening Review fetches one exact GitHub release plus its repository license into
+at discovered level 0. Each valid package also gets a conservative static authority report over
+the exact raw `main.js` bytes. Threadleaf blocks both JavaScript and CSS until the user grants that
+exact bundle for the current vault. Any byte change makes the grant stale; revocation disables and
+unloads the plugin. The execution renderer re-hashes the raw bytes immediately before compilation,
+so a file replacement after review is blocked too. This report is an explicit trust aid, not a
+runtime permission sandbox. The same page searches the public compatibility registry without
+downloading plugin code. Opening Review
+fetches one exact GitHub release plus its repository license into
 private, expiring staging and displays the pinned version, source, retained license, and complete
 SHA-256 evidence before any vault write. Apply first removes the plugin from Threadleaf's enabled
 set and unloads its runtime. Installs, updates, reinstalls, rollbacks, uninstalls, and restores all
@@ -120,8 +126,8 @@ restores the exact prior directory and private metadata or completes cleanup for
 committed operation. The current source adapter reads the public `obsidian-releases` registry at
 runtime but does not redistribute it or represent that unlicensed repository as Threadleaf's future
 open directory. The source interface and review protocol are replaceable open code.
-Startup plugin safe mode preserves the saved
-selection while loading no community code or CSS. The compatibility host remains an explicitly
+Startup plugin safe mode preserves the saved selection while loading no community code or CSS. The
+compatibility host remains an explicitly
 trusted desktop runtime in a separate transient Electron session with Node integration, a
 browser `connect-src 'none'` policy, denied browser permissions, blocked popups and
 navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. A timed
