@@ -221,6 +221,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   temporary storage, exercises large-note editing, raster attachments, external and burst edits,
   link-updating rename, restart recovery, and source-byte preservation, then reports aggregates
   without note names, content, paths, or hashes.
+- A one-command privacy-safe support bundle with an embedded beta feedback template, an exact
+  aggregate-only schema, main-renderer authority, outside-vault and symlink containment, atomic
+  mode-0600 writes, no upload path, private-field canary tests, and live About-page plus
+  command-palette verification in light and dark themes.
 - A renderer-to-main startup handshake that paints the opening workspace before restored-vault
   activation begins, plus cooperative metadata construction that yields during large corpus builds.
 - Obsidian-style raster wiki-image embeds through the existing contained, MIME-sniffed, bounded

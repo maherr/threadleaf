@@ -192,6 +192,8 @@ const elements = {
   appUpdateCheck: getButton("app-update-check"),
   appUpdateDownload: getButton("app-update-download"),
   appUpdateInstall: getButton("app-update-install"),
+  supportBundleExport: getButton("support-bundle-export"),
+  supportBundleStatus: getElement("support-bundle-status"),
   schemeSystem: getInput("scheme-system"),
   schemeLight: getInput("scheme-light"),
   schemeDark: getInput("scheme-dark"),
@@ -425,6 +427,9 @@ let migrationMessage = "Open the preview to inspect existing Obsidian behavior."
 let migrationMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let appUpdateSnapshot: AppUpdateSnapshot | null = null;
 let appUpdateActionBusy = false;
+let supportBundleBusy = false;
+let supportBundleMessage = "You choose where the report is saved, outside the active vault.";
+let supportBundleMessageKind: "info" | "saved" | "error" = "info";
 let lastPluginEditorUpdateId: string | null = null;
 let pluginSurfacePresentationVisible = true;
 let legacyThemeMigrationAttempted = false;
@@ -859,6 +864,16 @@ function commandCatalog(): RendererCommand[] {
       enabled: true,
       disabledReason: null,
       run: openSettings,
+    },
+    {
+      id: "support.export-bundle",
+      label: "Save privacy-safe support bundle",
+      category: "Support",
+      keywords: ["bug", "feedback", "diagnostics", "report", "privacy", "beta"],
+      shortcut: null,
+      enabled: !supportBundleBusy,
+      disabledReason: supportBundleBusy ? "Threadleaf is preparing the support bundle." : null,
+      run: exportSupportBundle,
     },
   ];
 
@@ -2072,7 +2087,7 @@ async function deleteCurrentNote(): Promise<void> {
 }
 
 function settingsOperationBusy(): boolean {
-  return settingsBusy || appearanceBusy || pluginBusy || migrationBusy;
+  return settingsBusy || appearanceBusy || pluginBusy || migrationBusy || supportBundleBusy;
 }
 
 function currentAppearancePreference(): VaultAppearanceSettings {
@@ -3734,6 +3749,47 @@ function renderAppUpdateSettings(): void {
     snapshot.phase === "installing" ? "Installing…" : "Restart and install";
 }
 
+function renderSupportBundleSettings(): void {
+  elements.supportBundleExport.disabled = supportBundleBusy;
+  elements.supportBundleExport.textContent = supportBundleBusy
+    ? "Preparing report…"
+    : "Save support bundle";
+  elements.supportBundleStatus.textContent = supportBundleMessage;
+  elements.supportBundleStatus.dataset.kind = supportBundleMessageKind;
+}
+
+async function exportSupportBundle(): Promise<void> {
+  if (supportBundleBusy) {
+    return;
+  }
+  supportBundleBusy = true;
+  supportBundleMessage = "Preparing an aggregate-only report. Nothing is being uploaded.";
+  supportBundleMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.exportSupportBundle();
+    if (response.status === "saved") {
+      supportBundleMessage = "Support bundle saved. Nothing was uploaded.";
+      supportBundleMessageKind = "saved";
+      showToast("Privacy-safe support bundle saved.");
+    } else if (response.status === "cancelled") {
+      supportBundleMessage = "Save cancelled. No report was created or uploaded.";
+      supportBundleMessageKind = "info";
+    } else {
+      supportBundleMessage = response.message;
+      supportBundleMessageKind = "error";
+      showToast(response.message);
+    }
+  } catch {
+    supportBundleMessage = "Threadleaf could not prepare the support bundle. Nothing was uploaded.";
+    supportBundleMessageKind = "error";
+    showToast(supportBundleMessage);
+  } finally {
+    supportBundleBusy = false;
+    renderSettings();
+  }
+}
+
 function updatePolicyLabel(snapshot: AppUpdateSnapshot): string {
   switch (snapshot.disabledReason) {
     case "development-build":
@@ -4038,6 +4094,7 @@ function renderSettings(): void {
   renderPluginSettings();
   renderMigrationSettings();
   renderAppUpdateSettings();
+  renderSupportBundleSettings();
   if (!elements.settingsDialog.open) {
     return;
   }
@@ -5656,6 +5713,7 @@ elements.settingsNavHotkeys.addEventListener("click", () => setSettingsPage("hot
 elements.appUpdateCheck.addEventListener("click", () => void runAppUpdateAction("check"));
 elements.appUpdateDownload.addEventListener("click", () => void runAppUpdateAction("download"));
 elements.appUpdateInstall.addEventListener("click", () => void runAppUpdateAction("install"));
+elements.supportBundleExport.addEventListener("click", () => void exportSupportBundle());
 elements.migrationRefresh.addEventListener("click", () => {
   void refreshMigrationPreview("Read-only migration preview refreshed. Nothing was changed.");
 });

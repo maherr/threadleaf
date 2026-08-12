@@ -172,7 +172,7 @@ effect of opening a vault.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, note transclusion, or
-completed beta upgrade, rollback, and diagnostic workflow.
+completed beta package upgrade and rollback rehearsal.
 
 Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather
 than a development server. A fresh package opens an external, read-only demo vault, keeps the
@@ -192,6 +192,12 @@ downloading, and restarting to install are three explicit user actions. Developm
 unsigned contributor packages, and Linux packages fail closed with a visible local policy; Linux
 continues to use its system package manager until native package signing is complete. The signed
 release feed still needs its first end-to-end rehearsal against published draft artifacts.
+
+About and updates also exposes a privacy-safe support bundle. The same action is available as Save
+privacy-safe support bundle in Ctrl/Cmd+K. It saves a mode-0600 Markdown feedback template and a
+fixed allowlist of aggregate diagnostics outside the active vault. It never uploads anything and
+does not include note text, filenames, vault paths or identifiers, hashes, plugin identities or
+settings, raw errors, usernames, hostnames, network addresses, or locale.
 
 ## Product promises
 
@@ -220,6 +226,7 @@ release feed still needs its first end-to-end rehearsal against published draft 
 - [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
+- [Beta feedback guide](docs/beta-feedback.md)
 
 ## Development
 
@@ -315,6 +322,14 @@ timings without note names, content, paths, or hashes:
 
 ```sh
 pnpm run test:representative-vault -- --source /absolute/path/to/vault
+```
+
+The support-bundle gate drives both visible export controls through Electron, proves the report
+stays outside the vault with mode 0600, and rejects private canaries across the renderer, main
+process, and generated Markdown:
+
+```sh
+pnpm run test:support-bundle
 ```
 
 The development CLI requires an explicit vault and never consults the desktop application's saved

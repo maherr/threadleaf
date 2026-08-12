@@ -150,7 +150,7 @@ conversion.
 - [x] Load the current public Excalidraw 2.26.4 bundle through the packaged desktop authority and
       process-isolation path without changing its source.
 - [x] Produce installable Linux desktop artifacts with checksums and native package inspection.
-- [ ] Add a one-command, privacy-reviewed diagnostic bundle and a short beta feedback template for
+- [x] Add a one-command, privacy-reviewed diagnostic bundle and a short beta feedback template for
       reproducible bugs and improvement notes.
 - [ ] Rehearse application upgrade and rollback with the beta package while preserving the vault
       and Threadleaf's private settings.

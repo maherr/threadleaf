@@ -53,6 +53,7 @@
     "test:editor-reliability": "pnpm run build && node scripts/check-editor-reliability.mjs",
     "test:representative-vault": "pnpm run build && node scripts/check-representative-vault.mjs",
     "test:startup-readiness": "pnpm run build && node scripts/check-startup-readiness.mjs",
+    "test:support-bundle": "pnpm run build && node scripts/check-support-bundle.mjs",
     "test:windows-package": "node scripts/check-windows-package.mjs",
     "typecheck": "tsc --noEmit"
   },

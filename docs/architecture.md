@@ -558,6 +558,23 @@ marks the demo read-only, makes CodeMirror non-editable, and disables mutation c
 smoke tests also call the preload mutation API directly, proving that a forged renderer request is
 rejected by the backend and leaves the resource bytes unchanged.
 
+### Support bundle privacy boundary
+
+The support bundle is an allowlist projection, not a raw log followed by redaction. Its versioned
+schema contains product, platform, state, count, and boolean fields constructed individually from
+runtime snapshots. It never spreads or serializes a runtime, settings, update, plugin, file, or
+note object. Unit fixtures populate every private field with canaries and require an exact aggregate
+output shape, so adding a field to an upstream snapshot cannot silently add it to a report.
+
+Only the sandboxed main renderer can request the native save operation. The user or an unpackaged
+test override selects an absolute target, the main process canonicalizes the active vault and
+target through existing ancestors, and any direct or symlinked target inside the vault is refused.
+The report is atomically written with mode 0600 and the renderer receives only saved, cancelled, or
+a generic failure message, never the chosen path. No network request or automatic upload exists.
+The report itself includes a short bug and improvement template and names its exclusions so a user
+can review it before sharing. The live Electron gate drives both the About and updates control and
+the command-palette action, verifies private canaries are absent, and proves the vault is unchanged.
+
 The initial Linux release lane produces unsigned x64 AppImage and RPM artifacts. It launches the
 exact AppImage through the packaged smoke contract, inspects the RPM identity, dependencies, and
 payload, and emits SHA-256 checksums for both. A separate reproducibility proof builds the unpacked

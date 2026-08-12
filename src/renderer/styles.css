@@ -2575,6 +2575,93 @@ button.inspector-item:hover {
   line-height: 1.55;
 }
 
+.support-bundle-card {
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-top: 3px double var(--accent-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      115deg,
+      color-mix(in srgb, var(--accent-soft) 52%, transparent),
+      transparent 48%
+    ),
+    var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.support-bundle-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.support-bundle-heading > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.support-bundle-heading small {
+  color: var(--accent-strong);
+  font: 800 7px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.support-bundle-heading strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.support-bundle-mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font: 800 13px var(--mono);
+}
+
+.support-bundle-card > p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 9px;
+  line-height: 1.58;
+}
+
+.support-bundle-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.support-bundle-actions button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 9px;
+}
+
+#support-bundle-status {
+  min-width: 0;
+  color: var(--ink-muted);
+  font: 8px / 1.45 var(--mono);
+}
+
+#support-bundle-status[data-kind="saved"] {
+  color: var(--accent-strong);
+}
+
+#support-bundle-status[data-kind="error"] {
+  color: var(--signal);
+}
+
 .settings-page[hidden] {
   display: none;
 }
@@ -4605,9 +4692,14 @@ button.inspector-item:hover {
 
   .plugin-mode-card,
   .plugin-summary-row,
-  .migration-safety-card {
+  .migration-safety-card,
+  .support-bundle-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .support-bundle-actions button {
+    align-self: start;
   }
 
   .migration-safety-card {

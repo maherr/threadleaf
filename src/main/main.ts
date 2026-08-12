@@ -1,3 +1,4 @@
+import { release as osRelease } from "node:os";
 import { join, resolve } from "node:path";
 import {
   app,
@@ -5,6 +6,7 @@ import {
   dialog,
   ipcMain,
   type OpenDialogOptions,
+  type SaveDialogOptions,
   type WebContents,
   type WebContentsView,
 } from "electron";
@@ -12,6 +14,7 @@ import { AppSettingsController } from "../application/app-settings-controller";
 import { AppUpdateController } from "../application/app-update-controller";
 import { parseEditorDraft } from "../application/editor-draft";
 import { WorkspaceController } from "../application/workspace-controller";
+import { atomicWriteFile } from "../kernel/durability";
 import { FixedStateRoot } from "../kernel/ports";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
@@ -42,6 +45,7 @@ import {
   parsePluginId,
   pluginCapabilityGrantMatches,
 } from "../shared/plugins";
+import type { SupportBundleExportResponse } from "../shared/support-bundle";
 import {
   readDevelopmentPickerOverride,
   readDevelopmentVaultPath,
@@ -57,6 +61,11 @@ import { loadObsidianMigrationPreview } from "./obsidian-migration-loader";
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
 import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
 import { PluginPackageManager } from "./plugin-package-manager";
+import {
+  createSupportBundleMarkdown,
+  isSupportBundleTargetOutsideVault,
+  readDevelopmentSupportBundlePath,
+} from "./support-bundle";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
@@ -229,6 +238,73 @@ async function registerCompatibilityPluginView(view: WebContentsView): Promise<v
 
 function isCompatibilityPluginSender(webContents: WebContents): boolean {
   return compatibilityPluginWebContents.has(webContents) && !webContents.isDestroyed();
+}
+
+function isMainRendererSender(webContents: WebContents): boolean {
+  return Boolean(
+    mainWindow &&
+      !mainWindow.isDestroyed() &&
+      !mainWindow.webContents.isDestroyed() &&
+      webContents === mainWindow.webContents,
+  );
+}
+
+async function exportSupportBundle(): Promise<SupportBundleExportResponse> {
+  try {
+    let targetPath = readDevelopmentSupportBundlePath(app.isPackaged, process.env);
+    if (!targetPath) {
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      const options: SaveDialogOptions = {
+        title: "Save a privacy-safe support bundle",
+        buttonLabel: "Save support bundle",
+        defaultPath: join(app.getPath("downloads"), `threadleaf-support-${dateStamp}.md`),
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+        properties: ["createDirectory", "showOverwriteConfirmation"],
+      };
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) {
+        return { status: "cancelled" } as const;
+      }
+      targetPath = result.filePath;
+    }
+
+    if (!(await isSupportBundleTargetOutsideVault(workspaceController.vaultPath, targetPath))) {
+      return {
+        status: "failed",
+        message: "Choose a location outside the active vault so the report cannot become a note.",
+      } as const;
+    }
+
+    const report = createSupportBundleMarkdown({
+      appearanceSafeMode: appearanceSafeMode(),
+      environment: {
+        appVersion: app.getVersion(),
+        architecture: process.arch,
+        chromiumVersion: process.versions.chrome ?? "unknown",
+        electronVersion: process.versions.electron ?? "unknown",
+        nodeVersion: process.versions.node,
+        osRelease: osRelease(),
+        packaged: app.isPackaged,
+        platform: process.platform,
+        updateTrust: readPackageUpdateTrust(app.getAppPath()) ?? "none",
+      },
+      generatedAt: new Date().toISOString(),
+      pluginSafeMode: pluginSafeMode(),
+      runtime: await workspaceController.getSnapshot(),
+      settings: settingsController.getSnapshot(),
+      update: appUpdateController.getSnapshot(),
+    });
+    await atomicWriteFile(targetPath, Buffer.from(report, "utf8"));
+    return { status: "saved" } as const;
+  } catch (error) {
+    console.error("Could not export a Threadleaf support bundle:", error);
+    return {
+      status: "failed",
+      message: "Threadleaf could not save the support bundle. Choose another location and retry.",
+    } as const;
+  }
 }
 
 function describeVaultOpenFailure(error: unknown): string {
@@ -534,6 +610,12 @@ async function createAppUpdateController(): Promise<AppUpdateController> {
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.handle(ipcChannels.exportSupportBundle, (event) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Support bundle export requires the active Threadleaf window.");
+    }
+    return exportSupportBundle();
+  });
   ipcMain.handle(ipcChannels.appUpdate, () => appUpdateController.getSnapshot());
   ipcMain.handle(ipcChannels.checkForAppUpdate, () => appUpdateController.checkForUpdates());
   ipcMain.handle(ipcChannels.downloadAppUpdate, () => appUpdateController.downloadUpdate());

@@ -9,6 +9,7 @@ import type {
   PluginPackagePreviewResponse,
 } from "./plugin-packages";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
+import type { SupportBundleExportResponse } from "./support-bundle";
 
 export type AppearanceUpdateResponse =
   | {
@@ -410,6 +411,7 @@ export type VaultOpenResponse =
   | { status: "failed"; message: string; snapshot: RuntimeSnapshot };
 
 export interface ThreadleafBridge {
+  exportSupportBundle(): Promise<SupportBundleExportResponse>;
   getAppUpdate(): Promise<AppUpdateSnapshot>;
   checkForAppUpdate(): Promise<AppUpdateSnapshot>;
   downloadAppUpdate(): Promise<AppUpdateSnapshot>;

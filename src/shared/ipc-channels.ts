@@ -1,4 +1,5 @@
 export const ipcChannels = {
+  exportSupportBundle: "threadleaf:export-support-bundle",
   appUpdate: "threadleaf:app-update",
   appUpdateChanged: "threadleaf:app-update-changed",
   checkForAppUpdate: "threadleaf:check-for-app-update",
