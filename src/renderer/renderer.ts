@@ -54,6 +54,7 @@ import {
 } from "./markdown-preview";
 import { pluginViewTypeForPath } from "./plugin-view-model";
 import "./styles.css";
+import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
 
 const elements = {
   vaultName: getElement("vault-name"),
@@ -358,6 +359,15 @@ let migrationMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let lastPluginEditorUpdateId: string | null = null;
 let pluginSurfacePresentationVisible = true;
 let legacyThemeMigrationAttempted = false;
+const virtualFileRowHeight = 64;
+const virtualFileOverscan = 6;
+let virtualFileRenderFrame: number | undefined;
+let virtualFileRenderKey = "";
+let virtualFileState: {
+  files: WorkspaceFileSummary[];
+  activePath: string | null;
+} = { files: [], activePath: null };
+let lastVirtualActivePath: string | null = null;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
 let newNoteVaultId: string | null = null;
@@ -3377,6 +3387,9 @@ function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
   if (previousVaultId !== snapshot.vault.id) {
+    elements.fileList.scrollTop = 0;
+    lastVirtualActivePath = null;
+    virtualFileRenderKey = "";
     pluginSurfaceRequest += 1;
     pluginSettingsTargetId = null;
     pluginLayoutReadyVaultId = null;
@@ -3573,8 +3586,10 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
 
 function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): void {
   const query = elements.fileSearch.value.trim();
-  elements.fileList.replaceChildren();
   if (vaultOpening()) {
+    cancelVirtualFileRender();
+    elements.fileList.dataset.mode = "empty";
+    elements.fileList.replaceChildren();
     elements.fileList.setAttribute("aria-busy", "true");
     elements.fileList.setAttribute("aria-label", "Vault index progress");
     elements.filterSummary.textContent = "Building vault index";
@@ -3591,13 +3606,79 @@ function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): 
   elements.fileList.setAttribute("aria-label", query ? "Vault search results" : "Markdown files");
 
   if (query) {
+    cancelVirtualFileRender();
+    elements.fileList.dataset.mode = "search";
+    elements.fileList.replaceChildren();
     renderVaultSearchResults(activePath, files.length);
     return;
   }
 
   elements.filterSummary.textContent = `${files.length} ${files.length === 1 ? "note" : "notes"} indexed`;
-  for (const file of files) {
+  const activeChanged = activePath !== lastVirtualActivePath;
+  virtualFileState = { files, activePath };
+  if (activeChanged && activePath) {
+    const activeIndex = files.findIndex((file) => file.path === activePath);
+    if (activeIndex >= 0) {
+      elements.fileList.scrollTop = nearestItemScrollTop(
+        activeIndex,
+        virtualFileRowHeight,
+        elements.fileList.scrollTop,
+        Math.max(virtualFileRowHeight, elements.fileList.clientHeight),
+      );
+    }
+  }
+  lastVirtualActivePath = activePath;
+  renderVirtualFiles(true);
+
+  if (files.length === 0) {
+    renderEmpty(elements.fileList, "No Markdown notes found.");
+  }
+}
+
+function cancelVirtualFileRender(): void {
+  if (virtualFileRenderFrame !== undefined) {
+    window.cancelAnimationFrame(virtualFileRenderFrame);
+    virtualFileRenderFrame = undefined;
+  }
+  virtualFileRenderKey = "";
+}
+
+function scheduleVirtualFileRender(): void {
+  if (virtualFileRenderFrame !== undefined || vaultOpening() || elements.fileSearch.value.trim()) {
+    return;
+  }
+  virtualFileRenderFrame = window.requestAnimationFrame(() => {
+    virtualFileRenderFrame = undefined;
+    renderVirtualFiles();
+  });
+}
+
+function renderVirtualFiles(force = false): void {
+  const { files, activePath } = virtualFileState;
+  const geometry = virtualListWindow({
+    itemCount: files.length,
+    rowHeight: virtualFileRowHeight,
+    scrollTop: elements.fileList.scrollTop,
+    viewportHeight: Math.max(virtualFileRowHeight, elements.fileList.clientHeight),
+    overscan: virtualFileOverscan,
+  });
+  const renderKey = `${geometry.start}:${geometry.end}:${activePath ?? ""}:${files.length}`;
+  if (!force && renderKey === virtualFileRenderKey) {
+    return;
+  }
+  virtualFileRenderKey = renderKey;
+  elements.fileList.dataset.mode = "virtual";
+  const fragment = document.createDocumentFragment();
+  fragment.append(createVirtualSpacer(geometry.topSpacer));
+  for (let index = geometry.start; index < geometry.end; index += 1) {
+    const file = files[index];
+    if (!file) {
+      continue;
+    }
     const button = createFileButton(file.path, file.title, activePath, "◇");
+    button.classList.add("virtual-file-row");
+    button.setAttribute("aria-posinset", String(index + 1));
+    button.setAttribute("aria-setsize", String(files.length));
     const copy = button.querySelector<HTMLElement>(".file-copy");
     if (!copy) {
       throw new Error("File buttons require a copy container.");
@@ -3614,12 +3695,18 @@ function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): 
         : `${file.backlinkCount} back · ${file.outgoingCount} out`;
     button.append(metrics);
     button.addEventListener("click", () => void openNote(file.path));
-    elements.fileList.append(button);
+    fragment.append(button);
   }
+  fragment.append(createVirtualSpacer(geometry.bottomSpacer));
+  elements.fileList.replaceChildren(fragment);
+}
 
-  if (files.length === 0) {
-    renderEmpty(elements.fileList, "No Markdown notes found.");
-  }
+function createVirtualSpacer(height: number): HTMLDivElement {
+  const spacer = document.createElement("div");
+  spacer.className = "virtual-list-spacer";
+  spacer.style.height = `${height}px`;
+  spacer.ariaHidden = "true";
+  return spacer;
 }
 
 function createFileButton(
@@ -4207,6 +4294,8 @@ function setActionState(nextBusy: boolean): void {
 elements.fileSearch.addEventListener("input", () => {
   scheduleVaultSearch();
 });
+elements.fileList.addEventListener("scroll", scheduleVirtualFileRender, { passive: true });
+window.addEventListener("resize", scheduleVirtualFileRender);
 
 elements.editView.addEventListener("click", () => setDocumentView("source"));
 elements.readView.addEventListener("click", () => setDocumentView("reading"));

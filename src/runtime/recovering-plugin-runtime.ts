@@ -52,6 +52,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
 {
   private readonly activePlugins = new Map<string, TrackedPlugin>();
   private closed = false;
+  private closePromise: Promise<void> | null = null;
   private current: T;
   private eventSequence = 0;
   private readonly eventLedger: RuntimeEvent[] = [];
@@ -184,24 +185,23 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   }
 
   async close(): Promise<void> {
-    if (this.closed) {
-      return;
+    if (this.closePromise) {
+      return this.closePromise;
     }
-    await this.enqueue(async () => {
-      if (this.closed) {
-        return;
-      }
-      this.closed = true;
-      this.activePlugins.clear();
-      this.failedPlugins.clear();
+    this.closed = true;
+    this.activePlugins.clear();
+    this.failedPlugins.clear();
+    const current = this.current;
+    this.closePromise = (async () => {
       try {
-        await this.current.close();
+        await current.close();
       } catch (error) {
         if (!isFatalPluginRuntimeError(error)) {
           throw error;
         }
       }
-    });
+    })();
+    return this.closePromise;
   }
 
   private runSnapshot(
@@ -215,9 +215,15 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
       }
       try {
         const snapshot = await operation(this.current);
+        if (this.closed) {
+          throw new Error("Plugin compatibility runtime is closed.");
+        }
         onSuccess?.(snapshot);
         return this.rememberSnapshot(snapshot);
       } catch (error) {
+        if (this.closed) {
+          throw new Error("Plugin compatibility runtime is closed.", { cause: error });
+        }
         if (!isFatalPluginRuntimeError(error)) {
           throw error;
         }
@@ -236,6 +242,9 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   }
 
   private async recover(context: OperationContext, failure: Error): Promise<RuntimeSnapshot> {
+    if (this.closed) {
+      throw new Error("Plugin compatibility runtime is closed.", { cause: failure });
+    }
     const activeBeforeRecovery = [...this.activePlugins.values()];
     let culpritDescriptor: PluginFailureDescriptor | null = null;
     if (context.pluginDirectory) {
@@ -269,9 +278,16 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
 
     const previous = this.current;
     await previous.close().catch(() => undefined);
+    if (this.closed) {
+      throw new Error("Plugin compatibility runtime is closed.", { cause: failure });
+    }
     let replacement: T | null = null;
     try {
       replacement = await this.options.create();
+      if (this.closed) {
+        await replacement.close().catch(() => undefined);
+        throw new Error("Plugin compatibility runtime is closed.", { cause: failure });
+      }
       this.current = replacement;
       await this.options.onRuntimeChange?.(replacement);
     } catch (recoveryError) {

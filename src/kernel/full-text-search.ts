@@ -51,11 +51,12 @@ export interface FullTextSearchOptions {
 interface IndexedLine {
   line: number;
   text: string;
+}
+
+interface IndexedHeading extends IndexedLine {
   canonical: string;
   normalized: string;
 }
-
-interface IndexedHeading extends IndexedLine {}
 
 interface IndexedSearchDocument {
   path: string;
@@ -82,11 +83,15 @@ function canonicalSearchText(value: string): string {
 }
 
 function normalizeSearchText(value: string): string {
-  return canonicalSearchText(value).toLocaleLowerCase("en-US");
+  return canonicalSearchText(value).toLowerCase();
 }
 
 function comparableText(canonical: string, normalized: string, caseSensitive: boolean): string {
   return caseSensitive ? canonical : normalized;
+}
+
+function comparableLine(line: IndexedLine, caseSensitive: boolean): string {
+  return caseSensitive ? canonicalSearchText(line.text) : normalizeSearchText(line.text);
 }
 
 function propertyText(key: string, value: string | string[]): string {
@@ -94,40 +99,49 @@ function propertyText(key: string, value: string | string[]): string {
 }
 
 function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument {
+  const canonicalContent = canonicalSearchText(document.content.replaceAll("\r\n", "\n"));
+  const normalizedContent = canonicalContent.toLowerCase();
   const lines = document.content.split(/\r?\n/).map((text, index) => ({
     line: index + 1,
     text,
-    canonical: canonicalSearchText(text),
-    normalized: normalizeSearchText(text),
   }));
   const title = displayTitleFromVaultPath(document.path);
+  const canonicalPath = canonicalSearchText(document.path);
+  const canonicalTitle = canonicalSearchText(title);
   return {
     path: document.path,
-    canonicalPath: canonicalSearchText(document.path),
-    normalizedPath: normalizeSearchText(document.path),
+    canonicalPath,
+    normalizedPath: canonicalPath.toLowerCase(),
     title,
-    canonicalTitle: canonicalSearchText(title),
-    normalizedTitle: normalizeSearchText(title),
+    canonicalTitle,
+    normalizedTitle: canonicalTitle.toLowerCase(),
     lines,
-    canonicalContent: lines.map((line) => line.canonical).join("\n"),
-    normalizedContent: lines.map((line) => line.normalized).join("\n"),
-    headings: document.headings.map((heading) => ({
-      line: heading.line,
-      text: heading.text,
-      canonical: canonicalSearchText(heading.text),
-      normalized: normalizeSearchText(heading.text),
-    })),
-    tags: document.tags.map((tag) => ({
-      text: `#${tag}`,
-      canonical: canonicalSearchText(tag),
-      normalized: normalizeSearchText(tag),
-    })),
+    canonicalContent,
+    normalizedContent,
+    headings: document.headings.map((heading) => {
+      const canonical = canonicalSearchText(heading.text);
+      return {
+        line: heading.line,
+        text: heading.text,
+        canonical,
+        normalized: canonical.toLowerCase(),
+      };
+    }),
+    tags: document.tags.map((tag) => {
+      const canonical = canonicalSearchText(tag);
+      return {
+        text: `#${tag}`,
+        canonical,
+        normalized: canonical.toLowerCase(),
+      };
+    }),
     properties: Object.entries(document.properties).map(([key, value]) => {
       const text = propertyText(key, value);
+      const canonical = canonicalSearchText(text);
       return {
         text,
-        canonical: canonicalSearchText(text),
-        normalized: normalizeSearchText(text),
+        canonical,
+        normalized: canonical.toLowerCase(),
       };
     }),
   };
@@ -318,7 +332,7 @@ function scoreDocument(
   }
   if (
     document.lines.some((line) => {
-      const text = comparableText(line.canonical, line.normalized, caseSensitive);
+      const text = comparableLine(line, caseSensitive);
       return terms.every((term) => text.includes(term));
     })
   ) {
@@ -334,7 +348,7 @@ function contextCandidates(
 ): ContextCandidate[] {
   const candidates: ContextCandidate[] = [];
   for (const line of document.lines) {
-    const comparison = comparableText(line.canonical, line.normalized, caseSensitive);
+    const comparison = comparableLine(line, caseSensitive);
     const coverage = termCoverage(comparison, terms);
     if (coverage === 0 || !line.text.trim()) {
       continue;

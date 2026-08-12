@@ -94,6 +94,37 @@ async function expectEquivalent(reactor: VaultIndexReactor, vault: MemoryVault):
 }
 
 describe("MetadataIndex", () => {
+  it("builds the index and reactor from existing text snapshots without rereading the vault", async () => {
+    const vault = new MemoryVault();
+    vault.set("A.md", "# Alpha\n[[Folder/B]]");
+    vault.set("Folder/B.md", "# Beta\nsearchable body");
+    const paths = await vault.listMarkdownPaths();
+    const snapshots = await Promise.all(paths.map((filePath) => vault.readText(filePath)));
+    const expected = (await MetadataIndex.build(vault)).snapshot();
+    vault.readPaths.length = 0;
+
+    const index = MetadataIndex.fromSnapshots(snapshots);
+    const reactor = VaultIndexReactor.fromSnapshots(vault, snapshots);
+
+    expect(index.snapshot()).toEqual(expected);
+    expect(reactor.index.snapshot()).toEqual(expected);
+    expect(reactor.index.search("searchable").results[0]?.path).toBe("Folder/B.md");
+    expect(vault.readPaths).toEqual([]);
+  });
+
+  it("reuses an immutable-generation snapshot and invalidates it after an index change", async () => {
+    const vault = new MemoryVault();
+    vault.set("A.md", "before");
+    const index = await MetadataIndex.build(vault);
+
+    const first = index.snapshot();
+    expect(index.snapshot()).toBe(first);
+
+    vault.set("A.md", "after");
+    await index.refresh(vault, "A.md");
+    expect(index.snapshot()).not.toBe(first);
+  });
+
   it("indexes properties, tags, headings, links, backlinks, ambiguity, and unresolved targets", async () => {
     const vault = new MemoryVault();
     vault.set(

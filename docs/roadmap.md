@@ -60,6 +60,11 @@ equivalence through the real writer-to-watcher seam.
 - [x] Arbitrary vault picker, validated runtime swaps, and persistent workspace restoration.
 - [x] Non-blocking first window through a plugin-free bootstrap runtime, explicit target-indexing
       state, disabled bootstrap mutations, user-switch supersession, and a production startup probe.
+- [x] Single-read target bootstrap that seeds watcher and index state from one stable observation,
+      excludes dot-prefixed trees, caches generation-bound projections, and verifies full readiness
+      plus clean shutdown against a 20,621-note working vault.
+- [x] Virtualized file navigation with bounded mounted rows, retained native scroll geometry,
+      active-note reveal, and absolute accessible set positions.
 - [x] Accessible command palette with shared core and compatibility-plugin actions, search,
       disabled-state explanations, and keyboard navigation.
 - [x] Versioned application settings and remappable hotkeys with collision validation, atomic

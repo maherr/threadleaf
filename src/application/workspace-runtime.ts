@@ -1,6 +1,6 @@
 import { SearchQueryError } from "../kernel/full-text-search";
-import { VaultIndexReactor } from "../kernel/metadata-index";
-import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
+import { type DocumentMetadataSnapshot, VaultIndexReactor } from "../kernel/metadata-index";
+import { captureVaultBootstrap, NodeVaultWatcher } from "../kernel/node-vault-watcher";
 import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
 import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
 import type {
@@ -54,6 +54,13 @@ export interface WorkspaceRuntimeOptions {
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
+
+interface WorkspaceIndexProjection {
+  generation: number;
+  documents: Map<string, DocumentMetadataSnapshot>;
+  backlinks: Map<string, string[]>;
+  files: WorkspaceFileSummary[];
+}
 
 interface SaveNoteRequest {
   path: string;
@@ -232,6 +239,7 @@ export class WorkspaceRuntime {
   #watcherError: string | null = null;
   #lastWatchSequence = 0;
   #lastRescanReason: string | null = null;
+  #indexProjection: WorkspaceIndexProjection | null = null;
   readonly #listeners = new Set<SnapshotListener>();
   readonly #releaseActions: Array<() => void> = [];
 
@@ -322,10 +330,12 @@ export class WorkspaceRuntime {
       stateRoot: options.stateRoot,
     });
     let runtime: WorkspaceRuntime | undefined;
-    const watcher = await NodeVaultWatcher.open(kernel.paths.rootPath, {
+    const bootstrap = await captureVaultBootstrap(kernel.paths);
+    const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, bootstrap.snapshot, {
       onError: (error) => runtime?.recordWatcherError(error),
     });
-    const indexReactor = await VaultIndexReactor.open(kernel);
+    const indexReactor = VaultIndexReactor.fromSnapshots(kernel, bootstrap.documents);
+    bootstrap.documents.length = 0;
     const pluginHost = options.pluginRuntimeFactory
       ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
       : new PluginHost(
@@ -768,8 +778,7 @@ export class WorkspaceRuntime {
   }
 
   async close(): Promise<void> {
-    await this.watcher.close();
-    await this.pluginHost.close();
+    await Promise.all([this.watcher.close(), this.pluginHost.close()]);
     for (const release of this.#releaseActions.reverse()) {
       release();
     }
@@ -1104,7 +1113,30 @@ export class WorkspaceRuntime {
 
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const index = this.indexReactor.index.snapshot();
-    const documents = new Map(index.documents.map((document) => [document.path, document]));
+    let projection = this.#indexProjection;
+    if (!projection || projection.generation !== this.indexReactor.index.generation) {
+      const documents = new Map(index.documents.map((document) => [document.path, document]));
+      const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
+      const files: WorkspaceFileSummary[] = index.documents.map((document) => {
+        const noteLinks = document.links.filter(isWorkspaceNoteLink);
+        return {
+          path: document.path,
+          title: displayTitleFromVaultPath(document.path),
+          tags: document.tags,
+          backlinkCount: backlinks.get(document.path)?.length ?? 0,
+          outgoingCount: noteLinks.length,
+          unresolvedCount: noteLinks.filter((link) => link.resolution.status !== "resolved").length,
+        };
+      });
+      projection = {
+        generation: this.indexReactor.index.generation,
+        documents,
+        backlinks,
+        files,
+      };
+      this.#indexProjection = projection;
+    }
+    const { documents, backlinks, files } = projection;
     const openPaths = this.#openPaths.filter((filePath) => documents.has(filePath));
     const activePath =
       this.#activePath && openPaths.includes(this.#activePath)
@@ -1115,18 +1147,6 @@ export class WorkspaceRuntime {
       this.applyWorkspaceState(reconciledState);
       await this.persistWorkspaceStateBestEffort();
     }
-    const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
-    const files: WorkspaceFileSummary[] = index.documents.map((document) => {
-      const noteLinks = document.links.filter(isWorkspaceNoteLink);
-      return {
-        path: document.path,
-        title: displayTitleFromVaultPath(document.path),
-        tags: document.tags,
-        backlinkCount: backlinks.get(document.path)?.length ?? 0,
-        outgoingCount: noteLinks.length,
-        unresolvedCount: noteLinks.filter((link) => link.resolution.status !== "resolved").length,
-      };
-    });
 
     let activeNote: WorkspaceNoteSnapshot | null = null;
     const activeMetadata = this.#activePath ? documents.get(this.#activePath) : undefined;
@@ -1153,7 +1173,6 @@ export class WorkspaceRuntime {
         backlinks: backlinks.get(note.path) ?? [],
       };
     }
-
     return {
       state: this.#watcherError ? "degraded" : "ready",
       indexGeneration: this.indexReactor.index.generation,

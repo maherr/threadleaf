@@ -120,7 +120,10 @@ Threadleaf opens a small plugin-free bootstrap runtime, registers IPC, and rende
 before it opens the configured or restored vault. A startup snapshot names the real target and
 disables bootstrap writes and search while the target builds its derived index. Open vault remains
 available, and a generation guard prevents a late restore from replacing a vault picked while it
-was opening. Environment overrides are never persisted. After adoption, Threadleaf reconciles only
+was opening. The target bootstrap reads each visible Markdown file once and uses the same stable
+byte snapshots to seed both watcher state and the derived metadata index. The watcher starts from
+that exact observation and reconciles later filesystem events instead of repeating the initial
+corpus read. Environment overrides are never persisted. After adoption, Threadleaf reconciles only
 the plugins explicitly selected in its private per-vault settings. A vault with no saved plugin
 preference starts restricted. An unavailable or malformed saved selection falls back to the
 bundled fixture with a visible warning and does not erase the saved path, so a temporarily
@@ -148,6 +151,12 @@ files into the vault or `.obsidian/`. A valid document restores exact tab order 
 path. Missing notes are pruned and the repaired state is persisted. An explicit empty document
 restores an empty workspace instead of falling back to the first note. Malformed state fails
 visibly without rewriting the invalid bytes.
+
+The renderer retains the complete ordered file projection for filtering and navigation, but mounts
+only the visible fixed-height rows plus a small overscan window. Spacer geometry preserves native
+scroll range, while each mounted row exposes its absolute position and total set size to assistive
+technology. Active-note navigation moves the virtual window to the nearest required range rather
+than creating one DOM node per vault file.
 
 Pure navigation changes persist before the runtime adopts them, so a failed write cannot create
 tab state that silently disappears after restart. A vault mutation that already committed remains
@@ -262,10 +271,16 @@ Non-Markdown filesystem activity publishes an empty sequenced batch without hash
 bytes. This invalidates reading-view asset requests while keeping binary files out of the metadata
 index. The next image request performs its own stable, bounded read.
 
-The metadata index is derived state. After every accepted mutation sequence, its externally visible
-state must equal an index rebuilt from the current vault bytes. Tests compare incremental and clean
-rebuild snapshots for additions, edits, deletions, renames, unresolved links, duplicates, and
-recovery.
+Ordinary discovery and watcher publication exclude every path containing a dot-prefixed segment,
+including `.obsidian/`, `.git/`, and `.trash/`. Explicit compatibility APIs may still perform a
+contained direct read of a named hidden resource when an enabled plugin requires it. That narrow
+read does not add the resource to navigation, search, backlinks, or watcher-derived note state.
+
+The metadata index is derived state. Its immutable snapshot and the workspace's maps, backlinks,
+and file summaries are cached only for the current index generation. After every accepted mutation
+sequence, its externally visible state must equal an index rebuilt from the current vault bytes.
+Tests compare incremental and clean rebuild snapshots for additions, edits, deletions, renames,
+unresolved links, duplicates, and recovery.
 
 The Phase 1 Markdown parser deliberately covers a documented structural subset: headings, basic
 frontmatter scalars and lists, tags, wiki links, embeds, and local Markdown links. Its link resolver
@@ -275,8 +290,8 @@ in Phase 3 rather than being inferred from filenames or third-party compatibilit
 ### Full-text search
 
 Full-text search is another disposable projection of saved vault bytes. It never writes a canonical
-database and intentionally excludes `.obsidian/`, `.git/`, and Threadleaf transaction artifacts
-from the note corpus. The same index reactor that maintains links updates search documents after
+database and intentionally excludes dot-prefixed paths and Threadleaf transaction artifacts from
+the note corpus. The same index reactor that maintains links updates search documents after
 internal saves, external edits, moves, deletes, subtree rescans, and full rebuilds. An unsaved editor
 draft does not appear until it crosses the recoverable save boundary, which the UI states plainly.
 
@@ -345,7 +360,7 @@ trash path itself is sufficient recovery metadata. The CLI exposes no permanent-
 Read-only kernel opening performs canonical path validation but creates no state directory, vault
 identity, recovery journal, or watcher. The CLI has a broad visible-file inventory for ordinary
 notes, attachments, Canvas documents, and empty folders, plus the narrower Markdown note corpus
-used by the desktop index. Both exclude `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction
+used by the desktop index. Both exclude every dot-prefixed path segment and Threadleaf transaction
 artifacts, including canonical targets reached through symlinks. File symlinks remain readable only
 when their targets stay inside the visible boundary; recursive discovery does not traverse folder
 symlink entries. Dedicated trash inspection is the only read-only exception.

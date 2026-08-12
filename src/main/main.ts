@@ -903,12 +903,31 @@ async function createWindow(): Promise<void> {
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("Threadleaf main renderer exited", details);
+  });
+  mainWindow.on("unresponsive", () => {
+    console.error("Threadleaf main window became unresponsive");
+  });
   mainWindow.once("closed", () => {
     attachedPluginView = null;
     mainWindow = null;
   });
   await mainWindow.loadFile(join(__dirname, "..", "renderer", "index.html"));
 }
+
+const gracefulShutdownHandler = createGracefulShutdownHandler({
+  prepare: detachPluginView,
+  close: () => workspaceController?.close(),
+  finalize: () => {
+    compatibilityPluginView = null;
+    compatibilityPluginWebContents = null;
+    pluginSurfaceCssWebContents = null;
+    pluginSurfaceCssKey = null;
+  },
+  quit: () => app.quit(),
+  reportError: (error) => console.error("Threadleaf shutdown cleanup failed:", error),
+});
 
 app.whenReady().then(async () => {
   settingsController = await AppSettingsController.open(
@@ -928,21 +947,7 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on(
-  "before-quit",
-  createGracefulShutdownHandler({
-    prepare: detachPluginView,
-    close: () => workspaceController?.close(),
-    finalize: () => {
-      compatibilityPluginView = null;
-      compatibilityPluginWebContents = null;
-      pluginSurfaceCssWebContents = null;
-      pluginSurfaceCssKey = null;
-    },
-    quit: () => app.quit(),
-    reportError: (error) => console.error("Threadleaf shutdown cleanup failed:", error),
-  }),
-);
+app.on("before-quit", gracefulShutdownHandler);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

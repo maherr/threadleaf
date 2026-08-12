@@ -562,6 +562,16 @@ h2 {
   cursor: pointer;
 }
 
+.virtual-file-row {
+  box-sizing: border-box;
+  height: 64px;
+}
+
+.virtual-list-spacer {
+  width: 100%;
+  pointer-events: none;
+}
+
 .file-item:hover {
   border-color: var(--line);
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);

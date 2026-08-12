@@ -11,6 +11,9 @@ const configuredVault = await fs.realpath(
   process.env.THREADLEAF_STARTUP_PROBE_VAULT ?? fixtureVault,
 );
 const budgetMs = Number.parseInt(process.env.THREADLEAF_STARTUP_BUDGET_MS ?? "5000", 10);
+const readyBudgetMs = process.env.THREADLEAF_STARTUP_READY_BUDGET_MS
+  ? Number.parseInt(process.env.THREADLEAF_STARTUP_READY_BUDGET_MS, 10)
+  : null;
 const screenshotDirectory = process.env.THREADLEAF_STARTUP_SCREENSHOT_DIR;
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-startup-readiness-"));
 const userDataPath = path.join(testRoot, "user-data");
@@ -163,6 +166,73 @@ async function waitForRenderedVault(deadline) {
   throw new Error(`Threadleaf did not render ${expectedName} within ${budgetMs} ms.`);
 }
 
+async function waitForReadyVault(deadline) {
+  while (Date.now() < deadline) {
+    const rendered = await evaluate(`(() => ({
+      runtimeState: document.querySelector("#runtime-state")?.textContent ?? "",
+      vaultPath: document.querySelector("#vault-identity")?.getAttribute("title") ?? "",
+    }))()`);
+    if (rendered.runtimeState === "Ready" && rendered.vaultPath === configuredVault) {
+      return rendered;
+    }
+    await delay(50);
+  }
+  throw new Error(
+    `Threadleaf did not fully activate ${path.basename(configuredVault) || configuredVault} within ${readyBudgetMs} ms.`,
+  );
+}
+
+async function verifyVirtualFileWindow() {
+  const inspect = () => `(async () => {
+    const list = document.querySelector("#file-list");
+    const rows = [...document.querySelectorAll("#file-list .virtual-file-row")];
+    const positions = rows.map((row) => Number(row.getAttribute("aria-posinset")));
+    const total = Number(rows[0]?.getAttribute("aria-setsize") ?? 0);
+    return {
+      mode: list?.getAttribute("data-mode") ?? "",
+      rowCount: rows.length,
+      first: positions[0] ?? null,
+      last: positions.at(-1) ?? null,
+      positions,
+      total,
+    };
+  })()`;
+  const before = await evaluate(inspect());
+  if (before.total <= 100) {
+    return before;
+  }
+  assert(before.mode === "virtual", "Large-vault file navigation did not enter virtual mode.");
+  assert(
+    before.rowCount > 0 && before.rowCount <= 64,
+    `Large-vault file navigation mounted ${before.rowCount} rows.`,
+  );
+  assert(
+    before.positions.every((position, index) => position === before.first + index),
+    "Virtual file rows did not expose consecutive absolute positions.",
+  );
+  await evaluate(`(async () => {
+    const list = document.querySelector("#file-list");
+    list.scrollTop = list.scrollHeight;
+    list.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  })()`);
+  const after = await evaluate(inspect());
+  assert(after.rowCount > 0 && after.rowCount <= 64, "Virtual row count grew after scrolling.");
+  assert(after.first > before.first, "Virtual file window did not advance after scrolling.");
+  assert(after.last === after.total, "Virtual file window did not reach the final note.");
+  assert(
+    after.positions.every((position, index) => position === after.first + index),
+    "Scrolled virtual rows lost consecutive absolute positions.",
+  );
+  await evaluate(`(async () => {
+    const list = document.querySelector("#file-list");
+    list.scrollTop = 0;
+    list.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  })()`);
+  return { ...before, scrolledFirst: after.first, scrolledLast: after.last };
+}
+
 async function captureTheme(theme, stateName) {
   const themeDeadline = Date.now() + 2_000;
   while (Date.now() < themeDeadline) {
@@ -184,6 +254,10 @@ try {
     throw new Error("The startup readiness integration check currently requires Linux and Xvfb.");
   }
   assert(Number.isFinite(budgetMs) && budgetMs > 0, "Startup budget must be a positive number.");
+  assert(
+    readyBudgetMs === null || (Number.isFinite(readyBudgetMs) && readyBudgetMs > 0),
+    "Full-ready budget must be a positive number when configured.",
+  );
   await fs.access(electronPath);
   await fs.mkdir(userDataPath, { recursive: true });
   const port = await availablePort();
@@ -263,13 +337,26 @@ try {
     screenshots = [await captureTheme("dark", stateName), await captureTheme("light", stateName)];
   }
 
+  let fullReadyMs = opening ? null : readyMs;
+  if (readyBudgetMs !== null && opening) {
+    await waitForReadyVault(startedAt + readyBudgetMs);
+    fullReadyMs = Date.now() - startedAt;
+    if (screenshotDirectory) {
+      screenshots.push(await captureTheme("dark", "ready"), await captureTheme("light", "ready"));
+    }
+  }
+  const virtualFiles = fullReadyMs === null ? null : await verifyVirtualFileWindow();
+
   console.log(
     JSON.stringify({
       budgetMs,
+      readyBudgetMs,
       readyMs,
+      fullReadyMs,
       state: opening ? "opening" : "ready",
       targetName: path.basename(configuredVault) || configuredVault,
       screenshots,
+      virtualFiles,
     }),
   );
   await evaluate("setTimeout(() => window.close(), 0); true");

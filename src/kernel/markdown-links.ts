@@ -122,27 +122,57 @@ function parseLine(
   return links;
 }
 
-function blankRange(mask: string[], start: number, end: number): void {
-  for (let index = start; index < end; index += 1) {
-    if (mask[index] !== "\n" && mask[index] !== "\r") {
-      mask[index] = " ";
-    }
-  }
+interface MaskRange {
+  start: number;
+  end: number;
 }
 
-function maskFencedCode(content: string, mask: string[]): void {
-  const lines = content.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
+function mergeMaskRanges(ranges: readonly MaskRange[]): MaskRange[] {
+  const sorted = [...ranges].sort(
+    (left, right) => left.start - right.start || left.end - right.end,
+  );
+  const merged: MaskRange[] = [];
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else if (range.end > range.start) {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
+}
+
+function applyMaskRanges(content: string, ranges: readonly MaskRange[]): string {
+  const merged = mergeMaskRanges(ranges);
+  if (merged.length === 0) {
+    return content;
+  }
+  const chunks: string[] = [];
+  let cursor = 0;
+  for (const range of merged) {
+    chunks.push(content.slice(cursor, range.start));
+    chunks.push(content.slice(range.start, range.end).replace(/[^\r\n]/g, " "));
+    cursor = range.end;
+  }
+  chunks.push(content.slice(cursor));
+  return chunks.join("");
+}
+
+function fencedCodeRanges(content: string): MaskRange[] {
+  const ranges: MaskRange[] = [];
+  const lines = content.matchAll(/[^\r\n]*(?:\r\n|\n|$)/g);
   let offset = 0;
   let fence: { character: "`" | "~"; length: number } | null = null;
-  for (let index = 0; index < lines.length; index += 1) {
-    const full = lines[index] ?? "";
-    if (full.length === 0 && index === lines.length - 1) {
+  for (const match of lines) {
+    const full = match[0];
+    if (full.length === 0) {
       break;
     }
     const line = full.replace(/\r?\n$/, "");
     const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
     if (fence || marker) {
-      blankRange(mask, offset, offset + line.length);
+      ranges.push({ start: offset, end: offset + full.length });
     }
     if (!fence && marker) {
       fence = { character: marker[0] as "`" | "~", length: marker.length };
@@ -156,10 +186,11 @@ function maskFencedCode(content: string, mask: string[]): void {
     }
     offset += full.length;
   }
+  return ranges;
 }
 
-function maskHtmlComments(mask: string[]): void {
-  const searchable = mask.join("");
+function htmlCommentRanges(searchable: string): MaskRange[] {
+  const ranges: MaskRange[] = [];
   let cursor = 0;
   while (cursor < searchable.length) {
     const start = searchable.indexOf("<!--", cursor);
@@ -168,13 +199,14 @@ function maskHtmlComments(mask: string[]): void {
     }
     const close = searchable.indexOf("-->", start + 4);
     const end = close === -1 ? searchable.length : close + 3;
-    blankRange(mask, start, end);
+    ranges.push({ start, end });
     cursor = end;
   }
+  return ranges;
 }
 
-function maskInlineCode(mask: string[]): void {
-  const searchable = mask.join("");
+function inlineCodeRanges(searchable: string): MaskRange[] {
+  const ranges: MaskRange[] = [];
   const runs = /`+/g;
   let opener = runs.exec(searchable);
   while (opener) {
@@ -193,26 +225,32 @@ function maskInlineCode(mask: string[]): void {
     } else {
       const start = opener.index ?? 0;
       const end = (closer.index ?? start) + delimiterLength;
-      blankRange(mask, start, end);
+      ranges.push({ start, end });
       runs.lastIndex = end;
     }
     opener = runs.exec(searchable);
   }
+  return ranges;
 }
 
 export function maskMarkdownCodeAndComments(content: string): string {
-  const mask = content.split("");
-  maskFencedCode(content, mask);
-  maskHtmlComments(mask);
-  maskInlineCode(mask);
-  return mask.join("");
+  const fencedRanges = fencedCodeRanges(content);
+  const fencedMask = applyMaskRanges(content, fencedRanges);
+  const structuralRanges = mergeMaskRanges([...fencedRanges, ...htmlCommentRanges(fencedMask)]);
+  const structuralMask = applyMaskRanges(content, structuralRanges);
+  return applyMaskRanges(content, [...structuralRanges, ...inlineCodeRanges(structuralMask)]);
 }
 
-export function parseMarkdownLinks(content: string): ParsedMarkdownLink[] {
+export function parseMarkdownLinks(
+  content: string,
+  maskedContent = maskMarkdownCodeAndComments(content),
+): ParsedMarkdownLink[] {
+  if (maskedContent.length !== content.length) {
+    throw new Error("Masked Markdown must preserve source offsets.");
+  }
   const links: ParsedMarkdownLink[] = [];
-  const searchable = maskMarkdownCodeAndComments(content);
   const lines = content.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
-  const searchableLines = searchable.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
+  const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
   let offset = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const full = lines[index] ?? "";

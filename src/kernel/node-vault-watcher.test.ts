@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { revisionOf } from "./durability";
 import {
+  captureVaultBootstrap,
   captureVaultSnapshot,
   diffVaultSnapshots,
   NodeVaultWatcher,
@@ -220,6 +221,52 @@ describe("watch protocol", () => {
 });
 
 describe("NodeVaultWatcher", () => {
+  it("seeds the index and watcher from one visible Markdown scan", async () => {
+    await fs.mkdir(path.join(vaultPath, "Folder"));
+    await fs.mkdir(path.join(vaultPath, ".archive"));
+    await fs.writeFile(path.join(vaultPath, "Alpha.md"), "alpha", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "Unicode.md"), "cafe\u0301", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".archive", "Hidden.md"), "hidden", "utf8");
+    const policy = await VaultPathPolicy.open(vaultPath);
+
+    const captured = await captureVaultBootstrap(policy);
+
+    expect(captured.documents).toEqual([
+      {
+        path: "Alpha.md",
+        content: "alpha",
+        revision: revisionOf(Buffer.from("alpha")),
+        size: Buffer.byteLength("alpha"),
+      },
+      {
+        path: "Folder/Unicode.md",
+        content: "cafe\u0301",
+        revision: revisionOf(Buffer.from("cafe\u0301")),
+        size: Buffer.byteLength("cafe\u0301"),
+      },
+    ]);
+    expect([...captured.snapshot.keys()]).toEqual(["Alpha.md", "Folder/Unicode.md"]);
+    for (const document of captured.documents) {
+      expect(captured.snapshot.get(document.path)).toMatchObject({
+        path: document.path,
+        revision: document.revision,
+        size: document.size,
+      });
+    }
+
+    const watcher = NodeVaultWatcher.fromSnapshot(policy, captured.snapshot, {
+      streamId: "bootstrap-stream",
+    });
+    await expect(watcher.scanNow()).resolves.toBeNull();
+    await fs.writeFile(path.join(vaultPath, "Alpha.md"), "alpha changed", "utf8");
+    await expect(watcher.scanNow()).resolves.toMatchObject({
+      streamId: "bootstrap-stream",
+      sequence: 1,
+      changes: [{ kind: "upsert", state: { path: "Alpha.md" } }],
+    });
+    await watcher.close();
+  });
+
   it("captures Markdown and conflict files while excluding transaction temporaries and external links", async () => {
     await fs.writeFile(path.join(vaultPath, "Note.md"), "note", "utf8");
     await fs.writeFile(
@@ -384,5 +431,30 @@ describe("NodeVaultWatcher", () => {
       changes: [],
     });
     await watcher.close();
+  });
+
+  it("does not queue shutdown behind a listener that is still handling a batch", async () => {
+    const watcher = await NodeVaultWatcher.open(vaultPath, {
+      debounceMs: 20,
+      streamId: "shutdown-stream",
+    });
+    let releaseListener: (() => void) | undefined;
+    const listenerReleased = new Promise<void>((resolve) => {
+      releaseListener = resolve;
+    });
+    let markListenerStarted: (() => void) | undefined;
+    const listenerStarted = new Promise<void>((resolve) => {
+      markListenerStarted = resolve;
+    });
+    watcher.start(async () => {
+      markListenerStarted?.();
+      await listenerReleased;
+    });
+    await fs.writeFile(path.join(vaultPath, "Closing.md"), "closing", "utf8");
+    await listenerStarted;
+
+    await expect(watcher.close()).resolves.toBeUndefined();
+    releaseListener?.();
+    expect(() => watcher.start(() => undefined)).toThrow("Vault watcher is closed");
   });
 });

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { normalizeVaultPath } from "./path-policy";
+import { hasHiddenVaultSegment, normalizeVaultPath } from "./path-policy";
 
 const maxNotePathLength = 4_096;
 
@@ -29,6 +29,9 @@ export function normalizeMarkdownNotePath(input: string): string {
   });
   if (privateSegment) {
     throw new Error(`Markdown note paths cannot use private application paths: ${privateSegment}`);
+  }
+  if (hasHiddenVaultSegment(normalized)) {
+    throw new Error("Markdown note paths cannot use hidden path segments.");
   }
   return normalized;
 }

@@ -222,4 +222,42 @@ describe("RecoveringPluginRuntime", () => {
     await expect(runtime.close()).resolves.toBeUndefined();
     expect(current.close).toHaveBeenCalledOnce();
   });
+
+  it("interrupts an in-flight renderer request instead of queuing shutdown behind it", async () => {
+    let rejectSnapshot: ((error: Error) => void) | undefined;
+    let markSnapshotStarted: (() => void) | undefined;
+    const snapshotStarted = new Promise<void>((resolve) => {
+      markSnapshotStarted = resolve;
+    });
+    const getSnapshot = vi.fn(
+      () =>
+        new Promise<RuntimeSnapshot>((_resolve, reject) => {
+          rejectSnapshot = reject;
+          markSnapshotStarted?.();
+        }),
+    );
+    const close = vi.fn(async () => {
+      rejectSnapshot?.(new FatalPluginRuntimeError("close", "Renderer closed."));
+    });
+    const current: PluginRuntimePort = {
+      close,
+      closePluginView: getSnapshot,
+      getSnapshot,
+      loadPlugin: getSnapshot,
+      markLayoutReady: getSnapshot,
+      openPluginSettings: getSnapshot,
+      openPluginView: getSnapshot,
+      reloadPlugin: getSnapshot,
+      runCommand: getSnapshot,
+      unloadAllPlugins: getSnapshot,
+      unloadPlugin: getSnapshot,
+    };
+    const runtime = await RecoveringPluginRuntime.open({ create: async () => current });
+    const pendingSnapshot = runtime.getSnapshot();
+    await snapshotStarted;
+
+    await expect(runtime.close()).resolves.toBeUndefined();
+    await expect(pendingSnapshot).rejects.toThrow("Plugin compatibility runtime is closed");
+    expect(close).toHaveBeenCalledOnce();
+  });
 });

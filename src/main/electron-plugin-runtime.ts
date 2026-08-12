@@ -163,9 +163,9 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
       return;
     }
     try {
-      await this.request("close", undefined, 5_000);
+      await this.request("close", undefined, Math.min(this.operationTimeoutMs, 1_000), false);
     } catch {
-      // Closing the WebContents remains the final cleanup boundary.
+      // A busy plugin renderer must not hold application shutdown open.
     }
     await this.destroy("Plugin compatibility renderer closed.");
   }
@@ -215,6 +215,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     operation: PluginRendererOperation,
     payload?: Record<string, unknown>,
     timeoutMs = this.operationTimeoutMs,
+    terminateOnFailure = true,
   ): Promise<RuntimeSnapshot | null> {
     if (!this.ready || this.closed || this.view.webContents.isDestroyed()) {
       return Promise.reject(
@@ -231,7 +232,9 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
           `Plugin renderer operation timed out: ${operation}.`,
         );
         reject(error);
-        this.terminate(error);
+        if (terminateOnFailure) {
+          this.terminate(error);
+        }
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timeout });
       try {
@@ -244,7 +247,9 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
           `Plugin renderer request could not be sent: ${errorMessage(error)}`,
         );
         reject(fatalError);
-        this.terminate(fatalError);
+        if (terminateOnFailure) {
+          this.terminate(fatalError);
+        }
       }
     });
   }

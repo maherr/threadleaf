@@ -120,6 +120,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Non-blocking initial window through a plugin-free bootstrap runtime, explicit target-indexing
   state, disabled bootstrap mutations and search, late-restore supersession, failure fallback, and
   an isolated production startup-readiness probe with optional dark and light captures.
+- Single-read target activation that seeds watcher and metadata state from the same stable Markdown
+  snapshots, excludes dot-prefixed trees from ordinary corpus activity, caches index-generation
+  projections, and verifies both full-vault readiness and clean exit.
+- Virtualized file navigation with a bounded overscan window, full scroll geometry, active-note
+  reveal, and absolute accessible item positions for large vaults.
 - Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the
   private selected set while loading no community JavaScript or CSS.
 - Dedicated Electron compatibility renderer with Node integration isolated from the sandboxed main
@@ -189,8 +194,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Settings now opens during startup background scans, so a clickable Settings control cannot fail
   silently while plugin and appearance catalogs are still loading.
-- Electron shutdown now waits for watcher and plugin cleanup, coalesces repeated quit events, and
-  still reaches the final quit when cleanup reports an error.
+- Electron shutdown now starts watcher and plugin cleanup together, detaches watcher publication
+  immediately, bounds a busy plugin renderer's courtesy close without deliberately crashing it,
+  coalesces repeated quit events, and still reaches the final quit after errors.
 - Compatibility views now await public `onOpen` and `onClose` hooks around state and component
   lifecycles, and still unload resources and detach their containers when close hooks fail.
 - Plugin-surface CSS handoff now retains the stable Electron `WebContents` object, so replacing a

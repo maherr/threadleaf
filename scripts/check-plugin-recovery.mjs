@@ -141,6 +141,29 @@ function assert(condition, message) {
   }
 }
 
+async function waitForReadyPlugins(vaultPath, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const snapshot = await withTimeout(
+      evaluate("window.threadleaf.getSnapshot()"),
+      2_000,
+      "A workspace snapshot did not resolve within 2 seconds.",
+    );
+    const commandIds = new Set(snapshot?.commands?.map(({ id }) => id) ?? []);
+    if (
+      !snapshot?.startup &&
+      snapshot?.vault?.path === vaultPath &&
+      snapshot?.workspace?.state === "ready" &&
+      commandIds.has("hang") &&
+      commandIds.has("threadleaf-fixture-confirm")
+    ) {
+      return snapshot;
+    }
+    await delay(50);
+  }
+  throw new Error("The target vault and both recovery fixtures were not ready in time.");
+}
+
 try {
   if (process.platform !== "linux") {
     throw new Error("The plugin recovery integration check currently requires Linux and Xvfb.");
@@ -214,11 +237,7 @@ try {
 
   const target = await waitForMainTarget(port);
   cdp = connectCdp(target.webSocketDebuggerUrl);
-  const before = await withTimeout(
-    evaluate("window.threadleaf.getSnapshot()"),
-    5_000,
-    "The initial workspace snapshot did not resolve within 5 seconds.",
-  );
+  const before = await waitForReadyPlugins(canonicalVaultPath, 15_000);
   const recovered = await withTimeout(
     evaluate('window.threadleaf.runCommand("hang")'),
     10_000,

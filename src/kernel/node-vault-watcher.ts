@@ -1,7 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { type FSWatcher, promises as fs, watch } from "node:fs";
 import path from "node:path";
-import { isPathInside, normalizeVaultDirectoryPath, VaultPathPolicy } from "./path-policy";
+import {
+  hasHiddenVaultSegment,
+  isPathInside,
+  normalizeVaultDirectoryPath,
+  VaultPathPolicy,
+} from "./path-policy";
+import type { VaultTextSnapshot } from "./ports";
 import {
   type RescanRequest,
   type VaultChange,
@@ -12,6 +18,11 @@ import {
 } from "./watch-protocol";
 
 export type VaultSnapshot = Map<string, WatchedPathState>;
+
+export interface VaultBootstrapScan {
+  documents: VaultTextSnapshot[];
+  snapshot: VaultSnapshot;
+}
 
 export interface SnapshotDiff {
   changes: VaultChange[];
@@ -26,6 +37,8 @@ function revisionOf(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+const textDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
 function sameObservedState(left: WatchedPathState, right: WatchedPathState): boolean {
   return (
     left.identity === right.identity &&
@@ -35,12 +48,13 @@ function sameObservedState(left: WatchedPathState, right: WatchedPathState): boo
   );
 }
 
-async function readWatchedState(
+async function readWatchedFile(
   policy: VaultPathPolicy,
   relativePath: string,
   previous: WatchedPathState | undefined,
+  includeDocument: boolean,
   attempt = 0,
-): Promise<WatchedPathState | null> {
+): Promise<{ document?: VaultTextSnapshot; state: WatchedPathState } | null> {
   const lexicalPath = policy.resolveLexical(relativePath);
   let canonicalPath: string;
   try {
@@ -73,7 +87,7 @@ async function readWatchedState(
     previous.modifiedNs === observed.modifiedNs &&
     previous.changedNs === observed.changedNs
   ) {
-    return { ...observed, revision: previous.revision };
+    return { state: { ...observed, revision: previous.revision } };
   }
 
   const bytes = await fs.readFile(canonicalPath);
@@ -88,9 +102,48 @@ async function readWatchedState(
     if (attempt >= 2) {
       throw new Error(`File kept changing while it was scanned: ${relativePath}`);
     }
-    return readWatchedState(policy, relativePath, undefined, attempt + 1);
+    return readWatchedFile(policy, relativePath, undefined, includeDocument, attempt + 1);
   }
-  return { ...observed, revision: revisionOf(bytes) };
+  const revision = revisionOf(bytes);
+  return {
+    state: { ...observed, revision },
+    ...(includeDocument
+      ? {
+          document: {
+            path: relativePath,
+            content: textDecoder.decode(bytes),
+            revision,
+            size: bytes.length,
+          },
+        }
+      : {}),
+  };
+}
+
+async function readWatchedState(
+  policy: VaultPathPolicy,
+  relativePath: string,
+  previous: WatchedPathState | undefined,
+): Promise<WatchedPathState | null> {
+  return (await readWatchedFile(policy, relativePath, previous, false))?.state ?? null;
+}
+
+export async function captureVaultBootstrap(policy: VaultPathPolicy): Promise<VaultBootstrapScan> {
+  const snapshot: VaultSnapshot = new Map();
+  const documents: VaultTextSnapshot[] = [];
+  const paths = await policy.listMarkdownPaths();
+  for (const relativePath of paths) {
+    if (isTransactionTemporary(path.posix.basename(relativePath))) {
+      continue;
+    }
+    const scanned = await readWatchedFile(policy, relativePath, undefined, true);
+    if (!scanned?.document) {
+      continue;
+    }
+    snapshot.set(relativePath, scanned.state);
+    documents.push(scanned.document);
+  }
+  return { documents, snapshot };
 }
 
 export async function captureVaultSnapshot(
@@ -222,6 +275,7 @@ export class NodeVaultWatcher {
   #listener: ((batch: VaultChangeBatch) => void | Promise<void>) | undefined;
   #flushTail: Promise<void> = Promise.resolve();
   #activitySinceScan = false;
+  #closed = false;
 
   private constructor(
     policy: VaultPathPolicy,
@@ -247,20 +301,37 @@ export class NodeVaultWatcher {
     return new NodeVaultWatcher(policy, snapshot, options);
   }
 
+  static fromSnapshot(
+    policy: VaultPathPolicy,
+    snapshot: VaultSnapshot,
+    options: NodeVaultWatcherOptions = {},
+  ): NodeVaultWatcher {
+    return new NodeVaultWatcher(policy, new Map(snapshot), options);
+  }
+
   get operations(): WatchOperationLedger {
     return this.#ledger;
   }
 
   start(listener: (batch: VaultChangeBatch) => void | Promise<void>): void {
+    if (this.#closed) {
+      throw new Error("Vault watcher is closed.");
+    }
     if (this.#watcher) {
       throw new Error("Vault watcher is already running.");
     }
     this.#listener = listener;
-    this.#watcher = watch(this.policy.rootPath, { recursive: true }, () => {
+    this.#watcher = watch(this.policy.rootPath, { recursive: true }, (_eventType, fileName) => {
+      if (fileName && hasHiddenVaultSegment(fileName.toString())) {
+        return;
+      }
       this.#activitySinceScan = true;
       this.scheduleScan();
     });
     this.#watcher.on("error", (error) => {
+      if (this.#closed) {
+        return;
+      }
       this.#onError(error);
       void this.emitRescan("backend-error").catch(this.#onError);
     });
@@ -330,22 +401,31 @@ export class NodeVaultWatcher {
   }
 
   async close(): Promise<void> {
+    if (this.#closed) {
+      return;
+    }
+    this.#closed = true;
     if (this.#timer) {
       clearTimeout(this.#timer);
       this.#timer = undefined;
     }
     this.#watcher?.close();
     this.#watcher = undefined;
-    await this.#flushTail;
     this.#listener = undefined;
   }
 
   private scheduleScan(): void {
+    if (this.#closed) {
+      return;
+    }
     if (this.#timer) {
       clearTimeout(this.#timer);
     }
     this.#timer = setTimeout(() => {
       this.#timer = undefined;
+      if (this.#closed) {
+        return;
+      }
       this.#flushTail = this.#flushTail.then(async () => {
         try {
           const observedFilesystemActivity = this.#activitySinceScan;
@@ -353,10 +433,16 @@ export class NodeVaultWatcher {
           const batch =
             (await this.scanNow()) ??
             (observedFilesystemActivity ? this.#sequencer.next({ changes: [] }) : null);
+          if (this.#closed) {
+            return;
+          }
           if (batch && this.#listener) {
             await this.#listener(batch);
           }
         } catch (error) {
+          if (this.#closed) {
+            return;
+          }
           this.#onError(error);
           await this.emitRescan("backend-error").catch(this.#onError);
         }

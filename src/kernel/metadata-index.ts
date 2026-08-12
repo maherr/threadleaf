@@ -154,6 +154,7 @@ function tagsFromProperties(properties: Record<string, string | string[]>): stri
 
 function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
   const searchable = stripFencedCode(snapshot.content);
+  const masked = maskMarkdownCodeAndComments(snapshot.content);
   const properties = parseProperties(snapshot.content);
   const headings: HeadingMetadata[] = [];
   const tagCounts = new Map<string, number>();
@@ -161,7 +162,7 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
   }
   const lines = searchable.split("\n");
-  const tagLines = maskMarkdownCodeAndComments(snapshot.content).split("\n");
+  const tagLines = masked.split("\n");
   let bodyStart = 0;
   if (lines[0]?.trim() === "---") {
     const closingIndex = lines.slice(1).findIndex((line) => line.trim() === "---");
@@ -192,7 +193,7 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     tags: Object.keys(sortedTagCounts),
     tagCounts: sortedTagCounts,
     properties,
-    links: parseMarkdownLinks(snapshot.content),
+    links: parseMarkdownLinks(snapshot.content, masked),
   };
 }
 
@@ -218,6 +219,7 @@ export class MetadataIndex {
   readonly #documents = new Map<string, ParsedDocument>();
   readonly #searchIndex = new FullTextSearchIndex();
   #generation = 0;
+  #snapshotCache: { generation: number; snapshot: MetadataIndexSnapshot } | null = null;
 
   get generation(): number {
     return this.#generation;
@@ -226,6 +228,19 @@ export class MetadataIndex {
   static async build(source: VaultReadPort): Promise<MetadataIndex> {
     const index = new MetadataIndex();
     await index.rebuild(source);
+    return index;
+  }
+
+  static fromSnapshots(snapshots: readonly VaultTextSnapshot[]): MetadataIndex {
+    const index = new MetadataIndex();
+    const documents = new Map<string, ParsedDocument>();
+    const searchDocuments: FullTextSearchDocument[] = [];
+    for (const snapshot of snapshots) {
+      const document = parseDocument(snapshot);
+      documents.set(snapshot.path, document);
+      searchDocuments.push(toSearchDocument(document, snapshot.content));
+    }
+    index.replaceDocuments(documents, searchDocuments);
     return index;
   }
 
@@ -269,6 +284,7 @@ export class MetadataIndex {
       this.#searchIndex.upsert(replacement.searchDocument);
     }
     this.#generation += 1;
+    this.#snapshotCache = null;
   }
 
   async refresh(source: VaultReadPort, filePath: string): Promise<void> {
@@ -281,12 +297,14 @@ export class MetadataIndex {
     this.#documents.set(filePath, document);
     this.#searchIndex.upsert(toSearchDocument(document, snapshot.content));
     this.#generation += 1;
+    this.#snapshotCache = null;
   }
 
   remove(filePath: string): void {
     if (this.#documents.delete(filePath)) {
       this.#searchIndex.remove(filePath);
       this.#generation += 1;
+      this.#snapshotCache = null;
     }
   }
 
@@ -299,6 +317,9 @@ export class MetadataIndex {
   }
 
   snapshot(): MetadataIndexSnapshot {
+    if (this.#snapshotCache?.generation === this.#generation) {
+      return this.#snapshotCache.snapshot;
+    }
     const documents = [...this.#documents.values()].sort((left, right) =>
       left.path.localeCompare(right.path),
     );
@@ -346,7 +367,13 @@ export class MetadataIndex {
       path: document.path,
       sources: [...(backlinks.get(document.path) ?? [])].sort(),
     }));
-    return { documents: documentSnapshots, backlinks: backlinkSnapshot, duplicateNames };
+    const snapshot = {
+      documents: documentSnapshots,
+      backlinks: backlinkSnapshot,
+      duplicateNames,
+    };
+    this.#snapshotCache = { generation: this.#generation, snapshot };
+    return snapshot;
   }
 
   private resolveLink(
@@ -400,6 +427,7 @@ export class MetadataIndex {
     }
     this.#searchIndex.replace(searchDocuments);
     this.#generation += 1;
+    this.#snapshotCache = null;
   }
 }
 
@@ -415,6 +443,13 @@ export class VaultIndexReactor {
 
   static async open(source: VaultReadPort): Promise<VaultIndexReactor> {
     return new VaultIndexReactor(source, await MetadataIndex.build(source));
+  }
+
+  static fromSnapshots(
+    source: VaultReadPort,
+    snapshots: readonly VaultTextSnapshot[],
+  ): VaultIndexReactor {
+    return new VaultIndexReactor(source, MetadataIndex.fromSnapshots(snapshots));
   }
 
   async accept(batch: VaultChangeBatch): Promise<IndexUpdateResult> {

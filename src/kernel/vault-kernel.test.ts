@@ -96,6 +96,8 @@ describe("VaultKernel path policy", () => {
       recursive: true,
     });
     await fs.mkdir(path.join(vaultPath, ".git", "notes"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, ".archive"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Folder", ".cache"), { recursive: true });
     await fs.mkdir(path.join(vaultPath, ".trash", "Folder"), { recursive: true });
     await fs.writeFile(path.join(vaultPath, "Root.md"), "root", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "A.md"), "a", "utf8");
@@ -106,6 +108,9 @@ describe("VaultKernel path policy", () => {
       "utf8",
     );
     await fs.writeFile(path.join(vaultPath, ".git", "notes", "README.md"), "git metadata", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".archive", "Hidden.md"), "hidden", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", ".cache", "Hidden.md"), "hidden", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".draft.md"), "hidden", "utf8");
     await fs.writeFile(path.join(vaultPath, ".trash", "Folder", "Deleted.md"), "deleted", "utf8");
     const kernel = await openKernel();
 
@@ -126,12 +131,17 @@ describe("VaultKernel path policy", () => {
     await fs.mkdir(path.join(vaultPath, "Folder", "Nested"), { recursive: true });
     await fs.mkdir(path.join(vaultPath, "Empty"));
     await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, ".archive"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Folder", ".cache"), { recursive: true });
     await fs.mkdir(path.join(vaultPath, ".trash"), { recursive: true });
     await fs.writeFile(path.join(vaultPath, "Root.md"), "root", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "image.PNG"), "image", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "Board.canvas"), "{}", "utf8");
     await fs.writeFile(path.join(vaultPath, ".obsidian", "appearance.json"), "{}", "utf8");
     await fs.writeFile(path.join(vaultPath, ".obsidian", "Secret.md"), "private", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".archive", "Hidden.md"), "hidden", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", ".cache", "Hidden.md"), "hidden", "utf8");
+    await fs.writeFile(path.join(vaultPath, ".hidden.txt"), "hidden", "utf8");
     await fs.writeFile(path.join(vaultPath, ".trash", "Deleted.md"), "deleted", "utf8");
     await fs.symlink("../Root.md", path.join(vaultPath, "Folder", "root-link.txt"));
     await fs.symlink("../.obsidian/Secret.md", path.join(vaultPath, "Folder", "private-link.md"));
@@ -152,6 +162,12 @@ describe("VaultKernel path policy", () => {
     });
     await expect(kernel.listVisiblePaths(".obsidian")).resolves.toEqual({
       directory: ".obsidian",
+      exists: false,
+      files: [],
+      folders: [],
+    });
+    await expect(kernel.listVisiblePaths(".archive")).resolves.toEqual({
+      directory: ".archive",
       exists: false,
       files: [],
       folders: [],

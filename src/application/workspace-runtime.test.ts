@@ -238,6 +238,15 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
+  it("reuses the unchanged derived file projection across snapshots", async () => {
+    const workspace = await openRuntime();
+
+    const first = await workspace.getSnapshot();
+    const second = await workspace.getSnapshot();
+
+    expect(second.workspace?.files).toBe(first.workspace?.files);
+  });
+
   it("restores ordered tabs, chooses a surviving active note, and prunes stale paths", async () => {
     const store = new MemoryWorkspaceStateStore({
       openPaths: ["Welcome.md", "Missing.md", "Linked Note.md"],

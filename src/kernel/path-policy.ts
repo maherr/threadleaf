@@ -27,8 +27,16 @@ function isPrivateVaultEntry(name: string): boolean {
   );
 }
 
+function isHiddenVaultEntry(name: string): boolean {
+  return name.startsWith(".");
+}
+
 export function hasPrivateVaultSegment(relativePath: string): boolean {
   return relativePath.split(/[\\/]/).some(isPrivateVaultEntry);
+}
+
+export function hasHiddenVaultSegment(relativePath: string): boolean {
+  return relativePath.split(/[\\/]/).some(isHiddenVaultEntry);
 }
 
 export function isPathInside(rootPath: string, candidatePath: string): boolean {
@@ -279,7 +287,7 @@ export class VaultPathPolicy {
 
   async listVisiblePaths(relativeDirectory = ""): Promise<VisibleVaultPaths> {
     const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
-    if (hasPrivateVaultSegment(normalizedDirectory)) {
+    if (hasPrivateVaultSegment(normalizedDirectory) || hasHiddenVaultSegment(normalizedDirectory)) {
       return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
     }
     const startDirectory = normalizedDirectory
@@ -297,7 +305,10 @@ export class VaultPathPolicy {
     if (!isPathInside(this.rootPath, canonicalDirectory)) {
       throw new VaultPathError(`Directory resolves outside the vault: ${relativeDirectory}`);
     }
-    if (hasPrivateVaultSegment(path.relative(this.rootPath, canonicalDirectory))) {
+    if (
+      hasPrivateVaultSegment(path.relative(this.rootPath, canonicalDirectory)) ||
+      hasHiddenVaultSegment(path.relative(this.rootPath, canonicalDirectory))
+    ) {
       return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
     }
     const stat = await fs.stat(canonicalDirectory);
@@ -324,7 +335,7 @@ export class VaultPathPolicy {
     entries.sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of entries) {
-      if (isPrivateVaultEntry(entry.name)) {
+      if (isPrivateVaultEntry(entry.name) || isHiddenVaultEntry(entry.name)) {
         continue;
       }
 
@@ -348,7 +359,8 @@ export class VaultPathPolicy {
         }
         if (
           !isPathInside(this.rootPath, canonicalPath) ||
-          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath))
+          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath)) ||
+          hasHiddenVaultSegment(path.relative(this.rootPath, canonicalPath))
         ) {
           continue;
         }
@@ -375,7 +387,7 @@ export class VaultPathPolicy {
     entries.sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of entries) {
-      if (isPrivateVaultEntry(entry.name)) {
+      if (isPrivateVaultEntry(entry.name) || isHiddenVaultEntry(entry.name)) {
         continue;
       }
       const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
@@ -397,7 +409,8 @@ export class VaultPathPolicy {
         }
         if (
           !isPathInside(this.rootPath, canonicalPath) ||
-          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath))
+          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath)) ||
+          hasHiddenVaultSegment(path.relative(this.rootPath, canonicalPath))
         ) {
           continue;
         }

@@ -135,4 +135,19 @@ describe("ElectronPluginRuntime", () => {
       operation: "get-snapshot",
     });
   });
+
+  it("bounds graceful shutdown without crashing a busy renderer", async () => {
+    const runtime = await ElectronPluginRuntime.open({
+      hostHtmlPath: "/app/plugin-host.html",
+      operationTimeoutMs: 10,
+      packageJsonPath: "/app/package.json",
+      vaultPath: "/vault",
+    });
+    const webContents = electronMock.views[0]?.webContents;
+
+    await expect(runtime.close()).resolves.toBeUndefined();
+
+    expect(webContents?.forcefullyCrashRenderer).not.toHaveBeenCalled();
+    expect(webContents?.close).toHaveBeenCalledOnce();
+  });
 });
