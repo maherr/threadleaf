@@ -156,3 +156,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - An executable Excalidraw byte-compatibility corpus covering real plugin Markdown, PNG, and SVG
   fixtures, external edits, interrupted writes and renames, conflict proposals, recovery, and exact
   SHA-256 preservation, plus a live unchanged-plugin attachment rename through Electron.
+- Public `FileManager.trashFile` compatibility for revision-bound files, implemented as an
+  active-vault-validated, recovery-journaled move into `.trash` with delete-event delivery, watcher
+  attribution, index convergence, stale-edit conflict detection, and exact-byte live proof in the
+  unchanged Excalidraw renderer.

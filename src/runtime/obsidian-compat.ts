@@ -105,6 +105,7 @@ export interface CompatibilityVaultWritePort {
     targetPath: string,
     expectedRevision: string,
   ): Promise<VaultRenameResult>;
+  trashFile?(sourcePath: string, expectedRevision: string): Promise<VaultRenameResult>;
   writeBinary?(
     relativePath: string,
     content: Uint8Array,
@@ -503,6 +504,38 @@ export class Vault {
     this.trigger("rename", file, sourcePath);
   }
 
+  async trash(file: TAbstractFile): Promise<void> {
+    if (!this.#writer?.trashFile) {
+      throw new Error("Plugin file trash is not available in the read-only compatibility runtime.");
+    }
+    if (!(file instanceof TFile)) {
+      throw new Error("Plugin folder trash is not supported yet.");
+    }
+    if (file.vault !== this) {
+      throw new Error("Plugin trash requires a file from the active compatibility vault.");
+    }
+    const sourcePath = normalizePath(file.path);
+    let expectedRevision = this.revisions.get(sourcePath);
+    if (!expectedRevision) {
+      await this.readBinary(file);
+      expectedRevision = this.revisions.get(sourcePath);
+    }
+    if (!expectedRevision) {
+      throw new Error(`Could not establish the current revision for ${sourcePath}.`);
+    }
+    const outcome = await this.trackMutation(() =>
+      this.#writer?.trashFile?.(sourcePath, expectedRevision),
+    );
+    if (!outcome) {
+      throw new Error("Plugin file trash is not available in the read-only compatibility runtime.");
+    }
+    if (outcome.status === "conflict") {
+      throw new Error(`Plugin trash conflict for ${sourcePath}: ${outcome.reason}.`);
+    }
+    this.revisions.delete(sourcePath);
+    this.trigger("delete", file);
+  }
+
   async waitForSettledMutations(quietMs = 75, timeoutMs = 5_000): Promise<void> {
     const startedAt = Date.now();
     let observedVersion = this.mutationVersion;
@@ -611,6 +644,10 @@ export class FileManager {
 
   renameFile(file: TAbstractFile, newPath: string): Promise<void> {
     return this.vault.rename(file, newPath);
+  }
+
+  trashFile(file: TAbstractFile): Promise<void> {
+    return this.vault.trash(file);
   }
 
   async getAvailablePathForAttachment(filename: string, sourcePath: string): Promise<string> {

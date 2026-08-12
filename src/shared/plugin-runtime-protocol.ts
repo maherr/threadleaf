@@ -8,6 +8,7 @@ export const pluginRendererChannels = {
   vaultCreateBinary: "threadleaf:plugin-renderer-vault-create-binary",
   vaultCreateFolder: "threadleaf:plugin-renderer-vault-create-folder",
   vaultRename: "threadleaf:plugin-renderer-vault-rename",
+  vaultTrash: "threadleaf:plugin-renderer-vault-trash",
   vaultWrite: "threadleaf:plugin-renderer-vault-write",
   vaultWriteBinary: "threadleaf:plugin-renderer-vault-write-binary",
 } as const;
@@ -83,6 +84,14 @@ export interface PluginVaultRenameRequest {
 export type PluginVaultRenameResponse =
   | { status: "committed"; from: string; to: string; transactionId: string }
   | { status: "conflict"; from: string; to: string; reason: string };
+
+export interface PluginVaultTrashRequest {
+  expectedRevision: string;
+  filePath: string;
+  vaultPath: string;
+}
+
+export type PluginVaultTrashResponse = PluginVaultRenameResponse;
 
 export type PluginRendererOperation =
   | "close"
@@ -291,6 +300,28 @@ export function parsePluginVaultRenameRequest(value: unknown): PluginVaultRename
     vaultPath: candidate.vaultPath,
     sourcePath: candidate.sourcePath,
     targetPath: candidate.targetPath,
+    expectedRevision: candidate.expectedRevision,
+  };
+}
+
+export function parsePluginVaultTrashRequest(value: unknown): PluginVaultTrashRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin vault trash request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.filePath !== "string" ||
+    candidate.filePath.length === 0 ||
+    typeof candidate.expectedRevision !== "string" ||
+    !/^[0-9a-f]{64}$/.test(candidate.expectedRevision)
+  ) {
+    throw new Error("Plugin vault trash requires vault, file, and SHA-256 revision strings.");
+  }
+  return {
+    vaultPath: candidate.vaultPath,
+    filePath: candidate.filePath,
     expectedRevision: candidate.expectedRevision,
   };
 }

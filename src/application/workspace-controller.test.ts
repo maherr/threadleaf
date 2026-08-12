@@ -101,6 +101,11 @@ class FakeRuntime implements WorkspaceRuntimePort {
     expectedRevision: string;
     expectedVaultId: string;
   } | null = null;
+  trashedPluginFile: {
+    filePath: string;
+    expectedRevision: string;
+    expectedVaultId: string;
+  } | null = null;
   closed = false;
 
   constructor(options: WorkspaceRuntimeOptions) {
@@ -276,6 +281,16 @@ class FakeRuntime implements WorkspaceRuntimePort {
       from: filePath,
       to: targetPath,
       transactionId: "plugin-file-rename",
+    };
+  }
+
+  async trashPluginFile(filePath: string, expectedRevision: string, expectedVaultId: string) {
+    this.trashedPluginFile = { filePath, expectedRevision, expectedVaultId };
+    return {
+      status: "committed" as const,
+      from: filePath,
+      to: `.trash/${filePath}`,
+      transactionId: "plugin-file-trash",
     };
   }
 
@@ -607,7 +622,7 @@ describe("WorkspaceController", () => {
     await controller.close();
   });
 
-  it("forwards plugin file and folder creation with the active vault identity", async () => {
+  it("forwards plugin file mutations with the active vault identity", async () => {
     const store = new MemorySelectionStore();
     const harness = runtimeHarness();
     const controller = await WorkspaceController.open({
@@ -617,6 +632,7 @@ describe("WorkspaceController", () => {
       runtimeFactory: harness.runtimeFactory,
     });
     const expectedVaultId = controller.vaultId;
+    const expectedRevision = "b".repeat(64);
 
     await controller.createPluginFolder("Excalidraw", expectedVaultId);
     await controller.createPluginNote(
@@ -624,6 +640,13 @@ describe("WorkspaceController", () => {
       "drawing bytes",
       expectedVaultId,
     );
+    await controller.renamePluginFile(
+      "Excalidraw/Drawing.png",
+      "Assets/Drawing.png",
+      expectedRevision,
+      expectedVaultId,
+    );
+    await controller.trashPluginFile("Assets/Drawing.png", expectedRevision, expectedVaultId);
 
     expect(harness.runtimes[0]?.createdPluginFolder).toEqual({
       folderPath: "Excalidraw",
@@ -632,6 +655,17 @@ describe("WorkspaceController", () => {
     expect(harness.runtimes[0]?.createdPluginNote).toEqual({
       filePath: "Excalidraw/Drawing.excalidraw.md",
       content: "drawing bytes",
+      expectedVaultId,
+    });
+    expect(harness.runtimes[0]?.renamedPluginFile).toEqual({
+      filePath: "Excalidraw/Drawing.png",
+      targetPath: "Assets/Drawing.png",
+      expectedRevision,
+      expectedVaultId,
+    });
+    expect(harness.runtimes[0]?.trashedPluginFile).toEqual({
+      filePath: "Assets/Drawing.png",
+      expectedRevision,
       expectedVaultId,
     });
     await controller.close();

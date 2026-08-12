@@ -34,7 +34,7 @@ import type {
 import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
 import { movedMarkdownPath, moveMarkdownNote } from "./note-move";
-import { trashMarkdownNote } from "./note-trash";
+import { trashMarkdownNote, vaultTrashDirectory } from "./note-trash";
 import { loadVaultImage } from "./vault-image-service";
 import {
   createWorkspaceState,
@@ -661,6 +661,40 @@ export class WorkspaceRuntime {
       this.indexReactor.index.remove(outcome.from);
       await this.indexReactor.index.refresh(this.kernel, outcome.to);
       if (this.moveOpenPath(outcome.from, outcome.to)) {
+        await this.persistWorkspaceStateBestEffort();
+      }
+    } else {
+      await this.indexReactor.index.rebuild(this.kernel);
+    }
+    await this.publishSnapshot();
+    return outcome;
+  }
+
+  async trashPluginFile(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this plugin file could be moved to trash.");
+    }
+    const normalizedSource = normalizeVaultPath(filePath);
+    if (hasPrivateVaultSegment(normalizedSource)) {
+      throw new Error(`Plugin trash cannot target private application paths: ${filePath}`);
+    }
+    const outcome = await this.kernel.renameFile(
+      normalizedSource,
+      `${vaultTrashDirectory}/${normalizedSource}`,
+      expectedRevision,
+    );
+    if (outcome.status === "committed") {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "delete",
+        path: outcome.from,
+      });
+      this.indexReactor.index.remove(outcome.from);
+      if (this.removeOpenPath(outcome.from)) {
         await this.persistWorkspaceStateBestEffort();
       }
     } else {

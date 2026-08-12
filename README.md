@@ -116,14 +116,15 @@ level 4. New drawing creation, native-editor embed insertion, and SVG/PNG vault 
 measured level 4 workflows. Full active-view unload and reload is measured too: plugin-owned
 transient UI, the drawing leaf, all 69 commands, and every registered integration are removed, and
 two reload cycles restore the exact command and integration counts without duplicates or runtime
-errors. Compatibility plugins can also rename revision-bound attachments through public
-`Vault.rename` and `FileManager.renameFile` APIs. The unchanged Excalidraw plugin has moved a real
-PNG through that path while preserving its exact SHA-256 digest, and recovery fixtures cover
-interrupted renames plus external-edit conflicts without replacing either side. The corresponding
-official Obsidian same-vault roundtrip is still pending. Inline wiki-embed rendering, untested
-export formats, and universal plugin parity remain unsupported. Excalidraw's release-notes modal
-and Threadleaf light/dark chrome also render, and its stylesheet is preserved while four remote
-font URLs are replaced with inert embedded assets. The runtime is still trusted:
+errors. Compatibility plugins can also rename and recoverably trash revision-bound attachments
+through public `Vault.rename`, `FileManager.renameFile`, and `FileManager.trashFile` APIs. The
+unchanged Excalidraw plugin has moved and trashed real binary fixtures through those paths while
+preserving their exact SHA-256 digests, and recovery fixtures cover interrupted renames plus
+external-edit conflicts without replacing either side. The corresponding official Obsidian
+same-vault roundtrip is still pending. Inline wiki-embed rendering, untested export formats, and
+universal plugin parity remain unsupported. Excalidraw's release-notes modal and Threadleaf
+light/dark chrome also render, and its stylesheet is preserved while four remote font URLs are
+replaced with inert embedded assets. The runtime is still trusted:
 Node-capable plugin code can perform its own I/O.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now

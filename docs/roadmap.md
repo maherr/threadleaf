@@ -179,7 +179,8 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
   - [x] Preserve exact Markdown, PNG, and SVG bytes through Threadleaf plugin writes, attachment
-        rename, external-edit conflicts, simulated interrupted writes and renames, and recovery.
+        rename and recoverable trash, external-edit conflicts, simulated interrupted writes and
+        renames, and recovery.
   - [ ] Complete the same disposable-vault open and save roundtrip in official Obsidian, then reopen
         it in Threadleaf and compare every fixture byte.
 

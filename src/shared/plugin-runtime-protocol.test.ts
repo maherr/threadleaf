@@ -9,6 +9,7 @@ import {
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
   parsePluginVaultRenameRequest,
+  parsePluginVaultTrashRequest,
   parsePluginVaultWriteBinaryRequest,
   parsePluginVaultWriteRequest,
   requirePayloadString,
@@ -146,6 +147,28 @@ describe("plugin renderer protocol", () => {
         expectedRevision: revision,
       }),
     ).toThrow("vault, source, target");
+  });
+
+  it("validates revision-bound plugin trash requests", () => {
+    const revision = "d".repeat(64);
+    expect(
+      parsePluginVaultTrashRequest({
+        vaultPath: "/vault",
+        filePath: "Assets/Drawing.png",
+        expectedRevision: revision,
+      }),
+    ).toEqual({
+      vaultPath: "/vault",
+      filePath: "Assets/Drawing.png",
+      expectedRevision: revision,
+    });
+    expect(() =>
+      parsePluginVaultTrashRequest({
+        vaultPath: "/vault",
+        filePath: "Assets/Drawing.png",
+        expectedRevision: "stale",
+      }),
+    ).toThrow("SHA-256 revision");
   });
 
   it("validates plugin file and folder create requests", () => {

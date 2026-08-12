@@ -694,6 +694,22 @@ describe("WorkspaceRuntime", () => {
     await expect(
       workspace.createPluginFile("Assets/Renamed Drawing.png", firstPng, workspace.vaultId),
     ).resolves.toMatchObject({ status: "exists", path: "Assets/Renamed Drawing.png" });
+    const trashedPng = await workspace.trashPluginFile(
+      "Assets/Renamed Drawing.png",
+      modifiedPng.revision,
+      workspace.vaultId,
+    );
+    expect(trashedPng).toMatchObject({
+      status: "committed",
+      from: "Assets/Renamed Drawing.png",
+      to: ".trash/Assets/Renamed Drawing.png",
+    });
+    await expect(
+      fs.readFile(path.join(vaultPath, "Assets", "Renamed Drawing.png")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      fs.readFile(path.join(vaultPath, ".trash", "Assets", "Renamed Drawing.png")),
+    ).resolves.toEqual(Buffer.from(secondPng));
     expect((await workspace.getSnapshot()).workspace?.activeNote?.path).toBe("Welcome.md");
     expect(
       (await workspace.getSnapshot()).workspace?.files.map(({ path: filePath }) => filePath),
@@ -754,6 +770,23 @@ describe("WorkspaceRuntime", () => {
         created.revision,
         "stale-vault",
       ),
+    ).rejects.toThrow("active vault changed");
+    await expect(
+      workspace.trashPluginFile(
+        "Excalidraw/Scene.excalidraw.md",
+        created.revision,
+        workspace.vaultId,
+      ),
+    ).resolves.toMatchObject({ status: "conflict", reason: "source-revision-changed" });
+    await expect(
+      workspace.trashPluginFile(
+        ".obsidian/Scene.excalidraw.md",
+        created.revision,
+        workspace.vaultId,
+      ),
+    ).rejects.toThrow("private application paths");
+    await expect(
+      workspace.trashPluginFile("Excalidraw/Scene.excalidraw.md", created.revision, "stale-vault"),
     ).rejects.toThrow("active vault changed");
   });
 

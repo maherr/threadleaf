@@ -274,6 +274,45 @@ describe("Obsidian compatibility vault writes", () => {
     expect(renamed).toHaveBeenCalledWith(file, "Exports/Drawing.png");
   });
 
+  it("moves binary files to recoverable trash through FileManager without changing bytes", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-binary-trash-"));
+    temporaryDirectories.push(rootPath);
+    await fs.mkdir(path.join(rootPath, "Assets"));
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 0xff, 4, 5, 6]);
+    await fs.writeFile(path.join(rootPath, "Assets", "Drawing.png"), bytes);
+    const trashFile = vi.fn(async (sourcePath: string, expectedRevision: string) => {
+      expect(expectedRevision).toBe(revisionOf(bytes));
+      const targetPath = `.trash/${sourcePath}`;
+      await fs.mkdir(path.dirname(path.join(rootPath, targetPath)), { recursive: true });
+      await fs.rename(path.join(rootPath, sourcePath), path.join(rootPath, targetPath));
+      return {
+        status: "committed" as const,
+        from: sourcePath,
+        to: targetPath,
+        transactionId: "binary-trash",
+      };
+    });
+    const vault = new Vault(rootPath, undefined, { trashFile, writeText: vi.fn() });
+    const file = vault.getFileByPath("Assets/Drawing.png");
+    if (!file) {
+      throw new Error("Binary trash fixture was not discovered.");
+    }
+    const deleted = vi.fn();
+    vault.on("delete", deleted);
+
+    await new FileManager(vault).trashFile(file);
+
+    expect(trashFile).toHaveBeenCalledWith("Assets/Drawing.png", revisionOf(bytes));
+    expect(vault.getFileByPath("Assets/Drawing.png")).toBeNull();
+    await expect(fs.stat(path.join(rootPath, "Assets", "Drawing.png"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      fs.readFile(path.join(rootPath, ".trash", "Assets", "Drawing.png")),
+    ).resolves.toEqual(Buffer.from(bytes));
+    expect(deleted).toHaveBeenCalledWith(file);
+  });
+
   it("surfaces retained conflict paths and rejects files from another vault", async () => {
     const { file, rootPath } = await createVaultFile();
     const writer = {

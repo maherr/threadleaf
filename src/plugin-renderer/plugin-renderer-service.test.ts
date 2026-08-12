@@ -9,6 +9,7 @@ import type {
   PluginRendererRequest,
   PluginVaultCreateBinaryRequest,
   PluginVaultRenameRequest,
+  PluginVaultTrashRequest,
   PluginVaultWriteBinaryRequest,
   PluginVaultWriteRequest,
 } from "../shared/plugin-runtime-protocol";
@@ -110,6 +111,7 @@ module.exports = class RendererFixture extends Plugin {
         const file = await this.app.vault.createBinary("Binary/Preview.png", Uint8Array.from([137, 80, 78, 71, 0, 255]).buffer);
         await this.app.vault.modifyBinary(file, Uint8Array.from([137, 80, 78, 71, 1, 2, 3, 0, 255]).buffer);
         await this.app.fileManager.renameFile(file, "Binary/Renamed.png");
+        await this.app.fileManager.trashFile(file);
       },
     });
     this.registerView("renderer-view", (leaf) => new RendererView(leaf));
@@ -153,6 +155,7 @@ module.exports = class RendererFixture extends Plugin {
       const writes: PluginVaultWriteRequest[] = [];
       const binaryCreates: PluginVaultCreateBinaryRequest[] = [];
       const binaryRenames: PluginVaultRenameRequest[] = [];
+      const binaryTrashes: PluginVaultTrashRequest[] = [];
       const binaryWrites: PluginVaultWriteBinaryRequest[] = [];
       const createdFolders: string[] = [];
       const createdFiles: string[] = [];
@@ -206,6 +209,23 @@ module.exports = class RendererFixture extends Plugin {
             from: renameRequest.sourcePath,
             to: renameRequest.targetPath,
             transactionId: "renderer-test-binary-rename",
+          };
+        },
+        trashFile: async (trashRequest) => {
+          binaryTrashes.push(trashRequest);
+          const targetPath = `.trash/${trashRequest.filePath}`;
+          await fs.mkdir(path.dirname(path.join(trashRequest.vaultPath, targetPath)), {
+            recursive: true,
+          });
+          await fs.rename(
+            path.join(trashRequest.vaultPath, trashRequest.filePath),
+            path.join(trashRequest.vaultPath, targetPath),
+          );
+          return {
+            status: "committed",
+            from: trashRequest.filePath,
+            to: targetPath,
+            transactionId: "renderer-test-binary-trash",
           };
         },
         writeBinary: async (writeRequest) => {
@@ -352,12 +372,22 @@ module.exports = class RendererFixture extends Plugin {
           expectedRevision: revisionOf(Uint8Array.from([137, 80, 78, 71, 1, 2, 3, 0, 255])),
         },
       ]);
+      expect(binaryTrashes).toEqual([
+        {
+          vaultPath,
+          filePath: "Binary/Renamed.png",
+          expectedRevision: revisionOf(Uint8Array.from([137, 80, 78, 71, 1, 2, 3, 0, 255])),
+        },
+      ]);
       await expect(
         fs.readFile(path.join(vaultPath, "Binary", "Preview.png")),
       ).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(fs.readFile(path.join(vaultPath, "Binary", "Renamed.png"))).resolves.toEqual(
-        Buffer.from([137, 80, 78, 71, 1, 2, 3, 0, 255]),
-      );
+      await expect(
+        fs.readFile(path.join(vaultPath, "Binary", "Renamed.png")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(
+        fs.readFile(path.join(vaultPath, ".trash", "Binary", "Renamed.png")),
+      ).resolves.toEqual(Buffer.from([137, 80, 78, 71, 1, 2, 3, 0, 255]));
 
       const ready = await service.handle(request("mark-layout-ready"));
       expect(ready?.notices).toContain("Renderer layout ready.");

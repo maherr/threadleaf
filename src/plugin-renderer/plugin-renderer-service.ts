@@ -14,6 +14,8 @@ import {
   type PluginVaultCreateResponse,
   type PluginVaultRenameRequest,
   type PluginVaultRenameResponse,
+  type PluginVaultTrashRequest,
+  type PluginVaultTrashResponse,
   type PluginVaultWriteBinaryRequest,
   type PluginVaultWriteBinaryResponse,
   type PluginVaultWriteRequest,
@@ -26,6 +28,7 @@ export interface PluginRendererVaultMutations {
   createFolder(request: PluginVaultCreateFolderRequest): Promise<PluginVaultCreateFolderResponse>;
   createText(request: PluginVaultCreateRequest): Promise<PluginVaultCreateResponse>;
   renameFile?(request: PluginVaultRenameRequest): Promise<PluginVaultRenameResponse>;
+  trashFile?(request: PluginVaultTrashRequest): Promise<PluginVaultTrashResponse>;
   writeBinary?(request: PluginVaultWriteBinaryRequest): Promise<PluginVaultWriteBinaryResponse>;
   writeText(request: PluginVaultWriteRequest): Promise<PluginVaultWriteResponse>;
 }
@@ -51,6 +54,7 @@ export class PluginRendererService {
         const vaultMutations = this.vaultMutations;
         const createBinary = vaultMutations?.createBinary;
         const renameFile = vaultMutations?.renameFile;
+        const trashFile = vaultMutations?.trashFile;
         const writeBinary = vaultMutations?.writeBinary;
         this.host = new PluginHost(
           vaultPath,
@@ -77,6 +81,12 @@ export class PluginRendererService {
                         targetPath: string,
                         expectedRevision: string,
                       ) => renameFile({ vaultPath, sourcePath, targetPath, expectedRevision }),
+                    }
+                  : {}),
+                ...(trashFile
+                  ? {
+                      trashFile: (filePath: string, expectedRevision: string) =>
+                        trashFile({ vaultPath, filePath, expectedRevision }),
                     }
                   : {}),
                 ...(createBinary

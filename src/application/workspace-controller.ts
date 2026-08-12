@@ -77,6 +77,11 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<VaultRenameResult>;
+  trashPluginFile(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult>;
   createPluginFolder(
     folderPath: string,
     expectedVaultId: string,
@@ -338,6 +343,14 @@ export class WorkspaceController {
     expectedVaultId: string,
   ): Promise<VaultRenameResult> {
     return this.#runtime.renamePluginFile(filePath, targetPath, expectedRevision, expectedVaultId);
+  }
+
+  trashPluginFile(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult> {
+    return this.#runtime.trashPluginFile(filePath, expectedRevision, expectedVaultId);
   }
 
   createPluginFolder(
