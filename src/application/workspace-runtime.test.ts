@@ -102,6 +102,19 @@ describe("WorkspaceRuntime", () => {
       runtime.saveNote(note.path, "blocked", note.revision, runtime.vaultId),
     ).rejects.toThrow("Open a local vault");
     await expect(
+      runtime.setNoteProperty(
+        note.path,
+        "status",
+        "blocked",
+        "text",
+        note.revision,
+        runtime.vaultId,
+      ),
+    ).rejects.toThrow("Open a local vault");
+    await expect(
+      runtime.removeNoteProperty(note.path, "status", note.revision, runtime.vaultId),
+    ).rejects.toThrow("Open a local vault");
+    await expect(
       runtime.moveNote(note.path, "Moved.md", note.revision, runtime.vaultId),
     ).rejects.toThrow("Open a local vault");
     await expect(runtime.deleteNote(note.path, note.revision, runtime.vaultId)).rejects.toThrow(
@@ -160,7 +173,17 @@ describe("WorkspaceRuntime", () => {
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
+      {
+        id: "workspace.remove-note-property",
+        name: "Remove note property",
+        source: "workspace",
+      },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
+      {
+        id: "workspace.set-note-property",
+        name: "Set note property",
+        source: "workspace",
+      },
     ]);
 
     const opened = await workspace.openNote("Welcome.md");
@@ -969,6 +992,157 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
+  it("views, sets, changes, and removes every supported desktop property type", async () => {
+    const workspace = await openRuntime();
+    let snapshot = await workspace.openNote("Welcome.md");
+    expect(snapshot.workspace?.activeNote).toMatchObject({
+      properties: [
+        {
+          name: "kind",
+          type: "text",
+          value: "compatibility-fixture",
+          rawValue: "compatibility-fixture",
+        },
+      ],
+      propertyEditor: { editable: true, message: null },
+    });
+
+    const cases = [
+      ["status", "review", "text", "review"],
+      ["aliases", '["Brief","Overview"]', "list", ["Brief", "Overview"]],
+      ["priority", "3.5", "number", 3.5],
+      ["published", "true", "checkbox", true],
+      ["due", "2026-08-12", "date", "2026-08-12"],
+      ["meeting", "2026-08-12T14:30:45", "datetime", "2026-08-12T14:30:45"],
+    ] as const;
+    for (const [name, rawValue, type, expectedValue] of cases) {
+      const note = snapshot.workspace?.activeNote;
+      if (!note) {
+        throw new Error("Expected an active note while setting properties.");
+      }
+      const response = await workspace.setNoteProperty(
+        note.path,
+        name,
+        rawValue,
+        type,
+        note.revision,
+        workspace.vaultId,
+      );
+      expect(response.outcome).toMatchObject({
+        status: "committed",
+        name,
+        type,
+        value: expectedValue,
+      });
+      snapshot = response.snapshot;
+    }
+
+    expect(snapshot.workspace?.activeNote?.properties).toEqual([
+      expect.objectContaining({ name: "kind", type: "text" }),
+      expect.objectContaining({ name: "status", type: "text", value: "review" }),
+      expect.objectContaining({ name: "aliases", type: "list", value: ["Brief", "Overview"] }),
+      expect.objectContaining({ name: "priority", type: "number", value: 3.5 }),
+      expect.objectContaining({ name: "published", type: "checkbox", value: true }),
+      expect.objectContaining({ name: "due", type: "date", value: "2026-08-12" }),
+      expect.objectContaining({
+        name: "meeting",
+        type: "datetime",
+        value: "2026-08-12T14:30:45",
+      }),
+    ]);
+
+    const current = snapshot.workspace?.activeNote;
+    if (!current) {
+      throw new Error("Expected the property-bearing note.");
+    }
+    const removed = await workspace.removeNoteProperty(
+      current.path,
+      "status",
+      current.revision,
+      workspace.vaultId,
+    );
+    expect(removed.outcome).toMatchObject({ status: "committed", name: "status" });
+    expect(removed.snapshot.workspace?.activeNote?.properties).not.toContainEqual(
+      expect.objectContaining({ name: "status" }),
+    );
+    const afterRemoval = removed.snapshot.workspace?.activeNote;
+    if (!afterRemoval) {
+      throw new Error("Expected the note after property removal.");
+    }
+    const missing = await workspace.removeNoteProperty(
+      afterRemoval.path,
+      "missing",
+      afterRemoval.revision,
+      workspace.vaultId,
+    );
+    expect(missing.outcome).toMatchObject({ status: "missing", name: "missing" });
+  });
+
+  it("refuses a stale property panel and preserves a raced proposal as a conflict note", async () => {
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+
+    await fs.writeFile(path.join(vaultPath, note.path), "---\nexternal: true\n---\nWinner", "utf8");
+    const stale = await workspace.setNoteProperty(
+      note.path,
+      "status",
+      "review",
+      "text",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(stale.outcome).toMatchObject({ status: "stale", name: "status" });
+    expect(stale.snapshot.workspace?.activeNote).toMatchObject({
+      content: "---\nexternal: true\n---\nWinner",
+      properties: [expect.objectContaining({ name: "external", type: "checkbox", value: true })],
+    });
+
+    const current = stale.snapshot.workspace?.activeNote;
+    if (!current) {
+      throw new Error("Expected the refreshed external note.");
+    }
+    const writeText = workspace.kernel.writeText.bind(workspace.kernel);
+    vi.spyOn(workspace.kernel, "writeText").mockImplementationOnce(
+      async (filePath, content, expectedRevision) => {
+        await fs.writeFile(path.join(vaultPath, filePath), "External race winner", "utf8");
+        return writeText(filePath, content, expectedRevision);
+      },
+    );
+    const raced = await workspace.setNoteProperty(
+      current.path,
+      "priority",
+      "4",
+      "number",
+      current.revision,
+      workspace.vaultId,
+    );
+    expect(raced.outcome).toMatchObject({
+      status: "conflict",
+      name: "priority",
+      value: 4,
+      conflictPath: expect.stringContaining("threadleaf-conflict"),
+    });
+    if (raced.outcome.status !== "conflict") {
+      throw new Error("Expected a property conflict.");
+    }
+    await expect(fs.readFile(path.join(vaultPath, current.path), "utf8")).resolves.toBe(
+      "External race winner",
+    );
+    await expect(
+      fs.readFile(path.join(vaultPath, raced.outcome.conflictPath), "utf8"),
+    ).resolves.toContain("priority: 4");
+    expect(raced.snapshot.workspace?.activeNote).toMatchObject({
+      path: raced.outcome.conflictPath,
+      properties: expect.arrayContaining([
+        expect.objectContaining({ name: "priority", type: "number", value: 4 }),
+      ]),
+    });
+  });
+
   it("searches current saved bytes with vault identity and contextual lines", async () => {
     const workspace = await openRuntime();
 
@@ -1195,7 +1369,17 @@ describe("WorkspaceRuntime", () => {
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       { id: "workspace.move-note", name: "Move or rename note", source: "workspace" },
       { id: "workspace.open-note", name: "Open note", source: "workspace" },
+      {
+        id: "workspace.remove-note-property",
+        name: "Remove note property",
+        source: "workspace",
+      },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
+      {
+        id: "workspace.set-note-property",
+        name: "Set note property",
+        source: "workspace",
+      },
     ]);
     await expect(workspace.openNote("Welcome.md")).resolves.toMatchObject({
       workspace: { activeNote: { path: "Welcome.md" } },

@@ -34,6 +34,8 @@ export const ipcChannels = {
   deleteNote: "threadleaf:delete-note",
   createNote: "threadleaf:create-note",
   saveNote: "threadleaf:save-note",
+  setNoteProperty: "threadleaf:set-note-property",
+  removeNoteProperty: "threadleaf:remove-note-property",
   getEditorDraft: "threadleaf:get-editor-draft",
   saveEditorDraft: "threadleaf:save-editor-draft",
   clearEditorDraft: "threadleaf:clear-editor-draft",

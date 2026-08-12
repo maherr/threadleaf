@@ -77,6 +77,9 @@ Headless property commands list and read the current indexed projection, then se
 top-level YAML properties through a byte-preserving, revision-checked application service. The
 writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated
 frontmatter and body bytes, and refuses complex YAML shapes instead of reserializing them blindly.
+The desktop right inspector presents those top-level properties in source order and uses the same
+service for typed add, edit, and remove actions. Dirty notes, stale revisions, read-only vaults, and
+unsupported complex values remain explicit no-write states instead of silently normalizing YAML.
 Headless task commands scan ordinary Markdown list checkboxes across the vault or one targeted note,
 filter complete, incomplete, and custom statuses, and address one task by its exact source line.
 Toggle, done, todo, and custom-status mutations replace only the checkbox character through the
@@ -271,6 +274,10 @@ Markdown note embeds can include a whole note, a heading and its descendants, or
 embeds retain links, local raster images, and source controls; visible placeholders explain cycles,
 limits, missing targets, ambiguous targets, and unsafe paths. Ctrl/Cmd+N opens the New note dialog
 and selects the resulting empty Markdown note for editing.
+The Properties section in the right inspector lists top-level frontmatter in source order. Add,
+Edit, and Remove support text, list, number, checkbox, date, and datetime values. Each mutation is
+bound to the displayed note revision and preserves all unrelated Markdown bytes. Complex YAML is
+shown read-only until a lossless editor exists for that shape.
 Ctrl/Cmd+Shift+M opens Move for the active clean note. Threadleaf commits only when the projected
 vault resolver preserves every internal-link meaning. It presents the exact rewrite count before
 enabling confirmation; for unusually large moves, the dialog names the first 100 target updates
@@ -329,6 +336,15 @@ recovery, and clean saved bytes:
 
 ```sh
 pnpm run test:editor-reliability
+```
+
+The packaged desktop gate opens both the bundled read-only demo and a disposable writable vault.
+It drives typed property add, edit, and remove controls through the real Electron bridge, checks
+exact unrelated Markdown bytes, verifies keyboard focus and command-palette reachability, and
+captures dark, light, and compact layouts when a screenshot directory is supplied:
+
+```sh
+THREADLEAF_PROPERTY_SCREENSHOT_DIR=/tmp/threadleaf-property-visual pnpm run test:packaged
 ```
 
 The representative-vault gate makes a private temporary copy, runs the packaged desktop behavior

@@ -132,7 +132,10 @@ equivalence through the real writer-to-watcher seam.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
 - [x] Bounded whole-note, heading, and block-ID transclusions in Reading view, with recursive
       rendering, exact source controls, nested links and raster images, and explicit safety limits.
-- [ ] Rich property views and editing, broader attachment types, and non-note non-raster wiki
+- [x] Ordered desktop top-level property inspection and typed add, edit, and remove controls for
+      text, list, number, checkbox, date, and datetime values, with revision binding, exact-byte
+      preservation, explicit unsupported shapes, and packaged visual and behavior tests.
+- [ ] Nested and complex property editing, broader attachment types, and non-note non-raster wiki
       embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.

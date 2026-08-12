@@ -453,6 +453,14 @@ number, checkbox, date, and datetime inputs are validated before a proposal exis
 quoted or spaced keys, JSON frontmatter, nested mappings, and block scalars fail closed in this
 initial boundary. A revision race preserves the complete proposed file as a conflict copy.
 
+The desktop property inspector derives an ordered presentation from the same authoritative note
+snapshot. It classifies editable text, list, number, checkbox, date, and datetime values while
+retaining unsupported or malformed YAML as visible read-only rows. Add, edit, and remove requests
+cross IPC with the displayed vault identity, note path, and revision. The runtime rechecks all three
+before invoking the shared mutation service, then reconciles the writer result through the normal
+watcher and metadata-index path. Dirty drafts, read-only vaults, stale snapshots, unsupported values,
+and concurrent mutations disable or reject the control without a renderer-owned filesystem path.
+
 Task inspection uses a shared Markdown scanner over the authoritative note bytes. It recognizes
 unordered and ordered list checkboxes, retains one-based source lines and exact status ranges, and
 uses the link parser's masking pass to exclude fenced code, inline code, and HTML comments. A task

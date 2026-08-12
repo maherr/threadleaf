@@ -8,6 +8,9 @@ import type {
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
+  NotePropertyRemoveResponse,
+  NotePropertySetResponse,
+  NotePropertyType,
   NoteSaveResponse,
   RuntimeSnapshot,
   VaultImageResponse,
@@ -337,6 +340,46 @@ class FakeRuntime implements WorkspaceRuntimePort {
         path: filePath,
         revision: "a".repeat(64),
         transactionId: "save",
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async setNoteProperty(
+    filePath: string,
+    name: string,
+    _rawValue: string,
+    type: NotePropertyType,
+    _expectedRevision: string,
+    _expectedVaultId: string,
+  ): Promise<NotePropertySetResponse> {
+    return {
+      outcome: {
+        status: "committed",
+        path: filePath,
+        revision: "a".repeat(64),
+        transactionId: "set-property",
+        name,
+        type,
+        value: "value",
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async removeNoteProperty(
+    filePath: string,
+    name: string,
+    _expectedRevision: string,
+    _expectedVaultId: string,
+  ): Promise<NotePropertyRemoveResponse> {
+    return {
+      outcome: {
+        status: "committed",
+        path: filePath,
+        revision: "a".repeat(64),
+        transactionId: "remove-property",
+        name,
       },
       snapshot: this.#snapshot,
     };

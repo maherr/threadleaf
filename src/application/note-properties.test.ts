@@ -7,6 +7,7 @@ import { VaultKernel } from "../kernel/vault-kernel";
 import {
   applyNotePropertyRemove,
   applyNotePropertySet,
+  inspectMarkdownNoteProperties,
   removeMarkdownNoteProperty,
   setMarkdownNoteProperty,
 } from "./note-properties";
@@ -34,6 +35,83 @@ async function openKernel(): Promise<VaultKernel> {
 }
 
 describe("note property transformations", () => {
+  it("inspects supported property types in source order", () => {
+    const content = [
+      "---",
+      'status: "review"',
+      "aliases:",
+      '  - "Brief"',
+      '  - "Overview"',
+      "priority: 3.5",
+      "published: true",
+      "due: 2026-08-12",
+      "meeting: 2026-08-12T14:30:45",
+      "---",
+      "Body",
+    ].join("\n");
+
+    expect(inspectMarkdownNoteProperties(content)).toEqual({
+      properties: [
+        { name: "status", type: "text", value: "review", rawValue: "review" },
+        {
+          name: "aliases",
+          type: "list",
+          value: ["Brief", "Overview"],
+          rawValue: '["Brief","Overview"]',
+        },
+        { name: "priority", type: "number", value: 3.5, rawValue: "3.5" },
+        { name: "published", type: "checkbox", value: true, rawValue: "true" },
+        { name: "due", type: "date", value: "2026-08-12", rawValue: "2026-08-12" },
+        {
+          name: "meeting",
+          type: "datetime",
+          value: "2026-08-12T14:30:45",
+          rawValue: "2026-08-12T14:30:45",
+        },
+      ],
+      editor: { editable: true, message: null },
+    });
+  });
+
+  it("shows complex values while locking mutation and falls back for malformed frontmatter", () => {
+    const complex = inspectMarkdownNoteProperties(
+      "---\nstatus: active\nnested:\n  child: value\n---\nBody",
+    );
+    expect(complex.properties).toEqual([
+      { name: "status", type: "text", value: "active", rawValue: "active" },
+      {
+        name: "nested",
+        type: "unsupported",
+        value: '{"child":"value"}',
+        rawValue: '{"child":"value"}',
+      },
+    ]);
+    expect(complex.editor).toMatchObject({ editable: false });
+
+    expect(
+      inspectMarkdownNoteProperties("---\nstatus: one\nstatus: two\n---\nBody", {
+        status: "two",
+      }),
+    ).toEqual({
+      properties: [{ name: "status", type: "unsupported", value: "two", rawValue: "two" }],
+      editor: {
+        editable: false,
+        message: expect.stringContaining("cannot be edited safely"),
+      },
+    });
+  });
+
+  it("treats absent and empty frontmatter as editable empty property sets", () => {
+    expect(inspectMarkdownNoteProperties("Body")).toEqual({
+      properties: [],
+      editor: { editable: true, message: null },
+    });
+    expect(inspectMarkdownNoteProperties("---\n---\nBody")).toEqual({
+      properties: [],
+      editor: { editable: true, message: null },
+    });
+  });
+
   it("creates typed frontmatter while preserving a BOM, CRLF, and the complete body", () => {
     const result = applyNotePropertySet("\ufeff# Body\r\n", "published", "true", "text");
 

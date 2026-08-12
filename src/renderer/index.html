@@ -196,6 +196,21 @@
           class="inspector workspace-split mod-right-split"
           aria-label="Note inspector and compatibility runtime"
         >
+          <section class="inspector-section property-inspector" aria-labelledby="properties-heading">
+            <div class="section-heading split-heading">
+              <div>
+                <p class="eyebrow">Metadata</p>
+                <h2 id="properties-heading">Properties</h2>
+              </div>
+              <div class="property-heading-actions">
+                <span id="property-count">0</span>
+                <button id="property-add" type="button" aria-label="Add note property">＋</button>
+              </div>
+            </div>
+            <p class="property-editor-message" id="property-editor-message" hidden></p>
+            <div class="property-list" id="property-list"></div>
+          </section>
+
           <section class="inspector-section" aria-labelledby="outline-heading">
             <div class="section-heading">
               <p class="eyebrow">Structure</p>
@@ -846,6 +861,94 @@
           </span>
         </footer>
       </div>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog property-dialog"
+      id="property-dialog"
+      aria-labelledby="property-dialog-title"
+      aria-describedby="property-dialog-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="property-form">
+        <header class="new-note-header property-dialog-header">
+          <span class="new-note-mark property-dialog-mark" aria-hidden="true">◆</span>
+          <span>
+            <small id="property-dialog-operation">Typed frontmatter</small>
+            <strong id="property-dialog-title">Add note property</strong>
+          </span>
+          <button id="property-dialog-close" type="button" aria-label="Cancel property change">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="property-dialog-description" class="new-note-description">
+          Threadleaf changes one top-level property without reserializing the rest of your note.
+        </p>
+        <div class="property-fields" id="property-fields">
+          <label class="new-note-field property-field" for="property-name">
+            <span>Property name</span>
+            <input
+              id="property-name"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="status"
+              maxlength="128"
+              required
+            />
+          </label>
+          <label class="new-note-field property-field" for="property-type">
+            <span>Value type</span>
+            <select id="property-type">
+              <option value="text">Text</option>
+              <option value="list">List</option>
+              <option value="number">Number</option>
+              <option value="checkbox">Checkbox</option>
+              <option value="date">Date</option>
+              <option value="datetime">Date and time</option>
+            </select>
+          </label>
+          <label class="new-note-field property-field" id="property-value-field" for="property-value">
+            <span>Value</span>
+            <input
+              id="property-value"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="4096"
+              required
+            />
+          </label>
+          <label
+            class="new-note-field property-field"
+            id="property-checkbox-field"
+            for="property-checkbox-value"
+            hidden
+          >
+            <span>Value</span>
+            <select id="property-checkbox-value">
+              <option value="true">Checked, true</option>
+              <option value="false">Unchecked, false</option>
+            </select>
+          </label>
+          <p class="property-value-hint" id="property-value-hint"></p>
+        </div>
+        <div class="property-remove-summary" id="property-remove-summary" hidden>
+          <span aria-hidden="true">◇</span>
+          <span>
+            <strong id="property-remove-name">Property</strong>
+            <small>The note stays recoverable, but this property line will be removed.</small>
+          </span>
+        </div>
+        <p class="new-note-error" id="property-error" role="alert" hidden></p>
+        <footer class="new-note-footer">
+          <span id="property-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="property-cancel" type="button">Cancel</button>
+            <button class="primary-button" id="property-submit" type="submit">Save property</button>
+          </span>
+        </footer>
+      </form>
     </dialog>
 
     <dialog

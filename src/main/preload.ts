@@ -9,6 +9,8 @@ import type {
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
+  NotePropertyRemoveResponse,
+  NotePropertySetResponse,
   NoteSaveResponse,
   PluginPackageApplyResponse,
   PluginSurfaceBounds,
@@ -171,6 +173,24 @@ const bridge: ThreadleafBridge = {
       expectedRevision,
       expectedVaultId,
     ) as Promise<NoteSaveResponse>,
+  setNoteProperty: (filePath, name, rawValue, type, expectedRevision, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.setNoteProperty,
+      filePath,
+      name,
+      rawValue,
+      type,
+      expectedRevision,
+      expectedVaultId,
+    ) as Promise<NotePropertySetResponse>,
+  removeNoteProperty: (filePath, name, expectedRevision, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.removeNoteProperty,
+      filePath,
+      name,
+      expectedRevision,
+      expectedVaultId,
+    ) as Promise<NotePropertyRemoveResponse>,
   getEditorDraft: (expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.getEditorDraft,

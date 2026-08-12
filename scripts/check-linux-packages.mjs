@@ -136,6 +136,9 @@ assert(requirements.includes("nss"), "RPM dependency metadata is missing nss.");
 await run("xvfb-run", ["-a", process.execPath, "scripts/check-packaged-app.mjs"], {
   env: { THREADLEAF_PACKAGED_EXECUTABLE: appImagePath },
 });
+await run("xvfb-run", ["-a", process.execPath, "scripts/check-packaged-properties.mjs"], {
+  env: { THREADLEAF_PACKAGED_EXECUTABLE: appImagePath },
+});
 
 const artifacts = [];
 for (const filePath of [appImagePath, rpmPath]) {

@@ -178,6 +178,30 @@ export interface WorkspaceLinkSummary {
   syntax?: "wiki" | "markdown";
 }
 
+export const notePropertyTypes = [
+  "text",
+  "list",
+  "number",
+  "checkbox",
+  "date",
+  "datetime",
+] as const;
+
+export type NotePropertyType = (typeof notePropertyTypes)[number];
+export type NotePropertyValue = string | string[] | number | boolean;
+
+export interface WorkspacePropertySummary {
+  name: string;
+  type: NotePropertyType | "unsupported";
+  value: NotePropertyValue;
+  rawValue: string;
+}
+
+export interface WorkspacePropertyEditorSnapshot {
+  editable: boolean;
+  message: string | null;
+}
+
 export interface WorkspaceNoteSnapshot {
   path: string;
   title: string;
@@ -187,6 +211,8 @@ export interface WorkspaceNoteSnapshot {
   headings: Array<{ level: number; text: string; line: number }>;
   outgoing: WorkspaceLinkSummary[];
   backlinks: string[];
+  properties: WorkspacePropertySummary[];
+  propertyEditor: WorkspacePropertyEditorSnapshot;
 }
 
 export interface EditorDraftSnapshot {
@@ -271,6 +297,72 @@ export type NoteSaveOutcome =
 
 export interface NoteSaveResponse {
   outcome: NoteSaveOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
+export type NotePropertySetOutcome =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+      name: string;
+      type: NotePropertyType;
+      value: NotePropertyValue;
+    }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+      name: string;
+      type: NotePropertyType;
+      value: NotePropertyValue;
+    }
+  | {
+      status: "stale";
+      path: string;
+      currentRevision: string;
+      name: string;
+    };
+
+export type NotePropertyRemoveOutcome =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+      name: string;
+    }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+      name: string;
+    }
+  | {
+      status: "missing";
+      path: string;
+      revision: string;
+      name: string;
+    }
+  | {
+      status: "stale";
+      path: string;
+      currentRevision: string;
+      name: string;
+    };
+
+export interface NotePropertySetResponse {
+  outcome: NotePropertySetOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
+export interface NotePropertyRemoveResponse {
+  outcome: NotePropertyRemoveOutcome;
   snapshot: RuntimeSnapshot;
 }
 
@@ -535,6 +627,20 @@ export interface ThreadleafBridge {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteSaveResponse>;
+  setNoteProperty(
+    path: string,
+    name: string,
+    rawValue: string,
+    type: NotePropertyType,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertySetResponse>;
+  removeNoteProperty(
+    path: string,
+    name: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertyRemoveResponse>;
   getEditorDraft(expectedVaultId: string): Promise<EditorDraftReadResponse>;
   saveEditorDraft(draft: EditorDraftSnapshot): Promise<EditorDraftSaveResponse>;
   clearEditorDraft(expectedVaultId: string, draftId: string): Promise<EditorDraftClearResponse>;

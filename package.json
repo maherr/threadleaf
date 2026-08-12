@@ -43,7 +43,7 @@
     "release:linux": "pnpm run check && pnpm run pack:linux && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write",
     "start": "electron .",
     "test": "vitest run",
-    "test:packaged": "pnpm run pack:dir && xvfb-run -a node scripts/check-packaged-app.mjs",
+    "test:packaged": "pnpm run pack:dir && xvfb-run -a node scripts/check-packaged-app.mjs && xvfb-run -a node scripts/check-packaged-properties.mjs",
     "test:linux-packages": "node scripts/check-linux-packages.mjs",
     "test:macos-package": "node scripts/check-macos-package.mjs",
     "test:package-reproducible": "pnpm run build && node scripts/package-reproducible-linux.mjs",

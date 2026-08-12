@@ -12,6 +12,9 @@ import type {
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
+  NotePropertyRemoveResponse,
+  NotePropertySetResponse,
+  NotePropertyType,
   NoteSaveResponse,
   PluginEditorContext,
   RuntimeSnapshot,
@@ -100,6 +103,20 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteSaveResponse>;
+  setNoteProperty(
+    filePath: string,
+    name: string,
+    rawValue: string,
+    type: NotePropertyType,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertySetResponse>;
+  removeNoteProperty(
+    filePath: string,
+    name: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertyRemoveResponse>;
   runPluginCommand(
     commandId: string,
     editorContext?: PluginEditorContext,
@@ -541,6 +558,38 @@ export class WorkspaceController {
     return this.activeRuntime("save a note").saveNote(
       filePath,
       content,
+      expectedRevision,
+      expectedVaultId,
+    );
+  }
+
+  setNoteProperty(
+    filePath: string,
+    name: string,
+    rawValue: string,
+    type: NotePropertyType,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertySetResponse> {
+    return this.activeRuntime("edit a note property").setNoteProperty(
+      filePath,
+      name,
+      rawValue,
+      type,
+      expectedRevision,
+      expectedVaultId,
+    );
+  }
+
+  removeNoteProperty(
+    filePath: string,
+    name: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertyRemoveResponse> {
+    return this.activeRuntime("remove a note property").removeNoteProperty(
+      filePath,
+      name,
       expectedRevision,
       expectedVaultId,
     );

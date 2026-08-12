@@ -81,6 +81,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Headless `properties`, `property:read`, `property:set`, and `property:remove` commands, with typed
   scalar and list serialization, conservative byte-preserving frontmatter patches, idempotent
   removal, mutation locking, revision conflicts, stable JSON, and explicit complex-YAML refusal.
+- Ordered desktop property inspection and typed add, edit, and remove controls for text, list,
+  number, checkbox, date, and datetime values, backed by the same revision-bound mutation service,
+  with dirty-note guards, explicit complex-value refusal, and packaged visual and exact-byte tests.
 - Source-offset-preserving wiki and Markdown link parsing plus deterministic move-rewrite planning,
   including fenced and inline code exclusion, HTML-comment exclusion, alias and anchor retention,
   relative-path regeneration, ambiguity refusal, and final projected-index validation.

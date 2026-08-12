@@ -18,6 +18,7 @@ import type {
   NoteMoveBlocker,
   NoteMoveResponse,
   NoteMoveRewritePreview,
+  NotePropertyType,
   PluginEditorContext,
   PluginEditorUpdate,
   RuntimeSnapshot,
@@ -26,6 +27,7 @@ import type {
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
+  WorkspacePropertySummary,
   WorkspaceTabSummary,
 } from "../shared/contracts";
 import {
@@ -108,6 +110,10 @@ const elements = {
   editNoticeMessage: getElement("edit-notice-message"),
   dismissEditNotice: getButton("dismiss-edit-notice"),
   outlineList: getElement("outline-list"),
+  propertyCount: getElement("property-count"),
+  propertyAdd: getButton("property-add"),
+  propertyEditorMessage: getElement("property-editor-message"),
+  propertyList: getElement("property-list"),
   linkCount: getElement("link-count"),
   outgoingList: getElement("outgoing-list"),
   backlinkList: getElement("backlink-list"),
@@ -207,6 +213,26 @@ const elements = {
   newNoteCreate: getButton("new-note-create"),
   newNoteError: getElement("new-note-error"),
   newNoteVault: getElement("new-note-vault"),
+  propertyDialog: getDialog("property-dialog"),
+  propertyForm: getForm("property-form"),
+  propertyDialogOperation: getElement("property-dialog-operation"),
+  propertyDialogTitle: getElement("property-dialog-title"),
+  propertyDialogDescription: getElement("property-dialog-description"),
+  propertyDialogClose: getButton("property-dialog-close"),
+  propertyFields: getElement("property-fields"),
+  propertyName: getInput("property-name"),
+  propertyType: getSelect("property-type"),
+  propertyValueField: getElement("property-value-field"),
+  propertyValue: getInput("property-value"),
+  propertyCheckboxField: getElement("property-checkbox-field"),
+  propertyCheckboxValue: getSelect("property-checkbox-value"),
+  propertyValueHint: getElement("property-value-hint"),
+  propertyRemoveSummary: getElement("property-remove-summary"),
+  propertyRemoveName: getElement("property-remove-name"),
+  propertyError: getElement("property-error"),
+  propertyVault: getElement("property-vault"),
+  propertyCancel: getButton("property-cancel"),
+  propertySubmit: getButton("property-submit"),
   moveNoteDialog: getDialog("move-note-dialog"),
   moveNoteForm: getForm("move-note-form"),
   moveNoteTarget: getInput("move-note-target"),
@@ -445,6 +471,14 @@ let lastVirtualActivePath: string | null = null;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
 let newNoteVaultId: string | null = null;
+type PropertyDialogMode = "add" | "edit" | "remove";
+let propertyDialogMode: PropertyDialogMode = "add";
+let propertyDialogRestoreFocus: HTMLElement | null = null;
+let propertyBusy = false;
+let propertyVaultId: string | null = null;
+let propertyNotePath: string | null = null;
+let propertyNoteRevision: string | null = null;
+let propertyTargetName: string | null = null;
 let moveNoteRestoreFocus: HTMLElement | null = null;
 let moveNoteBusy = false;
 let moveNoteVaultId: string | null = null;
@@ -627,6 +661,25 @@ function readOnlyVault(): boolean {
   return currentSnapshot?.vault.mode === "synthetic-read-only";
 }
 
+function propertyEditBlockReason(): string | null {
+  if (!loadedNote || !loadedVaultId) {
+    return "Open a note to manage its properties.";
+  }
+  if (readOnlyVault()) {
+    return "Open a local vault before editing properties.";
+  }
+  if (!loadedNote.propertyEditor.editable) {
+    return loadedNote.propertyEditor.message ?? "This frontmatter is read-only.";
+  }
+  if (dirty) {
+    return "Save or revert the current note before editing its properties.";
+  }
+  if (busy || saving || propertyBusy) {
+    return "Threadleaf is finishing another action.";
+  }
+  return null;
+}
+
 function syncEditorAccess(): void {
   const readOnly = readOnlyVault();
   if (readOnly !== editorReadOnly) {
@@ -681,6 +734,16 @@ function commandCatalog(): RendererCommand[] {
             ? "Save or revert the current note before moving it."
             : "Threadleaf is finishing another action.",
       run: openMoveNoteDialog,
+    },
+    {
+      id: "workspace.manage-properties",
+      label: "Add note property",
+      category: "Workspace",
+      keywords: ["property", "properties", "frontmatter", "metadata", "yaml"],
+      shortcut: null,
+      enabled: propertyEditBlockReason() === null,
+      disabledReason: propertyEditBlockReason(),
+      run: () => openPropertyDialog("add"),
     },
     {
       id: "workspace.delete-note",
@@ -1667,6 +1730,251 @@ async function createNewNote(): Promise<void> {
     showToast(`Created ${response.outcome.path}`);
   }
   window.setTimeout(() => editor.focus(), 0);
+}
+
+function selectedPropertyType(): NotePropertyType {
+  switch (elements.propertyType.value) {
+    case "list":
+    case "number":
+    case "checkbox":
+    case "date":
+    case "datetime":
+      return elements.propertyType.value;
+    default:
+      return "text";
+  }
+}
+
+function configurePropertyValueInput(): void {
+  const type = selectedPropertyType();
+  const checkbox = type === "checkbox";
+  elements.propertyValueField.hidden = checkbox;
+  elements.propertyCheckboxField.hidden = !checkbox;
+  elements.propertyValue.required = !checkbox;
+  elements.propertyCheckboxValue.required = checkbox;
+  elements.propertyValue.type =
+    type === "number"
+      ? "number"
+      : type === "date"
+        ? "date"
+        : type === "datetime"
+          ? "datetime-local"
+          : "text";
+  elements.propertyValue.step = type === "number" ? "any" : type === "datetime" ? "1" : "";
+  elements.propertyValue.placeholder =
+    type === "list"
+      ? 'alpha, beta or ["alpha","beta"]'
+      : type === "number"
+        ? "3.5"
+        : type === "date"
+          ? "YYYY-MM-DD"
+          : type === "datetime"
+            ? "YYYY-MM-DDTHH:mm:ss"
+            : "Property value";
+  elements.propertyValueHint.textContent =
+    type === "list"
+      ? "Use a comma-separated list or a JSON array of strings."
+      : type === "checkbox"
+        ? "Checked is stored as true; unchecked is stored as false."
+        : type === "date"
+          ? "A real calendar date is stored without a timezone."
+          : type === "datetime"
+            ? "Seconds are retained. This value is stored without a timezone."
+            : "Threadleaf preserves unrelated frontmatter bytes exactly.";
+}
+
+function renderPropertyDialog(): void {
+  if (!elements.propertyDialog.open) {
+    return;
+  }
+  const staleVault = Boolean(
+    propertyVaultId && propertyVaultId !== (currentSnapshot?.vault.id ?? null),
+  );
+  const staleNote = Boolean(
+    !propertyBusy &&
+      propertyNotePath &&
+      propertyNoteRevision &&
+      (!loadedNote ||
+        loadedNote.path !== propertyNotePath ||
+        loadedNote.revision !== propertyNoteRevision),
+  );
+  if ((staleVault || staleNote) && !elements.propertyError.textContent) {
+    elements.propertyError.textContent = staleVault
+      ? "The active vault changed. Cancel and reopen Properties."
+      : "The note changed on disk. Cancel, review it, and reopen Properties.";
+  }
+  const removing = propertyDialogMode === "remove";
+  const editing = propertyDialogMode === "edit";
+  elements.propertyDialogOperation.textContent = removing
+    ? "Explicit removal"
+    : editing
+      ? "Typed frontmatter"
+      : "New typed frontmatter";
+  elements.propertyDialogTitle.textContent = removing
+    ? "Remove note property?"
+    : editing
+      ? "Edit note property"
+      : "Add note property";
+  elements.propertyDialogDescription.textContent = removing
+    ? "Threadleaf removes only the selected top-level property block. The note body and every unrelated frontmatter byte stay unchanged."
+    : "Threadleaf changes one top-level property without reserializing the rest of your note.";
+  elements.propertyFields.hidden = removing;
+  elements.propertyRemoveSummary.hidden = !removing;
+  elements.propertyRemoveName.textContent = propertyTargetName ?? "Property";
+  elements.propertyName.disabled = propertyBusy || editing || removing;
+  elements.propertyType.disabled = propertyBusy || removing;
+  elements.propertyValue.disabled = propertyBusy || removing;
+  elements.propertyCheckboxValue.disabled = propertyBusy || removing;
+  elements.propertyDialogClose.disabled = propertyBusy;
+  elements.propertyCancel.disabled = propertyBusy;
+  elements.propertySubmit.disabled = propertyBusy || staleVault || staleNote || readOnlyVault();
+  elements.propertySubmit.textContent = propertyBusy
+    ? removing
+      ? "Removing…"
+      : "Saving…"
+    : removing
+      ? "Remove property"
+      : "Save property";
+  elements.propertySubmit.classList.toggle("trash-confirm-button", removing);
+  elements.propertyForm.setAttribute("aria-busy", String(propertyBusy));
+  elements.propertyVault.textContent = staleVault
+    ? "Vault changed"
+    : currentSnapshot
+      ? `In ${currentSnapshot.vault.name}`
+      : "Active vault";
+  elements.propertyError.hidden = !(elements.propertyError.textContent ?? "").length;
+  configurePropertyValueInput();
+}
+
+function openPropertyDialog(mode: PropertyDialogMode, property?: WorkspacePropertySummary): void {
+  const blocked = propertyEditBlockReason();
+  if (blocked) {
+    showToast(blocked);
+    return;
+  }
+  if (!loadedNote || !loadedVaultId) {
+    return;
+  }
+  if (mode !== "add" && (!property || property.type === "unsupported")) {
+    showToast("This property cannot be changed losslessly yet.");
+    return;
+  }
+  if (elements.commandPalette.open) {
+    closeCommandPalette(false);
+  }
+  if (documentViewMode === "plugin") {
+    setDocumentView("source", false);
+  }
+  propertyDialogRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  propertyDialogMode = mode;
+  propertyBusy = false;
+  propertyVaultId = loadedVaultId;
+  propertyNotePath = loadedNote.path;
+  propertyNoteRevision = loadedNote.revision;
+  propertyTargetName = property?.name ?? null;
+  elements.propertyName.value = property?.name ?? "";
+  elements.propertyType.value =
+    property?.type === "unsupported" ? "text" : (property?.type ?? "text");
+  elements.propertyValue.value = property?.rawValue ?? "";
+  elements.propertyCheckboxValue.value = property?.value === false ? "false" : "true";
+  elements.propertyError.textContent = "";
+  elements.propertyDialog.showModal();
+  renderPropertyDialog();
+  window.requestAnimationFrame(() => {
+    if (mode === "add") {
+      elements.propertyName.focus();
+    } else if (mode === "edit") {
+      (selectedPropertyType() === "checkbox"
+        ? elements.propertyCheckboxValue
+        : elements.propertyValue
+      ).focus();
+    } else {
+      elements.propertySubmit.focus();
+    }
+  });
+}
+
+function closePropertyDialog(restoreFocus = true): void {
+  if (!elements.propertyDialog.open || propertyBusy) {
+    return;
+  }
+  elements.propertyDialog.close();
+  elements.propertyForm.setAttribute("aria-busy", "false");
+  propertyVaultId = null;
+  propertyNotePath = null;
+  propertyNoteRevision = null;
+  propertyTargetName = null;
+  const restoreTarget = propertyDialogRestoreFocus;
+  propertyDialogRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function savePropertyChange(): Promise<void> {
+  const expectedVaultId = propertyVaultId;
+  const path = propertyNotePath;
+  const expectedRevision = propertyNoteRevision;
+  if (!expectedVaultId || !path || !expectedRevision || propertyBusy) {
+    return;
+  }
+  const name =
+    propertyDialogMode === "add" ? elements.propertyName.value.trim() : propertyTargetName;
+  if (!name) {
+    elements.propertyError.textContent = "Enter a property name.";
+    renderPropertyDialog();
+    elements.propertyName.focus();
+    return;
+  }
+
+  propertyBusy = true;
+  elements.propertyError.textContent = "";
+  renderPropertyDialog();
+  setActionState(true);
+  try {
+    const response =
+      propertyDialogMode === "remove"
+        ? await window.threadleaf.removeNoteProperty(path, name, expectedRevision, expectedVaultId)
+        : await window.threadleaf.setNoteProperty(
+            path,
+            name,
+            selectedPropertyType() === "checkbox"
+              ? elements.propertyCheckboxValue.value
+              : elements.propertyValue.value,
+            selectedPropertyType(),
+            expectedRevision,
+            expectedVaultId,
+          );
+    propertyBusy = false;
+    setActionState(false);
+    if (response.outcome.status === "stale") {
+      render(response.snapshot);
+      elements.propertyError.textContent =
+        "The note changed on disk. Nothing was written. Cancel, review the current note, and try again.";
+      renderPropertyDialog();
+      return;
+    }
+    closePropertyDialog(false);
+    render(response.snapshot);
+    if (response.outcome.status === "conflict") {
+      setEditNotice({
+        kind: "conflict",
+        title: "Your property change was preserved as a conflict note",
+        message: `The original changed on disk and was not overwritten. Your proposed property change is now ${response.outcome.conflictPath}.`,
+      });
+      showToast(`Property change preserved as ${response.outcome.conflictPath}`);
+    } else if (response.outcome.status === "missing") {
+      showToast(`${name} was already absent.`);
+    } else {
+      showToast(propertyDialogMode === "remove" ? `Removed ${name}.` : `Saved ${name}.`);
+    }
+  } catch (error) {
+    propertyBusy = false;
+    setActionState(false);
+    elements.propertyError.textContent = error instanceof Error ? error.message : String(error);
+    renderPropertyDialog();
+  }
 }
 
 function moveResolutionText(resolution: NoteMoveBlocker["before"]): string {
@@ -4547,6 +4855,9 @@ function render(snapshot: RuntimeSnapshot): void {
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
   }
+  if (elements.propertyDialog.open) {
+    renderPropertyDialog();
+  }
   if (elements.moveNoteDialog.open) {
     renderMoveNoteDialog();
   }
@@ -4856,6 +5167,7 @@ function renderNote(note: WorkspaceNoteSnapshot | null): void {
     elements.notePath.textContent = "No note selected";
     elements.noteTags.replaceChildren();
     elements.linkCount.textContent = "0";
+    renderProperties(null);
     renderEmpty(elements.outlineList, "No outline yet.");
     renderEmpty(elements.outgoingList, "No outgoing links.");
     renderEmpty(elements.backlinkList, "No backlinks.");
@@ -4878,6 +5190,8 @@ function renderNote(note: WorkspaceNoteSnapshot | null): void {
     untagged.textContent = "Untagged";
     elements.noteTags.append(untagged);
   }
+
+  renderProperties(note);
 
   elements.outlineList.replaceChildren();
   for (const heading of note.headings) {
@@ -4904,6 +5218,80 @@ function renderNote(note: WorkspaceNoteSnapshot | null): void {
     })),
   );
   renderEditControls();
+}
+
+function displayPropertyValue(property: WorkspacePropertySummary): string {
+  if (Array.isArray(property.value)) {
+    return property.value.length > 0 ? property.value.join(", ") : "Empty list";
+  }
+  if (property.type === "checkbox") {
+    return property.value ? "Checked" : "Unchecked";
+  }
+  const value = String(property.value);
+  return value || "Empty text";
+}
+
+function renderProperties(note: WorkspaceNoteSnapshot | null): void {
+  elements.propertyList.replaceChildren();
+  elements.propertyCount.textContent = String(note?.properties.length ?? 0);
+  for (const property of note?.properties ?? []) {
+    const row = document.createElement("div");
+    row.className = "property-row";
+    row.dataset.propertyName = property.name;
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "property-edit";
+    edit.dataset.propertyAction = "edit";
+    edit.dataset.propertyType = property.type;
+    edit.setAttribute("aria-label", `Edit ${property.name} property`);
+    const copy = document.createElement("span");
+    copy.className = "property-copy";
+    const name = document.createElement("strong");
+    name.textContent = property.name;
+    const value = document.createElement("span");
+    value.textContent = displayPropertyValue(property);
+    copy.append(name, value);
+    const type = document.createElement("small");
+    type.textContent = property.type === "unsupported" ? "Read only" : property.type;
+    edit.append(copy, type);
+    edit.addEventListener("click", () => openPropertyDialog("edit", property));
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "property-remove";
+    remove.dataset.propertyAction = "remove";
+    remove.dataset.propertyType = property.type;
+    remove.setAttribute("aria-label", `Remove ${property.name} property`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => openPropertyDialog("remove", property));
+    row.append(edit, remove);
+    elements.propertyList.append(row);
+  }
+  if (!note) {
+    renderEmpty(elements.propertyList, "Open a note to inspect properties.");
+  } else if (note.properties.length === 0) {
+    renderEmpty(elements.propertyList, "No frontmatter properties.");
+  }
+  renderPropertyControls();
+}
+
+function renderPropertyControls(): void {
+  const reason = propertyEditBlockReason();
+  elements.propertyAdd.disabled = reason !== null;
+  elements.propertyAdd.title = reason ?? "Add note property";
+  for (const control of elements.propertyList.querySelectorAll<HTMLButtonElement>(
+    "[data-property-action]",
+  )) {
+    const unsupported = control.dataset.propertyType === "unsupported";
+    control.disabled = reason !== null || unsupported;
+    control.title = unsupported
+      ? "This complex property is visible but cannot be rewritten losslessly yet."
+      : (reason ?? "");
+  }
+  const message = loadedNote ? reason : "Open a note to inspect and edit properties.";
+  elements.propertyEditorMessage.textContent = message ?? "";
+  elements.propertyEditorMessage.hidden = !message;
 }
 
 function reconcileEditor(
@@ -5162,6 +5550,8 @@ function recoveredDraftNote(
     headings: [],
     outgoing: [],
     backlinks: [],
+    properties: [],
+    propertyEditor: { editable: true, message: null },
   };
 }
 
@@ -5363,6 +5753,7 @@ function renderEditControls(): void {
   renderTabs(opening ? [] : (currentSnapshot?.workspace?.tabs ?? []), loadedNote?.path ?? null);
   renderEditNotice();
   renderDocumentView();
+  renderPropertyControls();
   renderPaletteResults();
 }
 
@@ -5685,6 +6076,9 @@ elements.newNote.addEventListener(
   "click",
   () => void executeRendererCommand("workspace.create-note"),
 );
+elements.propertyAdd.addEventListener("click", () => {
+  void executeRendererCommand("workspace.manage-properties");
+});
 elements.moveNote.addEventListener(
   "click",
   () => void executeRendererCommand("workspace.move-note"),
@@ -5869,6 +6263,23 @@ elements.newNoteDialog.addEventListener("click", (event) => {
   }
 });
 
+elements.propertyType.addEventListener("change", configurePropertyValueInput);
+elements.propertyForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void savePropertyChange();
+});
+elements.propertyDialogClose.addEventListener("click", () => closePropertyDialog());
+elements.propertyCancel.addEventListener("click", () => closePropertyDialog());
+elements.propertyDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closePropertyDialog();
+});
+elements.propertyDialog.addEventListener("click", (event) => {
+  if (event.target === elements.propertyDialog) {
+    closePropertyDialog();
+  }
+});
+
 elements.moveNoteTarget.addEventListener("input", () => {
   moveNoteBlockers = [];
   moveNoteRewrites = [];
@@ -5921,6 +6332,7 @@ document.addEventListener("keydown", (event) => {
     if (
       elements.settingsDialog.open ||
       elements.newNoteDialog.open ||
+      elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.pluginPackageReviewDialog.open ||
@@ -5939,6 +6351,7 @@ document.addEventListener("keydown", (event) => {
   if (targetId === "settings.open-keybindings") {
     if (
       elements.newNoteDialog.open ||
+      elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.pluginPackageReviewDialog.open ||
@@ -5958,6 +6371,7 @@ document.addEventListener("keydown", (event) => {
     elements.commandPalette.open ||
     elements.settingsDialog.open ||
     elements.newNoteDialog.open ||
+    elements.propertyDialog.open ||
     elements.moveNoteDialog.open ||
     elements.deleteNoteDialog.open ||
     elements.pluginPackageReviewDialog.open ||

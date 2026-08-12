@@ -19,10 +19,12 @@ import { FixedStateRoot } from "../kernel/ports";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
 import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared/appearance";
-import type {
-  PluginPackageApplyResponse,
-  PluginSurfaceBounds,
-  PluginUpdateResponse,
+import {
+  type NotePropertyType,
+  notePropertyTypes,
+  type PluginPackageApplyResponse,
+  type PluginSurfaceBounds,
+  type PluginUpdateResponse,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
@@ -1190,6 +1192,65 @@ function registerIpcHandlers(): void {
         throw new Error("Save note requires string path, content, revision, and vault values.");
       }
       return workspaceController.saveNote(filePath, content, expectedRevision, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.setNoteProperty,
+    (
+      _event,
+      filePath: unknown,
+      name: unknown,
+      rawValue: unknown,
+      type: unknown,
+      expectedRevision: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof name !== "string" ||
+        typeof rawValue !== "string" ||
+        typeof type !== "string" ||
+        !notePropertyTypes.includes(type as NotePropertyType) ||
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error(
+          "Set property requires string path, name, value, type, revision, and vault values.",
+        );
+      }
+      return workspaceController.setNoteProperty(
+        filePath,
+        name,
+        rawValue,
+        type as NotePropertyType,
+        expectedRevision,
+        expectedVaultId,
+      );
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.removeNoteProperty,
+    (
+      _event,
+      filePath: unknown,
+      name: unknown,
+      expectedRevision: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof name !== "string" ||
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Remove property requires string path, name, revision, and vault values.");
+      }
+      return workspaceController.removeNoteProperty(
+        filePath,
+        name,
+        expectedRevision,
+        expectedVaultId,
+      );
     },
   );
   ipcMain.handle(ipcChannels.getEditorDraft, async (_event, expectedVaultId: unknown) => {

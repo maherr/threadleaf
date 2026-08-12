@@ -191,6 +191,15 @@ function runtimeFixture(): RuntimeSnapshot {
           },
         ],
         backlinks: ["PRIVATE_BACKLINK.md"],
+        properties: [
+          {
+            name: "PRIVATE_PROPERTY",
+            type: "text",
+            value: "PRIVATE_PROPERTY_VALUE",
+            rawValue: "PRIVATE_PROPERTY_VALUE",
+          },
+        ],
+        propertyEditor: { editable: false, message: "PRIVATE_PROPERTY_MESSAGE" },
       },
       recoveryActionCount: 2,
       watcher: {

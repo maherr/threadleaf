@@ -160,8 +160,12 @@ The smoke check proves all of the following against the packaged executable:
 - A direct preload `createNote` request is rejected by the workspace backend and writes no file.
 - About and updates reports the installed version and the correct fail-closed platform policy.
 - A disabled update policy exposes no enabled network action or inactive progress indicator.
+- A disposable writable vault exposes properties in source order and accepts typed text, list,
+  number, checkbox, date, and datetime add and edit actions through the real Electron bridge.
+- Explicit property removal preserves every unrelated Markdown byte, and the packaged run exits
+  without a stale-write warning after its own successful filesystem update.
 - The application renders both dark and light appearances, including update settings at 1180x820
-  and the minimum 860x640 viewport, and exits cleanly.
+  and property add, edit, and removal dialogs at the minimum 860x640 viewport, and exits cleanly.
 
 The bundled resource is intentionally read-only. It is a safe first-run tour, not a starter vault.
 The user must explicitly open a local folder before Threadleaf permits writes or plugin-package

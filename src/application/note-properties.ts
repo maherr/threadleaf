@@ -1,17 +1,16 @@
+import { parse as parseYaml } from "yaml";
 import { normalizeMarkdownNotePath } from "../kernel/note-path";
 import type { VaultMutationPort, VaultWriteResult } from "../kernel/ports";
+import {
+  type NotePropertyType,
+  type NotePropertyValue,
+  notePropertyTypes,
+  type WorkspacePropertyEditorSnapshot,
+  type WorkspacePropertySummary,
+} from "../shared/contracts";
 
-export const notePropertyTypes = [
-  "text",
-  "list",
-  "number",
-  "checkbox",
-  "date",
-  "datetime",
-] as const;
-
-export type NotePropertyType = (typeof notePropertyTypes)[number];
-export type NotePropertyValue = string | string[] | number | boolean;
+export type { NotePropertyType, NotePropertyValue };
+export { notePropertyTypes };
 
 export type NotePropertySetOutcome = VaultWriteResult & {
   name: string;
@@ -46,6 +45,11 @@ interface FrontmatterLayout {
 interface SerializedProperty {
   value: NotePropertyValue;
   lines: string[];
+}
+
+export interface NotePropertyInspection {
+  properties: WorkspacePropertySummary[];
+  editor: WorkspacePropertyEditorSnapshot;
 }
 
 function lineEndingFor(content: string): "\n" | "\r\n" {
@@ -188,6 +192,121 @@ function isDateTime(value: string): boolean {
     Number(match[3]) <= 59 &&
     Number(match[4]) <= 59
   );
+}
+
+function unsupportedPropertyValue(value: unknown): string {
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function propertySummary(name: string, value: unknown): WorkspacePropertySummary {
+  if (typeof value === "boolean") {
+    return { name, type: "checkbox", value, rawValue: String(value) };
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return { name, type: "number", value, rawValue: String(value) };
+  }
+  if (typeof value === "string") {
+    const type = isCalendarDate(value) ? "date" : isDateTime(value) ? "datetime" : "text";
+    return { name, type, value, rawValue: value };
+  }
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+    return { name, type: "list", value, rawValue: JSON.stringify(value) };
+  }
+  const visible = unsupportedPropertyValue(value);
+  return { name, type: "unsupported", value: visible, rawValue: visible };
+}
+
+function fallbackPropertySummaries(
+  fallback: Readonly<Record<string, string | string[]>>,
+): WorkspacePropertySummary[] {
+  return Object.entries(fallback).map(([name, value]) => ({
+    name,
+    type: "unsupported",
+    value,
+    rawValue: Array.isArray(value) ? JSON.stringify(value) : value,
+  }));
+}
+
+function inspectionFailure(
+  message: string,
+  fallback: Readonly<Record<string, string | string[]>>,
+): NotePropertyInspection {
+  return {
+    properties: fallbackPropertySummaries(fallback),
+    editor: { editable: false, message },
+  };
+}
+
+export function inspectMarkdownNoteProperties(
+  content: string,
+  fallback: Readonly<Record<string, string | string[]>> = {},
+): NotePropertyInspection {
+  let layout: FrontmatterLayout | null;
+  try {
+    layout = frontmatterLayout(content);
+  } catch (error) {
+    return inspectionFailure(error instanceof Error ? error.message : String(error), fallback);
+  }
+  if (!layout) {
+    return { properties: [], editor: { editable: true, message: null } };
+  }
+
+  const frontmatterSource = layout.lines.map((line) => line.full).join("");
+  if (!frontmatterSource.trim()) {
+    return { properties: [], editor: { editable: true, message: null } };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(frontmatterSource, { uniqueKeys: true });
+  } catch (error) {
+    return inspectionFailure(
+      `Properties are visible through the index, but this frontmatter cannot be edited safely: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      fallback,
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return inspectionFailure(
+      "Threadleaf can edit only a top-level YAML property map. This frontmatter remains read-only.",
+      fallback,
+    );
+  }
+
+  const properties = Object.entries(parsed).map(([name, value]) => propertySummary(name, value));
+  try {
+    propertyBlocks(layout.lines);
+  } catch (error) {
+    return {
+      properties,
+      editor: {
+        editable: false,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+  if (properties.some((property) => property.type === "unsupported")) {
+    return {
+      properties,
+      editor: {
+        editable: false,
+        message:
+          "This note contains complex property values. Threadleaf shows them but will not rewrite this frontmatter yet.",
+      },
+    };
+  }
+  return { properties, editor: { editable: true, message: null } };
 }
 
 function serializeProperty(

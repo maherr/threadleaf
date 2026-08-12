@@ -20,6 +20,11 @@ import type {
   NoteDeleteResponse,
   NoteMoveOutcome,
   NoteMoveResponse,
+  NotePropertyRemoveOutcome,
+  NotePropertyRemoveResponse,
+  NotePropertySetOutcome,
+  NotePropertySetResponse,
+  NotePropertyType,
   NoteSaveOutcome,
   NoteSaveResponse,
   PluginEditorContext,
@@ -36,6 +41,11 @@ import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
 import { loadVaultNoteEmbed } from "./note-embed-service";
 import { movedMarkdownPath, moveMarkdownNote } from "./note-move";
+import {
+  applyNotePropertyRemove,
+  applyNotePropertySet,
+  inspectMarkdownNoteProperties,
+} from "./note-properties";
 import { trashMarkdownNote, vaultTrashDirectory } from "./note-trash";
 import { loadVaultImage } from "./vault-image-service";
 import {
@@ -67,6 +77,22 @@ interface WorkspaceIndexProjection {
 interface SaveNoteRequest {
   path: string;
   content: string;
+  expectedRevision: string;
+  expectedVaultId: string;
+}
+
+interface SetNotePropertyRequest {
+  path: string;
+  name: string;
+  rawValue: string;
+  type: NotePropertyType;
+  expectedRevision: string;
+  expectedVaultId: string;
+}
+
+interface RemoveNotePropertyRequest {
+  path: string;
+  name: string;
   expectedRevision: string;
   expectedVaultId: string;
 }
@@ -204,6 +230,60 @@ function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
   };
 }
 
+function parseSetNotePropertyRequest(payload: unknown): SetNotePropertyRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("name" in payload) ||
+    typeof payload.name !== "string" ||
+    !("rawValue" in payload) ||
+    typeof payload.rawValue !== "string" ||
+    !("type" in payload) ||
+    !["text", "list", "number", "checkbox", "date", "datetime"].includes(String(payload.type)) ||
+    !("expectedRevision" in payload) ||
+    typeof payload.expectedRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error(
+      "Set property requires string path, name, value, type, revision, and vault values.",
+    );
+  }
+  return {
+    path: payload.path,
+    name: payload.name,
+    rawValue: payload.rawValue,
+    type: payload.type as NotePropertyType,
+    expectedRevision: payload.expectedRevision,
+    expectedVaultId: payload.expectedVaultId,
+  };
+}
+
+function parseRemoveNotePropertyRequest(payload: unknown): RemoveNotePropertyRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("name" in payload) ||
+    typeof payload.name !== "string" ||
+    !("expectedRevision" in payload) ||
+    typeof payload.expectedRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Remove property requires string path, name, revision, and vault values.");
+  }
+  return {
+    path: payload.path,
+    name: payload.name,
+    expectedRevision: payload.expectedRevision,
+    expectedVaultId: payload.expectedVaultId,
+  };
+}
+
 function isWorkspaceNoteLink(link: { syntax: "wiki" | "markdown"; embed: boolean }): boolean {
   return link.syntax !== "markdown" || !link.embed;
 }
@@ -323,6 +403,20 @@ export class WorkspaceRuntime {
         name: "Save note",
         source: "workspace",
         execute: (payload) => this.saveNoteThroughKernel(parseSaveNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.set-note-property",
+        name: "Set note property",
+        source: "workspace",
+        execute: (payload) =>
+          this.setNotePropertyThroughKernel(parseSetNotePropertyRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.remove-note-property",
+        name: "Remove note property",
+        source: "workspace",
+        execute: (payload) =>
+          this.removeNotePropertyThroughKernel(parseRemoveNotePropertyRequest(payload)),
       }),
     );
   }
@@ -543,6 +637,46 @@ export class WorkspaceRuntime {
       expectedRevision,
       expectedVaultId,
     });
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async setNoteProperty(
+    filePath: string,
+    name: string,
+    rawValue: string,
+    type: NotePropertyType,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertySetResponse> {
+    const outcome = await this.actions.dispatch<NotePropertySetOutcome>(
+      "workspace.set-note-property",
+      {
+        path: filePath,
+        name,
+        rawValue,
+        type,
+        expectedRevision,
+        expectedVaultId,
+      },
+    );
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async removeNoteProperty(
+    filePath: string,
+    name: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NotePropertyRemoveResponse> {
+    const outcome = await this.actions.dispatch<NotePropertyRemoveOutcome>(
+      "workspace.remove-note-property",
+      {
+        path: filePath,
+        name,
+        expectedRevision,
+        expectedVaultId,
+      },
+    );
     return { outcome, snapshot: await this.publishSnapshot() };
   }
 
@@ -1039,6 +1173,85 @@ export class WorkspaceRuntime {
       request.content,
       request.expectedRevision,
     );
+    await this.reconcileNoteWrite(outcome);
+    return outcome;
+  }
+
+  private async setNotePropertyThroughKernel(
+    request: SetNotePropertyRequest,
+  ): Promise<NotePropertySetOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this property could be saved.");
+    }
+    this.assertWritable("edit note properties");
+    const normalizedPath = normalizeMarkdownNotePath(normalizeVaultPath(request.path));
+    const existing = await this.kernel.readText(normalizedPath);
+    if (existing.revision !== request.expectedRevision) {
+      await this.indexReactor.index.refresh(this.kernel, normalizedPath);
+      return {
+        status: "stale",
+        path: normalizedPath,
+        currentRevision: existing.revision,
+        name: request.name,
+      };
+    }
+    const proposal = applyNotePropertySet(
+      existing.content,
+      request.name,
+      request.rawValue,
+      request.type,
+    );
+    const outcome = await this.kernel.writeText(
+      normalizedPath,
+      proposal.content,
+      existing.revision,
+    );
+    await this.reconcileNoteWrite(outcome);
+    return {
+      ...outcome,
+      name: request.name,
+      type: request.type,
+      value: proposal.value,
+    };
+  }
+
+  private async removeNotePropertyThroughKernel(
+    request: RemoveNotePropertyRequest,
+  ): Promise<NotePropertyRemoveOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this property could be removed.");
+    }
+    this.assertWritable("edit note properties");
+    const normalizedPath = normalizeMarkdownNotePath(normalizeVaultPath(request.path));
+    const existing = await this.kernel.readText(normalizedPath);
+    if (existing.revision !== request.expectedRevision) {
+      await this.indexReactor.index.refresh(this.kernel, normalizedPath);
+      return {
+        status: "stale",
+        path: normalizedPath,
+        currentRevision: existing.revision,
+        name: request.name,
+      };
+    }
+    const proposal = applyNotePropertyRemove(existing.content, request.name);
+    if (!proposal.removed) {
+      return {
+        status: "missing",
+        path: normalizedPath,
+        revision: existing.revision,
+        name: request.name,
+      };
+    }
+    const outcome = await this.kernel.writeText(
+      normalizedPath,
+      proposal.content,
+      existing.revision,
+    );
+    await this.reconcileNoteWrite(outcome);
+    return { ...outcome, name: request.name };
+  }
+
+  private async reconcileNoteWrite(outcome: VaultWriteResult): Promise<void> {
     if (outcome.status === "committed") {
       this.watcher.operations.expect({
         id: outcome.transactionId,
@@ -1050,7 +1263,7 @@ export class WorkspaceRuntime {
       if (this.activatePath(outcome.path)) {
         await this.persistWorkspaceStateBestEffort();
       }
-      return outcome;
+      return;
     }
 
     const conflictCopy = await this.kernel.readText(outcome.conflictPath);
@@ -1069,7 +1282,6 @@ export class WorkspaceRuntime {
     if (this.activatePath(conflictCopy.path)) {
       await this.persistWorkspaceStateBestEffort();
     }
-    return outcome;
   }
 
   private async createNoteThroughKernel(
@@ -1198,6 +1410,10 @@ export class WorkspaceRuntime {
     const activeMetadata = this.#activePath ? documents.get(this.#activePath) : undefined;
     if (this.#activePath && activeMetadata) {
       const note = await this.kernel.readText(this.#activePath);
+      const propertyInspection = inspectMarkdownNoteProperties(
+        note.content,
+        activeMetadata.properties,
+      );
       activeNote = {
         path: note.path,
         title: displayTitleFromVaultPath(note.path),
@@ -1217,6 +1433,8 @@ export class WorkspaceRuntime {
           }),
         ),
         backlinks: backlinks.get(note.path) ?? [],
+        properties: propertyInspection.properties,
+        propertyEditor: propertyInspection.editor,
       };
     }
     return {
