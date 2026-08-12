@@ -103,7 +103,10 @@ failures without hiding the rest of the inventory. Startup plugin safe mode pres
 selection while loading no community code or CSS. The compatibility host remains an explicitly
 trusted desktop runtime in a separate transient Electron session with Node integration, a
 browser `connect-src 'none'` policy, denied browser permissions, blocked popups and
-navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. Its
+navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. A timed
+out operation, invalid response, send failure, or renderer crash terminates that shared plugin
+process. Threadleaf starts a clean renderer, keeps the native workspace responsive, and marks every
+stopped plugin for explicit reload instead of assuming its in-memory state survived. Its
 independently implemented DOM and UI base APIs activate the unchanged Excalidraw 2.25.3 release
 bundle in both a disposable DOM probe and the production compatibility renderer. Excalidraw
 registers two views, its commands, a ribbon action, a settings tab, and a Markdown processor. An

@@ -19,7 +19,11 @@ Node integration, a transient session partition, denied browser permissions, blo
 and popups, and `connect-src 'none'` for browser requests. This does not sandbox Node-capable plugin
 I/O. The main process communicates with that realm through validated typed request and response
 messages, times out every operation, attributes renderer exits, and never gives the primary
-renderer Node authority. The unchanged Excalidraw 2.25.3 bundle activates in this production realm
+renderer Node authority. A timeout, invalid protocol response, failed send, or renderer exit is a
+fatal boundary for the shared compatibility process. Threadleaf force-terminates that realm,
+creates a clean replacement, and retains every previously loaded plugin as stopped diagnostic
+state until the user explicitly reloads it. No plugin is replayed automatically after an unknown
+failure point. The unchanged Excalidraw 2.25.3 bundle activates in this production realm
 and its registered `ItemView` now attaches to a bounded visible workspace leaf. The plugin owns the
 leaf content, filename header, action icons, modal content, and canvas lifecycle; Threadleaf owns
 the surrounding layout and propagates its light/dark chrome. The normal Markdown header is not
@@ -194,6 +198,12 @@ switch or another enablement change. Reconciliation unloads runtime instances th
 selected, then activates each remaining selected package independently. One activation failure is
 retained as diagnostic state and does not prevent later packages from loading. Reload performs a
 clean unload before activation. Workspace shutdown unloads every instance.
+
+All compatibility plugins currently share one isolated renderer. Each request has a bounded
+deadline. If a request wedges that renderer, the process is killed rather than merely rejecting a
+timer while plugin code continues to run. A fresh renderer receives the same vault boundary and
+surface policy; previously loaded plugins remain failed until explicit reload. Per-plugin process
+isolation and CPU or memory budgets remain future work.
 
 Lifecycle ownership includes commands, event registrations, view and extension factories,
 processors, editor suggestions, ribbons, status items, settings tabs, leaves, and transient modals

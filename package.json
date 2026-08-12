@@ -25,6 +25,7 @@
     "format:check": "biome check .",
     "start": "electron .",
     "test": "vitest run",
+    "test:plugin-recovery": "pnpm run build && node scripts/check-plugin-recovery.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

@@ -1,6 +1,20 @@
 import type { ActionRegistry } from "../application/action-registry";
 import type { PluginEditorContext, RuntimeSnapshot } from "../shared/contracts";
 
+export class FatalPluginRuntimeError extends Error {
+  readonly operation: string;
+
+  constructor(operation: string, message: string) {
+    super(message);
+    this.name = "FatalPluginRuntimeError";
+    this.operation = operation;
+  }
+}
+
+export function isFatalPluginRuntimeError(error: unknown): error is FatalPluginRuntimeError {
+  return error instanceof FatalPluginRuntimeError;
+}
+
 export interface PluginRuntimePort {
   closePluginView(): Promise<RuntimeSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;

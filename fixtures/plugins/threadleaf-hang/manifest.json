@@ -1,0 +1,8 @@
+{
+  "id": "threadleaf-hang",
+  "name": "Threadleaf Hang Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "0.0.0",
+  "description": "Disposable compatibility-renderer recovery fixture.",
+  "isDesktopOnly": true
+}

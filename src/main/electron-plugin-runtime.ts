@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { type IpcMainEvent, type RenderProcessGoneDetails, WebContentsView } from "electron";
-import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
+import { FatalPluginRuntimeError, type PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { PluginEditorContext, RuntimeSnapshot } from "../shared/contracts";
 import {
   type PluginRendererOperation,
@@ -14,6 +14,7 @@ import {
 interface ElectronPluginRuntimeOptions {
   hostHtmlPath: string;
   onSurfaceVisibilityChange?(view: WebContentsView, visible: boolean): void;
+  operationTimeoutMs?: number;
   packageJsonPath: string;
   vaultPath: string;
 }
@@ -42,13 +43,19 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     | ((view: WebContentsView, visible: boolean) => void)
     | undefined;
   private surfaceVisible = false;
+  private readonly operationTimeoutMs: number;
 
   private constructor(
     view: WebContentsView,
     onSurfaceVisibilityChange?: (view: WebContentsView, visible: boolean) => void,
+    operationTimeout = operationTimeoutMs,
   ) {
     this.view = view;
     this.onSurfaceVisibilityChange = onSurfaceVisibilityChange;
+    this.operationTimeoutMs =
+      Number.isFinite(operationTimeout) && operationTimeout > 0
+        ? operationTimeout
+        : operationTimeoutMs;
     view.webContents.on("ipc-message", this.handleIpcMessage);
     view.webContents.on("render-process-gone", this.handleRendererGone);
   }
@@ -78,7 +85,11 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
       }
     });
 
-    const runtime = new ElectronPluginRuntime(view, options.onSurfaceVisibilityChange);
+    const runtime = new ElectronPluginRuntime(
+      view,
+      options.onSurfaceVisibilityChange,
+      options.operationTimeoutMs,
+    );
     try {
       const ready = runtime.waitUntilReady();
       await Promise.all([view.webContents.loadFile(options.hostHtmlPath), ready]);
@@ -188,7 +199,12 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   ): Promise<RuntimeSnapshot> {
     return this.request(operation, payload).then((snapshot) => {
       if (!snapshot) {
-        throw new Error(`Plugin renderer ${operation} returned no snapshot.`);
+        const error = new FatalPluginRuntimeError(
+          operation,
+          `Plugin renderer ${operation} returned no snapshot.`,
+        );
+        this.terminate(error);
+        throw error;
       }
       this.setSurfaceVisible(snapshot.pluginSurface !== null);
       return snapshot;
@@ -198,20 +214,38 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   private request(
     operation: PluginRendererOperation,
     payload?: Record<string, unknown>,
-    timeoutMs = operationTimeoutMs,
+    timeoutMs = this.operationTimeoutMs,
   ): Promise<RuntimeSnapshot | null> {
     if (!this.ready || this.closed || this.view.webContents.isDestroyed()) {
-      return Promise.reject(new Error("Plugin compatibility renderer is not available."));
+      return Promise.reject(
+        new FatalPluginRuntimeError(operation, "Plugin compatibility renderer is not available."),
+      );
     }
     const id = randomUUID();
     const request: PluginRendererRequest = { id, operation, ...(payload ? { payload } : {}) };
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Plugin renderer operation timed out: ${operation}.`));
+        const error = new FatalPluginRuntimeError(
+          operation,
+          `Plugin renderer operation timed out: ${operation}.`,
+        );
+        reject(error);
+        this.terminate(error);
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timeout });
-      this.view.webContents.send(pluginRendererChannels.request, request);
+      try {
+        this.view.webContents.send(pluginRendererChannels.request, request);
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        const fatalError = new FatalPluginRuntimeError(
+          operation,
+          `Plugin renderer request could not be sent: ${errorMessage(error)}`,
+        );
+        reject(fatalError);
+        this.terminate(fatalError);
+      }
     });
   }
 
@@ -234,7 +268,12 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     try {
       response = parsePluginRendererResponse(args[0]);
     } catch (error) {
-      this.rejectAll(errorMessage(error));
+      this.terminate(
+        new FatalPluginRuntimeError(
+          "response",
+          `Plugin renderer returned an invalid response: ${errorMessage(error)}`,
+        ),
+      );
       return;
     }
     const pending = this.pending.get(response.id);
@@ -254,19 +293,55 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     _event: Electron.Event,
     details: RenderProcessGoneDetails,
   ): void => {
-    const message = `Plugin compatibility renderer stopped (${details.reason}, exit ${details.exitCode}).`;
-    this.setSurfaceVisible(false);
-    this.readyReject?.(new Error(message));
-    this.rejectAll(message);
-    this.closed = true;
+    this.terminate(
+      new FatalPluginRuntimeError(
+        "renderer-exit",
+        `Plugin compatibility renderer stopped (${details.reason}, exit ${details.exitCode}).`,
+      ),
+      false,
+    );
   };
 
-  private rejectAll(message: string): void {
+  private rejectAll(error: Error | string): void {
+    const failure = typeof error === "string" ? new Error(error) : error;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timeout);
-      pending.reject(new Error(message));
+      pending.reject(failure);
     }
     this.pending.clear();
+  }
+
+  private markUnavailable(error: Error): void {
+    this.closed = true;
+    this.ready = false;
+    this.setSurfaceVisible(false);
+    this.readyReject?.(error);
+    this.readyResolve = null;
+    this.readyReject = null;
+    this.rejectAll(error);
+  }
+
+  private terminate(error: FatalPluginRuntimeError, crashRenderer = true): void {
+    if (this.closed) {
+      return;
+    }
+    this.markUnavailable(error);
+    this.view.webContents.removeListener("ipc-message", this.handleIpcMessage);
+    this.view.webContents.removeListener("render-process-gone", this.handleRendererGone);
+    if (!this.view.webContents.isDestroyed()) {
+      if (crashRenderer) {
+        try {
+          this.view.webContents.forcefullyCrashRenderer();
+        } catch {
+          // Closing the WebContents remains the final cleanup boundary.
+        }
+      }
+      try {
+        this.view.webContents.close();
+      } catch {
+        // A renderer that already exited has no remaining resources to preserve.
+      }
+    }
   }
 
   private async destroy(reason: string): Promise<void> {

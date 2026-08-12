@@ -5,11 +5,13 @@ import {
   dialog,
   ipcMain,
   type OpenDialogOptions,
+  type WebContents,
   type WebContentsView,
 } from "electron";
 import { AppSettingsController } from "../application/app-settings-controller";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
+import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
 import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared/appearance";
 import type { PluginSurfaceBounds, PluginUpdateResponse } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
@@ -52,20 +54,21 @@ let compatibilityPluginView: WebContentsView | null = null;
 let pluginSurfaceBounds: PluginSurfaceBounds = { x: 0, y: 0, width: 0, height: 0 };
 let pluginSurfaceCss = "";
 let pluginSurfaceCssKey: string | null = null;
-let pluginSurfaceCssView: WebContentsView | null = null;
+let pluginSurfaceCssWebContents: WebContents | null = null;
+let compatibilityPluginWebContents: WebContents | null = null;
 let pluginSurfaceTheme: "dark" | "light" = "dark";
 let pluginSurfacePresentationVisible = true;
 let pluginRuntimeSurfaceVisible = false;
 
 async function applyPluginSurfaceTheme(
   theme: "dark" | "light",
-  view = compatibilityPluginView,
+  webContents = compatibilityPluginWebContents,
 ): Promise<void> {
   pluginSurfaceTheme = theme;
-  if (!view || view.webContents.isDestroyed()) {
+  if (!webContents || webContents.isDestroyed()) {
     return;
   }
-  await view.webContents.executeJavaScript(`
+  await webContents.executeJavaScript(`
     (() => {
       const theme = ${JSON.stringify(theme)};
       document.documentElement.dataset.theme = theme;
@@ -77,26 +80,30 @@ async function applyPluginSurfaceTheme(
   `);
 }
 
-async function applyPluginSurfaceCss(css: string, view = compatibilityPluginView): Promise<void> {
+async function applyPluginSurfaceCss(
+  css: string,
+  view = compatibilityPluginView,
+  webContents = compatibilityPluginWebContents,
+): Promise<void> {
   pluginSurfaceCss = css;
-  const previousView = pluginSurfaceCssView;
+  const previousWebContents = pluginSurfaceCssWebContents;
   const previousKey = pluginSurfaceCssKey;
-  pluginSurfaceCssView = null;
+  pluginSurfaceCssWebContents = null;
   pluginSurfaceCssKey = null;
-  if (previousView && previousKey && !previousView.webContents.isDestroyed()) {
-    await previousView.webContents.removeInsertedCSS(previousKey).catch(() => undefined);
+  if (previousWebContents && previousKey && !previousWebContents.isDestroyed()) {
+    await previousWebContents.removeInsertedCSS(previousKey).catch(() => undefined);
   }
-  if (!view || view.webContents.isDestroyed() || !css) {
+  if (!view || !webContents || webContents.isDestroyed() || !css) {
     return;
   }
-  const key = await view.webContents.insertCSS(css, { cssOrigin: "author" });
-  if (view.webContents.isDestroyed() || view !== compatibilityPluginView) {
-    if (!view.webContents.isDestroyed()) {
-      await view.webContents.removeInsertedCSS(key).catch(() => undefined);
+  const key = await webContents.insertCSS(css, { cssOrigin: "author" });
+  if (webContents.isDestroyed() || view !== compatibilityPluginView) {
+    if (!webContents.isDestroyed()) {
+      await webContents.removeInsertedCSS(key).catch(() => undefined);
     }
     return;
   }
-  pluginSurfaceCssView = view;
+  pluginSurfaceCssWebContents = webContents;
   pluginSurfaceCssKey = key;
 }
 
@@ -170,6 +177,18 @@ function appearanceSafeMode(): boolean {
 
 function pluginSafeMode(): boolean {
   return process.argv.includes("--safe-plugins") || process.env.THREADLEAF_SAFE_PLUGINS === "1";
+}
+
+function developmentPluginOperationTimeout(): number | undefined {
+  if (app.isPackaged) {
+    return undefined;
+  }
+  const raw = process.env.THREADLEAF_PLUGIN_OPERATION_TIMEOUT_MS;
+  if (raw === undefined) {
+    return undefined;
+  }
+  const timeout = Number(raw);
+  return Number.isFinite(timeout) && timeout > 0 ? timeout : undefined;
 }
 
 function serializePluginOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -311,17 +330,45 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
     workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
     pluginRuntimeFactory: async (vaultPath) => {
-      const runtime = await ElectronPluginRuntime.open({
-        hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
-        onSurfaceVisibilityChange: setPluginViewVisibility,
-        packageJsonPath: join(app.getAppPath(), "package.json"),
-        vaultPath,
+      const pluginOperationTimeout = developmentPluginOperationTimeout();
+      return RecoveringPluginRuntime.open({
+        create: () =>
+          ElectronPluginRuntime.open({
+            hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
+            onSurfaceVisibilityChange: setPluginViewVisibility,
+            packageJsonPath: join(app.getAppPath(), "package.json"),
+            vaultPath,
+            ...(pluginOperationTimeout ? { operationTimeoutMs: pluginOperationTimeout } : {}),
+          }),
+        describePlugin: async (pluginDirectory) => {
+          const discovery = await discoverVaultPlugins(vaultPath);
+          const installed = discovery.plugins.find(
+            (plugin) => plugin.directoryPath === pluginDirectory,
+          );
+          return installed
+            ? {
+                id: installed.summary.id,
+                name: installed.summary.name,
+                version: installed.summary.version,
+                stylesheetDiscovered: installed.summary.stylesheetDiscovered,
+              }
+            : null;
+        },
+        onRuntimeChange: async (runtime) => {
+          if (attachedPluginView === compatibilityPluginView) {
+            detachPluginView();
+          }
+          pluginRuntimeSurfaceVisible = false;
+          compatibilityPluginView = runtime.view;
+          compatibilityPluginWebContents = runtime.view.webContents;
+          await applyPluginSurfaceTheme(pluginSurfaceTheme, compatibilityPluginWebContents);
+          await applyPluginSurfaceCss(
+            pluginSurfaceCss,
+            runtime.view,
+            compatibilityPluginWebContents,
+          );
+        },
       });
-      pluginRuntimeSurfaceVisible = false;
-      compatibilityPluginView = runtime.view;
-      await applyPluginSurfaceTheme(pluginSurfaceTheme, runtime.view);
-      await applyPluginSurfaceCss(pluginSurfaceCss, runtime.view);
-      return runtime;
     },
     ...(configuredPath ? { configuredVaultPath: configuredPath } : {}),
   });
@@ -329,11 +376,11 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 
 function registerIpcHandlers(): void {
   ipcMain.handle(pluginRendererChannels.vaultCreate, async (event, value: unknown) => {
-    const pluginView = compatibilityPluginView;
+    const pluginWebContents = compatibilityPluginWebContents;
     if (
-      !pluginView ||
-      pluginView.webContents.isDestroyed() ||
-      event.sender !== pluginView.webContents
+      !pluginWebContents ||
+      pluginWebContents.isDestroyed() ||
+      event.sender !== pluginWebContents
     ) {
       throw new Error("Plugin vault creates require the active compatibility renderer.");
     }
@@ -348,11 +395,11 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultCreateBinary, async (event, value: unknown) => {
-    const pluginView = compatibilityPluginView;
+    const pluginWebContents = compatibilityPluginWebContents;
     if (
-      !pluginView ||
-      pluginView.webContents.isDestroyed() ||
-      event.sender !== pluginView.webContents
+      !pluginWebContents ||
+      pluginWebContents.isDestroyed() ||
+      event.sender !== pluginWebContents
     ) {
       throw new Error("Plugin binary vault creates require the active compatibility renderer.");
     }
@@ -367,11 +414,11 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultCreateFolder, async (event, value: unknown) => {
-    const pluginView = compatibilityPluginView;
+    const pluginWebContents = compatibilityPluginWebContents;
     if (
-      !pluginView ||
-      pluginView.webContents.isDestroyed() ||
-      event.sender !== pluginView.webContents
+      !pluginWebContents ||
+      pluginWebContents.isDestroyed() ||
+      event.sender !== pluginWebContents
     ) {
       throw new Error("Plugin vault folder creates require the active compatibility renderer.");
     }
@@ -382,11 +429,11 @@ function registerIpcHandlers(): void {
     return workspaceController.createPluginFolder(request.folderPath, workspaceController.vaultId);
   });
   ipcMain.handle(pluginRendererChannels.vaultRename, async (event, value: unknown) => {
-    const pluginView = compatibilityPluginView;
+    const pluginWebContents = compatibilityPluginWebContents;
     if (
-      !pluginView ||
-      pluginView.webContents.isDestroyed() ||
-      event.sender !== pluginView.webContents
+      !pluginWebContents ||
+      pluginWebContents.isDestroyed() ||
+      event.sender !== pluginWebContents
     ) {
       throw new Error("Plugin vault renames require the active compatibility renderer.");
     }
@@ -402,11 +449,11 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultTrash, async (event, value: unknown) => {
-    const pluginView = compatibilityPluginView;
+    const pluginWebContents = compatibilityPluginWebContents;
     if (
-      !pluginView ||
-      pluginView.webContents.isDestroyed() ||
-      event.sender !== pluginView.webContents
+      !pluginWebContents ||
+      pluginWebContents.isDestroyed() ||
+      event.sender !== pluginWebContents
     ) {
       throw new Error("Plugin vault trash requires the active compatibility renderer.");
     }
@@ -421,11 +468,11 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultWrite, async (event, value: unknown) => {
-    const pluginView = compatibilityPluginView;
+    const pluginWebContents = compatibilityPluginWebContents;
     if (
-      !pluginView ||
-      pluginView.webContents.isDestroyed() ||
-      event.sender !== pluginView.webContents
+      !pluginWebContents ||
+      pluginWebContents.isDestroyed() ||
+      event.sender !== pluginWebContents
     ) {
       throw new Error("Plugin vault writes require the active compatibility renderer.");
     }
@@ -441,11 +488,11 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultWriteBinary, async (event, value: unknown) => {
-    const pluginView = compatibilityPluginView;
+    const pluginWebContents = compatibilityPluginWebContents;
     if (
-      !pluginView ||
-      pluginView.webContents.isDestroyed() ||
-      event.sender !== pluginView.webContents
+      !pluginWebContents ||
+      pluginWebContents.isDestroyed() ||
+      event.sender !== pluginWebContents
     ) {
       throw new Error("Plugin binary vault writes require the active compatibility renderer.");
     }
@@ -848,7 +895,8 @@ app.on(
     close: () => workspaceController?.close(),
     finalize: () => {
       compatibilityPluginView = null;
-      pluginSurfaceCssView = null;
+      compatibilityPluginWebContents = null;
+      pluginSurfaceCssWebContents = null;
       pluginSurfaceCssKey = null;
     },
     quit: () => app.quit(),

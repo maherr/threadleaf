@@ -391,10 +391,11 @@ export class WorkspaceRuntime {
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
-    const [pluginSnapshot, workspace] = await Promise.all([
-      this.pluginHost.getSnapshot(),
-      this.getWorkspaceSnapshot(),
-    ]);
+    return this.snapshotWithPluginState(await this.pluginHost.getSnapshot());
+  }
+
+  private async snapshotWithPluginState(pluginSnapshot: RuntimeSnapshot): Promise<RuntimeSnapshot> {
+    const workspace = await this.getWorkspaceSnapshot();
     return {
       ...pluginSnapshot,
       vault: {
@@ -718,48 +719,39 @@ export class WorkspaceRuntime {
     commandId: string,
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
-    await this.pluginHost.runCommand(commandId, editorContext);
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.runCommand(commandId, editorContext));
   }
 
   async markPluginLayoutReady(): Promise<RuntimeSnapshot> {
-    await this.pluginHost.markLayoutReady();
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.markLayoutReady());
   }
 
   async openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
-    await this.pluginHost.openPluginSettings(pluginId);
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.openPluginSettings(pluginId));
   }
 
   async openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
-    await this.pluginHost.openPluginView(viewType, filePath);
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.openPluginView(viewType, filePath));
   }
 
   async closePluginView(): Promise<RuntimeSnapshot> {
-    await this.pluginHost.closePluginView();
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.closePluginView());
   }
 
   async loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
-    await this.pluginHost.loadPlugin(pluginDirectory);
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.loadPlugin(pluginDirectory));
   }
 
   async reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    await this.pluginHost.reloadPlugin(pluginId);
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.reloadPlugin(pluginId));
   }
 
   async unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    await this.pluginHost.unloadPlugin(pluginId);
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.unloadPlugin(pluginId));
   }
 
   async unloadAllPlugins(): Promise<RuntimeSnapshot> {
-    await this.pluginHost.unloadAllPlugins();
-    return this.publishSnapshot();
+    return this.publishSnapshot(await this.pluginHost.unloadAllPlugins());
   }
 
   async reconcileNow(): Promise<RuntimeSnapshot> {
@@ -1100,8 +1092,10 @@ export class WorkspaceRuntime {
     this.#watcherError = error instanceof Error ? error.message : String(error);
   }
 
-  private async publishSnapshot(): Promise<RuntimeSnapshot> {
-    const snapshot = await this.getSnapshot();
+  private async publishSnapshot(pluginSnapshot?: RuntimeSnapshot): Promise<RuntimeSnapshot> {
+    const snapshot = pluginSnapshot
+      ? await this.snapshotWithPluginState(pluginSnapshot)
+      : await this.getSnapshot();
     for (const listener of this.#listeners) {
       listener(snapshot);
     }

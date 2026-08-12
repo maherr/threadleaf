@@ -117,6 +117,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   renderer, typed lifecycle IPC, transient session partitions, denied permissions and navigation,
   operation timeouts, renderer-exit attribution, and production startup activation of the unchanged
   Excalidraw 2.25.3 bundle.
+- Fatal compatibility-renderer recovery for timed-out operations, invalid protocol responses, send
+  failures, and renderer crashes. The shared plugin process is terminated, replaced with a clean
+  renderer, and every stopped plugin remains visible for explicit reload.
 - Visible community-plugin `ItemView` attachment in a bounded child surface, including filename
   headers, plugin action icons, light/dark chrome propagation, view lifecycle, and layout snapshots.
 - Compatibility implementations for workspace view factories, metadata and frontmatter caches,
@@ -179,3 +182,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   still reaches the final quit when cleanup reports an error.
 - Compatibility views now await public `onOpen` and `onClose` hooks around state and component
   lifecycles, and still unload resources and detach their containers when close hooks fail.
+- Plugin-surface CSS handoff now retains the stable Electron `WebContents` object, so replacing a
+  crashed compatibility view cannot dereference Electron's invalidated view getter.
