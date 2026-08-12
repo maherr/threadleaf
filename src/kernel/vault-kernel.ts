@@ -91,6 +91,16 @@ export type BinaryReadResult =
   | { status: "too-large"; path: string; size: number };
 
 export type WriteResult = VaultWriteResult;
+export type CreateResult =
+  | { status: "committed"; path: string; revision: string; transactionId: string }
+  | { status: "exists"; path: string; currentRevision: string }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+    };
 export type RenameResult = VaultRenameResult;
 export type {
   MoveWithWritesRequest,
@@ -287,6 +297,67 @@ export class VaultKernel implements VaultMutationPort {
       const bytes = Buffer.from(content, "utf8");
       const result = await this.performWrite(normalized, bytes, expectedRevision);
 
+      if (result.status === "committed") {
+        return {
+          status: "committed",
+          path: normalized,
+          revision: result.revision,
+          transactionId: result.transactionId,
+        };
+      }
+      return {
+        status: "conflict",
+        path: normalized,
+        currentRevision: result.currentRevision,
+        conflictPath: result.conflictPath,
+        transactionId: result.transactionId,
+      };
+    });
+  }
+
+  async writeBinary(
+    relativePath: string,
+    content: Uint8Array,
+    expectedRevision: string | null,
+  ): Promise<WriteResult> {
+    this.assertWritable();
+    assertExpectedRevision(expectedRevision);
+    return this.withMutation(async () => {
+      const normalized = normalizeVaultPath(relativePath);
+      const result = await this.performWrite(normalized, Buffer.from(content), expectedRevision);
+
+      if (result.status === "committed") {
+        return {
+          status: "committed",
+          path: normalized,
+          revision: result.revision,
+          transactionId: result.transactionId,
+        };
+      }
+      return {
+        status: "conflict",
+        path: normalized,
+        currentRevision: result.currentRevision,
+        conflictPath: result.conflictPath,
+        transactionId: result.transactionId,
+      };
+    });
+  }
+
+  async createBinary(relativePath: string, content: Uint8Array): Promise<CreateResult> {
+    this.assertWritable();
+    return this.withMutation(async () => {
+      const normalized = normalizeVaultPath(relativePath);
+      const targetAbsolute = await this.paths.resolveForWrite(normalized, true);
+      const existing = await readStableFile(targetAbsolute);
+      if (existing) {
+        return {
+          status: "exists",
+          path: normalized,
+          currentRevision: existing.revision,
+        };
+      }
+      const result = await this.performWrite(normalized, Buffer.from(content), null);
       if (result.status === "committed") {
         return {
           status: "committed",

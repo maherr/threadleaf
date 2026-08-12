@@ -206,6 +206,52 @@ describe("VaultKernel writes", () => {
     );
   });
 
+  it("creates, modifies, and conflict-preserves exact binary bytes", async () => {
+    const kernel = await openKernel();
+    const original = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0xff]);
+    const updated = Uint8Array.from([0, 0xff, 1, 2, 3, 4, 5]);
+    const proposed = Uint8Array.from([0xde, 0xad, 0, 0xbe, 0xef]);
+    const external = Uint8Array.from([9, 8, 7, 6]);
+
+    const created = await kernel.createBinary("Exports/Drawing.png", original);
+    expect(created).toMatchObject({ status: "committed", path: "Exports/Drawing.png" });
+    if (created.status !== "committed") {
+      throw new Error("Expected binary creation to commit.");
+    }
+    await expect(kernel.createBinary("Exports/Drawing.png", updated)).resolves.toMatchObject({
+      status: "exists",
+      path: "Exports/Drawing.png",
+      currentRevision: created.revision,
+    });
+    const modified = await kernel.writeBinary("Exports/Drawing.png", updated, created.revision);
+    expect(modified.status).toBe("committed");
+    if (modified.status !== "committed") {
+      throw new Error("Expected binary modification to commit.");
+    }
+    const afterModify = await kernel.readBinary("Exports/Drawing.png", 1024);
+    expect(afterModify.status).toBe("ready");
+    if (afterModify.status !== "ready") {
+      throw new Error("Expected the binary fixture to fit within the read limit.");
+    }
+    expect(afterModify.snapshot.bytes).toEqual(Buffer.from(updated));
+
+    await fs.writeFile(path.join(vaultPath, "Exports", "Drawing.png"), external);
+    const conflict = await kernel.writeBinary("Exports/Drawing.png", proposed, modified.revision);
+    expect(conflict.status).toBe("conflict");
+    if (conflict.status !== "conflict") {
+      throw new Error("Expected the stale binary write to retain a conflict copy.");
+    }
+    await expect(fs.readFile(path.join(vaultPath, "Exports", "Drawing.png"))).resolves.toEqual(
+      Buffer.from(external),
+    );
+    const retained = await kernel.readBinary(conflict.conflictPath, 1024);
+    expect(retained.status).toBe("ready");
+    if (retained.status !== "ready") {
+      throw new Error("Expected the binary conflict copy to fit within the read limit.");
+    }
+    expect(retained.snapshot.bytes).toEqual(Buffer.from(proposed));
+  });
+
   it.each([
     ["write:after-intent", "rolled-back", "original", false],
     ["write:after-stage", "conflict-copy", "original", true],

@@ -5,8 +5,10 @@ export const pluginRendererChannels = {
   request: "threadleaf:plugin-renderer-request",
   response: "threadleaf:plugin-renderer-response",
   vaultCreate: "threadleaf:plugin-renderer-vault-create",
+  vaultCreateBinary: "threadleaf:plugin-renderer-vault-create-binary",
   vaultCreateFolder: "threadleaf:plugin-renderer-vault-create-folder",
   vaultWrite: "threadleaf:plugin-renderer-vault-write",
+  vaultWriteBinary: "threadleaf:plugin-renderer-vault-write-binary",
 } as const;
 
 export interface PluginVaultCreateRequest {
@@ -25,6 +27,14 @@ export type PluginVaultCreateResponse =
       conflictPath: string;
       transactionId: string;
     };
+
+export interface PluginVaultCreateBinaryRequest {
+  content: ArrayBuffer;
+  filePath: string;
+  vaultPath: string;
+}
+
+export type PluginVaultCreateBinaryResponse = PluginVaultCreateResponse;
 
 export interface PluginVaultCreateFolderRequest {
   folderPath: string;
@@ -52,6 +62,15 @@ export type PluginVaultWriteResponse =
       conflictPath: string;
       transactionId: string;
     };
+
+export interface PluginVaultWriteBinaryRequest {
+  content: ArrayBuffer;
+  expectedRevision: string;
+  filePath: string;
+  vaultPath: string;
+}
+
+export type PluginVaultWriteBinaryResponse = PluginVaultWriteResponse;
 
 export type PluginRendererOperation =
   | "close"
@@ -211,6 +230,32 @@ export function parsePluginVaultWriteRequest(value: unknown): PluginVaultWriteRe
   };
 }
 
+export function parsePluginVaultWriteBinaryRequest(value: unknown): PluginVaultWriteBinaryRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin binary vault write request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.filePath !== "string" ||
+    candidate.filePath.length === 0 ||
+    !(candidate.content instanceof ArrayBuffer) ||
+    typeof candidate.expectedRevision !== "string" ||
+    !/^[0-9a-f]{64}$/.test(candidate.expectedRevision)
+  ) {
+    throw new Error(
+      "Plugin binary vault writes require vault, file, ArrayBuffer content, and a SHA-256 revision.",
+    );
+  }
+  return {
+    vaultPath: candidate.vaultPath,
+    filePath: candidate.filePath,
+    content: candidate.content,
+    expectedRevision: candidate.expectedRevision,
+  };
+}
+
 export function parsePluginVaultCreateRequest(value: unknown): PluginVaultCreateRequest {
   if (!value || typeof value !== "object") {
     throw new Error("Plugin vault create request must be an object.");
@@ -224,6 +269,29 @@ export function parsePluginVaultCreateRequest(value: unknown): PluginVaultCreate
     typeof candidate.content !== "string"
   ) {
     throw new Error("Plugin vault creates require vault, file, and content strings.");
+  }
+  return {
+    vaultPath: candidate.vaultPath,
+    filePath: candidate.filePath,
+    content: candidate.content,
+  };
+}
+
+export function parsePluginVaultCreateBinaryRequest(
+  value: unknown,
+): PluginVaultCreateBinaryRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin binary vault create request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.filePath !== "string" ||
+    candidate.filePath.length === 0 ||
+    !(candidate.content instanceof ArrayBuffer)
+  ) {
+    throw new Error("Plugin binary vault creates require vault, file, and ArrayBuffer content.");
   }
   return {
     vaultPath: candidate.vaultPath,

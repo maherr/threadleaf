@@ -16,8 +16,10 @@ import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
 import {
   parsePluginEditorContext,
+  parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
+  parsePluginVaultWriteBinaryRequest,
   parsePluginVaultWriteRequest,
   pluginRendererChannels,
 } from "../shared/plugin-runtime-protocol";
@@ -49,6 +51,8 @@ let pluginSurfaceCss = "";
 let pluginSurfaceCssKey: string | null = null;
 let pluginSurfaceCssView: WebContentsView | null = null;
 let pluginSurfaceTheme: "dark" | "light" = "dark";
+let pluginSurfacePresentationVisible = true;
+let pluginRuntimeSurfaceVisible = false;
 
 async function applyPluginSurfaceTheme(
   theme: "dark" | "light",
@@ -108,10 +112,16 @@ function updatePluginViewBounds(): void {
 }
 
 function setPluginViewVisibility(view: WebContentsView, visible: boolean): void {
+  if (view === compatibilityPluginView) {
+    pluginRuntimeSurfaceVisible = visible;
+  }
   if (!visible) {
     if (attachedPluginView === view) {
       detachPluginView();
     }
+    return;
+  }
+  if (!pluginSurfacePresentationVisible || view !== compatibilityPluginView) {
     return;
   }
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -125,6 +135,18 @@ function setPluginViewVisibility(view: WebContentsView, visible: boolean): void 
     attachedPluginView = view;
   }
   updatePluginViewBounds();
+}
+
+function setPluginSurfacePresentationVisible(visible: boolean): void {
+  pluginSurfacePresentationVisible = visible;
+  if (!visible) {
+    detachPluginView();
+    return;
+  }
+  const view = compatibilityPluginView;
+  if (view && pluginRuntimeSurfaceVisible) {
+    setPluginViewVisibility(view, true);
+  }
 }
 
 function describeVaultOpenFailure(error: unknown): string {
@@ -292,6 +314,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
         packageJsonPath: join(app.getAppPath(), "package.json"),
         vaultPath,
       });
+      pluginRuntimeSurfaceVisible = false;
       compatibilityPluginView = runtime.view;
       await applyPluginSurfaceTheme(pluginSurfaceTheme, runtime.view);
       await applyPluginSurfaceCss(pluginSurfaceCss, runtime.view);
@@ -315,9 +338,28 @@ function registerIpcHandlers(): void {
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
       throw new Error("The active vault changed before the plugin file could be created.");
     }
-    return workspaceController.createPluginNote(
+    return workspaceController.createPluginFile(
       request.filePath,
-      request.content,
+      Buffer.from(request.content, "utf8"),
+      workspaceController.vaultId,
+    );
+  });
+  ipcMain.handle(pluginRendererChannels.vaultCreateBinary, async (event, value: unknown) => {
+    const pluginView = compatibilityPluginView;
+    if (
+      !pluginView ||
+      pluginView.webContents.isDestroyed() ||
+      event.sender !== pluginView.webContents
+    ) {
+      throw new Error("Plugin binary vault creates require the active compatibility renderer.");
+    }
+    const request = parsePluginVaultCreateBinaryRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin binary file could be created.");
+    }
+    return workspaceController.createPluginFile(
+      request.filePath,
+      new Uint8Array(request.content),
       workspaceController.vaultId,
     );
   });
@@ -349,13 +391,32 @@ function registerIpcHandlers(): void {
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
       throw new Error("The active vault changed before the plugin edit could be saved.");
     }
-    const response = await workspaceController.saveNote(
+    return workspaceController.writePluginFile(
       request.filePath,
-      request.content,
+      Buffer.from(request.content, "utf8"),
       request.expectedRevision,
       workspaceController.vaultId,
     );
-    return response.outcome;
+  });
+  ipcMain.handle(pluginRendererChannels.vaultWriteBinary, async (event, value: unknown) => {
+    const pluginView = compatibilityPluginView;
+    if (
+      !pluginView ||
+      pluginView.webContents.isDestroyed() ||
+      event.sender !== pluginView.webContents
+    ) {
+      throw new Error("Plugin binary vault writes require the active compatibility renderer.");
+    }
+    const request = parsePluginVaultWriteBinaryRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin binary edit could be saved.");
+    }
+    return workspaceController.writePluginFile(
+      request.filePath,
+      new Uint8Array(request.content),
+      request.expectedRevision,
+      workspaceController.vaultId,
+    );
   });
   ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
   ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
@@ -665,6 +726,12 @@ function registerIpcHandlers(): void {
       height: Math.max(0, Math.round(candidate.height as number)),
     };
     updatePluginViewBounds();
+  });
+  ipcMain.handle(ipcChannels.setPluginSurfaceVisible, (_event, visible: unknown) => {
+    if (typeof visible !== "boolean") {
+      throw new Error("Plugin surface visibility must be a boolean.");
+    }
+    setPluginSurfacePresentationVisible(visible);
   });
   ipcMain.handle(ipcChannels.setPluginSurfaceTheme, async (_event, theme: unknown) => {
     if (theme !== "dark" && theme !== "light") {

@@ -38,7 +38,15 @@ compatibility runtime supplies Moment, Obsidian's loaded-plugin lifecycle flag, 
 leaves, workspace layout snapshots, and split-leaf creation so the unchanged Excalidraw command can
 create its standard folder and Markdown file, pass through a Markdown leaf, and promote that leaf
 to the registered drawing view. Creating a drawing, adding scene elements, saving, closing, and
-reopening the exact scene reaches measured level 4 for that named workflow.
+reopening the exact scene reaches measured level 4 for that named workflow. Opening Threadleaf's
+command palette now detaches only the child surface presentation, not the plugin leaf or renderer,
+so a selected plugin command can act on the still-live Excalidraw view before the child surface is
+reattached. The compatibility module also supplies frontmatter-entry lookup plus `Vault.createBinary`
+and `Vault.modifyBinary`. Text and binary export requests cross separate validated IPC channels,
+remain bound to the active vault and cached revision, and enter the recovery-backed writer without
+UTF-8 conversion. Excalidraw's unchanged SVG-to-vault and PNG-to-vault actions both create and
+overwrite valid exports; PNG verification checks the exact signature and decodes the resulting
+803 by 549 image.
 
 ### Filesystem authority
 

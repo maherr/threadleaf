@@ -1,4 +1,4 @@
-import type { StateRootPort, VaultDirectoryCreateResult } from "../kernel/ports";
+import type { StateRootPort, VaultDirectoryCreateResult, VaultWriteResult } from "../kernel/ports";
 import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
@@ -55,6 +55,17 @@ export interface WorkspaceRuntimePort {
     content: string,
     expectedVaultId: string,
   ): Promise<NoteCreateOutcome>;
+  createPluginFile(
+    filePath: string,
+    content: Uint8Array,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome>;
+  writePluginFile(
+    filePath: string,
+    content: Uint8Array,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultWriteResult>;
   createPluginFolder(
     folderPath: string,
     expectedVaultId: string,
@@ -290,6 +301,23 @@ export class WorkspaceController {
     expectedVaultId: string,
   ): Promise<NoteCreateOutcome> {
     return this.#runtime.createPluginNote(filePath, content, expectedVaultId);
+  }
+
+  createPluginFile(
+    filePath: string,
+    content: Uint8Array,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome> {
+    return this.#runtime.createPluginFile(filePath, content, expectedVaultId);
+  }
+
+  writePluginFile(
+    filePath: string,
+    content: Uint8Array,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultWriteResult> {
+    return this.#runtime.writePluginFile(filePath, content, expectedRevision, expectedVaultId);
   }
 
   createPluginFolder(

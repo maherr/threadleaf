@@ -2,8 +2,10 @@ import { ipcRenderer } from "electron";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import {
   type PluginRendererResponse,
+  type PluginVaultCreateBinaryResponse,
   type PluginVaultCreateFolderResponse,
   type PluginVaultCreateResponse,
+  type PluginVaultWriteBinaryResponse,
   type PluginVaultWriteResponse,
   parsePluginRendererRequest,
   pluginRendererChannels,
@@ -13,6 +15,11 @@ import { PluginRendererService } from "./plugin-renderer-service";
 installObsidianDomCompatibility(window, globalThis);
 
 const service = new PluginRendererService({
+  createBinary: (request) =>
+    ipcRenderer.invoke(
+      pluginRendererChannels.vaultCreateBinary,
+      request,
+    ) as Promise<PluginVaultCreateBinaryResponse>,
   createFolder: (request) =>
     ipcRenderer.invoke(
       pluginRendererChannels.vaultCreateFolder,
@@ -23,6 +30,11 @@ const service = new PluginRendererService({
       pluginRendererChannels.vaultCreate,
       request,
     ) as Promise<PluginVaultCreateResponse>,
+  writeBinary: (request) =>
+    ipcRenderer.invoke(
+      pluginRendererChannels.vaultWriteBinary,
+      request,
+    ) as Promise<PluginVaultWriteBinaryResponse>,
   writeText: (request) =>
     ipcRenderer.invoke(
       pluginRendererChannels.vaultWrite,

@@ -7,6 +7,8 @@ import { revisionOf } from "../kernel/durability";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import type {
   PluginRendererRequest,
+  PluginVaultCreateBinaryRequest,
+  PluginVaultWriteBinaryRequest,
   PluginVaultWriteRequest,
 } from "../shared/plugin-runtime-protocol";
 import { PluginRendererService } from "./plugin-renderer-service";
@@ -99,6 +101,15 @@ module.exports = class RendererFixture extends Plugin {
         await this.app.workspace.getLeaf(false).openFile(file);
       },
     });
+    this.addCommand({
+      id: "renderer-binary",
+      name: "Create renderer binary",
+      callback: async () => {
+        await this.app.vault.createFolder("Binary");
+        const file = await this.app.vault.createBinary("Binary/Preview.png", Uint8Array.from([137, 80, 78, 71, 0, 255]).buffer);
+        await this.app.vault.modifyBinary(file, Uint8Array.from([137, 80, 78, 71, 1, 2, 3, 0, 255]).buffer);
+      },
+    });
     this.registerView("renderer-view", (leaf) => new RendererView(leaf));
     this.registerExtensions(["drawing"], "renderer-view");
     this.registerEditorExtension([]);
@@ -138,9 +149,24 @@ module.exports = class RendererFixture extends Plugin {
       );
 
       const writes: PluginVaultWriteRequest[] = [];
+      const binaryCreates: PluginVaultCreateBinaryRequest[] = [];
+      const binaryWrites: PluginVaultWriteBinaryRequest[] = [];
       const createdFolders: string[] = [];
       const createdFiles: string[] = [];
       const service = new PluginRendererService({
+        createBinary: async (createRequest) => {
+          binaryCreates.push(createRequest);
+          const bytes = new Uint8Array(createRequest.content);
+          await fs.writeFile(path.join(createRequest.vaultPath, createRequest.filePath), bytes, {
+            flag: "wx",
+          });
+          return {
+            status: "committed",
+            path: createRequest.filePath,
+            revision: revisionOf(bytes),
+            transactionId: "renderer-test-binary-create",
+          };
+        },
         createFolder: async (createRequest) => {
           const absolutePath = path.join(createRequest.vaultPath, createRequest.folderPath);
           let created = false;
@@ -164,6 +190,17 @@ module.exports = class RendererFixture extends Plugin {
             path: createRequest.filePath,
             revision: revisionOf(Buffer.from(createRequest.content, "utf8")),
             transactionId: "renderer-test-create",
+          };
+        },
+        writeBinary: async (writeRequest) => {
+          binaryWrites.push(writeRequest);
+          const bytes = new Uint8Array(writeRequest.content);
+          await fs.writeFile(path.join(writeRequest.vaultPath, writeRequest.filePath), bytes);
+          return {
+            status: "committed",
+            path: writeRequest.filePath,
+            revision: revisionOf(bytes),
+            transactionId: "renderer-test-binary-write",
           };
         },
         writeText: async (writeRequest) => {
@@ -194,7 +231,11 @@ module.exports = class RendererFixture extends Plugin {
         state: "loaded",
         compatibilityLevel: 3,
       });
-      expect(loaded?.actions.map(({ id }) => id)).toEqual(["renderer-create", "renderer-command"]);
+      expect(loaded?.actions.map(({ id }) => id)).toEqual([
+        "renderer-binary",
+        "renderer-create",
+        "renderer-command",
+      ]);
       expect(loaded?.integrations).toMatchObject({
         extensions: [{ extension: "drawing", viewType: "renderer-view" }],
         viewTypes: ["renderer-view"],
@@ -276,6 +317,19 @@ module.exports = class RendererFixture extends Plugin {
       expect(createdFiles).toEqual(["Drawings/New.drawing"]);
       expect(await fs.readFile(path.join(vaultPath, "Drawings", "New.drawing"), "utf8")).toBe(
         "new drawing content",
+      );
+
+      await service.handle(request("run-command", { commandId: "renderer-binary" }));
+      expect(binaryCreates).toHaveLength(1);
+      expect(new Uint8Array(binaryCreates[0]?.content ?? new ArrayBuffer(0))).toEqual(
+        Uint8Array.from([137, 80, 78, 71, 0, 255]),
+      );
+      expect(binaryWrites).toHaveLength(1);
+      expect(binaryWrites[0]?.expectedRevision).toBe(
+        revisionOf(Uint8Array.from([137, 80, 78, 71, 0, 255])),
+      );
+      await expect(fs.readFile(path.join(vaultPath, "Binary", "Preview.png"))).resolves.toEqual(
+        Buffer.from([137, 80, 78, 71, 1, 2, 3, 0, 255]),
       );
 
       const ready = await service.handle(request("mark-layout-ready"));

@@ -171,7 +171,9 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [x] Run Excalidraw's unchanged new-drawing command through nested folder and file creation,
       built-in Markdown leaf handoff, custom-view activation, scene save, full view close, and exact
       persisted-scene reopen.
-- [ ] Complete Excalidraw embed, export, and full plugin-unload fixtures.
+- [x] Complete Excalidraw native-editor embed insertion plus SVG and PNG vault-export fixtures,
+      including create, overwrite, close, reopen, XML parsing, and exact binary-signature checks.
+- [ ] Complete the Excalidraw full plugin-unload fixture.
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
 

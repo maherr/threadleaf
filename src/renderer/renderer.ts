@@ -339,6 +339,7 @@ let pluginMessage = "Discovering installed plugins in this vault.";
 let pluginMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let lastPluginWarning = "";
 let lastPluginEditorUpdateId: string | null = null;
+let pluginSurfacePresentationVisible = true;
 let legacyThemeMigrationAttempted = false;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
@@ -1138,7 +1139,7 @@ function openCommandPalette(): void {
     return;
   }
   if (documentViewMode === "plugin") {
-    setDocumentView("source", false);
+    setPluginSurfacePresentationVisible(false);
   }
   paletteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1154,11 +1155,27 @@ function closeCommandPalette(restoreFocus = true): void {
     return;
   }
   elements.commandPalette.close();
+  if (documentViewMode === "plugin") {
+    setPluginSurfacePresentationVisible(true);
+  }
   const restoreTarget = paletteRestoreFocus;
   paletteRestoreFocus = null;
   if (restoreFocus && restoreTarget?.isConnected) {
     restoreTarget.focus();
   }
+}
+
+function setPluginSurfacePresentationVisible(visible: boolean): void {
+  if (pluginSurfacePresentationVisible === visible) {
+    return;
+  }
+  pluginSurfacePresentationVisible = visible;
+  void window.threadleaf.setPluginSurfaceVisible(visible).catch((error) => {
+    if (pluginSurfacePresentationVisible === visible) {
+      pluginSurfacePresentationVisible = !visible;
+    }
+    showToast(error instanceof Error ? error.message : String(error));
+  });
 }
 
 function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {

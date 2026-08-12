@@ -141,3 +141,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   keep ordinary Markdown in the native editor, and remove the child plugin surface on leaf close.
 - Plugin stylesheet preservation with external asset URLs replaced by inert embedded data,
   explicit diagnostics, and live proof that Excalidraw CSS applies without network requests.
+- Plugin-surface presentation control that lets Threadleaf's command palette overlay a live child
+  view without closing its plugin leaf, losing command context, or destroying renderer state.
+- Independently implemented `parseFrontMatterEntry`, `Vault.createBinary`, and
+  `Vault.modifyBinary`, with validated active-vault IPC and recovery-backed exact-byte writes.
+- Measured level 4 Excalidraw workflows for auto-creating a drawing and inserting its native-editor
+  embed, plus SVG-to-vault and PNG-to-vault creation and overwrite with parsed-image verification.

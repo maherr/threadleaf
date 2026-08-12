@@ -231,6 +231,33 @@ class FakeRuntime implements WorkspaceRuntimePort {
     };
   }
 
+  async createPluginFile(
+    filePath: string,
+    _content: Uint8Array,
+    _expectedVaultId: string,
+  ): Promise<NoteCreateOutcome> {
+    return {
+      status: "committed",
+      path: filePath,
+      revision: "a".repeat(64),
+      transactionId: "plugin-file-create",
+    };
+  }
+
+  async writePluginFile(
+    filePath: string,
+    _content: Uint8Array,
+    _expectedRevision: string,
+    _expectedVaultId: string,
+  ) {
+    return {
+      status: "committed" as const,
+      path: filePath,
+      revision: "a".repeat(64),
+      transactionId: "plugin-file-write",
+    };
+  }
+
   async createPluginFolder(folderPath: string, expectedVaultId: string) {
     this.createdPluginFolder = { folderPath, expectedVaultId };
     return { path: folderPath, created: true };

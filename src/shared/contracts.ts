@@ -393,6 +393,7 @@ export interface ThreadleafBridge {
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   closePluginView(): Promise<RuntimeSnapshot>;
   setPluginSurfaceBounds(bounds: PluginSurfaceBounds): Promise<void>;
+  setPluginSurfaceVisible(visible: boolean): Promise<void>;
   setPluginSurfaceTheme(theme: "dark" | "light"): Promise<void>;
   openNote(path: string): Promise<RuntimeSnapshot>;
   closeNote(path: string, expectedVaultId: string): Promise<RuntimeSnapshot>;

@@ -5,8 +5,10 @@ import {
   parsePluginEditorContext,
   parsePluginRendererRequest,
   parsePluginRendererResponse,
+  parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
+  parsePluginVaultWriteBinaryRequest,
   parsePluginVaultWriteRequest,
   requirePayloadString,
 } from "./plugin-runtime-protocol";
@@ -83,6 +85,41 @@ describe("plugin renderer protocol", () => {
         expectedRevision: "stale",
       }),
     ).toThrow("SHA-256 revision");
+  });
+
+  it("preserves ArrayBuffer payloads in binary create and revision-bound write requests", () => {
+    const revision = "b".repeat(64);
+    const bytes = Uint8Array.from([0, 0xff, 0x89, 0x50, 0x4e, 0x47]);
+    const create = parsePluginVaultCreateBinaryRequest({
+      vaultPath: "/vault",
+      filePath: "Exports/Drawing.png",
+      content: bytes.buffer,
+    });
+    const write = parsePluginVaultWriteBinaryRequest({
+      vaultPath: "/vault",
+      filePath: "Exports/Drawing.png",
+      content: bytes.buffer,
+      expectedRevision: revision,
+    });
+
+    expect(new Uint8Array(create.content)).toEqual(bytes);
+    expect(new Uint8Array(write.content)).toEqual(bytes);
+    expect(write.expectedRevision).toBe(revision);
+    expect(() =>
+      parsePluginVaultCreateBinaryRequest({
+        vaultPath: "/vault",
+        filePath: "Exports/Drawing.png",
+        content: bytes,
+      }),
+    ).toThrow("ArrayBuffer content");
+    expect(() =>
+      parsePluginVaultWriteBinaryRequest({
+        vaultPath: "/vault",
+        filePath: "Exports/Drawing.png",
+        content: "not binary",
+        expectedRevision: revision,
+      }),
+    ).toThrow("ArrayBuffer content");
   });
 
   it("validates plugin file and folder create requests", () => {

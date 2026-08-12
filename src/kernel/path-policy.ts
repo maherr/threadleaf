@@ -27,7 +27,7 @@ function isPrivateVaultEntry(name: string): boolean {
   );
 }
 
-function hasPrivateVaultSegment(relativePath: string): boolean {
+export function hasPrivateVaultSegment(relativePath: string): boolean {
   return relativePath.split(/[\\/]/).some(isPrivateVaultEntry);
 }
 

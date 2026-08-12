@@ -92,8 +92,14 @@ export interface FileStats {
 }
 
 export interface CompatibilityVaultWritePort {
+  createBinary?(relativePath: string, content: Uint8Array): Promise<NoteCreateOutcome>;
   createFolder?(relativePath: string): Promise<VaultDirectoryCreateResult>;
   createText?(relativePath: string, content: string): Promise<NoteCreateOutcome>;
+  writeBinary?(
+    relativePath: string,
+    content: Uint8Array,
+    expectedRevision: string,
+  ): Promise<VaultWriteResult>;
   writeText(
     relativePath: string,
     content: string,
@@ -269,6 +275,43 @@ export class Vault {
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   }
 
+  async modifyBinary(file: TFile, content: ArrayBuffer): Promise<void> {
+    if (!this.#writer?.writeBinary) {
+      throw new Error(
+        "Plugin binary saves are not available in the read-only compatibility runtime.",
+      );
+    }
+    if (file.vault !== this) {
+      throw new Error("Plugin vault writes require a file from the active compatibility vault.");
+    }
+    const normalized = normalizePath(file.path);
+    let expectedRevision = this.revisions.get(normalized);
+    if (!expectedRevision) {
+      await this.readBinary(file);
+      expectedRevision = this.revisions.get(normalized);
+    }
+    if (!expectedRevision) {
+      throw new Error(`Could not establish the current revision for ${normalized}.`);
+    }
+    const outcome = await this.trackMutation(() =>
+      this.#writer?.writeBinary?.(normalized, new Uint8Array(content), expectedRevision),
+    );
+    if (!outcome) {
+      throw new Error(
+        "Plugin binary saves are not available in the read-only compatibility runtime.",
+      );
+    }
+    if (outcome.status === "conflict") {
+      throw new Error(
+        `Plugin save conflict for ${normalized}; the proposed bytes were preserved at ${outcome.conflictPath}.`,
+      );
+    }
+    this.revisions.set(normalized, outcome.revision);
+    file.stat.mtime = Date.now();
+    file.stat.size = content.byteLength;
+    this.trigger("modify", file);
+  }
+
   async modify(file: TFile, content: string): Promise<void> {
     if (!this.#writer) {
       throw new Error(
@@ -334,6 +377,42 @@ export class Vault {
         ctime: now,
         mtime: now,
         size: Buffer.byteLength(content, "utf8"),
+      });
+    this.revisions.set(file.path, outcome.revision);
+    this.trigger("create", file);
+    return file;
+  }
+
+  async createBinary(filePath: string, content: ArrayBuffer): Promise<TFile> {
+    if (!this.#writer?.createBinary) {
+      throw new Error(
+        "Plugin binary creation is not available in the read-only compatibility runtime.",
+      );
+    }
+    const normalized = normalizePath(filePath);
+    const outcome = await this.trackMutation(() =>
+      this.#writer?.createBinary?.(normalized, new Uint8Array(content)),
+    );
+    if (!outcome) {
+      throw new Error(
+        "Plugin binary creation is not available in the read-only compatibility runtime.",
+      );
+    }
+    if (outcome.status === "exists") {
+      throw new Error(`Plugin file creation refused to overwrite ${outcome.path}.`);
+    }
+    if (outcome.status === "conflict") {
+      throw new Error(
+        `Plugin file creation conflict for ${normalized}; the proposed bytes were preserved at ${outcome.conflictPath}.`,
+      );
+    }
+    const now = Date.now();
+    const file =
+      this.getFileByPath(outcome.path) ??
+      new TFile(outcome.path, this, {
+        ctime: now,
+        mtime: now,
+        size: content.byteLength,
       });
     this.revisions.set(file.path, outcome.revision);
     this.trigger("create", file);
@@ -525,6 +604,28 @@ function parseFrontmatter(content: string): Record<string, unknown> | undefined 
   } catch {
     return undefined;
   }
+}
+
+export function parseFrontMatterEntry(
+  frontmatter: unknown | null,
+  key: string | RegExp,
+): unknown | null {
+  if (!frontmatter || typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
+    return null;
+  }
+  for (const [entryKey, value] of Object.entries(frontmatter as Record<string, unknown>)) {
+    if (typeof key === "string") {
+      if (entryKey === key) {
+        return value ?? null;
+      }
+      continue;
+    }
+    key.lastIndex = 0;
+    if (key.test(entryKey)) {
+      return value ?? null;
+    }
+  }
+  return null;
 }
 
 function cleanLinkpath(linkpath: string): string {
@@ -1151,6 +1252,7 @@ export interface ObsidianCompatibilityModule {
   addIcon(id: string, svgContent: string): void;
   getIcon(id: string): SVGSVGElement | null;
   normalizePath(filePath: string): string;
+  parseFrontMatterEntry: typeof parseFrontMatterEntry;
   requireApiVersion(version: string): boolean;
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
@@ -1284,6 +1386,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     getIcon,
     getLanguage,
     normalizePath,
+    parseFrontMatterEntry,
     requireApiVersion: () => true,
     sanitizeHTMLToDom,
     setIcon,

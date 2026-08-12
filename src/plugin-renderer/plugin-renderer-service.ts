@@ -6,18 +6,24 @@ import {
   optionalPayloadString,
   optionalPluginEditorContext,
   type PluginRendererRequest,
+  type PluginVaultCreateBinaryRequest,
+  type PluginVaultCreateBinaryResponse,
   type PluginVaultCreateFolderRequest,
   type PluginVaultCreateFolderResponse,
   type PluginVaultCreateRequest,
   type PluginVaultCreateResponse,
+  type PluginVaultWriteBinaryRequest,
+  type PluginVaultWriteBinaryResponse,
   type PluginVaultWriteRequest,
   type PluginVaultWriteResponse,
   requirePayloadString,
 } from "../shared/plugin-runtime-protocol";
 
 export interface PluginRendererVaultMutations {
+  createBinary?(request: PluginVaultCreateBinaryRequest): Promise<PluginVaultCreateBinaryResponse>;
   createFolder(request: PluginVaultCreateFolderRequest): Promise<PluginVaultCreateFolderResponse>;
   createText(request: PluginVaultCreateRequest): Promise<PluginVaultCreateResponse>;
+  writeBinary?(request: PluginVaultWriteBinaryRequest): Promise<PluginVaultWriteBinaryResponse>;
   writeText(request: PluginVaultWriteRequest): Promise<PluginVaultWriteResponse>;
 }
 
@@ -40,6 +46,8 @@ export class PluginRendererService {
         }
         await this.close();
         const vaultMutations = this.vaultMutations;
+        const createBinary = vaultMutations?.createBinary;
+        const writeBinary = vaultMutations?.writeBinary;
         this.host = new PluginHost(
           vaultPath,
           undefined,
@@ -58,6 +66,31 @@ export class PluginRendererService {
                   vaultMutations.createText({ vaultPath, filePath, content }),
                 createFolder: (folderPath) =>
                   vaultMutations.createFolder({ vaultPath, folderPath }),
+                ...(createBinary
+                  ? {
+                      createBinary: (filePath: string, content: Uint8Array) =>
+                        createBinary({
+                          vaultPath,
+                          filePath,
+                          content: new Uint8Array(content).buffer,
+                        }),
+                    }
+                  : {}),
+                ...(writeBinary
+                  ? {
+                      writeBinary: (
+                        filePath: string,
+                        content: Uint8Array,
+                        expectedRevision: string,
+                      ) =>
+                        writeBinary({
+                          vaultPath,
+                          filePath,
+                          content: new Uint8Array(content).buffer,
+                          expectedRevision,
+                        }),
+                    }
+                  : {}),
               }
             : undefined,
         );

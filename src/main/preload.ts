@@ -121,6 +121,8 @@ const bridge: ThreadleafBridge = {
     ipcRenderer.invoke(ipcChannels.closePluginView) as Promise<RuntimeSnapshot>,
   setPluginSurfaceBounds: (bounds: PluginSurfaceBounds) =>
     ipcRenderer.invoke(ipcChannels.setPluginSurfaceBounds, bounds) as Promise<void>,
+  setPluginSurfaceVisible: (visible: boolean) =>
+    ipcRenderer.invoke(ipcChannels.setPluginSurfaceVisible, visible) as Promise<void>,
   setPluginSurfaceTheme: (theme: "dark" | "light") =>
     ipcRenderer.invoke(ipcChannels.setPluginSurfaceTheme, theme) as Promise<void>,
   onSnapshot: (listener) => {

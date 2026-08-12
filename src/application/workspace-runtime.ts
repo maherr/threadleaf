@@ -2,8 +2,8 @@ import { SearchQueryError } from "../kernel/full-text-search";
 import { VaultIndexReactor } from "../kernel/metadata-index";
 import { NodeVaultWatcher } from "../kernel/node-vault-watcher";
 import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
-import { normalizeVaultPath } from "../kernel/path-policy";
-import type { StateRootPort, VaultDirectoryCreateResult } from "../kernel/ports";
+import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
+import type { StateRootPort, VaultDirectoryCreateResult, VaultWriteResult } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
@@ -529,6 +529,97 @@ export class WorkspaceRuntime {
       { path: filePath, content, expectedVaultId },
       false,
     );
+    await this.publishSnapshot();
+    return outcome;
+  }
+
+  async createPluginFile(
+    filePath: string,
+    content: Uint8Array,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this plugin file could be created.");
+    }
+    const normalizedPath = normalizeVaultPath(filePath);
+    if (hasPrivateVaultSegment(normalizedPath)) {
+      throw new Error(`Plugin file creation cannot target private application paths: ${filePath}`);
+    }
+    const outcome = await this.kernel.createBinary(normalizedPath, content);
+    const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
+    if (outcome.status === "committed") {
+      if (isMarkdown) {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "write",
+          path: outcome.path,
+          revision: outcome.revision,
+        });
+      }
+      await this.indexReactor.index.refresh(this.kernel, outcome.path);
+    } else if (outcome.status === "conflict") {
+      if (isMarkdown) {
+        const conflictCopy = await this.kernel.readText(outcome.conflictPath);
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "write",
+          path: conflictCopy.path,
+          revision: conflictCopy.revision,
+        });
+      }
+      if (outcome.currentRevision === null) {
+        this.indexReactor.index.remove(outcome.path);
+      } else {
+        await this.indexReactor.index.refresh(this.kernel, outcome.path);
+      }
+      await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
+    }
+    await this.publishSnapshot();
+    return outcome;
+  }
+
+  async writePluginFile(
+    filePath: string,
+    content: Uint8Array,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultWriteResult> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this plugin file could be saved.");
+    }
+    const normalizedPath = normalizeVaultPath(filePath);
+    if (hasPrivateVaultSegment(normalizedPath)) {
+      throw new Error(`Plugin file saves cannot target private application paths: ${filePath}`);
+    }
+    const outcome = await this.kernel.writeBinary(normalizedPath, content, expectedRevision);
+    const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
+    if (outcome.status === "committed") {
+      if (isMarkdown) {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "write",
+          path: outcome.path,
+          revision: outcome.revision,
+        });
+      }
+      await this.indexReactor.index.refresh(this.kernel, outcome.path);
+    } else {
+      if (isMarkdown) {
+        const conflictCopy = await this.kernel.readText(outcome.conflictPath);
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "write",
+          path: conflictCopy.path,
+          revision: conflictCopy.revision,
+        });
+      }
+      if (outcome.currentRevision === null) {
+        this.indexReactor.index.remove(outcome.path);
+      } else {
+        await this.indexReactor.index.refresh(this.kernel, outcome.path);
+      }
+      await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
+    }
     await this.publishSnapshot();
     return outcome;
   }

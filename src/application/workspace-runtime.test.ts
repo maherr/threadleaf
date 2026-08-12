@@ -638,6 +638,57 @@ describe("WorkspaceRuntime", () => {
     ).rejects.toThrow("active vault changed");
   });
 
+  it("creates and revision-binds plugin text and binary files outside the Markdown index", async () => {
+    const workspace = await openRuntime();
+    await workspace.openNote("Welcome.md");
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>',
+      "utf8",
+    );
+    const firstPng = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0xff]);
+    const secondPng = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 0, 0xff]);
+
+    const createdSvg = await workspace.createPluginFile(
+      "Exports/Drawing.svg",
+      svg,
+      workspace.vaultId,
+    );
+    const createdPng = await workspace.createPluginFile(
+      "Exports/Drawing.png",
+      firstPng,
+      workspace.vaultId,
+    );
+    expect(createdSvg.status).toBe("committed");
+    expect(createdPng.status).toBe("committed");
+    if (createdPng.status !== "committed") {
+      throw new Error("Expected plugin binary creation to commit.");
+    }
+    const modifiedPng = await workspace.writePluginFile(
+      "Exports/Drawing.png",
+      secondPng,
+      createdPng.revision,
+      workspace.vaultId,
+    );
+    expect(modifiedPng.status).toBe("committed");
+    await expect(fs.readFile(path.join(vaultPath, "Exports", "Drawing.svg"))).resolves.toEqual(svg);
+    await expect(fs.readFile(path.join(vaultPath, "Exports", "Drawing.png"))).resolves.toEqual(
+      Buffer.from(secondPng),
+    );
+    await expect(
+      workspace.createPluginFile("Exports/Drawing.png", firstPng, workspace.vaultId),
+    ).resolves.toMatchObject({ status: "exists", path: "Exports/Drawing.png" });
+    expect((await workspace.getSnapshot()).workspace?.activeNote?.path).toBe("Welcome.md");
+    expect(
+      (await workspace.getSnapshot()).workspace?.files.map(({ path: filePath }) => filePath),
+    ).not.toContain("Exports/Drawing.svg");
+    await expect(
+      workspace.createPluginFile("Exports/Wrong.png", firstPng, "stale-vault"),
+    ).rejects.toThrow("active vault changed");
+    await expect(
+      workspace.createPluginFile(".obsidian/Generated.png", firstPng, workspace.vaultId),
+    ).rejects.toThrow("private application paths");
+  });
+
   it("preserves a create race as a selected conflict note without overwriting the winner", async () => {
     const workspace = await openRuntime();
     const writeText = workspace.kernel.writeText.bind(workspace.kernel);

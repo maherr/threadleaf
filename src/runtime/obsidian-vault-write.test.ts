@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { revisionOf } from "../kernel/durability";
-import { FileManager, TFile, Vault } from "./obsidian-compat";
+import { FileManager, parseFrontMatterEntry, TFile, Vault } from "./obsidian-compat";
 
 const temporaryDirectories: string[] = [];
 
@@ -34,6 +34,15 @@ async function createVaultFile(content = "initial drawing"): Promise<{
 }
 
 describe("Obsidian compatibility vault writes", () => {
+  it("reads exact and regular-expression frontmatter entries", () => {
+    const frontmatter = { cssclasses: ["wide-page", "drawing"], title: "Canvas" };
+
+    expect(parseFrontMatterEntry(frontmatter, "cssclasses")).toEqual(["wide-page", "drawing"]);
+    expect(parseFrontMatterEntry(frontmatter, /^tit/)).toBe("Canvas");
+    expect(parseFrontMatterEntry(frontmatter, "missing")).toBeNull();
+    expect(parseFrontMatterEntry(null, "cssclasses")).toBeNull();
+  });
+
   it("resolves attachment paths beside the source and avoids existing names", async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-attachments-"));
     temporaryDirectories.push(rootPath);
@@ -165,6 +174,56 @@ describe("Obsidian compatibility vault writes", () => {
     expect(await fs.readFile(path.join(rootPath, file.path), "utf8")).toBe("third drawing");
     expect(writableFile.stat.size).toBe(Buffer.byteLength("third drawing", "utf8"));
     expect(modified).toHaveBeenCalledTimes(2);
+  });
+
+  it("creates and modifies binary files without changing their bytes", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-binary-write-"));
+    temporaryDirectories.push(rootPath);
+    await fs.mkdir(path.join(rootPath, "Exports"));
+    const createBinary = vi.fn(async (filePath: string, content: Uint8Array) => {
+      await fs.writeFile(path.join(rootPath, filePath), content, { flag: "wx" });
+      return {
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(content),
+        transactionId: "binary-create",
+      };
+    });
+    const writeBinary = vi.fn(async (filePath: string, content: Uint8Array) => {
+      await fs.writeFile(path.join(rootPath, filePath), content);
+      return {
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(content),
+        transactionId: "binary-write",
+      };
+    });
+    const vault = new Vault(rootPath, undefined, {
+      createBinary,
+      writeBinary,
+      writeText: vi.fn(),
+    });
+    const created = vi.fn();
+    const modified = vi.fn();
+    vault.on("create", created);
+    vault.on("modify", modified);
+    const firstBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0xff]);
+    const secondBytes = Uint8Array.from([0, 0xff, 0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+
+    const file = await vault.createBinary("Exports/Drawing.png", firstBytes.buffer);
+    await vault.modifyBinary(file, secondBytes.buffer);
+
+    expect(createBinary).toHaveBeenCalledWith("Exports/Drawing.png", firstBytes);
+    expect(writeBinary).toHaveBeenCalledWith(
+      "Exports/Drawing.png",
+      secondBytes,
+      revisionOf(firstBytes),
+    );
+    expect(new Uint8Array(await vault.readBinary(file))).toEqual(secondBytes);
+    expect(await fs.readFile(path.join(rootPath, file.path))).toEqual(Buffer.from(secondBytes));
+    expect(file.stat.size).toBe(secondBytes.byteLength);
+    expect(created).toHaveBeenCalledOnce();
+    expect(modified).toHaveBeenCalledOnce();
   });
 
   it("surfaces retained conflict paths and rejects files from another vault", async () => {

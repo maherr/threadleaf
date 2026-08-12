@@ -50,4 +50,9 @@ detaches the plugin leaf, and reopens the exact persisted scene. A second verifi
 unchanged plugin's new-drawing command, creates its standard nested folder and
 `Drawing <timestamp>.excalidraw.md` file through the recoverable kernel, opens the resulting custom
 view, persists deterministic scene elements, fully closes the view, and reloads those elements from
-the exact saved file. This does not imply that embeds, export, or full plugin unload pass.
+the exact saved file. A third workflow runs the unchanged auto-create-and-embed command from a
+native Markdown editor, creates the drawing through the recoverable kernel, and inserts its embed
+link into the revision-bound draft. A fourth opens Export Drawing and verifies both SVG-to-vault
+and PNG-to-vault creation and overwrite. The SVG parses as XML, while the PNG retains its exact
+binary signature and decodes as the expected image after closing and reopening the drawing. These
+results do not imply inline wiki-embed rendering, every export format, or full plugin unload pass.
