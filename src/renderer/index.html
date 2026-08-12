@@ -121,6 +121,7 @@
                 <legend class="sr-only">Document view</legend>
                 <button id="edit-view" type="button" aria-pressed="true">Edit</button>
                 <button id="read-view" type="button" aria-pressed="false">Read</button>
+                <button id="plugin-view" type="button" aria-pressed="false" hidden>Plugin</button>
               </fieldset>
               <span class="edit-state" id="edit-state" data-state="empty">No note</span>
               <button class="toolbar-button" id="move-note" type="button" disabled>Move</button>
@@ -181,6 +182,14 @@
               hidden
             ></section>
           </article>
+          <section
+            class="plugin-surface-host"
+            id="plugin-surface-host"
+            aria-label="Community plugin view"
+            hidden
+          >
+            <span class="plugin-surface-loading">Opening plugin view…</span>
+          </section>
         </main>
 
         <aside

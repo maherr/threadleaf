@@ -55,6 +55,9 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
   ): Promise<NoteSaveResponse>;
   runPluginCommand(commandId: string): Promise<RuntimeSnapshot>;
+  markPluginLayoutReady(): Promise<RuntimeSnapshot>;
+  openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
+  closePluginView(): Promise<RuntimeSnapshot>;
   loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
@@ -278,6 +281,18 @@ export class WorkspaceController {
 
   runPluginCommand(commandId: string): Promise<RuntimeSnapshot> {
     return this.#runtime.runPluginCommand(commandId);
+  }
+
+  markPluginLayoutReady(): Promise<RuntimeSnapshot> {
+    return this.#runtime.markPluginLayoutReady();
+  }
+
+  openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
+    return this.#runtime.openPluginView(viewType, filePath);
+  }
+
+  closePluginView(): Promise<RuntimeSnapshot> {
+    return this.#runtime.closePluginView();
   }
 
   loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {

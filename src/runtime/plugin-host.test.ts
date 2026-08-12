@@ -29,6 +29,30 @@ async function readFixtureBytes(): Promise<Map<string, Buffer>> {
 }
 
 describe("PluginHost", () => {
+  it("builds synchronous frontmatter and link metadata from canonical vault files", () => {
+    const host = new PluginHost(fixtureVault);
+    const welcome = host.vault.getFileByPath("Welcome.md");
+
+    expect(host.app.metadataCache.getFileCache(welcome)?.frontmatter).toEqual({
+      kind: "compatibility-fixture",
+    });
+    expect(host.app.metadataCache.getCachedFiles()).toEqual(["Linked Note.md", "Welcome.md"]);
+    const linked = host.app.metadataCache.getFirstLinkpathDest("Linked Note#Heading", "Welcome.md");
+    expect(linked?.path).toBe("Linked Note.md");
+    expect(linked && host.app.metadataCache.fileToLinktext(linked, "Welcome.md", true)).toBe(
+      "Linked Note",
+    );
+
+    const changed: string[] = [];
+    const eventRef = host.app.metadataCache.on("changed", (file) => {
+      changed.push((file as { path: string }).path);
+    });
+    host.app.metadataCache.trigger("changed", welcome);
+    host.app.metadataCache.offref(eventRef);
+    host.app.metadataCache.trigger("changed", welcome);
+    expect(changed).toEqual(["Welcome.md"]);
+  });
+
   it("loads an unchanged CommonJS plugin and verifies its command workflow", async () => {
     const before = await readFixtureBytes();
     const host = new PluginHost(fixtureVault);
@@ -262,6 +286,7 @@ if (![BaseComponent, Component, EditorSuggest, FileView, FuzzySuggestModal, Item
 module.exports = class UiApiPlugin extends Plugin {
   async onload() {
     if (normalizePath("/Folder\\\\Note.md") !== "Folder/Note.md") throw new Error("normalizePath failed");
+    if (normalizePath("") !== "") throw new Error("normalizePath root failed");
     addIcon("ui-api-icon", "<path d='M0 0h1v1z'/>");
     this.registerView("ui-api-view", (leaf) => new ItemView(leaf));
     this.registerExtensions(["drawing"], "ui-api-view");
@@ -282,6 +307,7 @@ module.exports = class UiApiPlugin extends Plugin {
       expect(loaded.plugin).toMatchObject({ state: "loaded", compatibilityLevel: 2 });
       expect(host.app.compatibility.snapshot()).toEqual({
         editorSuggests: 1,
+        extensions: [{ extension: "drawing", viewType: "ui-api-view" }],
         markdownPostProcessors: 1,
         ribbonItems: 1,
         settingTabs: 1,
@@ -290,12 +316,13 @@ module.exports = class UiApiPlugin extends Plugin {
       });
       expect(loaded.notices).not.toContain("Fixture layout became ready.");
 
-      host.app.workspace.markLayoutReady();
+      await host.app.workspace.markLayoutReady();
       expect((await host.getSnapshot()).notices).toContain("Fixture layout became ready.");
 
       await host.unloadPlugin();
       expect(host.app.compatibility.snapshot()).toEqual({
         editorSuggests: 0,
+        extensions: [],
         markdownPostProcessors: 0,
         ribbonItems: 0,
         settingTabs: 0,

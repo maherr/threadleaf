@@ -23,4 +23,9 @@ export const ipcChannels = {
   runCommand: "threadleaf:run-command",
   reloadPlugin: "threadleaf:reload-plugin",
   unloadPlugin: "threadleaf:unload-plugin",
+  markPluginLayoutReady: "threadleaf:mark-plugin-layout-ready",
+  openPluginView: "threadleaf:open-plugin-view",
+  closePluginView: "threadleaf:close-plugin-view",
+  setPluginSurfaceBounds: "threadleaf:set-plugin-surface-bounds",
+  setPluginSurfaceTheme: "threadleaf:set-plugin-surface-theme",
 } as const;

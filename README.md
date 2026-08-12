@@ -106,10 +106,13 @@ browser `connect-src 'none'` policy, denied browser permissions, blocked popups 
 navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. Its
 independently implemented DOM and UI base APIs activate the unchanged Excalidraw 2.25.3 release
 bundle in both a disposable DOM probe and the production compatibility renderer. Excalidraw
-registers two views, a ribbon action, a settings tab, and a Markdown processor at measured level 2.
-Its stylesheet is preserved while four remote font URLs are replaced with inert embedded assets.
-The runtime is still trusted: Node-capable plugin code can perform its own I/O. The drawing view and
-workflow APIs are not complete yet.
+registers two views, its commands, a ribbon action, a settings tab, and a Markdown processor. An
+existing Excalidraw Markdown document now opens through the production host as the plugin's real
+loaded canvas in a visible workspace leaf, with its filename header, action icons, release-notes
+modal, and Threadleaf light/dark chrome. That named read-only opening workflow is measured level 4;
+create, edit, save, embed, reopen-after-write, and export remain unsupported. Its stylesheet is
+preserved while four remote font URLs are replaced with inert embedded assets. The runtime is still
+trusted: Node-capable plugin code can perform its own I/O.
 
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,

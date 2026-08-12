@@ -6,6 +6,7 @@ import type {
   NoteDeleteResponse,
   NoteMoveResponse,
   NoteSaveResponse,
+  PluginSurfaceBounds,
   PluginUpdateResponse,
   RuntimeSnapshot,
   ThreadleafBridge,
@@ -108,6 +109,16 @@ const bridge: ThreadleafBridge = {
     ipcRenderer.invoke(ipcChannels.reloadPlugin, pluginId) as Promise<RuntimeSnapshot>,
   unloadPlugin: (pluginId) =>
     ipcRenderer.invoke(ipcChannels.unloadPlugin, pluginId) as Promise<RuntimeSnapshot>,
+  markPluginLayoutReady: () =>
+    ipcRenderer.invoke(ipcChannels.markPluginLayoutReady) as Promise<RuntimeSnapshot>,
+  openPluginView: (viewType, filePath) =>
+    ipcRenderer.invoke(ipcChannels.openPluginView, viewType, filePath) as Promise<RuntimeSnapshot>,
+  closePluginView: () =>
+    ipcRenderer.invoke(ipcChannels.closePluginView) as Promise<RuntimeSnapshot>,
+  setPluginSurfaceBounds: (bounds: PluginSurfaceBounds) =>
+    ipcRenderer.invoke(ipcChannels.setPluginSurfaceBounds, bounds) as Promise<void>,
+  setPluginSurfaceTheme: (theme: "dark" | "light") =>
+    ipcRenderer.invoke(ipcChannels.setPluginSurfaceTheme, theme) as Promise<void>,
   onSnapshot: (listener) => {
     const subscription = (_event: Electron.IpcRendererEvent, snapshot: RuntimeSnapshot) => {
       listener(snapshot);

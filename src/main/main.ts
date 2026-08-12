@@ -1,10 +1,17 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type OpenDialogOptions,
+  type WebContentsView,
+} from "electron";
 import { AppSettingsController } from "../application/app-settings-controller";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
 import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared/appearance";
-import type { PluginUpdateResponse } from "../shared/contracts";
+import type { PluginSurfaceBounds, PluginUpdateResponse } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
 import {
@@ -28,6 +35,90 @@ let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
 let pluginOperationTail: Promise<void> = Promise.resolve();
+let attachedPluginView: WebContentsView | null = null;
+let compatibilityPluginView: WebContentsView | null = null;
+let pluginSurfaceBounds: PluginSurfaceBounds = { x: 0, y: 0, width: 0, height: 0 };
+let pluginSurfaceCss = "";
+let pluginSurfaceCssKey: string | null = null;
+let pluginSurfaceCssView: WebContentsView | null = null;
+let pluginSurfaceTheme: "dark" | "light" = "dark";
+
+async function applyPluginSurfaceTheme(
+  theme: "dark" | "light",
+  view = compatibilityPluginView,
+): Promise<void> {
+  pluginSurfaceTheme = theme;
+  if (!view || view.webContents.isDestroyed()) {
+    return;
+  }
+  await view.webContents.executeJavaScript(`
+    (() => {
+      const theme = ${JSON.stringify(theme)};
+      document.documentElement.dataset.theme = theme;
+      for (const target of [document.documentElement, document.body]) {
+        target.classList.toggle("theme-dark", theme === "dark");
+        target.classList.toggle("theme-light", theme === "light");
+      }
+    })()
+  `);
+}
+
+async function applyPluginSurfaceCss(css: string, view = compatibilityPluginView): Promise<void> {
+  pluginSurfaceCss = css;
+  const previousView = pluginSurfaceCssView;
+  const previousKey = pluginSurfaceCssKey;
+  pluginSurfaceCssView = null;
+  pluginSurfaceCssKey = null;
+  if (previousView && previousKey && !previousView.webContents.isDestroyed()) {
+    await previousView.webContents.removeInsertedCSS(previousKey).catch(() => undefined);
+  }
+  if (!view || view.webContents.isDestroyed() || !css) {
+    return;
+  }
+  const key = await view.webContents.insertCSS(css, { cssOrigin: "author" });
+  if (view.webContents.isDestroyed() || view !== compatibilityPluginView) {
+    if (!view.webContents.isDestroyed()) {
+      await view.webContents.removeInsertedCSS(key).catch(() => undefined);
+    }
+    return;
+  }
+  pluginSurfaceCssView = view;
+  pluginSurfaceCssKey = key;
+}
+
+function detachPluginView(): void {
+  if (attachedPluginView && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.contentView.removeChildView(attachedPluginView);
+  }
+  attachedPluginView = null;
+}
+
+function updatePluginViewBounds(): void {
+  if (!attachedPluginView || pluginSurfaceBounds.width <= 0 || pluginSurfaceBounds.height <= 0) {
+    return;
+  }
+  attachedPluginView.setBounds(pluginSurfaceBounds);
+}
+
+function setPluginViewVisibility(view: WebContentsView, visible: boolean): void {
+  if (!visible) {
+    if (attachedPluginView === view) {
+      detachPluginView();
+    }
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (attachedPluginView && attachedPluginView !== view) {
+    detachPluginView();
+  }
+  if (attachedPluginView !== view) {
+    mainWindow.contentView.addChildView(view);
+    attachedPluginView = view;
+  }
+  updatePluginViewBounds();
+}
 
 function describeVaultOpenFailure(error: unknown): string {
   const code =
@@ -89,6 +180,13 @@ async function currentPluginCatalog(expectedVaultId: string): Promise<PluginCata
     preference: settingsController.getVaultPlugins(expectedVaultId),
     safeMode: pluginSafeMode(),
   });
+  if (
+    workspaceController.vaultId !== expectedVaultId ||
+    workspaceController.vaultPath !== vaultPath
+  ) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId };
+  }
+  await applyPluginSurfaceCss(catalog.css);
   if (
     workspaceController.vaultId !== expectedVaultId ||
     workspaceController.vaultPath !== vaultPath
@@ -175,12 +273,18 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
     workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
-    pluginRuntimeFactory: (vaultPath) =>
-      ElectronPluginRuntime.open({
+    pluginRuntimeFactory: async (vaultPath) => {
+      const runtime = await ElectronPluginRuntime.open({
         hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
+        onSurfaceVisibilityChange: setPluginViewVisibility,
         packageJsonPath: join(app.getAppPath(), "package.json"),
         vaultPath,
-      }),
+      });
+      compatibilityPluginView = runtime.view;
+      await applyPluginSurfaceTheme(pluginSurfaceTheme, runtime.view);
+      await applyPluginSurfaceCss(pluginSurfaceCss, runtime.view);
+      return runtime;
+    },
     ...(configuredPath ? { configuredVaultPath: configuredPath } : {}),
   });
 }
@@ -455,6 +559,49 @@ function registerIpcHandlers(): void {
     }
     return serializePluginOperation(() => workspaceController.unloadPlugin(pluginId));
   });
+  ipcMain.handle(ipcChannels.markPluginLayoutReady, () =>
+    serializePluginOperation(() => workspaceController.markPluginLayoutReady()),
+  );
+  ipcMain.handle(ipcChannels.openPluginView, (_event, viewType: unknown, filePath: unknown) => {
+    if (
+      typeof viewType !== "string" ||
+      viewType.length === 0 ||
+      !(filePath === undefined || (typeof filePath === "string" && filePath.length > 0))
+    ) {
+      throw new Error("Opening a plugin view requires a view type and optional file path.");
+    }
+    return serializePluginOperation(() => workspaceController.openPluginView(viewType, filePath));
+  });
+  ipcMain.handle(ipcChannels.closePluginView, () =>
+    serializePluginOperation(() => workspaceController.closePluginView()),
+  );
+  ipcMain.handle(ipcChannels.setPluginSurfaceBounds, (_event, value: unknown) => {
+    if (!value || typeof value !== "object") {
+      throw new Error("Plugin surface bounds must be an object.");
+    }
+    const candidate = value as Record<string, unknown>;
+    const fields = [candidate.x, candidate.y, candidate.width, candidate.height];
+    if (
+      fields.some((field) => typeof field !== "number" || !Number.isFinite(field)) ||
+      (candidate.width as number) < 0 ||
+      (candidate.height as number) < 0
+    ) {
+      throw new Error("Plugin surface bounds must contain finite non-negative dimensions.");
+    }
+    pluginSurfaceBounds = {
+      x: Math.max(0, Math.round(candidate.x as number)),
+      y: Math.max(0, Math.round(candidate.y as number)),
+      width: Math.max(0, Math.round(candidate.width as number)),
+      height: Math.max(0, Math.round(candidate.height as number)),
+    };
+    updatePluginViewBounds();
+  });
+  ipcMain.handle(ipcChannels.setPluginSurfaceTheme, async (_event, theme: unknown) => {
+    if (theme !== "dark" && theme !== "light") {
+      throw new Error("Plugin surface theme must be dark or light.");
+    }
+    await applyPluginSurfaceTheme(theme);
+  });
   workspaceController.onSnapshot((snapshot) => {
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(ipcChannels.snapshotChanged, snapshot);
@@ -468,6 +615,7 @@ function registerIpcHandlers(): void {
 }
 
 async function createWindow(): Promise<void> {
+  detachPluginView();
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 820,
@@ -485,6 +633,10 @@ async function createWindow(): Promise<void> {
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("closed", () => {
+    attachedPluginView = null;
+    mainWindow = null;
+  });
   await mainWindow.loadFile(join(__dirname, "..", "renderer", "index.html"));
 }
 

@@ -13,6 +13,7 @@ import {
 
 interface ElectronPluginRuntimeOptions {
   hostHtmlPath: string;
+  onSurfaceVisibilityChange?(view: WebContentsView, visible: boolean): void;
   packageJsonPath: string;
   vaultPath: string;
 }
@@ -37,9 +38,17 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   private closed = false;
   private readyResolve: (() => void) | null = null;
   private readyReject: ((error: Error) => void) | null = null;
+  private readonly onSurfaceVisibilityChange:
+    | ((view: WebContentsView, visible: boolean) => void)
+    | undefined;
+  private surfaceVisible = false;
 
-  private constructor(view: WebContentsView) {
+  private constructor(
+    view: WebContentsView,
+    onSurfaceVisibilityChange?: (view: WebContentsView, visible: boolean) => void,
+  ) {
     this.view = view;
+    this.onSurfaceVisibilityChange = onSurfaceVisibilityChange;
     view.webContents.on("ipc-message", this.handleIpcMessage);
     view.webContents.on("render-process-gone", this.handleRendererGone);
   }
@@ -69,7 +78,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
       }
     });
 
-    const runtime = new ElectronPluginRuntime(view);
+    const runtime = new ElectronPluginRuntime(view, options.onSurfaceVisibilityChange);
     try {
       const ready = runtime.waitUntilReady();
       await Promise.all([view.webContents.loadFile(options.hostHtmlPath), ready]);
@@ -86,6 +95,10 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.requestSnapshot("get-snapshot");
+  }
+
+  closePluginView(): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("close-view");
   }
 
   loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
@@ -110,6 +123,21 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
 
   markLayoutReady(): Promise<RuntimeSnapshot> {
     return this.requestSnapshot("mark-layout-ready");
+  }
+
+  openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("open-view", {
+      viewType,
+      ...(filePath ? { filePath } : {}),
+    });
+  }
+
+  private setSurfaceVisible(visible: boolean): void {
+    if (this.surfaceVisible === visible) {
+      return;
+    }
+    this.surfaceVisible = visible;
+    this.onSurfaceVisibilityChange?.(this.view, visible);
   }
 
   async close(): Promise<void> {
@@ -155,6 +183,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
       if (!snapshot) {
         throw new Error(`Plugin renderer ${operation} returned no snapshot.`);
       }
+      this.setSurfaceVisible(snapshot.pluginSurface !== null);
       return snapshot;
     });
   }
@@ -219,6 +248,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     details: RenderProcessGoneDetails,
   ): void => {
     const message = `Plugin compatibility renderer stopped (${details.reason}, exit ${details.exitCode}).`;
+    this.setSurfaceVisible(false);
     this.readyReject?.(new Error(message));
     this.rejectAll(message);
     this.closed = true;
@@ -237,6 +267,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
       return;
     }
     this.closed = true;
+    this.setSurfaceVisible(false);
     this.ready = false;
     this.readyReject?.(new Error(reason));
     this.readyResolve = null;

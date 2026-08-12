@@ -9,6 +9,7 @@ import {
 
 export class PluginRendererService {
   private host: PluginHost | null = null;
+  private restoreGlobalApp: (() => void) | null = null;
 
   async handle(request: PluginRendererRequest) {
     switch (request.operation) {
@@ -20,13 +21,16 @@ export class PluginRendererService {
         }
         await this.close();
         this.host = new PluginHost(vaultPath, undefined, undefined, createRequire(packageJsonPath));
+        this.restoreGlobalApp = this.installGlobalApp(this.host);
         return this.host.getSnapshot();
       }
       case "get-snapshot":
         return this.requireHost().getSnapshot();
       case "load-plugin":
+        await this.requireHost().closePluginView();
         return this.requireHost().loadPlugin(requirePayloadString(request, "pluginDirectory"));
       case "reload-plugin":
+        await this.requireHost().closePluginView();
         return this.requireHost().reloadPlugin(optionalPayloadString(request, "pluginId"));
       case "run-command":
         return this.requireHost().runCommand(requirePayloadString(request, "commandId"));
@@ -35,8 +39,14 @@ export class PluginRendererService {
       case "unload-all":
         return this.requireHost().unloadAllPlugins();
       case "mark-layout-ready":
-        this.requireHost().app.workspace.markLayoutReady();
-        return this.requireHost().getSnapshot();
+        return this.requireHost().markLayoutReady();
+      case "open-view":
+        return this.requireHost().openPluginView(
+          requirePayloadString(request, "viewType"),
+          optionalPayloadString(request, "filePath"),
+        );
+      case "close-view":
+        return this.requireHost().closePluginView();
       case "close":
         await this.close();
         return null;
@@ -46,7 +56,40 @@ export class PluginRendererService {
   async close(): Promise<void> {
     const host = this.host;
     this.host = null;
-    await host?.close();
+    try {
+      await host?.close();
+    } finally {
+      this.restoreGlobalApp?.();
+      this.restoreGlobalApp = null;
+    }
+  }
+
+  private installGlobalApp(host: PluginHost): () => void {
+    const targets: object[] = [globalThis];
+    if (typeof window !== "undefined" && window !== globalThis) {
+      targets.push(window);
+    }
+    const descriptors = targets.map((target) => ({
+      descriptor: Object.getOwnPropertyDescriptor(target, "app"),
+      target,
+    }));
+    for (const { target } of descriptors) {
+      Object.defineProperty(target, "app", {
+        configurable: true,
+        enumerable: true,
+        value: host.app,
+        writable: false,
+      });
+    }
+    return () => {
+      for (const { descriptor, target } of descriptors) {
+        if (descriptor) {
+          Object.defineProperty(target, "app", descriptor);
+        } else {
+          Reflect.deleteProperty(target, "app");
+        }
+      }
+    };
   }
 
   private requireHost(): PluginHost {

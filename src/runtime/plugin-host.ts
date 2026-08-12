@@ -19,8 +19,10 @@ import {
   NoticeBus,
   Plugin,
   type PluginManifest,
+  sleep,
   Vault,
 } from "./obsidian-compat";
+import { FileView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
 interface CommonJsModuleRecord {
@@ -67,6 +69,7 @@ export class PluginHost implements PluginRuntimePort {
   private readonly events: RuntimeEvent[] = [];
   private eventSequence = 0;
   private readonly plugins = new Map<string, LoadedPluginRecord>();
+  private activePluginLeaf: WorkspaceLeaf | null = null;
   private lastPluginId: string | null = null;
   private readonly pluginModuleResolver: PluginModuleResolver | undefined;
 
@@ -127,6 +130,7 @@ export class PluginHost implements PluginRuntimePort {
         throw new Error("Plugin export does not extend the compatibility Plugin class.");
       }
       record.instance = instance;
+      this.app.plugins.register(manifest, instance);
       record.summary = { ...record.summary, state: "loaded", compatibilityLevel: 1 };
       this.record("plugin", "Injected the open compatibility module and constructed the plugin.");
 
@@ -149,6 +153,7 @@ export class PluginHost implements PluginRuntimePort {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await instance?.__unload().catch(() => undefined);
+      this.app.plugins.unregister(manifest.id);
       record.instance = null;
       record.summary = {
         ...record.summary,
@@ -179,7 +184,53 @@ export class PluginHost implements PluginRuntimePort {
     return this.getSnapshot();
   }
 
+  async markLayoutReady(): Promise<RuntimeSnapshot> {
+    await this.app.workspace.markLayoutReady();
+    this.record("runtime", "Plugin workspace layout became ready.");
+    return this.getSnapshot();
+  }
+
+  async openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
+    await this.closePluginView();
+    if (typeof document === "undefined") {
+      throw new Error("Plugin views require a renderer document.");
+    }
+    const container = document.createElement("div");
+    container.id = "threadleaf-plugin-surface";
+    container.className = "threadleaf-plugin-surface workspace-leaf mod-active";
+    document.body.append(container);
+    const leaf = new WorkspaceLeaf(this.app, container);
+    this.activePluginLeaf = leaf;
+    try {
+      await leaf.setViewState({
+        type: viewType,
+        state: filePath ? { file: filePath } : {},
+      });
+      this.record(
+        "runtime",
+        `Opened plugin view ${viewType}${filePath ? ` for ${filePath}` : ""}.`,
+      );
+      return this.getSnapshot();
+    } catch (error) {
+      this.activePluginLeaf = null;
+      await leaf.detach().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async closePluginView(): Promise<RuntimeSnapshot> {
+    const leaf = this.activePluginLeaf;
+    this.activePluginLeaf = null;
+    if (leaf) {
+      const viewType = leaf.view?.getViewType() ?? "unknown";
+      await leaf.detach();
+      this.record("runtime", `Closed plugin view ${viewType}.`);
+    }
+    return this.getSnapshot();
+  }
+
   async unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+    await this.closePluginView();
     const targetId = pluginId ?? this.lastPluginId;
     const record = targetId ? this.plugins.get(targetId) : undefined;
     if (!record || record.summary.state === "unloaded") {
@@ -192,6 +243,7 @@ export class PluginHost implements PluginRuntimePort {
       unloadError = error instanceof Error ? error.message : String(error);
     }
     record.instance = null;
+    this.app.plugins.unregister(record.summary.id);
     record.summary = {
       ...record.summary,
       state: "unloaded",
@@ -214,6 +266,7 @@ export class PluginHost implements PluginRuntimePort {
   }
 
   async close(): Promise<void> {
+    await this.closePluginView();
     await this.unloadAllPlugins();
   }
 
@@ -249,6 +302,17 @@ export class PluginHost implements PluginRuntimePort {
       actions: this.app.commands.actions.list(),
       notices: this.app.notices.list(),
       events: this.events.map((event) => ({ ...event })),
+      integrations: this.app.compatibility.snapshot(),
+      pluginSurface: this.activePluginLeaf?.view
+        ? {
+            displayText: this.activePluginLeaf.view.getDisplayText(),
+            filePath:
+              this.activePluginLeaf.view instanceof FileView && this.activePluginLeaf.view.file
+                ? this.activePluginLeaf.view.file.path
+                : null,
+            viewType: this.activePluginLeaf.view.getViewType(),
+          }
+        : null,
     };
   }
 
@@ -288,9 +352,17 @@ export class PluginHost implements PluginRuntimePort {
       "module",
       "__filename",
       "__dirname",
+      "sleep",
       `${source}\n//# sourceURL=${sourceUrl}`,
     );
-    compiled(moduleRecord.exports, pluginRequire, moduleRecord, entryPath, path.dirname(entryPath));
+    compiled(
+      moduleRecord.exports,
+      pluginRequire,
+      moduleRecord,
+      entryPath,
+      path.dirname(entryPath),
+      sleep,
+    );
 
     const candidate = this.resolvePluginConstructor(moduleRecord.exports);
     if (typeof candidate !== "function") {

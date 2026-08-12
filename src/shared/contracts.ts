@@ -51,6 +51,34 @@ export interface PluginSummary {
   error: string | null;
 }
 
+export interface PluginExtensionRegistration {
+  extension: string;
+  viewType: string;
+}
+
+export interface PluginIntegrationSnapshot {
+  editorSuggests: number;
+  extensions: PluginExtensionRegistration[];
+  markdownPostProcessors: number;
+  ribbonItems: number;
+  settingTabs: number;
+  statusBarItems: number;
+  viewTypes: string[];
+}
+
+export interface PluginSurfaceSnapshot {
+  displayText: string;
+  filePath: string | null;
+  viewType: string;
+}
+
+export interface PluginSurfaceBounds {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}
+
 export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
 
 export interface RuntimeSnapshot {
@@ -69,6 +97,8 @@ export interface RuntimeSnapshot {
   actions: ActionSummary[];
   notices: string[];
   events: RuntimeEvent[];
+  integrations?: PluginIntegrationSnapshot;
+  pluginSurface?: PluginSurfaceSnapshot | null;
   workspace?: WorkspaceSnapshot;
 }
 
@@ -336,6 +366,11 @@ export interface ThreadleafBridge {
   runCommand(commandId: string): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
+  markPluginLayoutReady(): Promise<RuntimeSnapshot>;
+  openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
+  closePluginView(): Promise<RuntimeSnapshot>;
+  setPluginSurfaceBounds(bounds: PluginSurfaceBounds): Promise<void>;
+  setPluginSurfaceTheme(theme: "dark" | "light"): Promise<void>;
   openNote(path: string): Promise<RuntimeSnapshot>;
   closeNote(path: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
   moveNote(

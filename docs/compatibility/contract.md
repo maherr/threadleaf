@@ -38,3 +38,12 @@ The first fixture is an unchanged CommonJS bundle that:
 5. releases its registrations on unload.
 
 The acceptance test must exercise the bundle through the same loader used by Electron.
+
+## Visible view fixture
+
+The production renderer fixture registers an `ItemView`, opens it through the shared workspace
+model, and proves that its title, content, action icon, layout bounds, theme, and close lifecycle
+cross the main-renderer and compatibility-renderer seam. The unchanged Excalidraw 2.25.3 bundle is
+then sampled through that same path. A loaded canvas is evidence only for opening an existing
+Excalidraw Markdown document; it does not imply that create, edit, save, embed, reopen-after-write,
+or export workflows pass.

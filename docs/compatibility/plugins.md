@@ -26,8 +26,11 @@ listed, enabled, or activated is not by itself a workflow claim. The unchanged o
 2.25.3 release bundle now passes discovery and `onload` activation in Threadleaf's disposable DOM
 probe. It registers its two view types, ribbon action, settings tab, and Markdown processor without
 an uncaught activation error. The same unchanged bundle now activates at startup in Threadleaf's
-production Electron compatibility renderer. That is measured level 2 compatibility, not a working
-canvas. Excalidraw's create, edit, embed, reopen, and export workflows remain unsupported.
+production Electron compatibility renderer. Its registered drawing view attaches to a visible
+workspace leaf with the filename header, plugin action icons, release-notes modal, and real loaded
+Excalidraw canvas. Opening an existing Excalidraw Markdown document is measured level 4 for that
+named read-only workflow. Drawing creation, edit persistence, save, embed, reopen-after-write, and
+export remain unsupported and are not implied by that result.
 
 ## Trust model
 
@@ -94,4 +97,5 @@ starting normally restores the persisted preference.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
 - Broader workspace, editor, menu, settings-control, file, and metadata APIs.
-- Complete Excalidraw create, edit, embed, reopen, export, unload, and byte-preservation workflows.
+- Complete Excalidraw create, edit, save, embed, reopen-after-write, export, unload, and
+  byte-preservation workflows.

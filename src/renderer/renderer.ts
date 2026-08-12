@@ -76,6 +76,8 @@ const elements = {
   noteTags: getElement("note-tags"),
   editView: getButton("edit-view"),
   readView: getButton("read-view"),
+  pluginView: getButton("plugin-view"),
+  pluginSurfaceHost: getElement("plugin-surface-host"),
   noteEditorShell: getElement("note-editor-shell"),
   noteEditor: getElement("note-editor"),
   notePreview: getElement("note-preview"),
@@ -199,7 +201,7 @@ interface ShortcutTargetDefinition {
   description: string;
 }
 
-type DocumentViewMode = "source" | "reading";
+type DocumentViewMode = "source" | "reading" | "plugin";
 type SettingsPage = "appearance" | "plugins" | "hotkeys";
 
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
@@ -304,6 +306,8 @@ let renderedPreviewSource: string | null = null;
 let renderedPreviewVaultId: string | null = null;
 let renderedPreviewWatchSequence = -1;
 let previewImageRequest = 0;
+let pluginSurfaceRequest = 0;
+let pluginLayoutReadyVaultId: string | null = null;
 let paletteMatches: RendererCommand[] = [];
 let paletteSelection = -1;
 let paletteRestoreFocus: HTMLElement | null = null;
@@ -886,18 +890,107 @@ function renderReadingView(): void {
 function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
   const reading = hasNote && documentViewMode === "reading";
+  const plugin = hasNote && documentViewMode === "plugin";
+  const pluginViewType = preferredPluginViewType();
   elements.noteEditorShell.hidden = reading;
   elements.notePreview.hidden = !reading;
+  elements.noteView.hidden = !hasNote || plugin;
+  elements.pluginSurfaceHost.hidden = !plugin;
   elements.noteView.dataset.view = reading ? "reading" : "source";
   elements.editView.disabled = !hasNote || busy || saving;
   elements.readView.disabled = !hasNote || busy || saving;
-  elements.editView.setAttribute("aria-pressed", String(!reading));
+  elements.pluginView.hidden = pluginViewType === null;
+  elements.pluginView.disabled = !hasNote || !pluginViewType || busy || saving || dirty;
+  elements.editView.setAttribute("aria-pressed", String(hasNote && !reading && !plugin));
   elements.readView.setAttribute("aria-pressed", String(reading));
+  elements.pluginView.setAttribute("aria-pressed", String(plugin));
+  elements.pluginView.title = pluginViewType
+    ? `Open ${pluginViewType} community plugin view`
+    : "No community plugin view is registered";
   const shortcut = shortcutFor("editor.toggle-reading-view");
   elements.editView.title = shortcut ? `Editing view (${shortcut})` : "Editing view";
   elements.readView.title = shortcut ? `Reading view (${shortcut})` : "Reading view";
   if (reading) {
     renderReadingView();
+  }
+  if (plugin) {
+    window.requestAnimationFrame(() => void updatePluginSurfaceBounds());
+  }
+}
+
+function preferredPluginViewType(
+  snapshot: RuntimeSnapshot | null = currentSnapshot,
+): string | null {
+  const viewTypes = snapshot?.integrations?.viewTypes ?? [];
+  if (!loadedNote || viewTypes.length === 0) {
+    return null;
+  }
+  const lowerPath = loadedNote.path.toLowerCase();
+  if (lowerPath.endsWith(".excalidraw.md") && viewTypes.includes("excalidraw")) {
+    return "excalidraw";
+  }
+  const extension = lowerPath.includes(".") ? (lowerPath.split(".").at(-1) ?? "") : "";
+  const extensionView = snapshot?.integrations?.extensions.find(
+    (registration) => registration.extension === extension,
+  )?.viewType;
+  if (extensionView && viewTypes.includes(extensionView)) {
+    return extensionView;
+  }
+  return viewTypes.find((viewType) => !viewType.includes("sidepanel")) ?? viewTypes[0] ?? null;
+}
+
+async function updatePluginSurfaceBounds(): Promise<void> {
+  if (elements.pluginSurfaceHost.hidden) {
+    return;
+  }
+  const bounds = elements.pluginSurfaceHost.getBoundingClientRect();
+  await window.threadleaf.setPluginSurfaceBounds({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+  });
+}
+
+async function activatePluginView(): Promise<void> {
+  const viewType = preferredPluginViewType();
+  const filePath = loadedNote?.path;
+  if (!viewType || !filePath || busy || saving || dirty) {
+    if (dirty) {
+      showToast("Save or revert the current note before opening its plugin view.");
+    }
+    return;
+  }
+  const request = ++pluginSurfaceRequest;
+  documentViewMode = "plugin";
+  renderDocumentView();
+  setActionState(true);
+  try {
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    await updatePluginSurfaceBounds();
+    const vaultId = currentSnapshot?.vault.id ?? null;
+    if (vaultId && pluginLayoutReadyVaultId !== vaultId) {
+      pluginLayoutReadyVaultId = vaultId;
+      try {
+        render(await window.threadleaf.markPluginLayoutReady());
+      } catch (error) {
+        showToast(
+          `Plugin startup reported a compatibility gap: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const snapshot = await window.threadleaf.openPluginView(viewType, filePath);
+    if (request !== pluginSurfaceRequest || documentViewMode !== "plugin") {
+      await window.threadleaf.closePluginView();
+      return;
+    }
+    render(snapshot);
+  } catch (error) {
+    documentViewMode = "source";
+    renderDocumentView();
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    setActionState(false);
   }
 }
 
@@ -905,16 +998,26 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
   if (!loadedNote) {
     return;
   }
+  const closingPlugin = documentViewMode === "plugin" && mode !== "plugin";
   documentViewMode = mode;
-  localStorage.setItem("threadleaf-document-view", mode);
+  if (mode !== "plugin") {
+    localStorage.setItem("threadleaf-document-view", mode);
+  }
   renderDocumentView();
   renderPaletteResults();
+  if (closingPlugin) {
+    pluginSurfaceRequest += 1;
+    void window.threadleaf
+      .closePluginView()
+      .then(render)
+      .catch(() => undefined);
+  }
   if (!focus) {
     return;
   }
   if (mode === "source") {
     editor.focus();
-  } else {
+  } else if (mode === "reading") {
     elements.notePreview.focus();
   }
 }
@@ -996,6 +1099,9 @@ function openCommandPalette(): void {
     elements.paletteQuery.focus();
     elements.paletteQuery.select();
     return;
+  }
+  if (documentViewMode === "plugin") {
+    setDocumentView("source", false);
   }
   paletteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1117,6 +1223,9 @@ function openNewNoteDialog(): void {
   }
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
+  }
+  if (documentViewMode === "plugin") {
+    setDocumentView("source", false);
   }
   newNoteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1330,6 +1439,9 @@ function openMoveNoteDialog(): void {
   }
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
+  }
+  if (documentViewMode === "plugin") {
+    setDocumentView("source", false);
   }
   moveNoteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1553,6 +1665,9 @@ function openDeleteNoteDialog(): void {
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
   }
+  if (documentViewMode === "plugin") {
+    setDocumentView("source", false);
+  }
   deleteNoteRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
   deleteNoteBusy = false;
@@ -1694,6 +1809,7 @@ function applyColorScheme(preference: ColorSchemePreference): void {
   const next = scheme === "light" ? "dark" : "light";
   elements.themeLabel.textContent = next === "dark" ? "Dark" : "Light";
   elements.themeToggle.ariaLabel = `Switch to ${next} theme`;
+  void window.threadleaf.setPluginSurfaceTheme(scheme).catch(() => undefined);
   renderPaletteResults();
 }
 
@@ -2236,6 +2352,9 @@ function openSettings(): void {
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
   }
+  if (documentViewMode === "plugin") {
+    setDocumentView("source", false);
+  }
   settingsRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
   recordingShortcut = null;
@@ -2708,6 +2827,11 @@ function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
   if (previousVaultId !== snapshot.vault.id) {
+    pluginSurfaceRequest += 1;
+    pluginLayoutReadyVaultId = null;
+    if (documentViewMode === "plugin") {
+      documentViewMode = "source";
+    }
     appearanceRequest += 1;
     appearanceBusy = false;
     appearanceSnapshot = null;
@@ -2758,6 +2882,9 @@ function render(snapshot: RuntimeSnapshot): void {
   lastVaultWarning = snapshot.vault.warning;
 
   const displayedNote = reconcileEditor(workspace?.activeNote ?? null, snapshot.vault.id);
+  if (documentViewMode === "plugin" && !preferredPluginViewType(snapshot)) {
+    documentViewMode = "source";
+  }
   reconcileVaultSearch(snapshot);
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
   renderNote(displayedNote);
@@ -3482,6 +3609,7 @@ elements.fileSearch.addEventListener("input", () => {
 
 elements.editView.addEventListener("click", () => setDocumentView("source"));
 elements.readView.addEventListener("click", () => setDocumentView("reading"));
+elements.pluginView.addEventListener("click", () => void activatePluginView());
 elements.notePreview.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
@@ -3766,6 +3894,12 @@ systemColorScheme.addEventListener("change", handleSystemColorSchemeChange);
 
 const unsubscribe = window.threadleaf.onSnapshot(render);
 const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
+const pluginSurfaceResizeObserver = new ResizeObserver(() => {
+  if (documentViewMode === "plugin") {
+    void updatePluginSurfaceBounds();
+  }
+});
+pluginSurfaceResizeObserver.observe(elements.pluginSurfaceHost);
 window.addEventListener("beforeunload", (event) => {
   if (dirty) {
     event.preventDefault();
@@ -3781,6 +3915,7 @@ window.addEventListener(
     unsubscribe();
     unsubscribeSettings();
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
+    pluginSurfaceResizeObserver.disconnect();
     editor.destroy();
   },
   { once: true },

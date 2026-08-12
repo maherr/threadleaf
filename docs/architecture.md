@@ -20,8 +20,11 @@ and popups, and `connect-src 'none'` for browser requests. This does not sandbox
 I/O. The main process communicates with that realm through validated typed request and response
 messages, times out every operation, attributes renderer exits, and never gives the primary
 renderer Node authority. The unchanged Excalidraw 2.25.3 bundle activates in this production realm
-at measured compatibility level 2. Registered custom views are not attached to visible workspace
-leaves yet.
+and its registered `ItemView` now attaches to a bounded visible workspace leaf. The plugin owns the
+leaf content, filename header, action icons, modal content, and canvas lifecycle; Threadleaf owns
+the surrounding layout and propagates its light/dark chrome. Opening an existing Excalidraw
+Markdown document reaches the plugin's loaded canvas at measured level 4 for that named read-only
+workflow. Plugin-initiated vault writes remain outside the current compatibility boundary.
 
 ### Filesystem authority
 

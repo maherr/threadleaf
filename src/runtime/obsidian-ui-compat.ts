@@ -1,5 +1,6 @@
 import type { App, Plugin, TFile } from "./obsidian-compat";
 import { BaseComponent, Component } from "./obsidian-components";
+import { createCompatibleIcon } from "./obsidian-icons";
 
 function currentDocument(): Document {
   if (typeof document === "undefined") {
@@ -13,18 +14,52 @@ export interface Instruction {
   purpose: string;
 }
 
+interface ScopeKeyRegistration {
+  func: (event: KeyboardEvent) => unknown;
+  key: string;
+  modifiers: string[];
+}
+
 export class Scope {
   readonly parent: Scope | null;
+  readonly keys: ScopeKeyRegistration[] = [];
 
   constructor(parent: Scope | null = null) {
     this.parent = parent;
+  }
+
+  register(
+    modifiers: string[],
+    key: string,
+    func: (event: KeyboardEvent) => unknown,
+  ): ScopeKeyRegistration {
+    const registration = { func, key, modifiers: [...modifiers] };
+    this.keys.push(registration);
+    return registration;
+  }
+
+  unregister(registration: ScopeKeyRegistration): void {
+    const index = this.keys.indexOf(registration);
+    if (index >= 0) {
+      this.keys.splice(index, 1);
+    }
+  }
+}
+
+export class Keymap {
+  private readonly rootScope = new Scope();
+
+  getRootScope(): Scope {
+    return this.rootScope;
   }
 }
 
 export class Modal {
   readonly app: App;
   readonly scope = new Scope();
+  readonly bgEl: HTMLElement;
   readonly containerEl: HTMLElement;
+  readonly headerEl: HTMLElement;
   readonly modalEl: HTMLElement;
   readonly titleEl: HTMLElement;
   readonly contentEl: HTMLElement;
@@ -36,14 +71,19 @@ export class Modal {
     const doc = currentDocument();
     this.containerEl = doc.createElement("div");
     this.containerEl.className = "modal-container mod-dim";
+    this.bgEl = doc.createElement("div");
+    this.bgEl.className = "modal-bg";
     this.modalEl = doc.createElement("div");
     this.modalEl.className = "modal";
+    this.headerEl = doc.createElement("div");
+    this.headerEl.className = "modal-header";
     this.titleEl = doc.createElement("div");
     this.titleEl.className = "modal-title";
     this.contentEl = doc.createElement("div");
     this.contentEl.className = "modal-content";
-    this.modalEl.append(this.titleEl, this.contentEl);
-    this.containerEl.append(this.modalEl);
+    this.headerEl.append(this.titleEl);
+    this.modalEl.append(this.headerEl, this.contentEl);
+    this.containerEl.append(this.bgEl, this.modalEl);
   }
 
   open(): void {
@@ -82,6 +122,16 @@ export class Modal {
     } else {
       this.contentEl.replaceChildren(content);
     }
+    return this;
+  }
+
+  setDimBackground(dimmed: boolean): this {
+    this.containerEl.classList.toggle("mod-dim", dimmed);
+    return this;
+  }
+
+  setBackgroundOpacity(opacity: number): this {
+    this.bgEl.style.opacity = String(Math.min(1, Math.max(0, opacity)));
     return this;
   }
 }
@@ -276,11 +326,101 @@ export class PluginSettingTab extends SettingTab {
 export class WorkspaceLeaf {
   readonly app: App;
   readonly containerEl: HTMLElement;
+  readonly id: string;
+  readonly tabHeaderInnerIconEl: HTMLElement;
+  readonly tabHeaderInnerTitleEl: HTMLElement;
   view: View | null = null;
+  private readonly releaseWorkspaceRegistration: () => void;
+  private viewState: { type: string; state: Record<string, unknown> } = {
+    type: "empty",
+    state: {},
+  };
+
+  private static nextId = 1;
 
   constructor(app: App, containerEl?: HTMLElement) {
     this.app = app;
     this.containerEl = containerEl ?? currentDocument().createElement("div");
+    this.containerEl.classList.add("workspace-leaf");
+    this.id = `threadleaf-leaf-${WorkspaceLeaf.nextId++}`;
+    this.tabHeaderInnerIconEl = currentDocument().createElement("div");
+    this.tabHeaderInnerIconEl.className = "workspace-tab-header-inner-icon";
+    this.tabHeaderInnerTitleEl = currentDocument().createElement("div");
+    this.tabHeaderInnerTitleEl.className = "workspace-tab-header-inner-title";
+    this.releaseWorkspaceRegistration = app.workspace.registerLeaf(this);
+  }
+
+  getViewState(): { type: string; state: Record<string, unknown> } {
+    return {
+      type: this.viewState.type,
+      state: structuredClone(this.viewState.state),
+    };
+  }
+
+  async setViewState(
+    viewState: { type: string; state?: Record<string, unknown> },
+    result: Record<string, unknown> = {},
+  ): Promise<void> {
+    await this.releaseView();
+    this.containerEl.replaceChildren();
+    this.viewState = {
+      type: viewState.type,
+      state: structuredClone(viewState.state ?? {}),
+    };
+    if (viewState.type === "empty") {
+      return;
+    }
+    const candidate = this.app.compatibility.createView(viewState.type, this);
+    if (!(candidate instanceof View)) {
+      throw new Error(`View creator did not return a View: ${viewState.type}`);
+    }
+    this.view = candidate;
+    try {
+      candidate.load();
+      await candidate.setState(this.viewState.state, result);
+      const displayText = candidate.getDisplayText();
+      this.tabHeaderInnerTitleEl.textContent = displayText;
+      if (candidate instanceof ItemView) {
+        const filePath = candidate instanceof FileView ? candidate.file?.path : null;
+        candidate.setHeaderTitle(filePath ?? displayText);
+      }
+      this.app.workspace.activeLeaf = this;
+      this.app.workspace.trigger("active-leaf-change", this);
+      this.app.workspace.trigger("layout-change");
+    } catch (error) {
+      await this.releaseView();
+      throw error;
+    }
+  }
+
+  async openFile(file: TFile): Promise<void> {
+    const viewType =
+      this.app.compatibility.getViewTypeForExtension(file.extension) ??
+      this.view?.getViewType() ??
+      "markdown";
+    await this.setViewState({ type: viewType, state: { file: file.path } });
+  }
+
+  async rebuildView(): Promise<void> {
+    await this.setViewState(this.getViewState());
+  }
+
+  async detach(): Promise<void> {
+    await this.releaseView();
+    this.releaseWorkspaceRegistration();
+    this.containerEl.remove();
+  }
+
+  private async releaseView(): Promise<void> {
+    const view = this.view;
+    this.view = null;
+    if (!view) {
+      return;
+    }
+    if (view instanceof FileView && view.file) {
+      await view.onUnloadFile(view.file);
+    }
+    view.unload();
   }
 }
 
@@ -339,12 +479,30 @@ export class View extends Component {
 
 export class ItemView extends View {
   readonly contentEl: HTMLElement;
+  readonly viewActionsEl: HTMLElement;
+  readonly viewHeaderEl: HTMLElement;
+  readonly viewHeaderTitleEl: HTMLElement;
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
+    this.viewHeaderEl = this.ownerDocument.createElement("div");
+    this.viewHeaderEl.className = "view-header";
+    const titleContainer = this.ownerDocument.createElement("div");
+    titleContainer.className = "view-header-title-container";
+    this.viewHeaderTitleEl = this.ownerDocument.createElement("div");
+    this.viewHeaderTitleEl.className = "view-header-title";
+    titleContainer.append(this.viewHeaderTitleEl);
+    this.viewActionsEl = this.ownerDocument.createElement("div");
+    this.viewActionsEl.className = "view-actions";
+    this.viewHeaderEl.append(titleContainer, this.viewActionsEl);
     this.contentEl = this.ownerDocument.createElement("div");
     this.contentEl.className = "view-content";
-    this.containerEl.append(this.contentEl);
+    this.containerEl.append(this.viewHeaderEl, this.contentEl);
+  }
+
+  setHeaderTitle(title: string): void {
+    this.viewHeaderTitleEl.textContent = title;
+    this.viewHeaderTitleEl.title = title;
   }
 
   addAction(icon: string, title: string, callback: (event: MouseEvent) => unknown): HTMLElement {
@@ -353,8 +511,17 @@ export class ItemView extends View {
     action.className = "view-action clickable-icon";
     action.dataset.icon = icon;
     action.title = title;
+    action.setAttribute("aria-label", title);
+    const iconElement = createCompatibleIcon(
+      this.ownerDocument,
+      icon,
+      this.app.compatibility.getIcon(icon),
+    );
+    if (iconElement) {
+      action.append(iconElement);
+    }
     action.addEventListener("click", callback);
-    this.containerEl.prepend(action);
+    this.viewActionsEl.append(action);
     this.register(() => action.removeEventListener("click", callback));
     return action;
   }
@@ -365,6 +532,10 @@ export class FileView extends ItemView {
   file: TFile | null = null;
   override navigation = true;
 
+  get headerEl(): HTMLElement {
+    return this.viewHeaderEl;
+  }
+
   override getDisplayText(): string {
     return this.file?.basename ?? "No file";
   }
@@ -374,11 +545,20 @@ export class FileView extends ItemView {
   }
 
   override async setState(state: unknown, _result: unknown): Promise<void> {
+    const previousFile = this.file;
+    if (previousFile) {
+      await this.onUnloadFile(previousFile);
+    }
     if (!state || typeof state !== "object" || !("file" in state)) {
+      this.file = null;
       return;
     }
     const filePath = state.file;
-    this.file = typeof filePath === "string" ? this.app.createFile(filePath) : null;
+    const nextFile = typeof filePath === "string" ? this.app.createFile(filePath) : null;
+    this.file = nextFile;
+    if (nextFile) {
+      await this.onLoadFile(nextFile);
+    }
   }
 
   async onLoadFile(_file: TFile): Promise<void> {}

@@ -835,7 +835,7 @@ h2 {
 
 .document-view-switch {
   display: inline-grid;
-  grid-template-columns: repeat(2, auto);
+  grid-template-columns: repeat(3, auto);
   flex: 0 0 auto;
   gap: 2px;
   min-width: 0;
@@ -1029,8 +1029,27 @@ h2 {
 
 .note-empty[hidden],
 .note-view[hidden],
+.plugin-surface-host[hidden],
 .edit-notice[hidden] {
   display: none;
+}
+
+.plugin-surface-host {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  place-items: center;
+  background: var(--background-primary, var(--surface-raised));
+}
+
+.plugin-surface-loading {
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .note-header {

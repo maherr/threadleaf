@@ -168,8 +168,11 @@ describe("WorkspaceRuntime", () => {
       close: async () => {
         closed = true;
       },
+      closePluginView: async () => pluginSnapshot(),
       getSnapshot: async () => pluginSnapshot(),
       loadPlugin: async () => pluginSnapshot(),
+      markLayoutReady: async () => pluginSnapshot(),
+      openPluginView: async () => pluginSnapshot(),
       reloadPlugin: async () => pluginSnapshot(),
       runCommand: async () => {
         compatibilityLevel = 4;

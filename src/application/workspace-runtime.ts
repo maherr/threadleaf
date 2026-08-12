@@ -518,6 +518,21 @@ export class WorkspaceRuntime {
     return this.publishSnapshot();
   }
 
+  async markPluginLayoutReady(): Promise<RuntimeSnapshot> {
+    await this.pluginHost.markLayoutReady();
+    return this.publishSnapshot();
+  }
+
+  async openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot> {
+    await this.pluginHost.openPluginView(viewType, filePath);
+    return this.publishSnapshot();
+  }
+
+  async closePluginView(): Promise<RuntimeSnapshot> {
+    await this.pluginHost.closePluginView();
+    return this.publishSnapshot();
+  }
+
   async loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
     await this.pluginHost.loadPlugin(pluginDirectory);
     return this.publishSnapshot();

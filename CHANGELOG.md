@@ -116,6 +116,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Dedicated Electron compatibility renderer with Node integration isolated from the sandboxed main
   renderer, typed lifecycle IPC, transient session partitions, denied permissions and navigation,
   operation timeouts, renderer-exit attribution, and production startup activation of the unchanged
-  Excalidraw 2.25.3 bundle at measured compatibility level 2.
+  Excalidraw 2.25.3 bundle.
+- Visible community-plugin `ItemView` attachment in a bounded child surface, including filename
+  headers, plugin action icons, light/dark chrome propagation, view lifecycle, and layout snapshots.
+- Compatibility implementations for workspace view factories, metadata and frontmatter caches,
+  Markdown rendering, modal structure, and open Lucide icons, with executable synthetic fixtures.
+- A measured level 4 read-only workflow for opening an existing Excalidraw Markdown document as the
+  unchanged plugin's real loaded canvas in the production Electron host.
 - Plugin stylesheet preservation with external asset URLs replaced by inert embedded data,
   explicit diagnostics, and live proof that Excalidraw CSS applies without network requests.

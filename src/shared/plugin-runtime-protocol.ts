@@ -8,10 +8,12 @@ export const pluginRendererChannels = {
 
 export type PluginRendererOperation =
   | "close"
+  | "close-view"
   | "get-snapshot"
   | "initialize"
   | "load-plugin"
   | "mark-layout-ready"
+  | "open-view"
   | "reload-plugin"
   | "run-command"
   | "unload-all"
@@ -29,10 +31,12 @@ export type PluginRendererResponse =
 
 const operations = new Set<PluginRendererOperation>([
   "close",
+  "close-view",
   "get-snapshot",
   "initialize",
   "load-plugin",
   "mark-layout-ready",
+  "open-view",
   "reload-plugin",
   "run-command",
   "unload-all",

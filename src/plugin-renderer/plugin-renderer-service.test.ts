@@ -62,14 +62,63 @@ describe("PluginRendererService", () => {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { Notice, Plugin } = require("obsidian");
+        `const { MarkdownRenderer, Notice, Plugin, TextFileView, WorkspaceSplit } = require("obsidian");
+class RendererView extends TextFileView {
+  constructor(leaf) {
+    super(leaf);
+    this.addAction("link", "Copy drawing link", () => new Notice("Drawing link copied."));
+  }
+  getViewType() { return "renderer-view"; }
+  getDisplayText() { return this.file?.basename ?? "Renderer view"; }
+  setViewData(data, clear) {
+    super.setViewData(data, clear);
+    this.contentEl.setText(data);
+  }
+  clear() {
+    super.clear();
+    this.contentEl.empty();
+  }
+}
 module.exports = class RendererFixture extends Plugin {
   async onload() {
     this.addRibbonIcon("leaf", "Renderer action", () => new Notice("Renderer action ran."));
+    this.addCommand({ id: "renderer-command", name: "Superseded command", callback: () => new Notice("Superseded command ran.") });
     this.addCommand({ id: "renderer-command", name: "Renderer command", callback: () => new Notice("Renderer command ran.") });
+    this.registerView("renderer-view", (leaf) => new RendererView(leaf));
+    this.registerExtensions(["drawing"], "renderer-view");
+    this.registerEditorExtension([]);
+    this.registerMarkdownCodeBlockProcessor("renderer", () => {});
+    this.registerEvent(this.app.vault.on("modify", () => {}));
+    const clickHandler = () => {};
+    this.app.workspace.containerEl.addEventListener("click", clickHandler);
+    this.register(() => this.app.workspace.containerEl.removeEventListener("click", clickHandler));
+    let optionUpdates = 0;
+    this.registerEvent(this.app.workspace.on("layout-change", () => optionUpdates++));
+    this.app.workspace.updateOptions();
+    if (optionUpdates !== 1) throw new Error("Workspace options did not update");
+    const rendered = document.createElement("div");
+    rendered.id = "renderer-markdown";
+    await MarkdownRenderer.render(this.app, "**Release notes** [Guide](https://example.com) <div class='release-callout'>Welcome</div>", rendered, "", this);
+    document.body.append(rendered);
+    this.app.workspace.onLayoutReady(() => {
+      const split = new WorkspaceSplit(this.app.workspace, "vertical");
+      const leaf = this.app.workspace.createLeafInParent(split, 0);
+      const canvas = this.app.internalPlugins.plugins.canvas.views.canvas(leaf).canvas;
+      const node = canvas.createFileNode({ file: this.app.vault.getFileByPath("Canvas.drawing") });
+      canvas.removeNode(node);
+      const scope = this.app.keymap.getRootScope();
+      const key = scope.register(["Mod"], "k", () => true);
+      scope.unregister(key);
+      new Notice("Renderer layout ready.");
+    });
   }
 };
 `,
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(vaultPath, "Canvas.drawing"),
+        "renderer surface content",
         "utf8",
       );
 
@@ -81,6 +130,7 @@ module.exports = class RendererFixture extends Plugin {
         }),
       );
       expect(initialized?.vault.path).toBe(path.resolve(vaultPath));
+      expect(dom.window.eval("app.vault.getName()")).toBe("vault");
 
       const loaded = await service.handle(request("load-plugin", { pluginDirectory: pluginPath }));
       expect(loaded?.plugin).toMatchObject({
@@ -89,6 +139,55 @@ module.exports = class RendererFixture extends Plugin {
         compatibilityLevel: 3,
       });
       expect(loaded?.actions.map(({ id }) => id)).toEqual(["renderer-command"]);
+      expect(loaded?.integrations).toMatchObject({
+        extensions: [{ extension: "drawing", viewType: "renderer-view" }],
+        viewTypes: ["renderer-view"],
+      });
+      expect(dom.window.eval('app.plugins.plugins["renderer-fixture"].manifest.id')).toBe(
+        "renderer-fixture",
+      );
+
+      const opened = await service.handle(
+        request("open-view", { viewType: "renderer-view", filePath: "Canvas.drawing" }),
+      );
+      expect(opened?.pluginSurface).toEqual({
+        displayText: "Canvas",
+        filePath: "Canvas.drawing",
+        viewType: "renderer-view",
+      });
+      expect(dom.window.document.querySelector(".view-content")?.textContent).toBe(
+        "renderer surface content",
+      );
+      expect(dom.window.document.querySelector(".view-header-title")?.textContent).toBe(
+        "Canvas.drawing",
+      );
+      expect(dom.window.document.querySelector(".view-action")?.getAttribute("title")).toBe(
+        "Copy drawing link",
+      );
+      expect(
+        dom.window.document.querySelector('.view-action svg[data-icon="link"]'),
+      ).not.toBeNull();
+      expect(dom.window.document.querySelector("#renderer-markdown strong")?.textContent).toBe(
+        "Release notes",
+      );
+      expect(dom.window.document.querySelector("#renderer-markdown a")?.getAttribute("href")).toBe(
+        "#",
+      );
+      expect(
+        (dom.window.document.querySelector("#renderer-markdown a") as HTMLElement | null)?.dataset
+          .href,
+      ).toBe("https://example.com");
+      expect(
+        dom.window.document.querySelector("#renderer-markdown .release-callout")?.textContent,
+      ).toBe("Welcome");
+      expect(opened?.events.at(-1)?.message).toContain("Opened plugin view renderer-view");
+
+      const ready = await service.handle(request("mark-layout-ready"));
+      expect(ready?.notices).toContain("Renderer layout ready.");
+
+      const closed = await service.handle(request("close-view"));
+      expect(closed?.pluginSurface).toBeNull();
+      expect(dom.window.document.querySelector("#threadleaf-plugin-surface")).toBeNull();
 
       const ran = await service.handle(request("run-command", { commandId: "renderer-command" }));
       expect(ran?.notices).toContain("Renderer command ran.");
@@ -97,8 +196,10 @@ module.exports = class RendererFixture extends Plugin {
       const unloaded = await service.handle(request("unload-all"));
       expect(unloaded?.plugin?.state).toBe("unloaded");
       expect(unloaded?.commands).toEqual([]);
+      expect(dom.window.eval('app.plugins.plugins["renderer-fixture"]')).toBeUndefined();
 
       await service.handle(request("close"));
+      expect(Object.hasOwn(dom.window, "app")).toBe(false);
       await expect(service.handle(request("get-snapshot"))).rejects.toThrow(
         "has not been initialized",
       );

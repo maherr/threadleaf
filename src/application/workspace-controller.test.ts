@@ -101,6 +101,18 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return this.#snapshot;
   }
 
+  async markPluginLayoutReady(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async openPluginView(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async closePluginView(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
   async searchVault(query: string): Promise<VaultSearchResponse> {
     return {
       vaultId: this.vaultId,
