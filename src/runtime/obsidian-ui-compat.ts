@@ -1001,6 +1001,7 @@ export class WorkspaceLeaf {
     this.view = candidate;
     try {
       candidate.load();
+      await candidate.openCompatibilityView();
       await candidate.setState(this.viewState.state, result);
       const displayText = candidate.getDisplayText();
       this.tabHeaderInnerTitleEl.textContent = displayText;
@@ -1030,9 +1031,12 @@ export class WorkspaceLeaf {
   }
 
   async detach(): Promise<void> {
-    await this.releaseView();
-    this.releaseWorkspaceRegistration();
-    this.containerEl.remove();
+    try {
+      await this.releaseView();
+    } finally {
+      this.releaseWorkspaceRegistration();
+      this.containerEl.remove();
+    }
   }
 
   private async releaseView(): Promise<void> {
@@ -1041,10 +1045,27 @@ export class WorkspaceLeaf {
     if (!view) {
       return;
     }
+    let failure: unknown = null;
     if (view instanceof FileView && view.file) {
-      await view.onUnloadFile(view.file);
+      try {
+        await view.onUnloadFile(view.file);
+      } catch (error) {
+        failure = error;
+      }
     }
-    view.unload();
+    try {
+      await view.closeCompatibilityView();
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      view.unload();
+    } catch (error) {
+      failure ??= error;
+    }
+    if (failure) {
+      throw failure;
+    }
   }
 }
 
@@ -1055,6 +1076,7 @@ export class View extends Component {
   icon = "document";
   navigation = false;
   scope: Scope | null = null;
+  private openState = false;
 
   constructor(leaf: WorkspaceLeaf) {
     super();
@@ -1071,6 +1093,31 @@ export class View extends Component {
   get ownerWindow(): Window {
     return this.ownerDocument.defaultView ?? window;
   }
+
+  async openCompatibilityView(): Promise<void> {
+    if (this.openState) {
+      return;
+    }
+    this.openState = true;
+    try {
+      await this.onOpen();
+    } catch (error) {
+      this.openState = false;
+      throw error;
+    }
+  }
+
+  async closeCompatibilityView(): Promise<void> {
+    if (!this.openState) {
+      return;
+    }
+    this.openState = false;
+    await this.onClose();
+  }
+
+  protected async onOpen(): Promise<void> {}
+
+  protected async onClose(): Promise<void> {}
 
   getViewType(): string {
     return "empty";

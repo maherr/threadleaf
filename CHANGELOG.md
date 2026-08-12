@@ -169,8 +169,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Public `prepareFuzzySearch` with deterministic higher-is-better scoring and UTF-16 highlight
   ranges, plus DOM and string `htmlToMarkdown` conversion backed by the MIT-licensed Turndown
   library, both exercised through the unchanged CommonJS plugin bridge.
+- Public desktop `Platform` flags, cancellable `debounce`, tooltip metadata, and accessible DOM
+  `Menu` behavior with custom icons, labels, checked, disabled, warning, section, separator, click,
+  outside-dismissal, Escape, and keyboard-focus states.
 
 ### Fixed
 
 - Electron shutdown now waits for watcher and plugin cleanup, coalesces repeated quit events, and
   still reaches the final quit when cleanup reports an error.
+- Compatibility views now await public `onOpen` and `onClose` hooks around state and component
+  lifecycles, and still unload resources and detach their containers when close hooks fail.

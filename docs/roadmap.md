@@ -184,6 +184,10 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       external symlink fixtures.
 - [x] Provide deterministic fuzzy-search scores and highlight ranges plus FOSS-backed HTML-to-
       Markdown conversion through the CommonJS compatibility module.
+- [x] Provide desktop platform flags, cancellable debounce, tooltip metadata, and accessible DOM
+      menus with custom icons, item states, dismissal, positioning, and keyboard navigation.
+- [x] Await custom-view open and close hooks around state and component lifecycles, including
+      failure-safe component cleanup and leaf detachment.
 - [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
   - [x] Preserve exact Markdown, PNG, and SVG bytes through Threadleaf plugin writes, attachment

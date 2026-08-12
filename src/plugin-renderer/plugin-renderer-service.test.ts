@@ -70,7 +70,7 @@ describe("PluginRendererService", () => {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { FileSystemAdapter, MarkdownRenderer, Notice, Plugin, PluginSettingTab, Setting, TextFileView, WorkspaceSplit, arrayBufferToBase64, base64ToArrayBuffer, htmlToMarkdown, moment, prepareFuzzySearch } = require("obsidian");
+        `const { FileSystemAdapter, MarkdownRenderer, Menu, Notice, Platform, Plugin, PluginSettingTab, Setting, TextFileView, WorkspaceSplit, arrayBufferToBase64, base64ToArrayBuffer, debounce, htmlToMarkdown, moment, prepareFuzzySearch, setTooltip } = require("obsidian");
 class RendererView extends TextFileView {
   constructor(leaf) {
     super(leaf);
@@ -98,6 +98,21 @@ module.exports = class RendererFixture extends Plugin {
     if (arrayBufferToBase64(base64ToArrayBuffer("AAH/")) !== "AAH/") throw new Error("Binary codec mismatch");
     if (htmlToMarkdown("<h2>Renderer</h2>") !== "## Renderer") throw new Error("HTML conversion mismatch");
     if (JSON.stringify(prepareFuzzySearch("rdr")("Renderer")?.matches) !== JSON.stringify([[0,1],[3,4],[5,6]])) throw new Error("Fuzzy search mismatch");
+    if (!Platform.isDesktopApp || Platform.isMobile) throw new Error("Desktop platform flags missing");
+    let deferredValue = "";
+    const deferred = debounce((value) => deferredValue = value, 100, true);
+    deferred("ready").run();
+    if (deferredValue !== "ready") throw new Error("Debouncer controls missing");
+    const tooltipTarget = document.createElement("button");
+    setTooltip(tooltipTarget, "Renderer tooltip", { placement: "bottom" });
+    if (tooltipTarget.title !== "Renderer tooltip" || tooltipTarget.dataset.tooltipPosition !== "bottom") throw new Error("Tooltip metadata missing");
+    let menuRan = false;
+    const menu = new Menu().addItem((item) => item.setTitle("Renderer menu").setIcon("leaf").onClick(() => menuRan = true));
+    menu.showAtPosition({ x: 12, y: 12 });
+    const menuItem = document.querySelector(".threadleaf-compat-menu .menu-item");
+    if (!menuItem) throw new Error("Menu surface missing");
+    menuItem.click();
+    if (!menuRan || document.querySelector(".threadleaf-compat-menu")) throw new Error("Menu click lifecycle missing");
     if (this.app.vault.getConfig("propertiesInDocument") !== undefined) throw new Error("Unexpected compatibility config");
     this.addRibbonIcon("leaf", "Renderer action", () => new Notice("Renderer action ran."));
     this.addCommand({ id: "renderer-command", name: "Superseded command", callback: () => new Notice("Superseded command ran.") });

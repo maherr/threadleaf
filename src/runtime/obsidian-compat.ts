@@ -24,6 +24,7 @@ import type {
 import type { CommandSummary, NoteCreateOutcome } from "../shared/contracts";
 import { Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
+import { Menu, MenuItem, MenuSeparator } from "./obsidian-menu-compat";
 import {
   AbstractTextComponent,
   BaseComponent,
@@ -1545,6 +1546,9 @@ export interface ObsidianCompatibilityModule {
   MarkdownView: typeof MarkdownView;
   MarkdownRenderer: typeof MarkdownRenderer;
   MetadataCache: typeof MetadataCache;
+  Menu: typeof Menu;
+  MenuItem: typeof MenuItem;
+  MenuSeparator: typeof MenuSeparator;
   moment: typeof moment;
   Modal: typeof Modal;
   MomentFormatComponent: typeof MomentFormatComponent;
@@ -1572,13 +1576,16 @@ export interface ObsidianCompatibilityModule {
   WorkspaceLeaf: typeof WorkspaceLeaf;
   WorkspaceSplit: typeof WorkspaceSplit;
   addIcon(id: string, svgContent: string): void;
+  debounce: typeof debounce;
   getIcon(id: string): SVGSVGElement | null;
   normalizePath(filePath: string): string;
   parseFrontMatterEntry: typeof parseFrontMatterEntry;
+  Platform: typeof Platform;
   prepareFuzzySearch: typeof prepareFuzzySearch;
   requireApiVersion(version: string): boolean;
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
+  setTooltip: typeof setTooltip;
   sleep(milliseconds: number): Promise<void>;
 }
 
@@ -1605,6 +1612,113 @@ const htmlMarkdownConverter = new TurndownService({
 
 export function htmlToMarkdown(html: string | HTMLElement | Document | DocumentFragment): string {
   return htmlMarkdownConverter.turndown(html);
+}
+
+export interface Debouncer<T extends unknown[], V> {
+  (...args: T): Debouncer<T, V>;
+  cancel(): Debouncer<T, V>;
+  run(): V | undefined;
+}
+
+export function debounce<T extends unknown[], V>(
+  callback: (...args: T) => V,
+  timeout = 0,
+  resetTimer = false,
+): Debouncer<T, V> {
+  let args: T | null = null;
+  let context: unknown;
+  let timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  const invoke = (): V | undefined => {
+    if (!args) {
+      return undefined;
+    }
+    const pendingArgs = args;
+    const pendingContext = context;
+    args = null;
+    context = undefined;
+    timer = null;
+    return callback.apply(pendingContext, pendingArgs);
+  };
+  const debounced = function (this: unknown, ...nextArgs: T): Debouncer<T, V> {
+    args = nextArgs;
+    context = this;
+    if (timer && !resetTimer) {
+      return debounced;
+    }
+    if (timer) {
+      globalThis.clearTimeout(timer);
+    }
+    timer = globalThis.setTimeout(invoke, Math.max(0, timeout));
+    return debounced;
+  } as Debouncer<T, V>;
+  debounced.cancel = (): Debouncer<T, V> => {
+    if (timer) {
+      globalThis.clearTimeout(timer);
+    }
+    timer = null;
+    args = null;
+    context = undefined;
+    return debounced;
+  };
+  debounced.run = (): V | undefined => {
+    if (timer) {
+      globalThis.clearTimeout(timer);
+    }
+    return invoke();
+  };
+  return debounced;
+}
+
+const currentPlatform = process.platform;
+
+export const Platform = Object.freeze({
+  isDesktop: true,
+  isMobile: false,
+  isDesktopApp: true,
+  isMobileApp: false,
+  isIosApp: false,
+  isAndroidApp: false,
+  isPhone: false,
+  isTablet: false,
+  isMacOS: currentPlatform === "darwin",
+  isWin: currentPlatform === "win32",
+  isLinux: currentPlatform === "linux",
+  isSafari: false,
+  resourcePathPrefix: "file:///",
+});
+
+export interface TooltipOptions {
+  placement?: "bottom" | "right" | "left" | "top";
+  classes?: string[];
+  gap?: number;
+  delay?: number;
+}
+
+export function setTooltip(
+  element: HTMLElement,
+  tooltip: string,
+  options: TooltipOptions = {},
+): void {
+  element.title = tooltip;
+  element.dataset.tooltipPosition = options.placement ?? "top";
+  if (options.classes?.length) {
+    element.dataset.tooltipClasses = options.classes.join(" ");
+  } else {
+    delete element.dataset.tooltipClasses;
+  }
+  if (options.gap !== undefined) {
+    element.dataset.tooltipGap = String(options.gap);
+  } else {
+    delete element.dataset.tooltipGap;
+  }
+  if (options.delay !== undefined) {
+    element.dataset.tooltipDelay = String(options.delay);
+  } else {
+    delete element.dataset.tooltipDelay;
+  }
+  if (!element.getAttribute("aria-label") && !element.textContent?.trim()) {
+    element.setAttribute("aria-label", tooltip);
+  }
 }
 
 interface FuzzyCharacter {
@@ -1825,6 +1939,11 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
       parent.dataset.icon = iconId;
     }
   };
+  class BoundMenu extends Menu {
+    constructor() {
+      super((iconId) => app.compatibility.getIcon(iconId));
+    }
+  }
 
   return {
     AbstractTextComponent,
@@ -1836,6 +1955,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     ButtonComponent,
     ColorComponent,
     Component,
+    debounce,
     DropdownComponent,
     Editor,
     EditorSuggest,
@@ -1849,6 +1969,9 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     MarkdownView,
     MarkdownRenderer,
     MetadataCache,
+    Menu: BoundMenu,
+    MenuItem,
+    MenuSeparator,
     moment,
     Modal,
     MomentFormatComponent,
@@ -1881,10 +2004,12 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     htmlToMarkdown,
     normalizePath,
     parseFrontMatterEntry,
+    Platform,
     prepareFuzzySearch,
     requireApiVersion: () => true,
     sanitizeHTMLToDom,
     setIcon,
+    setTooltip,
     sleep,
   };
 }

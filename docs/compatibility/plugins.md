@@ -65,6 +65,13 @@ UTF-16 `[start, end)` highlight ranges for case-insensitive subsequence matches,
 MIT-licensed Turndown 7.2.4 library instead of a lossy one-off converter. Synthetic CommonJS
 plugin activation exercises both exports; exact private Obsidian scoring constants are not claimed.
 
+The same bridge exposes desktop `Platform` flags, cancellable `debounce`, native tooltip metadata,
+and a DOM-backed `Menu`. Menu items support built-in and plugin-registered icons, labels, checked,
+disabled, warning, section, and click states. Separators, viewport-bound positioning, outside click,
+Escape dismissal, and wrapping keyboard focus are executable behaviors. A request for a native
+operating-system menu currently uses this accessible DOM fallback rather than a platform-native
+popup.
+
 ## Trust model
 
 Existing community bundles run in the trusted desktop compatibility runtime. This is not a
@@ -92,6 +99,9 @@ targeted unload closes that plugin's transient UI without closing another plugin
 Plugin-owned settings tabs are tracked by plugin ID. Closing Options invokes the tab's `hide`
 lifecycle before removing its child surface, and disabling, reloading, or replacing the workspace
 uses the same cleanup boundary.
+Custom views await `View.onOpen` before applying state and await `View.onClose` before component
+unload. A failing close hook is reported without preventing component cleanup, workspace
+unregistration, or container removal.
 
 Plugin stylesheets are applied only while the corresponding package is selected and compatibility
 mode is enabled. Imports and legacy executable CSS remain rejected. External and relative asset
@@ -134,7 +144,7 @@ starting normally restores the persisted preference.
 - An explicit import preview for existing enabled-plugin inventory, settings, hotkeys, and layout.
 - Reviewable install, update, rollback, and uninstall through an open package index.
 - A generated compatibility registry backed by public workflow fixtures.
-- Broader workspace, editor, menu, settings-control, conversion, adapter-mutation, file, and
+- Broader workspace, editor, settings-control, conversion, adapter-mutation, file, and
   metadata APIs.
 - Complete Excalidraw inline wiki-embed, remaining export-format, and cross-application
   byte-preservation workflows.
