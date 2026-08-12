@@ -60,7 +60,7 @@ import {
 } from "./command-palette-model";
 import {
   addPreviewSourceControls,
-  hydrateMarkdownPreviewImages,
+  hydrateMarkdownPreview,
   renderMarkdownPreview,
 } from "./markdown-preview";
 import { pluginViewTypeForPath } from "./plugin-view-model";
@@ -383,7 +383,7 @@ let renderedPreviewPath: string | null = null;
 let renderedPreviewSource: string | null = null;
 let renderedPreviewVaultId: string | null = null;
 let renderedPreviewWatchSequence = -1;
-let previewImageRequest = 0;
+let previewHydrationRequest = 0;
 let pluginSurfaceRequest = 0;
 let pluginSettingsTargetId: string | null = null;
 let pluginLayoutReadyVaultId: string | null = null;
@@ -980,7 +980,7 @@ function previewLinkIdentity(anchor: HTMLAnchorElement): {
 }
 
 function matchingPreviewLink(
-  note: WorkspaceNoteSnapshot,
+  links: readonly WorkspaceLinkSummary[],
   anchor: HTMLAnchorElement,
 ): WorkspaceLinkSummary | null {
   const identity = previewLinkIdentity(anchor);
@@ -988,13 +988,40 @@ function matchingPreviewLink(
     return null;
   }
   return (
-    note.outgoing.find(
+    links.find(
       (link) =>
         link.syntax === identity.syntax &&
         link.target === identity.target &&
         (link.subpath ?? null) === identity.subpath,
     ) ?? null
   );
+}
+
+function decoratePreviewLinks(
+  root: HTMLElement,
+  links: readonly WorkspaceLinkSummary[],
+  sourceNotePath: string,
+): void {
+  for (const anchor of root.querySelectorAll<HTMLAnchorElement>("a[data-threadleaf-link]")) {
+    anchor.dataset.threadleafOriginPath = sourceNotePath;
+    if (anchor.dataset.threadleafLink === "external") {
+      anchor.ariaLabel = `${anchor.textContent?.trim() || "External link"}, external link`;
+      anchor.title = "External link opening is disabled in this beta.";
+      continue;
+    }
+    const identity = previewLinkIdentity(anchor);
+    if (identity) {
+      anchor.dataset.threadleafTarget = identity.target;
+      anchor.dataset.threadleafSubpath = identity.subpath ?? "";
+    }
+    const link = matchingPreviewLink(links, anchor);
+    const status = link?.status ?? "unresolved";
+    anchor.dataset.linkStatus = status;
+    anchor.ariaLabel = `${anchor.textContent?.trim() || "Internal link"}, ${status} internal link`;
+    if (link?.path) {
+      anchor.dataset.threadleafPath = link.path;
+    }
+  }
 }
 
 function sourceLineForSubpath(
@@ -1020,7 +1047,7 @@ function sourceLineForSubpath(
 
 function renderReadingView(): void {
   if (!loadedNote) {
-    previewImageRequest += 1;
+    previewHydrationRequest += 1;
     elements.notePreview.replaceChildren();
     renderedPreviewPath = null;
     renderedPreviewSource = null;
@@ -1039,43 +1066,28 @@ function renderReadingView(): void {
   ) {
     return;
   }
-  const request = previewImageRequest + 1;
-  previewImageRequest = request;
-  const fragment = addPreviewSourceControls(renderMarkdownPreview(source));
+  const request = previewHydrationRequest + 1;
+  previewHydrationRequest = request;
+  const fragment = addPreviewSourceControls(renderMarkdownPreview(source), {
+    sourceNotePath: loadedNote.path,
+  });
   elements.notePreview.replaceChildren(fragment);
-  for (const anchor of elements.notePreview.querySelectorAll<HTMLAnchorElement>(
-    "a[data-threadleaf-link]",
-  )) {
-    if (anchor.dataset.threadleafLink === "external") {
-      anchor.ariaLabel = `${anchor.textContent?.trim() || "External link"}, external link`;
-      anchor.title = "External link opening is disabled in this pre-alpha build.";
-      continue;
-    }
-    const identity = previewLinkIdentity(anchor);
-    if (identity) {
-      anchor.dataset.threadleafTarget = identity.target;
-      anchor.dataset.threadleafSubpath = identity.subpath ?? "";
-    }
-    const link = matchingPreviewLink(loadedNote, anchor);
-    const status = link?.status ?? "unresolved";
-    anchor.dataset.linkStatus = status;
-    anchor.ariaLabel = `${anchor.textContent?.trim() || "Internal link"}, ${status} internal link`;
-    if (link?.path) {
-      anchor.dataset.threadleafPath = link.path;
-    }
-  }
+  decoratePreviewLinks(elements.notePreview, loadedNote.outgoing, loadedNote.path);
   renderedPreviewPath = loadedNote.path;
   renderedPreviewSource = source;
   renderedPreviewVaultId = vaultId;
   renderedPreviewWatchSequence = watchSequence;
   if (vaultId) {
-    void hydrateMarkdownPreviewImages(elements.notePreview, {
+    void hydrateMarkdownPreview(elements.notePreview, {
       sourceNotePath: loadedNote.path,
       expectedVaultId: vaultId,
       loadImage: (sourceNotePath, target, expectedVaultId) =>
         window.threadleaf.loadVaultImage(sourceNotePath, target, expectedVaultId),
+      loadNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
+        window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, expectedVaultId),
+      decorateLinks: decoratePreviewLinks,
       isCurrent: () =>
-        previewImageRequest === request &&
+        previewHydrationRequest === request &&
         loadedVaultId === vaultId &&
         renderedPreviewPath === loadedNote?.path &&
         renderedPreviewSource === source,
@@ -1298,30 +1310,59 @@ function scrollToDocumentLine(line: number): void {
 
 async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
   if (anchor.dataset.threadleafLink === "external") {
-    showToast("External link opening is disabled in this pre-alpha build.");
+    showToast("External link opening is disabled in this beta.");
     return;
   }
   if (!loadedNote) {
     return;
   }
-  const link = matchingPreviewLink(loadedNote, anchor);
-  if (link?.status !== "resolved" || !link.path) {
+  const status = anchor.dataset.linkStatus;
+  const path = anchor.dataset.threadleafPath;
+  if (status !== "resolved" || !path) {
     showToast(
-      link?.status === "ambiguous"
+      status === "ambiguous"
         ? "That link has more than one possible destination."
         : "That link does not resolve to a note in this vault.",
     );
     return;
   }
-  const opened = await openNote(link.path);
+  const identity = previewLinkIdentity(anchor);
+  const opened = await openNote(path);
   if (!opened) {
     return;
   }
-  const line = sourceLineForSubpath(loadedNote, link.subpath);
+  const line = sourceLineForSubpath(loadedNote, identity?.subpath);
   if (line) {
     scrollToDocumentLine(line);
-  } else if (link.subpath?.startsWith("^")) {
+  } else if (identity?.subpath?.startsWith("^")) {
     showToast("Block-anchor navigation is not available yet.");
+  }
+}
+
+async function activatePreviewSourceAction(sourceAction: HTMLButtonElement): Promise<void> {
+  const line = Number.parseInt(sourceAction.dataset.sourceLine ?? "", 10);
+  const sourcePath = sourceAction.dataset.sourcePath || loadedNote?.path;
+  if (!sourcePath || !Number.isSafeInteger(line) || line < 1) {
+    return;
+  }
+  if (loadedNote?.path !== sourcePath && !(await openNote(sourcePath))) {
+    return;
+  }
+  setDocumentView("source", false);
+  window.requestAnimationFrame(() => scrollToSourceLine(line));
+}
+
+async function activatePreviewEmbed(openButton: HTMLButtonElement): Promise<void> {
+  const filePath = openButton.dataset.threadleafOpenPath;
+  if (!filePath || !(await openNote(filePath))) {
+    return;
+  }
+  const subpath = openButton.dataset.threadleafSubpath || null;
+  const line = sourceLineForSubpath(loadedNote, subpath);
+  if (line) {
+    scrollToDocumentLine(line);
+  } else if (subpath?.startsWith("^")) {
+    showToast("Opened the source note. Block-anchor scrolling is not available yet.");
   }
 }
 
@@ -4958,7 +4999,7 @@ function replaceEditorDocument(
   }
   loadedNote = note;
   loadedVaultId = note ? vaultId : null;
-  previewImageRequest += 1;
+  previewHydrationRequest += 1;
   renderedPreviewPath = null;
   renderedPreviewSource = null;
   renderedPreviewVaultId = null;
@@ -5612,11 +5653,12 @@ elements.notePreview.addEventListener("click", (event) => {
   }
   const sourceAction = event.target.closest<HTMLButtonElement>(".preview-source-action");
   if (sourceAction) {
-    const line = Number.parseInt(sourceAction.dataset.sourceLine ?? "", 10);
-    if (Number.isSafeInteger(line) && line > 0) {
-      setDocumentView("source", false);
-      window.requestAnimationFrame(() => scrollToSourceLine(line));
-    }
+    void activatePreviewSourceAction(sourceAction);
+    return;
+  }
+  const embedOpen = event.target.closest<HTMLButtonElement>(".preview-note-embed-open");
+  if (embedOpen) {
+    void activatePreviewEmbed(embedOpen);
     return;
   }
   const anchor = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-link]");

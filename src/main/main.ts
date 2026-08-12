@@ -1029,6 +1029,33 @@ function registerIpcHandlers(): void {
       return workspaceController.loadVaultImage(sourceNotePath, target, expectedVaultId);
     },
   );
+  ipcMain.handle(
+    ipcChannels.loadVaultNoteEmbed,
+    (
+      _event,
+      sourceNotePath: unknown,
+      target: unknown,
+      subpath: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof sourceNotePath !== "string" ||
+        typeof target !== "string" ||
+        (subpath !== null && typeof subpath !== "string") ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error(
+          "Load vault note embed requires string note, target, vault, and string or null subpath values.",
+        );
+      }
+      return workspaceController.loadVaultNoteEmbed(
+        sourceNotePath,
+        target,
+        subpath,
+        expectedVaultId,
+      );
+    },
+  );
   ipcMain.handle(ipcChannels.setKeyBinding, (_event, targetId: unknown, binding: unknown) => {
     if (
       typeof targetId !== "string" ||

@@ -25,6 +25,7 @@ import type {
   PluginEditorContext,
   RuntimeSnapshot,
   VaultImageResponse,
+  VaultNoteEmbedResponse,
   VaultSearchResponse,
   VaultSelectionSource,
   WorkspaceFileSummary,
@@ -33,6 +34,7 @@ import type {
 } from "../shared/contracts";
 import { ActionRegistry } from "./action-registry";
 import { createMarkdownNote } from "./note-creation";
+import { loadVaultNoteEmbed } from "./note-embed-service";
 import { movedMarkdownPath, moveMarkdownNote } from "./note-move";
 import { trashMarkdownNote, vaultTrashDirectory } from "./note-trash";
 import { loadVaultImage } from "./vault-image-service";
@@ -511,6 +513,22 @@ export class WorkspaceRuntime {
     expectedVaultId: string,
   ): Promise<VaultImageResponse> {
     return loadVaultImage(this.kernel, sourceNotePath, target, expectedVaultId);
+  }
+
+  loadVaultNoteEmbed(
+    sourceNotePath: string,
+    target: string,
+    subpath: string | null,
+    expectedVaultId: string,
+  ): Promise<VaultNoteEmbedResponse> {
+    return loadVaultNoteEmbed(
+      this.kernel,
+      this.indexReactor.index.snapshot().documents,
+      sourceNotePath,
+      target,
+      subpath,
+      expectedVaultId,
+    );
   }
 
   async saveNote(

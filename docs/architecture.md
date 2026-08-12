@@ -373,16 +373,23 @@ write boundary. Switching modes stores only an application preference outside th
 The first renderer uses Markdown-it for deterministic block parsing and DOMPurify with a narrow
 element and attribute allowlist. Raw HTML is accepted only after sanitization. Scripts, event
 handlers, forms, styles, media elements, and active URLs are removed. Markdown images and
-Obsidian-style wiki image embeds first become inert placeholders. A dedicated read-only service may
-then replace those placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. The renderer supplies
-the source note, raw target, and expected vault identity; the main process resolves note-relative
-and vault-rooted paths, follows symlinks only within the vault, excludes `.obsidian/`, `.git/`, and
-transaction artifacts, rechecks the active runtime after asynchronous reads, and never returns a
-filesystem URL. Reads are stable and limited to 10 MiB per image. One preview accepts at most 128
-images and 64 MiB of decoded input. Oversized, missing, external, malformed, unsupported, and
-out-of-vault targets remain labeled placeholders. SVG and non-image wiki embeds remain inert.
-External links also stay inert during pre-alpha rather than broadening IPC for shell access
-prematurely.
+Obsidian-style wiki embeds first become inert placeholders. A dedicated read-only image service may
+replace raster placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. A separate note-embed
+service resolves indexed Markdown identities and extracts either the whole note, one heading
+through its descendants, or one block ID. It returns exact path, revision, source range, content
+bytes, and nested-link summaries. The renderer sanitizes every returned fragment through the same
+Markdown pipeline, then recursively hydrates its nested notes and raster images.
+
+Both services receive the source note, raw target, and expected vault identity. The main process
+resolves note-relative and vault-rooted paths, follows symlinks only within the vault, excludes
+`.obsidian/`, `.git/`, and transaction artifacts, rechecks the active runtime after asynchronous
+reads, and never returns a filesystem URL. Image reads are stable and limited to 10 MiB each. One
+preview accepts at most 128 images and 64 MiB of decoded image input. Note reads are limited to 2
+MiB each, 32 expanded fragments, 8 MiB of returned Markdown, and four recursive levels. A
+path-and-subpath ancestry set stops cycles while allowing finite same-note section embeds.
+Oversized, missing, ambiguous, external, malformed, unsupported, stale-vault, and out-of-vault
+targets remain labeled placeholders. SVG and unsupported non-note wiki embeds remain inert.
+External links also stay inert during beta rather than broadening IPC for shell access prematurely.
 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized

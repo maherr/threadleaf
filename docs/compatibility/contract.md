@@ -53,6 +53,23 @@ light and dark schemes against a copied real-world Obsidian configuration. These
 safe preview boundary, not completed import behavior. See the
 [migration contract](migration.md) for the source limits and candidate rules.
 
+## Native note transclusion fixture
+
+Reading view recognizes wiki and Markdown note embeds without changing source bytes. The verified
+surface resolves whole-note, heading, and block-ID targets through the current rebuildable metadata
+index. Heading extraction includes descendants until the next peer or higher heading. Block lookup
+ignores code and HTML-comment lookalikes. Nested fragments reuse the same sanitizer, link resolver,
+raster-image loader, and source-navigation controls as the root note.
+
+The production fixture proves nested same-note sections terminate correctly, true cycles remain
+visible rather than recursing, exact source controls open the embedded note and line, and nested
+links and images resolve relative to the embedded note. It also proves explicit failure states for
+missing and ambiguous targets, invalid subpaths, private and out-of-vault paths, invalid UTF-8,
+oversized notes, stale vault responses, depth, count, and aggregate-byte limits. Current limits are
+2 MiB per source note, 32 expanded fragments, 8 MiB of returned Markdown, and four recursive
+levels. This evidence does not claim inline live-preview parity, block-range embeds, SVG rendering,
+or arbitrary plugin-defined embed processors.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

@@ -164,18 +164,156 @@ async function waitForTheme(theme, deadline) {
   throw new Error(`The packaged application did not switch to ${theme} mode.`);
 }
 
-async function captureTheme(theme) {
+async function captureTheme(theme, suffix = "") {
   const current = await evaluate("document.documentElement.dataset.theme");
   if (current !== theme) {
     await evaluate("document.querySelector('#theme-toggle').click(); true");
     await waitForTheme(theme, Date.now() + 5_000);
   }
+  await focusTransclusionPreview();
   const capture = await cdp.send("Page.captureScreenshot", {
     format: "png",
     captureBeyondViewport: false,
   });
-  const destination = path.join(screenshotDirectory, `packaged-linux-${theme}.png`);
+  const destination = path.join(screenshotDirectory, `packaged-linux-${theme}${suffix}.png`);
   await fs.writeFile(destination, Buffer.from(capture.data, "base64"));
+  return destination;
+}
+
+async function focusTransclusionPreview() {
+  const focused = await evaluate(`(() => {
+    const preview = document.querySelector('#note-preview');
+    const embed = document.querySelector('.preview-note-embed');
+    if (!(preview instanceof HTMLElement) || !(embed instanceof HTMLElement)) return false;
+    embed.scrollIntoView({ block: 'start' });
+    preview.scrollTop = Math.max(0, preview.scrollTop - 14);
+    return true;
+  })()`);
+  assert(focused, "The transclusion could not be focused for visual verification.");
+  await delay(80);
+}
+
+async function openTransclusionPreview() {
+  const opened = await evaluate(`(() => {
+    const note = document.querySelector('[data-note-path="Welcome.md"]');
+    if (!(note instanceof HTMLButtonElement)) return false;
+    note.click();
+    return true;
+  })()`);
+  assert(opened, "The bundled Welcome note was not reachable from the file list.");
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const state = await evaluate(`(() => ({
+      path: document.querySelector('#note-path')?.textContent ?? '',
+      readDisabled: document.querySelector('#read-view')?.disabled ?? true,
+    }))()`);
+    if (state.path === "Welcome.md" && !state.readDisabled) {
+      break;
+    }
+    await delay(50);
+  }
+  await evaluate("document.querySelector('#read-view')?.click(); true");
+  while (Date.now() < deadline) {
+    const state = await evaluate(`(() => ({
+      previewHidden: document.querySelector('#note-preview')?.hidden ?? true,
+      ready: document.querySelectorAll('.preview-note-embed[data-threadleaf-note-embed-status="ready"]').length,
+      pending: document.querySelectorAll('.preview-note-embed-placeholder').length,
+    }))()`);
+    if (!state.previewHidden && state.ready === 2 && state.pending === 0) {
+      return;
+    }
+    await delay(50);
+  }
+  throw new Error("The packaged note transclusion preview did not finish rendering.");
+}
+
+async function inspectTransclusionPreview() {
+  return evaluate(`(() => ({
+    path: document.querySelector('#note-path')?.textContent ?? '',
+    ready: document.querySelectorAll('.preview-note-embed[data-threadleaf-note-embed-status="ready"]').length,
+    unavailable: document.querySelectorAll('.preview-note-embed-unavailable').length,
+    pending: document.querySelectorAll('.preview-note-embed-placeholder').length,
+    nested: document.querySelectorAll('.preview-note-embed .preview-note-embed').length,
+    bodyText: document.querySelector('#note-preview')?.textContent ?? '',
+    openPaths: [...document.querySelectorAll('.preview-note-embed-open')].map((button) => button.dataset.threadleafOpenPath),
+    sourcePaths: [...document.querySelectorAll('.preview-note-embed-body .preview-source-action')].map((button) => button.dataset.sourcePath),
+    previewOverflow: (() => {
+      const preview = document.querySelector('#note-preview');
+      return preview instanceof HTMLElement ? preview.scrollWidth - preview.clientWidth : 0;
+    })(),
+  }))()`);
+}
+
+async function waitForDocumentState(expectedPath, expectedMode, deadline) {
+  while (Date.now() < deadline) {
+    const state = await evaluate(`(() => ({
+      path: document.querySelector('#note-path')?.textContent ?? '',
+      mode: document.querySelector('#note-view')?.dataset.view ?? '',
+      previewHidden: document.querySelector('#note-preview')?.hidden ?? true,
+    }))()`);
+    if (
+      state.path === expectedPath &&
+      state.mode === expectedMode &&
+      state.previewHidden === (expectedMode === "source")
+    ) {
+      return;
+    }
+    await delay(50);
+  }
+  throw new Error(`The document did not reach ${expectedPath} in ${expectedMode} mode.`);
+}
+
+async function exerciseTransclusionControls() {
+  const opened = await evaluate(`(() => {
+    const button = document.querySelector('.preview-note-embed-open');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  assert(opened, "The embedded-note open control was not reachable.");
+  await waitForDocumentState("Linked Note.md", "reading", Date.now() + 5_000);
+
+  await openTransclusionPreview();
+  const sourceOpened = await evaluate(`(() => {
+    const button = document.querySelector(
+      '.preview-note-embed-body .preview-source-action[data-source-path="Linked Note.md"]'
+    );
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  assert(sourceOpened, "The embedded-note source control was not reachable.");
+  await waitForDocumentState("Linked Note.md", "source", Date.now() + 5_000);
+  await openTransclusionPreview();
+}
+
+async function captureTransclusionPositiveControl() {
+  await focusTransclusionPreview();
+  const outlined = await evaluate(`(() => {
+    const embed = document.querySelector('.preview-note-embed');
+    if (!(embed instanceof HTMLElement)) return false;
+    embed.style.outline = '12px solid rgb(255, 0, 255)';
+    embed.style.outlineOffset = '-12px';
+    return getComputedStyle(embed).outlineColor === 'rgb(255, 0, 255)';
+  })()`);
+  assert(outlined, "The visual positive control did not reach the note transclusion.");
+  const capture = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+  });
+  const destination = path.join(
+    screenshotDirectory,
+    "packaged-linux-transclusion-positive-control.png",
+  );
+  await fs.writeFile(destination, Buffer.from(capture.data, "base64"));
+  await evaluate(`(() => {
+    const embed = document.querySelector('.preview-note-embed');
+    if (embed instanceof HTMLElement) {
+      embed.style.removeProperty('outline');
+      embed.style.removeProperty('outline-offset');
+    }
+    return true;
+  })()`);
   return destination;
 }
 
@@ -393,6 +531,35 @@ try {
   assert(updateControls.progressHidden, "Inactive updater exposed a progress indicator.");
   await evaluate("document.querySelector('#settings-close')?.click(); true");
 
+  await openTransclusionPreview();
+  const transclusion = await inspectTransclusionPreview();
+  assert(transclusion.path === "Welcome.md", "The transclusion fixture did not stay active.");
+  assert(
+    transclusion.ready === 2 && transclusion.unavailable === 0 && transclusion.pending === 0,
+    `The transclusion fixture was incomplete: ${JSON.stringify(transclusion)}`,
+  );
+  assert(transclusion.nested === 1, "The nested transclusion was not rendered exactly once.");
+  assert(
+    transclusion.bodyText.includes("bounded UTF-8 path") &&
+      transclusion.bodyText.includes("Open any local folder") &&
+      !transclusion.bodyText.includes("Heading extraction stops"),
+    "The packaged heading boundaries or nested content were incorrect.",
+  );
+  assert(
+    JSON.stringify(transclusion.openPaths) === JSON.stringify(["Linked Note.md", "Welcome.md"]),
+    `Embedded note identities were incorrect: ${JSON.stringify(transclusion.openPaths)}`,
+  );
+  assert(
+    transclusion.sourcePaths.includes("Linked Note.md") &&
+      transclusion.sourcePaths.includes("Welcome.md"),
+    `Embedded source controls lost their origin: ${JSON.stringify(transclusion.sourcePaths)}`,
+  );
+  assert(
+    transclusion.previewOverflow <= 1,
+    `The full transclusion preview overflowed horizontally by ${transclusion.previewOverflow}px.`,
+  );
+  await exerciseTransclusionControls();
+
   let screenshots = [];
   if (screenshotDirectory) {
     await fs.mkdir(screenshotDirectory, { recursive: true });
@@ -410,6 +577,7 @@ try {
     );
     screenshots = [
       await captureTheme("dark"),
+      await captureTransclusionPositiveControl(),
       await captureUpdateSettings("dark"),
       await captureVisualPositiveControl(),
       await captureTheme("light"),
@@ -427,9 +595,14 @@ try {
       compactViewport.width === 860 && compactViewport.height === 640,
       `Compact window bounds were not applied: ${JSON.stringify(compactViewport)}`,
     );
+    const compactTransclusion = await inspectTransclusionPreview();
+    assert(
+      compactTransclusion.ready === 2 && compactTransclusion.previewOverflow <= 1,
+      `Compact transclusion layout regressed: ${JSON.stringify(compactTransclusion)}`,
+    );
+    screenshots.push(await captureTheme("light", "-compact"));
     screenshots.push(await captureUpdateSettings("light", "-compact"));
-    await evaluate("document.querySelector('#theme-toggle').click(); true");
-    await waitForTheme("dark", Date.now() + 5_000);
+    screenshots.push(await captureTheme("dark", "-compact"));
     screenshots.push(await captureUpdateSettings("dark", "-compact"));
   }
 

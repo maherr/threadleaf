@@ -47,12 +47,14 @@ editor draft through a sanitized Markdown subset, keeps unsaved text off disk, r
 links through the derived index, and provides source-line controls that return to the matching
 CodeMirror line. Sniffed local PNG, JPEG, GIF, and WebP attachments now render through a
 vault-scoped, size-bounded main-process service; external, oversized, unsupported, private, and
-out-of-vault targets stay explicit placeholders. A headless CLI now inspects vaults, lists and reads
-notes, returns either ranked search paths or grep-style matching lines, and creates notes through the
-recoverable writer with stable JSON and explicit exit codes, without requiring the Electron
-application. Search supports folder, limit, case, count, and text/JSON controls. Read-only graph
-commands report outgoing links, grouped backlinks, non-resolved links, orphans, syntax-level dead
-ends, and line-aware outlines through the same metadata index as the desktop, with count and
+out-of-vault targets stay explicit placeholders. Whole-note, heading, and block-ID note embeds now
+render recursively through a separate read-only service with exact source controls and explicit
+cycle, depth, count, byte, containment, and stale-vault limits. A headless CLI now inspects vaults,
+lists and reads notes, returns either ranked search paths or grep-style matching lines, and creates
+notes through the recoverable writer with stable JSON and explicit exit codes, without requiring the
+Electron application. Search supports folder, limit, case, count, and text/JSON controls. Read-only
+graph commands report outgoing links, grouped backlinks, non-resolved links, orphans, syntax-level
+dead ends, and line-aware outlines through the same metadata index as the desktop, with count and
 structured output modes. The desktop New action,
 Ctrl/Cmd+N, and the CLI share one no-overwrite creation service. Missing folders are created,
 ordinary existing paths fail without mutation, and a path claimed during the final race window
@@ -158,8 +160,8 @@ through public `Vault.rename`, `FileManager.renameFile`, and `FileManager.trashF
 unchanged Excalidraw plugin has moved and trashed real binary fixtures through those paths while
 preserving their exact SHA-256 digests, and recovery fixtures cover interrupted renames plus
 external-edit conflicts without replacing either side. The corresponding official Obsidian
-same-vault roundtrip is still pending. Non-image note transclusion, untested export formats, and
-universal plugin parity remain unsupported. Excalidraw's release-notes modal and Threadleaf
+same-vault roundtrip is still pending. Untested export formats and universal plugin parity remain
+unsupported. Excalidraw's release-notes modal and Threadleaf
 light/dark chrome also render, and its stylesheet is preserved while four remote font URLs are
 replaced with inert embedded assets. The runtime is still trusted:
 Node-capable plugin code can perform its own I/O.
@@ -264,8 +266,11 @@ persisted choice, while paths that no longer exist are removed from the saved wo
 next successful launch.
 Reading view previews the current draft without saving it; clicking a source-line control returns
 to the exact source line. Relative and vault-rooted Markdown images plus Obsidian-style raster wiki
-embeds render without exposing filesystem paths or general file access to the renderer. Ctrl/Cmd+N
-opens the New note dialog and selects the resulting empty Markdown note for editing.
+embeds render without exposing filesystem paths or general file access to the renderer. Wiki and
+Markdown note embeds can include a whole note, a heading and its descendants, or a block ID. Nested
+embeds retain links, local raster images, and source controls; visible placeholders explain cycles,
+limits, missing targets, ambiguous targets, and unsafe paths. Ctrl/Cmd+N opens the New note dialog
+and selects the resulting empty Markdown note for editing.
 Ctrl/Cmd+Shift+M opens Move for the active clean note. Threadleaf commits only when the projected
 vault resolver preserves every internal-link meaning. It presents the exact rewrite count before
 enabling confirmation; for unusually large moves, the dialog names the first 100 target updates

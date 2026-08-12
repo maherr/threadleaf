@@ -11,6 +11,7 @@ import type {
   NoteSaveResponse,
   RuntimeSnapshot,
   VaultImageResponse,
+  VaultNoteEmbedResponse,
   VaultSearchResponse,
 } from "../shared/contracts";
 import {
@@ -76,6 +77,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
   readonly #snapshot: RuntimeSnapshot;
   readonly #listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
+  noteEmbedLoader: (() => Promise<VaultNoteEmbedResponse>) | null = null;
   closedNote: { filePath: string; expectedVaultId: string } | null = null;
   movedNote: {
     filePath: string;
@@ -160,6 +162,26 @@ class FakeRuntime implements WorkspaceRuntimePort {
       size: 1,
       revision: "a".repeat(64),
       base64: "AA==",
+    };
+  }
+
+  async loadVaultNoteEmbed(): Promise<VaultNoteEmbedResponse> {
+    if (this.noteEmbedLoader) {
+      return this.noteEmbedLoader();
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      path: "Embedded.md",
+      revision: "a".repeat(64),
+      sourceSize: 10,
+      contentBytes: 10,
+      content: "# Embedded",
+      startLine: 1,
+      endLine: 1,
+      kind: "note",
+      subpath: null,
+      links: [],
     };
   }
 
@@ -844,6 +866,54 @@ describe("WorkspaceController", () => {
       size: 1,
       revision: "b".repeat(64),
       base64: "AA==",
+    });
+
+    await expect(pending).resolves.toEqual({
+      status: "stale-vault",
+      vaultId: harness.runtimes[1]?.vaultId,
+    });
+    await controller.close();
+  });
+
+  it("rejects a note embed response that completes after the active vault changes", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const firstRuntime = harness.runtimes[0];
+    if (!firstRuntime) {
+      throw new Error("Expected the initial runtime.");
+    }
+    let releaseEmbed: ((response: VaultNoteEmbedResponse) => void) | undefined;
+    firstRuntime.noteEmbedLoader = () =>
+      new Promise<VaultNoteEmbedResponse>((resolve) => {
+        releaseEmbed = resolve;
+      });
+
+    const pending = controller.loadVaultNoteEmbed(
+      "Current.md",
+      "Embedded",
+      null,
+      firstRuntime.vaultId,
+    );
+    await controller.switchVault("/picked/vault");
+    releaseEmbed?.({
+      status: "ready",
+      vaultId: firstRuntime.vaultId,
+      path: "Embedded.md",
+      revision: "b".repeat(64),
+      sourceSize: 10,
+      contentBytes: 10,
+      content: "# Embedded",
+      startLine: 1,
+      endLine: 1,
+      kind: "note",
+      subpath: null,
+      links: [],
     });
 
     await expect(pending).resolves.toEqual({

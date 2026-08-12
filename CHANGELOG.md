@@ -232,6 +232,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   activation begins, plus cooperative metadata construction that yields during large corpus builds.
 - Obsidian-style raster wiki-image embeds through the existing contained, MIME-sniffed, bounded
   preview authority.
+- Read-only Markdown note transclusions in Reading view for whole notes, headings, and block IDs,
+  including recursive rendering, exact source controls, index-resolved nested links, internal
+  raster images, explicit unavailable states, and cycle, depth, count, byte, containment, and
+  stale-vault guards.
 - Bounded whole-vault move planning that reuses the current metadata snapshot and reads full bytes
   only for the source and documents whose links require rewriting.
 

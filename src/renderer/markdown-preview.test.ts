@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vitest";
-import type { VaultImageResponse } from "../shared/contracts";
+import type {
+  VaultImageResponse,
+  VaultNoteEmbedResponse,
+  WorkspaceLinkSummary,
+} from "../shared/contracts";
 import {
   addPreviewSourceControls,
+  hydrateMarkdownPreview,
   hydrateMarkdownPreviewImages,
   renderMarkdownPreview,
 } from "./markdown-preview";
@@ -13,6 +18,41 @@ function preview(source: string): HTMLElement {
   container.append(addPreviewSourceControls(renderMarkdownPreview(source)));
   return container;
 }
+
+function readyEmbed(
+  path: string,
+  content: string,
+  options: {
+    startLine?: number;
+    endLine?: number;
+    kind?: "note" | "heading" | "block";
+    subpath?: string | null;
+    links?: WorkspaceLinkSummary[];
+    contentBytes?: number;
+  } = {},
+): VaultNoteEmbedResponse {
+  return {
+    status: "ready",
+    vaultId: "vault-a",
+    path,
+    revision: "e".repeat(64),
+    sourceSize: Buffer.byteLength(content),
+    contentBytes: options.contentBytes ?? Buffer.byteLength(content),
+    content,
+    startLine: options.startLine ?? 1,
+    endLine: options.endLine ?? Math.max(1, content.split("\n").length),
+    kind: options.kind ?? "note",
+    subpath: options.subpath ?? null,
+    links: options.links ?? [],
+  };
+}
+
+const unavailableImage = async (): Promise<VaultImageResponse> => ({
+  status: "unavailable",
+  vaultId: "vault-a",
+  reason: "missing",
+  message: "No image fixture was provided.",
+});
 
 describe("Markdown reading view", () => {
   it("renders the supported structural subset with source-line controls", () => {
@@ -164,6 +204,198 @@ describe("Markdown reading view", () => {
       "Architecture",
     );
     expect(rendered.querySelector("a.preview-embed-link")).toBeNull();
+  });
+
+  it("distinguishes Markdown note transclusions from raster and plugin-owned embeds", () => {
+    const rendered = preview(
+      [
+        "![[Note#Section|Wiki section]]",
+        "",
+        "![Markdown section](Folder/Note.md#Part)",
+        "",
+        "![[assets/image.png|Raster]]",
+        "",
+        "![[Drawing.excalidraw]]",
+      ].join("\n"),
+    );
+    const embeds = [...rendered.querySelectorAll<HTMLElement>(".preview-note-embed-placeholder")];
+
+    expect(embeds).toHaveLength(2);
+    expect(embeds[0]?.dataset.threadleafTarget).toBe("Note");
+    expect(embeds[0]?.dataset.threadleafSubpath).toBe("#Section");
+    expect(embeds[1]?.dataset.threadleafTarget).toBe("Folder/Note.md");
+    expect(embeds[1]?.dataset.threadleafSubpath).toBe("#Part");
+    expect(rendered.querySelector(".preview-asset-placeholder")?.textContent).toContain("Raster");
+    expect(rendered.querySelector("a.preview-embed-link")?.textContent).toBe("Drawing.excalidraw");
+  });
+
+  it("hydrates nested note content, origin-relative images, links, and source provenance", async () => {
+    const rendered = preview("![[Embedded#Part|Project brief]]");
+    const noteRequests: Array<[string, string, string | null, string]> = [];
+    const imageRequests: Array<[string, string, string]> = [];
+    const decorated: Array<[string, string[]]> = [];
+
+    await hydrateMarkdownPreview(rendered, {
+      sourceNotePath: "Current.md",
+      expectedVaultId: "vault-a",
+      loadImage: async (sourceNotePath, target, expectedVaultId) => {
+        imageRequests.push([sourceNotePath, target, expectedVaultId]);
+        return {
+          status: "ready",
+          vaultId: "vault-a",
+          path: "Folder/pic.png",
+          mimeType: "image/png",
+          size: 4,
+          revision: "f".repeat(64),
+          base64: "iVBORw==",
+        };
+      },
+      loadNoteEmbed: async (sourceNotePath, target, subpath, expectedVaultId) => {
+        noteRequests.push([sourceNotePath, target, subpath, expectedVaultId]);
+        if (target === "Embedded") {
+          return readyEmbed(
+            "Folder/Embedded.md",
+            "## Part\n\n![Diagram](pic.png)\n\n[[Destination]]\n\n![[Nested]]",
+            {
+              startLine: 10,
+              endLine: 16,
+              kind: "heading",
+              subpath: "#Part",
+              links: [
+                {
+                  label: "Destination",
+                  status: "resolved",
+                  path: "Folder/Destination.md",
+                  target: "Destination",
+                  subpath: null,
+                  embed: false,
+                  syntax: "wiki",
+                },
+                {
+                  label: "Nested",
+                  status: "resolved",
+                  path: "Folder/Nested.md",
+                  target: "Nested",
+                  subpath: null,
+                  embed: true,
+                  syntax: "wiki",
+                },
+              ],
+            },
+          );
+        }
+        return readyEmbed("Folder/Nested.md", "# Nested\n\nNested body.");
+      },
+      decorateLinks: (_root, links, sourceNotePath) => {
+        decorated.push([sourceNotePath, links.map(({ label }) => label)]);
+      },
+    });
+
+    expect(noteRequests).toEqual([
+      ["Current.md", "Embedded", "#Part", "vault-a"],
+      ["Folder/Embedded.md", "Nested", null, "vault-a"],
+    ]);
+    expect(imageRequests).toEqual([["Folder/Embedded.md", "pic.png", "vault-a"]]);
+    expect(decorated).toEqual([
+      ["Folder/Embedded.md", ["Destination", "Nested"]],
+      ["Folder/Nested.md", []],
+    ]);
+    expect(
+      rendered.querySelectorAll(".preview-note-embed[data-threadleaf-note-embed-status='ready']"),
+    ).toHaveLength(2);
+    expect(rendered.querySelector<HTMLButtonElement>(".preview-note-embed-open")).toMatchObject({
+      textContent: "Folder/Embedded.md#Part",
+    });
+    expect(
+      rendered.querySelector<HTMLButtonElement>(
+        ".preview-note-embed-body .preview-source-action[data-source-line='10']",
+      )?.dataset.sourcePath,
+    ).toBe("Folder/Embedded.md");
+    expect(rendered.querySelector<HTMLImageElement>(".preview-note-embed-body img")?.alt).toBe(
+      "Diagram",
+    );
+  });
+
+  it("allows a finite same-note section embed and stops a repeated embed identity as a cycle", async () => {
+    const rendered = preview("![[#Part]]");
+    const requests: Array<[string, string, string | null]> = [];
+
+    await hydrateMarkdownPreview(rendered, {
+      sourceNotePath: "Current.md",
+      expectedVaultId: "vault-a",
+      loadImage: unavailableImage,
+      loadNoteEmbed: async (sourceNotePath, target, subpath) => {
+        requests.push([sourceNotePath, target, subpath]);
+        return readyEmbed("Current.md", "## Part\n\n![[#Part]]", {
+          kind: "heading",
+          subpath: "#Part",
+        });
+      },
+      decorateLinks: () => undefined,
+    });
+
+    expect(requests).toEqual([
+      ["Current.md", "", "#Part"],
+      ["Current.md", "", "#Part"],
+    ]);
+    expect(
+      rendered.querySelector(".preview-note-embed[data-threadleaf-note-embed-status='ready']"),
+    ).not.toBeNull();
+    expect(
+      rendered.querySelector(
+        ".preview-note-embed-unavailable[data-threadleaf-note-embed-status='cycle']",
+      )?.textContent,
+    ).toContain("Embedded note unavailable");
+  });
+
+  it("makes stale, depth-limited, and byte-limited note embeds explicit", async () => {
+    const stale = preview("![[Old]]");
+    await hydrateMarkdownPreview(stale, {
+      sourceNotePath: "Current.md",
+      expectedVaultId: "vault-a",
+      loadImage: unavailableImage,
+      loadNoteEmbed: async () => ({ status: "stale-vault", vaultId: "vault-b" }),
+      decorateLinks: () => undefined,
+    });
+    expect(
+      stale.querySelector<HTMLElement>(
+        ".preview-note-embed-unavailable[data-threadleaf-note-embed-status='stale-vault']",
+      )?.title,
+    ).toContain("active vault changed");
+
+    const deep = preview("![[A1]]");
+    let depthRequests = 0;
+    await hydrateMarkdownPreview(deep, {
+      sourceNotePath: "Current.md",
+      expectedVaultId: "vault-a",
+      loadImage: unavailableImage,
+      loadNoteEmbed: async (_source, target) => {
+        depthRequests += 1;
+        const number = Number.parseInt(target.slice(1), 10);
+        return readyEmbed(`A${number}.md`, `# A${number}\n\n![[A${number + 1}]]`);
+      },
+      decorateLinks: () => undefined,
+    });
+    expect(depthRequests).toBe(4);
+    expect(
+      deep.querySelector(
+        ".preview-note-embed-unavailable[data-threadleaf-note-embed-status='depth-limit']",
+      )?.textContent,
+    ).toContain("Embedded note unavailable");
+
+    const oversized = preview("![[Huge]]");
+    await hydrateMarkdownPreview(oversized, {
+      sourceNotePath: "Current.md",
+      expectedVaultId: "vault-a",
+      loadImage: unavailableImage,
+      loadNoteEmbed: async () => readyEmbed("Huge.md", "# Huge", { contentBytes: 9 * 1024 * 1024 }),
+      decorateLinks: () => undefined,
+    });
+    expect(
+      oversized.querySelector<HTMLElement>(
+        ".preview-note-embed-unavailable[data-threadleaf-note-embed-status='preview-limit']",
+      )?.title,
+    ).toContain("8 MiB");
   });
 
   it("hydrates a supported local image without exposing a navigable filesystem URL", async () => {

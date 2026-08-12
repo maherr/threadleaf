@@ -81,8 +81,11 @@ if (
   cliGraphEnvelope.ok !== true ||
   cliGraphEnvelope.command !== "links" ||
   cliGraphEnvelope.data?.path !== "Welcome.md" ||
-  cliGraphEnvelope.data?.total !== 1 ||
-  cliGraphEnvelope.data?.links?.[0]?.resolution?.path !== "Linked Note.md"
+  cliGraphEnvelope.data?.total !== 2 ||
+  cliGraphEnvelope.data?.links?.[0]?.resolution?.path !== "Linked Note.md" ||
+  cliGraphEnvelope.data?.links?.[1]?.resolution?.path !== "Linked Note.md" ||
+  cliGraphEnvelope.data?.links?.[1]?.embed !== true ||
+  cliGraphEnvelope.data?.links?.[1]?.subpath !== "#Project brief"
 ) {
   throw new Error("Built CLI returned an unexpected graph envelope.");
 }
@@ -101,7 +104,8 @@ const cliSearchResult = spawnSync(
 if (
   cliSearchResult.status !== 0 ||
   cliSearchResult.stderr !== "" ||
-  JSON.stringify(JSON.parse(cliSearchResult.stdout)) !== JSON.stringify(["Welcome.md"])
+  JSON.stringify(JSON.parse(cliSearchResult.stdout)) !==
+    JSON.stringify(["Welcome.md", "Linked Note.md"])
 ) {
   throw new Error(
     `Built CLI filtered search smoke test failed: ${cliSearchResult.stderr || `exit ${cliSearchResult.status}`}`,
@@ -123,7 +127,7 @@ const cliBacklinksResult = spawnSync(
 if (
   cliBacklinksResult.status !== 0 ||
   cliBacklinksResult.stderr !== "" ||
-  cliBacklinksResult.stdout !== "Welcome.md,1\n"
+  cliBacklinksResult.stdout !== "Welcome.md,2\n"
 ) {
   throw new Error(
     `Built CLI backlink format smoke test failed: ${cliBacklinksResult.stderr || `exit ${cliBacklinksResult.status}`}`,

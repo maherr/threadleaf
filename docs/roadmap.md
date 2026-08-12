@@ -130,8 +130,10 @@ equivalence through the real writer-to-watcher seam.
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
-- [ ] Rich property views and editing, broader attachment types, note transclusions, and
-      non-raster wiki embeds.
+- [x] Bounded whole-note, heading, and block-ID transclusions in Reading view, with recursive
+      rendering, exact source controls, nested links and raster images, and explicit safety limits.
+- [ ] Rich property views and editing, broader attachment types, and non-note non-raster wiki
+      embeds.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
 

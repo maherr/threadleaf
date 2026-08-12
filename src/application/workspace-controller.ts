@@ -16,6 +16,7 @@ import type {
   PluginEditorContext,
   RuntimeSnapshot,
   VaultImageResponse,
+  VaultNoteEmbedResponse,
   VaultSearchResponse,
   VaultSelectionSource,
 } from "../shared/contracts";
@@ -37,6 +38,12 @@ export interface WorkspaceRuntimePort {
     target: string,
     expectedVaultId: string,
   ): Promise<VaultImageResponse>;
+  loadVaultNoteEmbed(
+    sourceNotePath: string,
+    target: string,
+    subpath: string | null,
+    expectedVaultId: string,
+  ): Promise<VaultNoteEmbedResponse>;
   openNote(filePath: string): Promise<RuntimeSnapshot>;
   closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot>;
   moveNote(
@@ -379,6 +386,28 @@ export class WorkspaceController {
       return { status: "stale-vault", vaultId: runtime.vaultId };
     }
     const response = await runtime.loadVaultImage(sourceNotePath, target, expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async loadVaultNoteEmbed(
+    sourceNotePath: string,
+    target: string,
+    subpath: string | null,
+    expectedVaultId: string,
+  ): Promise<VaultNoteEmbedResponse> {
+    const runtime = this.activeRuntime("load a note embed");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.loadVaultNoteEmbed(
+      sourceNotePath,
+      target,
+      subpath,
+      expectedVaultId,
+    );
     if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
       return { status: "stale-vault", vaultId: this.#runtime.vaultId };
     }

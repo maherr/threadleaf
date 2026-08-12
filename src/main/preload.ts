@@ -16,6 +16,7 @@ import type {
   RuntimeSnapshot,
   ThreadleafBridge,
   VaultImageResponse,
+  VaultNoteEmbedResponse,
   VaultOpenResponse,
   VaultSearchResponse,
 } from "../shared/contracts";
@@ -114,6 +115,14 @@ const bridge: ThreadleafBridge = {
       target,
       expectedVaultId,
     ) as Promise<VaultImageResponse>,
+  loadVaultNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.loadVaultNoteEmbed,
+      sourceNotePath,
+      target,
+      subpath,
+      expectedVaultId,
+    ) as Promise<VaultNoteEmbedResponse>,
   setKeyBinding: (targetId, binding) =>
     ipcRenderer.invoke(
       ipcChannels.setKeyBinding,

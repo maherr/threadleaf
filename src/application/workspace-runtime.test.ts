@@ -144,7 +144,7 @@ describe("WorkspaceRuntime", () => {
       state: "ready",
       files: [
         { path: "Linked Note.md", title: "Linked Note" },
-        { path: "Welcome.md", title: "Welcome", outgoingCount: 1 },
+        { path: "Welcome.md", title: "Welcome", outgoingCount: 2 },
       ],
       activeNote: { path: "Linked Note.md", title: "Linked Note" },
       tabs: [{ path: "Linked Note.md", title: "Linked Note", active: true }],
@@ -174,6 +174,15 @@ describe("WorkspaceRuntime", () => {
           target: "Linked Note",
           subpath: null,
           embed: false,
+          syntax: "wiki",
+        },
+        {
+          label: "Linked Note#Project brief",
+          status: "resolved",
+          path: "Linked Note.md",
+          target: "Linked Note",
+          subpath: "#Project brief",
+          embed: true,
           syntax: "wiki",
         },
       ],
@@ -484,6 +493,15 @@ describe("WorkspaceRuntime", () => {
           syntax: "wiki",
           beforeTarget: "Linked Note",
           afterTarget: "Renamed",
+          line: 9,
+        },
+        {
+          documentPath: "Welcome.md",
+          resultPath: "Welcome.md",
+          syntax: "wiki",
+          beforeTarget: "Linked Note",
+          afterTarget: "Renamed",
+          line: 20,
         },
       ],
     });
@@ -543,11 +561,19 @@ describe("WorkspaceRuntime", () => {
       to: ".trash/Linked Note.md",
     });
     expect(deleted.snapshot.workspace).toMatchObject({
-      files: [{ path: "Welcome.md", unresolvedCount: 1 }],
+      files: [{ path: "Welcome.md", unresolvedCount: 2 }],
       tabs: [{ path: "Welcome.md", active: true }],
       activeNote: {
         path: "Welcome.md",
-        outgoing: [{ target: "Linked Note", status: "unresolved" }],
+        outgoing: [
+          { target: "Linked Note", status: "unresolved", embed: false, subpath: null },
+          {
+            target: "Linked Note",
+            status: "unresolved",
+            embed: true,
+            subpath: "#Project brief",
+          },
+        ],
       },
     });
     expect(store.saved.at(-1)).toMatchObject({
@@ -1015,6 +1041,22 @@ describe("WorkspaceRuntime", () => {
     });
     await expect(
       workspace.loadVaultImage("Welcome.md", "assets/pixel.png", "stale-vault"),
+    ).resolves.toEqual({ status: "stale-vault", vaultId: workspace.vaultId });
+  });
+
+  it("loads note transclusions through the current metadata index", async () => {
+    const workspace = await openRuntime();
+
+    await expect(
+      workspace.loadVaultNoteEmbed("Welcome.md", "Linked Note", null, workspace.vaultId),
+    ).resolves.toMatchObject({
+      status: "ready",
+      vaultId: workspace.vaultId,
+      path: "Linked Note.md",
+      kind: "note",
+    });
+    await expect(
+      workspace.loadVaultNoteEmbed("Welcome.md", "Linked Note", null, "stale-vault"),
     ).resolves.toEqual({ status: "stale-vault", vaultId: workspace.vaultId });
   });
 

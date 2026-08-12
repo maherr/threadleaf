@@ -1,6 +1,10 @@
 import DOMPurify, { type Config } from "dompurify";
 import MarkdownIt, { type RendererRule, type StateInline } from "markdown-it";
-import type { VaultImageResponse } from "../shared/contracts";
+import type {
+  VaultImageResponse,
+  VaultNoteEmbedResponse,
+  WorkspaceLinkSummary,
+} from "../shared/contracts";
 
 export interface PreviewWikiLink extends Record<string, unknown> {
   target: string;
@@ -53,6 +57,7 @@ const sanitizeConfig = {
     "data-threadleaf-embed",
     "data-threadleaf-external-url",
     "data-threadleaf-link",
+    "data-threadleaf-note-embed",
     "data-threadleaf-subpath",
     "data-threadleaf-target",
     "href",
@@ -148,6 +153,21 @@ function isExternalLink(value: string): boolean {
   return /^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith("//");
 }
 
+function isMarkdownNoteTarget(target: string, subpath: string | null, wiki: boolean): boolean {
+  const normalized = target.trim().toLocaleLowerCase("en-US");
+  if (normalized.endsWith(".md")) {
+    return true;
+  }
+  if (subpath && !/\.[^/]+$/u.test(normalized)) {
+    return true;
+  }
+  return wiki && normalized !== "" && !/\.[^/]+$/u.test(normalized);
+}
+
+function noteEmbedPlaceholder(target: string, subpath: string | null, label: string): string {
+  return `<span class="preview-note-embed-placeholder" role="status" aria-label="Loading embedded note ${escapeAttribute(label)}" data-threadleaf-note-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-subpath="${escapeAttribute(subpath ?? "")}" data-threadleaf-alt="${escapeAttribute(label)}">Embedded note: ${escapeText(label)}</span>`;
+}
+
 const markdown = new MarkdownIt({
   breaks: false,
   html: true,
@@ -174,6 +194,9 @@ markdown.renderer.rules.threadleaf_wikilink = (tokens, index) => {
   const label = link.alias ?? fallback;
   if (link.embed && /\.(?:gif|jpe?g|png|webp)$/iu.test(link.target)) {
     return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(link.target)}" data-threadleaf-alt="${escapeAttribute(link.alias ?? "")}">Image: ${escapeText(label)}</span>`;
+  }
+  if (link.embed && isMarkdownNoteTarget(link.target, link.subpath, true)) {
+    return noteEmbedPlaceholder(link.target, link.subpath, label);
   }
   const classes = link.embed ? "internal-link preview-embed-link" : "internal-link";
   return `<a href="#" class="${classes}" data-threadleaf-link="wiki" data-threadleaf-target="${escapeAttribute(link.target)}" data-threadleaf-subpath="${escapeAttribute(link.subpath ?? "")}" data-threadleaf-embed="${String(link.embed)}">${escapeText(label)}</a>`;
@@ -223,11 +246,33 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
   const source = String(token.attrGet("src") ?? "");
   const alt = renderer.renderInlineAsText(token.children ?? [], options, env).trim();
   const label = alt || source || "attachment";
+  const { target, subpath } = splitTarget(source);
+  if (isMarkdownNoteTarget(target, subpath, false)) {
+    return noteEmbedPlaceholder(target, subpath, label);
+  }
   return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(source)}" data-threadleaf-alt="${escapeAttribute(alt)}">Image: ${escapeText(label)}</span>`;
 };
 
 const maxImagesPerPreview = 128;
 const maxPreviewImageBytes = 64 * 1024 * 1024;
+const maxNoteEmbedsPerPreview = 32;
+const maxPreviewNoteEmbedBytes = 8 * 1024 * 1024;
+const maxNoteEmbedDepth = 4;
+
+interface PreviewHydrationBudget {
+  imageBytes: number;
+  imageCount: number;
+  noteEmbedBytes: number;
+  noteEmbedCount: number;
+}
+
+function createPreviewHydrationBudget(): PreviewHydrationBudget {
+  return { imageBytes: 0, imageCount: 0, noteEmbedBytes: 0, noteEmbedCount: 0 };
+}
+
+function noteEmbedIdentity(path: string, subpath: string | null): string {
+  return `${path}\0${subpath ?? ""}`;
+}
 
 export interface PreviewImageHydrationOptions {
   sourceNotePath: string;
@@ -238,6 +283,7 @@ export interface PreviewImageHydrationOptions {
     expectedVaultId: string,
   ): Promise<VaultImageResponse>;
   isCurrent?(): boolean;
+  budget?: PreviewHydrationBudget;
 }
 
 function imageLabel(placeholder: HTMLElement): string {
@@ -263,14 +309,14 @@ export async function hydrateMarkdownPreviewImages(
   const placeholders = [
     ...root.querySelectorAll<HTMLElement>(".preview-asset-placeholder[data-threadleaf-asset]"),
   ];
-  let loadedBytes = 0;
+  const budget = options.budget ?? createPreviewHydrationBudget();
 
-  for (const [index, placeholder] of placeholders.entries()) {
+  for (const placeholder of placeholders) {
     if (options.isCurrent && !options.isCurrent()) {
       return;
     }
     const label = imageLabel(placeholder);
-    if (index >= maxImagesPerPreview) {
+    if (budget.imageCount >= maxImagesPerPreview) {
       markImageUnavailable(
         placeholder,
         label,
@@ -279,6 +325,7 @@ export async function hydrateMarkdownPreviewImages(
       );
       continue;
     }
+    budget.imageCount += 1;
     const target = placeholder.dataset.threadleafAsset ?? "";
     placeholder.ariaBusy = "true";
     placeholder.dataset.threadleafAssetStatus = "loading";
@@ -308,7 +355,7 @@ export async function hydrateMarkdownPreviewImages(
       markImageUnavailable(placeholder, label, response.reason, response.message);
       continue;
     }
-    if (loadedBytes + response.size > maxPreviewImageBytes) {
+    if (budget.imageBytes + response.size > maxPreviewImageBytes) {
       markImageUnavailable(
         placeholder,
         label,
@@ -317,7 +364,7 @@ export async function hydrateMarkdownPreviewImages(
       );
       continue;
     }
-    loadedBytes += response.size;
+    budget.imageBytes += response.size;
 
     const image = root.ownerDocument.createElement("img");
     image.className = "preview-local-image";
@@ -348,6 +395,254 @@ export async function hydrateMarkdownPreviewImages(
   }
 }
 
+export interface PreviewNoteEmbedHydrationOptions {
+  sourceNotePath: string;
+  expectedVaultId: string;
+  loadImage: PreviewImageHydrationOptions["loadImage"];
+  loadNoteEmbed(
+    sourceNotePath: string,
+    target: string,
+    subpath: string | null,
+    expectedVaultId: string,
+  ): Promise<VaultNoteEmbedResponse>;
+  decorateLinks(
+    root: HTMLElement,
+    links: readonly WorkspaceLinkSummary[],
+    sourceNotePath: string,
+  ): void;
+  isCurrent?(): boolean;
+}
+
+function noteEmbedLabel(placeholder: HTMLElement): string {
+  return (
+    placeholder.dataset.threadleafAlt ||
+    `${placeholder.dataset.threadleafTarget ?? ""}${placeholder.dataset.threadleafSubpath ?? ""}` ||
+    "embedded note"
+  );
+}
+
+function markNoteEmbedUnavailable(
+  placeholder: HTMLElement,
+  label: string,
+  status: string,
+  message: string,
+): void {
+  placeholder.ariaBusy = "false";
+  placeholder.className = "preview-note-embed preview-note-embed-unavailable";
+  placeholder.dataset.threadleafNoteEmbedStatus = status;
+  placeholder.setAttribute("role", "note");
+  placeholder.setAttribute("aria-label", `Embedded note unavailable: ${label}`);
+  placeholder.title = message;
+  placeholder.replaceChildren();
+  const marker = placeholder.ownerDocument.createElement("span");
+  marker.className = "preview-note-embed-marker";
+  marker.ariaHidden = "true";
+  marker.textContent = "×";
+  const copy = placeholder.ownerDocument.createElement("span");
+  copy.className = "preview-note-embed-failure-copy";
+  const title = placeholder.ownerDocument.createElement("strong");
+  title.textContent = `Embedded note unavailable: ${label}`;
+  const detail = placeholder.ownerDocument.createElement("span");
+  detail.textContent = message;
+  copy.append(title, detail);
+  placeholder.append(marker, copy);
+}
+
+function noteEmbedHost(placeholder: HTMLElement): HTMLElement {
+  const parent = placeholder.parentElement;
+  if (
+    parent?.tagName === "P" &&
+    [...parent.childNodes].every(
+      (node) => node === placeholder || (node.nodeType === 3 && !(node.textContent ?? "").trim()),
+    )
+  ) {
+    return parent;
+  }
+  return placeholder;
+}
+
+function createNoteEmbed(
+  placeholder: HTMLElement,
+  response: Extract<VaultNoteEmbedResponse, { status: "ready" }>,
+): { body: HTMLElement; embed: HTMLElement } {
+  const document = placeholder.ownerDocument;
+  const embed = document.createElement("section");
+  embed.className = "preview-note-embed";
+  embed.dataset.threadleafNoteEmbedStatus = "ready";
+  embed.dataset.threadleafPath = response.path;
+  embed.dataset.threadleafRevision = response.revision;
+  embed.dataset.threadleafEmbedKind = response.kind;
+  embed.setAttribute("aria-label", `Embedded note ${response.path}`);
+
+  const header = document.createElement("header");
+  header.className = "preview-note-embed-header";
+  const marker = document.createElement("span");
+  marker.className = "preview-note-embed-marker";
+  marker.ariaHidden = "true";
+  marker.textContent = "↳";
+  const identity = document.createElement("span");
+  identity.className = "preview-note-embed-identity";
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "preview-note-embed-eyebrow";
+  eyebrow.textContent =
+    response.kind === "heading"
+      ? "Embedded section"
+      : response.kind === "block"
+        ? "Embedded block"
+        : "Embedded note";
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "preview-note-embed-open";
+  open.dataset.threadleafOpenPath = response.path;
+  open.dataset.threadleafSubpath = response.subpath ?? "";
+  open.textContent = `${response.path}${response.subpath ?? ""}`;
+  open.title = `Open ${response.path}${response.subpath ?? ""}`;
+  identity.append(eyebrow, open);
+  const provenance = document.createElement("span");
+  provenance.className = "preview-note-embed-provenance";
+  provenance.textContent =
+    response.startLine === response.endLine
+      ? `line ${response.startLine}`
+      : `lines ${response.startLine}-${response.endLine}`;
+  header.append(marker, identity, provenance);
+
+  const body = document.createElement("div");
+  body.className = "preview-note-embed-body";
+  embed.append(header, body);
+  return { body, embed };
+}
+
+async function hydrateNoteEmbedTree(
+  root: HTMLElement,
+  sourceNotePath: string,
+  depth: number,
+  ancestors: ReadonlySet<string>,
+  budget: PreviewHydrationBudget,
+  options: PreviewNoteEmbedHydrationOptions,
+): Promise<void> {
+  await hydrateMarkdownPreviewImages(root, {
+    sourceNotePath,
+    expectedVaultId: options.expectedVaultId,
+    loadImage: options.loadImage,
+    budget,
+    ...(options.isCurrent ? { isCurrent: options.isCurrent } : {}),
+  });
+  const placeholders = [
+    ...root.querySelectorAll<HTMLElement>(
+      ".preview-note-embed-placeholder[data-threadleaf-note-embed]",
+    ),
+  ];
+  for (const placeholder of placeholders) {
+    if ((options.isCurrent && !options.isCurrent()) || !root.contains(placeholder)) {
+      return;
+    }
+    const label = noteEmbedLabel(placeholder);
+    const host = noteEmbedHost(placeholder);
+    if (depth >= maxNoteEmbedDepth) {
+      markNoteEmbedUnavailable(
+        host,
+        label,
+        "depth-limit",
+        `Reading view expands embedded notes through at most ${maxNoteEmbedDepth} levels.`,
+      );
+      continue;
+    }
+    if (budget.noteEmbedCount >= maxNoteEmbedsPerPreview) {
+      markNoteEmbedUnavailable(
+        host,
+        label,
+        "preview-limit",
+        `Reading view expands at most ${maxNoteEmbedsPerPreview} embedded notes at once.`,
+      );
+      continue;
+    }
+    budget.noteEmbedCount += 1;
+    placeholder.ariaBusy = "true";
+    placeholder.dataset.threadleafNoteEmbedStatus = "loading";
+    let response: VaultNoteEmbedResponse;
+    try {
+      response = await options.loadNoteEmbed(
+        sourceNotePath,
+        placeholder.dataset.threadleafTarget ?? "",
+        placeholder.dataset.threadleafSubpath || null,
+        options.expectedVaultId,
+      );
+    } catch {
+      if ((!options.isCurrent || options.isCurrent()) && root.contains(placeholder)) {
+        markNoteEmbedUnavailable(host, label, "unreadable", "The embedded note request failed.");
+      }
+      continue;
+    }
+    if ((options.isCurrent && !options.isCurrent()) || !root.contains(placeholder)) {
+      return;
+    }
+    if (response.status === "stale-vault" || response.vaultId !== options.expectedVaultId) {
+      markNoteEmbedUnavailable(
+        host,
+        label,
+        "stale-vault",
+        "The active vault changed before this embedded note finished loading.",
+      );
+      continue;
+    }
+    if (response.status === "unavailable") {
+      markNoteEmbedUnavailable(host, label, response.reason, response.message);
+      continue;
+    }
+    const responseIdentity = noteEmbedIdentity(response.path, response.subpath);
+    if (ancestors.has(responseIdentity)) {
+      markNoteEmbedUnavailable(
+        host,
+        label,
+        "cycle",
+        `Embedding ${response.path} here would create a recursive note cycle.`,
+      );
+      continue;
+    }
+    if (budget.noteEmbedBytes + response.contentBytes > maxPreviewNoteEmbedBytes) {
+      markNoteEmbedUnavailable(
+        host,
+        label,
+        "preview-limit",
+        "This reading view reached its 8 MiB embedded-note budget.",
+      );
+      continue;
+    }
+    budget.noteEmbedBytes += response.contentBytes;
+    const { body, embed } = createNoteEmbed(placeholder, response);
+    body.append(
+      addPreviewSourceControls(renderMarkdownPreview(response.content), {
+        sourceNotePath: response.path,
+        lineOffset: response.startLine - 1,
+      }),
+    );
+    options.decorateLinks(body, response.links, response.path);
+    host.replaceWith(embed);
+    await hydrateNoteEmbedTree(
+      body,
+      response.path,
+      depth + 1,
+      new Set([...ancestors, responseIdentity]),
+      budget,
+      options,
+    );
+  }
+}
+
+export async function hydrateMarkdownPreview(
+  root: HTMLElement,
+  options: PreviewNoteEmbedHydrationOptions,
+): Promise<void> {
+  await hydrateNoteEmbedTree(
+    root,
+    options.sourceNotePath,
+    0,
+    new Set([noteEmbedIdentity(options.sourceNotePath, null)]),
+    createPreviewHydrationBudget(),
+    options,
+  );
+}
+
 export function renderMarkdownPreview(source: string): DocumentFragment {
   const html = markdown.render(maskFrontmatter(source));
   const fragment = DOMPurify.sanitize(html, sanitizeConfig);
@@ -369,22 +664,38 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
   return fragment;
 }
 
-export function addPreviewSourceControls(fragment: DocumentFragment): DocumentFragment {
+export interface PreviewSourceControlOptions {
+  sourceNotePath?: string;
+  lineOffset?: number;
+}
+
+export function addPreviewSourceControls(
+  fragment: DocumentFragment,
+  options: PreviewSourceControlOptions = {},
+): DocumentFragment {
+  const lineOffset = options.lineOffset ?? 0;
   for (const element of [...fragment.children]) {
     const mappedElement = element.hasAttribute("data-source-line")
       ? element
       : element.querySelector<HTMLElement>("[data-source-line]");
-    const line = Number.parseInt(mappedElement?.getAttribute("data-source-line") ?? "", 10);
-    if (!Number.isSafeInteger(line) || line < 1) {
+    const fragmentLine = Number.parseInt(mappedElement?.getAttribute("data-source-line") ?? "", 10);
+    if (!Number.isSafeInteger(fragmentLine) || fragmentLine < 1) {
       continue;
     }
-    const wrapper = document.createElement("section");
+    const line = fragmentLine + lineOffset;
+    const wrapper = fragment.ownerDocument.createElement("section");
     wrapper.className = "preview-block";
     wrapper.dataset.sourceLine = String(line);
-    const sourceButton = document.createElement("button");
+    if (options.sourceNotePath) {
+      wrapper.dataset.sourcePath = options.sourceNotePath;
+    }
+    const sourceButton = fragment.ownerDocument.createElement("button");
     sourceButton.type = "button";
     sourceButton.className = "preview-source-action";
     sourceButton.dataset.sourceLine = String(line);
+    if (options.sourceNotePath) {
+      sourceButton.dataset.sourcePath = options.sourceNotePath;
+    }
     sourceButton.ariaLabel = `Edit source at line ${line}`;
     sourceButton.title = `Edit source at line ${line}`;
     sourceButton.textContent = String(line);
