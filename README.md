@@ -167,8 +167,12 @@ than a development server. A fresh package opens an external, read-only demo vau
 license beside the application resources, rejects forged demo-vault mutations in the backend, and
 ignores development-only vault overrides. The package checks launch the AppImage end to end,
 inspect the RPM metadata and payload, and write SHA-256 checksums. A separate proof compares two
-independent unpacked application trees and normalized archives byte for byte. These are contributor
-artifacts, not a signed public release.
+independent unpacked application trees and normalized archives byte for byte. Native macOS ARM64
+ZIP and DMG packages have also passed executable, architecture, bundle, resource, archive, disk
+image, and update-metadata verification on an M4 Mac. Pinned native CI and a manual fail-closed
+signing workflow now cover Linux, macOS ARM64 and Intel, and Windows x64. The Intel Mac and Windows
+lanes still need their first hosted run. These are contributor artifacts, not a signed public
+release.
 
 ## Product promises
 

@@ -260,6 +260,10 @@ Exit gate: selected high-value plugins complete named workflows against public f
       AppImage end-to-end smoke coverage, RPM payload inspection, and installed-RPM verification.
 - [x] Reproducible unpacked Linux application trees and normalized tar.xz archives, with exact file,
       symlink, mode, size, and SHA-256 manifests from two independent builds.
+- [x] Native macOS ARM64 ZIP and DMG packaging with executable, architecture, bundle, resource,
+      archive, disk-image, update-metadata, and checksum verification on an M4 Mac.
+- [ ] Complete the first pinned hosted Intel macOS and Windows installer lifecycle runs after the
+      public repository exists.
 - [ ] Signed Windows, macOS, and Linux installers; native-container reproducibility; notarization;
       automatic updates; rollback; crash recovery; opt-in diagnostics; and tested upgrade and
       downgrade paths.

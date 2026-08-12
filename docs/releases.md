@@ -1,8 +1,9 @@
 # Release engineering
 
-Threadleaf is pre-alpha. The current package lane creates unsigned Linux x64 contributor artifacts,
-not a supported public release. Windows and macOS configuration is present for development, but
-those native artifacts are not yet release-gated, signed, or notarized.
+Threadleaf is pre-alpha. Native contributor lanes create unsigned Linux x64, macOS ARM64 and x64,
+and Windows x64 artifacts. These are installability and package-integrity proofs, not supported
+public releases. A separate manual workflow fails closed unless Windows signing and Apple Developer
+ID plus notarization credentials are present. Nothing publishes automatically.
 
 ## Linux artifacts
 
@@ -27,11 +28,86 @@ This proves reproducibility of the unpacked application and normalized archive. 
 claim bit-for-bit reproducibility of the AppImage or RPM containers, whose builder metadata and
 native packaging toolchains still need deterministic release work.
 
+## macOS artifacts
+
+Run the command matching the native machine:
+
+```sh
+pnpm run pack:mac:arm64
+THREADLEAF_PACKAGE_ARCH=arm64 pnpm run test:macos-package
+```
+
+or:
+
+```sh
+pnpm run pack:mac:x64
+THREADLEAF_PACKAGE_ARCH=x64 pnpm run test:macos-package
+```
+
+The verifier runs the packaged executable, checks its Mach-O architecture, bundle identifier,
+version, external demo vault, license, application archive, and GitHub update provider. It fully
+tests the ZIP, verifies the DMG checksum, recomputes every update-metadata size and SHA-512 digest,
+and writes SHA-256 checksums. The ARM64 lane has passed on an M4 Mac. Intel packaging is configured
+for its native hosted runner and still needs its first hosted run.
+
+Contributor macOS packages explicitly disable identity discovery and hardened runtime because they
+are unsigned. This makes the boundary visible: Gatekeeper should reject them. A release candidate
+instead uses a universal binary, requires a Developer ID Application signature, enables hardened
+runtime, submits the app through Apple's notary service, validates the stapled ticket, and requires
+Gatekeeper assessment to pass.
+
+## Windows artifacts
+
+On native x64 Windows:
+
+```powershell
+pnpm run pack:windows
+pnpm run test:windows-package
+```
+
+The verifier runs the unpacked application, expands and runs the ZIP, silently installs the NSIS
+package into an isolated temporary directory, runs that installed executable, uninstalls it, and
+requires the installation directory to disappear. It also checks the external demo and license,
+recomputes update-metadata sizes and SHA-512 digests, inspects Authenticode state, and writes
+SHA-256 checksums. Linux can cross-build the Windows ZIP, but NSIS requires Wine there, so the real
+installer gate intentionally runs on native Windows. That hosted gate is configured but has not yet
+run because this repository has no public remote.
+
+## Hosted native CI
+
+`.github/workflows/ci.yml` runs the complete source gate and native package verifier on Ubuntu
+24.04, Windows Server 2025, macOS 15 ARM64, and macOS 15 Intel. Every third-party action is pinned to
+an immutable commit, repository authority is read-only, jobs have explicit timeouts, and artifacts
+expire after 14 days. A repository test parses both workflow files and rejects mutable or unreviewed
+action references. The same workflows also pass `actionlint` 1.7.12 locally.
+
+The CI workflow can run on pull requests, pushes to `main`, or manual dispatch. It never signs,
+publishes, or receives release credentials.
+
+## Signed release candidate
+
+`.github/workflows/release.yml` can run only through manual dispatch against an existing tag that
+exactly matches `v<package version>`. Its `publish` input defaults to `false`. When false, it builds
+and retains candidate artifacts in Actions without changing a GitHub release. When explicitly set
+to true, it attests every artifact and creates or updates a draft release only after every native
+gate passes.
+
+The signed lanes require these repository secrets:
+
+- `MAC_CSC_LINK` and `MAC_CSC_KEY_PASSWORD` for the Developer ID Application certificate.
+- `APPLE_API_KEY_BASE64`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` for notarization.
+- `WINDOWS_CSC_LINK` and `WINDOWS_CSC_KEY_PASSWORD` for the Authenticode certificate.
+
+Missing credentials fail before packaging. macOS `forceCodeSigning`, notarization, code-signature,
+stapling, and Gatekeeper checks all fail closed. Windows `forceCodeSigning` and Authenticode checks
+do the same. Linux artifacts are reproducible and provenance-attested in this workflow, but Linux
+native-container signing remains an open release gate.
+
 ## Build and verify
 
 The Linux lane requires Node.js 22 or newer, pnpm, Electron's Linux runtime dependencies,
 `xvfb-run`, `rpm`, and the RPM build tools. Fedora 44 also needs `libxcrypt-compat` for the current
-RPM toolchain.
+RPM toolchain. Hosted CI installs the FUSE 2 compatibility library and runs the exact AppImage.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -81,7 +157,7 @@ entry validation must also exit successfully.
 
 ## Remaining release gates
 
-Public releases still require platform-native verification on Windows and macOS, signing authority,
-macOS notarization, trusted update metadata, upgrade and downgrade tests, rollback, and published
-support and security-response procedures. Until those gates pass, every local package remains
-clearly labeled pre-alpha and unsigned.
+Public releases still require the first hosted Intel macOS and Windows runs, real signing authority,
+a successful signed release rehearsal, Linux native-container signing, secure in-app update UX,
+upgrade and downgrade tests, rollback, and published support and security-response procedures.
+Until those gates pass, every local package remains clearly labeled pre-alpha and unsigned.

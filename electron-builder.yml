@@ -25,6 +25,12 @@ compression: normal
 npmRebuild: false
 removePackageScripts: true
 
+publish:
+  provider: github
+  owner: maherr
+  repo: threadleaf
+  releaseType: draft
+
 linux:
   category: Office
   executableName: threadleaf
@@ -40,6 +46,7 @@ mac:
   category: public.app-category.productivity
   hardenedRuntime: true
   icon: build/icon.svg
+  notarize: true
   target:
     - dmg
     - zip
