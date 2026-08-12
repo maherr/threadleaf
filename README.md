@@ -106,7 +106,21 @@ failures without hiding the rest of the inventory. Before enablement, each packa
 declared Obsidian API baseline, desktop-only flag, standard bundled-dependency model, and measured
 compatibility evidence. Evidence is exact to the tested plugin version: Excalidraw 2.25.3 reports
 its named level 4 workflows, a different release remains unverified, and an unknown plugin starts
-at discovered level 0. Startup plugin safe mode preserves the saved
+at discovered level 0. The same page searches the public compatibility registry without downloading
+plugin code. Opening Review fetches one exact GitHub release plus its repository license into
+private, expiring staging and displays the pinned version, source, retained license, and complete
+SHA-256 evidence before any vault write. Apply first removes the plugin from Threadleaf's enabled
+set and unloads its runtime. Installs, updates, reinstalls, rollbacks, uninstalls, and restores all
+remain disabled until separately enabled. Updates preserve package data, rollback restores reviewed
+code assets while retaining current data, and uninstall keeps a complete private recovery snapshot.
+Managed code, manifest, stylesheet, receipt, and license bytes are rechecked before every load;
+changed bytes are visibly blocked until a reviewed reinstall. Every package mutation has a durable
+private transaction journal and up to five retained package versions. Restart recovery either
+restores the exact prior directory and private metadata or completes cleanup for an already
+committed operation. The current source adapter reads the public `obsidian-releases` registry at
+runtime but does not redistribute it or represent that unlicensed repository as Threadleaf's future
+open directory. The source interface and review protocol are replaceable open code.
+Startup plugin safe mode preserves the saved
 selection while loading no community code or CSS. The compatibility host remains an explicitly
 trusted desktop runtime in a separate transient Electron session with Node integration, a
 browser `connect-src 'none'` policy, denied browser permissions, blocked popups and
@@ -223,6 +237,11 @@ is the default for a vault with no saved Threadleaf plugin preference. Turn it o
 packages you trust. Threadleaf persists that selection outside the vault and reloads it on the next
 start. Start with `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins` to suppress every community plugin
 bundle and stylesheet for that process while keeping the catalog and saved selection visible.
+Search the Community package index to inspect metadata. Review install downloads a bounded exact
+release into private staging and shows the full hashes and retained license. Only Apply reviewed
+change writes the package. Review update, Review reinstall, Uninstall, and Review restore use the
+same two-step contract. Every applied package stays disabled, and any later managed-byte change
+locks its enable control until another reviewed install.
 When a loaded plugin registers its own settings tab, an Options control opens that unchanged tab in
 the compatibility surface. Closing it runs the plugin's normal settings cleanup and save lifecycle.
 

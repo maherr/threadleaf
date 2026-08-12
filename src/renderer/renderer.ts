@@ -36,6 +36,12 @@ import {
   shortcutTargetForEvent,
 } from "../shared/key-bindings";
 import type { ObsidianMigrationPreview } from "../shared/migration";
+import type {
+  ManagedPluginPackageSummary,
+  PluginPackageIndexSnapshot,
+  PluginPackagePreviewRequest,
+  PluginPackageReview,
+} from "../shared/plugin-packages";
 import {
   createDefaultVaultPluginSettings,
   type PluginCatalogSnapshot,
@@ -150,6 +156,12 @@ const elements = {
   pluginReloadAll: getButton("plugin-reload-all"),
   pluginSearch: getInput("plugin-search"),
   pluginList: getElement("plugin-list"),
+  pluginIndexQuery: getInput("plugin-index-query"),
+  pluginIndexSearch: getButton("plugin-index-search"),
+  pluginIndexSource: getElement("plugin-index-source"),
+  pluginIndexList: getElement("plugin-index-list"),
+  pluginRemovedPanel: getElement("plugin-removed-panel"),
+  pluginRemovedList: getElement("plugin-removed-list"),
   pluginStatus: getElement("plugin-status"),
   pluginWarnings: getElement("plugin-warnings"),
   migrationState: getElement("migration-state"),
@@ -197,6 +209,18 @@ const elements = {
   deleteNoteTrashPath: getElement("delete-note-trash-path"),
   deleteNoteImpactCopy: getElement("delete-note-impact-copy"),
   deleteNoteVault: getElement("delete-note-vault"),
+  pluginPackageReviewDialog: getDialog("plugin-package-review-dialog"),
+  pluginPackageReviewOperation: getElement("plugin-package-review-operation"),
+  pluginPackageReviewTitle: getElement("plugin-package-review-title"),
+  pluginPackageReviewSummary: getElement("plugin-package-review-summary"),
+  pluginPackageFacts: getElement("plugin-package-facts"),
+  pluginPackageAssets: getElement("plugin-package-assets"),
+  pluginPackageLicense: getElement("plugin-package-license"),
+  pluginPackageWarnings: getElement("plugin-package-warnings"),
+  pluginPackageReviewError: getElement("plugin-package-review-error"),
+  pluginPackageReviewClose: getButton("plugin-package-review-close"),
+  pluginPackageReviewCancel: getButton("plugin-package-review-cancel"),
+  pluginPackageReviewApply: getButton("plugin-package-review-apply"),
   toast: getElement("toast"),
 };
 
@@ -351,6 +375,10 @@ let pluginRequest = 0;
 let pluginMessage = "Discovering installed plugins in this vault.";
 let pluginMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let lastPluginWarning = "";
+let pluginPackageIndex: PluginPackageIndexSnapshot | null = null;
+let pluginPackageReview: PluginPackageReview | null = null;
+let pluginPackageRequest = 0;
+let pluginPackageRestoreFocus: HTMLElement | null = null;
 let migrationPreview: ObsidianMigrationPreview | null = null;
 let migrationBusy = false;
 let migrationRequest = 0;
@@ -2284,6 +2312,254 @@ async function reloadPlugins(): Promise<void> {
   );
 }
 
+function formatPackageBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KiB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function packageOperationLabel(operation: PluginPackageReview["operation"]): string {
+  return {
+    install: "Install",
+    update: "Update",
+    reinstall: "Reinstall",
+    uninstall: "Uninstall",
+    rollback: "Roll back",
+  }[operation];
+}
+
+function pluginPackageErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/^Error invoking remote method '[^']+': Error: /u, "");
+}
+
+async function searchOpenPluginIndex(): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId || pluginBusy) {
+    return;
+  }
+  const request = ++pluginPackageRequest;
+  pluginBusy = true;
+  pluginMessage = "Reading the public compatibility registry…";
+  pluginMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.searchPluginPackages(
+      vaultId,
+      elements.pluginIndexQuery.value,
+    );
+    if (request !== pluginPackageRequest || vaultId !== currentSnapshot?.vault.id) {
+      return;
+    }
+    if (response.status === "stale-vault") {
+      pluginMessage = "The active vault changed before the registry search completed.";
+      return;
+    }
+    pluginPackageIndex = response.index;
+    pluginMessage = `${response.index.results.length} registry result${response.index.results.length === 1 ? "" : "s"} ready for metadata review.`;
+    pluginMessageKind = "saved";
+  } catch (error) {
+    if (request === pluginPackageRequest) {
+      pluginMessage = pluginPackageErrorMessage(error);
+      pluginMessageKind = "error";
+    }
+  } finally {
+    if (request === pluginPackageRequest) {
+      pluginBusy = false;
+      renderSettings();
+      renderPaletteResults();
+    }
+  }
+}
+
+function appendPackageFact(label: string, value: string): void {
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const description = document.createElement("dd");
+  description.textContent = value;
+  elements.pluginPackageFacts.append(term, description);
+}
+
+function openPluginPackageReview(review: PluginPackageReview): void {
+  pluginPackageReview = review;
+  pluginPackageRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  elements.pluginPackageReviewOperation.textContent = `${packageOperationLabel(review.operation)} review`;
+  elements.pluginPackageReviewTitle.textContent = review.manifest?.name ?? review.pluginId;
+  elements.pluginPackageReviewSummary.textContent =
+    review.operation === "uninstall"
+      ? `Remove ${review.pluginId} ${review.installedVersion ?? ""} after retaining a recoverable snapshot.`
+      : `${packageOperationLabel(review.operation)} ${review.pluginId} from ${review.installedVersion ?? "not installed"} to ${review.targetVersion ?? "removed"}.`;
+  elements.pluginPackageFacts.replaceChildren();
+  appendPackageFact("Plugin", review.pluginId);
+  appendPackageFact("Current", review.installedVersion ?? "Not installed");
+  appendPackageFact("Target", review.targetVersion ?? "Removed");
+  appendPackageFact("Repository", review.repository ?? "Local retained package");
+  appendPackageFact("Review expires", new Date(review.expiresAt).toLocaleString());
+  if (review.indexSha256) {
+    appendPackageFact("Index SHA-256", review.indexSha256);
+  }
+
+  elements.pluginPackageAssets.replaceChildren();
+  if (review.assets.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = "No new executable asset will be installed.";
+    elements.pluginPackageAssets.append(empty);
+  } else {
+    for (const asset of review.assets) {
+      const row = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = asset.filename;
+      const size = document.createElement("span");
+      size.textContent = formatPackageBytes(asset.size);
+      const hash = document.createElement("code");
+      hash.textContent = asset.sha256;
+      row.append(name, size, hash);
+      elements.pluginPackageAssets.append(row);
+    }
+  }
+  elements.pluginPackageLicense.textContent = review.license
+    ? `${review.license.spdxId} · ${review.license.name} · ${formatPackageBytes(review.license.size)} · SHA-256 ${review.license.sha256}`
+    : review.operation === "uninstall"
+      ? "The existing directory is retained byte-for-byte in rollback history."
+      : "No retained license is available for this local rollback snapshot.";
+  elements.pluginPackageWarnings.replaceChildren();
+  for (const warning of review.warnings) {
+    const item = document.createElement("li");
+    item.textContent = warning;
+    elements.pluginPackageWarnings.append(item);
+  }
+  elements.pluginPackageReviewError.hidden = true;
+  elements.pluginPackageReviewError.textContent = "";
+  elements.pluginPackageReviewApply.disabled = false;
+  elements.pluginPackageReviewCancel.disabled = false;
+  elements.pluginPackageReviewClose.disabled = false;
+  if (!elements.pluginPackageReviewDialog.open) {
+    elements.pluginPackageReviewDialog.showModal();
+  }
+  elements.pluginPackageReviewClose.focus();
+}
+
+async function previewPluginPackage(requestValue: PluginPackagePreviewRequest): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId || pluginBusy) {
+    return;
+  }
+  const request = ++pluginPackageRequest;
+  pluginBusy = true;
+  pluginMessage = `Preparing an exact ${requestValue.action} review for ${requestValue.pluginId}…`;
+  pluginMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.previewPluginPackage(vaultId, requestValue);
+    if (request !== pluginPackageRequest || vaultId !== currentSnapshot?.vault.id) {
+      return;
+    }
+    if (response.status === "stale-vault") {
+      pluginMessage = "The active vault changed before package review completed.";
+      return;
+    }
+    pluginMessage = `${packageOperationLabel(response.review.operation)} review is ready. No vault bytes changed.`;
+    pluginMessageKind = response.review.warnings.length > 0 ? "warning" : "saved";
+    openPluginPackageReview(response.review);
+  } catch (error) {
+    if (request === pluginPackageRequest) {
+      pluginMessage = pluginPackageErrorMessage(error);
+      pluginMessageKind = "error";
+    }
+  } finally {
+    if (request === pluginPackageRequest) {
+      pluginBusy = false;
+      renderSettings();
+      renderPaletteResults();
+    }
+  }
+}
+
+async function closePluginPackageReview(restoreFocus = true): Promise<void> {
+  const review = pluginPackageReview;
+  if (!elements.pluginPackageReviewDialog.open || pluginBusy) {
+    return;
+  }
+  pluginPackageReview = null;
+  elements.pluginPackageReviewDialog.close();
+  if (review && currentSnapshot?.vault.id === review.vaultId) {
+    await window.threadleaf
+      .cancelPluginPackageReview(review.vaultId, review.reviewId)
+      .catch(() => undefined);
+  }
+  const restoreTarget = pluginPackageRestoreFocus;
+  pluginPackageRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function applyPluginPackageReview(): Promise<void> {
+  const review = pluginPackageReview;
+  const vaultId = currentSnapshot?.vault.id;
+  if (!review || !vaultId || review.vaultId !== vaultId || pluginBusy) {
+    return;
+  }
+  const request = ++pluginPackageRequest;
+  pluginBusy = true;
+  elements.pluginPackageReviewApply.disabled = true;
+  elements.pluginPackageReviewCancel.disabled = true;
+  elements.pluginPackageReviewClose.disabled = true;
+  elements.pluginPackageReviewError.hidden = true;
+  pluginMessage = `Applying the reviewed ${review.operation} while keeping ${review.pluginId} disabled…`;
+  pluginMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.applyPluginPackage(vaultId, review.reviewId);
+    if (request !== pluginPackageRequest || vaultId !== currentSnapshot?.vault.id) {
+      return;
+    }
+    if (response.status === "stale-vault") {
+      throw new Error("The active vault changed before the reviewed package could be applied.");
+    }
+    applySettingsSnapshot(response.settings);
+    render(response.snapshot);
+    applyPluginCatalog(response.catalog);
+    pluginPackageIndex = null;
+    pluginPackageReview = null;
+    elements.pluginPackageReviewDialog.close();
+    pluginMessage = `${response.outcome.pluginId} ${response.outcome.operation} completed and remains disabled.`;
+    pluginMessageKind = response.catalog.warnings.length > 0 ? "warning" : "saved";
+    showToast(`${response.outcome.pluginId} ${response.outcome.operation} completed disabled.`);
+    migrationPreview = null;
+    void refreshMigrationPreview("Migration preview refreshed after the package change.");
+  } catch (error) {
+    if (request === pluginPackageRequest) {
+      const message = `${pluginPackageErrorMessage(error)} Review the exact package again before another apply.`;
+      pluginPackageReview = null;
+      pluginMessage = message;
+      pluginMessageKind = "error";
+      elements.pluginPackageReviewError.textContent = message;
+      elements.pluginPackageReviewError.hidden = false;
+    }
+  } finally {
+    if (request === pluginPackageRequest) {
+      pluginBusy = false;
+      if (pluginPackageReview) {
+        elements.pluginPackageReviewApply.disabled = false;
+        elements.pluginPackageReviewCancel.disabled = false;
+        elements.pluginPackageReviewClose.disabled = false;
+      } else if (elements.pluginPackageReviewDialog.open) {
+        elements.pluginPackageReviewApply.disabled = true;
+        elements.pluginPackageReviewCancel.disabled = false;
+        elements.pluginPackageReviewClose.disabled = false;
+      }
+      renderSettings();
+      renderPaletteResults();
+    }
+  }
+}
+
 async function refreshMigrationPreview(successMessage?: string): Promise<void> {
   const vaultId = currentSnapshot?.vault.id;
   if (!vaultId) {
@@ -2599,6 +2875,121 @@ function renderMigrationSettings(): void {
   }
 }
 
+function packageActionButton(
+  label: string,
+  ariaLabel: string,
+  request: PluginPackagePreviewRequest,
+  disabled: boolean,
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary-button plugin-package-action";
+  button.textContent = label;
+  button.ariaLabel = ariaLabel;
+  button.disabled = disabled;
+  button.addEventListener("click", () => void previewPluginPackage(request));
+  return button;
+}
+
+function renderOpenPluginIndex(vaultId: string | null, disabled: boolean): void {
+  const index = pluginPackageIndex?.vaultId === vaultId ? pluginPackageIndex : null;
+  elements.pluginIndexQuery.disabled = disabled;
+  elements.pluginIndexSearch.disabled = disabled;
+  elements.pluginIndexSearch.textContent = pluginBusy ? "Working…" : "Search index";
+  elements.pluginIndexSource.textContent = index
+    ? `Verified ${index.sourceSha256.slice(0, 12)}…`
+    : "Not loaded";
+  elements.pluginIndexSource.title = index
+    ? `${index.sourceUrl}\nSHA-256 ${index.sourceSha256}`
+    : "Search to read the public registry.";
+  elements.pluginIndexList.replaceChildren();
+  if (!index) {
+    const empty = document.createElement("p");
+    empty.className = "plugin-empty";
+    empty.textContent = "Search the public registry to review installable packages.";
+    elements.pluginIndexList.append(empty);
+    return;
+  }
+  for (const plugin of index.results) {
+    const row = document.createElement("article");
+    row.className = "plugin-index-row";
+    row.dataset.pluginId = plugin.id;
+    const copy = document.createElement("span");
+    copy.className = "plugin-copy";
+    const nameLine = document.createElement("span");
+    nameLine.className = "plugin-name-line";
+    const name = document.createElement("strong");
+    name.textContent = plugin.name;
+    const id = document.createElement("code");
+    id.textContent = plugin.id;
+    nameLine.append(name, id);
+    const description = document.createElement("small");
+    description.textContent = plugin.description;
+    const source = document.createElement("small");
+    source.className = "plugin-author";
+    source.textContent = `${plugin.author} · ${plugin.repository}`;
+    copy.append(nameLine, description, source);
+    const state = document.createElement("span");
+    state.className = "plugin-index-state";
+    state.textContent = plugin.installedVersion
+      ? `Installed ${plugin.installedVersion}${plugin.managed ? " · managed" : ""}`
+      : "Not installed";
+    const review = packageActionButton(
+      plugin.installedVersion ? "Review update" : "Review install",
+      `${plugin.installedVersion ? "Review an update for" : "Review installation of"} ${plugin.name}`,
+      { action: "install", pluginId: plugin.id },
+      disabled,
+    );
+    const controls = document.createElement("span");
+    controls.className = "plugin-index-controls";
+    controls.append(state, review);
+    row.append(copy, controls);
+    elements.pluginIndexList.append(row);
+  }
+  if (index.results.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "plugin-empty";
+    empty.textContent = `No registry plugins match “${index.query}”.`;
+    elements.pluginIndexList.append(empty);
+  }
+}
+
+function renderRemovedPackages(
+  managedPackages: ManagedPluginPackageSummary[],
+  disabled: boolean,
+): void {
+  const removed = managedPackages.filter(
+    (managed) => managed.currentVersion === null && managed.history.length > 0,
+  );
+  elements.pluginRemovedPanel.hidden = removed.length === 0;
+  elements.pluginRemovedList.replaceChildren();
+  for (const managed of removed) {
+    const row = document.createElement("article");
+    row.className = "plugin-row plugin-removed-row";
+    row.dataset.pluginId = managed.pluginId;
+    const copy = document.createElement("span");
+    copy.className = "plugin-copy";
+    const nameLine = document.createElement("span");
+    nameLine.className = "plugin-name-line";
+    const name = document.createElement("strong");
+    name.textContent = managed.pluginId;
+    const version = document.createElement("code");
+    version.textContent = managed.history[0]?.version ?? "unknown";
+    nameLine.append(name, version);
+    const detail = document.createElement("small");
+    detail.textContent = `${managed.history.length} retained rollback package${managed.history.length === 1 ? "" : "s"}; no package is currently installed.`;
+    copy.append(nameLine, detail);
+    const restore = packageActionButton(
+      "Review restore",
+      `Review restoring ${managed.pluginId}`,
+      { action: "rollback", pluginId: managed.pluginId },
+      disabled,
+    );
+    row.append(copy, restore);
+    elements.pluginRemovedList.append(row);
+  }
+}
+
 function renderPluginSettings(): void {
   const vaultId = currentSnapshot?.vault.id ?? null;
   const catalog = pluginCatalog?.vaultId === vaultId ? pluginCatalog : null;
@@ -2607,6 +2998,8 @@ function renderPluginSettings(): void {
   const restricted = preference.compatibilityMode === "restricted";
   const disabled = pluginBusy || !vaultId;
   const installed = catalog?.plugins ?? [];
+  const managedPackages = catalog?.managedPackages ?? [];
+  const managedById = new Map(managedPackages.map((managed) => [managed.pluginId, managed]));
 
   elements.pluginModeState.textContent = safeMode
     ? "Safe mode"
@@ -2621,6 +3014,7 @@ function renderPluginSettings(): void {
   elements.pluginInstalledCount.textContent = `${installed.length} installed`;
   elements.pluginReloadAll.disabled = disabled || safeMode || restricted;
   elements.pluginSearch.disabled = disabled;
+  renderOpenPluginIndex(vaultId, disabled);
 
   const query = elements.pluginSearch.value.trim().toLocaleLowerCase("en-US");
   const visiblePlugins = installed.filter((plugin) =>
@@ -2646,6 +3040,7 @@ function renderPluginSettings(): void {
     if (plugin.error) {
       row.title = plugin.error;
     }
+    const managed = managedById.get(plugin.id);
 
     const copy = document.createElement("span");
     copy.className = "plugin-copy";
@@ -2686,6 +3081,14 @@ function renderPluginSettings(): void {
     dependencies.className = "plugin-preflight-badge";
     dependencies.textContent = "Deps: bundled model";
     preflight.append(evidence, apiBaseline, platform, dependencies);
+    if (managed) {
+      const integrity = document.createElement("span");
+      integrity.className = "plugin-preflight-badge";
+      integrity.dataset.evidence = managed.integrity === "verified" ? "verified" : "invalid";
+      integrity.textContent =
+        managed.integrity === "verified" ? "◆ SHA-256 verified" : "× Managed bytes changed";
+      preflight.append(integrity);
+    }
     const compatibilityEvidence = document.createElement("small");
     compatibilityEvidence.className = "plugin-compatibility-evidence";
     compatibilityEvidence.textContent = `Evidence: ${plugin.compatibility.summary}`;
@@ -2696,6 +3099,38 @@ function renderPluginSettings(): void {
 
     const controls = document.createElement("span");
     controls.className = "plugin-row-controls";
+    const packageControls = document.createElement("span");
+    packageControls.className = "plugin-package-controls";
+    if (plugin.packageState !== "invalid" || managed?.currentVersion) {
+      packageControls.append(
+        packageActionButton(
+          managed?.integrity === "changed" ? "Review reinstall" : "Review update",
+          managed?.integrity === "changed"
+            ? `Review reinstalling exact package bytes for ${plugin.name}`
+            : `Review an exact package update for ${plugin.name}`,
+          { action: "install", pluginId: plugin.id },
+          disabled,
+        ),
+      );
+    }
+    if ((managed?.history.length ?? 0) > 0) {
+      packageControls.append(
+        packageActionButton(
+          "Roll back",
+          `Review rolling back ${plugin.name}`,
+          { action: "rollback", pluginId: plugin.id },
+          disabled,
+        ),
+      );
+    }
+    packageControls.append(
+      packageActionButton(
+        "Uninstall",
+        `Review uninstalling ${plugin.name}`,
+        { action: "uninstall", pluginId: plugin.id },
+        disabled,
+      ),
+    );
     const selected = preference.enabledPluginIds.includes(plugin.id);
     const runtimePlugin = (currentSnapshot?.plugins ?? []).find(
       (candidate) => candidate.id === plugin.id,
@@ -2703,23 +3138,25 @@ function renderPluginSettings(): void {
     const runtimeState = document.createElement("span");
     runtimeState.className = "plugin-runtime-state";
     runtimeState.textContent =
-      plugin.packageState === "invalid"
-        ? "Invalid package"
-        : safeMode
-          ? selected
-            ? "Selected · safe"
-            : "Disabled"
-          : restricted
+      managed?.integrity === "changed"
+        ? "Integrity changed"
+        : plugin.packageState === "invalid"
+          ? "Invalid package"
+          : safeMode
             ? selected
-              ? "Selected"
+              ? "Selected · safe"
               : "Disabled"
-            : runtimePlugin?.state === "failed"
-              ? "Load failed"
-              : selected
-                ? runtimePlugin?.state === "loaded"
-                  ? `Active · L${runtimePlugin.compatibilityLevel}`
-                  : "Enabled"
-                : "Disabled";
+            : restricted
+              ? selected
+                ? "Selected"
+                : "Disabled"
+              : runtimePlugin?.state === "failed"
+                ? "Load failed"
+                : selected
+                  ? runtimePlugin?.state === "loaded"
+                    ? `Active · L${runtimePlugin.compatibilityLevel}`
+                    : "Enabled"
+                  : "Disabled";
 
     const toggle = document.createElement("label");
     toggle.className = "plugin-toggle";
@@ -2750,7 +3187,7 @@ function renderPluginSettings(): void {
     options.disabled = disabled || safeMode || restricted || pluginBusy || busy || saving;
     options.ariaLabel = `Open ${plugin.name} options`;
     options.addEventListener("click", () => void activatePluginSettings(plugin.id));
-    controls.append(runtimeState, options, toggle);
+    controls.append(runtimeState, packageControls, options, toggle);
     row.append(copy, controls);
     elements.pluginList.append(row);
   }
@@ -2765,6 +3202,8 @@ function renderPluginSettings(): void {
       : "Plugin catalog is not loaded yet.";
     elements.pluginList.append(empty);
   }
+
+  renderRemovedPackages(managedPackages, disabled);
 
   elements.pluginStatus.textContent = pluginMessage;
   elements.pluginStatus.dataset.kind = pluginMessageKind;
@@ -3402,8 +3841,14 @@ function render(snapshot: RuntimeSnapshot): void {
     appearanceStyle.textContent = "";
     lastAppearanceWarning = "";
     pluginRequest += 1;
+    pluginPackageRequest += 1;
     pluginBusy = false;
     pluginCatalog = null;
+    pluginPackageIndex = null;
+    pluginPackageReview = null;
+    if (elements.pluginPackageReviewDialog.open) {
+      elements.pluginPackageReviewDialog.close();
+    }
     pluginStyle.textContent = "";
     lastPluginWarning = "";
     migrationRequest += 1;
@@ -4419,6 +4864,31 @@ elements.pluginModeToggle.addEventListener("click", () => {
 });
 elements.pluginReloadAll.addEventListener("click", () => void reloadPlugins());
 elements.pluginSearch.addEventListener("input", renderPluginSettings);
+elements.pluginIndexSearch.addEventListener("click", () => void searchOpenPluginIndex());
+elements.pluginIndexQuery.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void searchOpenPluginIndex();
+  }
+});
+elements.pluginPackageReviewClose.addEventListener("click", () => {
+  void closePluginPackageReview();
+});
+elements.pluginPackageReviewCancel.addEventListener("click", () => {
+  void closePluginPackageReview();
+});
+elements.pluginPackageReviewApply.addEventListener("click", () => {
+  void applyPluginPackageReview();
+});
+elements.pluginPackageReviewDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  void closePluginPackageReview();
+});
+elements.pluginPackageReviewDialog.addEventListener("click", (event) => {
+  if (event.target === elements.pluginPackageReviewDialog) {
+    void closePluginPackageReview();
+  }
+});
 for (const [input, colorScheme] of [
   [elements.schemeSystem, "system"],
   [elements.schemeLight, "light"],

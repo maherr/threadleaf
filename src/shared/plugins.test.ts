@@ -40,7 +40,7 @@ describe("plugin compatibility settings", () => {
 
   it("rejects malformed manifests and duplicate enabled identifiers", () => {
     expect(() => parsePluginManifest({ id: "../escape", name: "Bad", version: "1" })).toThrow(
-      "lowercase letters",
+      "start with a letter or number",
     );
     expect(() => parsePluginManifest({ id: "valid", name: " ", version: "1" })).toThrow(
       "non-empty name",
@@ -51,6 +51,12 @@ describe("plugin compatibility settings", () => {
         enabledPluginIds: ["fixture", "fixture"],
       }),
     ).toThrow("unique");
+  });
+
+  it("accepts the uppercase, underscore, and dotted identifiers present in the public registry", () => {
+    for (const id of ["DEVONlink-obsidian", "waka_time_box", "scrybble.ink"]) {
+      expect(parsePluginManifest({ id, name: id, version: "1.0.0" }).id).toBe(id);
+    }
   });
 
   it("keeps compatibility evidence exact to the tested plugin version", () => {

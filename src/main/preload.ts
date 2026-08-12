@@ -6,6 +6,7 @@ import type {
   NoteDeleteResponse,
   NoteMoveResponse,
   NoteSaveResponse,
+  PluginPackageApplyResponse,
   PluginSurfaceBounds,
   PluginUpdateResponse,
   RuntimeSnapshot,
@@ -17,6 +18,11 @@ import type {
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
 import type { MigrationPreviewResponse } from "../shared/migration";
+import type {
+  PluginPackageIndexResponse,
+  PluginPackagePreviewRequest,
+  PluginPackagePreviewResponse,
+} from "../shared/plugin-packages";
 import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
 
 const bridge: ThreadleafBridge = {
@@ -32,6 +38,30 @@ const bridge: ThreadleafBridge = {
     ) as Promise<AppearanceUpdateResponse>,
   getPlugins: (expectedVaultId) =>
     ipcRenderer.invoke(ipcChannels.plugins, expectedVaultId) as Promise<PluginCatalogResponse>,
+  searchPluginPackages: (expectedVaultId, query) =>
+    ipcRenderer.invoke(
+      ipcChannels.searchPluginPackages,
+      expectedVaultId,
+      query,
+    ) as Promise<PluginPackageIndexResponse>,
+  previewPluginPackage: (expectedVaultId, request: PluginPackagePreviewRequest) =>
+    ipcRenderer.invoke(
+      ipcChannels.previewPluginPackage,
+      expectedVaultId,
+      request,
+    ) as Promise<PluginPackagePreviewResponse>,
+  applyPluginPackage: (expectedVaultId, reviewId) =>
+    ipcRenderer.invoke(
+      ipcChannels.applyPluginPackage,
+      expectedVaultId,
+      reviewId,
+    ) as Promise<PluginPackageApplyResponse>,
+  cancelPluginPackageReview: (expectedVaultId, reviewId) =>
+    ipcRenderer.invoke(
+      ipcChannels.cancelPluginPackageReview,
+      expectedVaultId,
+      reviewId,
+    ) as Promise<void>,
   setCompatibilityMode: (expectedVaultId, mode: CompatibilityMode) =>
     ipcRenderer.invoke(
       ipcChannels.setCompatibilityMode,

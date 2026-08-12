@@ -10,9 +10,10 @@ tested without conversion:
   plugins/<id>/styles.css
 ```
 
-These files are compatibility input only. Threadleaf does not rewrite, install into, enable, or
-disable packages under `.obsidian/`. Its enabled set and restricted-mode choice live in private
-application data keyed by the vault identity.
+Existing files are read-only compatibility input during discovery and runtime activation.
+Threadleaf changes a package directory only through the separate reviewed package workflow below.
+Its enabled set, restricted-mode choice, package receipts, recovery journals, and retained history
+live in private application data keyed by the vault identity.
 
 ## Discovery is not execution
 
@@ -45,6 +46,47 @@ without an open note, follows Threadleaf's light and dark scheme, persists a cha
 the plugin's normal `saveData` path on close, restores it on reopen, and removes the settings DOM on
 close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
 not implied by those results.
+
+## Reviewed package management
+
+The Community package index uses a replaceable source interface. Its current compatibility adapter
+reads the public
+[`obsidian-releases` registry](https://github.com/obsidianmd/obsidian-releases/blob/master/community-plugins.json)
+at runtime, then obtains `manifest.json`, `main.js`, and optional `styles.css` directly from one
+exact GitHub release tag. It also requires and retains the repository license at that same tag.
+The public registry repository has no declared license, so Threadleaf does not redistribute it or
+describe it as the future Threadleaf-owned open directory. The source adapter, review schema, and
+package manager are AGPL code and can be replaced without changing the vault package format.
+
+Search downloads registry metadata only. Selecting Review downloads bounded release and license
+bytes into private staging for 15 minutes. The review displays the exact version, repository,
+registry digest, release-asset sizes and complete SHA-256 digests, retained license identity and
+digest, and operation warnings. It does not change the vault or load the bundle. Apply is bound to
+that review and refuses to continue if the private staged bytes, installed package tree, or selected
+retained rollback tree changed in the meantime.
+
+Before applying, Threadleaf removes the plugin from its private enabled set and unloads any active
+runtime. Every resulting package remains disabled. The operations have these data rules:
+
+- install creates only the reviewed package and retained receipt and license;
+- update and reinstall replace reviewed code assets while preserving other package files such as
+  `data.json`;
+- rollback restores retained code assets while preserving the current data files;
+- uninstall first retains the complete package directory, including data, in private history; and
+- restore reinstates that retained directory without enabling it.
+
+The manager retains at most five complete prior package versions per plugin. A receipt is stored
+both privately and beside the package. Discovery verifies the exact `manifest.json`, `main.js`,
+optional `styles.css`, receipt, and retained license before managed code is eligible to run. Any
+change marks the package invalid, unloads or excludes it during reconciliation, disables its enable
+control, and requires a new reviewed install.
+
+Every apply has a durable private journal with intent, staged, package-mutated, and
+metadata-committed phases. The old directory and private inventory state remain recoverable until
+the metadata commit is durable. On restart, Threadleaf restores the exact prior package and private
+metadata for an incomplete operation, or keeps the reviewed result and completes cleanup when the
+metadata commit had already finished. First install, update, rollback, uninstall, committed-state,
+final-swap race, and externally changed-byte fixtures exercise this boundary.
 
 ## Pre-enablement report
 
@@ -180,13 +222,19 @@ Safe mode loads no community JavaScript or CSS and disables lifecycle controls f
 Settings still shows installed packages and the saved selected set for diagnosis. Exiting and
 starting normally restores the persisted preference.
 
+Interrupted reviewed package operations recover before catalog discovery. The resulting diagnostic
+states whether Threadleaf restored the previous package and private metadata or completed cleanup
+for an operation whose metadata was already committed. If transaction evidence itself changed,
+recovery fails closed and leaves the changed or unresolved artifacts plus the private journal in
+place for manual review.
+
 ## Remaining work
 
 - Per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
 - Static capability and permission reporting before enablement.
 - Explicit apply, rollback, and conflict handling for reviewed migration candidates.
-- Reviewable install, update, rollback, and uninstall through an open package index.
-- A generated compatibility registry backed by public workflow fixtures.
+- A Threadleaf-owned, open-licensed package and compatibility registry backed by public workflow
+  fixtures.
 - Broader workspace, editor, settings-control, conversion, adapter-mutation, file, and
   metadata APIs.
 - Complete Excalidraw inline wiki-embed, remaining export-format, and cross-application

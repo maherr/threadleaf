@@ -2751,6 +2751,121 @@ button.inspector-item:hover {
   padding-top: 8px;
 }
 
+.plugin-index-panel {
+  display: grid;
+  gap: 10px;
+  padding: 13px 14px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px 3px 10px 3px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent-soft) 46%, transparent),
+      transparent 46%
+    ),
+    var(--surface-raised);
+}
+
+.plugin-index-panel .installed-plugin-heading {
+  padding-top: 0;
+}
+
+.plugin-index-source {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--accent-strong);
+  font: 7px var(--mono);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.plugin-index-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.plugin-index-search label {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink-muted);
+  background: var(--surface-sunken);
+}
+
+.plugin-index-search label:has(input:focus-visible) {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  outline-offset: 1px;
+}
+
+.plugin-index-search label > span {
+  font: 14px var(--mono);
+  text-align: center;
+}
+
+.plugin-index-search input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 9px 0 0;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+  font: 9px var(--mono);
+}
+
+.plugin-index-search .secondary-button {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 8px;
+}
+
+.plugin-index-note {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.plugin-index-list {
+  display: grid;
+  max-height: 284px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.plugin-index-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 11px 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+.plugin-index-row:last-child {
+  border-bottom: 0;
+}
+
+.plugin-index-controls {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.plugin-index-state {
+  color: var(--ink-muted);
+  font: 7px var(--mono);
+  text-transform: uppercase;
+}
+
 .plugin-preflight-explainer {
   display: grid;
   gap: 3px;
@@ -2911,9 +3026,29 @@ button.inspector-item:hover {
 }
 
 .plugin-row-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: center;
+  justify-items: end;
   gap: 9px;
+}
+
+.plugin-runtime-state,
+.plugin-package-controls {
+  grid-column: 1 / -1;
+}
+
+.plugin-package-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.plugin-package-action {
+  min-height: 24px;
+  padding: 0 7px;
+  font-size: 7px;
 }
 
 .plugin-runtime-state {
@@ -3006,6 +3141,24 @@ button.inspector-item:hover {
   text-align: center;
 }
 
+.plugin-removed-panel {
+  display: grid;
+  gap: 6px;
+  padding: 0 10px 7px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-sunken);
+}
+
+.plugin-removed-panel[hidden] {
+  display: none;
+}
+
+.plugin-removed-row {
+  padding-right: 0;
+  padding-left: 0;
+}
+
 .plugin-diagnostics {
   display: grid;
   gap: 5px;
@@ -3043,6 +3196,134 @@ button.inspector-item:hover {
   color: var(--ink-soft);
   background: var(--signal-soft);
   font-size: 8px;
+}
+
+.plugin-package-review-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+.plugin-package-review-shell {
+  max-height: calc(100vh - 34px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.plugin-package-review-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  padding: 4px 22px 18px;
+  overflow-y: auto;
+}
+
+.plugin-package-review-body > p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.plugin-package-review-body section {
+  display: grid;
+  gap: 7px;
+}
+
+.plugin-package-review-body section > strong {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.plugin-package-review-body section > p {
+  overflow-wrap: anywhere;
+  font: 8px / 1.55 var(--mono);
+}
+
+.plugin-package-facts {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 1px 10px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+}
+
+.plugin-package-facts dt,
+.plugin-package-facts dd {
+  min-width: 0;
+  margin: 0;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--line);
+  font: 8px / 1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.plugin-package-facts dt {
+  color: var(--ink-muted);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.plugin-package-facts dd {
+  color: var(--ink);
+}
+
+.plugin-package-assets {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.plugin-package-assets > div {
+  display: grid;
+  grid-template-columns: 95px 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.plugin-package-assets strong,
+.plugin-package-assets span,
+.plugin-package-assets code {
+  font: 8px var(--mono);
+}
+
+.plugin-package-assets span {
+  color: var(--ink-muted);
+  text-align: right;
+}
+
+.plugin-package-assets code {
+  min-width: 0;
+  color: var(--accent-strong);
+  overflow-wrap: anywhere;
+}
+
+.plugin-package-assets > p {
+  margin: 0;
+  padding: 10px 4px;
+  color: var(--ink-muted);
+  font-size: 8px;
+}
+
+.plugin-package-warnings {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-package-warnings li {
+  padding: 7px 9px;
+  border-left: 4px double var(--signal);
+  color: var(--ink-soft);
+  background: var(--signal-soft);
+  font-size: 8px;
+  line-height: 1.45;
 }
 
 .migration-settings {
@@ -3749,6 +4030,10 @@ button.inspector-item:hover {
   color: var(--ink);
   background: var(--signal-soft);
   font-size: 10px;
+}
+
+#plugin-package-review-error {
+  margin: 0;
 }
 
 .move-note-blockers {

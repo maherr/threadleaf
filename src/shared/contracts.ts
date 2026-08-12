@@ -1,6 +1,12 @@
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
 import type { MigrationPreviewResponse } from "./migration";
+import type {
+  PluginPackageApplyOutcome,
+  PluginPackageIndexResponse,
+  PluginPackagePreviewRequest,
+  PluginPackagePreviewResponse,
+} from "./plugin-packages";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 
 export type AppearanceUpdateResponse =
@@ -17,6 +23,16 @@ export type PluginUpdateResponse =
       settings: AppSettingsSnapshot;
       catalog: PluginCatalogSnapshot;
       snapshot: RuntimeSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type PluginPackageApplyResponse =
+  | {
+      status: "updated";
+      settings: AppSettingsSnapshot;
+      catalog: PluginCatalogSnapshot;
+      snapshot: RuntimeSnapshot;
+      outcome: PluginPackageApplyOutcome;
     }
   | { status: "stale-vault"; vaultId: string };
 
@@ -377,6 +393,16 @@ export interface ThreadleafBridge {
     appearance: VaultAppearanceSettings,
   ): Promise<AppearanceUpdateResponse>;
   getPlugins(expectedVaultId: string): Promise<PluginCatalogResponse>;
+  searchPluginPackages(expectedVaultId: string, query: string): Promise<PluginPackageIndexResponse>;
+  previewPluginPackage(
+    expectedVaultId: string,
+    request: PluginPackagePreviewRequest,
+  ): Promise<PluginPackagePreviewResponse>;
+  applyPluginPackage(
+    expectedVaultId: string,
+    reviewId: string,
+  ): Promise<PluginPackageApplyResponse>;
+  cancelPluginPackageReview(expectedVaultId: string, reviewId: string): Promise<void>;
   setCompatibilityMode(
     expectedVaultId: string,
     mode: CompatibilityMode,

@@ -37,6 +37,7 @@ interface VaultPluginLoaderOptions {
   vaultId: string;
   preference: VaultPluginSettings;
   safeMode: boolean;
+  blockedPluginIds?: ReadonlySet<string>;
 }
 
 function errorCode(error: unknown): string | null {
@@ -318,7 +319,11 @@ export async function discoverVaultPlugins(vaultPath: string): Promise<VaultPlug
   const plugins: DiscoveredVaultPlugin[] = [];
   const warnings: string[] = [];
   for (const entry of entries
-    .filter((candidate) => candidate.isDirectory() || candidate.isSymbolicLink())
+    .filter(
+      (candidate) =>
+        !candidate.name.startsWith(".threadleaf-package-") &&
+        (candidate.isDirectory() || candidate.isSymbolicLink()),
+    )
     .sort((left, right) => left.name.localeCompare(right.name, "en-US", { numeric: true }))) {
     if (plugins.length >= maxCatalogEntries) {
       warnings.push(`Only the first ${maxCatalogEntries} installed plugins are shown.`);
@@ -349,6 +354,21 @@ export async function loadVaultPluginCatalog(
 
   if (options.safeMode) {
     warnings.unshift("Plugin safe mode is active. Saved compatibility plugins were not loaded.");
+  }
+
+  for (const pluginId of options.blockedPluginIds ?? []) {
+    const plugin = packagesById.get(pluginId);
+    if (!plugin) {
+      continue;
+    }
+    plugin.summary = {
+      ...plugin.summary,
+      packageState: "invalid",
+      error: "Threadleaf-managed package bytes changed after their recorded SHA-256 review.",
+    };
+    warnings.push(
+      `Managed plugin ${pluginId} changed after installation and was blocked until reviewed again.`,
+    );
   }
 
   for (const pluginId of preference.enabledPluginIds) {
@@ -394,6 +414,7 @@ export async function loadVaultPluginCatalog(
     preference,
     safeMode: options.safeMode,
     plugins: discovery.plugins.map(({ summary }) => summary),
+    managedPackages: [],
     warnings,
     css: cssParts.join("\n\n"),
   };

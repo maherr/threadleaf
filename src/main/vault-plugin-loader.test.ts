@@ -109,6 +109,26 @@ describe("vault plugin loader", () => {
     expect(safe.warnings[0]).toContain("safe mode");
   });
 
+  it("blocks managed packages whose reviewed bytes changed, including their CSS", async () => {
+    await writePlugin("drawing", { css: ".drawing-view { --drawing-ready: 1; }" });
+
+    const catalog = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "f".repeat(64),
+      preference: { compatibilityMode: "enabled", enabledPluginIds: ["drawing"] },
+      safeMode: false,
+      blockedPluginIds: new Set(["drawing"]),
+    });
+
+    expect(catalog.plugins[0]).toMatchObject({
+      id: "drawing",
+      packageState: "invalid",
+      error: expect.stringContaining("SHA-256"),
+    });
+    expect(catalog.css).toBe("");
+    expect(catalog.warnings.join("\n")).toContain("changed after installation");
+  });
+
   it("reports missing, mismatched, and unsafe packages without losing the valid catalog", async () => {
     await writePlugin("valid");
     await writePlugin("mismatch", { manifestId: "another-id" });

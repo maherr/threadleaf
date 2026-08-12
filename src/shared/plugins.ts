@@ -43,6 +43,7 @@ export interface PluginCatalogSnapshot {
   preference: VaultPluginSettings;
   safeMode: boolean;
   plugins: PluginPackageSummary[];
+  managedPackages: import("./plugin-packages").ManagedPluginPackageSummary[];
   warnings: string[];
   css: string;
 }
@@ -56,7 +57,7 @@ export const defaultVaultPluginSettings: Readonly<VaultPluginSettings> = {
   enabledPluginIds: [],
 };
 
-const pluginIdPattern = /^[a-z0-9][a-z0-9-]{0,127}$/;
+const pluginIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 const verifiedPluginWorkflows: Readonly<Record<string, { version: string; workflow: string }>> = {
   "obsidian-excalidraw-plugin": {
@@ -106,7 +107,9 @@ function optionalString(value: unknown, field: string, maxLength: number): strin
 
 export function parsePluginId(value: unknown): string {
   if (typeof value !== "string" || !pluginIdPattern.test(value)) {
-    throw new Error("Plugin identifier must use lowercase letters, numbers, and hyphens.");
+    throw new Error(
+      "Plugin identifier must start with a letter or number and use only letters, numbers, dots, underscores, and hyphens.",
+    );
   }
   return value;
 }

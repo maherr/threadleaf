@@ -154,8 +154,10 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 - [x] Add renderer-wide operation deadlines, forced termination, crash attribution, clean runtime
       replacement, stopped-plugin diagnostics, and explicit reload recovery.
 - [ ] Add per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
-- [ ] Implement reviewable install, update, rollback, and uninstall against an open package index,
-      with exact version pins, integrity checks, retained licenses, and no silent bundle execution.
+- [x] Implement reviewable install, update, rollback, uninstall, and restore through a replaceable
+      package-source interface and public compatibility registry, with exact version pins, full
+      SHA-256 evidence, retained licenses, five-version private history, durable interruption
+      recovery, changed-byte lockout, and no silent bundle execution.
 - [x] Add minimum-app-version, desktop-only, standard bundled-dependency-model, and exact-version
       compatibility-level reporting before a plugin can be enabled.
 - [ ] Add static capability and permission reporting before enablement.

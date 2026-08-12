@@ -230,6 +230,32 @@ only exact-version workflow evidence. A plugin or version without a production-p
 at level 0. Evidence from another release is shown as historical context, not inherited as a
 compatibility claim.
 
+Package acquisition is a separate two-step boundary. A replaceable source adapter currently reads
+the public compatibility registry and exact GitHub release assets, requires a repository license at
+the same release tag, and stages bounded bytes in private application data. Preview is read-only to
+the vault. Apply is bound to the reviewed vault, plugin, version, source digest, asset digests, and
+the complete installed-tree revision observed before review. Rollback is additionally bound to the
+full retained-package tree revision and every reviewed retained asset. The main process removes
+that plugin from the private enabled set and unloads it before any package mutation. No install,
+update, reinstall, rollback, uninstall, or restore operation executes the resulting bundle.
+
+Each apply writes a private transaction journal before creating a transaction-owned staging
+directory under `.obsidian/plugins`. Complete prior package and private metadata snapshots remain
+available through four durable phases: intent, staged, package-mutated, and metadata-committed.
+Directory replacement uses same-parent renames and keeps the old directory at a transaction-owned
+rollback path until private receipt and inventory writes are durable. Startup recovery restores the
+exact pre-operation directory and metadata for an earlier phase when its evidence still matches. A
+metadata-committed journal keeps the reviewed result and only finishes cleanup. Recovery compares
+full deterministic tree digests before moving or removing transaction paths; externally changed
+bytes are preserved and the package remains disabled. Retained rollback history is pruned only
+after commit.
+
+Updates and reinstalls overlay reviewed code assets onto a complete copy of the prior directory, so
+plugin data remains. Rollback overlays retained code and license assets onto current data.
+Uninstall retains the complete directory before removal, and restore can recover it. Both the vault
+receipt and its private counterpart cover the manifest, bundle, optional stylesheet, and retained
+license. A mismatch blocks activation until a new review.
+
 The main process serializes catalog and lifecycle operations so activation cannot race a vault
 switch or another enablement change. Reconciliation unloads runtime instances that are no longer
 selected, then activates each remaining selected package independently. One activation failure is

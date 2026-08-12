@@ -335,7 +335,8 @@
           </nav>
           <p id="settings-description" class="settings-description">
             Preferences stay in Threadleaf's private application data. Vault themes, snippets, and
-            plugin packages are read from <code>.obsidian/</code> without changing it.
+            existing plugin packages are discovered without changes. Package writes require a
+            separate integrity review.
           </p>
         </aside>
 
@@ -546,6 +547,34 @@
               </button>
             </div>
 
+            <section class="plugin-index-panel" aria-labelledby="plugin-index-heading">
+              <header class="installed-plugin-heading">
+                <span>
+                  <strong id="plugin-index-heading">Community package index</strong>
+                  <small>Public registry, exact GitHub release assets, retained license</small>
+                </span>
+                <span class="plugin-index-source" id="plugin-index-source">Not loaded</span>
+              </header>
+              <div class="plugin-index-search">
+                <label for="plugin-index-query">
+                  <span aria-hidden="true">⌕</span>
+                  <input
+                    id="plugin-index-query"
+                    type="search"
+                    placeholder="Search by plugin, author, or repository…"
+                  />
+                </label>
+                <button class="secondary-button" id="plugin-index-search" type="button">
+                  Search index
+                </button>
+              </div>
+              <p class="plugin-index-note">
+                Search reads metadata only. Selecting Review downloads a bounded exact release into
+                private staging; it does not write to the vault or execute code.
+              </p>
+              <div class="plugin-index-list" id="plugin-index-list"></div>
+            </section>
+
             <div class="installed-plugin-heading">
               <span>
                 <strong>Installed plugins</strong>
@@ -565,6 +594,15 @@
               <input id="plugin-search" type="search" placeholder="Search installed plugins…" />
             </label>
             <div class="plugin-list" id="plugin-list"></div>
+            <section class="plugin-removed-panel" id="plugin-removed-panel" hidden>
+              <header class="installed-plugin-heading">
+                <span>
+                  <strong>Removed packages</strong>
+                  <small>Recoverable packages retained in private rollback history</small>
+                </span>
+              </header>
+              <div class="plugin-list" id="plugin-removed-list"></div>
+            </section>
             <div class="plugin-diagnostics">
               <p id="plugin-status" data-kind="info" role="status" aria-live="polite">
                 Discovering installed plugins in this vault.
@@ -605,6 +643,52 @@
             </span>
           </footer>
         </section>
+      </div>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog plugin-package-review-dialog"
+      id="plugin-package-review-dialog"
+      aria-labelledby="plugin-package-review-title"
+      aria-describedby="plugin-package-review-summary"
+      aria-modal="true"
+    >
+      <div class="new-note-shell plugin-package-review-shell">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">◇</span>
+          <span>
+            <small id="plugin-package-review-operation">Package review</small>
+            <strong id="plugin-package-review-title">Review exact package</strong>
+          </span>
+          <button id="plugin-package-review-close" type="button" aria-label="Close package review">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <div class="plugin-package-review-body">
+          <p id="plugin-package-review-summary"></p>
+          <dl class="plugin-package-facts" id="plugin-package-facts"></dl>
+          <section aria-labelledby="plugin-package-assets-heading">
+            <strong id="plugin-package-assets-heading">Reviewed assets</strong>
+            <div class="plugin-package-assets" id="plugin-package-assets"></div>
+          </section>
+          <section aria-labelledby="plugin-package-license-heading">
+            <strong id="plugin-package-license-heading">Retained license</strong>
+            <p id="plugin-package-license"></p>
+          </section>
+          <ul class="plugin-package-warnings" id="plugin-package-warnings"></ul>
+          <p class="new-note-error" id="plugin-package-review-error" role="alert" hidden></p>
+        </div>
+        <footer class="new-note-footer plugin-package-review-footer">
+          <span>Exact reviewed bytes only</span>
+          <span>
+          <button class="secondary-button" id="plugin-package-review-cancel" type="button">
+            Cancel
+          </button>
+          <button class="primary-button" id="plugin-package-review-apply" type="button">
+            Apply reviewed change
+          </button>
+          </span>
+        </footer>
       </div>
     </dialog>
 

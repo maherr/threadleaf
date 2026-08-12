@@ -114,6 +114,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Pre-enablement plugin reports with the declared Obsidian API baseline, desktop-only flag,
   standard bundled-dependency model, and exact-version compatibility evidence. Unknown versions
   remain visibly discovered at level 0 instead of inheriting another release's test result.
+- Reviewable plugin install, update, reinstall, rollback, uninstall, and restore through a
+  replaceable package-source interface, with exact GitHub release pins, retained license and
+  SHA-256 evidence, disabled-by-default apply, data-preserving updates, five-version private
+  history, managed-byte lockout, and durable process-interruption recovery. The current adapter
+  reads but does not redistribute the public unlicensed compatibility registry.
 - Read-only Obsidian behavior migration preview for enabled and installed plugins, settings-file
   shape without private keys or values, reviewed hotkey candidates, appearance assets, and
   restorable note tabs, with bounded contained reads and exact source-byte preservation.
