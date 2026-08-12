@@ -188,6 +188,30 @@ export interface WorkspaceNoteSnapshot {
   backlinks: string[];
 }
 
+export interface EditorDraftSnapshot {
+  version: 1;
+  draftId: string;
+  vaultId: string;
+  path: string;
+  baseRevision: string;
+  content: string;
+  selection: PluginEditorSelection;
+  updatedAt: string;
+}
+
+export type EditorDraftReadResponse =
+  | { status: "ready"; draft: EditorDraftSnapshot }
+  | { status: "empty" }
+  | { status: "stale-vault"; vaultId: string };
+
+export type EditorDraftSaveResponse =
+  | { status: "saved"; draft: EditorDraftSnapshot }
+  | { status: "stale-vault"; vaultId: string };
+
+export type EditorDraftClearResponse =
+  | { status: "cleared"; cleared: boolean }
+  | { status: "stale-vault"; vaultId: string };
+
 export type VaultSearchContextKind = "content" | "heading" | "tag" | "property" | "path";
 
 export interface VaultSearchContext {
@@ -465,6 +489,9 @@ export interface ThreadleafBridge {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteSaveResponse>;
+  getEditorDraft(expectedVaultId: string): Promise<EditorDraftReadResponse>;
+  saveEditorDraft(draft: EditorDraftSnapshot): Promise<EditorDraftSaveResponse>;
+  clearEditorDraft(expectedVaultId: string, draftId: string): Promise<EditorDraftClearResponse>;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   onSettings(listener: (snapshot: AppSettingsSnapshot) => void): () => void;
   onAppUpdate(listener: (snapshot: AppUpdateSnapshot) => void): () => void;

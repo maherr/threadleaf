@@ -10,6 +10,7 @@ import {
 } from "electron";
 import { AppSettingsController } from "../application/app-settings-controller";
 import { AppUpdateController } from "../application/app-update-controller";
+import { parseEditorDraft } from "../application/editor-draft";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
@@ -47,9 +48,11 @@ import {
 } from "./development-picker-override";
 import { ElectronPluginRuntime } from "./electron-plugin-runtime";
 import { FileAppSettingsStore } from "./file-app-settings-store";
+import { FileEditorDraftStore } from "./file-editor-draft-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { createGracefulShutdownHandler } from "./graceful-shutdown";
+import { createMainRendererRecoveryHandler } from "./main-renderer-recovery";
 import { loadObsidianMigrationPreview } from "./obsidian-migration-loader";
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
 import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
@@ -76,6 +79,7 @@ let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
 let appUpdateController: AppUpdateController;
+let editorDraftStore: FileEditorDraftStore;
 let pluginPackageManager: PluginPackageManager;
 let pluginOperationTail: Promise<void> = Promise.resolve();
 let attachedPluginView: WebContentsView | null = null;
@@ -1058,6 +1062,49 @@ function registerIpcHandlers(): void {
       return workspaceController.saveNote(filePath, content, expectedRevision, expectedVaultId);
     },
   );
+  ipcMain.handle(ipcChannels.getEditorDraft, async (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Load editor draft requires a string vault identity.");
+    }
+    const vaultId = workspaceController.vaultId;
+    if (expectedVaultId !== vaultId) {
+      return { status: "stale-vault", vaultId } as const;
+    }
+    const draft = await editorDraftStore.load(vaultId);
+    return draft ? ({ status: "ready", draft } as const) : ({ status: "empty" } as const);
+  });
+  ipcMain.handle(ipcChannels.saveEditorDraft, async (_event, value: unknown) => {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("vaultId" in value) ||
+      typeof value.vaultId !== "string"
+    ) {
+      throw new Error("Save editor draft requires a versioned draft document.");
+    }
+    const vaultId = workspaceController.vaultId;
+    if (value.vaultId !== vaultId) {
+      return { status: "stale-vault", vaultId } as const;
+    }
+    const draft = await editorDraftStore.save(parseEditorDraft(value, vaultId));
+    return { status: "saved", draft } as const;
+  });
+  ipcMain.handle(
+    ipcChannels.clearEditorDraft,
+    async (_event, expectedVaultId: unknown, draftId: unknown) => {
+      if (typeof expectedVaultId !== "string" || typeof draftId !== "string") {
+        throw new Error("Clear editor draft requires string vault and draft identities.");
+      }
+      const vaultId = workspaceController.vaultId;
+      if (expectedVaultId !== vaultId) {
+        return { status: "stale-vault", vaultId } as const;
+      }
+      return {
+        status: "cleared",
+        cleared: await editorDraftStore.clear(vaultId, draftId),
+      } as const;
+    },
+  );
   ipcMain.handle(ipcChannels.runCommand, (_event, commandId: unknown, editorContext: unknown) => {
     if (typeof commandId !== "string" || commandId.length === 0) {
       throw new Error("Run command requires a string identifier.");
@@ -1156,7 +1203,7 @@ function registerIpcHandlers(): void {
 
 async function createWindow(): Promise<void> {
   detachPluginView();
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1180,
     height: 820,
     minWidth: 860,
@@ -1171,20 +1218,42 @@ async function createWindow(): Promise<void> {
       sandbox: true,
     },
   });
+  mainWindow = window;
 
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
-  mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error("Threadleaf main renderer exited", details);
+  window.once("ready-to-show", () => window.show());
+  window.webContents.on("render-process-gone", (_event, details) => {
+    recoverMainRenderer({ reason: details.reason, exitCode: details.exitCode });
   });
-  mainWindow.on("unresponsive", () => {
+  window.on("unresponsive", () => {
     console.error("Threadleaf main window became unresponsive");
   });
-  mainWindow.once("closed", () => {
-    attachedPluginView = null;
-    mainWindow = null;
+  window.once("closed", () => {
+    if (mainWindow === window) {
+      attachedPluginView = null;
+      mainWindow = null;
+    }
   });
-  await mainWindow.loadFile(join(__dirname, "..", "renderer", "index.html"));
+  await window.loadFile(join(__dirname, "..", "renderer", "index.html"));
 }
+
+async function replaceMainWindowAfterCrash(): Promise<void> {
+  const stoppedWindow = mainWindow;
+  if (!stoppedWindow || stoppedWindow.isDestroyed()) {
+    throw new Error("The stopped main window is no longer available.");
+  }
+  await createWindow();
+  stoppedWindow.destroy();
+}
+
+const recoverMainRenderer = createMainRendererRecoveryHandler({
+  prepare: () => {
+    detachPluginView();
+    setPluginSurfacePresentationVisible(false);
+  },
+  recover: replaceMainWindowAfterCrash,
+  report: (message, details) => console.error(message, details ?? ""),
+  schedule: (operation, delayMs) => setTimeout(operation, delayMs),
+});
 
 const gracefulShutdownHandler = createGracefulShutdownHandler({
   prepare: detachPluginView,
@@ -1209,6 +1278,7 @@ app.whenReady().then(async () => {
   settingsController = await AppSettingsController.open(
     new FileAppSettingsStore(join(app.getPath("userData"), "settings.json")),
   );
+  editorDraftStore = new FileEditorDraftStore(join(app.getPath("userData"), "editor-drafts"));
   workspaceController = await createWorkspaceController();
   registerIpcHandlers();
   await createWindow();

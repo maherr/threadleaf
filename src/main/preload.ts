@@ -3,6 +3,9 @@ import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { AppearanceResponse } from "../shared/appearance";
 import type {
   AppearanceUpdateResponse,
+  EditorDraftClearResponse,
+  EditorDraftReadResponse,
+  EditorDraftSaveResponse,
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
@@ -155,6 +158,19 @@ const bridge: ThreadleafBridge = {
       expectedRevision,
       expectedVaultId,
     ) as Promise<NoteSaveResponse>,
+  getEditorDraft: (expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.getEditorDraft,
+      expectedVaultId,
+    ) as Promise<EditorDraftReadResponse>,
+  saveEditorDraft: (draft) =>
+    ipcRenderer.invoke(ipcChannels.saveEditorDraft, draft) as Promise<EditorDraftSaveResponse>,
+  clearEditorDraft: (expectedVaultId, draftId) =>
+    ipcRenderer.invoke(
+      ipcChannels.clearEditorDraft,
+      expectedVaultId,
+      draftId,
+    ) as Promise<EditorDraftClearResponse>,
   runCommand: (commandId, editorContext) =>
     ipcRenderer.invoke(
       ipcChannels.runCommand,

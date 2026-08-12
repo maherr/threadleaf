@@ -136,12 +136,13 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
 
 ### Daily-drive beta handoff
 
-Threadleaf will be presented as ready for Maher's daily-drive testing only when every unchecked
-item here is closed. The first handoff uses a copy of the live vault and never requires conversion.
+Threadleaf will be presented as ready for maintainer-led daily-drive testing only when every
+unchecked item here is closed. The first handoff uses a copy of the live vault and never requires
+conversion.
 
 - [ ] Exercise a representative copy of the live vault at real scale, including large notes,
       attachments, external edits, sync-style event bursts, rename refactors, and restart recovery.
-- [ ] Complete the editor reliability pass for IME, undo and redo, selections, dirty navigation,
+- [x] Complete the editor reliability pass for IME, undo and redo, selections, dirty navigation,
       save conflicts, crash recovery, and no-loss reopen behavior.
 - [x] Isolate each compatibility plugin in its own renderer process and prove that a timed-out
       plugin does not stop a healthy sibling or the native workspace.

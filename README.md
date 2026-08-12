@@ -32,7 +32,12 @@ derived state. The first window no longer waits for a complete restored-vault sc
 target, shows indexing state, blocks bootstrap writes, and lets a user choose another vault while
 the real runtime opens in the background. Revision-aware saves use the recoverable writer. If the
 file changed externally, the original is left untouched and the local edit becomes a clearly
-labeled conflict copy. Core actions and dynamically registered compatibility-plugin commands share
+labeled conflict copy. Unsaved Markdown is also protected in a versioned, atomic, private draft
+store outside the vault. Threadleaf retains the exact vault, note, base revision, bytes, and
+selection, clears only the matching committed or reverted draft, and replaces a stopped main
+renderer with a fresh window that restores that state. If the disk changed while the renderer was
+down, recovery keeps the changed disk note untouched and routes a later save through the same
+conflict-copy path. Core actions and dynamically registered compatibility-plugin commands share
 a searchable, keyboard-navigable command palette. Versioned application settings now keep remappable
 keyboard shortcuts outside every vault, reject collisions, and persist changes before activating
 them. Compatibility plugins
@@ -294,6 +299,15 @@ proves alias and tag catalog output, proves an exact task read/status/toggle rou
 exact-byte delete and restore behavior. It also resolves a packaged `file=` command by unique note
 name so basename compatibility cannot pass only in source-level tests, and exercises visible-file
 inventory plus Unicode word counting.
+
+The Linux editor reliability probe exercises the real Electron and CodeMirror path against a
+disposable vault, including Unicode composition, undo and redo, cursor retention, dirty-navigation
+guards, external-edit conflict preservation, abrupt main-renderer replacement, exact private-draft
+recovery, and clean saved bytes:
+
+```sh
+pnpm run test:editor-reliability
+```
 
 The development CLI requires an explicit vault and never consults the desktop application's saved
 selection:

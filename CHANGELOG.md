@@ -33,6 +33,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   backlinks, external-change updates, and keyboard-first controls.
 - CodeMirror Markdown source editing with explicit dirty state, Revert, Ctrl/Cmd+S, revision-aware
   recoverable saves, non-destructive external-edit warnings, and indexed conflict copies.
+- Versioned private editor drafts with exact vault, note, base-revision, content, and selection
+  binding; atomic mode-0600 persistence; exact-identity cleanup; note-scoped undo history; and
+  automatic main-renderer replacement that restores unsaved bytes without overwriting a changed
+  disk note.
 - CSP-nonce integration for CodeMirror's generated styles and an isolated-vault development launch
   override for live save and conflict verification.
 - Native local-folder picker with Ctrl/Cmd+O, private persisted selection, validated runtime swaps,

@@ -12,6 +12,7 @@ import {
   type VaultAppearanceSettings,
 } from "../shared/appearance";
 import type {
+  EditorDraftSnapshot,
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveBlocker,
@@ -364,8 +365,17 @@ let lastVaultWarning: string | null = null;
 let toastTimer: number | undefined;
 let busy = false;
 let saving = false;
+let savingContent: string | null = null;
 let dirty = false;
 let syncingEditor = false;
+let editorDraftId: string | null = null;
+let editorDraftTimer: number | undefined;
+let editorDraftPersistenceTail: Promise<void> = Promise.resolve();
+let editorDraftPersistenceState: "idle" | "pending" | "saved" | "error" = "idle";
+let editorDraftPersistenceError: string | null = null;
+let editorDraftCheckedVaultId: string | null = null;
+let editorDraftRestoreRequest = 0;
+let pendingCleanDiskAcceptance = false;
 let documentViewMode: DocumentViewMode = "source";
 let renderedPreviewPath: string | null = null;
 let renderedPreviewSource: string | null = null;
@@ -490,15 +500,16 @@ const sourceHighlight = HighlightStyle.define([
 const editorAccess = new Compartment();
 let editorReadOnly = false;
 
-const editor = new EditorView({
-  doc: "",
-  parent: elements.noteEditor,
-  extensions: [
+function editorExtensions() {
+  return [
     basicSetup,
     markdown(),
     EditorView.lineWrapping,
     EditorView.cspNonce.of(editorStyleNonce),
-    editorAccess.of([EditorState.readOnly.of(false), EditorView.editable.of(true)]),
+    editorAccess.of([
+      EditorState.readOnly.of(editorReadOnly),
+      EditorView.editable.of(!editorReadOnly),
+    ]),
     syntaxHighlighting(sourceHighlight),
     EditorView.contentAttributes.of({
       "aria-label": "Markdown source editor",
@@ -506,12 +517,44 @@ const editor = new EditorView({
       spellcheck: "true",
     }),
     EditorView.updateListener.of((update) => {
-      if (!syncingEditor && update.docChanged) {
-        dirty = true;
+      if (syncingEditor) {
+        return;
+      }
+      if (update.docChanged) {
+        const wasDirty = dirty;
+        dirty = loadedNote !== null && update.state.doc.toString() !== loadedNote.content;
+        if (dirty) {
+          scheduleEditorDraftPersistence();
+        } else if (wasDirty) {
+          clearCurrentEditorDraft();
+          schedulePendingDiskAcceptance();
+        }
         renderEditControls();
+        return;
+      }
+      if (dirty && update.selectionSet) {
+        scheduleEditorDraftPersistence();
       }
     }),
-  ],
+  ];
+}
+
+function createEditorState(
+  content: string,
+  selection: { anchor: number; head?: number } = { anchor: 0 },
+): EditorState {
+  const anchor = Math.max(0, Math.min(selection.anchor, content.length));
+  const head = Math.max(0, Math.min(selection.head ?? anchor, content.length));
+  return EditorState.create({
+    doc: content,
+    selection: { anchor, head },
+    extensions: editorExtensions(),
+  });
+}
+
+const editor = new EditorView({
+  state: createEditorState(""),
+  parent: elements.noteEditor,
 });
 
 function getElement(id: string): HTMLElement {
@@ -4280,6 +4323,8 @@ function render(snapshot: RuntimeSnapshot): void {
   currentSnapshot = snapshot;
   syncEditorAccess();
   if (previousVaultId !== snapshot.vault.id) {
+    editorDraftRestoreRequest += 1;
+    editorDraftCheckedVaultId = null;
     elements.fileList.scrollTop = 0;
     lastVirtualActivePath = null;
     virtualFileRenderKey = "";
@@ -4410,6 +4455,7 @@ function render(snapshot: RuntimeSnapshot): void {
   if (elements.deleteNoteDialog.open) {
     renderDeleteNoteDialog();
   }
+  maybeRestoreEditorDraft(snapshot);
 }
 
 function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): void {
@@ -4797,8 +4843,16 @@ function reconcileEditor(
   }
 
   const currentText = editor.state.doc.toString();
-  if (saving && currentText === incomingNote.content) {
-    replaceEditorDocument(incomingNote, incomingVaultId);
+  if (saving && savingContent === incomingNote.content) {
+    loadedNote = incomingNote;
+    loadedVaultId = incomingVaultId;
+    pendingDiskNote = null;
+    diskChanged = false;
+    dirty = currentText !== incomingNote.content;
+    if (dirty) {
+      scheduleEditorDraftPersistence();
+    }
+    clearEditNotice();
     return incomingNote;
   }
 
@@ -4823,18 +4877,25 @@ function reconcileEditor(
     return loadedNote;
   }
 
-  replaceEditorDocument(incomingNote, incomingVaultId);
+  const sameDocument = loadedVaultId === incomingVaultId && loadedNote.path === incomingNote.path;
+  const currentSelection = editor.state.selection.main;
+  replaceEditorDocument(
+    incomingNote,
+    incomingVaultId,
+    sameDocument ? { anchor: currentSelection.anchor, head: currentSelection.head } : undefined,
+  );
   return incomingNote;
 }
 
-function replaceEditorDocument(note: WorkspaceNoteSnapshot | null, vaultId: string | null): void {
+function replaceEditorDocument(
+  note: WorkspaceNoteSnapshot | null,
+  vaultId: string | null,
+  selection?: { anchor: number; head?: number },
+): void {
   const content = note?.content ?? "";
   syncingEditor = true;
   try {
-    editor.dispatch({
-      changes: { from: 0, to: editor.state.doc.length, insert: content },
-      selection: { anchor: 0 },
-    });
+    editor.setState(createEditorState(content, selection));
   } finally {
     syncingEditor = false;
   }
@@ -4849,7 +4910,244 @@ function replaceEditorDocument(note: WorkspaceNoteSnapshot | null, vaultId: stri
   pendingDiskNote = null;
   diskChanged = false;
   dirty = false;
+  editorDraftId = null;
+  editorDraftPersistenceState = "idle";
+  editorDraftPersistenceError = null;
   clearEditNotice();
+}
+
+function enqueueEditorDraftOperation(operation: () => Promise<void>): Promise<void> {
+  const result = editorDraftPersistenceTail.then(operation, operation);
+  editorDraftPersistenceTail = result.catch(() => undefined);
+  return result;
+}
+
+function reportEditorDraftPersistenceError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  const changed = message !== editorDraftPersistenceError;
+  editorDraftPersistenceState = "error";
+  editorDraftPersistenceError = message;
+  renderEditControls();
+  if (changed) {
+    showToast(`Draft recovery unavailable: ${message}`);
+  }
+}
+
+function currentEditorDraft(): EditorDraftSnapshot | null {
+  if (!dirty || !loadedNote || !loadedVaultId) {
+    return null;
+  }
+  editorDraftId ??= window.crypto.randomUUID();
+  const selection = editor.state.selection.main;
+  return {
+    version: 1,
+    draftId: editorDraftId,
+    vaultId: loadedVaultId,
+    path: loadedNote.path,
+    baseRevision: loadedNote.revision,
+    content: editor.state.doc.toString(),
+    selection: { anchor: selection.anchor, head: selection.head },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function persistCurrentEditorDraft(): Promise<void> {
+  const draft = currentEditorDraft();
+  if (!draft) {
+    return;
+  }
+  editorDraftPersistenceState = "pending";
+  renderEditControls();
+  try {
+    await enqueueEditorDraftOperation(async () => {
+      const response = await window.threadleaf.saveEditorDraft(draft);
+      if (response.status === "stale-vault") {
+        throw new Error("the active vault changed before the private draft was stored");
+      }
+    });
+    if (editorDraftId === draft.draftId) {
+      editorDraftPersistenceState = "saved";
+      editorDraftPersistenceError = null;
+      renderEditControls();
+    }
+  } catch (error) {
+    reportEditorDraftPersistenceError(error);
+  }
+}
+
+function scheduleEditorDraftPersistence(delayMs = 180): void {
+  if (!dirty || !loadedNote || !loadedVaultId) {
+    return;
+  }
+  if (editorDraftTimer !== undefined) {
+    window.clearTimeout(editorDraftTimer);
+  }
+  editorDraftPersistenceState = "pending";
+  editorDraftTimer = window.setTimeout(() => {
+    editorDraftTimer = undefined;
+    void persistCurrentEditorDraft();
+  }, delayMs);
+}
+
+async function flushEditorDraftPersistence(): Promise<void> {
+  if (editorDraftTimer !== undefined) {
+    window.clearTimeout(editorDraftTimer);
+    editorDraftTimer = undefined;
+    await persistCurrentEditorDraft();
+  }
+  await editorDraftPersistenceTail;
+}
+
+function clearPersistedEditorDraft(vaultId: string, draftId: string): void {
+  void enqueueEditorDraftOperation(async () => {
+    const response = await window.threadleaf.clearEditorDraft(vaultId, draftId);
+    if (response.status === "stale-vault") {
+      return;
+    }
+  }).catch(reportEditorDraftPersistenceError);
+}
+
+function clearCurrentEditorDraft(): void {
+  if (editorDraftTimer !== undefined) {
+    window.clearTimeout(editorDraftTimer);
+    editorDraftTimer = undefined;
+  }
+  const draftId = editorDraftId;
+  const vaultId = loadedVaultId;
+  editorDraftId = null;
+  editorDraftPersistenceState = "idle";
+  editorDraftPersistenceError = null;
+  if (draftId && vaultId) {
+    clearPersistedEditorDraft(vaultId, draftId);
+  }
+}
+
+function schedulePendingDiskAcceptance(): void {
+  if (!diskChanged || pendingCleanDiskAcceptance) {
+    return;
+  }
+  pendingCleanDiskAcceptance = true;
+  queueMicrotask(() => {
+    pendingCleanDiskAcceptance = false;
+    if (dirty || !diskChanged) {
+      return;
+    }
+    const selection = editor.state.selection.main;
+    const diskNote = pendingDiskNote ?? currentSnapshot?.workspace?.activeNote ?? null;
+    replaceEditorDocument(diskNote, currentSnapshot?.vault.id ?? null, {
+      anchor: selection.anchor,
+      head: selection.head,
+    });
+    if (currentSnapshot) {
+      render(currentSnapshot);
+    } else {
+      renderNote(diskNote);
+    }
+    showToast(diskNote ? "Accepted the current disk version." : "Accepted the disk deletion.");
+  });
+}
+
+function recoveredDraftNote(
+  draft: EditorDraftSnapshot,
+  diskNote: WorkspaceNoteSnapshot | null,
+): WorkspaceNoteSnapshot {
+  if (diskNote) {
+    return { ...diskNote, revision: draft.baseRevision };
+  }
+  const basename = draft.path.slice(draft.path.lastIndexOf("/") + 1);
+  return {
+    path: draft.path,
+    title: basename.toLocaleLowerCase("en-US").endsWith(".md") ? basename.slice(0, -3) : basename,
+    content: "",
+    revision: draft.baseRevision,
+    tags: [],
+    headings: [],
+    outgoing: [],
+    backlinks: [],
+  };
+}
+
+async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): Promise<void> {
+  if (
+    request !== editorDraftRestoreRequest ||
+    currentSnapshot?.vault.id !== draft.vaultId ||
+    dirty ||
+    readOnlyVault()
+  ) {
+    return;
+  }
+
+  let diskNote = currentSnapshot.workspace?.activeNote ?? null;
+  if (diskNote?.path !== draft.path) {
+    const exists =
+      currentSnapshot.workspace?.files.some(({ path }) => path === draft.path) ?? false;
+    if (exists) {
+      const opened = await window.threadleaf.openNote(draft.path);
+      if (request !== editorDraftRestoreRequest || opened.vault.id !== draft.vaultId || dirty) {
+        return;
+      }
+      render(opened);
+      diskNote = opened.workspace?.activeNote ?? null;
+    } else {
+      diskNote = null;
+    }
+  }
+
+  if (diskNote?.content === draft.content) {
+    clearPersistedEditorDraft(draft.vaultId, draft.draftId);
+    return;
+  }
+
+  const restoredNote = recoveredDraftNote(draft, diskNote);
+  syncingEditor = true;
+  try {
+    editor.setState(createEditorState(draft.content, draft.selection));
+  } finally {
+    syncingEditor = false;
+  }
+  loadedNote = restoredNote;
+  loadedVaultId = draft.vaultId;
+  editorDraftId = draft.draftId;
+  editorDraftPersistenceState = "saved";
+  editorDraftPersistenceError = null;
+  pendingDiskNote = diskNote;
+  diskChanged = diskNote === null || diskNote.revision !== draft.baseRevision;
+  dirty = true;
+  setEditNotice({
+    kind: diskChanged ? "conflict" : "external",
+    title: diskChanged ? "Recovered draft, disk changed" : "Recovered unsaved draft",
+    message: diskChanged
+      ? "Threadleaf restored your private draft without overwriting the changed or missing vault note. Save to preserve it through the conflict path, or Revert to accept disk state."
+      : "Threadleaf restored the exact private draft and selection from before the renderer stopped. Save it to the vault or Revert to discard it.",
+  });
+  renderFiles(currentSnapshot.workspace?.files ?? [], restoredNote.path);
+  renderNote(restoredNote);
+  setActionState(busy);
+  setDocumentView("source", false);
+  window.requestAnimationFrame(() => editor.focus());
+}
+
+function maybeRestoreEditorDraft(snapshot: RuntimeSnapshot): void {
+  const vaultId = snapshot.vault.id;
+  if (
+    snapshot.startup?.phase === "opening" ||
+    !vaultId ||
+    snapshot.vault.mode !== "kernel-backed" ||
+    editorDraftCheckedVaultId === vaultId
+  ) {
+    return;
+  }
+  editorDraftCheckedVaultId = vaultId;
+  const request = ++editorDraftRestoreRequest;
+  void window.threadleaf
+    .getEditorDraft(vaultId)
+    .then((response) => {
+      if (response.status === "ready") {
+        return restoreEditorDraft(response.draft, request);
+      }
+      return undefined;
+    })
+    .catch((error: unknown) => reportEditorDraftPersistenceError(error));
 }
 
 function renderConnections(container: HTMLElement, links: WorkspaceLinkSummary[]): void {
@@ -4932,6 +5230,9 @@ function renderEditControls(): void {
   if (saving) {
     state = "saving";
     label = "Saving";
+  } else if (dirty && editorDraftPersistenceState === "error") {
+    state = "conflict";
+    label = "Unsaved, recovery failed";
   } else if (dirty && diskChanged) {
     state = "conflict";
     label = "Unsaved, disk changed";
@@ -4943,7 +5244,15 @@ function renderEditControls(): void {
     label = readOnlyVault() ? "Read only" : "Saved";
   }
   elements.editState.dataset.state = state;
+  elements.editState.dataset.draftState = editorDraftPersistenceState;
   elements.editState.textContent = label;
+  elements.editState.title = editorDraftPersistenceError
+    ? `Private draft recovery failed: ${editorDraftPersistenceError}`
+    : dirty && editorDraftPersistenceState === "saved"
+      ? "Unsaved changes are protected in Threadleaf's private recovery store."
+      : dirty && editorDraftPersistenceState === "pending"
+        ? "Threadleaf is protecting this draft in private recovery storage."
+        : "";
   const opening = vaultOpening();
   const readOnly = readOnlyVault();
   elements.newNote.disabled = opening || readOnly || busy || saving || dirty;
@@ -5099,8 +5408,15 @@ async function saveActiveNote(): Promise<void> {
   const expectedVaultId = loadedVaultId;
   const content = editor.state.doc.toString();
   saving = true;
+  savingContent = content;
   renderEditControls();
   setActionState(busy);
+  await flushEditorDraftPersistence();
+  const savedDraftId = editorDraftId;
+  const savedDraftVaultId = loadedVaultId;
+  const savedDraftPersistenceState = editorDraftPersistenceState;
+  const savedDraftPersistenceError = editorDraftPersistenceError;
+  editorDraftId = null;
   try {
     const response = await window.threadleaf.saveNote(
       path,
@@ -5109,6 +5425,9 @@ async function saveActiveNote(): Promise<void> {
       expectedVaultId,
     );
     render(response.snapshot);
+    if (savedDraftId && savedDraftVaultId) {
+      clearPersistedEditorDraft(savedDraftVaultId, savedDraftId);
+    }
     if (response.outcome.status === "conflict") {
       setEditNotice({
         kind: "conflict",
@@ -5123,9 +5442,19 @@ async function saveActiveNote(): Promise<void> {
       showToast(`Saved ${response.outcome.path}`);
     }
   } catch (error) {
+    if (!editorDraftId && savedDraftId) {
+      editorDraftId = savedDraftId;
+      editorDraftPersistenceState = savedDraftPersistenceState;
+      editorDraftPersistenceError = savedDraftPersistenceError;
+    }
     showToast(error instanceof Error ? error.message : String(error));
   } finally {
     saving = false;
+    savingContent = null;
+    if (!dirty) {
+      editorDraftPersistenceState = "idle";
+      editorDraftPersistenceError = null;
+    }
     setActionState(busy);
   }
 }
@@ -5137,10 +5466,19 @@ function revertActiveNote(): void {
   const diskNote = diskChanged
     ? (pendingDiskNote ?? currentSnapshot?.workspace?.activeNote ?? null)
     : loadedNote;
+  const discardedDraftId = editorDraftId;
+  const discardedVaultId = loadedVaultId;
   replaceEditorDocument(
     diskNote,
     diskChanged ? (currentSnapshot?.vault.id ?? null) : loadedVaultId,
+    {
+      anchor: editor.state.selection.main.anchor,
+      head: editor.state.selection.main.head,
+    },
   );
+  if (discardedDraftId && discardedVaultId) {
+    clearPersistedEditorDraft(discardedVaultId, discardedDraftId);
+  }
   if (currentSnapshot) {
     render(currentSnapshot);
   } else {
@@ -5561,6 +5899,11 @@ const pluginSurfaceResizeObserver = new ResizeObserver(() => {
 pluginSurfaceResizeObserver.observe(elements.pluginSurfaceHost);
 window.addEventListener("beforeunload", (event) => {
   if (dirty) {
+    if (editorDraftTimer !== undefined) {
+      window.clearTimeout(editorDraftTimer);
+      editorDraftTimer = undefined;
+    }
+    void persistCurrentEditorDraft();
     event.preventDefault();
     event.returnValue = "";
   }
@@ -5570,6 +5913,9 @@ window.addEventListener(
   () => {
     if (vaultSearchTimer !== undefined) {
       window.clearTimeout(vaultSearchTimer);
+    }
+    if (editorDraftTimer !== undefined) {
+      window.clearTimeout(editorDraftTimer);
     }
     unsubscribe();
     unsubscribeSettings();

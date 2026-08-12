@@ -136,6 +136,21 @@ both vaults. The renderer also blocks user-initiated switching while a note is u
 development overrides take precedence without changing the persisted user selection and are
 ignored by packaged builds.
 
+The active unsaved draft is also mirrored into a versioned document under the operating system's
+application-data directory after a short debounce. That private document contains the exact vault
+identity, normalized Markdown path, base revision, draft bytes, selection, draft identity, and
+canonical update time. It is bounded, validated again in the main process, serialized with other
+draft writes, and replaced atomically with mode-0600 permissions. Save and Revert clear only the
+matching draft identity, so a delayed cleanup cannot delete a newer edit. Malformed recovery bytes
+fail visibly and remain available for diagnosis.
+
+CodeMirror gets a fresh editor state when the active document changes, preventing undo history from
+crossing notes. A successful save adopts the new disk revision without replacing that state, so
+selection and useful undo history remain. If the sandboxed main renderer stops, the main process
+creates and loads a replacement window before retiring the failed window. The replacement restores
+the exact private draft and selection. A changed or missing disk revision remains untouched and a
+later save uses the ordinary conflict-copy boundary.
+
 ### Workspace tabs and draft ownership
 
 The workspace runtime owns an ordered, deduplicated list of open Markdown paths and one active
@@ -269,11 +284,12 @@ selected, then activates each remaining selected package independently. One acti
 retained as diagnostic state and does not prevent later packages from loading. Reload performs a
 clean unload before activation. Workspace shutdown unloads every instance.
 
-All compatibility plugins currently share one isolated renderer. Each request has a bounded
-deadline. If a request wedges that renderer, the process is killed rather than merely rejecting a
-timer while plugin code continues to run. A fresh renderer receives the same vault boundary and
-surface policy; previously loaded plugins remain failed until explicit reload. Per-plugin process
-isolation and CPU or memory budgets remain future work.
+Each compatibility plugin runs in its own isolated renderer and transient session partition. Every
+request has a bounded deadline. If a request wedges, violates the protocol, fails to send, or loses
+its renderer, Threadleaf terminates only that plugin process. A fresh renderer receives the same
+vault boundary and surface policy when the user explicitly reloads the culprit. Healthy siblings
+and the sandboxed native workspace continue running. Per-plugin CPU and memory budgets remain
+future work.
 
 Lifecycle ownership includes commands, event registrations, view and extension factories,
 processors, editor suggestions, ribbons, status items, settings tabs, leaves, and transient modals
@@ -612,7 +628,6 @@ Capability host ---> native Threadleaf extension
 
 ## Decisions still to make
 
-- Long-term process isolation for trusted plugins.
 - Native extension SDK license and capability vocabulary.
 - Inline live-preview editor architecture and fine-grained cursor mapping.
 - Metadata schema and migration strategy.
