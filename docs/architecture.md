@@ -118,6 +118,34 @@ duplicates before persistence, and resets all bindings through the same durable 
 events resolve to action IDs. Workspace and editor targets then use the same renderer command
 catalog as visible controls and the command palette.
 
+### Appearance boundary
+
+Threadleaf treats a vault's Obsidian theme and snippet folders as read-only compatibility input.
+The main process discovers `.obsidian/themes/<folder>/theme.css` plus optional `manifest.json`
+metadata and `.obsidian/snippets/*.css`. It never uses those directories for Threadleaf state.
+Per-vault color scheme, theme ID, and ordered snippet IDs live in the versioned application settings
+document under a SHA-256 vault identity. Version 1 settings migrate to version 2 with an empty
+appearance map.
+
+The loader resolves real paths and requires every theme, manifest, and snippet to remain inside its
+expected vault directory. Theme CSS is limited to 2 MiB, each snippet to 512 KiB, each manifest to
+64 KiB, the combined active CSS to 4 MiB, and each catalog to 256 entries. Text must decode as
+UTF-8. The loader rejects imports, direct external URLs, and legacy executable CSS constructs.
+Embedded data and fragment URLs remain available; variable URLs remain subject to the renderer's
+network-blocking content-security policy.
+
+The renderer applies the base light or dark contract first, one selected theme second, and enabled
+snippets in their persisted order last. It exposes common Obsidian variables and workspace class
+aliases without giving custom CSS filesystem or script authority. Application startup can suppress
+custom CSS with `THREADLEAF_SAFE_APPEARANCE=1` or `--safe-appearance`. The settings catalog remains
+visible in safe mode, and a remappable recovery action clears the saved custom selection while
+retaining the base color scheme. Missing and invalid assets produce visible warnings and leave the
+rest of the workspace usable.
+
+Discovery is explicit in this phase. The user reloads changed files from Settings or the command
+palette; a future watcher must preserve the same containment, stale-vault, diagnostics, and safe
+mode boundaries. See the [theme compatibility contract](compatibility/themes.md).
+
 ### Watcher and index model
 
 Filesystem notifications are hints, not truth. The watcher emits debounced batches with a stream

@@ -48,6 +48,8 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
+    expect(parsed.version).toBe(2);
+    expect(parsed.appearanceByVault).toEqual({});
     expect(() =>
       parseAppSettings({
         version: 1,
@@ -67,6 +69,25 @@ describe("key bindings", () => {
     expect(() => updateKeyBinding(original, "editor.revert-note", "Mod+S")).toThrow(
       "editor.save-note",
     );
+  });
+
+  it("loads version 2 appearance settings and preserves them through shortcut updates", () => {
+    const vaultId = "a".repeat(64);
+    const parsed = parseAppSettings({
+      version: 2,
+      keyBindings: {},
+      appearanceByVault: {
+        [vaultId]: {
+          colorScheme: "dark",
+          themeId: "obsidian-theme:Minimal",
+          enabledSnippetIds: ["obsidian-snippet:headings.css"],
+        },
+      },
+    });
+    const updated = updateKeyBinding(parsed, "editor.revert-note", "Alt+R");
+
+    expect(updated.appearanceByVault).toEqual(parsed.appearanceByVault);
+    expect(updated.keyBindings["editor.revert-note"]).toBe("Alt+R");
   });
 
   it("captures portable bindings and matches the platform primary modifier exactly", () => {

@@ -85,6 +85,14 @@ versioned private application data. An intentionally empty workspace stays empty
 are pruned on restore, and malformed state remains available for diagnosis behind a visible
 warning. No workspace metadata is written into the vault or `.obsidian/`.
 
+Vault appearance support now discovers standard `.obsidian/themes/<name>/theme.css` packages and
+`.obsidian/snippets/*.css` files without changing them. A per-vault selection, base color scheme,
+and enabled snippet order are stored in Threadleaf's private application settings. Custom CSS is
+size bounded, path contained, checked for network-capable and legacy executable constructs, and
+applied under the renderer content-security policy. Missing or invalid selections degrade to the
+default appearance with visible diagnostics. A startup safe mode and a recovery shortcut disable
+custom CSS without preventing catalog inspection.
+
 Do not use the current build with an important vault. The picker and recoverable writer are now
 functional, but Threadleaf is still pre-alpha and has no inline live preview, wiki-embed rendering,
 or release-grade backup and restore workflow.
@@ -107,6 +115,7 @@ or release-grade backup and restore workflow.
 - [Architecture](docs/architecture.md)
 - [CLI guide](docs/cli.md)
 - [Compatibility contract](docs/compatibility/contract.md)
+- [Theme and CSS compatibility](docs/compatibility/themes.md)
 - [Roadmap](docs/roadmap.md)
 - [Performance baselines](docs/performance.md)
 - [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
@@ -127,7 +136,7 @@ On first launch, the executable build opens the bundled synthetic vault. Use the
 Ctrl/Cmd+O to select a Markdown folder. Threadleaf validates and persists a successful selection,
 restores it on the next launch, and does not automatically run its compatibility plugins.
 Ctrl/Cmd+K opens the command palette; Ctrl/Cmd+P searches saved content, paths, headings, tags, and
-properties; Ctrl/Cmd+, opens keyboard settings. Search terms use AND semantics and quoted text is
+properties; Ctrl/Cmd+, opens application settings. Search terms use AND semantics and quoted text is
 matched as a phrase. Every listed shortcut can be reassigned or cleared, and Reset defaults
 restores the portable built-in bindings. Threadleaf stores these preferences in private
 application data, not in the vault or `.obsidian/`. Ctrl/Cmd+E switches between Markdown source and
@@ -148,6 +157,13 @@ one in keyboard settings. Its confirmation moves the exact current revision to
 `.trash/<original-path>`, warns when indexed incoming links will become unresolved, and never
 overwrites an earlier deletion. Restore through the native CLI or move the file back with another
 filesystem tool.
+
+The Appearance section follows the operating-system scheme by default and can pin light or dark.
+It discovers community themes and CSS snippets from the active vault, applies a selected theme
+before the enabled snippets, and exposes an explicit file reload. Ctrl/Cmd+Shift+L toggles the base
+scheme. Ctrl/Cmd+Alt+L clears the current vault's custom theme and snippet selection while retaining
+the base scheme. Start with `THREADLEAF_SAFE_APPEARANCE=1` or `--safe-appearance` to suppress all
+custom CSS for that process while keeping the saved selection available for diagnosis.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 

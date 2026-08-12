@@ -2,6 +2,13 @@ import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
+import {
+  type AppearanceSnapshot,
+  type ColorSchemePreference,
+  createDefaultVaultAppearance,
+  effectiveColorScheme,
+  type VaultAppearanceSettings,
+} from "../shared/appearance";
 import type {
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -18,6 +25,7 @@ import type {
 } from "../shared/contracts";
 import {
   type AppSettingsSnapshot,
+  appearanceForVault,
   bindingFromKeyboardEvent,
   createDefaultAppSettings,
   displayKeyBinding,
@@ -109,6 +117,17 @@ const elements = {
   settingsDone: getButton("settings-done"),
   settingsReset: getButton("settings-reset"),
   settingsWarning: getElement("settings-warning"),
+  appearanceState: getElement("appearance-state"),
+  appearanceTheme: getSelect("appearance-theme"),
+  appearanceThemeDetail: getElement("appearance-theme-detail"),
+  appearanceSnippets: getElement("appearance-snippets"),
+  appearanceReload: getButton("appearance-reload"),
+  appearanceReset: getButton("appearance-reset"),
+  appearanceStatus: getElement("appearance-status"),
+  appearanceWarnings: getElement("appearance-warnings"),
+  schemeSystem: getInput("scheme-system"),
+  schemeLight: getInput("scheme-light"),
+  schemeDark: getInput("scheme-dark"),
   settingsList: getElement("key-binding-list"),
   settingsStatus: getElement("settings-status"),
   newNoteDialog: getDialog("new-note-dialog"),
@@ -171,8 +190,8 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   },
   {
     id: "settings.open-keybindings",
-    label: "Open keyboard settings",
-    description: "Review and change Threadleaf keyboard shortcuts.",
+    label: "Open settings",
+    description: "Review vault appearance and Threadleaf keyboard shortcuts.",
   },
   {
     id: "workspace.open-vault",
@@ -234,6 +253,16 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     label: "Toggle light or dark theme",
     description: "Switch the current Threadleaf color scheme.",
   },
+  {
+    id: "appearance.reload-custom-css",
+    label: "Reload themes and CSS snippets",
+    description: "Rescan the active vault and reapply selected appearance files.",
+  },
+  {
+    id: "appearance.disable-custom-css",
+    label: "Disable custom theme and snippets",
+    description: "Restore Threadleaf styling without changing the selected light or dark scheme.",
+  },
 ];
 
 const isMac = navigator.platform.toLocaleLowerCase("en-US").includes("mac");
@@ -268,6 +297,14 @@ let settingsBusy = false;
 let settingsMessage = "Select a command, then press its new shortcut.";
 let settingsMessageKind: "info" | "saved" | "error" = "info";
 let lastSettingsWarning: string | null = null;
+let settingsLoaded = false;
+let appearanceSnapshot: AppearanceSnapshot | null = null;
+let appearanceBusy = false;
+let appearanceRequest = 0;
+let appearanceMessage = "Discovering themes and snippets in this vault.";
+let appearanceMessageKind: "info" | "saved" | "error" = "info";
+let lastAppearanceWarning = "";
+let legacyThemeMigrationAttempted = false;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
 let newNoteVaultId: string | null = null;
@@ -306,6 +343,11 @@ let vaultSearchTimer: number | undefined;
 let vaultSearchRequest = 0;
 
 const editorStyleNonce = "threadleaf-codemirror";
+const appearanceStyle = document.createElement("style");
+appearanceStyle.id = "threadleaf-custom-appearance";
+appearanceStyle.nonce = editorStyleNonce;
+document.head.append(appearanceStyle);
+const systemColorScheme = window.matchMedia("(prefers-color-scheme: dark)");
 const sourceHighlight = HighlightStyle.define([
   { tag: tags.heading, color: "var(--accent-strong)", fontWeight: "700" },
   {
@@ -363,6 +405,14 @@ function getInput(id: string): HTMLInputElement {
   const element = getElement(id);
   if (!(element instanceof HTMLInputElement)) {
     throw new Error(`Expected an input: ${id}`);
+  }
+  return element;
+}
+
+function getSelect(id: string): HTMLSelectElement {
+  const element = getElement(id);
+  if (!(element instanceof HTMLSelectElement)) {
+    throw new Error(`Expected a select: ${id}`);
   }
   return element;
 }
@@ -555,13 +605,38 @@ function commandCatalog(): RendererCommand[] {
       run: toggleTheme,
     },
     {
+      id: "appearance.reload-custom-css",
+      label: "Reload themes and CSS snippets",
+      category: "Appearance",
+      keywords: ["refresh", "rescan", "theme", "snippet", "css"],
+      shortcut: shortcutFor("appearance.reload-custom-css"),
+      enabled: Boolean(currentSnapshot?.vault.id && !appearanceBusy),
+      disabledReason: appearanceBusy
+        ? "Threadleaf is applying appearance settings."
+        : "No vault is active.",
+      run: () => refreshAppearance("Appearance files reloaded."),
+    },
+    {
+      id: "appearance.disable-custom-css",
+      label: "Disable custom theme and snippets",
+      category: "Appearance",
+      keywords: ["safe", "reset", "recover", "theme", "snippet", "css"],
+      shortcut: shortcutFor("appearance.disable-custom-css"),
+      enabled: Boolean(currentSnapshot?.vault.id && !appearanceBusy),
+      disabledReason: appearanceBusy
+        ? "Threadleaf is applying appearance settings."
+        : "No vault is active.",
+      run: disableCustomAppearance,
+    },
+    {
       id: "settings.open-keybindings",
-      label: "Open keyboard settings",
+      label: "Open settings",
       category: "Settings",
-      keywords: ["shortcut", "hotkey", "key binding", "preferences"],
+      keywords: ["appearance", "theme", "snippet", "shortcut", "hotkey", "preferences"],
       shortcut: shortcutFor("settings.open-keybindings"),
-      enabled: !settingsBusy,
-      disabledReason: settingsBusy ? "Threadleaf is saving keyboard settings." : null,
+      enabled: !settingsBusy && !appearanceBusy,
+      disabledReason:
+        settingsBusy || appearanceBusy ? "Threadleaf is saving application settings." : null,
       run: openSettings,
     },
   ];
@@ -837,10 +912,6 @@ async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
   }
 }
 
-function toggleTheme(): void {
-  setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
-}
-
 async function runCompatibilityCommand(commandId: string): Promise<void> {
   await runAction(async () => {
     const snapshot = await window.threadleaf.runCommand(commandId);
@@ -897,15 +968,32 @@ function closeCommandPalette(restoreFocus = true): void {
 }
 
 function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  const previousAppearance = vaultId
+    ? appearanceForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultAppearance();
   settingsSnapshot = snapshot;
+  settingsLoaded = true;
   updateShortcutLabels();
   renderDocumentView();
   if (snapshot.warning && snapshot.warning !== lastSettingsWarning) {
     showToast(snapshot.warning);
   }
   lastSettingsWarning = snapshot.warning;
+  const nextAppearance = currentAppearancePreference();
+  applyColorScheme(nextAppearance.colorScheme);
+  if (
+    vaultId &&
+    !appearanceBusy &&
+    (!appearancesEqual(previousAppearance, nextAppearance) ||
+      appearanceSnapshot?.vaultId !== vaultId ||
+      !appearancesEqual(appearanceSnapshot.preference, nextAppearance))
+  ) {
+    void refreshAppearance();
+  }
   renderSettings();
   renderPaletteResults();
+  void maybeMigrateLegacyTheme();
 }
 
 function updateShortcutLabels(): void {
@@ -1492,6 +1580,294 @@ async function deleteCurrentNote(): Promise<void> {
   }
 }
 
+function settingsOperationBusy(): boolean {
+  return settingsBusy || appearanceBusy;
+}
+
+function currentAppearancePreference(): VaultAppearanceSettings {
+  const vaultId = currentSnapshot?.vault.id;
+  return vaultId
+    ? appearanceForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultAppearance();
+}
+
+function appearancesEqual(left: VaultAppearanceSettings, right: VaultAppearanceSettings): boolean {
+  return (
+    left.colorScheme === right.colorScheme &&
+    left.themeId === right.themeId &&
+    left.enabledSnippetIds.length === right.enabledSnippetIds.length &&
+    left.enabledSnippetIds.every((id, index) => id === right.enabledSnippetIds[index])
+  );
+}
+
+function applyColorScheme(preference: ColorSchemePreference): void {
+  const scheme = effectiveColorScheme(preference, systemColorScheme.matches);
+  document.documentElement.dataset.theme = scheme;
+  for (const target of [document.documentElement, document.body]) {
+    target.classList.toggle("theme-light", scheme === "light");
+    target.classList.toggle("theme-dark", scheme === "dark");
+  }
+  const next = scheme === "light" ? "dark" : "light";
+  elements.themeLabel.textContent = next === "dark" ? "Dark" : "Light";
+  elements.themeToggle.ariaLabel = `Switch to ${next} theme`;
+  renderPaletteResults();
+}
+
+function applyAppearanceSnapshot(snapshot: AppearanceSnapshot): void {
+  if (snapshot.vaultId !== currentSnapshot?.vault.id) {
+    return;
+  }
+  appearanceSnapshot = snapshot;
+  appearanceStyle.textContent = snapshot.css;
+  applyColorScheme(snapshot.preference.colorScheme);
+  const warningKey = snapshot.warnings.join("\n");
+  if (warningKey && warningKey !== lastAppearanceWarning) {
+    showToast(snapshot.warnings[0] ?? "A custom appearance file could not be applied.");
+  }
+  lastAppearanceWarning = warningKey;
+  renderSettings();
+  renderPaletteResults();
+}
+
+async function refreshAppearance(successMessage?: string): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId) {
+    appearanceSnapshot = null;
+    appearanceStyle.textContent = "";
+    renderSettings();
+    return;
+  }
+  const request = ++appearanceRequest;
+  appearanceBusy = true;
+  appearanceMessage = "Scanning .obsidian/themes and .obsidian/snippets…";
+  appearanceMessageKind = "info";
+  renderSettings();
+  renderPaletteResults();
+  try {
+    const response = await window.threadleaf.getAppearance(vaultId);
+    if (request !== appearanceRequest || vaultId !== currentSnapshot?.vault.id) {
+      return;
+    }
+    if (response.status === "stale-vault") {
+      appearanceMessage = "The active vault changed before appearance files finished loading.";
+      appearanceMessageKind = "info";
+      return;
+    }
+    applyAppearanceSnapshot(response.appearance);
+    appearanceMessage =
+      successMessage ??
+      `${response.appearance.themes.length} themes and ${response.appearance.snippets.length} snippets discovered.`;
+    appearanceMessageKind = response.appearance.warnings.length > 0 ? "error" : "saved";
+  } catch (error) {
+    if (request !== appearanceRequest) {
+      return;
+    }
+    appearanceMessage = error instanceof Error ? error.message : String(error);
+    appearanceMessageKind = "error";
+  } finally {
+    if (request === appearanceRequest) {
+      appearanceBusy = false;
+      renderSettings();
+      renderPaletteResults();
+      void maybeMigrateLegacyTheme();
+    }
+  }
+}
+
+async function persistAppearance(
+  appearance: VaultAppearanceSettings,
+  successMessage: string,
+): Promise<boolean> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId || appearanceBusy) {
+    return false;
+  }
+  const request = ++appearanceRequest;
+  appearanceBusy = true;
+  appearanceMessage = "Saving appearance outside the vault…";
+  appearanceMessageKind = "info";
+  renderSettings();
+  renderPaletteResults();
+  try {
+    const response = await window.threadleaf.setVaultAppearance(vaultId, appearance);
+    if (request !== appearanceRequest || vaultId !== currentSnapshot?.vault.id) {
+      return false;
+    }
+    if (response.status === "stale-vault") {
+      appearanceMessage = "The active vault changed before the appearance update completed.";
+      appearanceMessageKind = "info";
+      return false;
+    }
+    applySettingsSnapshot(response.settings);
+    applyAppearanceSnapshot(response.appearance);
+    appearanceMessage = successMessage;
+    appearanceMessageKind = response.appearance.warnings.length > 0 ? "error" : "saved";
+    return true;
+  } catch (error) {
+    if (request === appearanceRequest) {
+      appearanceMessage = error instanceof Error ? error.message : String(error);
+      appearanceMessageKind = "error";
+    }
+    return false;
+  } finally {
+    if (request === appearanceRequest) {
+      appearanceBusy = false;
+      renderSettings();
+      renderPaletteResults();
+    }
+  }
+}
+
+async function toggleTheme(): Promise<void> {
+  const preference = currentAppearancePreference();
+  const current = effectiveColorScheme(preference.colorScheme, systemColorScheme.matches);
+  await persistAppearance(
+    { ...preference, colorScheme: current === "dark" ? "light" : "dark" },
+    `Switched to ${current === "dark" ? "light" : "dark"} mode.`,
+  );
+}
+
+async function disableCustomAppearance(): Promise<void> {
+  const preference = currentAppearancePreference();
+  const changed = await persistAppearance(
+    { ...preference, themeId: null, enabledSnippetIds: [] },
+    "Custom theme and snippets disabled.",
+  );
+  if (changed) {
+    showToast("Custom theme and snippets disabled.");
+  }
+}
+
+async function maybeMigrateLegacyTheme(): Promise<void> {
+  if (legacyThemeMigrationAttempted || !settingsLoaded || appearanceBusy) {
+    return;
+  }
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId) {
+    return;
+  }
+  legacyThemeMigrationAttempted = true;
+  const storedTheme = localStorage.getItem("threadleaf-theme");
+  if (
+    (storedTheme !== "light" && storedTheme !== "dark") ||
+    settingsSnapshot.settings.appearanceByVault[vaultId]
+  ) {
+    return;
+  }
+  const migrated = await persistAppearance(
+    { ...createDefaultVaultAppearance(), colorScheme: storedTheme },
+    "Previous light or dark preference migrated into app settings.",
+  );
+  if (migrated) {
+    localStorage.removeItem("threadleaf-theme");
+  }
+}
+
+function renderAppearanceSettings(): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  const catalog = appearanceSnapshot?.vaultId === vaultId ? appearanceSnapshot : null;
+  const preference = currentAppearancePreference();
+  const disabled = appearanceBusy || !vaultId;
+  const safeMode = catalog?.safeMode ?? false;
+
+  elements.schemeSystem.checked = preference.colorScheme === "system";
+  elements.schemeLight.checked = preference.colorScheme === "light";
+  elements.schemeDark.checked = preference.colorScheme === "dark";
+  for (const input of [elements.schemeSystem, elements.schemeLight, elements.schemeDark]) {
+    input.disabled = disabled;
+  }
+
+  elements.appearanceTheme.replaceChildren();
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Threadleaf default";
+  elements.appearanceTheme.append(defaultOption);
+  for (const theme of catalog?.themes ?? []) {
+    const option = document.createElement("option");
+    option.value = theme.id;
+    option.textContent = theme.version ? `${theme.name} (${theme.version})` : theme.name;
+    elements.appearanceTheme.append(option);
+  }
+  if (
+    preference.themeId &&
+    !(catalog?.themes ?? []).some((theme) => theme.id === preference.themeId)
+  ) {
+    const missing = document.createElement("option");
+    missing.value = preference.themeId;
+    missing.textContent = "Selected theme is unavailable";
+    elements.appearanceTheme.append(missing);
+  }
+  elements.appearanceTheme.value = preference.themeId ?? "";
+  elements.appearanceTheme.disabled = disabled || safeMode;
+  const selectedTheme = catalog?.themes.find((theme) => theme.id === preference.themeId);
+  elements.appearanceThemeDetail.textContent = selectedTheme
+    ? [selectedTheme.author, selectedTheme.version].filter(Boolean).join(" · ") ||
+      "Vault community theme"
+    : preference.themeId
+      ? "Not found in .obsidian/themes"
+      : "Threadleaf default";
+
+  elements.appearanceSnippets.replaceChildren();
+  for (const snippet of catalog?.snippets ?? []) {
+    const label = document.createElement("label");
+    label.className = "snippet-option";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = snippet.id;
+    input.checked = preference.enabledSnippetIds.includes(snippet.id);
+    input.disabled = disabled || safeMode;
+    input.addEventListener("change", () => {
+      const enabledSnippetIds = [
+        ...elements.appearanceSnippets.querySelectorAll<HTMLInputElement>(
+          'input[type="checkbox"]:checked',
+        ),
+      ].map((candidate) => candidate.value);
+      void persistAppearance(
+        { ...currentAppearancePreference(), enabledSnippetIds },
+        "CSS snippet selection saved.",
+      );
+    });
+    const name = document.createElement("span");
+    name.textContent = snippet.name;
+    label.append(input, name);
+    elements.appearanceSnippets.append(label);
+  }
+  if ((catalog?.snippets.length ?? 0) === 0) {
+    const empty = document.createElement("p");
+    empty.className = "snippet-empty";
+    empty.textContent = catalog
+      ? "No .css files found in .obsidian/snippets."
+      : "Appearance catalog is not loaded yet.";
+    elements.appearanceSnippets.append(empty);
+  }
+
+  elements.appearanceReload.disabled = disabled;
+  elements.appearanceReset.disabled =
+    disabled || (preference.themeId === null && preference.enabledSnippetIds.length === 0);
+  elements.appearanceStatus.textContent = appearanceMessage;
+  elements.appearanceStatus.dataset.kind = appearanceMessageKind;
+  elements.appearanceWarnings.replaceChildren();
+  for (const warning of catalog?.warnings ?? []) {
+    const item = document.createElement("li");
+    item.textContent = warning;
+    elements.appearanceWarnings.append(item);
+  }
+
+  const customCount = (catalog?.activeThemeId ? 1 : 0) + (catalog?.activeSnippetIds.length ?? 0);
+  elements.appearanceState.textContent = safeMode
+    ? "Safe mode"
+    : appearanceBusy
+      ? "Applying"
+      : customCount > 0
+        ? `${customCount} active`
+        : "Default";
+  elements.appearanceState.dataset.state = safeMode
+    ? "safe"
+    : customCount > 0
+      ? "active"
+      : "default";
+}
+
 function openSettings(): void {
   if (elements.settingsDialog.open) {
     elements.settingsClose.focus();
@@ -1508,10 +1884,13 @@ function openSettings(): void {
   elements.settingsDialog.showModal();
   renderSettings();
   elements.settingsClose.focus();
+  if (!appearanceSnapshot || appearanceSnapshot.vaultId !== currentSnapshot?.vault.id) {
+    void refreshAppearance();
+  }
 }
 
 function closeSettings(restoreFocus = true): void {
-  if (!elements.settingsDialog.open || settingsBusy) {
+  if (!elements.settingsDialog.open || settingsOperationBusy()) {
     return;
   }
   recordingShortcut = null;
@@ -1532,7 +1911,7 @@ function focusBindingButton(targetId: ShortcutTargetId): void {
 }
 
 function beginShortcutRecording(targetId: ShortcutTargetId): void {
-  if (settingsBusy) {
+  if (settingsOperationBusy()) {
     return;
   }
   recordingShortcut = targetId;
@@ -1555,7 +1934,7 @@ async function persistKeyBinding(
   targetId: ShortcutTargetId,
   binding: string | null,
 ): Promise<void> {
-  if (settingsBusy) {
+  if (settingsOperationBusy()) {
     return;
   }
   settingsBusy = true;
@@ -1579,7 +1958,7 @@ async function persistKeyBinding(
 }
 
 async function resetKeyBindings(): Promise<void> {
-  if (settingsBusy) {
+  if (settingsOperationBusy()) {
     return;
   }
   settingsBusy = true;
@@ -1637,9 +2016,11 @@ function renderSettings(): void {
   elements.settingsStatus.textContent =
     settingsMessageKind === "error" ? `Error: ${settingsMessage}` : settingsMessage;
   elements.settingsStatus.dataset.kind = settingsMessageKind;
-  elements.settingsClose.disabled = settingsBusy;
-  elements.settingsDone.disabled = settingsBusy;
-  elements.settingsReset.disabled = settingsBusy;
+  const operationBusy = settingsOperationBusy();
+  elements.settingsClose.disabled = operationBusy;
+  elements.settingsDone.disabled = operationBusy;
+  elements.settingsReset.disabled = operationBusy;
+  renderAppearanceSettings();
   if (!elements.settingsDialog.open) {
     return;
   }
@@ -1666,7 +2047,7 @@ function renderSettings(): void {
     capture.className = "binding-capture";
     capture.dataset.shortcutTarget = target.id;
     capture.dataset.recording = String(recordingShortcut === target.id);
-    capture.disabled = settingsBusy;
+    capture.disabled = operationBusy;
     capture.ariaLabel = `Change shortcut for ${target.label}`;
     const key = document.createElement("kbd");
     key.textContent =
@@ -1678,7 +2059,7 @@ function renderSettings(): void {
     const clear = document.createElement("button");
     clear.type = "button";
     clear.className = "binding-clear";
-    clear.disabled = settingsBusy || binding === null;
+    clear.disabled = operationBusy || binding === null;
     clear.ariaLabel = `Clear shortcut for ${target.label}`;
     clear.textContent = "Clear";
     clear.addEventListener("click", () => void persistKeyBinding(target.id, null));
@@ -1909,7 +2290,18 @@ function reconcileVaultSearch(snapshot: RuntimeSnapshot): void {
 }
 
 function render(snapshot: RuntimeSnapshot): void {
+  const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
+  if (previousVaultId !== snapshot.vault.id) {
+    appearanceRequest += 1;
+    appearanceBusy = false;
+    appearanceSnapshot = null;
+    appearanceStyle.textContent = "";
+    lastAppearanceWarning = "";
+    applyColorScheme(currentAppearancePreference().colorScheme);
+    void refreshAppearance();
+    void maybeMigrateLegacyTheme();
+  }
   const workspace = snapshot.workspace;
   const plugin = snapshot.plugin;
   elements.vaultName.textContent = snapshot.vault.name;
@@ -1986,7 +2378,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
   for (const tab of tabs) {
     const isActive = tab.path === displayedPath;
     const wrapper = document.createElement("div");
-    wrapper.className = "note-tab";
+    wrapper.className = "note-tab workspace-tab-header";
     wrapper.dataset.active = String(isActive);
 
     const activate = document.createElement("button");
@@ -2094,7 +2486,7 @@ function createFileButton(
 ): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "file-item";
+  button.className = "file-item nav-file-title";
   button.dataset.notePath = filePath;
   button.ariaLabel = `Open ${filePath}`;
   if (filePath === activePath) {
@@ -2652,15 +3044,6 @@ function setActionState(nextBusy: boolean): void {
   renderEditControls();
 }
 
-function setTheme(theme: "light" | "dark"): void {
-  document.documentElement.dataset.theme = theme;
-  localStorage.setItem("threadleaf-theme", theme);
-  const next = theme === "light" ? "dark" : "light";
-  elements.themeLabel.textContent = next === "dark" ? "Dark" : "Light";
-  elements.themeToggle.ariaLabel = `Switch to ${next} theme`;
-  renderPaletteResults();
-}
-
 elements.fileSearch.addEventListener("input", () => {
   scheduleVaultSearch();
 });
@@ -2766,6 +3149,36 @@ elements.commandPalette.addEventListener("click", (event) => {
 elements.settingsClose.addEventListener("click", () => closeSettings());
 elements.settingsDone.addEventListener("click", () => closeSettings());
 elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
+for (const [input, colorScheme] of [
+  [elements.schemeSystem, "system"],
+  [elements.schemeLight, "light"],
+  [elements.schemeDark, "dark"],
+] as const) {
+  input.addEventListener("change", () => {
+    if (!input.checked) {
+      return;
+    }
+    void persistAppearance(
+      { ...currentAppearancePreference(), colorScheme },
+      colorScheme === "system"
+        ? "Color scheme now follows the desktop."
+        : `${colorScheme === "light" ? "Light" : "Dark"} mode saved.`,
+    );
+  });
+}
+elements.appearanceTheme.addEventListener("change", () => {
+  void persistAppearance(
+    {
+      ...currentAppearancePreference(),
+      themeId: elements.appearanceTheme.value || null,
+    },
+    elements.appearanceTheme.value ? "Community theme applied." : "Threadleaf theme restored.",
+  );
+});
+elements.appearanceReload.addEventListener("click", () => {
+  void refreshAppearance("Appearance files reloaded.");
+});
+elements.appearanceReset.addEventListener("click", () => void disableCustomAppearance());
 elements.settingsDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   if (recordingShortcut) {
@@ -2900,14 +3313,14 @@ updateShortcutLabels();
 const storedDocumentView = localStorage.getItem("threadleaf-document-view");
 documentViewMode = storedDocumentView === "reading" ? "reading" : "source";
 
-const storedTheme = localStorage.getItem("threadleaf-theme");
-const initialTheme =
-  storedTheme === "light" || storedTheme === "dark"
-    ? storedTheme
-    : window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-setTheme(initialTheme);
+applyColorScheme("system");
+const handleSystemColorSchemeChange = (): void => {
+  if (currentAppearancePreference().colorScheme === "system") {
+    applyColorScheme("system");
+    renderSettings();
+  }
+};
+systemColorScheme.addEventListener("change", handleSystemColorSchemeChange);
 
 const unsubscribe = window.threadleaf.onSnapshot(render);
 const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
@@ -2925,6 +3338,7 @@ window.addEventListener(
     }
     unsubscribe();
     unsubscribeSettings();
+    systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
     editor.destroy();
   },
   { once: true },

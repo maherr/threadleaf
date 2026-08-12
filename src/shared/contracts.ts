@@ -1,4 +1,13 @@
+import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
+
+export type AppearanceUpdateResponse =
+  | {
+      status: "updated";
+      settings: AppSettingsSnapshot;
+      appearance: AppearanceSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
 
 export type PluginRuntimeState = "empty" | "loaded" | "unloaded" | "failed";
 
@@ -286,6 +295,11 @@ export type VaultOpenResponse =
 export interface ThreadleafBridge {
   getSnapshot(): Promise<RuntimeSnapshot>;
   getSettings(): Promise<AppSettingsSnapshot>;
+  getAppearance(expectedVaultId: string): Promise<AppearanceResponse>;
+  setVaultAppearance(
+    expectedVaultId: string,
+    appearance: VaultAppearanceSettings,
+  ): Promise<AppearanceUpdateResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   loadVaultImage(
     sourceNotePath: string,

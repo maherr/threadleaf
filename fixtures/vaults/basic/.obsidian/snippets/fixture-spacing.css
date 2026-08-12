@@ -1,0 +1,11 @@
+/* Synthetic snippet used to verify standard Obsidian snippet discovery and activation. */
+
+.markdown-source-view .cm-content,
+.markdown-preview-view {
+  padding-inline: var(--file-margins, 44px);
+}
+
+.workspace-leaf-content .tag-row li {
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}

@@ -1,3 +1,9 @@
+import {
+  createDefaultVaultAppearance,
+  parseVaultAppearanceSettings,
+  type VaultAppearanceSettings,
+} from "./appearance";
+
 export const shortcutTargetIds = [
   "ui.command-palette",
   "settings.open-keybindings",
@@ -13,13 +19,16 @@ export const shortcutTargetIds = [
   "editor.revert-note",
   "editor.toggle-reading-view",
   "appearance.toggle-theme",
+  "appearance.reload-custom-css",
+  "appearance.disable-custom-css",
 ] as const;
 
 export type ShortcutTargetId = (typeof shortcutTargetIds)[number];
 
 export interface AppSettings {
-  version: 1;
+  version: 2;
   keyBindings: Record<string, string | null>;
+  appearanceByVault: Record<string, VaultAppearanceSettings>;
 }
 
 export interface AppSettingsSnapshot {
@@ -50,6 +59,8 @@ export const defaultKeyBindings: Readonly<Record<ShortcutTargetId, string | null
   "editor.revert-note": null,
   "editor.toggle-reading-view": "Mod+E",
   "appearance.toggle-theme": "Mod+Shift+L",
+  "appearance.reload-custom-css": null,
+  "appearance.disable-custom-css": "Mod+Alt+L",
 };
 
 const modifierOrder = ["Mod", "Alt", "Shift"] as const;
@@ -102,6 +113,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const vaultIdPattern = /^[a-f0-9]{64}$/;
+
+function parseAppearanceByVault(value: unknown): Record<string, VaultAppearanceSettings> {
+  if (!isRecord(value)) {
+    throw new Error("Settings appearanceByVault must be an object.");
+  }
+  const entries = Object.entries(value);
+  if (entries.length > 128) {
+    throw new Error("Settings contain appearance preferences for too many vaults.");
+  }
+  const appearanceByVault: Record<string, VaultAppearanceSettings> = {};
+  for (const [vaultId, appearance] of entries) {
+    if (!vaultIdPattern.test(vaultId)) {
+      throw new Error("Appearance preferences require lowercase SHA-256 vault identities.");
+    }
+    appearanceByVault[vaultId] = parseVaultAppearanceSettings(appearance);
+  }
+  return appearanceByVault;
+}
+
 function normalizeKey(value: string): string {
   const trimmed = eventKeyNames[value.trim()] ?? value.trim();
   if (/^[a-z0-9]$/i.test(trimmed)) {
@@ -148,12 +179,16 @@ export function normalizeKeyBinding(value: string): string {
 }
 
 export function createDefaultAppSettings(): AppSettings {
-  return { version: 1, keyBindings: { ...defaultKeyBindings } };
+  return { version: 2, keyBindings: { ...defaultKeyBindings }, appearanceByVault: {} };
 }
 
 export function parseAppSettings(value: unknown): AppSettings {
-  if (!isRecord(value) || value.version !== 1 || !isRecord(value.keyBindings)) {
-    throw new Error("Settings must contain version 1 and a keyBindings object.");
+  if (
+    !isRecord(value) ||
+    (value.version !== 1 && value.version !== 2) ||
+    !isRecord(value.keyBindings)
+  ) {
+    throw new Error("Settings must contain version 1 or 2 and a keyBindings object.");
   }
   const entries = Object.entries(value.keyBindings);
   if (entries.length > 512) {
@@ -170,7 +205,9 @@ export function parseAppSettings(value: unknown): AppSettings {
     keyBindings[targetId] = binding === null ? null : normalizeKeyBinding(binding);
   }
   assertNoKeyBindingCollisions(keyBindings);
-  return { version: 1, keyBindings };
+  const appearanceByVault =
+    value.version === 1 ? {} : parseAppearanceByVault(value.appearanceByVault);
+  return { version: 2, keyBindings, appearanceByVault };
 }
 
 export function isShortcutTargetId(value: string): value is ShortcutTargetId {
@@ -187,7 +224,39 @@ export function updateKeyBinding(
     [targetId]: binding === null ? null : normalizeKeyBinding(binding),
   };
   assertNoKeyBindingCollisions(keyBindings);
-  return { version: 1, keyBindings };
+  return { ...settings, keyBindings };
+}
+
+export function appearanceForVault(
+  settings: AppSettings,
+  vaultId: string,
+): VaultAppearanceSettings {
+  const appearance = settings.appearanceByVault[vaultId];
+  return appearance
+    ? {
+        colorScheme: appearance.colorScheme,
+        themeId: appearance.themeId,
+        enabledSnippetIds: [...appearance.enabledSnippetIds],
+      }
+    : createDefaultVaultAppearance();
+}
+
+export function updateVaultAppearance(
+  settings: AppSettings,
+  vaultId: string,
+  appearance: VaultAppearanceSettings,
+): AppSettings {
+  if (!vaultIdPattern.test(vaultId)) {
+    throw new Error("Appearance preferences require a lowercase SHA-256 vault identity.");
+  }
+  const normalized = parseVaultAppearanceSettings(appearance);
+  return {
+    ...settings,
+    appearanceByVault: {
+      ...settings.appearanceByVault,
+      [vaultId]: normalized,
+    },
+  };
 }
 
 export function assertNoKeyBindingCollisions(

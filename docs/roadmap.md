@@ -112,6 +112,13 @@ equivalence through the real writer-to-watcher seam.
       word and grapheme-character counts, with private-tree and symlink containment.
 - [x] Obsidian-style CLI search and graph output controls, including folder, limit, case, total,
       counts, verbose sources, grep-style context, JSON/TSV/CSV, and tree/Markdown/JSON outlines.
+- [x] Read-only discovery of standard Obsidian theme and CSS snippet folders, with deterministic
+      catalogs, bounded contained reads, explicit diagnostics, and theme-before-snippet ordering.
+- [x] Versioned per-vault appearance settings outside the vault, system/light/dark selection,
+      settings UI, manual reload, one-command recovery, startup safe mode, and version 1 migration.
+- [x] Initial Obsidian-compatible appearance variables and workspace class aliases, verified in
+      default and synthetic compatibility themes at minimum desktop size and under moderate
+      deuteranomaly.
 - [ ] Remaining CLI commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.
@@ -128,8 +135,16 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       supported method, event, component, and lifecycle edge.
 - [ ] Add workspace views, Markdown processors, menus, ribbons, status items, modal and setting
       components, plugin settings views, and CodeMirror editor extensions.
-- [ ] Implement plugin discovery, install, update, enable, disable, reload, safe mode, diagnostics,
-      and per-vault configuration without requiring a running Obsidian process.
+- [ ] Discover `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` through
+      contained bounded reads, with deterministic identity and explicit invalid-package evidence.
+- [ ] Keep Threadleaf's enabled-plugin set and grants in private per-vault settings while reading
+      existing Obsidian configuration only through an explicit migration preview.
+- [ ] Implement enable, disable, reload, startup safe mode, activation timeouts, crash attribution,
+      lifecycle diagnostics, and clean unload for every discovered compatibility plugin.
+- [ ] Implement reviewable install, update, rollback, and uninstall against an open package index,
+      with exact version pins, integrity checks, retained licenses, and no silent bundle execution.
+- [ ] Add dependency, minimum-app-version, desktop-only, and compatibility-level reporting before a
+      plugin can be enabled.
 - [ ] Import behavior with an explicit preview: enabled-plugin inventory, compatible plugin
       settings, hotkeys, themes, CSS snippets, and workspace layout. Never require or mutate
       `.obsidian/`.
@@ -139,7 +154,11 @@ Exit gate: a real vault can be used daily without enabling compatibility plugins
       search latency, memory use, editor latency, and plugin activation.
 - [ ] Run plugin bundles through automated compatibility and security checks before distribution.
 - [ ] Verify representative open plugins for queries, tasks, templates, Git, citations, calendars,
-      tables, databases, and a demanding end-to-end Excalidraw workflow.
+      tables, and databases through named end-to-end workflows.
+- [ ] Run the open Excalidraw plugin unchanged through discovery, activation, command registration,
+      drawing creation, edit, embed, reopen, export, and clean unload fixtures.
+- [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
+      rename, sync-style conflicts, and recovery without a converter-only fork of the format.
 
 Exit gate: selected high-value plugins complete named workflows against public fixtures.
 
@@ -158,14 +177,22 @@ Exit gate: selected high-value plugins complete named workflows against public f
 
 ## Phase 5: Themes, workspace parity, and desktop 1.0
 
-- [ ] Versioned design tokens and a stable theme contract for light, dark, high-contrast, and
-      system-following appearances.
-- [ ] Theme and CSS snippet discovery, preview, install, update, enable, disable, conflict
-      diagnostics, and per-vault selection.
-- [ ] An Obsidian-theme compatibility layer for commonly used variables, classes, icons, and
-      component states, tested against representative open community themes in every major view.
-- [ ] Visual regression coverage for default and compatibility themes at minimum desktop size,
-      ordinary laptop size, high DPI, zoom, long translations, and moderate deuteranomaly.
+- [x] Stable baseline design tokens for light, dark, and system-following appearances.
+- [ ] Add high-contrast tokens, user accent controls, text/font controls, reduced-transparency
+      behavior, and a versioned public theme contract.
+- [x] Discover, enable, disable, reload, diagnose, and select existing vault themes and snippets
+      per vault without mutating `.obsidian/`.
+- [ ] Add preview-before-commit, package install, update, rollback, uninstall, file watching,
+      conflict diagnostics, and portable theme export.
+- [x] Expose an initial Obsidian-theme compatibility layer for common variables, workspace classes,
+      Markdown views, file navigation, tabs, and status bars.
+- [ ] Expand the compatibility layer through measured open-theme usage, icon and component states,
+      settings controls, pop-outs, graphs, Canvas, and every major workspace view.
+- [x] Verify default and synthetic compatibility themes at minimum desktop size in both schemes,
+      with live computed-style contrast, focusable names, non-color state cues, and moderate and
+      stress deuteranomaly checks.
+- [ ] Add committed visual regression coverage for ordinary laptop size, high DPI, zoom, long
+      translations, reduced motion, high contrast, and representative open community themes.
 - [ ] Split groups, draggable tabs, pinned tabs, side docks, floating windows, pop-out views,
       history, bookmarks, quick switcher, command discovery, and persistent workspace layouts.
 - [ ] Source mode, live preview, reading mode, block and heading references, embeds, callouts,

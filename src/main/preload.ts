@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { AppearanceResponse } from "../shared/appearance";
 import type {
+  AppearanceUpdateResponse,
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
@@ -16,6 +18,14 @@ import type { AppSettingsSnapshot } from "../shared/key-bindings";
 const bridge: ThreadleafBridge = {
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
   getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
+  getAppearance: (expectedVaultId) =>
+    ipcRenderer.invoke(ipcChannels.appearance, expectedVaultId) as Promise<AppearanceResponse>,
+  setVaultAppearance: (expectedVaultId, appearance) =>
+    ipcRenderer.invoke(
+      ipcChannels.setVaultAppearance,
+      expectedVaultId,
+      appearance,
+    ) as Promise<AppearanceUpdateResponse>,
   searchVault: (query) =>
     ipcRenderer.invoke(ipcChannels.searchVault, query) as Promise<VaultSearchResponse>,
   loadVaultImage: (sourceNotePath, target, expectedVaultId) =>

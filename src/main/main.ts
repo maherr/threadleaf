@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "ele
 import { AppSettingsController } from "../application/app-settings-controller";
 import { WorkspaceController } from "../application/workspace-controller";
 import { FixedStateRoot } from "../kernel/ports";
+import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared/appearance";
 import { ipcChannels } from "../shared/ipc-channels";
 import { isShortcutTargetId } from "../shared/key-bindings";
 import {
@@ -13,6 +14,7 @@ import {
 import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
+import { loadVaultAppearance } from "./vault-appearance-loader";
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
@@ -31,6 +33,32 @@ function describeVaultOpenFailure(error: unknown): string {
   }
   const detail = error instanceof Error ? error.message : String(error);
   return `Could not open that folder: ${detail}`;
+}
+
+function appearanceSafeMode(): boolean {
+  return (
+    process.argv.includes("--safe-appearance") || process.env.THREADLEAF_SAFE_APPEARANCE === "1"
+  );
+}
+
+async function currentAppearance(expectedVaultId: string): Promise<AppearanceResponse> {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId };
+  }
+  const vaultPath = workspaceController.vaultPath;
+  const appearance = await loadVaultAppearance({
+    vaultPath,
+    vaultId: expectedVaultId,
+    preference: settingsController.getVaultAppearance(expectedVaultId),
+    safeMode: appearanceSafeMode(),
+  });
+  if (
+    workspaceController.vaultId !== expectedVaultId ||
+    workspaceController.vaultPath !== vaultPath
+  ) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId };
+  }
+  return { status: "ready", appearance };
 }
 
 async function createWorkspaceController(): Promise<WorkspaceController> {
@@ -57,6 +85,29 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
   ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
+  ipcMain.handle(ipcChannels.appearance, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Appearance loading requires a string vault identity.");
+    }
+    return currentAppearance(expectedVaultId);
+  });
+  ipcMain.handle(
+    ipcChannels.setVaultAppearance,
+    async (_event, expectedVaultId: unknown, appearanceValue: unknown) => {
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Appearance updates require a string vault identity.");
+      }
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      const appearance = parseVaultAppearanceSettings(appearanceValue);
+      const settings = await settingsController.setVaultAppearance(expectedVaultId, appearance);
+      const response = await currentAppearance(expectedVaultId);
+      return response.status === "ready"
+        ? { status: "updated", settings, appearance: response.appearance }
+        : response;
+    },
+  );
   ipcMain.handle(ipcChannels.searchVault, (_event, query: unknown) => {
     if (typeof query !== "string") {
       throw new Error("Vault search requires a string query.");

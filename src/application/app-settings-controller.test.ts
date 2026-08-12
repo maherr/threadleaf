@@ -81,12 +81,37 @@ describe("AppSettingsController", () => {
   it("resets bindings through the same durable adoption path", async () => {
     const customized = createDefaultAppSettings();
     customized.keyBindings["editor.revert-note"] = "Alt+R";
+    customized.appearanceByVault["a".repeat(64)] = {
+      colorScheme: "dark",
+      themeId: "obsidian-theme:Minimal",
+      enabledSnippetIds: [],
+    };
     const store = new MemorySettingsStore(customized);
     const controller = await AppSettingsController.open(store);
 
     const reset = await controller.resetKeyBindings();
 
-    expect(reset.settings).toEqual(createDefaultAppSettings());
-    expect(store.saved).toEqual([createDefaultAppSettings()]);
+    expect(reset.settings.keyBindings).toEqual(createDefaultAppSettings().keyBindings);
+    expect(reset.settings.appearanceByVault).toEqual(customized.appearanceByVault);
+    expect(store.saved).toEqual([reset.settings]);
+  });
+
+  it("persists per-vault appearance without changing keyboard settings", async () => {
+    const store = new MemorySettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const vaultId = "b".repeat(64);
+
+    const snapshot = await controller.setVaultAppearance(vaultId, {
+      colorScheme: "light",
+      themeId: "obsidian-theme:Paper",
+      enabledSnippetIds: ["obsidian-snippet:spacing.css"],
+    });
+
+    expect(snapshot.settings.keyBindings).toEqual(createDefaultAppSettings().keyBindings);
+    expect(controller.getVaultAppearance(vaultId)).toEqual({
+      colorScheme: "light",
+      themeId: "obsidian-theme:Paper",
+      enabledSnippetIds: ["obsidian-snippet:spacing.css"],
+    });
   });
 });

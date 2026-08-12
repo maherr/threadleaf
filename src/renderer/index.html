@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'nonce-threadleaf-codemirror'; img-src 'self' data:; connect-src 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'nonce-threadleaf-codemirror'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'"
     />
     <title>Threadleaf</title>
   </head>
-  <body>
-    <div class="app-frame">
-      <header class="topbar">
+  <body class="app-container is-desktop theme-light">
+    <div class="app-frame workspace-container">
+      <header class="topbar titlebar">
         <a class="brand" href="#note-editor-shell" aria-label="Threadleaf workspace">
           <span class="brand-mark" aria-hidden="true"><span>T</span></span>
           <span class="brand-copy">
@@ -50,7 +50,7 @@
             class="icon-button settings-trigger"
             id="settings-trigger"
             type="button"
-            aria-label="Open keyboard settings"
+            aria-label="Open settings"
           >
             <span aria-hidden="true">⚙</span>
             <span class="settings-trigger-copy">Settings</span>
@@ -64,7 +64,7 @@
       </header>
 
       <div class="workspace">
-        <aside class="navigator" aria-labelledby="files-heading">
+        <aside class="navigator workspace-split mod-left-split" aria-labelledby="files-heading">
           <div class="pane-heading navigator-heading">
             <div>
               <p class="eyebrow">Vault</p>
@@ -95,7 +95,11 @@
           </label>
 
           <p class="filter-summary" id="filter-summary" aria-live="polite">Loading vault index</p>
-          <nav class="file-list" id="file-list" aria-label="Markdown files"></nav>
+          <nav
+            class="file-list nav-files-container"
+            id="file-list"
+            aria-label="Markdown files"
+          ></nav>
 
           <div class="navigator-foot">
             <span><strong id="index-status">Indexing</strong> derived index</span>
@@ -103,8 +107,8 @@
           </div>
         </aside>
 
-        <main class="note-stage" id="main-content">
-          <div class="note-tabs-shell">
+        <main class="note-stage workspace-split mod-root" id="main-content">
+          <div class="note-tabs-shell workspace-tabs">
             <div class="note-tabs" id="note-tabs" role="tablist" aria-label="Open notes"></div>
           </div>
           <div class="note-toolbar">
@@ -143,10 +147,15 @@
             <p>The filesystem remains authoritative. This surface reads through the safe vault kernel.</p>
           </div>
 
-          <article class="note-view" id="note-view" hidden>
+          <article
+            class="note-view workspace-leaf-content"
+            id="note-view"
+            data-type="markdown"
+            hidden
+          >
             <header class="note-header">
               <p class="eyebrow">Open document</p>
-              <h2 id="note-title">Untitled</h2>
+              <h2 class="inline-title" id="note-title">Untitled</h2>
               <p class="note-stats" id="note-stats"></p>
               <ul class="tag-row" id="note-tags" aria-label="Note tags"></ul>
             </header>
@@ -158,11 +167,14 @@
               </span>
               <button class="notice-dismiss" id="dismiss-edit-notice" type="button">Dismiss</button>
             </div>
-            <div class="note-editor-shell" id="note-editor-shell">
+            <div
+              class="note-editor-shell view-content markdown-source-view mod-cm6 is-live-preview"
+              id="note-editor-shell"
+            >
               <div class="note-editor" id="note-editor"></div>
             </div>
             <section
-              class="note-preview"
+              class="note-preview view-content markdown-preview-view"
               id="note-preview"
               tabindex="-1"
               aria-label="Rendered Markdown preview"
@@ -171,7 +183,10 @@
           </article>
         </main>
 
-        <aside class="inspector" aria-label="Note inspector and compatibility runtime">
+        <aside
+          class="inspector workspace-split mod-right-split"
+          aria-label="Note inspector and compatibility runtime"
+        >
           <section class="inspector-section" aria-labelledby="outline-heading">
             <div class="section-heading">
               <p class="eyebrow">Structure</p>
@@ -225,7 +240,7 @@
         </aside>
       </div>
 
-      <footer class="statusbar">
+      <footer class="statusbar status-bar">
         <span id="vault-mode"><span aria-hidden="true">◆</span> <span id="vault-source">Bundled vault</span></span>
         <span>Watcher sequence <strong id="watch-sequence">0</strong></span>
         <span id="watch-message">Filesystem and index agree</span>
@@ -276,7 +291,7 @@
     </dialog>
 
     <dialog
-      class="shortcut-settings"
+      class="shortcut-settings modal"
       id="shortcut-settings"
       aria-labelledby="settings-title"
       aria-describedby="settings-description"
@@ -286,29 +301,107 @@
         <header class="settings-header">
           <span>
             <small>App-owned preferences</small>
-            <strong id="settings-title">Keyboard settings</strong>
+            <strong id="settings-title">Settings</strong>
           </span>
-          <button id="settings-close" type="button" aria-label="Close keyboard settings">
+          <button id="settings-close" type="button" aria-label="Close settings">
             <kbd>Esc</kbd>
           </button>
         </header>
         <p id="settings-description" class="settings-description">
-          Shortcuts are stored in Threadleaf's private application data, never in this vault or
-          <code>.obsidian/</code>. Select a binding to record a replacement.
+          Preferences are stored in Threadleaf's private application data. Themes and snippets are
+          discovered read-only from <code>.obsidian/</code>; Threadleaf never changes those files.
         </p>
         <p class="settings-warning" id="settings-warning" role="alert" hidden></p>
-        <div class="binding-column-labels" aria-hidden="true">
-          <span>Command</span>
-          <span>Binding</span>
+        <div class="settings-content">
+          <section class="appearance-settings" aria-labelledby="appearance-heading">
+            <header class="settings-section-heading">
+              <span>
+                <small>Vault appearance</small>
+                <strong id="appearance-heading">Theme and CSS snippets</strong>
+              </span>
+              <span class="appearance-state" id="appearance-state">Loading</span>
+            </header>
+
+            <fieldset class="scheme-fieldset" id="scheme-fieldset">
+              <legend>Base color scheme</legend>
+              <div class="scheme-options">
+                <label class="scheme-option">
+                  <input id="scheme-system" name="color-scheme" type="radio" value="system" />
+                  <span aria-hidden="true">◐</span>
+                  <strong>System</strong>
+                  <small>Follow the desktop</small>
+                </label>
+                <label class="scheme-option">
+                  <input id="scheme-light" name="color-scheme" type="radio" value="light" />
+                  <span aria-hidden="true">○</span>
+                  <strong>Light</strong>
+                  <small>Always use light</small>
+                </label>
+                <label class="scheme-option">
+                  <input id="scheme-dark" name="color-scheme" type="radio" value="dark" />
+                  <span aria-hidden="true">●</span>
+                  <strong>Dark</strong>
+                  <small>Always use dark</small>
+                </label>
+              </div>
+            </fieldset>
+
+            <label class="appearance-select-field" for="appearance-theme">
+              <span>
+                <strong>Community theme</strong>
+                <small id="appearance-theme-detail">Threadleaf default</small>
+              </span>
+              <select id="appearance-theme">
+                <option value="">Threadleaf default</option>
+              </select>
+            </label>
+
+            <div class="snippet-settings">
+              <div class="snippet-heading">
+                <span>
+                  <strong>CSS snippets</strong>
+                  <small>Enabled after the selected theme, in listed order</small>
+                </span>
+                <button class="secondary-button" id="appearance-reload" type="button">
+                  Reload files
+                </button>
+              </div>
+              <div class="snippet-list" id="appearance-snippets"></div>
+            </div>
+
+            <div class="appearance-diagnostics">
+              <p id="appearance-status" data-kind="info" role="status" aria-live="polite">
+                Discovering themes and snippets in this vault.
+              </p>
+              <ul id="appearance-warnings" aria-label="Appearance diagnostics"></ul>
+            </div>
+            <button class="appearance-reset" id="appearance-reset" type="button">
+              Disable custom theme and snippets
+            </button>
+          </section>
+
+          <section class="keyboard-settings" aria-labelledby="keyboard-heading">
+            <header class="settings-section-heading keyboard-heading">
+              <span>
+                <small>Keyboard</small>
+                <strong id="keyboard-heading">Shortcuts</strong>
+              </span>
+              <small>Select a binding, then press its replacement</small>
+            </header>
+            <div class="binding-column-labels" aria-hidden="true">
+              <span>Command</span>
+              <span>Binding</span>
+            </div>
+            <div class="key-binding-list" id="key-binding-list"></div>
+          </section>
         </div>
-        <div class="key-binding-list" id="key-binding-list"></div>
         <footer class="settings-footer">
           <p id="settings-status" data-kind="info" role="status" aria-live="polite">
             Select a command, then press its new shortcut.
           </p>
           <span class="settings-actions">
             <button class="secondary-button" id="settings-reset" type="button">
-              Reset defaults
+              Reset shortcuts
             </button>
             <button class="primary-button" id="settings-done" type="button">Done</button>
           </span>
