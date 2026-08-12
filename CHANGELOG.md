@@ -91,3 +91,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Headless `aliases`, `tags`, and `tag` commands with exact-note filtering, deterministic alias
   source paths, distinct tag names, raw occurrence totals, count sorting, and verbose carrying-file
   output from the rebuildable metadata index.
+- Shared `file=` note-name resolution across existing-note CLI commands, with optional `.md`,
+  case-insensitive NFC matching, canonical resolved paths, and explicit missing or duplicate-name
+  failures instead of arbitrary selection.

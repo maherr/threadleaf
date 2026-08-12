@@ -64,7 +64,7 @@ const cliGraphResult = spawnSync(
     path.join(projectRoot, "fixtures", "vaults", "basic"),
     "--json",
     "links",
-    "path=Welcome.md",
+    "file=welcome",
   ],
   { encoding: "utf8" },
 );

@@ -45,7 +45,7 @@ During development, prefix the same arguments with `pnpm cli`.
 | --- | --- | --- |
 | `vault info` or `vault:info` | Canonical path and note, heading, tag, and link counts | Read-only kernel plus derived index |
 | `files` | Sorted Markdown paths, optionally filtered to a directory | Read-only kernel |
-| `read` | Exact UTF-8 note content | Read-only kernel |
+| `read` | UTF-8 note content | Read-only kernel |
 | `search` | Ranked paths and best context, with a bounded result count | Derived metadata and full-text index |
 | `links` | Ordered outgoing internal-link occurrences and resolution states | Derived metadata index |
 | `backlinks` | Resolved source notes and occurrence counts for one note | Derived metadata index |
@@ -65,16 +65,29 @@ During development, prefix the same arguments with `pnpm cli`.
 | `property:read` | One indexed property value or an explicit absent result | Derived metadata index |
 | `property:set` | Typed property value, note revision, and transaction | Revision-checked recoverable writer |
 | `property:remove` | Committed removal or explicit no-write missing result | Revision-checked recoverable writer |
-| `tasks` | Vault-wide or exact-note Markdown tasks with status filters and optional count/location output | Read-only kernel plus Markdown task scanner |
-| `task` | One exact `path:line` task, optionally with a new checkbox status | Read-only scanner or revision-checked recoverable writer |
-| `aliases` | Frontmatter aliases across the vault or one exact note, optionally with source paths | Derived metadata index |
-| `tags` | Unique tag catalog with occurrence counts across the vault or one exact note | Derived metadata index |
+| `tasks` | Vault-wide or targeted-note Markdown tasks with status filters and optional count/location output | Read-only kernel plus Markdown task scanner |
+| `task` | One targeted task line, optionally with a new checkbox status | Read-only scanner or revision-checked recoverable writer |
+| `aliases` | Frontmatter aliases across the vault or one targeted note, optionally with source paths | Derived metadata index |
+| `tags` | Unique tag catalog with occurrence counts across the vault or one targeted note | Derived metadata index |
 | `tag` | Occurrence total and carrying files for one tag | Derived metadata index |
 
 The note corpus excludes `.obsidian/`, `.git/`, `.trash/`, and Threadleaf transaction artifacts.
 Read-only kernel opening performs path validation but creates no state directory, vault identity,
 recovery journal, or watcher. `trash list` deliberately inspects `.trash/` through a dedicated path
 without admitting its contents to files, read, search, graph, watcher, workspace, or image results.
+
+## Note targets
+
+Native positional note arguments and `path=` are exact vault-relative paths. `file=` is the
+familiar name-based form: it compares Markdown basenames case-insensitively after NFC Unicode
+normalization, and accepts the name with or without `.md`. A unique match returns its canonical
+vault path. No match returns `VAULT` exit 3, and multiple matches return the same exit with every
+candidate path listed. Threadleaf never guesses among duplicate basenames.
+
+This rule is shared by read, graph, outline, text mutation, move, rename, delete, property, task,
+alias, and tag commands. `task ref=<path:line>` remains exact because the path and source line form
+one stable address. `restore` is also exact because it addresses the one-to-one path mapping under
+`.trash/`, not the live Markdown corpus.
 
 The graph commands expose the index's distinctions instead of flattening them. `links` retains
 source order and duplicate occurrences. `backlinks` groups resolved occurrences by source, while
@@ -136,8 +149,7 @@ manual removal from `.trash/` remains outside the current CLI contract.
 
 `properties` and `property:read` expose the same current scalar-and-list projection used by desktop
 search. Both are read-only and create no CLI state. Threadleaf has no active-file default, so each
-property command requires an exact `path=` or `file=` target. `file=` remains an exact path in this
-release rather than basename or wikilink resolution.
+property command requires an explicit exact `path=` or unique-name `file=` target.
 
 `property:set` defaults to `type=text`. Supported explicit types are `text`, `list`, `number`,
 `checkbox`, `date`, and `datetime`. Text is stored as a quoted one-line YAML string. A list value may
@@ -154,13 +166,15 @@ keys, JSON frontmatter, nested mappings, and block scalars are refused before an
 first patcher cannot yet preserve them losslessly. A revision race keeps the external winner at the
 requested path, stores the complete proposed file as a conflict copy, and returns exit 5.
 
-`tasks` scans every indexed Markdown note or one exact `path=` or `file=` target. With no filter it
+`tasks` scans every indexed Markdown note, one exact `path=` target, or one unique-name `file=`
+target. With no filter it
 returns all recognized tasks. `done` means status `x` or `X`; `todo` means every other status, so
 custom statuses remain visible. `status=<char>` matches one exact Unicode character. Human output
 is checkbox text by default, `verbose` prefixes `path:line`, and `total` prints only the matching
 count. Versioned JSON always includes the full matching records and their count.
 
-`task` reads or mutates one task addressed by `ref=<path:line>` or by exact `path=` plus `line=`.
+`task` reads or mutates one task addressed by exact `ref=<path:line>`, or by `path=` or `file=` plus
+`line=`.
 `toggle` changes `x` or `X` to a space and every other status to `x`; `done` sets `x`, `todo` sets a
 space, and `status=<char>` sets one custom character. The scanner recognizes unordered and ordered
 list checkboxes, including nested and quoted tasks, while excluding fenced code, inline code, and
@@ -169,9 +183,10 @@ task text, indentation, and all unrelated bytes. Setting the current status succ
 write. A revision race keeps the external winner, stores the complete proposed note as a conflict
 copy, and returns exit 5.
 
-`aliases` reads `alias` and `aliases` frontmatter values across the vault or one exact `path=` or
-`file=` target. `total` prints the number of alias entries. Human output lists aliases alone by
-default and adds the exact source path with `verbose`. Versioned JSON always includes both fields.
+`aliases` reads `alias` and `aliases` frontmatter values across the vault, one exact `path=` target,
+or one unique-name `file=` target. `total` prints the number of alias entries. Human output lists
+aliases alone by default and adds the exact source path with `verbose`. Versioned JSON always
+includes both fields.
 
 `tags` reports distinct tag names from frontmatter and inline Markdown. `total` prints the distinct
 tag count, `counts` adds each tag's occurrence total to human output, and `sort=count` orders by
@@ -216,18 +231,18 @@ The public Obsidian CLI guide is behavioral input because its concise verbs alre
 scripts. Threadleaf currently accepts these aliases in addition to its native forms:
 
 ```sh
-threadleaf --vault /path/to/vault read file="Folder/Note.md"
+threadleaf --vault /path/to/vault read file="Note"
 threadleaf --vault /path/to/vault read path="Folder/Note.md"
 threadleaf --vault /path/to/vault search query="quoted phrase"
 threadleaf --vault /path/to/vault links path="Folder/Note.md"
-threadleaf --vault /path/to/vault backlinks file="Folder/Note.md"
+threadleaf --vault /path/to/vault backlinks file="Note"
 threadleaf --vault /path/to/vault outline path="Folder/Note.md"
 threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n"
 threadleaf --vault /path/to/vault create name="Root note"
 threadleaf --vault /path/to/vault append path="Folder/Note.md" content="Next line"
-threadleaf --vault /path/to/vault prepend file="Folder/Note.md" content="Lead" inline
+threadleaf --vault /path/to/vault prepend file="Note" content="Lead" inline
 threadleaf --vault /path/to/vault move path="Folder/Note.md" to="Archive/Note.md"
-threadleaf --vault /path/to/vault rename file="Folder/Note.md" name="New name"
+threadleaf --vault /path/to/vault rename file="Note" name="New name"
 threadleaf --vault /path/to/vault delete path="Folder/Note.md"
 threadleaf --vault /path/to/vault restore path="Folder/Note.md"
 threadleaf --vault /path/to/vault properties path="Folder/Note.md"
@@ -235,10 +250,10 @@ threadleaf --vault /path/to/vault property:read path="Folder/Note.md" name=statu
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status value=review
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=aliases 'value=["First","Second"]' type=list
 threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
-threadleaf --vault /path/to/vault tasks file="Folder/Note.md" todo verbose
+threadleaf --vault /path/to/vault tasks file="Note" todo verbose
 threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" toggle
 threadleaf --vault /path/to/vault task path="Folder/Note.md" line=12 status="?"
-threadleaf --vault /path/to/vault aliases file="Folder/Note.md" verbose
+threadleaf --vault /path/to/vault aliases file="Note" verbose
 threadleaf --vault /path/to/vault tags path="Folder/Note.md" counts
 threadleaf --vault /path/to/vault tag name=project verbose
 ```
@@ -246,22 +261,21 @@ threadleaf --vault /path/to/vault tag name=project verbose
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
 command or error behavior will require an executable fixture. Threadleaf's native contract keeps
 explicit vault selection, structured JSON, headless execution, and script-safe diagnostics even
-where a compatibility spelling follows another application's convention. `file=` currently means
-an exact vault-relative path in Threadleaf, as does `path=`. Basename and wikilink-style target
-resolution are not claimed.
+where a compatibility spelling follows another application's convention. `file=` performs the
+unique basename resolution described above, while `path=` remains exact. The target behavior is
+covered by cross-command executable fixtures rather than claimed from argument parsing alone.
 
 ## Current compatibility boundary
 
 Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberately omits its
 `permanent` flag. Move and rename support explicit compound link rewriting through Threadleaf's
 native `--update-links` confirmation flag. Threadleaf accepts the public property command names and
-parameter spellings, but its lossless frontmatter
-subset and native JSON contract are narrower than a complete compatibility claim. Threadleaf does
-not yet accept Obsidian's `open`, `overwrite`, or template parameters, active-file defaults,
-basename resolution, or graph-command `total`, `counts`, `verbose`, and `format` flags. The task
-subset does not yet support `active`, `daily`, basename-based `file=` resolution, or alternate
-`format` output. Alias and tag commands do not yet support `active`, basename-based `file=`
-resolution, or alternate `format` output. `trash list`, `trash:list`, and `restore` are native
-Threadleaf recovery commands rather than claimed Obsidian CLI compatibility.
+parameter spellings, but its lossless frontmatter subset and native JSON contract are narrower than
+a complete compatibility claim. Threadleaf does not yet accept Obsidian's `open`, `overwrite`, or
+template parameters, active-file defaults, or graph-command `total`, `counts`, `verbose`, and
+`format` flags. The task subset does not yet support `active`, `daily`, or alternate `format`
+output. Alias and tag commands do not yet support `active` or alternate `format` output.
+`trash list`, `trash:list`, and `restore` are native Threadleaf recovery commands rather than
+claimed Obsidian CLI compatibility.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).

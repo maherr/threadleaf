@@ -74,10 +74,12 @@ describe("Threadleaf CLI arguments", () => {
     expect(parseCliArguments(["read", "file=Folder/Note.md", "--vault=/vault"])).toMatchObject({
       id: "read",
       filePath: "Folder/Note.md",
+      targetKind: "file",
     });
     expect(parseCliArguments(["read", "path=Folder/Note.md", "--vault=/vault"])).toMatchObject({
       id: "read",
       filePath: "Folder/Note.md",
+      targetKind: "path",
     });
     expect(
       parseCliArguments(["--vault", "/vault", "search", "query=linked", "notes", "--limit=7"]),
@@ -140,14 +142,16 @@ describe("Threadleaf CLI arguments", () => {
     ).toMatchObject({
       id: "move",
       sourcePath: "Folder/Old",
-      targetPath: "Archive/Old.md",
+      sourceTargetKind: "path",
+      targetValue: "Archive/",
     });
     expect(
       parseCliArguments(["rename", "Folder/Old.md", "--name", "New", "--vault", "/vault"]),
     ).toMatchObject({
       id: "rename",
       sourcePath: "Folder/Old.md",
-      targetPath: "Folder/New.md",
+      sourceTargetKind: "path",
+      targetValue: "New",
     });
     expect(parseCliArguments(["--vault=/vault", "delete", "path=Folder/Old.md"])).toMatchObject({
       id: "delete",
@@ -156,6 +160,7 @@ describe("Threadleaf CLI arguments", () => {
     expect(parseCliArguments(["--vault=/vault", "restore", "file=Folder/Old.md"])).toMatchObject({
       id: "restore",
       filePath: "Folder/Old.md",
+      targetKind: "path",
     });
     expect(parseCliArguments(["--vault=/vault", "trash", "list"])).toMatchObject({
       id: "trash.list",
@@ -218,7 +223,12 @@ describe("Threadleaf CLI arguments", () => {
     });
     expect(
       parseCliArguments(["--vault=/vault", "aliases", "file=Folder/Note.md", "verbose"]),
-    ).toMatchObject({ id: "aliases", filePath: "Folder/Note.md", verbose: true });
+    ).toMatchObject({
+      id: "aliases",
+      filePath: "Folder/Note.md",
+      targetKind: "file",
+      verbose: true,
+    });
     expect(parseCliArguments(["--vault=/vault", "tags", "sort=count", "counts"])).toMatchObject({
       id: "tags",
       sortBy: "count",
@@ -312,6 +322,155 @@ describe("Threadleaf CLI arguments", () => {
   it("shows help without requiring a vault", async () => {
     const result = await invoke(["--help"]);
     expect(result).toEqual({ exitCode: 0, stdout: cliHelp, stderr: "" });
+  });
+});
+
+describe("Threadleaf CLI note-name target resolution", () => {
+  it("resolves file= by a unique case-insensitive NFC basename while path= stays exact", async () => {
+    const composedName = "Caf\u00e9.md";
+    const content = "# Unicode target\n";
+    await fs.writeFile(path.join(vaultPath, "Folder", composedName), content, "utf8");
+
+    const resolved = await invoke(["--json", "--vault", vaultPath, "read", "file=CAFE\u0301"]);
+    expect(resolved.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(resolved.stdout)).toMatchObject({
+      command: "read",
+      data: { path: `Folder/${composedName}`, content },
+    });
+
+    const exact = await invoke(["--json", "--vault", vaultPath, "read", `path=${composedName}`]);
+    expect(exact.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(exact.stderr)).toMatchObject({
+      command: "read",
+      error: { code: "VAULT", message: expect.stringContaining("not indexed") },
+    });
+
+    const missing = await invoke(["--json", "--vault", vaultPath, "read", "file=Missing"]);
+    expect(missing.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(missing.stderr)).toMatchObject({
+      command: "read",
+      error: { code: "VAULT", message: "No Markdown note matches file=Missing" },
+    });
+
+    await fs.mkdir(path.join(vaultPath, "Other"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Other", "Beta.md"), "duplicate", "utf8");
+    const ambiguous = await invoke(["--json", "--vault", vaultPath, "read", "file=beta.md"]);
+    expect(ambiguous.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(ambiguous.stderr)).toMatchObject({
+      command: "read",
+      error: {
+        code: "VAULT",
+        message: expect.stringMatching(
+          /^Ambiguous file=beta\.md\. Matches: .*Folder\/Beta\.md.*Other\/Beta\.md$/,
+        ),
+      },
+    });
+  });
+
+  it("uses the resolved note across metadata, write, refactor, and recovery commands", async () => {
+    const betaPath = path.join(vaultPath, "Folder", "Beta.md");
+    await fs.writeFile(
+      betaPath,
+      [
+        "---",
+        "aliases: [Bee]",
+        "tags: [nested/topic]",
+        "status: seed",
+        "---",
+        "# Beta heading",
+        "- [ ] task",
+        "[[Alpha]]",
+      ].join("\n"),
+      "utf8",
+    );
+
+    for (const [command, expected] of [
+      [["links", "file=beta"], { path: "Folder/Beta.md", total: 1 }],
+      [["backlinks", "file=BETA.md"], { path: "Folder/Beta.md", total: 1 }],
+      [["outline", "file=Folder/Beta.md"], { path: "Folder/Beta.md", total: 1 }],
+      [["properties", "file=beta"], { path: "Folder/Beta.md", total: 3 }],
+      [["aliases", "file=BETA"], { path: "Folder/Beta.md", total: 1 }],
+      [["tags", "file=beta.md"], { path: "Folder/Beta.md", total: 1 }],
+      [["tasks", "file=Beta"], { path: "Folder/Beta.md", total: 1 }],
+    ] as const) {
+      const result = await invoke(["--json", "--vault", vaultPath, ...command]);
+      expect(result.exitCode).toBe(cliExitCodes.success);
+      expect(JSON.parse(result.stdout).data).toMatchObject(expected);
+    }
+
+    const readProperty = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "property:read",
+      "file=beta",
+      "name=status",
+    ]);
+    expect(JSON.parse(readProperty.stdout).data).toMatchObject({
+      path: "Folder/Beta.md",
+      value: "seed",
+    });
+
+    for (const args of [
+      ["property:set", "file=beta", "name=priority", "value=1", "type=number"],
+      ["property:remove", "file=BETA.md", "name=priority"],
+      ["task", "file=beta", "line=7", "done"],
+      ["append", "file=beta", "content= tail", "inline"],
+      ["prepend", "file=beta.md", "content=Lead ", "inline"],
+    ]) {
+      const result = await invoke(["--json", "--vault", vaultPath, ...args]);
+      expect(result.exitCode).toBe(cliExitCodes.success);
+    }
+
+    const renamed = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "rename",
+      "file=bEtA",
+      "name=Gamma",
+      "--update-links",
+    ]);
+    expect(JSON.parse(renamed.stdout).data).toMatchObject({
+      status: "committed",
+      from: "Folder/Beta.md",
+      to: "Folder/Gamma.md",
+    });
+
+    const moved = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "move",
+      "file=gamma",
+      "to=Archive/",
+      "--update-links",
+    ]);
+    expect(JSON.parse(moved.stdout).data).toMatchObject({
+      status: "committed",
+      from: "Folder/Gamma.md",
+      to: "Archive/Gamma.md",
+    });
+
+    const beforeDelete = await fs.readFile(path.join(vaultPath, "Archive", "Gamma.md"), "utf8");
+    const deleted = await invoke(["--json", "--vault", vaultPath, "delete", "file=GAMMA.md"]);
+    expect(JSON.parse(deleted.stdout).data).toMatchObject({
+      status: "committed",
+      from: "Archive/Gamma.md",
+      to: ".trash/Archive/Gamma.md",
+    });
+
+    const restored = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "restore",
+      "path=Archive/Gamma.md",
+    ]);
+    expect(restored.exitCode).toBe(cliExitCodes.success);
+    await expect(fs.readFile(path.join(vaultPath, "Archive", "Gamma.md"), "utf8")).resolves.toBe(
+      beforeDelete,
+    );
   });
 });
 

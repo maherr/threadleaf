@@ -154,7 +154,8 @@ This non-packaged development override is not persisted and is ignored by packag
 remain loadable over `file://`. It also executes the built CLI against disposable synthetic-vault
 copies, validates its versioned JSON envelope, proves an exact property set/read/remove round trip,
 proves alias and tag catalog output, proves an exact task read/status/toggle round trip, and proves
-exact-byte delete and restore behavior.
+exact-byte delete and restore behavior. It also resolves a packaged `file=` command by unique note
+name so basename compatibility cannot pass only in source-level tests.
 
 The development CLI requires an explicit vault and never consults the desktop application's saved
 selection:
@@ -165,7 +166,7 @@ pnpm cli --vault /absolute/path/to/vault files
 pnpm cli --vault /absolute/path/to/vault read "Folder/Note.md"
 pnpm cli --vault /absolute/path/to/vault --json search "quoted phrase" --limit 20
 pnpm cli --vault /absolute/path/to/vault links path="Folder/Note.md"
-pnpm cli --vault /absolute/path/to/vault backlinks file="Folder/Note.md"
+pnpm cli --vault /absolute/path/to/vault backlinks file="Note"
 pnpm cli --vault /absolute/path/to/vault unresolved
 pnpm cli --vault /absolute/path/to/vault outline path="Folder/Note.md"
 pnpm cli --vault /absolute/path/to/vault create "Inbox/New thought"

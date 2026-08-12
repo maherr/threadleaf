@@ -38,7 +38,7 @@ import {
   normalizeVaultDirectoryPath,
   normalizeVaultPath,
 } from "../kernel/path-policy";
-import { FixedStateRoot, type StateRootPort } from "../kernel/ports";
+import { FixedStateRoot, type StateRootPort, type VaultReadPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 
 export const cliSchemaVersion = 1;
@@ -104,9 +104,12 @@ interface CliFilesCommand extends CliVaultCommand {
   directory: string;
 }
 
+type CliTargetKind = "path" | "file";
+
 interface CliReadCommand extends CliVaultCommand {
   id: "read";
   filePath: string;
+  targetKind: CliTargetKind;
 }
 
 interface CliSearchCommand extends CliVaultCommand {
@@ -118,6 +121,7 @@ interface CliSearchCommand extends CliVaultCommand {
 interface CliTargetMetadataCommand extends CliVaultCommand {
   id: "links" | "backlinks" | "outline";
   filePath: string;
+  targetKind: CliTargetKind;
 }
 
 interface CliVaultMetadataCommand extends CliVaultCommand {
@@ -133,6 +137,7 @@ interface CliCreateCommand extends CliVaultCommand {
 interface CliTextMutationCommand extends CliVaultCommand {
   id: "append" | "prepend";
   filePath: string;
+  targetKind: CliTargetKind;
   content: string;
   inline: boolean;
 }
@@ -140,13 +145,15 @@ interface CliTextMutationCommand extends CliVaultCommand {
 interface CliMoveCommand extends CliVaultCommand {
   id: "move" | "rename";
   sourcePath: string;
-  targetPath: string;
+  sourceTargetKind: CliTargetKind;
+  targetValue: string;
   updateLinks: boolean;
 }
 
 interface CliTrashMutationCommand extends CliVaultCommand {
   id: "delete" | "restore";
   filePath: string;
+  targetKind: CliTargetKind;
 }
 
 interface CliTrashListCommand extends CliVaultCommand {
@@ -156,17 +163,20 @@ interface CliTrashListCommand extends CliVaultCommand {
 interface CliPropertiesCommand extends CliVaultCommand {
   id: "properties";
   filePath: string;
+  targetKind: CliTargetKind;
 }
 
 interface CliPropertyReadCommand extends CliVaultCommand {
   id: "property.read";
   filePath: string;
+  targetKind: CliTargetKind;
   propertyName: string;
 }
 
 interface CliPropertySetCommand extends CliVaultCommand {
   id: "property.set";
   filePath: string;
+  targetKind: CliTargetKind;
   propertyName: string;
   propertyValue: string;
   propertyType: NotePropertyType;
@@ -175,6 +185,7 @@ interface CliPropertySetCommand extends CliVaultCommand {
 interface CliPropertyRemoveCommand extends CliVaultCommand {
   id: "property.remove";
   filePath: string;
+  targetKind: CliTargetKind;
   propertyName: string;
 }
 
@@ -187,6 +198,7 @@ type CliTaskFilter =
 interface CliTasksCommand extends CliVaultCommand {
   id: "tasks";
   filePath: string | null;
+  targetKind: CliTargetKind | null;
   filter: CliTaskFilter;
   totalOnly: boolean;
   verbose: boolean;
@@ -195,6 +207,7 @@ interface CliTasksCommand extends CliVaultCommand {
 interface CliTaskCommand extends CliVaultCommand {
   id: "task";
   filePath: string;
+  targetKind: CliTargetKind;
   line: number;
   mutation: MarkdownTaskMutation | null;
 }
@@ -202,6 +215,7 @@ interface CliTaskCommand extends CliVaultCommand {
 interface CliAliasesCommand extends CliVaultCommand {
   id: "aliases";
   filePath: string | null;
+  targetKind: CliTargetKind | null;
   totalOnly: boolean;
   verbose: boolean;
 }
@@ -209,6 +223,7 @@ interface CliAliasesCommand extends CliVaultCommand {
 interface CliTagsCommand extends CliVaultCommand {
   id: "tags";
   filePath: string | null;
+  targetKind: CliTargetKind | null;
   sortBy: "name" | "count";
   totalOnly: boolean;
   counts: boolean;
@@ -312,15 +327,24 @@ function parsePositiveInteger(value: string, option: string): number {
   return parsed;
 }
 
-function exactTargetPath(value: string): string {
-  if (value.startsWith("file=") || value.startsWith("path=")) {
-    return value.slice(value.indexOf("=") + 1);
+interface CliTargetParameter {
+  filePath: string;
+  targetKind: CliTargetKind;
+}
+
+function parseCliTarget(value: string): CliTargetParameter {
+  if (value.startsWith("file=")) {
+    return { filePath: value.slice("file=".length), targetKind: "file" };
   }
-  return value;
+  if (value.startsWith("path=")) {
+    return { filePath: value.slice("path=".length), targetKind: "path" };
+  }
+  return { filePath: value, targetKind: "path" };
 }
 
 interface PropertyParameters {
   filePath: string | null;
+  targetKind: CliTargetKind | null;
   name: string | null;
   value: string | null;
   type: string | null;
@@ -330,13 +354,21 @@ function parsePropertyParameters(
   values: readonly string[],
   commandName: string,
 ): PropertyParameters {
-  const parsed: PropertyParameters = { filePath: null, name: null, value: null, type: null };
+  const parsed: PropertyParameters = {
+    filePath: null,
+    targetKind: null,
+    name: null,
+    value: null,
+    type: null,
+  };
   for (const value of values) {
     if (value.startsWith("path=") || value.startsWith("file=")) {
       if (parsed.filePath !== null) {
         usageFailure(`${commandName} accepts only one note path.`);
       }
-      parsed.filePath = value.slice(value.indexOf("=") + 1);
+      const target = parseCliTarget(value);
+      parsed.filePath = target.filePath;
+      parsed.targetKind = target.targetKind;
     } else if (value.startsWith("name=")) {
       if (parsed.name !== null) {
         usageFailure(`${commandName} accepts name only once.`);
@@ -354,6 +386,7 @@ function parsePropertyParameters(
       parsed.type = value.slice("type=".length);
     } else if (parsed.filePath === null && !value.includes("=")) {
       parsed.filePath = value;
+      parsed.targetKind = "path";
     } else {
       usageFailure(`Unsupported ${commandName} argument: ${value}`);
     }
@@ -361,11 +394,14 @@ function parsePropertyParameters(
   return parsed;
 }
 
-function requiredPropertyPath(parameters: PropertyParameters, commandName: string): string {
-  if (!parameters.filePath) {
+function requiredPropertyTarget(
+  parameters: PropertyParameters,
+  commandName: string,
+): CliTargetParameter {
+  if (!parameters.filePath || parameters.targetKind === null) {
     usageFailure(`${commandName} requires path=<note.md>.`);
   }
-  return parameters.filePath;
+  return { filePath: parameters.filePath, targetKind: parameters.targetKind };
 }
 
 function requiredPropertyName(parameters: PropertyParameters, commandName: string): string {
@@ -569,11 +605,11 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     ) {
       usageFailure("read requires exactly one vault-relative Markdown path.");
     }
-    const filePath = exactTargetPath(values[0] ?? "");
+    const { filePath, targetKind } = parseCliTarget(values[0] ?? "");
     if (!filePath) {
       usageFailure("read requires a non-empty Markdown path.");
     }
-    return { id: "read", json, vaultPath, filePath };
+    return { id: "read", json, vaultPath, filePath, targetKind };
   }
   if (
     (name === "trash" && values[0] === "list" && values.length === 1) ||
@@ -610,11 +646,18 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     ) {
       usageFailure(`${name} requires exactly one vault-relative Markdown path.`);
     }
-    const filePath = exactTargetPath(values[0] ?? "");
+    const target = parseCliTarget(values[0] ?? "");
+    const filePath = target.filePath;
     if (!filePath) {
       usageFailure(`${name} requires a non-empty Markdown path.`);
     }
-    return { id: name, json, vaultPath, filePath };
+    return {
+      id: name,
+      json,
+      vaultPath,
+      filePath,
+      targetKind: name === "restore" ? "path" : target.targetKind,
+    };
   }
   if (name === "tasks") {
     if (
@@ -629,6 +672,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure("tasks accepts parameter=value arguments and task flags only.");
     }
     let filePath: string | null = null;
+    let targetKind: CliTargetKind | null = null;
     let filter: CliTaskFilter = { kind: "all" };
     let totalOnly = false;
     let verbose = false;
@@ -643,7 +687,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         if (filePath !== null) {
           usageFailure("tasks accepts only one note path.");
         }
-        filePath = value.slice(value.indexOf("=") + 1);
+        const target = parseCliTarget(value);
+        filePath = target.filePath;
+        targetKind = target.targetKind;
         if (!filePath) {
           usageFailure("tasks path requires a value.");
         }
@@ -669,7 +715,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         usageFailure(`Unsupported tasks argument: ${value}`);
       }
     }
-    return { id: "tasks", json, vaultPath, filePath, filter, totalOnly, verbose };
+    return { id: "tasks", json, vaultPath, filePath, targetKind, filter, totalOnly, verbose };
   }
   if (name === "task") {
     if (
@@ -684,6 +730,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure("task accepts path, line, ref, and one mutation flag only.");
     }
     let filePath: string | null = null;
+    let targetKind: CliTargetKind | null = null;
     let line: number | null = null;
     let reference: { filePath: string; line: number } | null = null;
     let mutation: MarkdownTaskMutation | null = null;
@@ -703,7 +750,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         if (filePath !== null) {
           usageFailure("task accepts only one note path.");
         }
-        filePath = value.slice(value.indexOf("=") + 1);
+        const target = parseCliTarget(value);
+        filePath = target.filePath;
+        targetKind = target.targetKind;
         if (!filePath) {
           usageFailure("task path requires a value.");
         }
@@ -734,12 +783,13 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         usageFailure("task accepts ref or path plus line, not both.");
       }
       filePath = reference.filePath;
+      targetKind = "path";
       line = reference.line;
     }
-    if (!filePath || line === null) {
+    if (!filePath || targetKind === null || line === null) {
       usageFailure("task requires ref=<path:line> or path=<note.md> line=<n>.");
     }
-    return { id: "task", json, vaultPath, filePath, line, mutation };
+    return { id: "task", json, vaultPath, filePath, targetKind, line, mutation };
   }
   if (name === "aliases") {
     if (
@@ -754,6 +804,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure("aliases accepts path and alias flags only.");
     }
     let filePath: string | null = null;
+    let targetKind: CliTargetKind | null = null;
     let totalOnly = false;
     let verbose = false;
     for (const value of values) {
@@ -761,7 +812,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         if (filePath !== null) {
           usageFailure("aliases accepts only one note path.");
         }
-        filePath = value.slice(value.indexOf("=") + 1);
+        const target = parseCliTarget(value);
+        filePath = target.filePath;
+        targetKind = target.targetKind;
         if (!filePath) {
           usageFailure("aliases path requires a value.");
         }
@@ -781,7 +834,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         usageFailure(`Unsupported aliases argument: ${value}`);
       }
     }
-    return { id: "aliases", json, vaultPath, filePath, totalOnly, verbose };
+    return { id: "aliases", json, vaultPath, filePath, targetKind, totalOnly, verbose };
   }
   if (name === "tags") {
     if (
@@ -796,6 +849,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure("tags accepts path and tag flags only.");
     }
     let filePath: string | null = null;
+    let targetKind: CliTargetKind | null = null;
     let sortBy: "name" | "count" = "name";
     let totalOnly = false;
     let counts = false;
@@ -804,7 +858,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         if (filePath !== null) {
           usageFailure("tags accepts only one note path.");
         }
-        filePath = value.slice(value.indexOf("=") + 1);
+        const target = parseCliTarget(value);
+        filePath = target.filePath;
+        targetKind = target.targetKind;
         if (!filePath) {
           usageFailure("tags path requires a value.");
         }
@@ -829,7 +885,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         usageFailure(`Unsupported tags argument: ${value}`);
       }
     }
-    return { id: "tags", json, vaultPath, filePath, sortBy, totalOnly, counts };
+    return { id: "tags", json, vaultPath, filePath, targetKind, sortBy, totalOnly, counts };
   }
   if (name === "tag") {
     if (
@@ -895,25 +951,25 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure(`${name} accepts parameter=value arguments only.`);
     }
     const parameters = parsePropertyParameters(values, name);
-    const filePath = requiredPropertyPath(parameters, name);
+    const { filePath, targetKind } = requiredPropertyTarget(parameters, name);
     if (name === "properties") {
       if (parameters.name !== null || parameters.value !== null || parameters.type !== null) {
         usageFailure("properties accepts only one note path.");
       }
-      return { id: "properties", json, vaultPath, filePath };
+      return { id: "properties", json, vaultPath, filePath, targetKind };
     }
     const propertyName = requiredPropertyName(parameters, name);
     if (name === "property:read") {
       if (parameters.value !== null || parameters.type !== null) {
         usageFailure("property:read accepts only path and name parameters.");
       }
-      return { id: "property.read", json, vaultPath, filePath, propertyName };
+      return { id: "property.read", json, vaultPath, filePath, targetKind, propertyName };
     }
     if (name === "property:remove") {
       if (parameters.value !== null || parameters.type !== null) {
         usageFailure("property:remove accepts only path and name parameters.");
       }
-      return { id: "property.remove", json, vaultPath, filePath, propertyName };
+      return { id: "property.remove", json, vaultPath, filePath, targetKind, propertyName };
     }
     if (parameters.value === null) {
       usageFailure("property:set requires value=<value>.");
@@ -927,6 +983,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       json,
       vaultPath,
       filePath,
+      targetKind,
       propertyName,
       propertyValue: parameters.value,
       propertyType: propertyType as NotePropertyType,
@@ -945,11 +1002,11 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     ) {
       usageFailure(`${name} requires exactly one vault-relative Markdown path.`);
     }
-    const filePath = exactTargetPath(values[0] ?? "");
+    const { filePath, targetKind } = parseCliTarget(values[0] ?? "");
     if (!filePath) {
       usageFailure(`${name} requires a non-empty Markdown path.`);
     }
-    return { id: name, json, vaultPath, filePath };
+    return { id: name, json, vaultPath, filePath, targetKind };
   }
   if (name === "unresolved" || name === "orphans" || name === "deadends") {
     if (
@@ -1045,6 +1102,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure(`${name} received an option that it does not accept.`);
     }
     let filePath: string | null = null;
+    let targetKind: CliTargetKind | null = null;
     let parameterContent: string | null = null;
     let inlineFlag = inline;
     for (const value of values) {
@@ -1052,7 +1110,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         if (filePath !== null) {
           usageFailure(`${name} accepts only one note path.`);
         }
-        filePath = value.slice(value.indexOf("=") + 1);
+        const target = parseCliTarget(value);
+        filePath = target.filePath;
+        targetKind = target.targetKind;
       } else if (value.startsWith("content=")) {
         if (parameterContent !== null) {
           usageFailure("content may be supplied only once.");
@@ -1065,11 +1125,12 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         inlineFlag = true;
       } else if (filePath === null && !value.includes("=")) {
         filePath = value;
+        targetKind = "path";
       } else {
         usageFailure(`Unsupported ${name} argument: ${value}`);
       }
     }
-    if (!filePath) {
+    if (!filePath || targetKind === null) {
       usageFailure(`${name} requires one note path.`);
     }
     if (content !== null && parameterContent !== null) {
@@ -1084,6 +1145,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       json,
       vaultPath,
       filePath,
+      targetKind,
       content: decodedContent,
       inline: inlineFlag,
     };
@@ -1093,6 +1155,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure(`${name} received an option that it does not accept.`);
     }
     let sourcePath: string | null = null;
+    let sourceTargetKind: CliTargetKind | null = null;
     let parameterDestination: string | null = null;
     let parameterName: string | null = null;
     for (const value of values) {
@@ -1100,7 +1163,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         if (sourcePath !== null) {
           usageFailure(`${name} accepts only one source path.`);
         }
-        sourcePath = value.slice(value.indexOf("=") + 1);
+        const target = parseCliTarget(value);
+        sourcePath = target.filePath;
+        sourceTargetKind = target.targetKind;
       } else if (value.startsWith("to=")) {
         if (parameterDestination !== null) {
           usageFailure("to may be supplied only once.");
@@ -1113,11 +1178,12 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         parameterName = value.slice("name=".length);
       } else if (sourcePath === null && !value.includes("=")) {
         sourcePath = value;
+        sourceTargetKind = "path";
       } else {
         usageFailure(`Unsupported ${name} argument: ${value}`);
       }
     }
-    if (!sourcePath) {
+    if (!sourcePath || sourceTargetKind === null) {
       usageFailure(`${name} requires one source note path.`);
     }
     if (destination !== null && parameterDestination !== null) {
@@ -1132,24 +1198,28 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       if (!targetDestination || targetName !== null) {
         usageFailure("move requires exactly one --to or to= destination.");
       }
+      pathArgument(() => movedMarkdownPath(sourcePath, targetDestination));
       return {
         id: "move",
         json,
         vaultPath,
         sourcePath,
-        targetPath: pathArgument(() => movedMarkdownPath(sourcePath, targetDestination)),
+        sourceTargetKind,
+        targetValue: targetDestination,
         updateLinks,
       };
     }
     if (!targetName || targetDestination !== null) {
       usageFailure("rename requires exactly one --name or name= filename.");
     }
+    pathArgument(() => renamedMarkdownPath(sourcePath, targetName));
     return {
       id: "rename",
       json,
       vaultPath,
       sourcePath,
-      targetPath: pathArgument(() => renamedMarkdownPath(sourcePath, targetName)),
+      sourceTargetKind,
+      targetValue: targetName,
       updateLinks,
     };
   }
@@ -1189,10 +1259,10 @@ Usage:
   threadleaf --vault <path> [--json] tag name=<tag> [total|verbose]
 
 Compatibility spellings:
-  threadleaf --vault <path> read file=<note.md>
+  threadleaf --vault <path> read file=<note-name>
   threadleaf --vault <path> search query=<text>
   threadleaf --vault <path> links path=<note.md>
-  threadleaf --vault <path> backlinks file=<note.md>
+  threadleaf --vault <path> backlinks file=<note-name>
   threadleaf --vault <path> outline path=<note.md>
   threadleaf --vault <path> create path=<note> content=<text>
   threadleaf --vault <path> append path=<note> content=<text> [inline]
@@ -1205,11 +1275,16 @@ Compatibility spellings:
   threadleaf --vault <path> property:read path=<note.md> name=<name>
   threadleaf --vault <path> property:set path=<note.md> name=<name> value=<value> [type=<type>]
   threadleaf --vault <path> property:remove path=<note.md> name=<name>
-  threadleaf --vault <path> tasks [path=<note.md>] [done|todo|status=<char>] [total|verbose]
+  threadleaf --vault <path> tasks [file=<note-name>] [done|todo|status=<char>] [total|verbose]
   threadleaf --vault <path> task path=<note.md> line=<n> [toggle|done|todo|status=<char>]
-  threadleaf --vault <path> aliases [path=<note.md>] [total|verbose]
+  threadleaf --vault <path> aliases [file=<note-name>] [total|verbose]
   threadleaf --vault <path> tags [path=<note.md>] [sort=count] [total|counts]
   threadleaf --vault <path> tag name=<tag> [total|verbose]
+
+Target rules:
+  Positional note targets and path= are exact vault-relative paths.
+  file= resolves one case-insensitive NFC-normalized Markdown basename; .md is optional.
+  Missing and duplicate file= matches fail explicitly instead of choosing a note.
 
 Commands are headless and never require a running Electron process.
 `;
@@ -1404,6 +1479,47 @@ async function openWritableKernel(
   }
 }
 
+function cliFileLookupKey(rawTarget: string): string {
+  const portableTarget = rawTarget.replaceAll("\\", "/");
+  const basename = path.posix.basename(portableTarget);
+  const stem = basename.toLocaleLowerCase("en-US").endsWith(".md")
+    ? basename.slice(0, -3)
+    : basename;
+  return stem.normalize("NFC").toLocaleLowerCase("en-US");
+}
+
+async function resolveCliMarkdownTarget(
+  vault: VaultReadPort,
+  requestedPath: string,
+  targetKind: CliTargetKind,
+): Promise<string> {
+  if (targetKind === "path") {
+    return requestedPath;
+  }
+  if (
+    requestedPath.length > 4096 ||
+    requestedPath.includes("\0") ||
+    requestedPath.endsWith("/") ||
+    requestedPath.endsWith("\\")
+  ) {
+    throw new Error(`Invalid file= note name: ${requestedPath}`);
+  }
+  const requestedKey = cliFileLookupKey(requestedPath);
+  if (!requestedKey) {
+    throw new Error("file= requires a non-empty Markdown note name.");
+  }
+  const matches = (await vault.listMarkdownPaths()).filter(
+    (candidatePath) => cliFileLookupKey(candidatePath) === requestedKey,
+  );
+  if (matches.length === 0) {
+    throw new Error(`No Markdown note matches file=${requestedPath}`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Ambiguous file=${requestedPath}. Matches: ${matches.join(", ")}`);
+  }
+  return matches[0] as string;
+}
+
 function indexedMarkdownDocument(
   snapshot: MetadataIndexSnapshot,
   rawPath: string,
@@ -1580,10 +1696,19 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "move" || command.id === "rename") {
-      const outcome = await moveMarkdownNote(
+      const sourcePath = await resolveCliMarkdownTarget(
         kernel,
         command.sourcePath,
-        command.targetPath,
+        command.sourceTargetKind,
+      );
+      const targetPath =
+        command.id === "move"
+          ? movedMarkdownPath(sourcePath, command.targetValue)
+          : renamedMarkdownPath(sourcePath, command.targetValue);
+      const outcome = await moveMarkdownNote(
+        kernel,
+        sourcePath,
+        targetPath,
         undefined,
         command.updateLinks ? { acceptCurrentRewrites: true } : undefined,
       );
@@ -1614,10 +1739,14 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "delete" || command.id === "restore") {
+      const filePath =
+        command.id === "delete"
+          ? await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind)
+          : command.filePath;
       const outcome =
         command.id === "delete"
-          ? await trashMarkdownNote(kernel, command.filePath)
-          : await restoreTrashedMarkdownNote(kernel, command.filePath);
+          ? await trashMarkdownNote(kernel, filePath)
+          : await restoreTrashedMarkdownNote(kernel, filePath);
       if (outcome.status === "conflict") {
         const operation = command.id === "delete" ? "move to recoverable trash" : "restore";
         throw new CliFailure(
@@ -1630,9 +1759,10 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "append" || command.id === "prepend") {
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
       const outcome = await mutateMarkdownNoteText(
         kernel,
-        command.filePath,
+        filePath,
         command.content,
         command.id,
         command.inline,
@@ -1648,9 +1778,10 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "property.set") {
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
       const outcome = await setMarkdownNoteProperty(
         kernel,
-        command.filePath,
+        filePath,
         command.propertyName,
         command.propertyValue,
         command.propertyType,
@@ -1666,11 +1797,8 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "property.remove") {
-      const outcome = await removeMarkdownNoteProperty(
-        kernel,
-        command.filePath,
-        command.propertyName,
-      );
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const outcome = await removeMarkdownNoteProperty(kernel, filePath, command.propertyName);
       if (outcome.status === "conflict") {
         throw new CliFailure(
           "CONFLICT",
@@ -1682,7 +1810,11 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "tasks") {
-      const tasks = await listMarkdownTasks(kernel, command.filePath ?? undefined);
+      const filePath =
+        command.filePath === null || command.targetKind === null
+          ? null
+          : await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const tasks = await listMarkdownTasks(kernel, filePath ?? undefined);
       const filtered = tasks.filter((task) => {
         if (command.filter.kind === "done") {
           return task.completed;
@@ -1696,22 +1828,18 @@ async function executeCommand(
         return true;
       });
       return {
-        path: command.filePath,
+        path: filePath,
         filter: command.filter,
         total: filtered.length,
         tasks: filtered,
       };
     }
     if (command.id === "task") {
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
       if (command.mutation === null) {
-        return readMarkdownTask(kernel, command.filePath, command.line);
+        return readMarkdownTask(kernel, filePath, command.line);
       }
-      const outcome = await mutateMarkdownTask(
-        kernel,
-        command.filePath,
-        command.line,
-        command.mutation,
-      );
+      const outcome = await mutateMarkdownTask(kernel, filePath, command.line, command.mutation);
       if (outcome.status === "conflict") {
         throw new CliFailure(
           "CONFLICT",
@@ -1731,7 +1859,9 @@ async function executeCommand(
       return { directory, total: files.length, files };
     }
     if (command.id === "read") {
-      const filePath = normalizeVaultPath(command.filePath);
+      const filePath = normalizeVaultPath(
+        await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind),
+      );
       if (!filePath.toLocaleLowerCase("en-US").endsWith(".md")) {
         throw new Error("read accepts only Markdown note paths.");
       }
@@ -1760,11 +1890,13 @@ async function executeCommand(
 
     const snapshot = index.snapshot();
     if (command.id === "links") {
-      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const document = indexedMarkdownDocument(snapshot, filePath, command.id);
       return { path: document.path, total: document.links.length, links: document.links };
     }
     if (command.id === "backlinks") {
-      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const document = indexedMarkdownDocument(snapshot, filePath, command.id);
       return backlinksForPath(snapshot, document.path);
     }
     if (command.id === "unresolved") {
@@ -1777,11 +1909,13 @@ async function executeCommand(
       return deadEndNotes(snapshot);
     }
     if (command.id === "outline") {
-      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const document = indexedMarkdownDocument(snapshot, filePath, command.id);
       return { path: document.path, total: document.headings.length, headings: document.headings };
     }
     if (command.id === "properties") {
-      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const document = indexedMarkdownDocument(snapshot, filePath, command.id);
       return {
         path: document.path,
         total: Object.keys(document.properties).length,
@@ -1789,7 +1923,8 @@ async function executeCommand(
       };
     }
     if (command.id === "property.read") {
-      const document = indexedMarkdownDocument(snapshot, command.filePath, command.id);
+      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const document = indexedMarkdownDocument(snapshot, filePath, command.id);
       const exists = Object.hasOwn(document.properties, command.propertyName);
       return {
         path: document.path,
@@ -1799,12 +1934,20 @@ async function executeCommand(
       };
     }
     if (command.id === "aliases") {
-      const aliases = aliasCatalog(snapshot, command.filePath);
-      return { path: command.filePath, total: aliases.length, aliases };
+      const filePath =
+        command.filePath === null || command.targetKind === null
+          ? null
+          : await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const aliases = aliasCatalog(snapshot, filePath);
+      return { path: filePath, total: aliases.length, aliases };
     }
     if (command.id === "tags") {
-      const tags = tagCatalog(snapshot, command.filePath, command.sortBy);
-      return { path: command.filePath, sort: command.sortBy, total: tags.length, tags };
+      const filePath =
+        command.filePath === null || command.targetKind === null
+          ? null
+          : await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const tags = tagCatalog(snapshot, filePath, command.sortBy);
+      return { path: filePath, sort: command.sortBy, total: tags.length, tags };
     }
     if (command.id === "tag") {
       const entry = tagCatalog(snapshot, null).find((tag) => tag.name === command.tagName);

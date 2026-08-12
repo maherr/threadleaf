@@ -104,9 +104,11 @@ equivalence through the real writer-to-watcher seam.
       parent journal, with reverse rollback, conflict copies, and desktop and CLI confirmation.
 - [x] Headless task listing and exact `path:line` reads plus recovery-backed toggle, done, todo, and
       custom-status mutation, with code and comment exclusion, no-op detection, and conflict copies.
-- [x] Headless alias and tag catalogs across the vault or one exact note, with distinct names,
+- [x] Headless alias and tag catalogs across the vault or one targeted note, with distinct names,
       occurrence totals, deterministic count sorting, and verbose source-file attribution.
-- [ ] Remaining CLI mutation commands and a broader executable behavior corpus for familiar
+- [x] Shared Obsidian-style `file=` note-name resolution across read, metadata, refactor, recovery,
+      property, and task commands, with case-insensitive NFC matching and explicit ambiguity.
+- [ ] Remaining CLI commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [ ] Split panes, application menus, and broader workspace settings.
 - [ ] Inline live preview and fine-grained cursor-to-rendered-position mapping.
