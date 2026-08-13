@@ -37,3 +37,8 @@ The matrix covers explicit high-contrast, reduced-motion, and reduced-transparen
 The exact public Excalidraw workflow remains in its dedicated `pnpm test:excalidraw-roundtrip`
 gate so this hermetic matrix never bundles or records a third-party plugin package or asset. The
 local synthetic compatibility plugin settings page remains covered here.
+
+The opt-in community-theme matrix is separate so the checkout never carries third-party theme
+packages or assets. See [the pinned provenance and cache contract](../docs/compatibility/community-themes-v1.md),
+then run `pnpm run community-theme:acquire` followed by `pnpm run community-theme:check` when the
+external cache is intentionally available.

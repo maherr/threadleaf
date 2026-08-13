@@ -121,7 +121,10 @@ the installed theme or snippet remains an ordinary `.obsidian/` file or director
 
 ## Remaining work
 
-- Generate selector and token coverage from representative open community themes.
-- Add high-contrast, zoom, high-DPI, localization, and committed screenshot matrices.
+- Extend the compatibility matrix through measured selector and token coverage from additional
+  pinned open themes. The current community set and its deliberate rejection boundaries are
+  documented in [community-themes-v1.md](./community-themes-v1.md).
+- Add localization and further workspace-view matrices as those surfaces become stable. The core
+  matrix already covers high contrast, zoom, high DPI, and committed screenshot integrity.
 - Extend compatibility to every future workspace view, pop-out, Canvas surface, and plugin-provided
   component.

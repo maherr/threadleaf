@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "matrix": "threadleaf-community-open-themes-v1",
+  "cases": {
+    "minimal:dark-laptop": {
+      "path": "minimal-dark-laptop.png",
+      "sha256": "97d844454c1b4cd1a8e71a8dba99d68ba089ecaffcf8e0fe6114977ba993fec0",
+      "dimensions": [1180, 820]
+    },
+    "minimal:light-laptop": {
+      "path": "minimal-light-laptop.png",
+      "sha256": "d85da6f9f9df64b40413fc5545a28b7fb2ffcf8924f340c74d41ad3c135b34d7",
+      "dimensions": [1180, 820]
+    },
+    "minimal:light-minimum": {
+      "path": "minimal-light-minimum.png",
+      "sha256": "7c6cd235993dd3bdecbfb6b8cb92b98a61d5dedbafc23408ab8f43511d038744",
+      "dimensions": [860, 640]
+    },
+    "minimal:dark-high-contrast": {
+      "path": "minimal-dark-high-contrast.png",
+      "sha256": "5810093f9455d9a74ca13387adc70e7d9ed758f1d1a4e3eb72f971a74fc2f126",
+      "dimensions": [1180, 820]
+    },
+    "wikipedia:dark-laptop": {
+      "path": "wikipedia-dark-laptop.png",
+      "sha256": "8a852fe288f6c6369f528f66f2a558c657a715c901469e9ed6f062356bda28d8",
+      "dimensions": [1180, 820]
+    },
+    "wikipedia:light-laptop": {
+      "path": "wikipedia-light-laptop.png",
+      "sha256": "b31b8721230eb0536187202cb07df3d488c9c937b1214078633bbbc95dbe76a6",
+      "dimensions": [1180, 820]
+    },
+    "wikipedia:light-minimum": {
+      "path": "wikipedia-light-minimum.png",
+      "sha256": "f02c076cccd872ef2c27a9311079698a8f773558fabba395abc404fbba15a240",
+      "dimensions": [860, 640]
+    },
+    "wikipedia:dark-high-contrast": {
+      "path": "wikipedia-dark-high-contrast.png",
+      "sha256": "fa460ad495a50be268c157f7bdc1b7f94da451acd58861185538c06aedb3a4ea",
+      "dimensions": [1180, 820]
+    },
+    "sanctum:dark-laptop": {
+      "path": "sanctum-dark-laptop.png",
+      "sha256": "f43b177ceb69c125c320958d149104d5af496b0cc178b6b406fd145d3731c898",
+      "dimensions": [1180, 820]
+    },
+    "sanctum:light-laptop": {
+      "path": "sanctum-light-laptop.png",
+      "sha256": "b409632cde58a02caac7e4c080a82d84f84a950d1d91f6270d71bbb64fdf388f",
+      "dimensions": [1180, 820]
+    },
+    "sanctum:light-minimum": {
+      "path": "sanctum-light-minimum.png",
+      "sha256": "1b5127f17795ac01dec0f38afa59ac9db324dd95ed4fc4fd0289809567798ee1",
+      "dimensions": [860, 640]
+    },
+    "sanctum:dark-high-contrast": {
+      "path": "sanctum-dark-high-contrast.png",
+      "sha256": "32a2d3cfa6473fa9bd8061c6fd8b5ae54c081e97d464d626be84d545d007d3bc",
+      "dimensions": [1180, 820]
+    }
+  },
+  "generatedBy": "scripts/check-community-theme-matrix.mjs --update"
+}

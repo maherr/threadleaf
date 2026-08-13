@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "id": "threadleaf-community-open-themes-v1",
+  "renderer": {
+    "electron": "43.3.0",
+    "nodeMajor": 22,
+    "display": "xvfb-x11"
+  },
+  "cache": {
+    "defaultDirectory": "$XDG_CACHE_HOME/threadleaf/community-themes-v1",
+    "networkPolicy": "acquisition-only",
+    "runtimeNetwork": "forbidden",
+    "shippedThirdPartyAssets": false
+  },
+  "themes": [
+    {
+      "id": "minimal",
+      "folder": "Minimal",
+      "name": "Minimal",
+      "release": "9.0.2",
+      "repository": "https://github.com/kepano/obsidian-minimal",
+      "commit": "dc4ebf23b3183ff7aa661ea452d26f5bbe909b17",
+      "commitUrl": "https://github.com/kepano/obsidian-minimal/commit/dc4ebf23b3183ff7aa661ea452d26f5bbe909b17",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/kepano/obsidian-minimal/dc4ebf23b3183ff7aa661ea452d26f5bbe909b17/LICENSE",
+      "pattern": "variable-rich workspace and embedded data assets",
+      "files": [
+        {
+          "path": "theme.css",
+          "url": "https://raw.githubusercontent.com/kepano/obsidian-minimal/dc4ebf23b3183ff7aa661ea452d26f5bbe909b17/theme.css",
+          "sha256": "4b7e6f55d017465f69ec2a145c11a171cd308e6b7c3a0fba65314f6e2f83fe7b"
+        },
+        {
+          "path": "manifest.json",
+          "url": "https://raw.githubusercontent.com/kepano/obsidian-minimal/dc4ebf23b3183ff7aa661ea452d26f5bbe909b17/manifest.json",
+          "sha256": "22ca939102aa2eae4ad57b4d77933572bc055d4fee096b9bc00fd8e890680536"
+        },
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/kepano/obsidian-minimal/dc4ebf23b3183ff7aa661ea452d26f5bbe909b17/LICENSE",
+          "sha256": "5439c5837626f72e932960a7500064d0c27a290955c47ba73073f37dd09fd73d"
+        }
+      ]
+    },
+    {
+      "id": "wikipedia",
+      "folder": "Wikipedia",
+      "name": "Wikipedia",
+      "release": "2.0.4",
+      "repository": "https://github.com/Bluemoondragon07/Wikipedia-Theme",
+      "commit": "b3187a105ebc4c28693777d228fd1707d3c01c06",
+      "commitUrl": "https://github.com/Bluemoondragon07/Wikipedia-Theme/commit/b3187a105ebc4c28693777d228fd1707d3c01c06",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/Bluemoondragon07/Wikipedia-Theme/b3187a105ebc4c28693777d228fd1707d3c01c06/LICENSE",
+      "pattern": "font-face declarations and document-oriented layout selectors",
+      "files": [
+        {
+          "path": "theme.css",
+          "url": "https://raw.githubusercontent.com/Bluemoondragon07/Wikipedia-Theme/b3187a105ebc4c28693777d228fd1707d3c01c06/theme.css",
+          "sha256": "91258f1f23bc7d6fa9173d76d131a061e1c6ff05cd9cfd9c1b09110715ae4f2a"
+        },
+        {
+          "path": "manifest.json",
+          "url": "https://raw.githubusercontent.com/Bluemoondragon07/Wikipedia-Theme/b3187a105ebc4c28693777d228fd1707d3c01c06/manifest.json",
+          "sha256": "1e147c2099cc30e3bc294cd2063e85827593aecd257d53323e4262ed60485fd6"
+        },
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/Bluemoondragon07/Wikipedia-Theme/b3187a105ebc4c28693777d228fd1707d3c01c06/LICENSE",
+          "sha256": "7ee45903067effb13f1b1d6ca4dbd4cf69e9ad84722e3654622238bf1335da11"
+        }
+      ]
+    },
+    {
+      "id": "sanctum",
+      "folder": "Sanctum",
+      "name": "Sanctum",
+      "release": "1.2.0",
+      "repository": "https://github.com/jdanielmourao/obsidian-sanctum",
+      "commit": "ac69e5992a66d2aeabb30d8c2d90c636d155fc25",
+      "commitUrl": "https://github.com/jdanielmourao/obsidian-sanctum/commit/ac69e5992a66d2aeabb30d8c2d90c636d155fc25",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/jdanielmourao/obsidian-sanctum/ac69e5992a66d2aeabb30d8c2d90c636d155fc25/LICENSE",
+      "pattern": "media-driven workspace and data-backed icon assets",
+      "files": [
+        {
+          "path": "theme.css",
+          "url": "https://raw.githubusercontent.com/jdanielmourao/obsidian-sanctum/ac69e5992a66d2aeabb30d8c2d90c636d155fc25/theme.css",
+          "sha256": "368643f25c6700d4aaee2b5fbac1a5e1f88ed6dcf55ebe0104d3165bfad20cbc"
+        },
+        {
+          "path": "manifest.json",
+          "url": "https://raw.githubusercontent.com/jdanielmourao/obsidian-sanctum/ac69e5992a66d2aeabb30d8c2d90c636d155fc25/manifest.json",
+          "sha256": "a89eb62ea17aedc4453d537a5b9f856d6bec77246030b2d8fc0d9e11c4dcfb09"
+        },
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/jdanielmourao/obsidian-sanctum/ac69e5992a66d2aeabb30d8c2d90c636d155fc25/LICENSE",
+          "sha256": "e47f41c970543cabb188965952eecb4050719352912c77131a0f9fd9d96f47e3"
+        }
+      ]
+    }
+  ],
+  "viewports": [
+    { "id": "laptop", "width": 1180, "height": 820, "deviceScaleFactor": 1, "zoom": 1 },
+    { "id": "minimum", "width": 860, "height": 640, "deviceScaleFactor": 1, "zoom": 1 }
+  ],
+  "cases": [
+    { "id": "dark-laptop", "theme": "minimal", "scheme": "dark", "viewport": "laptop" },
+    { "id": "light-laptop", "theme": "minimal", "scheme": "light", "viewport": "laptop" },
+    { "id": "light-minimum", "theme": "minimal", "scheme": "light", "viewport": "minimum" },
+    {
+      "id": "dark-high-contrast",
+      "theme": "minimal",
+      "scheme": "dark",
+      "viewport": "laptop",
+      "highContrast": true
+    },
+    { "id": "dark-laptop", "theme": "wikipedia", "scheme": "dark", "viewport": "laptop" },
+    { "id": "light-laptop", "theme": "wikipedia", "scheme": "light", "viewport": "laptop" },
+    { "id": "light-minimum", "theme": "wikipedia", "scheme": "light", "viewport": "minimum" },
+    {
+      "id": "dark-high-contrast",
+      "theme": "wikipedia",
+      "scheme": "dark",
+      "viewport": "laptop",
+      "highContrast": true
+    },
+    { "id": "dark-laptop", "theme": "sanctum", "scheme": "dark", "viewport": "laptop" },
+    { "id": "light-laptop", "theme": "sanctum", "scheme": "light", "viewport": "laptop" },
+    { "id": "light-minimum", "theme": "sanctum", "scheme": "light", "viewport": "minimum" },
+    {
+      "id": "dark-high-contrast",
+      "theme": "sanctum",
+      "scheme": "dark",
+      "viewport": "laptop",
+      "highContrast": true
+    }
+  ]
+}
