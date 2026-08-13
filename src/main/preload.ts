@@ -347,6 +347,10 @@ const bridge: ThreadleafBridge = {
       paneId,
       activate,
     ) as Promise<RuntimeSnapshot>,
+  goBack: (expectedVaultId, paneId) =>
+    ipcRenderer.invoke(ipcChannels.goBack, expectedVaultId, paneId) as Promise<RuntimeSnapshot>,
+  goForward: (expectedVaultId, paneId) =>
+    ipcRenderer.invoke(ipcChannels.goForward, expectedVaultId, paneId) as Promise<RuntimeSnapshot>,
   closeNote: (filePath, expectedVaultId, paneId) =>
     ipcRenderer.invoke(
       ipcChannels.closeNote,

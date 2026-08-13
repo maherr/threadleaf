@@ -99,9 +99,11 @@ import { loadVaultImage } from "./vault-image-service";
 import {
   activeWorkspacePane,
   createWorkspaceLayout,
+  maximumPersistedWorkspaceHistory,
   type PersistedWorkspacePane,
   type PersistedWorkspaceState,
   reorderWorkspaceTab,
+  type WorkspaceNavigationHistory,
   type WorkspaceStateStore,
   workspaceStatesEqual,
 } from "./workspace-state";
@@ -176,6 +178,12 @@ interface OpenNoteRequest {
   path: string;
   paneId?: WorkspacePaneId;
   activate?: boolean;
+}
+
+interface NavigateHistoryRequest {
+  direction: "back" | "forward";
+  paneId?: WorkspacePaneId;
+  expectedVaultId: string;
 }
 
 interface SplitWorkspaceRequest {
@@ -313,6 +321,26 @@ function parseOpenNoteRequest(payload: unknown): OpenNoteRequest {
     path: payload.path,
     ...(paneId === "primary" || paneId === "secondary" ? { paneId } : {}),
     ...(typeof activate === "boolean" ? { activate } : {}),
+  };
+}
+
+function parseNavigateHistoryRequest(payload: unknown): NavigateHistoryRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("direction" in payload) ||
+    (payload.direction !== "back" && payload.direction !== "forward") ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string" ||
+    ("paneId" in payload && payload.paneId !== "primary" && payload.paneId !== "secondary")
+  ) {
+    throw new Error("Workspace history navigation requires a direction and vault identity.");
+  }
+  const paneId = "paneId" in payload ? payload.paneId : undefined;
+  return {
+    direction: payload.direction,
+    expectedVaultId: payload.expectedVaultId,
+    ...(paneId === "primary" || paneId === "secondary" ? { paneId } : {}),
   };
 }
 
@@ -541,6 +569,91 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function cloneNavigationHistory(
+  history: WorkspaceNavigationHistory | undefined,
+): WorkspaceNavigationHistory | undefined {
+  return history ? { back: [...history.back], forward: [...history.forward] } : undefined;
+}
+
+function navigationHistoryForPaths(
+  history: WorkspaceNavigationHistory | undefined,
+  availablePaths: ReadonlySet<string>,
+  excludedPath?: string | null,
+): WorkspaceNavigationHistory | undefined {
+  if (!history) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const take = (paths: readonly string[]): string[] => {
+    const result: string[] = [];
+    for (const filePath of paths) {
+      if (
+        result.length >= maximumPersistedWorkspaceHistory ||
+        filePath === excludedPath ||
+        !availablePaths.has(filePath) ||
+        seen.has(filePath)
+      ) {
+        continue;
+      }
+      seen.add(filePath);
+      result.push(filePath);
+    }
+    return result;
+  };
+  const back = take(history.back);
+  const forward = take(history.forward);
+  return { back, forward };
+}
+
+function remapNavigationHistoryPath(
+  history: WorkspaceNavigationHistory | undefined,
+  from: string,
+  to: string,
+): WorkspaceNavigationHistory | undefined {
+  if (!history) {
+    return undefined;
+  }
+  const remapped = navigationHistoryForPaths(
+    {
+      back: history.back.map((filePath) => (filePath === from ? to : filePath)),
+      forward: history.forward.map((filePath) => (filePath === from ? to : filePath)),
+    },
+    new Set([...history.back, ...history.forward, to]),
+  );
+  return remapped ?? { back: [], forward: [] };
+}
+
+function navigationHistoryEqual(
+  left: WorkspaceNavigationHistory | undefined,
+  right: WorkspaceNavigationHistory | undefined,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  return Boolean(
+    left &&
+      right &&
+      left.back.length === right.back.length &&
+      left.back.every((filePath, index) => filePath === right.back[index]) &&
+      left.forward.length === right.forward.length &&
+      left.forward.every((filePath, index) => filePath === right.forward[index]),
+  );
+}
+
+function recordNavigation(
+  history: WorkspaceNavigationHistory | undefined,
+  from: string,
+  to: string,
+): WorkspaceNavigationHistory {
+  const back = [from, ...(history?.back ?? [])].filter(
+    (filePath, index, paths) => filePath !== to && paths.indexOf(filePath) === index,
+  );
+  return {
+    back: back.slice(0, maximumPersistedWorkspaceHistory),
+    forward: [],
+  };
+}
+
 export class WorkspaceRuntime {
   readonly actions: ActionRegistry;
   readonly kernel: VaultKernel;
@@ -629,6 +742,20 @@ export class WorkspaceRuntime {
         name: "Open note",
         source: "workspace",
         execute: (payload) => this.selectNote(parseOpenNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.go-back",
+        name: "Go back in note history",
+        source: "workspace",
+        execute: (payload) =>
+          this.navigateHistoryThroughState(parseNavigateHistoryRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.go-forward",
+        name: "Go forward in note history",
+        source: "workspace",
+        execute: (payload) =>
+          this.navigateHistoryThroughState(parseNavigateHistoryRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.close-note",
@@ -777,14 +904,21 @@ export class WorkspaceRuntime {
       ]);
       const panes = restoredWorkspace.panes.map((pane) => {
         const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
+        const activePath =
+          pane.activePath && openPaths.includes(pane.activePath)
+            ? pane.activePath
+            : (openPaths.at(-1) ?? null);
+        const navigationHistory = navigationHistoryForPaths(
+          pane.navigationHistory,
+          availablePaths,
+          activePath,
+        );
         return {
           id: pane.id,
           openPaths,
           pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
-          activePath:
-            pane.activePath && openPaths.includes(pane.activePath)
-              ? pane.activePath
-              : (openPaths.at(-1) ?? null),
+          activePath,
+          ...(navigationHistory ? { navigationHistory } : {}),
         };
       });
       const restored = createWorkspaceLayout(
@@ -800,7 +934,7 @@ export class WorkspaceRuntime {
     } else {
       const firstPath = indexReactor.index.snapshot().documents[0]?.path;
       if (firstPath) {
-        runtime.activatePath(firstPath);
+        runtime.activatePath(firstPath, "primary", false);
       }
       if (options.workspaceStateStore && workspaceStateReadable) {
         await runtime.persistWorkspaceStateBestEffort();
@@ -851,6 +985,24 @@ export class WorkspaceRuntime {
       path: filePath,
       ...(paneId ? { paneId } : {}),
       activate,
+    });
+    return this.publishSnapshot();
+  }
+
+  async goBack(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.go-back", {
+      direction: "back",
+      expectedVaultId,
+      ...(paneId ? { paneId } : {}),
+    });
+    return this.publishSnapshot();
+  }
+
+  async goForward(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.go-forward", {
+      direction: "forward",
+      expectedVaultId,
+      ...(paneId ? { paneId } : {}),
     });
     return this.publishSnapshot();
   }
@@ -1581,12 +1733,16 @@ export class WorkspaceRuntime {
   }
 
   private applyWorkspaceState(state: PersistedWorkspaceState): void {
-    this.#panes = state.panes.map((pane) => ({
-      id: pane.id,
-      openPaths: [...pane.openPaths],
-      pinnedPaths: [...pane.pinnedPaths],
-      activePath: pane.activePath,
-    }));
+    this.#panes = state.panes.map((pane) => {
+      const navigationHistory = cloneNavigationHistory(pane.navigationHistory);
+      return {
+        id: pane.id,
+        openPaths: [...pane.openPaths],
+        pinnedPaths: [...pane.pinnedPaths],
+        activePath: pane.activePath,
+        ...(navigationHistory ? { navigationHistory } : {}),
+      };
+    });
     this.#activePaneId = state.activePaneId;
     this.#splitDirection = state.splitDirection;
   }
@@ -1686,6 +1842,13 @@ export class WorkspaceRuntime {
       pane.openPaths.push(filePath);
     }
     if (request.activate !== false) {
+      if (pane.activePath && pane.activePath !== filePath) {
+        pane.navigationHistory = recordNavigation(
+          pane.navigationHistory,
+          pane.activePath,
+          filePath,
+        );
+      }
       pane.activePath = filePath;
     }
     const activePaneId = request.activate === false ? state.activePaneId : paneId;
@@ -1695,12 +1858,101 @@ export class WorkspaceRuntime {
     );
   }
 
-  private activatePath(filePath: string, paneId = this.#activePaneId): boolean {
+  private async navigateHistoryThroughState(request: NavigateHistoryRequest): Promise<void> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before note history could be traversed.");
+    }
+    const paneId = request.paneId ?? this.#activePaneId;
+    this.workspacePane(paneId);
+    const state = this.currentWorkspaceState();
+    const pane = state.panes.find(({ id }) => id === paneId);
+    if (!pane) {
+      throw new Error(`Workspace pane is not open: ${paneId}`);
+    }
+    const visible = await this.kernel.listVisiblePaths();
+    const availablePaths = new Set([
+      ...this.indexReactor.index.snapshot().documents.map((document) => document.path),
+      ...visible.files.filter(isCanvasPath),
+    ]);
+    const reconciledHistory = navigationHistoryForPaths(
+      pane.navigationHistory,
+      availablePaths,
+      pane.activePath,
+    );
+    const history = reconciledHistory ?? { back: [], forward: [] };
+    const source = request.direction === "back" ? history.back : history.forward;
+    const target = source.shift();
+    const currentHistory = cloneNavigationHistory(pane.navigationHistory) ?? {
+      back: [],
+      forward: [],
+    };
+    if (!target) {
+      if (!navigationHistoryEqual(currentHistory, reconciledHistory)) {
+        if (reconciledHistory) {
+          pane.navigationHistory = reconciledHistory;
+        } else {
+          delete pane.navigationHistory;
+        }
+        await this.adoptWorkspaceState(
+          createWorkspaceLayout(
+            this.kernel.vaultId,
+            state.panes,
+            state.activePaneId,
+            state.splitDirection,
+          ),
+          true,
+        );
+      }
+      return;
+    }
+    const opposite = request.direction === "back" ? history.forward : history.back;
+    if (pane.activePath && pane.activePath !== target) {
+      opposite.unshift(pane.activePath);
+    }
+    const seen = new Set<string>();
+    const dedupe = (paths: string[]): string[] =>
+      paths.filter((filePath) => {
+        if (seen.has(filePath)) {
+          return false;
+        }
+        seen.add(filePath);
+        return true;
+      });
+    const nextHistory: WorkspaceNavigationHistory = {
+      back: dedupe(request.direction === "back" ? history.back : opposite).slice(
+        0,
+        maximumPersistedWorkspaceHistory,
+      ),
+      forward: dedupe(request.direction === "back" ? opposite : history.forward).slice(
+        0,
+        maximumPersistedWorkspaceHistory,
+      ),
+    };
+    if (!pane.openPaths.includes(target)) {
+      pane.openPaths.push(target);
+    }
+    pane.activePath = target;
+    pane.navigationHistory = nextHistory;
+    await this.adoptWorkspaceState(
+      createWorkspaceLayout(this.kernel.vaultId, state.panes, paneId, state.splitDirection),
+      true,
+    );
+  }
+
+  private activatePath(
+    filePath: string,
+    paneId = this.#activePaneId,
+    recordHistory = true,
+  ): boolean {
     const pane = this.workspacePane(paneId);
+    const previousPath = pane.activePath;
     let changed = this.#activePaneId !== paneId || pane.activePath !== filePath;
     if (!pane.openPaths.includes(filePath)) {
       pane.openPaths.push(filePath);
       changed = true;
+    }
+    if (recordHistory && previousPath && previousPath !== filePath) {
+      pane.navigationHistory = recordNavigation(pane.navigationHistory, previousPath, filePath);
     }
     pane.activePath = filePath;
     this.#activePaneId = paneId;
@@ -1710,6 +1962,16 @@ export class WorkspaceRuntime {
   private removeOpenPath(filePath: string): boolean {
     let changed = false;
     for (const pane of this.#panes) {
+      if (pane.navigationHistory) {
+        const nextHistory: WorkspaceNavigationHistory = {
+          back: pane.navigationHistory.back.filter((path) => path !== filePath),
+          forward: pane.navigationHistory.forward.filter((path) => path !== filePath),
+        };
+        if (!navigationHistoryEqual(pane.navigationHistory, nextHistory)) {
+          pane.navigationHistory = nextHistory;
+          changed = true;
+        }
+      }
       const index = pane.openPaths.indexOf(filePath);
       if (index === -1) {
         continue;
@@ -1718,6 +1980,12 @@ export class WorkspaceRuntime {
       pane.pinnedPaths = pane.pinnedPaths.filter((pinnedPath) => pinnedPath !== filePath);
       if (pane.activePath === filePath) {
         pane.activePath = pane.openPaths[index] ?? pane.openPaths[index - 1] ?? null;
+      }
+      if (pane.navigationHistory && pane.activePath) {
+        pane.navigationHistory = {
+          back: pane.navigationHistory.back.filter((path) => path !== pane.activePath),
+          forward: pane.navigationHistory.forward.filter((path) => path !== pane.activePath),
+        };
       }
       changed = true;
     }
@@ -1733,6 +2001,15 @@ export class WorkspaceRuntime {
   private moveOpenPath(from: string, to: string): boolean {
     let changed = false;
     for (const pane of this.#panes) {
+      const nextHistory = remapNavigationHistoryPath(pane.navigationHistory, from, to);
+      if (!navigationHistoryEqual(pane.navigationHistory, nextHistory)) {
+        if (nextHistory) {
+          pane.navigationHistory = nextHistory;
+        } else {
+          delete pane.navigationHistory;
+        }
+        changed = true;
+      }
       const sourceIndex = pane.openPaths.indexOf(from);
       if (sourceIndex === -1) {
         continue;
@@ -1783,6 +2060,12 @@ export class WorkspaceRuntime {
       nextPane.activePath === normalizedPath
         ? (openPaths[index] ?? openPaths[index - 1] ?? null)
         : nextPane.activePath;
+    if (nextPane.navigationHistory && nextPane.activePath) {
+      nextPane.navigationHistory = {
+        back: nextPane.navigationHistory.back.filter((path) => path !== nextPane.activePath),
+        forward: nextPane.navigationHistory.forward.filter((path) => path !== nextPane.activePath),
+      };
+    }
     await this.adoptWorkspaceState(
       createWorkspaceLayout(
         this.kernel.vaultId,
@@ -2376,14 +2659,21 @@ export class WorkspaceRuntime {
     const availablePaths = new Set([...documents.keys(), ...canvasPaths]);
     const reconciledPanes = this.#panes.map((pane) => {
       const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
+      const activePath =
+        pane.activePath && openPaths.includes(pane.activePath)
+          ? pane.activePath
+          : (openPaths.at(-1) ?? null);
+      const navigationHistory = navigationHistoryForPaths(
+        pane.navigationHistory,
+        availablePaths,
+        activePath,
+      );
       return {
         id: pane.id,
         openPaths,
         pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
-        activePath:
-          pane.activePath && openPaths.includes(pane.activePath)
-            ? pane.activePath
-            : (openPaths.at(-1) ?? null),
+        activePath,
+        ...(navigationHistory ? { navigationHistory } : {}),
       };
     });
     const reconciledState = createWorkspaceLayout(
@@ -2478,6 +2768,8 @@ export class WorkspaceRuntime {
             pinned: pane.pinnedPaths.includes(filePath),
           })),
           activeNote,
+          canGoBack: Boolean(pane.navigationHistory?.back.length),
+          canGoForward: Boolean(pane.navigationHistory?.forward.length),
           ...(activeCanvas ? { activeCanvas } : {}),
         };
       }),

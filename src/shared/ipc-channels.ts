@@ -62,6 +62,8 @@ export const ipcChannels = {
   formatNoteWorkflowValue: "threadleaf:format-note-workflow-value",
   chooseVault: "threadleaf:choose-vault",
   openNote: "threadleaf:open-note",
+  goBack: "threadleaf:go-back",
+  goForward: "threadleaf:go-forward",
   closeNote: "threadleaf:close-note",
   toggleTabPin: "threadleaf:toggle-tab-pin",
   splitWorkspace: "threadleaf:split-workspace",

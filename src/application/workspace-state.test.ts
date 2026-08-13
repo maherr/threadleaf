@@ -4,6 +4,7 @@ import {
   createWorkspaceLayout,
   createWorkspaceState,
   createWorkspaceStateDocument,
+  maximumPersistedWorkspaceHistory,
   maximumPersistedWorkspaceTabs,
   parseWorkspaceState,
   reorderWorkspaceTab,
@@ -295,6 +296,53 @@ describe("workspace state", () => {
     expect(() => createWorkspaceState(vaultId, paths, paths[0] ?? null)).toThrow(
       `${maximumPersistedWorkspaceTabs} tabs`,
     );
+  });
+
+  it("round-trips bounded per-pane navigation history without changing old layouts", () => {
+    const state = createWorkspaceLayout(
+      vaultId,
+      [
+        {
+          id: "primary",
+          openPaths: ["Current.md"],
+          activePath: "Current.md",
+          navigationHistory: {
+            back: ["Earlier.md", "First.md"],
+            forward: ["Later.md"],
+          },
+        },
+      ],
+      "primary",
+      null,
+    );
+    const document = createWorkspaceStateDocument(state);
+
+    expect(document.panes[0]?.navigationHistory).toEqual({
+      back: ["Earlier.md", "First.md"],
+      forward: ["Later.md"],
+    });
+    expect(parseWorkspaceState(document, vaultId)).toEqual(state);
+    expect(() =>
+      createWorkspaceLayout(
+        vaultId,
+        [
+          {
+            id: "primary",
+            openPaths: ["Current.md"],
+            activePath: "Current.md",
+            navigationHistory: {
+              back: Array.from(
+                { length: maximumPersistedWorkspaceHistory + 1 },
+                (_, index) => `Earlier ${index}.md`,
+              ),
+              forward: [],
+            },
+          },
+        ],
+        "primary",
+        null,
+      ),
+    ).toThrow(`${maximumPersistedWorkspaceHistory} entries`);
   });
 
   it("reorders tabs deterministically without crossing the pinned region", () => {

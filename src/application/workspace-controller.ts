@@ -84,6 +84,8 @@ export interface WorkspaceRuntimePort {
     paneId?: WorkspacePaneId,
     activate?: boolean,
   ): Promise<RuntimeSnapshot>;
+  goBack(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
+  goForward(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
   getWorkspaceSettings(): VaultWorkspaceSettings;
   setWorkspaceSettings(settings: VaultWorkspaceSettings, expectedVaultId: string): void;
   closeNote(
@@ -613,6 +615,14 @@ export class WorkspaceController {
     activate?: boolean,
   ): Promise<RuntimeSnapshot> {
     return this.activeRuntime("open a note").openNote(filePath, paneId, activate);
+  }
+
+  goBack(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("go back in note history").goBack(expectedVaultId, paneId);
+  }
+
+  goForward(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("go forward in note history").goForward(expectedVaultId, paneId);
   }
 
   getWorkspaceSettings(): VaultWorkspaceSettings {

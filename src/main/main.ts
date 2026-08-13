@@ -2670,6 +2670,24 @@ function registerIpcHandlers(): void {
       return workspaceController.openNote(filePath, paneId, activate);
     },
   );
+  ipcMain.handle(ipcChannels.goBack, (_event, expectedVaultId: unknown, paneId: unknown) => {
+    if (
+      typeof expectedVaultId !== "string" ||
+      !(paneId === undefined || paneId === "primary" || paneId === "secondary")
+    ) {
+      throw new Error("Going back requires a vault identity and optional pane ID.");
+    }
+    return workspaceController.goBack(expectedVaultId, paneId);
+  });
+  ipcMain.handle(ipcChannels.goForward, (_event, expectedVaultId: unknown, paneId: unknown) => {
+    if (
+      typeof expectedVaultId !== "string" ||
+      !(paneId === undefined || paneId === "primary" || paneId === "secondary")
+    ) {
+      throw new Error("Going forward requires a vault identity and optional pane ID.");
+    }
+    return workspaceController.goForward(expectedVaultId, paneId);
+  });
   ipcMain.handle(
     ipcChannels.closeNote,
     (_event, filePath: unknown, expectedVaultId: unknown, paneId: unknown) => {

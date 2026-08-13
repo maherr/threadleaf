@@ -328,8 +328,11 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [x] Pointer and keyboard tab reordering and cross-pane transfer, independently collapsible side
       docks, private per-vault dock and window bounds, and native compatibility-plugin pop-out views
       with close, crash, vault-switch, and stale-session recovery.
-- [ ] Add freeform split groups, general floating windows, navigation history, a quick switcher,
-      broader command discovery, and persistent non-plugin view placement.
+- [x] Add bounded per-pane note navigation history with dirty-draft protection, private persistence,
+      rename/delete reconciliation, and keyboard, command-palette, and native-menu access, plus a
+      deterministic keyboard-accessible quick switcher over indexed note titles and paths.
+- [ ] Add freeform split groups, general floating windows, broader command discovery, and persistent
+      non-plugin view placement.
 - [ ] Complete the existing Source, Live Preview, and Reading modes with footnotes, rendered
       tables, math, diagrams, and large-document editing beyond the current source fallback, with
       reliable IME and undo.

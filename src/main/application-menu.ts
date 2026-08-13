@@ -111,6 +111,7 @@ export function createApplicationMenuTemplate(
       label: "Workspace",
       submenu: [
         action("Command Palette…", "ui.command-palette"),
+        action("Quick Switcher…", "workspace.quick-switcher"),
         action("Search Vault", "workspace.focus-note-filter"),
         action("Toggle Note Bookmark", "workspace.toggle-note-bookmark"),
         action("Toggle Pin for Current Tab", "workspace.toggle-tab-pin"),
@@ -122,6 +123,8 @@ export function createApplicationMenuTemplate(
         { type: "separator" },
         action("Next Tab", "workspace.next-tab"),
         action("Previous Tab", "workspace.previous-tab"),
+        action("Go Back in Note History", "workspace.go-back"),
+        action("Go Forward in Note History", "workspace.go-forward"),
       ],
     },
     {

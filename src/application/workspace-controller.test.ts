@@ -271,6 +271,14 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return this.#snapshot;
   }
 
+  async goBack(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
+  async goForward(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
   getWorkspaceSettings(): VaultWorkspaceSettings {
     return { ...this.workspaceSettings };
   }

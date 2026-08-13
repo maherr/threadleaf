@@ -326,6 +326,8 @@ describe("WorkspaceRuntime", () => {
       },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
       { id: "workspace.focus-pane", name: "Focus workspace pane", source: "workspace" },
+      { id: "workspace.go-back", name: "Go back in note history", source: "workspace" },
+      { id: "workspace.go-forward", name: "Go forward in note history", source: "workspace" },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       {
         id: "workspace.move-note-to-pane",
@@ -553,6 +555,81 @@ describe("WorkspaceRuntime", () => {
     await expect(workspace.closeNote("Welcome.md", "stale-vault")).rejects.toThrow(
       "active vault changed",
     );
+  });
+
+  it("traverses per-pane history, clears forward history on a branch, and persists it", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let workspace = await openRuntime(store);
+
+    await workspace.openNote("Welcome.md");
+    const linked = await workspace.openNote("Linked Note.md");
+    expect(linked.workspace?.panes[0]).toMatchObject({
+      activeNote: { path: "Linked Note.md" },
+      canGoBack: true,
+      canGoForward: false,
+    });
+
+    const back = await workspace.goBack(workspace.vaultId);
+    expect(back.workspace?.activeNote?.path).toBe("Welcome.md");
+    expect(back.workspace?.panes[0]).toMatchObject({ canGoBack: false, canGoForward: true });
+
+    const forward = await workspace.goForward(workspace.vaultId);
+    expect(forward.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(forward.workspace?.panes[0]).toMatchObject({ canGoBack: true, canGoForward: false });
+
+    await workspace.goBack(workspace.vaultId);
+    const branched = await workspace.openNote("Linked Note.md");
+    expect(branched.workspace?.panes[0]).toMatchObject({ canGoBack: true, canGoForward: false });
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: ["Welcome.md"],
+      forward: [],
+    });
+
+    await workspace.close();
+    runtime = undefined;
+    workspace = await openRuntime(store);
+    expect((await workspace.getSnapshot()).workspace?.panes[0]).toMatchObject({
+      activeNote: { path: "Linked Note.md" },
+      canGoBack: true,
+      canGoForward: false,
+    });
+  });
+
+  it("prunes the replacement active note when closing a tab and restoring stale history", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    const closed = await workspace.closeNote("Linked Note.md", workspace.vaultId);
+    expect(closed.workspace?.activeNote?.path).toBe("Welcome.md");
+    expect(closed.workspace?.panes[0]).toMatchObject({
+      canGoBack: false,
+      canGoForward: false,
+    });
+
+    await workspace.close();
+    runtime = undefined;
+    store.value = createWorkspaceLayout(
+      workspace.vaultId,
+      [
+        {
+          id: "primary",
+          openPaths: ["Welcome.md"],
+          activePath: "Welcome.md",
+          navigationHistory: { back: ["Welcome.md", "Linked Note.md"], forward: [] },
+        },
+      ],
+      "primary",
+      null,
+    );
+    workspace = await openRuntime(store);
+    const restored = await workspace.getSnapshot();
+    expect(restored.workspace?.activeNote?.path).toBe("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: ["Linked Note.md"],
+      forward: [],
+    });
   });
 
   it("orders pinned tabs, refuses destructive closes, and persists their private state", async () => {
@@ -1183,6 +1260,35 @@ describe("WorkspaceRuntime", () => {
     });
   });
 
+  it("remaps and removes history entries when notes are renamed or deleted", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    await fs.rename(path.join(vaultPath, "Welcome.md"), path.join(vaultPath, "Renamed.md"));
+    const renamed = await workspace.reconcileNow();
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: ["Renamed.md"],
+      forward: [],
+    });
+    const back = await workspace.goBack(workspace.vaultId);
+    expect(back.workspace?.activeNote?.path).toBe("Renamed.md");
+
+    await workspace.goForward(workspace.vaultId);
+    await fs.unlink(path.join(vaultPath, "Renamed.md"));
+    const deleted = await workspace.reconcileNow();
+    expect(deleted.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(deleted.workspace?.panes[0]).toMatchObject({ canGoBack: false });
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: [],
+      forward: [],
+    });
+    expect(renamed.workspace?.panes[0]?.tabs.map(({ path: filePath }) => filePath)).toContain(
+      "Renamed.md",
+    );
+  });
+
   it("moves an open note through the link-safe service and remaps its tab", async () => {
     const store = new MemoryWorkspaceStateStore();
     const workspace = await openRuntime(store);
@@ -1529,6 +1635,12 @@ describe("WorkspaceRuntime", () => {
       tags: ["fresh"],
       outgoing: [expect.objectContaining({ path: "Welcome.md", status: "resolved" })],
     });
+    expect(created.snapshot.workspace?.panes[0]).toMatchObject({
+      canGoBack: true,
+      canGoForward: false,
+    });
+    const returned = await workspace.goBack(workspace.vaultId);
+    expect(returned.workspace?.activeNote?.path).toBe("Linked Note.md");
     await expect(
       fs.readFile(path.join(vaultPath, "Projects", "New thread.md"), "utf8"),
     ).resolves.toBe("# New thread\n\n#fresh and [[Welcome]]\n");
@@ -2303,6 +2415,8 @@ describe("WorkspaceRuntime", () => {
       { id: "workspace.close-pane", name: "Close workspace pane", source: "workspace" },
       { id: "workspace.create-note", name: "Create note", source: "workspace" },
       { id: "workspace.focus-pane", name: "Focus workspace pane", source: "workspace" },
+      { id: "workspace.go-back", name: "Go back in note history", source: "workspace" },
+      { id: "workspace.go-forward", name: "Go forward in note history", source: "workspace" },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       {
         id: "workspace.move-note-to-pane",

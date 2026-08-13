@@ -70,6 +70,11 @@ describe("application menu", () => {
     expect(item(template, "Edit", "Insert Template…").accelerator).toBeUndefined();
     expect(item(template, "Workspace", "Split Right").accelerator).toBeUndefined();
     expect(item(template, "Workspace", "Toggle Pin for Current Tab").accelerator).toBeUndefined();
+    expect(item(template, "Workspace", "Quick Switcher…").accelerator).toBe("CmdOrCtrl+Shift+O");
+    expect(item(template, "Workspace", "Go Back in Note History").accelerator).toBe("CmdOrCtrl+[");
+    expect(item(template, "Workspace", "Go Forward in Note History").accelerator).toBe(
+      "CmdOrCtrl+]",
+    );
 
     item(template, "Workspace", "Split Right").click?.({} as never, undefined, {} as never);
     expect(dispatch).toHaveBeenCalledWith("workspace.split-right");

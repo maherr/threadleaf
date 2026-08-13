@@ -468,6 +468,8 @@ export interface WorkspacePaneSnapshot {
   active: boolean;
   tabs: WorkspaceTabSummary[];
   activeNote: WorkspaceNoteSnapshot | null;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
   activeCanvas?: WorkspaceCanvasSnapshot | null;
 }
 
@@ -1084,6 +1086,8 @@ export interface ThreadleafBridge {
   setPluginSurfaceTheme(theme: "dark" | "light"): Promise<void>;
   setPluginSurfaceAccessibility(preferences: EffectiveAccessibilityPreferences): Promise<void>;
   openNote(path: string, paneId?: WorkspacePaneId, activate?: boolean): Promise<RuntimeSnapshot>;
+  goBack(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
+  goForward(expectedVaultId: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
   closeNote(
     path: string,
     expectedVaultId: string,

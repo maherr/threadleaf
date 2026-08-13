@@ -123,6 +123,12 @@ import {
 } from "./migration-review-identity";
 import { pluginViewTypeForPath } from "./plugin-view-model";
 import { createStandalonePublishedNoteHtml } from "./publish-export";
+import {
+  filterQuickSwitcherNotes,
+  moveQuickSwitcherSelection,
+  type QuickSwitcherNote,
+  quickSwitcherNotesFromFiles,
+} from "./quick-switcher-model";
 import { RecoveryViewController } from "./recovery-view";
 import "./styles.css";
 import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
@@ -156,6 +162,8 @@ const elements = {
   workspacePanes: getElement("workspace-panes"),
   workspacePane: getElement("workspace-pane-primary"),
   noteTabs: getElement("note-tabs"),
+  navigateBack: getButton("navigate-back"),
+  navigateForward: getButton("navigate-forward"),
   splitPaneRight: getButton("split-pane-right"),
   splitPaneDown: getButton("split-pane-down"),
   moveTabPane: getButton("move-tab-pane"),
@@ -217,6 +225,7 @@ const elements = {
   themeToggle: getButton("theme-toggle"),
   themeLabel: getElement("theme-label"),
   commandPalette: getDialog("command-palette"),
+  quickSwitcher: getDialog("quick-switcher"),
   graphDialog: getDialog("graph-dialog"),
   recoveryDialog: getDialog("recovery-dialog"),
   paletteQuery: getInput("palette-query"),
@@ -224,6 +233,11 @@ const elements = {
   paletteCount: getElement("palette-count"),
   paletteResults: getElement("palette-results"),
   paletteHint: getElement("palette-hint"),
+  quickSwitcherQuery: getInput("quick-switcher-query"),
+  quickSwitcherClose: getButton("quick-switcher-close"),
+  quickSwitcherCount: getElement("quick-switcher-count"),
+  quickSwitcherResults: getElement("quick-switcher-results"),
+  quickSwitcherHint: getElement("quick-switcher-hint"),
   settingsDialog: getDialog("shortcut-settings"),
   settingsClose: getButton("settings-close"),
   settingsDone: getButton("settings-done"),
@@ -435,6 +449,8 @@ const elements = {
 const paneElementKeys = [
   "workspacePane",
   "noteTabs",
+  "navigateBack",
+  "navigateForward",
   "splitPaneRight",
   "splitPaneDown",
   "moveTabPane",
@@ -525,6 +541,8 @@ function paneElementsFor(
   return {
     workspacePane,
     noteTabs: element("note-tabs"),
+    navigateBack: button("navigate-back"),
+    navigateForward: button("navigate-forward"),
     splitPaneRight: button("split-pane-right"),
     splitPaneDown: button("split-pane-down"),
     moveTabPane: button("move-tab-pane"),
@@ -641,6 +659,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     description: "Choose a local Markdown folder after any draft is saved or reverted.",
   },
   {
+    id: "workspace.quick-switcher",
+    label: "Open quick switcher",
+    description: "Search indexed note titles and paths, then open one in the active pane.",
+  },
+  {
     id: "workspace.create-note",
     label: "Create new note",
     description: "Create and open a Markdown note through the recoverable writer.",
@@ -704,6 +727,16 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.previous-tab",
     label: "Activate previous tab",
     description: "Move backward through the ordered open notes.",
+  },
+  {
+    id: "workspace.go-back",
+    label: "Go back in note history",
+    description: "Return to the previous note in this pane's bounded navigation history.",
+  },
+  {
+    id: "workspace.go-forward",
+    label: "Go forward in note history",
+    description: "Advance to the next note in this pane's bounded navigation history.",
   },
   {
     id: "workspace.focus-note-filter",
@@ -819,6 +852,11 @@ let pluginLayoutReadyVaultId: string | null = null;
 let paletteMatches: RendererCommand[] = [];
 let paletteSelection = -1;
 let paletteRestoreFocus: HTMLElement | null = null;
+let quickSwitcherMatches: QuickSwitcherNote[] = [];
+let quickSwitcherSelection = -1;
+let quickSwitcherRestoreFocus: HTMLElement | null = null;
+let quickSwitcherIdentity: { vaultId: string; indexGeneration: number } | null = null;
+let quickSwitcherRequest = 0;
 let settingsSnapshot: AppSettingsSnapshot = {
   settings: createDefaultAppSettings(),
   warning: null,
@@ -1606,6 +1644,38 @@ function commandCatalog(): RendererCommand[] {
       run: closeActiveTab,
     },
     {
+      id: "workspace.go-back",
+      label: "Go back in note history",
+      category: "Workspace",
+      keywords: ["back", "history", "previous", "note", "navigation"],
+      shortcut: shortcutFor("workspace.go-back"),
+      enabled: Boolean(
+        workspacePaneSnapshot()?.canGoBack && !opening && !busy && !paneSaving && !paneDirty,
+      ),
+      disabledReason: paneDirty
+        ? "Save or revert drafts before navigating note history."
+        : workspacePaneSnapshot()?.canGoBack
+          ? "Threadleaf is finishing another action."
+          : "No earlier note is available in this pane's history.",
+      run: () => navigateHistory("back"),
+    },
+    {
+      id: "workspace.go-forward",
+      label: "Go forward in note history",
+      category: "Workspace",
+      keywords: ["forward", "history", "next", "note", "navigation"],
+      shortcut: shortcutFor("workspace.go-forward"),
+      enabled: Boolean(
+        workspacePaneSnapshot()?.canGoForward && !opening && !busy && !paneSaving && !paneDirty,
+      ),
+      disabledReason: paneDirty
+        ? "Save or revert drafts before navigating note history."
+        : workspacePaneSnapshot()?.canGoForward
+          ? "Threadleaf is finishing another action."
+          : "No later note is available in this pane's history.",
+      run: () => navigateHistory("forward"),
+    },
+    {
       id: "workspace.split-right",
       label: paneCount < 2 ? "Split editor right" : "Arrange panes side by side",
       category: "Workspace",
@@ -1702,6 +1772,20 @@ function commandCatalog(): RendererCommand[] {
           ? "Threadleaf is finishing another action."
           : null,
       run: chooseVault,
+    },
+    {
+      id: "workspace.quick-switcher",
+      label: "Open quick switcher",
+      category: "Workspace",
+      keywords: ["quick", "switch", "note", "file", "open", "title", "path"],
+      shortcut: shortcutFor("workspace.quick-switcher"),
+      enabled: Boolean(!opening && !busy && !paneSaving && !paneDirty),
+      disabledReason: paneDirty
+        ? "Save or revert drafts before opening the quick switcher."
+        : opening
+          ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+          : "Threadleaf is finishing another action.",
+      run: openQuickSwitcher,
     },
     {
       id: "workspace.focus-note-filter",
@@ -2668,6 +2752,159 @@ function closeCommandPalette(restoreFocus = true): void {
   if (restoreFocus && restoreTarget?.isConnected) {
     restoreTarget.focus();
   }
+}
+
+function selectQuickSwitcherIndex(index: number, scrollIntoView: boolean): void {
+  quickSwitcherSelection = index;
+  const options = [
+    ...elements.quickSwitcherResults.querySelectorAll<HTMLButtonElement>(".quick-switcher-option"),
+  ];
+  for (const [optionIndex, option] of options.entries()) {
+    const active = optionIndex === index;
+    option.dataset.active = String(active);
+    option.setAttribute("aria-selected", String(active));
+  }
+  const activeOption = options[index];
+  if (activeOption) {
+    elements.quickSwitcherQuery.setAttribute("aria-activedescendant", activeOption.id);
+    const note = quickSwitcherMatches[index];
+    elements.quickSwitcherHint.textContent = note ? `Open ${note.path}` : "Ready";
+    if (scrollIntoView) {
+      activeOption.scrollIntoView({ block: "nearest" });
+    }
+  } else {
+    elements.quickSwitcherQuery.removeAttribute("aria-activedescendant");
+    elements.quickSwitcherHint.textContent = "No note selected";
+  }
+}
+
+function renderQuickSwitcherResults(): void {
+  if (!elements.quickSwitcher.open) {
+    return;
+  }
+  const identity = currentVaultSearchIdentity();
+  if (!identity) {
+    closeQuickSwitcher(false);
+    return;
+  }
+  if (
+    quickSwitcherIdentity?.vaultId !== identity.vaultId ||
+    quickSwitcherIdentity?.indexGeneration !== identity.indexGeneration
+  ) {
+    quickSwitcherRequest += 1;
+    quickSwitcherIdentity = identity;
+  }
+  const selectedPath = quickSwitcherMatches[quickSwitcherSelection]?.path;
+  quickSwitcherMatches = filterQuickSwitcherNotes(
+    quickSwitcherNotesFromFiles(currentSnapshot?.workspace?.files ?? []),
+    elements.quickSwitcherQuery.value,
+  );
+  const preservedIndex = selectedPath
+    ? quickSwitcherMatches.findIndex((note) => note.path === selectedPath)
+    : -1;
+  quickSwitcherSelection =
+    preservedIndex >= 0 ? preservedIndex : quickSwitcherMatches.length > 0 ? 0 : -1;
+  elements.quickSwitcherResults.replaceChildren();
+  for (const [index, note] of quickSwitcherMatches.entries()) {
+    const option = document.createElement("button");
+    option.id = `quick-switcher-option-${index}`;
+    option.type = "button";
+    option.className = "quick-switcher-option";
+    option.dataset.notePath = note.path;
+    option.setAttribute("role", "option");
+    const mark = document.createElement("span");
+    mark.className = "quick-switcher-option-mark";
+    mark.ariaHidden = "true";
+    mark.textContent = "◇";
+    const copy = document.createElement("span");
+    copy.className = "quick-switcher-option-copy";
+    const title = document.createElement("strong");
+    title.textContent = note.title;
+    const path = document.createElement("small");
+    path.textContent = note.path;
+    copy.append(title, path);
+    option.append(mark, copy);
+    option.addEventListener("click", () => void chooseQuickSwitcherNote(index));
+    option.addEventListener("mousemove", () => selectQuickSwitcherIndex(index, false));
+    elements.quickSwitcherResults.append(option);
+  }
+  if (quickSwitcherMatches.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "quick-switcher-empty";
+    empty.textContent = "No indexed note matches this search.";
+    elements.quickSwitcherResults.append(empty);
+  }
+  elements.quickSwitcherCount.textContent = `${quickSwitcherMatches.length} shown`;
+  selectQuickSwitcherIndex(quickSwitcherSelection, false);
+}
+
+function openQuickSwitcher(): void {
+  if (elements.quickSwitcher.open) {
+    elements.quickSwitcherQuery.focus();
+    elements.quickSwitcherQuery.select();
+    return;
+  }
+  if (vaultOpening()) {
+    showToast("Wait for the vault index to finish opening.");
+    return;
+  }
+  if (busy || anyPaneDirty() || anyPaneSaving()) {
+    if (anyPaneDirty()) {
+      showToast("Save or revert drafts before opening the quick switcher.");
+    }
+    return;
+  }
+  if (documentViewMode === "plugin") {
+    setPluginSurfacePresentationVisible(false);
+  }
+  quickSwitcherRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  quickSwitcherRequest += 1;
+  quickSwitcherIdentity = currentVaultSearchIdentity();
+  elements.quickSwitcherQuery.value = "";
+  quickSwitcherSelection = -1;
+  elements.quickSwitcher.showModal();
+  renderQuickSwitcherResults();
+  window.requestAnimationFrame(() => {
+    elements.quickSwitcherQuery.focus();
+    elements.quickSwitcherQuery.select();
+  });
+}
+
+function closeQuickSwitcher(restoreFocus = true): void {
+  if (!elements.quickSwitcher.open) {
+    return;
+  }
+  quickSwitcherRequest += 1;
+  elements.quickSwitcher.close();
+  quickSwitcherIdentity = null;
+  if (documentViewMode === "plugin") {
+    setPluginSurfacePresentationVisible(true);
+  }
+  const restoreTarget = quickSwitcherRestoreFocus;
+  quickSwitcherRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) {
+    restoreTarget.focus();
+  }
+}
+
+async function chooseQuickSwitcherNote(index: number): Promise<void> {
+  const note = quickSwitcherMatches[index];
+  const request = quickSwitcherRequest;
+  const identity = quickSwitcherIdentity;
+  if (!note || !identity) {
+    return;
+  }
+  closeQuickSwitcher(false);
+  if (
+    request + 1 !== quickSwitcherRequest ||
+    currentVaultSearchIdentity()?.vaultId !== identity.vaultId ||
+    currentVaultSearchIdentity()?.indexGeneration !== identity.indexGeneration
+  ) {
+    showToast("The indexed note list changed. Reopen the quick switcher.");
+    return;
+  }
+  await openNote(note.path);
 }
 
 function setPluginSurfacePresentationVisible(visible: boolean): void {
@@ -7633,6 +7870,7 @@ function renderWorkspacePanes(
       continue;
     }
     const available = availablePaneIds.has(paneId);
+    const paneSnapshot = workspace?.panes.find((candidate) => candidate.id === paneId);
     pane.workspacePane.hidden = !available;
     pane.workspacePane.dataset.active = String(available && paneId === activePaneId);
     pane.workspacePane.setAttribute(
@@ -7649,6 +7887,15 @@ function renderWorkspacePanes(
       "aria-pressed",
       String(paneCount > 1 && workspace?.splitDirection === "horizontal"),
     );
+    const historyBlocked = busy || anyPaneSaving() || anyPaneDirty();
+    pane.navigateBack.disabled = !available || historyBlocked || !paneSnapshot?.canGoBack;
+    pane.navigateForward.disabled = !available || historyBlocked || !paneSnapshot?.canGoForward;
+    pane.navigateBack.title = anyPaneDirty()
+      ? "Save or revert drafts before navigating note history"
+      : "Go back in note history";
+    pane.navigateForward.title = anyPaneDirty()
+      ? "Save or revert drafts before navigating note history"
+      : "Go forward in note history";
   }
 
   const displayedNotes = new Map<WorkspacePaneId, WorkspaceNoteSnapshot | null>();
@@ -7806,6 +8053,9 @@ function render(snapshot: RuntimeSnapshot): void {
     });
   }
   if (previousVaultId !== snapshot.vault.id) {
+    if (elements.quickSwitcher.open) {
+      closeQuickSwitcher(false);
+    }
     bookmarkRequest += 1;
     bookmarkVaultId = null;
     bookmarkPaths = [];
@@ -7967,6 +8217,7 @@ function render(snapshot: RuntimeSnapshot): void {
     setDocumentView(editingViewMode, false);
   }
   reconcileVaultSearch(snapshot);
+  renderQuickSwitcherResults();
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
   renderNoteBookmarks(workspace?.files ?? [], displayedNote?.path ?? null);
 
@@ -9531,6 +9782,16 @@ function renderEditControls(): void {
     opening || paneCount < 2 || busy || anyPaneSaving() || anyPaneDirty() || !loadedNote;
   elements.closePane.disabled =
     opening || paneCount < 2 || busy || anyPaneSaving() || anyPaneDirty();
+  const activePane = workspacePaneSnapshot();
+  const historyBlocked = busy || saving || dirty;
+  elements.navigateBack.disabled = historyBlocked || !activePane?.canGoBack;
+  elements.navigateForward.disabled = historyBlocked || !activePane?.canGoForward;
+  elements.navigateBack.title = dirty
+    ? "Save or revert the open draft before navigating note history"
+    : "Go back in note history";
+  elements.navigateForward.title = dirty
+    ? "Save or revert the open draft before navigating note history"
+    : "Go forward in note history";
   elements.splitPaneRight.title =
     paneCount < 2 && anyPaneDirty()
       ? "Save or revert the open draft before creating another pane"
@@ -9721,6 +9982,40 @@ async function openNote(
   return (
     loadedNote?.path === filePath || workspacePaneSnapshot(paneId)?.activeCanvas?.path === filePath
   );
+}
+
+async function navigateHistory(
+  direction: "back" | "forward",
+  paneId: WorkspacePaneId = activePaneContextId,
+): Promise<void> {
+  activatePaneContext(paneId);
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || busy) {
+    return;
+  }
+  if (dirty || saving) {
+    showToast("Save or revert the open note before navigating history.");
+    setDocumentView("source");
+    editor.focus();
+    return;
+  }
+  const pane = workspacePaneSnapshot(paneId);
+  if (
+    (direction === "back" && !pane?.canGoBack) ||
+    (direction === "forward" && !pane?.canGoForward)
+  ) {
+    return;
+  }
+  await runAction(() =>
+    direction === "back"
+      ? window.threadleaf.goBack(expectedVaultId, paneId)
+      : window.threadleaf.goForward(expectedVaultId, paneId),
+  );
+  window.requestAnimationFrame(() => {
+    if (loadedNote) {
+      documentViewMode === "reading" ? elements.notePreview.focus() : editor.focus();
+    }
+  });
 }
 
 async function chooseVault(): Promise<void> {
@@ -10113,6 +10408,14 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     activate();
     void splitWorkspace("horizontal");
   });
+  pane.navigateBack.addEventListener("click", () => {
+    activate();
+    void navigateHistory("back", paneId);
+  });
+  pane.navigateForward.addEventListener("click", () => {
+    activate();
+    void navigateHistory("forward", paneId);
+  });
   pane.moveTabPane.addEventListener("click", () => {
     activate();
     void moveActiveTabToOtherPane();
@@ -10283,6 +10586,34 @@ elements.commandPalette.addEventListener("cancel", (event) => {
 elements.commandPalette.addEventListener("click", (event) => {
   if (event.target === elements.commandPalette) {
     closeCommandPalette();
+  }
+});
+elements.quickSwitcherQuery.addEventListener("input", renderQuickSwitcherResults);
+elements.quickSwitcherQuery.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    quickSwitcherSelection = moveQuickSwitcherSelection(
+      quickSwitcherSelection,
+      quickSwitcherMatches.length,
+      event.key === "ArrowDown" ? 1 : -1,
+    );
+    selectQuickSwitcherIndex(quickSwitcherSelection, true);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    void chooseQuickSwitcherNote(quickSwitcherSelection);
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeQuickSwitcher();
+  }
+});
+elements.quickSwitcherClose.addEventListener("click", () => closeQuickSwitcher());
+elements.quickSwitcher.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeQuickSwitcher();
+});
+elements.quickSwitcher.addEventListener("click", (event) => {
+  if (event.target === elements.quickSwitcher) {
+    closeQuickSwitcher();
   }
 });
 
@@ -10583,6 +10914,7 @@ document.addEventListener("keydown", (event) => {
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
+      elements.quickSwitcher.open ||
       elements.pluginPackageReviewDialog.open ||
       elements.pluginAuthorityReviewDialog.open ||
       elements.appearancePackageReviewDialog.open
@@ -10597,6 +10929,29 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (targetId === "workspace.quick-switcher") {
+    if (
+      elements.settingsDialog.open ||
+      elements.graphDialog.open ||
+      elements.recoveryDialog.open ||
+      elements.newNoteDialog.open ||
+      elements.templatePickerDialog.open ||
+      elements.propertyDialog.open ||
+      elements.moveNoteDialog.open ||
+      elements.deleteNoteDialog.open ||
+      elements.pluginPackageReviewDialog.open ||
+      elements.pluginAuthorityReviewDialog.open
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (elements.quickSwitcher.open) {
+      closeQuickSwitcher();
+    } else {
+      openQuickSwitcher();
+    }
+    return;
+  }
   if (targetId === "settings.open-keybindings") {
     if (
       elements.graphDialog.open ||
@@ -10606,6 +10961,7 @@ document.addEventListener("keydown", (event) => {
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
+      elements.quickSwitcher.open ||
       elements.pluginPackageReviewDialog.open ||
       elements.pluginAuthorityReviewDialog.open ||
       elements.appearancePackageReviewDialog.open
@@ -10630,6 +10986,7 @@ document.addEventListener("keydown", (event) => {
     elements.propertyDialog.open ||
     elements.moveNoteDialog.open ||
     elements.deleteNoteDialog.open ||
+    elements.quickSwitcher.open ||
     elements.pluginPackageReviewDialog.open ||
     elements.pluginAuthorityReviewDialog.open ||
     elements.appearancePackageReviewDialog.open
@@ -10704,6 +11061,17 @@ const unsubscribeMenuCommand = window.threadleaf.onMenuCommand((commandId) => {
       return;
     }
     openCommandPalette();
+    return;
+  }
+  if (commandId === "workspace.quick-switcher") {
+    if (openDialog && openDialog !== elements.quickSwitcher) {
+      return;
+    }
+    if (elements.quickSwitcher.open) {
+      closeQuickSwitcher();
+    } else {
+      openQuickSwitcher();
+    }
     return;
   }
   if (commandId === "settings.open-keybindings") {

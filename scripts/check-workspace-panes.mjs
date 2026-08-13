@@ -625,6 +625,121 @@ try {
     async () => (await paneState("primary"))?.path === "Welcome.md",
     "Welcome.md did not open in the primary pane",
   );
+
+  phase = "note history and quick switcher real input";
+  await clickSelector('[data-note-path="Linked Note.md"]');
+  await waitFor(
+    async () => (await paneState("primary"))?.path === "Linked Note.md",
+    "Linked Note.md did not open in the primary pane for history",
+  );
+  current = await snapshot();
+  assert(
+    current.workspace.panes[0].canGoBack === true,
+    "Opening a second note did not expose per-pane back history.",
+  );
+  await clickSelector("#navigate-back");
+  await waitFor(
+    async () => (await paneState("primary"))?.path === "Welcome.md",
+    "The visible back control did not return to the previous note",
+  );
+  current = await snapshot();
+  assert(
+    current.workspace.panes[0].canGoForward === true,
+    "Back navigation did not expose a forward entry.",
+  );
+
+  await pressKey("O", "KeyO", 2 | 8);
+  await waitFor(
+    () => evaluate("document.querySelector('#quick-switcher')?.open === true"),
+    "The quick switcher hotkey did not open its dialog",
+  );
+  await captureScreenshot("workspace-quick-switcher-dark");
+  assert(
+    await evaluate(
+      "document.querySelector('#quick-switcher-query')?.getAttribute('role') === 'combobox'",
+    ),
+    "The quick switcher query is not exposed as an accessible combobox.",
+  );
+  await cdp.send("Input.insertText", { text: "Linked" });
+  await waitFor(
+    () =>
+      evaluate(
+        "document.querySelector('[data-note-path=\"Linked Note.md\"]')?.textContent?.includes('Linked')",
+      ),
+    "The quick switcher did not rank a matching indexed note",
+  );
+  await pressKey("Enter", "Enter");
+  await waitFor(
+    async () => (await paneState("primary"))?.path === "Linked Note.md",
+    "Enter did not open the selected quick-switcher note",
+  );
+
+  await pressKey("[", "BracketLeft", 2);
+  await waitFor(
+    async () => (await paneState("primary"))?.path === "Welcome.md",
+    "The history hotkey did not traverse back to Welcome.md",
+  );
+  await clickSelector('[data-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]');
+  await waitFor(async () => {
+    const candidate = await snapshot();
+    return paneTabPaths(candidate, "primary").join("\n") === "Welcome.md" ? candidate : null;
+  }, "The temporary history tab did not close before the pane-layout checks");
+  const historyDraftMarker = "THREADLEAF-HISTORY-DRAFT";
+  await appendToPane("primary", `\n\n${historyDraftMarker}`);
+  assert(
+    await evaluate("document.querySelector('#navigate-forward')?.disabled === true"),
+    "The forward control remained enabled while the active pane had a dirty draft.",
+  );
+  await pressKey("]", "BracketRight", 2);
+  await delay(100);
+  assert(
+    (await paneState("primary"))?.path === "Welcome.md",
+    "History navigation changed notes while the active pane had a dirty draft.",
+  );
+  await clickSelector("#revert-note");
+  await waitFor(async () => {
+    const state = await paneState("primary");
+    const clean = await evaluate("document.querySelector('#navigate-forward')?.disabled === false");
+    return state && !state.text.includes(historyDraftMarker) && clean ? state : null;
+  }, "The history dirty-draft control did not return the editor to a clean state");
+
+  await clickSelector("#theme-toggle");
+  await waitFor(
+    () => evaluate("document.documentElement.dataset.theme === 'light'"),
+    "The light theme did not become active for quick-switcher verification",
+  );
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 900,
+    height: 720,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await pressKey("O", "KeyO", 2 | 8);
+  await waitFor(
+    () => evaluate("document.querySelector('#quick-switcher')?.open === true"),
+    "The quick switcher did not reopen in the compact light viewport",
+  );
+  assert(
+    await evaluate(`(() => {
+      const dialog = document.querySelector('#quick-switcher');
+      return dialog instanceof HTMLElement && dialog.scrollWidth <= dialog.clientWidth;
+    })()`),
+    "The quick switcher overflowed horizontally at the minimum viewport.",
+  );
+  await captureScreenshot("workspace-quick-switcher-light-minimum");
+  await pressKey("Escape", "Escape");
+  await clickSelector("#theme-toggle");
+  await waitFor(
+    () => evaluate("document.documentElement.dataset.theme === 'dark'"),
+    "The dark theme was not restored after quick-switcher verification",
+  );
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 840,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+
   await clickSelector("#split-pane-right");
   current = await waitFor(async () => {
     const candidate = await snapshot();
@@ -862,7 +977,7 @@ try {
   await closeApplication();
 
   console.log(
-    "Verified isolated virtual input, two-pane layout persistence, independent editors and undo histories, two protected crash drafts, clean saves, tab transfer, pane collapse, restart recovery, and non-destructive malformed-state fallback.",
+    "Verified isolated virtual input, per-pane note history with dirty-draft refusal, keyboard quick switching, light/dark minimum-viewport rendering, two-pane layout persistence, independent editors and undo histories, two protected crash drafts, clean saves, tab transfer, pane collapse, restart recovery, and non-destructive malformed-state fallback.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

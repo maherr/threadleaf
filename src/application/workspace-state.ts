@@ -1,10 +1,16 @@
 import { normalizeVaultPath } from "../kernel/path-policy";
 
 export const maximumPersistedWorkspaceTabs = 1_024;
+export const maximumPersistedWorkspaceHistory = 128;
 export const maximumWorkspacePanes = 2;
 
 export type WorkspacePaneId = "primary" | "secondary";
 export type WorkspaceSplitDirection = "horizontal" | "vertical";
+
+export interface WorkspaceNavigationHistory {
+  back: string[];
+  forward: string[];
+}
 
 export interface PersistedWorkspacePane {
   id: WorkspacePaneId;
@@ -16,6 +22,8 @@ export interface PersistedWorkspacePane {
    */
   pinnedPaths: string[];
   activePath: string | null;
+  /** Optional so layoutVersion 2 readers can safely retain older state files. */
+  navigationHistory?: WorkspaceNavigationHistory;
 }
 
 export interface WorkspacePaneInput {
@@ -23,6 +31,10 @@ export interface WorkspacePaneInput {
   openPaths: readonly string[];
   pinnedPaths?: readonly string[];
   activePath: string | null;
+  navigationHistory?: {
+    readonly back: readonly string[];
+    readonly forward: readonly string[];
+  };
 }
 
 export interface PersistedWorkspaceState {
@@ -73,7 +85,10 @@ export function workspaceStatesEqual(
         pane.openPaths.length === other.openPaths.length &&
         pane.openPaths.every((filePath, pathIndex) => filePath === other.openPaths[pathIndex]) &&
         pane.pinnedPaths.length === other.pinnedPaths.length &&
-        pane.pinnedPaths.every((filePath, pathIndex) => filePath === other.pinnedPaths[pathIndex])
+        pane.pinnedPaths.every(
+          (filePath, pathIndex) => filePath === other.pinnedPaths[pathIndex],
+        ) &&
+        navigationHistoriesEqual(pane.navigationHistory, other.navigationHistory)
       );
     })
   );
@@ -106,6 +121,47 @@ function normalizeWorkspacePath(value: unknown): string {
     throw new Error("Workspace tabs cannot point inside .obsidian.");
   }
   return normalized;
+}
+
+function normalizeNavigationHistory(value: unknown): WorkspaceNavigationHistory | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value) || !Array.isArray(value.back) || !Array.isArray(value.forward)) {
+    throw new Error("Workspace navigation history requires back and forward path arrays.");
+  }
+  if (value.back.length + value.forward.length > maximumPersistedWorkspaceHistory) {
+    throw new Error(
+      `Workspace navigation history cannot contain more than ${maximumPersistedWorkspaceHistory} entries per pane.`,
+    );
+  }
+  const back = value.back.map(normalizeWorkspacePath);
+  const forward = value.forward.map(normalizeWorkspacePath);
+  if (new Set([...back, ...forward]).size !== back.length + forward.length) {
+    throw new Error("Workspace navigation history cannot contain duplicate paths.");
+  }
+  return { back, forward };
+}
+
+function navigationHistoriesEqual(
+  left: WorkspaceNavigationHistory | undefined,
+  right: WorkspaceNavigationHistory | undefined,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return (
+      (!left || (left.back.length === 0 && left.forward.length === 0)) &&
+      (!right || (right.back.length === 0 && right.forward.length === 0))
+    );
+  }
+  return (
+    left.back.length === right.back.length &&
+    left.back.every((filePath, index) => filePath === right.back[index]) &&
+    left.forward.length === right.forward.length &&
+    left.forward.every((filePath, index) => filePath === right.forward[index])
+  );
 }
 
 function normalizePane(value: unknown): PersistedWorkspacePane {
@@ -152,7 +208,14 @@ function normalizePane(value: unknown): PersistedWorkspacePane {
   if (activePath === null && openPaths.length > 0) {
     throw new Error("A workspace pane with open tabs must identify its active path.");
   }
-  return { id: value.id, openPaths, pinnedPaths, activePath };
+  const navigationHistory = normalizeNavigationHistory(value.navigationHistory);
+  return {
+    id: value.id,
+    openPaths,
+    pinnedPaths,
+    activePath,
+    ...(navigationHistory ? { navigationHistory } : {}),
+  };
 }
 
 function normalizeVersionTwo(
@@ -313,6 +376,14 @@ export function createWorkspaceLayout(
         openPaths: [...pane.openPaths],
         ...(pane.pinnedPaths ? { pinnedPaths: [...pane.pinnedPaths] } : {}),
         activePath: pane.activePath,
+        ...(pane.navigationHistory
+          ? {
+              navigationHistory: {
+                back: [...pane.navigationHistory.back],
+                forward: [...pane.navigationHistory.forward],
+              },
+            }
+          : {}),
       })),
       activePaneId,
       splitDirection,
@@ -345,6 +416,14 @@ export function createWorkspaceStateDocument(
       openPaths: [...pane.openPaths],
       pinnedPaths: [...pane.pinnedPaths],
       activePath: pane.activePath,
+      ...(pane.navigationHistory
+        ? {
+            navigationHistory: {
+              back: [...pane.navigationHistory.back],
+              forward: [...pane.navigationHistory.forward],
+            },
+          }
+        : {}),
     })),
     activePaneId: normalized.activePaneId,
     splitDirection: normalized.splitDirection,
