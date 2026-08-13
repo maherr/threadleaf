@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { type AppSettings, createDefaultAppSettings } from "../shared/key-bindings";
-import { createDefaultVaultWorkspaceSettings } from "../shared/workspace-settings";
+import {
+  createDefaultVaultWorkspaceSettings,
+  type VaultWorkspaceSettings,
+} from "../shared/workspace-settings";
 import { AppSettingsController, type AppSettingsStore } from "./app-settings-controller";
 
 class MemorySettingsStore implements AppSettingsStore {
@@ -28,6 +31,56 @@ class MemorySettingsStore implements AppSettingsStore {
     this.saved.push(settings);
     return settings;
   }
+}
+
+interface PendingSave {
+  settings: AppSettings;
+  resolve: (settings: AppSettings) => void;
+  reject: (error: unknown) => void;
+}
+
+class DelayedSettingsStore extends MemorySettingsStore {
+  readonly pending: PendingSave[] = [];
+
+  override save(settings: AppSettings): Promise<AppSettings> {
+    return new Promise<AppSettings>((resolve, reject) => {
+      this.pending.push({ settings, resolve, reject });
+    });
+  }
+
+  releaseNext(): void {
+    const pending = this.pending.shift();
+    if (!pending) {
+      throw new Error("No delayed settings save is pending.");
+    }
+    this.value = pending.settings;
+    this.saved.push(pending.settings);
+    pending.resolve(pending.settings);
+  }
+
+  rejectNext(error: unknown): void {
+    const pending = this.pending.shift();
+    if (!pending) {
+      throw new Error("No delayed settings save is pending.");
+    }
+    pending.reject(error);
+  }
+}
+
+async function waitForPendingSaves(store: DelayedSettingsStore, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (store.pending.length >= count) {
+      return;
+    }
+    await Promise.resolve();
+  }
+  throw new Error(`Expected ${count} delayed settings saves, found ${store.pending.length}.`);
+}
+
+function workspaceSettings(
+  overrides: Partial<VaultWorkspaceSettings> = {},
+): VaultWorkspaceSettings {
+  return { ...createDefaultVaultWorkspaceSettings(), ...overrides };
 }
 
 describe("AppSettingsController", () => {
@@ -242,5 +295,115 @@ describe("AppSettingsController", () => {
     );
     expect(snapshot.settings.workspaceByVault[firstVault]).toBeUndefined();
     expect(store.saved).toEqual([snapshot.settings]);
+  });
+
+  it("serializes concurrent key and two-vault workspace changes from the latest snapshot", async () => {
+    const store = new DelayedSettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const firstVault = "c".repeat(64);
+    const secondVault = "d".repeat(64);
+
+    const key = controller.setKeyBinding("editor.revert-note", "Alt+R");
+    const firstWorkspace = controller.setVaultWorkspaceSettings(
+      firstVault,
+      workspaceSettings({ defaultNoteFolder: "First", linkStyle: "markdown" }),
+    );
+    const secondWorkspace = controller.setVaultWorkspaceSettings(
+      secondVault,
+      workspaceSettings({ defaultNoteFolder: "Second", linkStyle: "wikilink" }),
+    );
+
+    await waitForPendingSaves(store, 1);
+    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    store.releaseNext();
+    await waitForPendingSaves(store, 1);
+    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(store.pending[0]?.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe(
+      "First",
+    );
+    store.releaseNext();
+    await waitForPendingSaves(store, 1);
+    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(store.pending[0]?.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe(
+      "First",
+    );
+    expect(store.pending[0]?.settings.workspaceByVault[secondVault]?.defaultNoteFolder).toBe(
+      "Second",
+    );
+    store.releaseNext();
+
+    const [keySnapshot, firstSnapshot, secondSnapshot] = await Promise.all([
+      key,
+      firstWorkspace,
+      secondWorkspace,
+    ]);
+    expect(keySnapshot.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(firstSnapshot.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe("First");
+    expect(firstSnapshot.settings.workspaceByVault[secondVault]).toBeUndefined();
+    expect(secondSnapshot.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe("First");
+    expect(secondSnapshot.settings.workspaceByVault[secondVault]?.defaultNoteFolder).toBe("Second");
+    expect(secondSnapshot.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+  });
+
+  it("serializes a vault reset before a different-vault set without restoring stale state", async () => {
+    const firstVault = "e".repeat(64);
+    const secondVault = "f".repeat(64);
+    const customized = createDefaultAppSettings();
+    customized.workspaceByVault[firstVault] = workspaceSettings({
+      defaultNoteFolder: "Old",
+      linkStyle: "markdown",
+    });
+    const store = new DelayedSettingsStore(customized);
+    const controller = await AppSettingsController.open(store);
+
+    const reset = controller.resetVaultWorkspaceSettings(firstVault);
+    const set = controller.setVaultWorkspaceSettings(
+      secondVault,
+      workspaceSettings({ defaultNoteFolder: "New", linkStyle: "wikilink" }),
+    );
+
+    await waitForPendingSaves(store, 1);
+    expect(store.pending[0]?.settings.workspaceByVault[firstVault]).toBeUndefined();
+    store.releaseNext();
+    await waitForPendingSaves(store, 1);
+    expect(store.pending[0]?.settings.workspaceByVault[firstVault]).toBeUndefined();
+    expect(store.pending[0]?.settings.workspaceByVault[secondVault]?.defaultNoteFolder).toBe("New");
+    store.releaseNext();
+
+    const [resetSnapshot, setSnapshot] = await Promise.all([reset, set]);
+    expect(resetSnapshot.settings.workspaceByVault[firstVault]).toBeUndefined();
+    expect(setSnapshot.settings.workspaceByVault[firstVault]).toBeUndefined();
+    expect(setSnapshot.settings.workspaceByVault[secondVault]?.defaultNoteFolder).toBe("New");
+    expect(controller.getVaultWorkspaceSettings(firstVault)).toEqual(
+      createDefaultVaultWorkspaceSettings(),
+    );
+  });
+
+  it("recovers the save queue after a failed write", async () => {
+    const store = new DelayedSettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const vaultId = "1".repeat(64);
+    const failure = new Error("settings disk unavailable");
+
+    const key = controller.setKeyBinding("editor.revert-note", "Alt+R");
+    const workspace = controller.setVaultWorkspaceSettings(
+      vaultId,
+      workspaceSettings({ defaultNoteFolder: "Recovered" }),
+    );
+
+    await waitForPendingSaves(store, 1);
+    store.rejectNext(failure);
+    await expect(key).rejects.toThrow("settings disk unavailable");
+    await waitForPendingSaves(store, 1);
+    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBeNull();
+    expect(store.pending[0]?.settings.workspaceByVault[vaultId]?.defaultNoteFolder).toBe(
+      "Recovered",
+    );
+    store.releaseNext();
+
+    const snapshot = await workspace;
+    expect(snapshot.settings.keyBindings["editor.revert-note"]).toBeNull();
+    expect(snapshot.settings.workspaceByVault[vaultId]?.defaultNoteFolder).toBe("Recovered");
+    expect(controller.getSnapshot()).toEqual(snapshot);
   });
 });

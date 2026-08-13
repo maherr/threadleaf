@@ -122,22 +122,23 @@ export class AppSettingsController {
     vaultId: string,
     workspace: VaultWorkspaceSettings,
   ): Promise<AppSettingsSnapshot> {
-    const candidate = updateVaultWorkspaceSettings(this.#snapshot.settings, vaultId, workspace);
-    const settings = await this.#store.save(candidate);
-    return this.adopt(settings);
+    return this.enqueueSave((settings) =>
+      updateVaultWorkspaceSettings(settings, vaultId, workspace),
+    );
   }
 
   async resetVaultWorkspaceSettings(vaultId: string): Promise<AppSettingsSnapshot> {
-    if (!/^[a-f0-9]{64}$/.test(vaultId)) {
-      throw new Error("Workspace preferences require a lowercase SHA-256 vault identity.");
-    }
-    const workspaceByVault = { ...this.#snapshot.settings.workspaceByVault };
-    delete workspaceByVault[vaultId];
-    const settings = await this.#store.save({
-      ...this.#snapshot.settings,
-      workspaceByVault,
+    return this.enqueueSave((settings) => {
+      if (!/^[a-f0-9]{64}$/.test(vaultId)) {
+        throw new Error("Workspace preferences require a lowercase SHA-256 vault identity.");
+      }
+      const workspaceByVault = { ...settings.workspaceByVault };
+      delete workspaceByVault[vaultId];
+      return {
+        ...settings,
+        workspaceByVault,
+      };
     });
-    return this.adopt(settings);
   }
 
   onSnapshot(listener: SettingsListener): () => void {

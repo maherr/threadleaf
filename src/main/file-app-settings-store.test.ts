@@ -40,6 +40,27 @@ describe("FileAppSettingsStore", () => {
     );
   });
 
+  it("refuses to overwrite a private settings file replaced after load", async () => {
+    const writer = new FileAppSettingsStore(settingsPath);
+    const initial = createDefaultAppSettings();
+    await writer.save(initial);
+
+    const store = new FileAppSettingsStore(settingsPath);
+    await expect(store.load()).resolves.toEqual(initial);
+
+    const external = createDefaultAppSettings();
+    external.keyBindings["editor.revert-note"] = "Mod+R";
+    const externalBytes = `${JSON.stringify(external, null, 2)}\n`;
+    await fs.writeFile(settingsPath, externalBytes, "utf8");
+
+    const attempted = createDefaultAppSettings();
+    attempted.keyBindings["editor.revert-note"] = "Alt+R";
+    await expect(store.save(attempted)).rejects.toThrow(
+      "changed externally; refusing to overwrite",
+    );
+    await expect(fs.readFile(settingsPath, "utf8")).resolves.toBe(externalBytes);
+  });
+
   it("rejects malformed, unsupported, and colliding settings", async () => {
     const store = new FileAppSettingsStore(settingsPath);
     await fs.mkdir(path.dirname(settingsPath), { recursive: true });

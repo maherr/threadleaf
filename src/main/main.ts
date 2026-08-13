@@ -2235,6 +2235,9 @@ function registerIpcHandlers(): void {
         expectedVaultId,
         settings,
       );
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
       workspaceController.setWorkspaceSettings(settings, expectedVaultId);
       return {
         status: "updated" as const,
@@ -2252,6 +2255,9 @@ function registerIpcHandlers(): void {
       return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
     }
     const appSettings = await settingsController.resetVaultWorkspaceSettings(expectedVaultId);
+    if (workspaceController.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+    }
     const settings = createDefaultVaultWorkspaceSettings();
     workspaceController.setWorkspaceSettings(settings, expectedVaultId);
     return {
