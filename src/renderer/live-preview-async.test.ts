@@ -322,6 +322,28 @@ describe("Live Preview async ownership", () => {
     host.remove();
   });
 
+  it("keeps mounted raw HTML open across inline and fenced code close-tag lookalikes", async () => {
+    const sources = [
+      "<span>`</span>`\n**inside**\n</span>\n**outside**",
+      ...["```", "~~~"].map(
+        (marker) =>
+          `prefix <span>\n${marker}\n</span>\n${marker}\n**inside**\n</span>\n**outside**`,
+      ),
+    ];
+    for (const source of sources) {
+      const current = { path: "Current.md", vaultId: "vault-a" };
+      const { view, host } = editorFor(source, current, async () => {
+        throw new Error("The code lookalike fixture has no note embeds.");
+      });
+      await flushAsyncWork();
+      const strong = [...host.querySelectorAll<HTMLElement>(".tl-live-strong")];
+      expect(strong, source).toHaveLength(1);
+      expect(strong[0]?.dataset.tlSourceFrom).toBe(String(source.lastIndexOf("**outside**")));
+      view.destroy();
+      host.remove();
+    }
+  });
+
   it("binds each table body widget to its own source line", async () => {
     const source = [
       "| Field | Value |",

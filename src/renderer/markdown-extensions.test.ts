@@ -135,4 +135,34 @@ describe("raw HTML source protection", () => {
       { from: 0, to: tagWithBackticks.indexOf("</span>") + "</span>".length },
     ]);
   });
+
+  it("keeps HTML ranges UTF-16-correct across CRLF code lookalikes", () => {
+    const source = "😀 <span>\r\n~~~\r\n</span>\r\n~~~\r\n</span>\r\n$x$";
+    const from = source.indexOf("<span>");
+    const to = source.lastIndexOf("</span>") + "</span>".length;
+    expect(markdownHtmlRanges(source)).toEqual([{ from, to }]);
+  });
+
+  it("keeps mismatched closers fail-closed and bounds adversarial stack work", () => {
+    const mismatched = "<a><b></c> $x$ </b> $y$ </a> $z$";
+    const outerEnd = mismatched.indexOf("</a>") + "</a>".length;
+    expect(markdownHtmlRanges(mismatched)).toEqual([{ from: 0, to: outerEnd }]);
+
+    const size = 4_096;
+    const source = "<span>".repeat(size) + "</missing>".repeat(size) + "</span>".repeat(size);
+    const stats = { steps: 0, maxOpenTags: 0 };
+    expect(markdownHtmlRanges(source, undefined, stats)).toEqual([{ from: 0, to: source.length }]);
+    expect(stats.maxOpenTags).toBe(size);
+    expect(stats.steps).toBeLessThan(source.length);
+  });
+
+  it("keeps nested comments and malformed tags inside the outer HTML range", () => {
+    const comment = "<span><!-- </span> $x$ --> **inside** </span> $y$";
+    expect(markdownHtmlRanges(comment)).toEqual([
+      { from: 0, to: comment.lastIndexOf("</span>") + "</span>".length },
+    ]);
+
+    const malformed = '<span><em title="unterminated> $x$ </span> $y$';
+    expect(markdownHtmlRanges(malformed)).toEqual([{ from: 0, to: malformed.length }]);
+  });
 });

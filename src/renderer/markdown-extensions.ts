@@ -300,9 +300,7 @@ function scanHtmlTag(source: string, from: number): HtmlTagScan | null {
 
 function mergeMarkdownRanges(ranges: readonly MarkdownSourceRange[]): MarkdownSourceRange[] {
   const merged: MarkdownSourceRange[] = [];
-  for (const range of [...ranges].sort(
-    (left, right) => left.from - right.from || left.to - right.to,
-  )) {
+  for (const range of ranges) {
     const previous = merged[merged.length - 1];
     if (previous && range.from <= previous.to) {
       previous.to = Math.max(previous.to, range.to);
@@ -311,6 +309,11 @@ function mergeMarkdownRanges(ranges: readonly MarkdownSourceRange[]): MarkdownSo
     }
   }
   return merged;
+}
+
+export interface MarkdownHtmlRangeScanStats {
+  steps: number;
+  maxOpenTags: number;
 }
 
 /**
@@ -323,9 +326,18 @@ function mergeMarkdownRanges(ranges: readonly MarkdownSourceRange[]): MarkdownSo
 export function markdownHtmlRanges(
   source: string,
   codeRanges: readonly MarkdownSourceRange[] = markdownCodeRanges(source),
+  stats?: MarkdownHtmlRangeScanStats,
 ): MarkdownSourceRange[] {
   const ranges: MarkdownSourceRange[] = [];
   const openTags: { name: string; from: number }[] = [];
+  const openTagsByName = new Map<string, { name: string; from: number }[]>();
+  const countStep = (): void => {
+    if (stats) stats.steps += 1;
+  };
+  if (stats) {
+    stats.steps = 0;
+    stats.maxOpenTags = 0;
+  }
   let codeIndex = 0;
   const insideCode = (position: number): boolean => {
     while (codeIndex < codeRanges.length && position >= (codeRanges[codeIndex]?.to ?? 0)) {
@@ -336,7 +348,8 @@ export function markdownHtmlRanges(
   };
 
   for (let index = 0; index < source.length; ) {
-    if (openTags.length === 0 && insideCode(index)) {
+    countStep();
+    if (insideCode(index)) {
       index = codeRanges[codeIndex]?.to ?? source.length;
       continue;
     }
@@ -350,11 +363,11 @@ export function markdownHtmlRanges(
       continue;
     }
     if (!tag.complete) {
-      ranges.push({ from: index, to: source.length });
+      if (openTags.length === 0) ranges.push({ from: index, to: source.length });
       break;
     }
     if (tag.kind === "standalone") {
-      ranges.push({ from: index, to: tag.end });
+      if (openTags.length === 0) ranges.push({ from: index, to: tag.end });
       index = tag.end;
       continue;
     }
@@ -365,24 +378,43 @@ export function markdownHtmlRanges(
     }
     if (tag.kind === "opening") {
       if (tag.selfClosing || htmlVoidElements.has(name)) {
-        ranges.push({ from: index, to: tag.end });
+        if (openTags.length === 0) ranges.push({ from: index, to: tag.end });
       } else {
-        openTags.push({ name, from: index });
+        const open = { name, from: index };
+        openTags.push(open);
+        const sameName = openTagsByName.get(name) ?? [];
+        sameName.push(open);
+        openTagsByName.set(name, sameName);
+        if (stats) stats.maxOpenTags = Math.max(stats.maxOpenTags, openTags.length);
       }
       index = tag.end;
       continue;
     }
-    const matchingIndex = openTags.findLastIndex((open) => open.name === name);
-    if (matchingIndex < 0) {
-      ranges.push({ from: index, to: tag.end });
+    const sameName = openTagsByName.get(name);
+    const matching = sameName?.[sameName.length - 1];
+    if (!matching) {
+      if (openTags.length === 0) ranges.push({ from: index, to: tag.end });
     } else {
-      ranges.push({ from: openTags[matchingIndex]?.from ?? index, to: tag.end });
-      openTags.splice(matchingIndex);
+      while (openTags.length > 0) {
+        const open = openTags.pop();
+        if (!open) break;
+        countStep();
+        const nameStack = openTagsByName.get(open.name);
+        if (nameStack) {
+          nameStack.pop();
+          if (nameStack.length === 0) openTagsByName.delete(open.name);
+        }
+        if (open === matching) break;
+      }
+      if (openTags.length === 0) {
+        ranges.push({ from: matching.from, to: tag.end });
+      }
     }
     index = tag.end;
   }
-  for (const open of openTags) {
-    ranges.push({ from: open.from, to: source.length });
+  const firstOpen = openTags[0];
+  if (firstOpen) {
+    ranges.push({ from: firstOpen.from, to: source.length });
   }
   return mergeMarkdownRanges(ranges);
 }

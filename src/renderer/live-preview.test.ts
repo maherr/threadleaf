@@ -6,6 +6,7 @@ import {
   parseLivePreviewLine,
   resolveInlineTransclusions,
 } from "./live-preview";
+import { markdownHtmlRanges } from "./markdown-extensions";
 
 interface FixtureToken {
   kind: string;
@@ -174,6 +175,32 @@ describe("live preview inline model", () => {
     expect(
       mapping.tokens.some((token) => token.kind === "math" && token.sourceText === "$y$"),
     ).toBe(true);
+  });
+
+  it("keeps raw HTML open across inline and fenced code close-tag lookalikes", () => {
+    const sources = [
+      { source: "<span>`</span>`\n**inside**\n</span>\n**outside**", from: 0 },
+      ...["```", "~~~"].map((marker) => ({
+        source: `prefix <span>\n${marker}\n</span>\n${marker}\n**inside**\n</span>\n**outside**`,
+        from: "prefix ".length,
+      })),
+    ];
+    for (const { source, from } of sources) {
+      const actualCloseEnd = source.lastIndexOf("</span>") + "</span>".length;
+      expect(markdownHtmlRanges(source)).toEqual([{ from, to: actualCloseEnd }]);
+      const mapping = buildLivePreviewMapping(source);
+      expect(mapping.rendered).toContain("**inside**");
+      expect(mapping.rendered).toContain("outside");
+      expect(mapping.rendered).not.toContain("**outside**");
+      expect(
+        mapping.tokens.some(
+          (token) =>
+            token.kind === "delimiter" &&
+            token.from === source.lastIndexOf("**outside**") &&
+            token.to === source.lastIndexOf("**outside**") + 2,
+        ),
+      ).toBe(true);
+    }
   });
 
   it("keeps math literal after mismatched or unclosed standalone fences", () => {
