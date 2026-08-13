@@ -168,7 +168,7 @@ conversion.
       save conflicts, crash recovery, and no-loss reopen behavior.
 - [x] Isolate each compatibility plugin in its own renderer process and prove that a timed-out
       plugin does not stop a healthy sibling or the native workspace.
-- [x] Load the current public Excalidraw 2.26.4 bundle through the packaged desktop authority and
+- [x] Load the public Excalidraw 2.25.3 bundle through the packaged desktop authority and
       process-isolation path without changing its source.
 - [x] Produce installable Linux desktop artifacts with checksums and native package inspection.
 - [x] Add a one-command, privacy-reviewed diagnostic bundle and a short beta feedback template for
