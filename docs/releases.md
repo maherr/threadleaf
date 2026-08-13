@@ -5,6 +5,48 @@ unsigned Linux x64, macOS ARM64 and x64, and Windows x64 artifacts. These remain
 not signed public releases. A separate manual workflow fails closed unless Windows signing and
 Apple Developer ID plus notarization credentials are present. Nothing publishes automatically.
 
+## Exact final-asset staging
+
+`pnpm run stage:release-assets` is a local, no-network boundary between a lane's verified candidate
+directory and a later publication workflow. It accepts an explicit lane, an input directory, an
+external verification receipt, and a new empty output path:
+
+```sh
+pnpm run stage:release-assets -- \
+  --lane linux-x64-unsigned \
+  --input /absolute/path/to/candidate-input \
+  --receipt /absolute/path/to/verification-receipt.json \
+  --output /absolute/path/to/final-assets
+```
+
+The command permits only the current `package.json` version and one exact lane matrix. The input
+directory must contain every expected direct file and nothing else. It rejects missing or extra
+names, a stale version, directories, symlinks, non-regular files, a changed size, or a changed
+SHA-256 digest. It never discovers artifacts with a release glob. Its output copies those exact
+bytes and adds one deterministic JSON manifest bound to the source commit, package version, and
+lane. The manifest contains no timestamp, host path, credentials, or release URL.
+
+The initial allowlist is intentionally small:
+
+| Lane | Exact assets |
+| --- | --- |
+| `linux-x64-unsigned` | AppImage, RPM, their shared SHA-256 file, the reproducible tar.xz archive, and that archive's JSON manifest and SHA-256 file |
+| `macos-universal-signed` | universal DMG, ZIP, SHA-256 file, and `latest-mac.yml` |
+| `windows-x64-signed` | x64 NSIS installer, ZIP, SHA-256 file, and `latest.yml` |
+
+The receipt is an input from a platform-specific verifier. It records the exact source commit,
+version, lane, asset names, sizes, and SHA-256 digests. A signed lane accepts only a receipt whose
+signature status is `verified`; an unsigned receipt is rejected before any output directory is
+created. This stager does not perform cryptographic signature verification, create a key, sign a
+manifest, upload an artifact, create a GitHub release, or assert that an artifact is signed. A
+future signed workflow must obtain that receipt from the native signature verifier for the exact
+same bytes.
+
+The current Linux lane remains explicitly unsigned. GitHub artifact attestations are the planned
+provenance mechanism for a future hosted workflow. Native RPM signing and a detached OpenPGP-signed
+final SHA-256 manifest for the AppImage remain later gates. This local staging command does not
+claim that any of those mechanisms has run or that a hosted artifact exists.
+
 ## Linux artifacts
 
 `pnpm run pack:linux` writes these versioned files under `release/`:
