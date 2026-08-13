@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.bench-dist/
 /release/
 coverage/
 *.log

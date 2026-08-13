@@ -220,8 +220,11 @@ normal external vault backup and the privacy-safe feedback workflow.
 - [x] Publish a generated plugin compatibility registry with exact plugin and Threadleaf version
       binding, supported workflows and executable gates, known failures, required static authority
       classes, platform limits, and deterministic machine-readable and Markdown output.
-- [ ] Publish benchmark vaults and regression budgets for cold start, full rebuild, watcher bursts,
-      search latency, memory use, editor latency, and plugin activation.
+- [x] Publish deterministic public benchmark corpora and relative regression budgets for the
+      supported headless index, rebuild, watcher-burst, search, and runtime-activation seams,
+      with correctness checks, machine-readable results, and an opt-in timing gate.
+- [ ] Add cross-platform Electron first-paint, editor-latency, plugin-activation, image-decoding,
+      and reliable memory regression seams once they can be measured without proxy claims.
 - [ ] Run plugin bundles through automated compatibility and security checks before distribution.
 - [ ] Verify representative open plugins for queries, tasks, templates, Git, citations, calendars,
       tables, and databases through named end-to-end workflows.
@@ -342,8 +345,10 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [ ] Signed Windows, macOS, and Linux installers; native-container reproducibility; notarization;
       a published signed update-feed rehearsal; rollback; crash recovery; opt-in diagnostics; and
       tested upgrade and downgrade paths.
-- [ ] Public large-vault, attachment-heavy, and plugin-heavy performance budgets with profiling
-      artifacts and regression alarms.
+- [x] Public large-vault and attachment-metadata scale corpus with reproducible manifests and
+      relative index/search/watcher budgets.
+- [ ] Plugin-heavy and renderer/editor performance budgets with profiling artifacts and regression
+      alarms after their stable production seams exist.
 
 Exit gate: a fresh user and an established Obsidian user can each adopt Threadleaf as their daily
 desktop workspace without a conversion, missing core workflow, or proprietary service dependency.

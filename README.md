@@ -495,8 +495,14 @@ pnpm cli --vault /absolute/path/to/vault snippets
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported
 Obsidian-style argument spellings.
 
-Run `pnpm benchmark:search` for the deterministic 10,000-note search microbenchmark. It reports
-measurements rather than enforcing machine-dependent timing thresholds.
+Run `pnpm benchmark:search` for the in-memory 10,000-note search microbenchmark. For the broader
+public, filesystem-backed scale corpus use `pnpm benchmark:corpus` for deterministic integrity
+checks or the opt-in `pnpm benchmark:scale -- --profile large` runner. The latter reports JSON for
+metadata rebuild, runtime activation, watcher bursts, search, and a clearly labeled memory
+observation; it does not print private paths or note content. `pnpm benchmark:scale:check` compares
+p50 and robust p90 timings with the checked-in same-profile reference. These are relative
+regression budgets, not universal machine-independent SLAs. See [Performance baselines](docs/performance.md)
+for corpus profiles, result schema, limitations, and the reviewed baseline-update workflow.
 
 ## License
 

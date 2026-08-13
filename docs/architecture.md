@@ -440,9 +440,11 @@ vault, query, or generation and immediately requests the current result.
 
 The initial index is an in-memory normalized scan. That is the simplest correct implementation and
 already clears the current interactive scale baseline. `pnpm benchmark:search` measures rebuild,
-rare-query, and deliberately broad-query behavior over a deterministic 10,000-note corpus. A future
-inverted or SQLite FTS index must be earned by those measurements and preserve the same rebuildable
-contract, rather than adding canonical database state speculatively.
+rare-query, and deliberately broad-query behavior over a deterministic 10,000-note corpus. The
+public `benchmarks/` module adds filesystem-backed smoke, standard, and large corpora with manifest
+hashes, index/link correctness checks, watcher bursts, runtime activation, and opt-in relative
+timing budgets. A future inverted or SQLite FTS index must be earned by those measurements and
+preserve the same rebuildable contract, rather than adding canonical database state speculatively.
 
 ### Live Preview, Source, Reading, and source mapping
 
@@ -790,6 +792,7 @@ Capability host ---> native Threadleaf extension
 - Fine-grained intra-token cursor mapping and complex-syntax projection in Live Preview.
 - Metadata schema and migration strategy.
 - Behavior-import apply, rollback, and conflict semantics for the existing preview schema.
-- Public benchmark corpora, target devices, and regression budgets.
+- Cross-platform Electron-window, editor-latency, and plugin-activation benchmark seams; the
+  headless kernel/index/watcher benchmark corpus and relative budgets are now public.
 - Signing, notarization, native-package reproducibility, and automatic-update channels.
 - Encrypted object format, key hierarchy, recovery model, and residual-metadata budget.

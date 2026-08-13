@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": "1.0.0",
+  "seed": 1903322465,
+  "profiles": {
+    "smoke": {
+      "profile": "smoke",
+      "seed": 1903322465,
+      "noteCount": 64,
+      "attachmentCount": 4,
+      "totalBytes": 44322,
+      "manifestHash": "584fbb1d2e9f97bec51c39c15a2e9a0433d1dbbc6fc4aa901502e40fca1453f6"
+    },
+    "standard": {
+      "profile": "standard",
+      "seed": 1903322465,
+      "noteCount": 1024,
+      "attachmentCount": 4,
+      "totalBytes": 676898,
+      "manifestHash": "73b7567226558615a9700fda3471d8406113b1c1ca10ff1fc2496c3bf3cfb3c5"
+    },
+    "large": {
+      "profile": "large",
+      "seed": 1903322465,
+      "noteCount": 10000,
+      "attachmentCount": 4,
+      "totalBytes": 6400894,
+      "manifestHash": "e631b0f89b2c752bb3870909079427b71d273cecc9db2ef3b891498fde0b6ee2"
+    }
+  }
+}

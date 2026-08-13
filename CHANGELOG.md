@@ -58,6 +58,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   stale-response protection, and automatic convergence after saves and external filesystem edits.
 - Deterministic 10,000-note search microbenchmark and scale fixtures for rebuild, rare-query, and
   broad-query behavior.
+- Public deterministic benchmark corpus generator and manifest hashes for smoke, standard, and
+  large vault shapes, with index/link correctness checks, watcher-burst and runtime-activation
+  measurements, machine-readable results, reviewed relative regression budgets, and an explicit
+  opt-in timing gate. Private vault paths and note content never enter benchmark output.
 - Explicit Ctrl/Cmd+E reading view that safely renders the current editor draft, sanitizes raw HTML,
   preserves source-line navigation, resolves internal links through indexed metadata, blocks dirty
   note navigation, and leaves unsupported external links and attachments inert.

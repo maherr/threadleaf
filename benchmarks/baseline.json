@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "profile": "large",
+  "source": "Reference run: Linux x64, Node v22.22.2, 2026-08-12, 1 warmup and 5 samples",
+  "host": {
+    "node": "v22.22.2",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "metrics": [
+    {
+      "name": "metadata-index-rebuild",
+      "unit": "milliseconds",
+      "warmupCount": 1,
+      "sampleCount": 5,
+      "samples": [2147.625841, 2205.402347, 2071.627417, 2097.124969, 2133.074855],
+      "median": 2133.074855,
+      "tail": 2205.402347,
+      "tailStatistic": "p90",
+      "minimum": 2071.627417,
+      "maximum": 2205.402347,
+      "details": { "noteCount": 10000 }
+    },
+    {
+      "name": "workspace-runtime-activation",
+      "unit": "milliseconds",
+      "warmupCount": 1,
+      "sampleCount": 5,
+      "samples": [2364.77738, 2286.25307, 2314.85844, 2279.183861, 2301.86477],
+      "median": 2301.86477,
+      "tail": 2364.77738,
+      "tailStatistic": "p90",
+      "minimum": 2279.183861,
+      "maximum": 2364.77738,
+      "details": {
+        "noteCount": 10000,
+        "seam": "kernel-watcher-index-plugin-host-without-electron-window"
+      }
+    },
+    {
+      "name": "watcher-burst-incremental-index",
+      "unit": "milliseconds",
+      "warmupCount": 1,
+      "sampleCount": 5,
+      "samples": [606.231042, 589.508727, 573.385726, 608.091174, 565.507689],
+      "median": 589.508727,
+      "tail": 608.091174,
+      "tailStatistic": "p90",
+      "minimum": 565.507689,
+      "maximum": 608.091174,
+      "details": { "changedNotes": 64 }
+    },
+    {
+      "name": "search-rare-query",
+      "unit": "milliseconds",
+      "warmupCount": 1,
+      "sampleCount": 5,
+      "samples": [5.386561, 4.066721, 4.343258, 4.177253, 3.920008],
+      "median": 4.177253,
+      "tail": 5.386561,
+      "tailStatistic": "p90",
+      "minimum": 3.920008,
+      "maximum": 5.386561,
+      "details": { "queryClass": "rare", "limit": 20 }
+    },
+    {
+      "name": "search-broad-query",
+      "unit": "milliseconds",
+      "warmupCount": 1,
+      "sampleCount": 5,
+      "samples": [71.156146, 68.391413, 71.130655, 65.224982, 66.00589],
+      "median": 68.391413,
+      "tail": 71.156146,
+      "tailStatistic": "p90",
+      "minimum": 65.224982,
+      "maximum": 71.156146,
+      "details": { "queryClass": "broad", "limit": 50 }
+    }
+  ]
+}
