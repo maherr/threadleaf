@@ -487,7 +487,22 @@ describe("reviewed Obsidian migration transactions", () => {
     continueApply();
     await applying;
     expect(await recovering).toEqual([]);
-    expect(recoveryStateRead).toBe(true);
+    expect(recoveryStateRead).toBe(false);
+  });
+
+  it("does not read workspace state when no interrupted migration exists", async () => {
+    const stateRoot = path.join(sandboxPath, "state");
+    const manager = new ObsidianMigrationTransactionManager(stateRoot, new MemoryAdapter(state()));
+    await manager.initialize();
+    let stateReads = 0;
+
+    await expect(
+      manager.recover(vaultA, async () => {
+        stateReads += 1;
+        throw new Error("current private state should remain unread");
+      }),
+    ).resolves.toEqual([]);
+    expect(stateReads).toBe(0);
   });
 
   it("rejects an oversized private migration journal without reading it", async () => {

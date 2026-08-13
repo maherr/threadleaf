@@ -693,7 +693,6 @@ export class ObsidianMigrationTransactionManager {
   ): Promise<MigrationRecoveryNotice[]> {
     return this.#serialize(async () => {
       const vaultId = parseVaultId(vaultIdValue);
-      let current = typeof currentState === "function" ? await currentState() : currentState;
       await this.#reapRetentionMarkers(vaultId);
       const root = this.#vaultRoot(vaultId);
       let entries: Dirent<string>[];
@@ -717,11 +716,23 @@ export class ObsidianMigrationTransactionManager {
         journals.push(await this.#readJournal(vaultId, entry.name.slice(0, -5)));
       }
       validateJournalRelationships(journals);
+      const interruptedPhases = new Set<MigrationTransactionPhase>([
+        "prepared",
+        "settings-committed",
+        "workspace-committed",
+      ]);
+      let current: MigrationPrivateState | null = null;
+      if (journals.some((journal) => interruptedPhases.has(journal.phase))) {
+        current = typeof currentState === "function" ? await currentState() : currentState;
+      }
       const notices: MigrationRecoveryNotice[] = [];
       for (const journal of journals) {
         const transactionId = journal.id;
-        if (!["prepared", "settings-committed", "workspace-committed"].includes(journal.phase)) {
+        if (!interruptedPhases.has(journal.phase)) {
           continue;
+        }
+        if (!current) {
+          throw new Error("Interrupted migration recovery requires current private state.");
         }
         const currentSettingsRevision = digest(current.settings);
         const beforeSettingsRevision = digest(journal.before.settings);
