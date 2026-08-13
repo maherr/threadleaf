@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/generate-plugin-compatibility-registry.mjs",
+  "threadleafVersion": "0.1.0-beta.3",
+  "entries": [
+    {
+      "plugin": {
+        "id": "obsidian-excalidraw-plugin",
+        "name": "Excalidraw",
+        "version": "2.25.3",
+        "repository": "https://github.com/zsviczian/obsidian-excalidraw-plugin",
+        "license": "AGPL-3.0",
+        "bundleSha256": "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6"
+      },
+      "threadleafVersion": "0.1.0-beta.3",
+      "lastTested": "2026-08-12",
+      "compatibilityLevel": 4,
+      "summary": "Open, create, embed, SVG and PNG export, unload, reload, and plugin-owned settings workflows passed for this exact plugin release.",
+      "evidenceMode": "composed",
+      "requiredCapabilities": [
+        "vault-read",
+        "vault-write",
+        "network",
+        "clipboard",
+        "external-navigation",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Trusted desktop compatibility runtime only.",
+            "The static capability report is a review aid, not a runtime sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": [
+            "Packaged application coverage exists, but this plugin workflow is not verified on macOS."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": [
+            "Packaged application coverage exists, but this plugin workflow is not verified on Windows."
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "exact-release-review",
+          "name": "Exact release discovery and package review",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "src/main/open-plugin-package-source.live.test.ts",
+              "command": "pnpm test:plugin-index-live"
+            },
+            {
+              "path": "scripts/check-plugin-packages-e2e.mjs",
+              "command": "pnpm test:plugin-packages-e2e"
+            }
+          ]
+        },
+        {
+          "id": "open-save-reopen",
+          "name": "Open, change, save, close, and reopen a drawing",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "src/plugin-renderer/plugin-renderer-service.test.ts",
+              "command": "pnpm test"
+            }
+          ]
+        },
+        {
+          "id": "create-and-export",
+          "name": "Create a drawing, insert an embed, and export SVG and PNG",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "src/kernel/excalidraw-byte-compatibility.test.ts",
+              "command": "pnpm test"
+            },
+            {
+              "path": "src/plugin-renderer/plugin-renderer-service.test.ts",
+              "command": "pnpm test"
+            }
+          ]
+        },
+        {
+          "id": "unload-reload-settings",
+          "name": "Unload, reload, and use plugin-owned settings",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "src/runtime/plugin-host.test.ts",
+              "command": "pnpm test"
+            },
+            {
+              "path": "src/plugin-renderer/plugin-renderer-service.test.ts",
+              "command": "pnpm test"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Inline wiki-embed rendering and export formats beyond SVG and PNG are not verified.",
+        "The official Obsidian to Threadleaf to Obsidian byte-roundtrip remains unverified.",
+        "The exact release check and host workflow checks are composed gates, not one monolithic end-to-end command."
+      ]
+    },
+    {
+      "plugin": {
+        "id": "threadleaf-fixture",
+        "name": "Threadleaf Compatibility Fixture",
+        "version": "0.1.0",
+        "repository": "https://github.com/maherr/threadleaf",
+        "license": "AGPL-3.0-or-later",
+        "bundleSha256": "8450949c0c1989d68810b8e4d70c79bfd3e80cbf590785154a80baedd3860788"
+      },
+      "threadleafVersion": "0.1.0-beta.3",
+      "lastTested": "2026-08-12",
+      "compatibilityLevel": 4,
+      "summary": "Activation, command execution, notice delivery, unload, reload, timeout isolation, and restart recovery passed for this exact fixture release.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "workspace-ui"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Fixture coverage proves the compatibility host boundary, not arbitrary community plugins."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "packaged-only",
+          "limits": [
+            "The fixture is packaged but its complete workflow is not run on macOS CI."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "packaged-only",
+          "limits": [
+            "The fixture is packaged but its complete workflow is not run on Windows CI."
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "lifecycle-command",
+          "name": "Activate, run a command, deliver a notice, unload, and reload",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "src/runtime/plugin-host.test.ts",
+              "command": "pnpm test"
+            }
+          ]
+        },
+        {
+          "id": "isolation-recovery",
+          "name": "Survive a sibling timeout and recover after restart",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-plugin-recovery.mjs",
+              "command": "pnpm test:plugin-recovery"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This repository-owned fixture intentionally exercises a narrow API surface.",
+        "It is not listed in the external community package directory."
+      ]
+    }
+  ]
+}

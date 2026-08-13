@@ -58,7 +58,7 @@ describe("plugin compatibility settings", () => {
     ).toThrow("unique");
   });
 
-  it("accepts the uppercase, underscore, and dotted identifiers present in the public registry", () => {
+  it("accepts the uppercase, underscore, and dotted identifiers in the community package index", () => {
     for (const id of ["DEVONlink-obsidian", "waka_time_box", "scrybble.ink"]) {
       expect(parsePluginManifest({ id, name: id, version: "1.0.0" }).id).toBe(id);
     }
@@ -71,6 +71,8 @@ describe("plugin compatibility settings", () => {
       level: 4,
       status: "verified",
       testedVersion: "2.25.3",
+      testedThreadleafVersion: "0.1.0-beta.3",
+      lastTested: "2026-08-12",
     });
     expect(
       createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.26.0" }),
@@ -78,11 +80,15 @@ describe("plugin compatibility settings", () => {
       level: 0,
       status: "different-version",
       testedVersion: "2.25.3",
+      testedThreadleafVersion: "0.1.0-beta.3",
+      lastTested: "2026-08-12",
     });
     expect(createPluginCompatibilityReport({ id: "unknown-plugin", version: "1.0.0" })).toEqual({
       level: 0,
       status: "unverified",
       testedVersion: null,
+      testedThreadleafVersion: null,
+      lastTested: null,
       summary:
         "Package structure is valid. No production-path workflow is verified for this exact plugin version.",
     });

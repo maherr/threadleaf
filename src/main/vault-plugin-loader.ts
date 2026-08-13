@@ -224,6 +224,8 @@ function invalidSummary(folderId: string, message: string): PluginPackageSummary
       level: 0,
       status: "unverified",
       testedVersion: null,
+      testedThreadleafVersion: null,
+      lastTested: null,
       summary: "Package validation failed before a compatibility workflow could run.",
     },
     capabilityReport: null,

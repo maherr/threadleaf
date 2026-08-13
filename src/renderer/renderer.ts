@@ -4040,7 +4040,7 @@ async function searchOpenPluginIndex(): Promise<void> {
   }
   const request = ++pluginPackageRequest;
   pluginBusy = true;
-  pluginMessage = "Reading the public compatibility registry…";
+  pluginMessage = "Reading the community package index…";
   pluginMessageKind = "info";
   renderSettings();
   try {
@@ -4707,14 +4707,14 @@ function renderOpenPluginIndex(vaultId: string | null, disabled: boolean): void 
     : "Not loaded";
   elements.pluginIndexSource.title = index
     ? `${index.sourceUrl}\nSHA-256 ${index.sourceSha256}`
-    : "Search to read the public registry.";
+    : "Search to read the community package index.";
   elements.pluginIndexList.replaceChildren();
   if (!index) {
     const empty = document.createElement("p");
     empty.className = "plugin-empty";
     empty.textContent = readOnlyVault()
       ? "Open a local vault to review and install plugin packages."
-      : "Search the public registry to review installable packages.";
+      : "Search the community package index to review installable packages.";
     elements.pluginIndexList.append(empty);
     return;
   }
@@ -4757,7 +4757,7 @@ function renderOpenPluginIndex(vaultId: string | null, disabled: boolean): void 
   if (index.results.length === 0) {
     const empty = document.createElement("p");
     empty.className = "plugin-empty";
-    empty.textContent = `No registry plugins match “${index.query}”.`;
+    empty.textContent = `No indexed plugins match “${index.query}”.`;
     elements.pluginIndexList.append(empty);
   }
 }

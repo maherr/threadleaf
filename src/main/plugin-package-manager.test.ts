@@ -363,7 +363,7 @@ describe("plugin package manager", () => {
     expect(await fs.readFile(pluginPath("main.js"), "utf8")).toContain('"1.0.0"');
   });
 
-  it("searches the public registry with installed and managed state but never downloads a bundle", async () => {
+  it("searches the community package index with installed and managed state but never downloads a bundle", async () => {
     const source = new FixtureSource();
     const manager = await openManager(source);
     const result = await manager.search(vaultPath, vaultId, "fixture");

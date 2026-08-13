@@ -87,14 +87,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function requiredIndexText(value: unknown, field: string, maxLength: number): string {
   if (typeof value !== "string") {
-    throw new Error(`Public plugin registry entry requires ${field}.`);
+    throw new Error(`Community package index entry requires ${field}.`);
   }
   const normalized = value
     .replace(/[\r\n\t]+/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
   if (!normalized || normalized.length > maxLength) {
-    throw new Error(`Public plugin registry entry has an invalid ${field}.`);
+    throw new Error(`Community package index entry has an invalid ${field}.`);
   }
   return normalized;
 }
@@ -106,14 +106,14 @@ function optionalIndexText(
   fallback: string,
 ): string {
   if (typeof value !== "string") {
-    throw new Error(`Public plugin registry entry requires ${field}.`);
+    throw new Error(`Community package index entry requires ${field}.`);
   }
   const normalized = value
     .replace(/[\r\n\t]+/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
   if (normalized.length > maxLength) {
-    throw new Error(`Public plugin registry entry has an invalid ${field}.`);
+    throw new Error(`Community package index entry has an invalid ${field}.`);
   }
   return normalized || fallback;
 }
@@ -121,7 +121,7 @@ function optionalIndexText(
 function parseRepository(value: unknown): string {
   const repository = requiredIndexText(value, "repo", 201);
   if (!repositoryPattern.test(repository)) {
-    throw new Error("Public plugin registry repository must be a GitHub owner/repository pair.");
+    throw new Error("Community package index repository must be a GitHub owner/repository pair.");
   }
   return repository;
 }
@@ -233,14 +233,14 @@ export class OpenPluginPackageSource implements PluginPackageSource {
     if (this.#cachedIndex && this.#cachedIndex.expiresAt > Date.now()) {
       return this.#cachedIndex.value;
     }
-    const bytes = await this.#request(registryUrl, maxRegistryBytes, "public plugin registry");
+    const bytes = await this.#request(registryUrl, maxRegistryBytes, "community package index");
     const parsed: unknown = JSON.parse(decoder.decode(bytes));
     if (!Array.isArray(parsed) || parsed.length > maxRegistryEntries) {
-      throw new Error("Public plugin registry must be a bounded array.");
+      throw new Error("Community package index must be a bounded array.");
     }
     const entries = parsed.map((value): OpenPluginIndexEntry => {
       if (!isRecord(value)) {
-        throw new Error("Public plugin registry contains a non-object entry.");
+        throw new Error("Community package index contains a non-object entry.");
       }
       return {
         id: parsePluginId(value.id),
@@ -251,7 +251,7 @@ export class OpenPluginPackageSource implements PluginPackageSource {
       };
     });
     if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
-      throw new Error("Public plugin registry contains duplicate plugin identifiers.");
+      throw new Error("Community package index contains duplicate plugin identifiers.");
     }
     const value = { entries, sha256: sha256(bytes), sourceUrl: registryUrl };
     this.#cachedIndex = { expiresAt: Date.now() + 5 * 60_000, value };
@@ -263,7 +263,7 @@ export class OpenPluginPackageSource implements PluginPackageSource {
     const index = await this.getIndex();
     const entry = index.entries.find((candidate) => candidate.id === pluginId);
     if (!entry) {
-      throw new Error(`Plugin ${pluginId} is not present in the public compatibility registry.`);
+      throw new Error(`Plugin ${pluginId} is not present in the community package index.`);
     }
     const version = requestedVersion
       ? parseVersion(requestedVersion)

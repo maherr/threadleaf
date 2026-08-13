@@ -160,7 +160,7 @@ the exact raw `main.js` bytes. Threadleaf blocks both JavaScript and CSS until t
 exact bundle for the current vault. Any byte change makes the grant stale; revocation disables and
 unloads the plugin. The execution renderer re-hashes the raw bytes immediately before compilation,
 so a file replacement after review is blocked too. This report is an explicit trust aid, not a
-runtime permission sandbox. The same page searches the public compatibility registry without
+runtime permission sandbox. The same page searches the community package index without
 downloading plugin code. Opening Review
 fetches one exact GitHub release plus its repository license into
 private, expiring staging and displays the pinned version, source, retained license, and complete
@@ -175,6 +175,12 @@ restores the exact prior directory and private metadata or completes cleanup for
 committed operation. The current source adapter reads the public `obsidian-releases` registry at
 runtime but does not redistribute it or represent that unlicensed repository as Threadleaf's future
 open directory. The source interface and review protocol are replaceable open code.
+
+Threadleaf's separate [generated compatibility registry](docs/compatibility/registry.md) publishes
+exact plugin and Threadleaf versions, bundle digests, static authority classes, platform limits,
+supported workflows, executable evidence gates, known failures, limitations, and last-tested
+dates. Package discovery and compatibility evidence are deliberately different datasets.
+
 Startup plugin safe mode preserves the saved selection while loading no community code or CSS.
 Each compatibility host remains an explicitly trusted desktop runtime in a separate transient
 Electron session with Node integration, a

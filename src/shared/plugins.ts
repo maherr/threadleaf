@@ -1,3 +1,5 @@
+import { pluginCompatibilityRegistry } from "../generated/plugin-compatibility-registry";
+
 export const compatibilityModes = ["restricted", "enabled"] as const;
 export const maxPluginBundleBytes = 16 * 1024 * 1024;
 export const pluginCapabilityIds = [
@@ -114,6 +116,8 @@ export interface PluginCompatibilityReport {
   level: 0 | 4;
   status: PluginCompatibilityEvidenceStatus;
   testedVersion: string | null;
+  testedThreadleafVersion: string | null;
+  lastTested: string | null;
   summary: string;
 }
 
@@ -150,17 +154,6 @@ export const defaultVaultPluginSettings: Readonly<VaultPluginSettings> = {
 };
 
 const pluginIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-
-const verifiedPluginWorkflows: Readonly<Record<string, { version: string; workflow: string }>> = {
-  "obsidian-excalidraw-plugin": {
-    version: "2.25.3",
-    workflow: "Open, create, embed, SVG and PNG export, unload, and reload",
-  },
-  "threadleaf-fixture": {
-    version: "0.1.0",
-    workflow: "Activation, command execution, notice delivery, and unload",
-  },
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -228,29 +221,39 @@ export function parsePluginManifest(value: unknown): PluginManifestData {
 export function createPluginCompatibilityReport(
   manifest: Pick<PluginManifestData, "id" | "version">,
 ): PluginCompatibilityReport {
-  const evidence = verifiedPluginWorkflows[manifest.id];
-  if (!evidence) {
+  const candidates = pluginCompatibilityRegistry.entries.filter(
+    (entry) => entry.plugin.id === manifest.id,
+  );
+  const evidence = candidates.find((entry) => entry.plugin.version === manifest.version);
+  const reference = evidence ?? candidates.at(-1);
+  if (evidence) {
+    return {
+      level: evidence.compatibilityLevel,
+      status: "verified",
+      testedVersion: evidence.plugin.version,
+      testedThreadleafVersion: evidence.threadleafVersion,
+      lastTested: evidence.lastTested,
+      summary: `${evidence.summary} Verified with Threadleaf ${evidence.threadleafVersion} on ${evidence.lastTested}.`,
+    };
+  }
+  if (!reference) {
     return {
       level: 0,
       status: "unverified",
       testedVersion: null,
+      testedThreadleafVersion: null,
+      lastTested: null,
       summary:
         "Package structure is valid. No production-path workflow is verified for this exact plugin version.",
     };
   }
-  if (evidence.version !== manifest.version) {
-    return {
-      level: 0,
-      status: "different-version",
-      testedVersion: evidence.version,
-      summary: `${evidence.workflow} workflows passed on ${evidence.version}; installed ${manifest.version} remains unverified.`,
-    };
-  }
   return {
-    level: 4,
-    status: "verified",
-    testedVersion: evidence.version,
-    summary: `${evidence.workflow} workflows passed on this exact version.`,
+    level: 0,
+    status: "different-version",
+    testedVersion: reference.plugin.version,
+    testedThreadleafVersion: reference.threadleafVersion,
+    lastTested: reference.lastTested,
+    summary: `${reference.summary} Evidence applies to plugin ${reference.plugin.version} with Threadleaf ${reference.threadleafVersion}; installed ${manifest.version} remains unverified.`,
   };
 }
 

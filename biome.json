@@ -21,5 +21,16 @@
       "quoteStyle": "double",
       "semicolons": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "compatibility/registry.v1.json",
+        "src/generated/plugin-compatibility-registry.ts"
+      ],
+      "formatter": {
+        "enabled": false
+      }
+    }
+  ]
 }

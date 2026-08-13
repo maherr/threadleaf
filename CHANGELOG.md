@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Generated machine-readable and Markdown plugin compatibility registries with exact plugin and
+  Threadleaf version binding, bundle digests, static authority classes, platform limits, named
+  workflow gates, failures, limitations, deterministic drift checks, and a live exact-release
+  verification path. Community package discovery is now labeled separately from compatibility
+  evidence.
 - Initial project charter, architecture, compatibility contract, and execution roadmap.
 - Read-only synthetic Markdown vault fixture.
 - Independently implemented compatibility API for plugin, vault, command, file, and notice behavior.
@@ -155,7 +160,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   replaceable package-source interface, with exact GitHub release pins, retained license and
   SHA-256 evidence, disabled-by-default apply, data-preserving updates, five-version private
   history, managed-byte lockout, and durable process-interruption recovery. The current adapter
-  reads but does not redistribute the public unlicensed compatibility registry.
+  reads but does not redistribute the public unlicensed community package index.
 - Read-only Obsidian behavior migration preview for enabled and installed plugins, settings-file
   shape without private keys or values, reviewed hotkey candidates, appearance assets, and
   restorable note tabs, with bounded contained reads and exact source-byte preservation.

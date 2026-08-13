@@ -315,7 +315,7 @@ production-path fixture stays at level 0. Evidence from another release is shown
 context, not inherited as a compatibility claim.
 
 Package acquisition is a separate two-step boundary. A replaceable source adapter currently reads
-the public compatibility registry and exact GitHub release assets, requires a repository license at
+the community package index and exact GitHub release assets, requires a repository license at
 the same release tag, and stages bounded bytes in private application data. Preview is read-only to
 the vault. Apply is bound to the reviewed vault, plugin, version, source digest, asset digests, and
 the complete installed-tree revision observed before review. Rollback is additionally bound to the

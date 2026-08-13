@@ -200,7 +200,7 @@ normal external vault backup and the privacy-safe feedback workflow.
       recovery while healthy sibling plugins continue running.
 - [ ] Add per-plugin CPU, memory, and operation-specific resource budgets.
 - [x] Implement reviewable install, update, rollback, uninstall, and restore through a replaceable
-      package-source interface and public compatibility registry, with exact version pins, full
+      package-source interface and community package index, with exact version pins, full
       SHA-256 evidence, retained licenses, five-version private history, durable interruption
       recovery, changed-byte lockout, and no silent bundle execution.
 - [x] Add minimum-app-version, desktop-only, standard bundled-dependency-model, and exact-version
@@ -213,8 +213,9 @@ normal external vault backup and the privacy-safe feedback workflow.
       reads. Never require or mutate `.obsidian/`.
 - [ ] Apply only explicitly reviewed behavior candidates to Threadleaf's private settings, with
       per-item selection, conflict reporting, rollback, and no `.obsidian/` writes.
-- [ ] Publish a generated plugin compatibility registry with supported workflows, failures,
-      required permissions, platform limits, and the last tested plugin and Threadleaf versions.
+- [x] Publish a generated plugin compatibility registry with exact plugin and Threadleaf version
+      binding, supported workflows and executable gates, known failures, required static authority
+      classes, platform limits, and deterministic machine-readable and Markdown output.
 - [ ] Publish benchmark vaults and regression budgets for cold start, full rebuild, watcher bursts,
       search latency, memory use, editor latency, and plugin activation.
 - [ ] Run plugin bundles through automated compatibility and security checks before distribution.

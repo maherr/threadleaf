@@ -54,9 +54,9 @@ reads the public
 [`obsidian-releases` registry](https://github.com/obsidianmd/obsidian-releases/blob/master/community-plugins.json)
 at runtime, then obtains `manifest.json`, `main.js`, and optional `styles.css` directly from one
 exact GitHub release tag. It also requires and retains the repository license at that same tag.
-The public registry repository has no declared license, so Threadleaf does not redistribute it or
-describe it as the future Threadleaf-owned open directory. The source adapter, review schema, and
-package manager are AGPL code and can be replaced without changing the vault package format.
+The community package index repository has no declared license, so Threadleaf does not redistribute
+it or describe it as the future Threadleaf-owned open directory. The source adapter, review schema,
+and package manager are AGPL code and can be replaced without changing the vault package format.
 
 Search downloads registry metadata only. Selecting Review downloads bounded release and license
 bytes into private staging for 15 minutes. The review displays the exact version, repository,
@@ -127,6 +127,22 @@ Evidence never transfers silently between releases. Excalidraw 2.25.3 and Thread
 compatibility fixture report their measured level 4 workflows. Another Excalidraw version reports
 the tested 2.25.3 reference but remains unverified at level 0. Every unknown valid package starts at
 discovered level 0. Invalid packages explain that validation stopped before a workflow could run.
+
+## Generated compatibility evidence
+
+Threadleaf publishes a separate [generated compatibility registry](registry.md). The authored
+evidence source binds each claim to an exact plugin version, exact Threadleaf version, raw bundle
+SHA-256 digest, last-tested date, static authority classes, platform status, named workflows,
+executable gate paths, known failures, and limitations. A deterministic generator produces both
+the public machine-readable registry and the Markdown view. The normal project check rejects schema
+errors, missing gate files, stale generated output, or a Threadleaf version bump that has not been
+retested.
+
+This registry is not the external community package index. The package index answers what can be
+reviewed for installation. The Threadleaf registry answers what exact behavior has evidence. The
+current Excalidraw entry labels its evidence as composed because the exact-release check and the
+host workflow checks are separate gates; that limitation is public instead of being hidden behind
+a single compatibility number.
 
 ## Existing vault migration
 
@@ -253,8 +269,7 @@ place for manual review.
 
 - Per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
 - Explicit apply, rollback, and conflict handling for reviewed migration candidates.
-- A Threadleaf-owned, open-licensed package and compatibility registry backed by public workflow
-  fixtures.
+- A Threadleaf-owned, open-licensed package directory backed by reviewed releases.
 - Broader workspace, editor, settings-control, conversion, adapter-mutation, file, and
   metadata APIs.
 - Complete Excalidraw inline wiki-embed, remaining export-format, and cross-application
