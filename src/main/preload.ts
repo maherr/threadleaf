@@ -7,6 +7,9 @@ import type {
 import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { AppearanceResponse, AppearanceSnapshot } from "../shared/appearance";
 import type {
+  AppearancePackageApplyResponse,
+  AppearancePackageInventoryResponse,
+  AppearancePackageLocalPreviewResponse,
   AppearanceUpdateResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
@@ -57,6 +60,11 @@ import type {
 import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
+import type {
+  AppearancePackageKind,
+  AppearancePackagePreviewRequest,
+  AppearancePackagePreviewResponse,
+} from "../shared/theme-packages";
 import type { WorkspaceDockId, WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 
@@ -116,6 +124,35 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       appearance,
     ) as Promise<AppearanceUpdateResponse>,
+  getAppearancePackages: (expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.appearancePackages,
+      expectedVaultId,
+    ) as Promise<AppearancePackageInventoryResponse>,
+  previewAppearancePackage: (expectedVaultId, request: AppearancePackagePreviewRequest) =>
+    ipcRenderer.invoke(
+      ipcChannels.previewAppearancePackage,
+      expectedVaultId,
+      request,
+    ) as Promise<AppearancePackagePreviewResponse>,
+  previewLocalAppearancePackage: (expectedVaultId, kind: AppearancePackageKind) =>
+    ipcRenderer.invoke(
+      ipcChannels.previewLocalAppearancePackage,
+      expectedVaultId,
+      kind,
+    ) as Promise<AppearancePackageLocalPreviewResponse>,
+  applyAppearancePackage: (expectedVaultId, reviewId) =>
+    ipcRenderer.invoke(
+      ipcChannels.applyAppearancePackage,
+      expectedVaultId,
+      reviewId,
+    ) as Promise<AppearancePackageApplyResponse>,
+  cancelAppearancePackageReview: (expectedVaultId, reviewId) =>
+    ipcRenderer.invoke(
+      ipcChannels.cancelAppearancePackageReview,
+      expectedVaultId,
+      reviewId,
+    ) as Promise<void>,
   getPlugins: (expectedVaultId) =>
     ipcRenderer.invoke(ipcChannels.plugins, expectedVaultId) as Promise<PluginCatalogResponse>,
   searchPluginPackages: (expectedVaultId, query) =>

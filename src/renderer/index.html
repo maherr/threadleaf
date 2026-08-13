@@ -741,6 +741,40 @@
               </p>
               <ul id="appearance-warnings" aria-label="Appearance diagnostics"></ul>
             </div>
+            <section
+              class="appearance-package-panel"
+              id="appearance-package-panel"
+              aria-labelledby="appearance-package-heading"
+            >
+              <header class="appearance-package-heading">
+                <span>
+                  <strong id="appearance-package-heading">Offline appearance packages</strong>
+                  <small>Review a local ZIP before any .obsidian write. No network or store.</small>
+                </span>
+                <span class="appearance-state" id="appearance-package-state">Not loaded</span>
+              </header>
+              <div class="appearance-package-toolbar">
+                <label for="appearance-package-kind">
+                  <span>Package type</span>
+                  <select id="appearance-package-kind">
+                    <option value="theme">Theme</option>
+                    <option value="snippet">CSS snippet</option>
+                  </select>
+                </label>
+                <span class="appearance-package-actions">
+                  <button class="primary-button" id="appearance-package-open" type="button">
+                    Review local ZIP
+                  </button>
+                  <button class="secondary-button" id="appearance-package-refresh" type="button">
+                    Refresh inventory
+                  </button>
+                </span>
+              </div>
+              <div class="appearance-package-list" id="appearance-package-list"></div>
+              <p id="appearance-package-status" data-kind="info" role="status" aria-live="polite">
+                No package changes have been reviewed yet.
+              </p>
+            </section>
             <button class="appearance-reset" id="appearance-reset" type="button">
               Disable custom theme and snippets
             </button>
@@ -1513,6 +1547,60 @@
             </span>
           </footer>
         </section>
+      </div>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog plugin-package-review-dialog appearance-package-review-dialog"
+      id="appearance-package-review-dialog"
+      aria-labelledby="appearance-package-review-title"
+      aria-describedby="appearance-package-review-summary"
+      aria-modal="true"
+    >
+      <div class="new-note-shell plugin-package-review-shell">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">◐</span>
+          <span>
+            <small id="appearance-package-review-operation">Package review</small>
+            <strong id="appearance-package-review-title">Review exact appearance package</strong>
+          </span>
+          <button id="appearance-package-review-close" type="button" aria-label="Close appearance package review">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <div class="plugin-package-review-body">
+          <p id="appearance-package-review-summary"></p>
+          <dl class="plugin-package-facts" id="appearance-package-review-facts"></dl>
+          <section aria-labelledby="appearance-package-assets-heading">
+            <strong id="appearance-package-assets-heading">Exact reviewed assets</strong>
+            <div class="plugin-package-assets" id="appearance-package-review-assets"></div>
+          </section>
+          <section aria-labelledby="appearance-package-css-heading">
+            <strong id="appearance-package-css-heading">Stylesheet safety report</strong>
+            <p id="appearance-package-review-css"></p>
+          </section>
+          <section aria-labelledby="appearance-package-license-heading">
+            <strong id="appearance-package-license-heading">License evidence</strong>
+            <p id="appearance-package-review-license"></p>
+          </section>
+          <section aria-labelledby="appearance-package-readme-heading">
+            <strong id="appearance-package-readme-heading">README evidence</strong>
+            <p id="appearance-package-review-readme"></p>
+          </section>
+          <ul class="plugin-package-warnings" id="appearance-package-review-warnings"></ul>
+          <p class="new-note-error" id="appearance-package-review-error" role="alert" hidden></p>
+        </div>
+        <footer class="new-note-footer plugin-package-review-footer">
+          <span>Exact reviewed bytes only</span>
+          <span>
+            <button class="secondary-button" id="appearance-package-review-cancel" type="button">
+              Cancel
+            </button>
+            <button class="primary-button" id="appearance-package-review-apply" type="button">
+              Apply reviewed change
+            </button>
+          </span>
+        </footer>
       </div>
     </dialog>
 

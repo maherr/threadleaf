@@ -35,6 +35,7 @@ import {
   parseVaultAppearanceSettings,
 } from "../shared/appearance";
 import {
+  type AppearancePackageApplyResponse,
   type NotePropertyType,
   notePropertyTypes,
   type PluginPackageApplyResponse,
@@ -74,6 +75,8 @@ import {
   type PublishNoteExportResponse,
 } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
+import type { AppearancePackageKind } from "../shared/theme-packages";
+import { parseAppearancePackagePreviewRequest } from "../shared/theme-packages";
 import {
   restoreWorkspaceWindowBounds,
   type WorkspaceWindowBounds,
@@ -112,6 +115,7 @@ import {
   ObsidianMigrationTransactionManager,
 } from "./obsidian-migration-transaction";
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
+import { OpenAppearancePackageSource } from "./open-theme-package-source";
 import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
 import { PluginPackageManager } from "./plugin-package-manager";
 import {
@@ -126,6 +130,7 @@ import {
   isSupportBundleTargetOutsideVault,
   readDevelopmentSupportBundlePath,
 } from "./support-bundle";
+import { ThemePackageManager } from "./theme-package-manager";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { VaultAppearanceWatcher } from "./vault-appearance-watcher";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
@@ -154,6 +159,8 @@ let appUpdateController: AppUpdateController;
 let editorDraftStore: FileEditorDraftStore;
 let noteBookmarkController: NoteBookmarkController;
 let pluginPackageManager: PluginPackageManager;
+let appearancePackageSource: OpenAppearancePackageSource;
+let themePackageManager: ThemePackageManager;
 let workspaceLayoutController!: WorkspaceLayoutController;
 let workspaceStateStore: FileWorkspaceStateStore;
 let pluginOperationTail: Promise<void> = Promise.resolve();
@@ -1117,6 +1124,32 @@ async function currentAppearance(expectedVaultId: string): Promise<AppearanceRes
   return { status: "ready", appearance };
 }
 
+async function currentAppearancePackages(expectedVaultId: string) {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+  }
+  const activeSnapshot = await workspaceController.getSnapshot();
+  if (activeSnapshot.vault.mode === "synthetic-read-only") {
+    return {
+      status: "ready" as const,
+      inventory: { vaultId: expectedVaultId, packages: [], recoveryNotices: [] },
+    };
+  }
+  const vaultPath = workspaceController.vaultPath;
+  const packages = await themePackageManager.getManagedPackages(vaultPath, expectedVaultId);
+  const recoveryNotices = themePackageManager.takeRecoveryNotices(expectedVaultId);
+  if (
+    workspaceController.vaultId !== expectedVaultId ||
+    workspaceController.vaultPath !== vaultPath
+  ) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+  }
+  return {
+    status: "ready" as const,
+    inventory: { vaultId: expectedVaultId, packages, recoveryNotices },
+  };
+}
+
 async function currentPluginCatalog(expectedVaultId: string): Promise<PluginCatalogResponse> {
   if (workspaceController.vaultId !== expectedVaultId) {
     return { status: "stale-vault", vaultId: workspaceController.vaultId };
@@ -1411,6 +1444,9 @@ async function activateInitialWorkspace(): Promise<void> {
     if (!expectedVaultId || workspaceController.vaultId !== expectedVaultId) {
       return;
     }
+    if (outcome.snapshot.vault.mode === "kernel-backed") {
+      await themePackageManager.recoverVault(workspaceController.vaultPath, expectedVaultId);
+    }
     const recoveryNotices = migrationTransactionManager
       ? await migrationTransactionManager.recover(expectedVaultId, () =>
           currentMigrationState(expectedVaultId),
@@ -1678,6 +1714,142 @@ function registerIpcHandlers(): void {
       return response.status === "ready"
         ? { status: "updated", settings, appearance: response.appearance }
         : response;
+    },
+  );
+  ipcMain.handle(ipcChannels.appearancePackages, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Appearance package inventory requires a string vault identity.");
+    }
+    return serializePluginOperation(() => currentAppearancePackages(expectedVaultId));
+  });
+  ipcMain.handle(
+    ipcChannels.previewAppearancePackage,
+    (_event, expectedVaultId: unknown, requestValue: unknown) => {
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Appearance package review requires a vault identity.");
+      }
+      const request = parseAppearancePackagePreviewRequest(requestValue);
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const activeSnapshot = await workspaceController.getSnapshot();
+        if (activeSnapshot.vault.mode === "synthetic-read-only") {
+          throw new Error("Open a local vault before changing appearance packages.");
+        }
+        const vaultPath = workspaceController.vaultPath;
+        const review = await themePackageManager.preview(vaultPath, expectedVaultId, request);
+        return workspaceController.vaultId === expectedVaultId &&
+          workspaceController.vaultPath === vaultPath
+          ? ({ status: "ready", review } as const)
+          : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
+      });
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.previewLocalAppearancePackage,
+    (_event, expectedVaultId: unknown, kindValue: unknown) => {
+      if (
+        typeof expectedVaultId !== "string" ||
+        (kindValue !== "theme" && kindValue !== "snippet")
+      ) {
+        throw new Error("Local appearance review requires a vault identity and package kind.");
+      }
+      const kind = kindValue as AppearancePackageKind;
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const activeSnapshot = await workspaceController.getSnapshot();
+        if (activeSnapshot.vault.mode === "synthetic-read-only") {
+          throw new Error("Open a local vault before changing appearance packages.");
+        }
+        const result = mainWindow
+          ? await dialog.showOpenDialog(mainWindow, {
+              title: `Choose a local ${kind} package archive`,
+              buttonLabel: "Review package",
+              properties: ["openFile", "dontAddToRecent"],
+              filters: [
+                { name: "Appearance package archives", extensions: ["zip"] },
+                { name: "All files", extensions: ["*"] },
+              ],
+            })
+          : await dialog.showOpenDialog({
+              title: `Choose a local ${kind} package archive`,
+              buttonLabel: "Review package",
+              properties: ["openFile", "dontAddToRecent"],
+              filters: [
+                { name: "Appearance package archives", extensions: ["zip"] },
+                { name: "All files", extensions: ["*"] },
+              ],
+            });
+        if (result.canceled || !result.filePaths[0]) {
+          return { status: "cancelled" } as const;
+        }
+        const vaultPath = workspaceController.vaultPath;
+        const pkg = await appearancePackageSource.openLocalPackage(result.filePaths[0], kind);
+        const review = await themePackageManager.previewLocal(vaultPath, expectedVaultId, pkg);
+        return workspaceController.vaultId === expectedVaultId &&
+          workspaceController.vaultPath === vaultPath
+          ? ({ status: "ready", review } as const)
+          : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
+      });
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.applyAppearancePackage,
+    (
+      _event,
+      expectedVaultId: unknown,
+      reviewId: unknown,
+    ): Promise<AppearancePackageApplyResponse> => {
+      if (typeof expectedVaultId !== "string" || typeof reviewId !== "string") {
+        throw new Error("Appearance package apply requires a vault identity and review identity.");
+      }
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const activeSnapshot = await workspaceController.getSnapshot();
+        if (activeSnapshot.vault.mode === "synthetic-read-only") {
+          throw new Error("Open a local vault before changing appearance packages.");
+        }
+        const vaultPath = workspaceController.vaultPath;
+        const review = themePackageManager.reviewForApply(expectedVaultId, reviewId);
+        const outcome = await themePackageManager.apply(
+          vaultPath,
+          expectedVaultId,
+          review.reviewId,
+        );
+        const appearanceResponse = await currentAppearance(expectedVaultId);
+        const inventoryResponse = await currentAppearancePackages(expectedVaultId);
+        if (
+          appearanceResponse.status !== "ready" ||
+          inventoryResponse.status !== "ready" ||
+          workspaceController.vaultId !== expectedVaultId ||
+          workspaceController.vaultPath !== vaultPath
+        ) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        broadcastAppearance(appearanceResponse.appearance);
+        return {
+          status: "updated",
+          appearance: appearanceResponse.appearance,
+          inventory: inventoryResponse.inventory,
+          outcome,
+        } as const;
+      });
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.cancelAppearancePackageReview,
+    (_event, expectedVaultId: unknown, reviewId: unknown) => {
+      if (typeof expectedVaultId !== "string" || typeof reviewId !== "string") {
+        throw new Error("Appearance package review cancellation requires string identities.");
+      }
+      return serializePluginOperation(() =>
+        themePackageManager.cancelReview(expectedVaultId, reviewId),
+      );
     },
   );
   ipcMain.handle(ipcChannels.plugins, (_event, expectedVaultId: unknown) => {
@@ -2355,6 +2527,9 @@ function registerIpcHandlers(): void {
         status: "opened",
         snapshot: await serializePluginOperation(async () => {
           const opened = await workspaceController.switchVault(selectedPath);
+          if (opened.vault.mode === "kernel-backed" && opened.vault.id) {
+            await themePackageManager.recoverVault(workspaceController.vaultPath, opened.vault.id);
+          }
           const snapshot = await reconcileCompatibilityPlugins(
             opened.vault.id ?? workspaceController.vaultId,
           );
@@ -3029,6 +3204,12 @@ app.whenReady().then(async () => {
     new OpenPluginPackageSource(),
   );
   await pluginPackageManager.initialize();
+  appearancePackageSource = new OpenAppearancePackageSource();
+  themePackageManager = new ThemePackageManager(
+    join(app.getPath("userData"), "appearance-packages"),
+    appearancePackageSource,
+  );
+  await themePackageManager.initialize();
   settingsController = await AppSettingsController.open(
     new FileAppSettingsStore(join(app.getPath("userData"), "settings.json")),
   );

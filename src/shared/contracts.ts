@@ -32,6 +32,14 @@ export type { PluginMutationWaitOptions } from "./plugin-runtime-protocol";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
+import type {
+  AppearancePackageApplyOutcome,
+  AppearancePackageInventorySnapshot,
+  AppearancePackageKind,
+  AppearancePackagePreviewRequest,
+  AppearancePackagePreviewResponse,
+  AppearancePackageReview,
+} from "./theme-packages";
 import type { WorkspaceLayoutSnapshot } from "./workspace-layout";
 import type { VaultWorkspaceSettings } from "./workspace-settings";
 
@@ -83,6 +91,24 @@ export type PluginPackageApplyResponse =
       catalog: PluginCatalogSnapshot;
       snapshot: RuntimeSnapshot;
       outcome: PluginPackageApplyOutcome;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type AppearancePackageInventoryResponse =
+  | { status: "ready"; inventory: AppearancePackageInventorySnapshot }
+  | { status: "stale-vault"; vaultId: string };
+
+export type AppearancePackageLocalPreviewResponse =
+  | { status: "ready"; review: AppearancePackageReview }
+  | { status: "cancelled" }
+  | { status: "stale-vault"; vaultId: string };
+
+export type AppearancePackageApplyResponse =
+  | {
+      status: "updated";
+      appearance: AppearanceSnapshot;
+      inventory: AppearancePackageInventorySnapshot;
+      outcome: AppearancePackageApplyOutcome;
     }
   | { status: "stale-vault"; vaultId: string };
 
@@ -934,6 +960,20 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
     appearance: VaultAppearanceSettings,
   ): Promise<AppearanceUpdateResponse>;
+  getAppearancePackages(expectedVaultId: string): Promise<AppearancePackageInventoryResponse>;
+  previewAppearancePackage(
+    expectedVaultId: string,
+    request: AppearancePackagePreviewRequest,
+  ): Promise<AppearancePackagePreviewResponse>;
+  previewLocalAppearancePackage(
+    expectedVaultId: string,
+    kind: AppearancePackageKind,
+  ): Promise<AppearancePackageLocalPreviewResponse>;
+  applyAppearancePackage(
+    expectedVaultId: string,
+    reviewId: string,
+  ): Promise<AppearancePackageApplyResponse>;
+  cancelAppearancePackageReview(expectedVaultId: string, reviewId: string): Promise<void>;
   getPlugins(expectedVaultId: string): Promise<PluginCatalogResponse>;
   searchPluginPackages(expectedVaultId: string, query: string): Promise<PluginPackageIndexResponse>;
   previewPluginPackage(

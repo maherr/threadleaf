@@ -4,11 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { applyAppearanceCss } from "../renderer/appearance-renderer";
+import { createDefaultVaultAppearance } from "../shared/appearance";
 import {
   inspectAppearancePackageArchive,
   MemoryAppearancePackageSource,
+  readLocalAppearancePackage,
 } from "./open-theme-package-source";
 import { ThemePackageManager } from "./theme-package-manager";
+import { loadVaultAppearance } from "./vault-appearance-loader";
+import { VaultAppearanceWatcher } from "./vault-appearance-watcher";
 
 const vaultId = "a".repeat(64);
 const themeId = "fixture-theme";
@@ -189,6 +194,18 @@ describe("appearance package archive inspection", () => {
     });
   });
 
+  it("opens a user-selected archive as an offline exact package", async () => {
+    const archivePath = path.join(sandboxPath, "local-theme.zip");
+    await fs.writeFile(archivePath, appearanceArchive("theme", themeId, "1.0.0"));
+
+    const pkg = await readLocalAppearancePackage(archivePath, "theme");
+
+    expect(pkg.provenance.source).toBe("local");
+    expect(pkg.provenance.locator).toBe("local-theme.zip");
+    expect(pkg.packageId).toBe(themeId);
+    expect(pkg.manifest.version).toBe("1.0.0");
+  });
+
   it.each([
     ["path traversal", [{ name: "../escape.css", bytes: Buffer.from("x") }]],
     ["absolute path", [{ name: "/escape.css", bytes: Buffer.from("x") }]],
@@ -289,6 +306,21 @@ describe("theme and snippet package manager", () => {
     });
   });
 
+  it("stages a local archive for exact review before any vault mutation", async () => {
+    const archivePath = path.join(sandboxPath, "offline-theme.zip");
+    await fs.writeFile(archivePath, appearanceArchive("theme", themeId, "1.0.0"));
+    const pkg = await readLocalAppearancePackage(archivePath, "theme");
+    const manager = await openManager([]);
+
+    const review = await manager.previewLocal(vaultPath, vaultId, pkg);
+
+    expect(review.provenance).toMatchObject({ source: "local", locator: "offline-theme.zip" });
+    expect(review.archiveSha256).toBe(pkg.archiveSha256);
+    await expect(fs.stat(themePath())).rejects.toMatchObject({ code: "ENOENT" });
+    await manager.apply(vaultPath, vaultId, review.reviewId);
+    expect(await fs.readFile(themePath("theme.css"), "utf8")).toContain("1.0.0");
+  });
+
   it("installs a snippet as one CSS file and does not copy package metadata into the vault", async () => {
     const manager = await openManager();
     const review = await manager.preview(vaultPath, vaultId, {
@@ -305,6 +337,24 @@ describe("theme and snippet package manager", () => {
       kind: "snippet",
       integrity: "verified",
     });
+  });
+
+  it("refuses to apply a review under a different vault identity", async () => {
+    const manager = await openManager();
+    const review = await manager.preview(vaultPath, vaultId, {
+      action: "install",
+      kind: "theme",
+      packageId: themeId,
+    });
+    const otherVaultId = "b".repeat(64);
+
+    expect(() => manager.reviewForApply(otherVaultId, review.reviewId)).toThrow(
+      /missing, expired, or belongs to another vault/iu,
+    );
+    await expect(manager.apply(vaultPath, otherVaultId, review.reviewId)).rejects.toThrow(
+      /missing, expired, or belongs to another vault/iu,
+    );
+    await expect(fs.stat(themePath())).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("preserves unmanaged theme bytes across update and rolls exact package bytes back", async () => {
@@ -527,5 +577,107 @@ describe("theme and snippet package manager", () => {
     );
     expect(await fs.stat(transactionPath)).toBeDefined();
     expect(await fs.stat(rollback)).toBeDefined();
+  });
+});
+
+describe("appearance package desktop cascade", () => {
+  it("routes installed CSS through the watcher and renderer in theme-before-snippet order", async () => {
+    await fs.mkdir(path.join(vaultPath, ".obsidian", "themes"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, ".obsidian", "snippets"), { recursive: true });
+    const v1 = packageFor("theme", themeId, "1.0.0");
+    const v2 = packageFor("theme", themeId, "2.0.0");
+    const snippet = packageFor("snippet", snippetId, "1.0.0");
+    const manager = await openManager([v1, v2, snippet]);
+    const preference = {
+      ...createDefaultVaultAppearance(),
+      themeId: `obsidian-theme:${themeId}`,
+      enabledSnippetIds: [`obsidian-snippet:${snippetId}.css`],
+    };
+    const styleTarget: { textContent: string | null } = { textContent: null };
+    const invalidations: string[] = [];
+    const watcher = await VaultAppearanceWatcher.open({
+      vaultPath,
+      debounceMs: 10,
+      onInvalidation: async ({ reason }) => {
+        invalidations.push(reason);
+        const snapshot = await loadVaultAppearance({
+          vaultPath,
+          vaultId,
+          preference,
+          safeMode: false,
+        });
+        applyAppearanceCss(styleTarget, snapshot.css);
+      },
+    });
+
+    const waitForStyle = async (expected: string, absent?: string): Promise<void> => {
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+        await watcher.whenIdle();
+        if (
+          styleTarget.textContent?.includes(expected) &&
+          !styleTarget.textContent.includes(absent ?? "\u0000")
+        ) {
+          return;
+        }
+      }
+      throw new Error(`Timed out waiting for appearance CSS: ${expected}`);
+    };
+
+    try {
+      const installTheme = await manager.preview(vaultPath, vaultId, {
+        action: "install",
+        kind: "theme",
+        packageId: themeId,
+        version: "1.0.0",
+      });
+      await manager.apply(vaultPath, vaultId, installTheme.reviewId);
+      const installSnippet = await manager.preview(vaultPath, vaultId, {
+        action: "install",
+        kind: "snippet",
+        packageId: snippetId,
+        version: "1.0.0",
+      });
+      await manager.apply(vaultPath, vaultId, installSnippet.reviewId);
+      await waitForStyle('--fixture-version: "1.0.0";');
+      const installedCss = styleTarget.textContent ?? "";
+      expect(installedCss.indexOf("Threadleaf appearance: theme")).toBeGreaterThanOrEqual(0);
+      expect(installedCss.indexOf("Threadleaf appearance: snippet")).toBeGreaterThan(
+        installedCss.indexOf("Threadleaf appearance: theme"),
+      );
+
+      const update = await manager.preview(vaultPath, vaultId, {
+        action: "install",
+        kind: "theme",
+        packageId: themeId,
+        version: "2.0.0",
+      });
+      await manager.apply(vaultPath, vaultId, update.reviewId);
+      await waitForStyle('--fixture-version: "2.0.0";');
+      expect(styleTarget.textContent?.indexOf("Threadleaf appearance: snippet")).toBeGreaterThan(
+        styleTarget.textContent?.indexOf("Threadleaf appearance: theme") ?? -1,
+      );
+
+      const rollback = await manager.preview(vaultPath, vaultId, {
+        action: "rollback",
+        kind: "theme",
+        packageId: themeId,
+      });
+      await manager.apply(vaultPath, vaultId, rollback.reviewId);
+      await waitForStyle('--fixture-version: "1.0.0";');
+
+      const uninstall = await manager.preview(vaultPath, vaultId, {
+        action: "uninstall",
+        kind: "snippet",
+        packageId: snippetId,
+      });
+      await manager.apply(vaultPath, vaultId, uninstall.reviewId);
+      await waitForStyle("Threadleaf appearance: theme", "Threadleaf appearance: snippet");
+      expect(styleTarget.textContent).not.toContain("Threadleaf appearance: snippet");
+      expect(invalidations.length).toBeGreaterThan(0);
+    } finally {
+      await watcher.close();
+    }
   });
 });

@@ -642,6 +642,12 @@ export class ThemePackageManager {
     await this.recoverVault(vaultPath, vaultId);
     const request = parseAppearancePackagePreviewRequest(requestValue);
     const packageId = parsePackageId(request.packageId);
+    if (request.action === "install") {
+      await this.#assertAppearanceRoot(vaultPath, request.kind);
+      const pkg = await this.#source.getPackage(request.kind, packageId, request.version);
+      validateReviewedPackage(pkg, request.kind, packageId);
+      return this.#previewInstallPackage(vaultPath, vaultId, request.kind, packageId, pkg);
+    }
     await this.#assertAppearanceRoot(vaultPath, request.kind);
     const targetPath = this.#targetPath(vaultPath, request.kind, packageId);
     const expectedTargetRevision = await targetRevision(targetPath);
@@ -656,34 +662,6 @@ export class ThemePackageManager {
       installed?.packageVersion ?? (expectedTargetRevision ? "unknown" : null);
     const createdAt = this.#clock();
     const expiresAt = new Date(createdAt.getTime() + reviewLifetimeMs);
-    if (request.action === "install") {
-      const pkg = await this.#source.getPackage(request.kind, packageId, request.version);
-      validateReviewedPackage(pkg, request.kind, packageId);
-      const operation: AppearancePackageOperation =
-        expectedTargetRevision === null
-          ? "install"
-          : installedVersion === pkg.manifest.version
-            ? "reinstall"
-            : "update";
-      const review = this.#reviewFromPackage(
-        vaultId,
-        operation,
-        installedVersion,
-        request.kind,
-        pkg,
-        createdAt,
-        expiresAt,
-      );
-      await this.#stageReview(review, pkg);
-      this.#retainReview({
-        review,
-        expectedTargetRevision,
-        historySnapshotId: null,
-        historySnapshotRevision: null,
-        targetKind,
-      });
-      return review;
-    }
     if (expectedTargetRevision === null && request.action === "uninstall")
       throw new Error(`Appearance ${request.kind} ${packageId} is not installed in this vault.`);
     if (request.action === "uninstall") {
@@ -783,6 +761,65 @@ export class ThemePackageManager {
       expectedTargetRevision,
       historySnapshotId: selected.snapshotId,
       historySnapshotRevision: historyRevision,
+      targetKind,
+    });
+    return review;
+  }
+
+  async previewLocal(
+    vaultPath: string,
+    vaultIdValue: string,
+    pkg: OpenAppearancePackage,
+  ): Promise<AppearancePackageReview> {
+    const vaultId = parseVaultId(vaultIdValue);
+    await this.recoverVault(vaultPath, vaultId);
+    const packageId = parsePackageId(pkg.packageId);
+    validateReviewedPackage(pkg, pkg.kind, packageId);
+    return this.#previewInstallPackage(vaultPath, vaultId, pkg.kind, packageId, pkg);
+  }
+
+  async #previewInstallPackage(
+    vaultPath: string,
+    vaultId: string,
+    kind: AppearancePackageKind,
+    packageId: string,
+    pkg: OpenAppearancePackage,
+  ): Promise<AppearancePackageReview> {
+    await this.#assertAppearanceRoot(vaultPath, kind);
+    const targetPath = this.#targetPath(vaultPath, kind, packageId);
+    const expectedTargetRevision = await targetRevision(targetPath);
+    const targetKind = kind === "theme" ? "directory" : "file";
+    const existingKind = await pathKind(targetPath);
+    if (existingKind !== "missing" && existingKind !== targetKind) {
+      throw new Error("Appearance package target conflicts with an existing file type.");
+    }
+    await this.#assertNoCaseCollision(vaultPath, kind, packageId);
+    const installed = await this.#currentReceipt(vaultId, kind, packageId);
+    const installedVersion =
+      installed?.packageVersion ?? (expectedTargetRevision ? "unknown" : null);
+    const operation: AppearancePackageOperation =
+      expectedTargetRevision === null
+        ? "install"
+        : installedVersion === pkg.manifest.version
+          ? "reinstall"
+          : "update";
+    const createdAt = this.#clock();
+    const expiresAt = new Date(createdAt.getTime() + reviewLifetimeMs);
+    const review = this.#reviewFromPackage(
+      vaultId,
+      operation,
+      installedVersion,
+      kind,
+      pkg,
+      createdAt,
+      expiresAt,
+    );
+    await this.#stageReview(review, pkg);
+    this.#retainReview({
+      review,
+      expectedTargetRevision,
+      historySnapshotId: null,
+      historySnapshotRevision: null,
       targetKind,
     });
     return review;

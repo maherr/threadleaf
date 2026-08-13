@@ -133,6 +133,12 @@ export interface ManagedAppearancePackageSummary {
   history: ManagedAppearancePackageHistory[];
 }
 
+export interface AppearancePackageInventorySnapshot {
+  vaultId: string;
+  packages: ManagedAppearancePackageSummary[];
+  recoveryNotices: string[];
+}
+
 export interface AppearancePackageApplyOutcome {
   kind: AppearancePackageKind;
   packageId: string;

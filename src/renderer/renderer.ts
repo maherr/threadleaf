@@ -83,10 +83,17 @@ import {
   type VaultPluginSettings,
 } from "../shared/plugins";
 import { maximumPublishNoteHtmlBytes, publishNoteExportVersion } from "../shared/publish-export";
+import type {
+  AppearancePackageKind,
+  AppearancePackagePreviewRequest,
+  AppearancePackageReview,
+  ManagedAppearancePackageSummary,
+} from "../shared/theme-packages";
 import {
   createDefaultVaultWorkspaceSettings,
   type VaultWorkspaceSettings,
 } from "../shared/workspace-settings";
+import { applyAppearanceCss } from "./appearance-renderer";
 import { CanvasViewController } from "./canvas-view";
 import {
   filterPaletteCommands,
@@ -229,6 +236,26 @@ const elements = {
   appearanceSnippets: getElement("appearance-snippets"),
   appearanceReload: getButton("appearance-reload"),
   appearanceReset: getButton("appearance-reset"),
+  appearancePackageKind: getSelect("appearance-package-kind"),
+  appearancePackageOpen: getButton("appearance-package-open"),
+  appearancePackageRefresh: getButton("appearance-package-refresh"),
+  appearancePackageState: getElement("appearance-package-state"),
+  appearancePackageList: getElement("appearance-package-list"),
+  appearancePackageStatus: getElement("appearance-package-status"),
+  appearancePackageReviewDialog: getDialog("appearance-package-review-dialog"),
+  appearancePackageReviewOperation: getElement("appearance-package-review-operation"),
+  appearancePackageReviewTitle: getElement("appearance-package-review-title"),
+  appearancePackageReviewSummary: getElement("appearance-package-review-summary"),
+  appearancePackageReviewFacts: getElement("appearance-package-review-facts"),
+  appearancePackageReviewAssets: getElement("appearance-package-review-assets"),
+  appearancePackageReviewLicense: getElement("appearance-package-review-license"),
+  appearancePackageReviewReadme: getElement("appearance-package-review-readme"),
+  appearancePackageReviewCss: getElement("appearance-package-review-css"),
+  appearancePackageReviewWarnings: getElement("appearance-package-review-warnings"),
+  appearancePackageReviewError: getElement("appearance-package-review-error"),
+  appearancePackageReviewClose: getButton("appearance-package-review-close"),
+  appearancePackageReviewCancel: getButton("appearance-package-review-cancel"),
+  appearancePackageReviewApply: getButton("appearance-package-review-apply"),
   appearanceStatus: getElement("appearance-status"),
   appearanceWarnings: getElement("appearance-warnings"),
   accessibilityHighContrast: getSelect("accessibility-high-contrast"),
@@ -820,6 +847,14 @@ let appearanceRequest = 0;
 let appearanceMessage = "Discovering themes and snippets in this vault.";
 let appearanceMessageKind: "info" | "saved" | "error" = "info";
 let lastAppearanceWarning = "";
+let appearancePackages: ManagedAppearancePackageSummary[] = [];
+let appearancePackagesVaultId: string | null = null;
+let appearancePackageBusy = false;
+let appearancePackageRequest = 0;
+let appearancePackageMessage = "No package changes have been reviewed yet.";
+let appearancePackageMessageKind: "info" | "saved" | "warning" | "error" = "info";
+let appearancePackageReview: AppearancePackageReview | null = null;
+let appearancePackageRestoreFocus: HTMLElement | null = null;
 let pluginCatalog: PluginCatalogSnapshot | null = null;
 let pluginBusy = false;
 let pluginRequest = 0;
@@ -3686,6 +3721,7 @@ function settingsOperationBusy(): boolean {
     noteWorkflowBusy ||
     workspaceSettingsBusy ||
     appearanceBusy ||
+    appearancePackageBusy ||
     accessibilityBusy ||
     pluginBusy ||
     migrationBusy ||
@@ -4505,7 +4541,7 @@ function applyAppearanceSnapshot(snapshot: AppearanceSnapshot): void {
   const previousCss = appearanceSnapshot?.css;
   appearanceSnapshot = snapshot;
   if (previousCss !== snapshot.css) {
-    appearanceStyle.textContent = snapshot.css;
+    applyAppearanceCss(appearanceStyle, snapshot.css);
   }
   applyColorScheme(snapshot.preference.colorScheme);
   const warningKey = snapshot.warnings.join("\n");
@@ -4522,7 +4558,7 @@ async function refreshAppearance(successMessage?: string): Promise<void> {
   const vaultId = currentSnapshot?.vault.id;
   if (!vaultId) {
     appearanceSnapshot = null;
-    appearanceStyle.textContent = "";
+    applyAppearanceCss(appearanceStyle, "");
     renderSettings();
     return;
   }
@@ -4863,13 +4899,16 @@ function formatPackageBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
-function packageOperationLabel(operation: PluginPackageReview["operation"]): string {
+function packageOperationLabel(
+  operation: PluginPackageReview["operation"] | AppearancePackageReview["operation"],
+): string {
   return {
     install: "Install",
     update: "Update",
     reinstall: "Reinstall",
     uninstall: "Uninstall",
     rollback: "Roll back",
+    restore: "Restore",
   }[operation];
 }
 
@@ -6125,6 +6164,353 @@ function renderPluginSettings(): void {
   }
 }
 
+function appearancePackageKindLabel(kind: AppearancePackageKind): string {
+  return kind === "theme" ? "Theme" : "CSS snippet";
+}
+
+function renderAppearancePackageSettings(): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  const loaded = appearancePackagesVaultId === vaultId && vaultId !== null;
+  const disabled = appearancePackageBusy || !vaultId || readOnlyVault();
+  elements.appearancePackageKind.disabled = disabled;
+  elements.appearancePackageOpen.disabled = disabled;
+  elements.appearancePackageRefresh.disabled = appearancePackageBusy || !vaultId;
+  elements.appearancePackageState.textContent = appearancePackageBusy
+    ? "Working"
+    : !loaded
+      ? "Not loaded"
+      : `${appearancePackages.length} managed`;
+  elements.appearancePackageState.dataset.state = appearancePackageBusy
+    ? "active"
+    : loaded
+      ? "default"
+      : "safe";
+
+  elements.appearancePackageList.replaceChildren();
+  if (!loaded) {
+    const empty = document.createElement("p");
+    empty.className = "appearance-package-empty";
+    empty.textContent = "Package inventory is not loaded yet.";
+    elements.appearancePackageList.append(empty);
+  } else if (appearancePackages.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "appearance-package-empty";
+    empty.textContent = "No Threadleaf-managed appearance packages are installed.";
+    elements.appearancePackageList.append(empty);
+  } else {
+    for (const pkg of appearancePackages) {
+      const row = document.createElement("article");
+      row.className = "appearance-package-row";
+      const copy = document.createElement("span");
+      copy.className = "appearance-package-row-copy";
+      const title = document.createElement("strong");
+      title.textContent = `${appearancePackageKindLabel(pkg.kind)} · ${pkg.packageId}`;
+      const detail = document.createElement("small");
+      const version = pkg.currentVersion ?? "Not installed";
+      detail.textContent = `${version} · ${pkg.integrity} · ${pkg.history.length} retained`;
+      copy.append(title, detail);
+
+      const controls = document.createElement("span");
+      controls.className = "appearance-package-row-controls";
+      const addAction = (label: string, action: "uninstall" | "rollback" | "restore"): void => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "secondary-button";
+        button.textContent = label;
+        button.ariaLabel = `${label} ${pkg.packageId}`;
+        button.disabled = disabled;
+        button.addEventListener("click", () => {
+          void previewManagedAppearancePackage({
+            action,
+            kind: pkg.kind,
+            packageId: pkg.packageId,
+          });
+        });
+        controls.append(button);
+      };
+      if (pkg.currentVersion !== null) {
+        addAction("Uninstall", "uninstall");
+      }
+      if (pkg.history.length > 0) {
+        addAction(
+          pkg.currentVersion === null ? "Restore" : "Roll back",
+          pkg.currentVersion === null ? "restore" : "rollback",
+        );
+      }
+      row.append(copy, controls);
+      elements.appearancePackageList.append(row);
+    }
+  }
+  elements.appearancePackageStatus.textContent = appearancePackageMessage;
+  elements.appearancePackageStatus.dataset.kind = appearancePackageMessageKind;
+}
+
+async function refreshAppearancePackages(successMessage?: string): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId || appearancePackageBusy) {
+    return;
+  }
+  const request = ++appearancePackageRequest;
+  appearancePackageBusy = true;
+  appearancePackageMessage = "Reading the private appearance package inventory…";
+  appearancePackageMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.getAppearancePackages(vaultId);
+    if (request !== appearancePackageRequest || vaultId !== currentSnapshot?.vault.id) {
+      return;
+    }
+    if (response.status === "stale-vault") {
+      appearancePackageMessage = "The active vault changed before package inventory loaded.";
+      appearancePackageMessageKind = "info";
+      return;
+    }
+    appearancePackages = response.inventory.packages;
+    appearancePackagesVaultId = response.inventory.vaultId;
+    appearancePackageMessage =
+      response.inventory.recoveryNotices[0] ??
+      successMessage ??
+      `${appearancePackages.length} managed appearance package${appearancePackages.length === 1 ? "" : "s"} loaded.`;
+    appearancePackageMessageKind =
+      response.inventory.recoveryNotices.length > 0 ? "warning" : "saved";
+  } catch (error) {
+    if (request === appearancePackageRequest) {
+      appearancePackageMessage = ipcErrorMessage(error);
+      appearancePackageMessageKind = "error";
+    }
+  } finally {
+    if (request === appearancePackageRequest) {
+      appearancePackageBusy = false;
+      renderSettings();
+    }
+  }
+}
+
+function appendAppearancePackageFact(label: string, value: string): void {
+  appendDefinitionListFact(elements.appearancePackageReviewFacts, label, value);
+}
+
+function openAppearancePackageReview(review: AppearancePackageReview): void {
+  appearancePackageReview = review;
+  appearancePackageRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  elements.appearancePackageReviewOperation.textContent = `${packageOperationLabel(review.operation)} review`;
+  elements.appearancePackageReviewTitle.textContent = review.name;
+  elements.appearancePackageReviewSummary.textContent =
+    review.operation === "uninstall"
+      ? `Remove ${appearancePackageKindLabel(review.kind).toLocaleLowerCase("en-US")} ${review.packageId} after retaining its complete bytes for recovery.`
+      : `${packageOperationLabel(review.operation)} ${review.packageId} from ${review.installedVersion ?? "not installed"} to ${review.targetVersion ?? "removed"}.`;
+  elements.appearancePackageReviewFacts.replaceChildren();
+  appendAppearancePackageFact("Kind", appearancePackageKindLabel(review.kind));
+  appendAppearancePackageFact("Package", review.packageId);
+  appendAppearancePackageFact("Current", review.installedVersion ?? "Not installed");
+  appendAppearancePackageFact("Target", review.targetVersion ?? "Removed");
+  appendAppearancePackageFact("Vault target", review.targetPath);
+  appendAppearancePackageFact("Stylesheet", review.stylesheetFilename ?? "Retained target bytes");
+  appendAppearancePackageFact("Archive SHA-256", review.archiveSha256 ?? "Retained bytes");
+  appendAppearancePackageFact(
+    "Provenance",
+    review.provenance
+      ? `${review.provenance.source}${review.provenance.locator ? ` · ${review.provenance.locator}` : ""}`
+      : "Retained vault bytes",
+  );
+  appendAppearancePackageFact("Review expires", new Date(review.expiresAt).toLocaleString());
+
+  elements.appearancePackageReviewAssets.replaceChildren();
+  if (review.assets.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent =
+      "No new archive assets. The existing target bytes are retained for this operation.";
+    elements.appearancePackageReviewAssets.append(empty);
+  } else {
+    for (const asset of review.assets) {
+      const row = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = asset.filename;
+      const size = document.createElement("span");
+      size.textContent = formatPackageBytes(asset.size);
+      const hash = document.createElement("code");
+      hash.textContent = asset.sha256;
+      row.append(name, size, hash);
+      elements.appearancePackageReviewAssets.append(row);
+    }
+  }
+  elements.appearancePackageReviewCss.textContent = review.css
+    ? `${review.css.valid ? "Valid" : "Rejected"} · ${review.css.stylesheetBytes} bytes · ${review.css.selectorCount} selectors · ${review.css.declarationCount} declarations · ${review.css.importCount} imports · ${review.css.externalUrlCount} external URLs · ${review.css.executableConstructCount} executable constructs`
+    : "No new stylesheet report for this retained-byte operation.";
+  elements.appearancePackageReviewLicense.textContent = review.license
+    ? `${review.license.spdxId} · ${review.license.name} · ${formatPackageBytes(review.license.size)} · SHA-256 ${review.license.sha256}`
+    : "No license evidence is included in this review.";
+  elements.appearancePackageReviewReadme.textContent = review.readme
+    ? `${review.readme.filename} · ${formatPackageBytes(review.readme.size)} · SHA-256 ${review.readme.sha256}\n${review.readme.preview}`
+    : "No README evidence is included in this review.";
+  elements.appearancePackageReviewWarnings.replaceChildren();
+  for (const warning of review.warnings) {
+    const item = document.createElement("li");
+    item.textContent = warning;
+    elements.appearancePackageReviewWarnings.append(item);
+  }
+  elements.appearancePackageReviewError.hidden = true;
+  elements.appearancePackageReviewError.textContent = "";
+  elements.appearancePackageReviewApply.textContent =
+    review.operation === "uninstall"
+      ? "Apply reviewed uninstall"
+      : `Apply reviewed ${packageOperationLabel(review.operation).toLocaleLowerCase("en-US")}`;
+  elements.appearancePackageReviewApply.disabled = readOnlyVault();
+  elements.appearancePackageReviewCancel.disabled = false;
+  elements.appearancePackageReviewClose.disabled = false;
+  if (!elements.appearancePackageReviewDialog.open) {
+    elements.appearancePackageReviewDialog.showModal();
+  }
+  elements.appearancePackageReviewClose.focus();
+}
+
+async function previewLocalAppearancePackage(): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId || appearancePackageBusy || readOnlyVault()) {
+    if (readOnlyVault()) showToast("Open a local vault before changing appearance packages.");
+    return;
+  }
+  const request = ++appearancePackageRequest;
+  const kind = elements.appearancePackageKind.value as AppearancePackageKind;
+  appearancePackageBusy = true;
+  appearancePackageMessage = `Choose an exact local ${appearancePackageKindLabel(kind).toLocaleLowerCase("en-US")} archive to review…`;
+  appearancePackageMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.previewLocalAppearancePackage(vaultId, kind);
+    if (request !== appearancePackageRequest || vaultId !== currentSnapshot?.vault.id) return;
+    if (response.status === "cancelled") {
+      appearancePackageMessage = "Package review cancelled. No vault bytes changed.";
+      appearancePackageMessageKind = "info";
+      return;
+    }
+    if (response.status === "stale-vault") {
+      appearancePackageMessage = "The active vault changed before package review completed.";
+      appearancePackageMessageKind = "info";
+      return;
+    }
+    appearancePackageMessage = `${packageOperationLabel(response.review.operation)} review is ready. No vault bytes changed.`;
+    appearancePackageMessageKind = response.review.warnings.length > 0 ? "warning" : "saved";
+    openAppearancePackageReview(response.review);
+  } catch (error) {
+    if (request === appearancePackageRequest) {
+      appearancePackageMessage = ipcErrorMessage(error);
+      appearancePackageMessageKind = "error";
+    }
+  } finally {
+    if (request === appearancePackageRequest) {
+      appearancePackageBusy = false;
+      renderSettings();
+    }
+  }
+}
+
+async function previewManagedAppearancePackage(
+  requestValue: AppearancePackagePreviewRequest,
+): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (!vaultId || appearancePackageBusy || readOnlyVault()) {
+    if (readOnlyVault()) showToast("Open a local vault before changing appearance packages.");
+    return;
+  }
+  const request = ++appearancePackageRequest;
+  appearancePackageBusy = true;
+  appearancePackageMessage = `Preparing an exact ${requestValue.action} review for ${requestValue.packageId}…`;
+  appearancePackageMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.previewAppearancePackage(vaultId, requestValue);
+    if (request !== appearancePackageRequest || vaultId !== currentSnapshot?.vault.id) return;
+    if (response.status === "stale-vault") {
+      appearancePackageMessage = "The active vault changed before package review completed.";
+      appearancePackageMessageKind = "info";
+      return;
+    }
+    appearancePackageMessage = `${packageOperationLabel(response.review.operation)} review is ready. No vault bytes changed.`;
+    appearancePackageMessageKind = response.review.warnings.length > 0 ? "warning" : "saved";
+    openAppearancePackageReview(response.review);
+  } catch (error) {
+    if (request === appearancePackageRequest) {
+      appearancePackageMessage = ipcErrorMessage(error);
+      appearancePackageMessageKind = "error";
+    }
+  } finally {
+    if (request === appearancePackageRequest) {
+      appearancePackageBusy = false;
+      renderSettings();
+    }
+  }
+}
+
+async function closeAppearancePackageReview(restoreFocus = true): Promise<void> {
+  const review = appearancePackageReview;
+  if (!elements.appearancePackageReviewDialog.open || appearancePackageBusy) return;
+  appearancePackageReview = null;
+  elements.appearancePackageReviewDialog.close();
+  if (review && currentSnapshot?.vault.id === review.vaultId) {
+    await window.threadleaf
+      .cancelAppearancePackageReview(review.vaultId, review.reviewId)
+      .catch(() => undefined);
+  }
+  const restoreTarget = appearancePackageRestoreFocus;
+  appearancePackageRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) restoreTarget.focus();
+}
+
+async function applyAppearancePackageReview(): Promise<void> {
+  const review = appearancePackageReview;
+  const vaultId = currentSnapshot?.vault.id;
+  if (!review || !vaultId || review.vaultId !== vaultId || appearancePackageBusy) return;
+  if (readOnlyVault()) {
+    showToast("Open a local vault before changing appearance packages.");
+    return;
+  }
+  const request = ++appearancePackageRequest;
+  appearancePackageBusy = true;
+  elements.appearancePackageReviewApply.disabled = true;
+  elements.appearancePackageReviewCancel.disabled = true;
+  elements.appearancePackageReviewClose.disabled = true;
+  elements.appearancePackageReviewError.hidden = true;
+  appearancePackageMessage = `Applying the reviewed ${review.operation} without changing private appearance selection…`;
+  appearancePackageMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.applyAppearancePackage(vaultId, review.reviewId);
+    if (request !== appearancePackageRequest || vaultId !== currentSnapshot?.vault.id) return;
+    if (response.status === "stale-vault") {
+      throw new Error("The active vault changed before the reviewed package could be applied.");
+    }
+    applyAppearanceSnapshot(response.appearance);
+    appearancePackages = response.inventory.packages;
+    appearancePackagesVaultId = response.inventory.vaultId;
+    appearancePackageReview = null;
+    elements.appearancePackageReviewDialog.close();
+    appearancePackageMessage = `${response.outcome.packageId} ${response.outcome.operation} completed. Private theme and snippet selection stayed unchanged.`;
+    appearancePackageMessageKind =
+      response.inventory.recoveryNotices.length > 0 ? "warning" : "saved";
+    showToast(`${response.outcome.packageId} ${response.outcome.operation} completed.`);
+    const restoreTarget = appearancePackageRestoreFocus;
+    appearancePackageRestoreFocus = null;
+    if (restoreTarget?.isConnected) restoreTarget.focus();
+  } catch (error) {
+    if (request === appearancePackageRequest) {
+      const message = `${ipcErrorMessage(error)} Review the exact package again before another apply.`;
+      appearancePackageReview = null;
+      appearancePackageMessage = message;
+      appearancePackageMessageKind = "error";
+      elements.appearancePackageReviewError.textContent = message;
+      elements.appearancePackageReviewError.hidden = false;
+      elements.appearancePackageReviewDialog.close();
+    }
+  } finally {
+    if (request === appearancePackageRequest) {
+      appearancePackageBusy = false;
+      renderSettings();
+    }
+  }
+}
+
 function renderAppearanceSettings(): void {
   const vaultId = currentSnapshot?.vault.id ?? null;
   const catalog = appearanceSnapshot?.vaultId === vaultId ? appearanceSnapshot : null;
@@ -6228,6 +6614,7 @@ function renderAppearanceSettings(): void {
     : customCount > 0
       ? "active"
       : "default";
+  renderAppearancePackageSettings();
 }
 
 function renderAppUpdateSettings(): void {
@@ -6504,6 +6891,9 @@ function openSettings(): void {
   elements.settingsClose.focus();
   if (!appearanceSnapshot || appearanceSnapshot.vaultId !== currentSnapshot?.vault.id) {
     void refreshAppearance();
+  }
+  if (appearancePackagesVaultId !== currentSnapshot?.vault.id) {
+    void refreshAppearancePackages();
   }
   if (!noteWorkflowCatalog || noteWorkflowCatalog.vaultId !== currentSnapshot?.vault.id) {
     void refreshNoteWorkflows();
@@ -7249,7 +7639,7 @@ function render(snapshot: RuntimeSnapshot): void {
     appearanceRequest += 1;
     appearanceBusy = false;
     appearanceSnapshot = null;
-    appearanceStyle.textContent = "";
+    applyAppearanceCss(appearanceStyle, "");
     lastAppearanceWarning = "";
     noteWorkflowRequest += 1;
     noteWorkflowBusy = false;
@@ -7276,6 +7666,25 @@ function render(snapshot: RuntimeSnapshot): void {
     }
     pluginStyle.textContent = "";
     lastPluginWarning = "";
+    const staleAppearanceReview = appearancePackageReview;
+    appearancePackageRequest += 1;
+    appearancePackageBusy = false;
+    appearancePackages = [];
+    appearancePackagesVaultId = null;
+    appearancePackageReview = null;
+    appearancePackageMessage = "No package changes have been reviewed yet.";
+    appearancePackageMessageKind = "info";
+    if (elements.appearancePackageReviewDialog.open) {
+      elements.appearancePackageReviewDialog.close();
+    }
+    if (staleAppearanceReview) {
+      void window.threadleaf
+        .cancelAppearancePackageReview(
+          staleAppearanceReview.vaultId,
+          staleAppearanceReview.reviewId,
+        )
+        .catch(() => undefined);
+    }
     migrationRequest += 1;
     migrationBusy = false;
     migrationPreview = null;
@@ -7288,6 +7697,7 @@ function render(snapshot: RuntimeSnapshot): void {
     lastPluginEditorUpdateId = null;
     applyColorScheme(currentAppearancePreference().colorScheme);
     void refreshAppearance();
+    void refreshAppearancePackages();
     void refreshNoteWorkflows();
     void refreshWorkspaceSettings();
     void refreshPlugins();
@@ -9806,6 +10216,30 @@ elements.appearanceReload.addEventListener("click", () => {
   void refreshAppearance("Appearance files reloaded.");
 });
 elements.appearanceReset.addEventListener("click", () => void disableCustomAppearance());
+elements.appearancePackageOpen.addEventListener("click", () => {
+  void previewLocalAppearancePackage();
+});
+elements.appearancePackageRefresh.addEventListener("click", () => {
+  void refreshAppearancePackages("Package inventory refreshed.");
+});
+elements.appearancePackageReviewClose.addEventListener("click", () => {
+  void closeAppearancePackageReview();
+});
+elements.appearancePackageReviewCancel.addEventListener("click", () => {
+  void closeAppearancePackageReview();
+});
+elements.appearancePackageReviewApply.addEventListener("click", () => {
+  void applyAppearancePackageReview();
+});
+elements.appearancePackageReviewDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  void closeAppearancePackageReview();
+});
+elements.appearancePackageReviewDialog.addEventListener("click", (event) => {
+  if (event.target === elements.appearancePackageReviewDialog) {
+    void closeAppearancePackageReview();
+  }
+});
 for (const [control, preferenceKey] of [
   [elements.accessibilityHighContrast, "highContrast"],
   [elements.accessibilityReducedMotion, "reducedMotion"],
@@ -9959,7 +10393,8 @@ document.addEventListener("keydown", (event) => {
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.pluginPackageReviewDialog.open ||
-      elements.pluginAuthorityReviewDialog.open
+      elements.pluginAuthorityReviewDialog.open ||
+      elements.appearancePackageReviewDialog.open
     ) {
       return;
     }
@@ -9981,7 +10416,8 @@ document.addEventListener("keydown", (event) => {
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.pluginPackageReviewDialog.open ||
-      elements.pluginAuthorityReviewDialog.open
+      elements.pluginAuthorityReviewDialog.open ||
+      elements.appearancePackageReviewDialog.open
     ) {
       return;
     }
@@ -10004,7 +10440,8 @@ document.addEventListener("keydown", (event) => {
     elements.moveNoteDialog.open ||
     elements.deleteNoteDialog.open ||
     elements.pluginPackageReviewDialog.open ||
-    elements.pluginAuthorityReviewDialog.open
+    elements.pluginAuthorityReviewDialog.open ||
+    elements.appearancePackageReviewDialog.open
   ) {
     return;
   }
@@ -10097,7 +10534,8 @@ const unsubscribeMenuCommand = window.threadleaf.onMenuCommand((commandId) => {
     if (
       openDialog &&
       openDialog !== elements.commandPalette &&
-      openDialog !== elements.settingsDialog
+      openDialog !== elements.settingsDialog &&
+      openDialog !== elements.appearancePackageReviewDialog
     ) {
       return;
     }

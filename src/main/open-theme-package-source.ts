@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { inflateRawSync } from "node:zlib";
 import type {
   AppearanceCssStaticReport,
@@ -310,7 +312,7 @@ function boundedTextPreview(bytes: Buffer, maxBytes: number): string {
 function manifestFromArchive(
   files: AppearanceArchiveEntry[],
   kind: AppearancePackageKind,
-  requestedId: string,
+  requestedId?: string,
 ): { manifest: AppearancePackageManifest; manifestFile: AppearanceArchiveEntry } {
   const manifestFile = files.find(
     (file) => file.filename === "manifest.json" || file.filename === "package.json",
@@ -330,7 +332,7 @@ function manifestFromArchive(
     throw new Error("Appearance package manifest must be an object.");
   }
   const record = value as Record<string, unknown>;
-  const id = typeof record.id === "string" ? record.id : requestedId;
+  const id = typeof record.id === "string" ? record.id : (requestedId ?? "");
   const manifestKind = record.kind ?? record.type;
   const resolvedKind = manifestKind === undefined ? kind : manifestKind;
   const name = typeof record.name === "string" ? record.name.trim() : id;
@@ -340,7 +342,7 @@ function manifestFromArchive(
     resolvedKind !== kind ||
     !name ||
     !versionPattern.test(version) ||
-    id !== requestedId
+    (requestedId !== undefined && id !== requestedId)
   ) {
     throw new Error("Appearance package manifest identity, kind, or version is invalid.");
   }
@@ -442,7 +444,7 @@ function findReadme(files: AppearanceArchiveEntry[]): AppearancePackageReadmeEvi
 
 export function inspectAppearancePackageArchive(
   kind: AppearancePackageKind,
-  packageId: string,
+  packageId: string | undefined,
   archive: Uint8Array,
   provenance: AppearancePackageProvenance = {
     source: "local",
@@ -450,7 +452,7 @@ export function inspectAppearancePackageArchive(
     sourceSha256: sha256(archive),
   },
 ): OpenAppearancePackage {
-  if (!packageIdPattern.test(packageId)) {
+  if (packageId !== undefined && !packageIdPattern.test(packageId)) {
     throw new Error("Appearance package identifier is invalid.");
   }
   const inspection = extractAppearanceArchive(archive);
@@ -478,7 +480,7 @@ export function inspectAppearancePackageArchive(
   ];
   return {
     kind,
-    packageId,
+    packageId: manifest.id,
     manifest,
     archive: Buffer.from(archive),
     archiveSha256: inspection.archiveSha256,
@@ -520,6 +522,47 @@ export function indexSnapshotForAppearanceSource(
         managed: managed.has(`${entry.kind}:${entry.id}`),
       })),
   };
+}
+
+/** Opens one user-selected local archive. It never fetches, indexes, or writes a vault. */
+export async function readLocalAppearancePackage(
+  filePath: string,
+  kind: AppearancePackageKind,
+): Promise<OpenAppearancePackage> {
+  const stat = await fs.lstat(filePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new Error("The selected appearance package must be a regular local file.");
+  }
+  const archive = await fs.readFile(filePath);
+  return inspectAppearancePackageArchive(kind, undefined, archive, {
+    source: "local",
+    locator: path.basename(filePath),
+    sourceSha256: sha256(archive),
+  });
+}
+
+/** Offline source adapter used by the desktop package manager. */
+export class OpenAppearancePackageSource implements AppearancePackageSource {
+  async getIndex(): Promise<OpenAppearanceIndex> {
+    const bytes = Buffer.from("[]\n", "utf8");
+    return {
+      entries: [],
+      sha256: sha256(bytes),
+      sourceUrl: "local://appearance-packages",
+    };
+  }
+
+  async getPackage(
+    _kind: AppearancePackageKind,
+    _packageId: string,
+    _version?: string,
+  ): Promise<OpenAppearancePackage> {
+    throw new Error("Choose a local appearance package archive before reviewing it.");
+  }
+
+  openLocalPackage(filePath: string, kind: AppearancePackageKind): Promise<OpenAppearancePackage> {
+    return readLocalAppearancePackage(filePath, kind);
+  }
 }
 
 /** Offline fixture/source adapter. It intentionally has no network or account behavior. */
