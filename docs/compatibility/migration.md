@@ -27,6 +27,9 @@ latest committed apply and refuses to overwrite any newer private revision. Neit
 rollback writes `.obsidian/` or vault Markdown bytes. Plugin code is not loaded or reconciled inside
 either transaction. A changed plugin selection takes effect only after an explicit plugin reload or
 Threadleaf restart, and the committed response reports that requirement.
+Once both private snapshots are durable, a later journal hook fault finalizes the receipt and the
+IPC response reports the apply as committed and recovered rather than failed; startup recovery
+remains idempotent.
 
 ## Source boundary
 

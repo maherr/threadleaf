@@ -1124,6 +1124,18 @@ function developmentMigrationInterruptPhase(): MigrationTransactionPhase | null 
     : null;
 }
 
+function developmentMigrationFaultPhase(): MigrationTransactionPhase | null {
+  if (app.isPackaged) {
+    return null;
+  }
+  const value = process.env.THREADLEAF_MIGRATION_FAULT_PHASE;
+  return ["prepared", "settings-committed", "workspace-committed", "committed"].includes(
+    value ?? "",
+  )
+    ? (value as MigrationTransactionPhase)
+    : null;
+}
+
 function serializePluginOperation<T>(operation: () => Promise<T>): Promise<T> {
   const result = pluginOperationTail.then(operation, operation);
   pluginOperationTail = result.then(
@@ -2213,16 +2225,20 @@ function registerIpcHandlers(): void {
             };
           },
         });
-        const runtimeWarning =
+        const runtimeWarnings = [
+          outcome.recovered
+            ? "Migration was committed and recovered after a journal hook fault. Its recovery receipt was retained."
+            : null,
           outcome.before.enabledPluginIds.join("\n") === outcome.after.enabledPluginIds.join("\n")
             ? null
-            : "Plugin runtime changes are intentionally deferred. Reload plugins explicitly or restart Threadleaf.";
+            : "Plugin runtime changes are intentionally deferred. Reload plugins explicitly or restart Threadleaf.",
+        ].filter((warning): warning is string => warning !== null);
         return {
           status: "updated",
           settings: settingsController.getSnapshot(),
           snapshot: await workspaceController.getSnapshot(),
           outcome,
-          runtimeWarning,
+          runtimeWarning: runtimeWarnings.length > 0 ? runtimeWarnings.join(" ") : null,
         } as const;
       });
     },
@@ -3288,7 +3304,9 @@ app.whenReady().then(async () => {
   );
   workspaceStateStore = new FileWorkspaceStateStore(join(app.getPath("userData"), "workspaces"));
   const migrationInterruptPhase = developmentMigrationInterruptPhase();
+  const migrationFaultPhase = developmentMigrationFaultPhase();
   let migrationInterrupted = false;
+  let migrationFaulted = false;
   migrationTransactionManager = new ObsidianMigrationTransactionManager(
     join(app.getPath("userData"), "migration"),
     {
@@ -3307,12 +3325,16 @@ app.whenReady().then(async () => {
       },
     },
     () => new Date(),
-    migrationInterruptPhase
+    migrationInterruptPhase || migrationFaultPhase
       ? {
           afterPhase: (phase) => {
             if (phase === migrationInterruptPhase && !migrationInterrupted) {
               migrationInterrupted = true;
               process.kill(process.pid, "SIGKILL");
+            }
+            if (phase === migrationFaultPhase && !migrationFaulted) {
+              migrationFaulted = true;
+              throw new Error(`Injected migration hook fault at ${phase}.`);
             }
           },
         }

@@ -428,6 +428,49 @@ describe("reviewed Obsidian migration transactions", () => {
     expect(notices).toMatchObject([{ status: "completed" }]);
   });
 
+  it("returns a recovered committed outcome when a later journal hook faults", async () => {
+    const current = state();
+    const plan = buildMigrationPlan(preview(vaultA), current);
+    const request = {
+      planId: plan.planId,
+      sourceDigest: plan.sourceDigest,
+      selectedItemIds: ["plugin:exact"],
+    };
+    const adapter = new MemoryAdapter(current);
+    let fault = true;
+    const stateRoot = path.join(sandboxPath, "state");
+    const manager = new ObsidianMigrationTransactionManager(
+      stateRoot,
+      adapter,
+      () => new Date("2026-08-12T22:00:00.000Z"),
+      {
+        afterPhase: async (phase) => {
+          if (phase === "workspace-committed" && fault) {
+            fault = false;
+            throw new Error("simulated post-workspace hook fault");
+          }
+        },
+      },
+    );
+    await manager.initialize();
+
+    const outcome = await manager.apply({
+      plan,
+      request,
+      sourceDigest: plan.sourceDigest,
+      current,
+      next: applyMigrationSelections(plan, request, current),
+      validateReview: validateReview(plan),
+    });
+
+    expect(outcome).toMatchObject({ status: "applied", recovered: true });
+    expect(adapter.current.settings.pluginsByVault[vaultA]?.enabledPluginIds).toEqual(["exact"]);
+    expect(await manager.latestRollbackTransaction(vaultA)).toBe(outcome.transactionId);
+    const recovered = new ObsidianMigrationTransactionManager(stateRoot, adapter);
+    await recovered.initialize();
+    await expect(recovered.recover(vaultA, adapter.current)).resolves.toEqual([]);
+  });
+
   it("serializes recovery behind a migration that is still applying", async () => {
     const current = state();
     const plan = buildMigrationPlan(preview(vaultA), current);

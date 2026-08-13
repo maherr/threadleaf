@@ -960,6 +960,7 @@ export class ObsidianMigrationTransactionManager {
       journal.updatedAt = this.#clock().toISOString();
       await this.#writeJournal(journal);
       await this.#afterPhase(journal);
+      let recovered = false;
       await this.#adapter.writeWorkspace(
         cloneWorkspace(next.workspace),
         cloneWorkspace(current.workspace),
@@ -967,11 +968,27 @@ export class ObsidianMigrationTransactionManager {
       journal.phase = "workspace-committed";
       journal.updatedAt = this.#clock().toISOString();
       await this.#writeJournal(journal);
-      await this.#afterPhase(journal);
-      journal.phase = "committed";
-      journal.updatedAt = this.#clock().toISOString();
-      await this.#writeJournal(journal);
-      await this.#afterPhase(journal);
+      try {
+        await this.#afterPhase(journal);
+      } catch (error) {
+        if (!(await this.#recoverCommittedApplyAfterHook(journal))) {
+          throw error;
+        }
+        recovered = true;
+      }
+      if (!recovered) {
+        journal.phase = "committed";
+        journal.updatedAt = this.#clock().toISOString();
+        await this.#writeJournal(journal);
+        try {
+          await this.#afterPhase(journal);
+        } catch (error) {
+          if (journal.phase !== "committed") {
+            throw error;
+          }
+          recovered = true;
+        }
+      }
       const beforeSummary = stateSummaryForVault(current, vaultId);
       const afterSummary = stateSummaryForVault(next, vaultId);
       return {
@@ -986,6 +1003,7 @@ export class ObsidianMigrationTransactionManager {
         before: beforeSummary,
         after: afterSummary,
         rollbackAvailable: true,
+        recovered,
       };
     });
   }
@@ -1084,6 +1102,26 @@ export class ObsidianMigrationTransactionManager {
 
   async #afterPhase(journal: MigrationJournal): Promise<void> {
     await this.#hooks.afterPhase?.(journal.phase, journal.id);
+  }
+
+  /**
+   * Once both private snapshots are durable, a hook fault cannot make the
+   * transaction failed. Finish the receipt so the IPC caller can report the
+   * committed state immediately while startup recovery remains idempotent.
+   */
+  async #recoverCommittedApplyAfterHook(journal: MigrationJournal): Promise<boolean> {
+    if (
+      journal.operation !== "apply" ||
+      (journal.phase !== "workspace-committed" && journal.phase !== "committed")
+    ) {
+      return false;
+    }
+    if (journal.phase === "workspace-committed") {
+      journal.phase = "committed";
+      journal.updatedAt = this.#clock().toISOString();
+      await this.#writeJournal(journal);
+    }
+    return true;
   }
 
   #transactionsRoot(): string {

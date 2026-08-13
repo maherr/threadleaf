@@ -10,6 +10,7 @@ const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-migration-a
 const vaultPath = path.join(testRoot, "vault");
 const userDataPath = path.join(testRoot, "user-data");
 const crashUserDataPath = path.join(testRoot, "crash-user-data");
+const faultUserDataPath = path.join(testRoot, "fault-user-data");
 const screenshotDirectory =
   process.env.THREADLEAF_MIGRATION_SCREENSHOT_DIR ?? path.join(testRoot, "screenshots");
 const output = [];
@@ -277,6 +278,11 @@ async function launchApplication(options = {}) {
     childEnvironment.THREADLEAF_MIGRATION_INTERRUPT_PHASE = options.interruptPhase;
   } else {
     delete childEnvironment.THREADLEAF_MIGRATION_INTERRUPT_PHASE;
+  }
+  if (options.faultPhase) {
+    childEnvironment.THREADLEAF_MIGRATION_FAULT_PHASE = options.faultPhase;
+  } else {
+    delete childEnvironment.THREADLEAF_MIGRATION_FAULT_PHASE;
   }
   delete childEnvironment.WAYLAND_DISPLAY;
   child = spawn(
@@ -549,6 +555,143 @@ try {
   );
   await closeApplication();
   assertTreeEqual(beforeObsidian, await treeManifest(obsidianRoot), "Startup recovery");
+  await fs.writeFile(path.join(vaultPath, "Recovery Target.md"), "# Recovery target\n", "utf8");
+
+  phase = "IPC post-commit hook fault recovery";
+  await launchApplication({
+    profilePath: faultUserDataPath,
+    faultPhase: "workspace-committed",
+  });
+  const faultRuntime = await waitFor(async () => {
+    const snapshot = await evaluate("window.threadleaf.getSnapshot()");
+    return snapshot.workspace?.state === "ready" && snapshot.vault?.path === vaultPath
+      ? snapshot
+      : null;
+  }, "The post-commit fault fixture did not become ready");
+  const faultVaultId = faultRuntime.vault.id;
+  const faultWorkspaceBefore = await evaluate('window.threadleaf.openNote("Welcome.md")');
+  assert(
+    faultWorkspaceBefore.workspace?.activeNote?.path === "Welcome.md",
+    "The post-commit fault fixture could not establish a distinct before workspace.",
+  );
+  const faultReview = await evaluate(
+    `window.threadleaf.getMigrationPreview(${JSON.stringify(faultVaultId)})`,
+  );
+  assert(faultReview.status === "ready", "The post-commit fault migration preview was not ready.");
+  const faultSelectedIds = ["hotkey:ui.command-palette", "workspace:tabs"];
+  assert(
+    faultSelectedIds.every((candidateId) =>
+      faultReview.plan.candidates.some(
+        (candidate) => candidate.id === candidateId && candidate.status === "ready",
+      ),
+    ),
+    `The post-commit fault fixture did not expose the selected ready candidates: ${JSON.stringify(
+      faultReview.plan.candidates,
+    )}`,
+  );
+  await click("#settings-trigger");
+  await waitFor(
+    () => evaluate('document.querySelector("#shortcut-settings")?.open === true'),
+    "Settings dialog did not open for post-commit fault recovery",
+  );
+  await click("#settings-nav-migration");
+  await waitFor(
+    () =>
+      evaluate(
+        'document.querySelector("#migration-review-summary")?.textContent?.includes("ready")',
+      ),
+    "Post-commit fault migration plan did not render",
+  );
+  await click("#migration-refresh");
+  await waitFor(
+    () =>
+      evaluate(
+        'document.querySelector("#migration-refresh")?.disabled === false && document.querySelector("#migration-review-summary")?.textContent?.includes("ready")',
+      ),
+    "Post-commit fault migration preview refresh did not complete",
+  );
+  await delay(750);
+  const faultRenderedPlanId = await evaluate(
+    'document.querySelector("#migration-review-receipt")?.dataset.planId ?? ""',
+  );
+  const faultLiveReview = await evaluate(
+    `window.threadleaf.getMigrationPreview(${JSON.stringify(faultVaultId)})`,
+  );
+  assert(faultLiveReview.status === "ready", "The post-commit fault live preview was not ready.");
+  assert(
+    faultRenderedPlanId === faultLiveReview.plan.planId,
+    `The post-commit fault plan drifted before apply: ${faultRenderedPlanId} vs ${faultLiveReview.plan.planId}`,
+  );
+  for (const candidateId of faultSelectedIds) {
+    await evaluate(`(() => {
+      const input = document.querySelector('input[data-candidate-id=${JSON.stringify(candidateId)}]');
+      if (!(input instanceof HTMLInputElement) || input.disabled) {
+        throw new Error("Ready migration candidate is missing or disabled: " + ${JSON.stringify(candidateId)});
+      }
+      input.click();
+      return true;
+    })()`);
+    await waitFor(
+      () =>
+        evaluate(
+          `document.querySelector('input[data-candidate-id=${JSON.stringify(candidateId)}]')?.checked === true`,
+        ),
+      `Post-commit fault candidate was not selected: ${candidateId}`,
+    );
+  }
+  await click("#migration-apply");
+  const faultStatus = await waitFor(
+    () =>
+      evaluate(`(() => {
+        const status = document.querySelector("#migration-apply-status")?.textContent ?? "";
+        const receipt = document.querySelector("#migration-review-receipt")?.textContent ?? "";
+        return status.includes("committed and recovered") && receipt.startsWith("Transaction")
+          ? { status, receipt }
+          : null;
+      })()`),
+    "Post-commit hook fault was not surfaced as committed and recovered",
+    45_000,
+  );
+  const faultScreenshots = [
+    await captureScreenshot("migration-post-commit-recovered", "dark"),
+    await captureScreenshot("migration-post-commit-recovered", "light"),
+  ];
+  const faultSettings = await readSettings();
+  assert(
+    faultSettings.settings.keyBindings["ui.command-palette"] === "Mod+Shift+P",
+    "Post-commit hook fault did not retain committed private settings",
+  );
+  const faultSnapshot = await evaluate("window.threadleaf.getSnapshot()");
+  assert(
+    faultSnapshot.workspace?.activeNote?.path === "Recovery Target.md",
+    "Post-commit hook fault did not retain committed workspace state",
+  );
+  const faultJournalDirectory = path.join(
+    faultUserDataPath,
+    "migration",
+    "transactions",
+    faultVaultId,
+  );
+  const faultJournalNames = (await fs.readdir(faultJournalDirectory)).filter((name) =>
+    name.endsWith(".json"),
+  );
+  assert(
+    faultJournalNames.length === 1,
+    "Post-commit hook fault left an unexpected journal count.",
+  );
+  const faultJournal = JSON.parse(
+    await fs.readFile(path.join(faultJournalDirectory, faultJournalNames[0]), "utf8"),
+  );
+  assert(
+    faultJournal.phase === "committed",
+    `Post-commit hook fault did not retain a committed recovery receipt: ${faultJournal.phase}`,
+  );
+  await closeApplication();
+  assertTreeEqual(
+    beforeObsidian,
+    await treeManifest(obsidianRoot),
+    "Post-commit hook fault recovery",
+  );
 
   phase = "isolated X11 launch and preview";
   await launchApplication();
@@ -826,6 +969,9 @@ try {
       candidates,
       selectedViaKeyboard: true,
       pluginConflictLocked: true,
+      postCommitHookFaultRecovered: true,
+      postCommitHookFaultStatus: faultStatus.status,
+      postCommitHookFaultScreenshots: faultScreenshots,
       appliedAndRestarted: true,
       rolledBack: true,
       obsidianBytesPreserved: true,

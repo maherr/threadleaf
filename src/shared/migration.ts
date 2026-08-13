@@ -160,6 +160,8 @@ export interface MigrationApplyOutcome {
   before: MigrationPrivateStateSummary;
   after: MigrationPrivateStateSummary;
   rollbackAvailable: true;
+  /** True when a post-commit journal hook fault was recovered without undoing state. */
+  recovered: boolean;
 }
 
 export type MigrationRollbackResponse =

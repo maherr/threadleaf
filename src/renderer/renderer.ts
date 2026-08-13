@@ -112,6 +112,10 @@ import {
   hydrateMarkdownPreview,
   renderMarkdownPreview,
 } from "./markdown-preview";
+import {
+  type MigrationReviewIdentityState,
+  migrationReviewOperationIsCurrent,
+} from "./migration-review-identity";
 import { pluginViewTypeForPath } from "./plugin-view-model";
 import { createStandalonePublishedNoteHtml } from "./publish-export";
 import { RecoveryViewController } from "./recovery-view";
@@ -877,6 +881,7 @@ let migrationLastTransactionId: string | null = null;
 let migrationApplyBusy = false;
 let migrationBusy = false;
 let migrationRequest = 0;
+let migrationMutationRequest = 0;
 let migrationMessage = "Open the preview to inspect existing Obsidian behavior.";
 let migrationMessageKind: "info" | "saved" | "warning" | "error" = "info";
 let appUpdateSnapshot: AppUpdateSnapshot | null = null;
@@ -5359,7 +5364,14 @@ async function applyPluginPackageReview(): Promise<void> {
 async function refreshMigrationPreview(
   successMessage?: string,
   successKind?: "saved" | "warning",
+  preserveMutation = false,
 ): Promise<void> {
+  if (!preserveMutation) {
+    // A refresh supersedes any response still in flight. The response gate below
+    // keeps that old operation from clearing the new preview or its selection.
+    migrationMutationRequest += 1;
+    migrationApplyBusy = false;
+  }
   const vaultId = currentSnapshot?.vault.id;
   if (!vaultId) {
     migrationPreview = null;
@@ -5420,6 +5432,22 @@ async function applyMigrationReview(): Promise<void> {
   if (migrationBusy || migrationApplyBusy || !vaultId || !plan || migrationSelection.size === 0) {
     return;
   }
+  const requestId = migrationRequest;
+  const mutationRequest = ++migrationMutationRequest;
+  const operation = {
+    kind: "apply" as const,
+    requestId,
+    vaultId,
+    planId: plan.planId,
+  };
+  const currentIdentity = (): MigrationReviewIdentityState => ({
+    requestId: migrationRequest,
+    vaultId: currentSnapshot?.vault.id ?? null,
+    planId: migrationPlan?.planId ?? null,
+    transactionId: migrationLastTransactionId,
+  });
+  const currentMutation = (): boolean =>
+    mutationRequest === migrationMutationRequest && vaultId === currentSnapshot?.vault.id;
   migrationApplyBusy = true;
   migrationMessage = "Applying the reviewed private-state transaction…";
   migrationMessageKind = "info";
@@ -5430,6 +5458,9 @@ async function applyMigrationReview(): Promise<void> {
       sourceDigest: plan.sourceDigest,
       selectedItemIds: [...migrationSelection],
     });
+    if (!migrationReviewOperationIsCurrent(operation, currentIdentity())) {
+      return;
+    }
     if (response.status === "stale-vault") {
       migrationMessage = "The active vault changed before migration apply completed.";
       migrationMessageKind = "info";
@@ -5439,15 +5470,20 @@ async function applyMigrationReview(): Promise<void> {
     migrationMessage = `Private state committed for ${response.outcome.selectedItemIds.length} reviewed item${response.outcome.selectedItemIds.length === 1 ? "" : "s"}. Before and after state were retained for rollback.${response.runtimeWarning ? ` ${response.runtimeWarning}` : ""}`;
     migrationMessageKind = response.runtimeWarning ? "warning" : "saved";
     migrationSelection = new Set();
-    await refreshMigrationPreview(migrationMessage, migrationMessageKind);
+    await refreshMigrationPreview(migrationMessage, migrationMessageKind, true);
   } catch (error) {
+    if (!migrationReviewOperationIsCurrent(operation, currentIdentity())) {
+      return;
+    }
     migrationPlan = null;
     migrationSelection = new Set();
     migrationMessage = error instanceof Error ? error.message : String(error);
     migrationMessageKind = "error";
   } finally {
-    migrationApplyBusy = false;
-    renderSettings();
+    if (currentMutation()) {
+      migrationApplyBusy = false;
+      renderSettings();
+    }
   }
 }
 
@@ -5456,12 +5492,32 @@ async function rollbackMigrationReview(): Promise<void> {
   if (migrationBusy || migrationApplyBusy || !vaultId || !migrationLastTransactionId) {
     return;
   }
+  const requestId = migrationRequest;
+  const transactionId = migrationLastTransactionId;
+  const mutationRequest = ++migrationMutationRequest;
+  const operation = {
+    kind: "rollback" as const,
+    requestId,
+    vaultId,
+    transactionId,
+  };
+  const currentIdentity = (): MigrationReviewIdentityState => ({
+    requestId: migrationRequest,
+    vaultId: currentSnapshot?.vault.id ?? null,
+    planId: migrationPlan?.planId ?? null,
+    transactionId: migrationLastTransactionId,
+  });
+  const currentMutation = (): boolean =>
+    mutationRequest === migrationMutationRequest && vaultId === currentSnapshot?.vault.id;
   migrationApplyBusy = true;
   migrationMessage = "Checking the private-state receipt before rollback…";
   migrationMessageKind = "info";
   renderSettings();
   try {
-    const response = await window.threadleaf.rollbackMigration(vaultId, migrationLastTransactionId);
+    const response = await window.threadleaf.rollbackMigration(vaultId, transactionId);
+    if (!migrationReviewOperationIsCurrent(operation, currentIdentity())) {
+      return;
+    }
     if (response.status === "stale-vault") {
       migrationMessage = "The active vault changed before rollback completed.";
       migrationMessageKind = "info";
@@ -5476,15 +5532,20 @@ async function rollbackMigrationReview(): Promise<void> {
     migrationSelection = new Set();
     migrationMessage = `Rollback committed. Newer private changes were not overwritten.${response.runtimeWarning ? ` ${response.runtimeWarning}` : ""}`;
     migrationMessageKind = response.runtimeWarning ? "warning" : "saved";
-    await refreshMigrationPreview(migrationMessage, migrationMessageKind);
+    await refreshMigrationPreview(migrationMessage, migrationMessageKind, true);
   } catch (error) {
+    if (!migrationReviewOperationIsCurrent(operation, currentIdentity())) {
+      return;
+    }
     migrationPlan = null;
     migrationSelection = new Set();
     migrationMessage = error instanceof Error ? error.message : String(error);
     migrationMessageKind = "error";
   } finally {
-    migrationApplyBusy = false;
-    renderSettings();
+    if (currentMutation()) {
+      migrationApplyBusy = false;
+      renderSettings();
+    }
   }
 }
 
@@ -7799,6 +7860,7 @@ function render(snapshot: RuntimeSnapshot): void {
         .catch(() => undefined);
     }
     migrationRequest += 1;
+    migrationMutationRequest += 1;
     migrationBusy = false;
     migrationPreview = null;
     migrationPlan = null;
