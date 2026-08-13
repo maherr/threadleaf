@@ -55,6 +55,7 @@ export const ipcChannels = {
   setNoteWorkflows: "threadleaf:set-note-workflows",
   workspaceSettings: "threadleaf:workspace-settings",
   setWorkspaceSettings: "threadleaf:set-workspace-settings",
+  setWorkspaceMode: "threadleaf:set-workspace-mode",
   resetWorkspaceSettings: "threadleaf:reset-workspace-settings",
   openDailyNote: "threadleaf:open-daily-note",
   renderNoteTemplate: "threadleaf:render-note-template",

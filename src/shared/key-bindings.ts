@@ -16,6 +16,7 @@ import {
 import {
   createDefaultVaultWorkspaceSettings,
   parseVaultWorkspaceSettings,
+  type VaultWorkspaceMode,
   type VaultWorkspaceSettings,
 } from "./workspace-settings";
 
@@ -488,6 +489,18 @@ export function updateVaultWorkspaceSettings(
       [vaultId]: normalized,
     },
   };
+}
+
+export function updateVaultWorkspaceMode(
+  settings: AppSettings,
+  vaultId: string,
+  mode: VaultWorkspaceMode,
+): AppSettings {
+  const workspace = workspaceSettingsForVault(settings, vaultId);
+  return updateVaultWorkspaceSettings(settings, vaultId, {
+    ...workspace,
+    ...mode,
+  });
 }
 
 export function assertNoKeyBindingCollisions(

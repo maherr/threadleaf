@@ -267,6 +267,41 @@ describe("AppSettingsController", () => {
     expect(snapshot.settings.noteWorkflowsByVault).toEqual({});
   });
 
+  it("updates only one vault's persisted workspace mode", async () => {
+    const firstVault = "a".repeat(64);
+    const secondVault = "b".repeat(64);
+    const customized = createDefaultAppSettings();
+    customized.workspaceByVault[firstVault] = {
+      ...createDefaultVaultWorkspaceSettings(),
+      editorMode: "source",
+      documentView: "source",
+    };
+    customized.workspaceByVault[secondVault] = {
+      ...createDefaultVaultWorkspaceSettings(),
+      editorMode: "live",
+      documentView: "live",
+    };
+    const store = new MemorySettingsStore(customized);
+    const controller = await AppSettingsController.open(store);
+
+    const snapshot = await controller.setVaultWorkspaceMode(firstVault, {
+      editorMode: "live",
+      documentView: "reading",
+    });
+
+    expect(controller.getVaultWorkspaceSettings(firstVault)).toMatchObject({
+      editorMode: "live",
+      documentView: "reading",
+    });
+    expect(controller.getVaultWorkspaceSettings(firstVault).defaultNoteFolder).toBe("");
+    expect(controller.getVaultWorkspaceSettings(secondVault)).toMatchObject({
+      editorMode: "live",
+      documentView: "live",
+    });
+    expect(snapshot.settings.workspaceByVault[firstVault]?.editorMode).toBe("live");
+    expect(store.saved).toHaveLength(1);
+  });
+
   it("resets only one vault workspace entry back to validated defaults", async () => {
     const firstVault = "a".repeat(64);
     const secondVault = "b".repeat(64);

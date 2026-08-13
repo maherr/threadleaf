@@ -16,6 +16,11 @@ export type EditorMode = (typeof editorModes)[number];
 export const documentViewModes = ["live", "source", "reading"] as const;
 export type DocumentViewMode = (typeof documentViewModes)[number];
 
+export interface VaultWorkspaceMode {
+  editorMode: EditorMode;
+  documentView: DocumentViewMode;
+}
+
 export const restorePolicies = ["restore", "fresh"] as const;
 export type RestorePolicy = (typeof restorePolicies)[number];
 
@@ -118,6 +123,16 @@ export function parseVaultWorkspaceSettings(value: unknown): VaultWorkspaceSetti
     editorMode: parseEnum(value.editorMode, editorModes, "Editor mode"),
     documentView: parseEnum(value.documentView, documentViewModes, "Document view"),
     restorePolicy: parseEnum(value.restorePolicy, restorePolicies, "Workspace restore policy"),
+  };
+}
+
+export function parseVaultWorkspaceMode(value: unknown): VaultWorkspaceMode {
+  if (!isRecord(value)) {
+    throw new Error("Workspace mode must be an object.");
+  }
+  return {
+    editorMode: parseEnum(value.editorMode, editorModes, "Editor mode"),
+    documentView: parseEnum(value.documentView, documentViewModes, "Document view"),
   };
 }
 

@@ -85,6 +85,7 @@ import {
 } from "../shared/workspace-layout";
 import {
   createDefaultVaultWorkspaceSettings,
+  parseVaultWorkspaceMode,
   parseVaultWorkspaceSettings,
 } from "../shared/workspace-settings";
 import {
@@ -1083,6 +1084,34 @@ function developmentPluginOperationTimeout(): number | undefined {
   return Number.isFinite(timeout) && timeout > 0 ? timeout : undefined;
 }
 
+function developmentWorkspaceSettingsDelay(): number | undefined {
+  if (app.isPackaged) {
+    return undefined;
+  }
+  const raw = process.env.THREADLEAF_WORKSPACE_SETTINGS_DELAY_MS;
+  if (raw === undefined) {
+    return undefined;
+  }
+  const delay = Number(raw);
+  return Number.isFinite(delay) && delay > 0 ? delay : undefined;
+}
+
+function developmentWorkspaceSettingsShouldFail(): boolean {
+  return !app.isPackaged && process.env.THREADLEAF_WORKSPACE_SETTINGS_ERROR === "1";
+}
+
+function developmentSettingsDelay(): number | undefined {
+  if (app.isPackaged) {
+    return undefined;
+  }
+  const raw = process.env.THREADLEAF_SETTINGS_DELAY_MS;
+  if (raw === undefined) {
+    return undefined;
+  }
+  const delay = Number(raw);
+  return Number.isFinite(delay) && delay > 0 ? delay : undefined;
+}
+
 function developmentMigrationInterruptPhase(): MigrationTransactionPhase | null {
   if (app.isPackaged) {
     return null;
@@ -1682,7 +1711,13 @@ function registerIpcHandlers(): void {
     }
     startInitialWorkspaceActivation();
   });
-  ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
+  ipcMain.handle(ipcChannels.settings, async () => {
+    const delay = developmentSettingsDelay();
+    if (delay !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    return settingsController.getSnapshot();
+  });
   ipcMain.handle(ipcChannels.accessibilityPreferences, () =>
     accessibilityPreferencesController.getSnapshot(),
   );
@@ -2380,9 +2415,16 @@ function registerIpcHandlers(): void {
         : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
     },
   );
-  ipcMain.handle(ipcChannels.workspaceSettings, (_event, expectedVaultId: unknown) => {
+  ipcMain.handle(ipcChannels.workspaceSettings, async (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Workspace preference loading requires a string vault identity.");
+    }
+    const delay = developmentWorkspaceSettingsDelay();
+    if (delay !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    if (developmentWorkspaceSettingsShouldFail()) {
+      throw new Error("Test workspace preference refresh failure.");
     }
     if (workspaceController.vaultId !== expectedVaultId) {
       return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
@@ -2410,6 +2452,27 @@ function registerIpcHandlers(): void {
       if (workspaceController.vaultId !== expectedVaultId) {
         return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
       }
+      workspaceController.setWorkspaceSettings(settings, expectedVaultId);
+      return {
+        status: "updated" as const,
+        vaultId: expectedVaultId,
+        settings: workspaceController.getWorkspaceSettings(),
+        appSettings,
+      };
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.setWorkspaceMode,
+    async (_event, expectedVaultId: unknown, modeValue: unknown) => {
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Workspace mode updates require a string vault identity.");
+      }
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      const mode = parseVaultWorkspaceMode(modeValue);
+      const appSettings = await settingsController.setVaultWorkspaceMode(expectedVaultId, mode);
+      const settings = settingsController.getVaultWorkspaceSettings(expectedVaultId);
       workspaceController.setWorkspaceSettings(settings, expectedVaultId);
       return {
         status: "updated" as const,

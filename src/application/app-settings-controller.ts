@@ -12,12 +12,13 @@ import {
   updateVaultAppearance,
   updateVaultNoteWorkflows,
   updateVaultPlugins,
+  updateVaultWorkspaceMode,
   updateVaultWorkspaceSettings,
   workspaceSettingsForVault,
 } from "../shared/key-bindings";
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type { VaultPluginSettings } from "../shared/plugins";
-import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
+import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "../shared/workspace-settings";
 
 export interface AppSettingsStore {
   load(): Promise<AppSettings | null>;
@@ -125,6 +126,13 @@ export class AppSettingsController {
     return this.enqueueSave((settings) =>
       updateVaultWorkspaceSettings(settings, vaultId, workspace),
     );
+  }
+
+  async setVaultWorkspaceMode(
+    vaultId: string,
+    mode: VaultWorkspaceMode,
+  ): Promise<AppSettingsSnapshot> {
+    return this.enqueueSave((settings) => updateVaultWorkspaceMode(settings, vaultId, mode));
   }
 
   async resetVaultWorkspaceSettings(vaultId: string): Promise<AppSettingsSnapshot> {

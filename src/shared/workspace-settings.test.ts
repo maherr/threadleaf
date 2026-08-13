@@ -3,6 +3,7 @@ import { createDefaultAppSettings, parseAppSettings } from "./key-bindings";
 import {
   createDefaultVaultWorkspaceSettings,
   defaultNotePath,
+  parseVaultWorkspaceMode,
   parseVaultWorkspaceSettings,
 } from "./workspace-settings";
 
@@ -32,6 +33,19 @@ describe("workspace settings", () => {
     ).toThrow("hidden or private");
     expect(() => parseVaultWorkspaceSettings({ ...defaults, linkStyle: "html" })).toThrow(
       "Link style",
+    );
+  });
+
+  it("validates a mode update without accepting unrelated workspace fields", () => {
+    expect(parseVaultWorkspaceMode({ editorMode: "source", documentView: "reading" })).toEqual({
+      editorMode: "source",
+      documentView: "reading",
+    });
+    expect(() => parseVaultWorkspaceMode({ editorMode: "reading", documentView: "live" })).toThrow(
+      "Editor mode",
+    );
+    expect(() => parseVaultWorkspaceMode({ editorMode: "live", documentView: "plugin" })).toThrow(
+      "Document view",
     );
   });
 

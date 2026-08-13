@@ -8,7 +8,9 @@ import { deflateSync } from "node:zlib";
 const appRoot = process.cwd();
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-live-preview-"));
-const vaultPath = path.join(testRoot, "vault");
+const vaultAPath = path.join(testRoot, "vault-a");
+const vaultBPath = path.join(testRoot, "vault-b");
+let activeVaultPath = vaultAPath;
 const userDataPath = path.join(testRoot, "user-data");
 const screenshotDirectory = process.env.THREADLEAF_LIVE_PREVIEW_SCREENSHOT_DIR;
 const output = [];
@@ -261,7 +263,9 @@ async function waitFor(probe, message, timeoutMs = 10_000) {
   throw new Error(`${message}. Last observation: ${JSON.stringify(last)}`);
 }
 
-async function launchApplication() {
+async function launchApplication(options = {}) {
+  const { vaultPath = activeVaultPath, env = {} } = options;
+  activeVaultPath = vaultPath;
   const port = await availablePort();
   child = spawn(
     "xvfb-run",
@@ -283,6 +287,7 @@ async function launchApplication() {
         ELECTRON_OZONE_PLATFORM_HINT: "x11",
         THREADLEAF_SAFE_PLUGINS: "1",
         THREADLEAF_VAULT_PATH: vaultPath,
+        ...env,
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -440,11 +445,26 @@ async function waitForShowcase() {
       ready: document.querySelector("#runtime-state")?.textContent === "Ready",
       path: document.querySelector("#note-path")?.textContent ?? "",
       mode: document.querySelector("#note-view")?.dataset.view ?? "",
+      noteHidden: document.querySelector("#note-view")?.hidden ?? true,
       livePressed: document.querySelector("#edit-view")?.getAttribute("aria-pressed"),
       sourcePressed: document.querySelector("#source-view")?.getAttribute("aria-pressed"),
     }))()`);
     return state.ready && state.path === "Showcase.md" ? state : null;
   }, "The Live Preview showcase did not open");
+}
+
+async function waitForPersistedMode(vaultId, expected) {
+  return waitFor(
+    async () => {
+      const snapshot = await evaluate("window.threadleaf.getSettings()");
+      const mode = snapshot?.settings?.workspaceByVault?.[vaultId];
+      return mode?.editorMode === expected.editorMode &&
+        mode?.documentView === expected.documentView
+        ? mode
+        : null;
+    },
+    `Vault ${vaultId} did not persist ${JSON.stringify(expected)}`,
+  );
 }
 
 async function liveSurfaceState() {
@@ -500,19 +520,22 @@ try {
     throw new Error("The Live Preview integration check currently requires Linux and Xvfb.");
   }
   await fs.access(electronPath);
-  await fs.mkdir(vaultPath, { recursive: true });
-  await fs.writeFile(path.join(vaultPath, "Showcase.md"), showcaseSource);
-  await fs.writeFile(path.join(vaultPath, "Linked Note.md"), linkedSource);
-  await fs.writeFile(path.join(vaultPath, "pixel.png"), fixturePng());
+  for (const vaultPath of [vaultAPath, vaultBPath]) {
+    await fs.mkdir(vaultPath, { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Showcase.md"), showcaseSource);
+    await fs.writeFile(path.join(vaultPath, "Linked Note.md"), linkedSource);
+    await fs.writeFile(path.join(vaultPath, "pixel.png"), fixturePng());
+  }
 
   phase = "isolated launch";
-  await launchApplication();
-  await waitFor(async () => {
+  await launchApplication({ vaultPath: vaultAPath });
+  const firstReadySnapshot = await waitFor(async () => {
     const snapshot = await evaluate("window.threadleaf.getSnapshot()");
-    return snapshot?.workspace?.state === "ready" && snapshot?.vault?.path === vaultPath
+    return snapshot?.workspace?.state === "ready" && snapshot?.vault?.path === vaultAPath
       ? snapshot
       : null;
   }, "The isolated vault did not become ready");
+  const vaultAId = firstReadySnapshot.vault.id;
 
   phase = "default Live mode";
   await waitFor(async () => {
@@ -733,7 +756,7 @@ try {
       (await evaluate('document.querySelector("#edit-state")?.textContent ?? ""')) === "Saved",
     "The Live Preview task edit did not save",
   );
-  const savedSource = await fs.readFile(path.join(vaultPath, "Showcase.md"), "utf8");
+  const savedSource = await fs.readFile(path.join(vaultAPath, "Showcase.md"), "utf8");
   assert(
     savedSource === showcaseSource.replace("- [ ] open task", "- [x] open task"),
     "Live Preview changed bytes beyond the exact task marker.",
@@ -784,7 +807,7 @@ try {
   );
   await captureScreenshot("live-preview-light-split");
 
-  phase = "preferred mode restart";
+  phase = "explicit persisted Source preference";
   // At the intentionally narrow split width the primary toolbar can be
   // covered by its neighboring action. The control was already exercised by
   // a real pointer click before splitting; here use its semantic click path
@@ -803,15 +826,175 @@ try {
       editControl.height > 0,
     `The primary Live control was not semantically available at split width: ${JSON.stringify(editControl)}`,
   );
-  await evaluate('document.querySelector("#edit-view")?.click(); true');
+  await evaluate('document.querySelector("#source-view")?.click(); true');
+  const sourcePreference = await waitFor(async () => {
+    const candidate = await waitForShowcase();
+    return candidate.mode === "source" ? candidate : null;
+  }, "The explicit Source mode change did not reach the primary pane");
+  assert(
+    sourcePreference.sourcePressed === "true",
+    "The Source control did not expose pressed state.",
+  );
+  await waitForPersistedMode(vaultAId, { editorMode: "source", documentView: "source" });
+  const seededStaleMode = await evaluate(`(() => {
+    localStorage.setItem("threadleaf-document-view", "reading");
+    localStorage.setItem("threadleaf-editing-view", "reading");
+    return {
+      documentView: localStorage.getItem("threadleaf-document-view"),
+      editingView: localStorage.getItem("threadleaf-editing-view"),
+    };
+  })()`);
+  assert(
+    seededStaleMode.documentView === "reading" && seededStaleMode.editingView === "reading",
+    `Could not seed stale localStorage mode: ${JSON.stringify(seededStaleMode)}`,
+  );
+  await captureScreenshot("live-preview-light-vault-a-source");
   await closeApplication();
-  await launchApplication();
+
+  phase = "vault A delayed settings restart";
+  await launchApplication({
+    vaultPath: vaultAPath,
+    env: {
+      THREADLEAF_SETTINGS_DELAY_MS: "750",
+      THREADLEAF_WORKSPACE_SETTINGS_DELAY_MS: "750",
+    },
+  });
+  await waitFor(async () => {
+    const snapshot = await evaluate("window.threadleaf.getSnapshot()");
+    return snapshot?.workspace?.state === "ready" && snapshot?.vault?.path === vaultAPath
+      ? snapshot
+      : null;
+  }, "Vault A did not become ready after the delayed restart");
+  const delayedA = await waitForShowcase();
+  assert(
+    delayedA.mode !== "live",
+    `Vault A flashed the transient Live mode before settings arrived: ${JSON.stringify(delayedA)}`,
+  );
+  opened = await waitFor(async () => {
+    const candidate = await waitForShowcase();
+    return candidate.mode === "source" ? candidate : null;
+  }, "Vault A did not restore its persisted Source mode after delayed settings refresh");
+  assert(!opened.noteHidden, "Vault A remained hidden after its persisted mode loaded.");
+  assert(
+    opened.livePressed === "false" && opened.sourcePressed === "true",
+    "Vault A mode controls disagreed after restart.",
+  );
+  const restartStaleStorage = await evaluate(`({
+    documentView: localStorage.getItem("threadleaf-document-view"),
+    editingView: localStorage.getItem("threadleaf-editing-view"),
+  })`);
+  assert(
+    restartStaleStorage.documentView === "reading" && restartStaleStorage.editingView === "reading",
+    "The seeded stale localStorage values were not present during the restart check.",
+  );
+  await captureScreenshot("live-preview-light-vault-a-source-restart");
+  await closeApplication();
+
+  phase = "vault B delayed refresh isolation";
+  await launchApplication({
+    vaultPath: vaultBPath,
+    env: { THREADLEAF_WORKSPACE_SETTINGS_DELAY_MS: "750" },
+  });
+  const secondReadySnapshot = await waitFor(async () => {
+    const snapshot = await evaluate("window.threadleaf.getSnapshot()");
+    return snapshot?.workspace?.state === "ready" && snapshot?.vault?.path === vaultBPath
+      ? snapshot
+      : null;
+  }, "Vault B did not become ready");
+  const vaultBId = secondReadySnapshot.vault.id;
+  await waitFor(async () => {
+    const state = await evaluate(`(() => ({
+        target: Boolean(document.querySelector('[data-note-path="Showcase.md"]')),
+        runtime: document.querySelector("#runtime-state")?.textContent ?? "",
+      }))()`);
+    return state.target && state.runtime === "Ready" ? state : null;
+  }, "Vault B Showcase did not appear in the virtual file list");
+  await clickSelector('[data-note-path="Showcase.md"]');
   opened = await waitForShowcase();
-  assert(opened.mode === "live", "The preferred Live editing mode did not survive restart.");
+  assert(opened.mode === "live", `Vault B inherited Vault A's mode: ${JSON.stringify(opened)}`);
+  assert(
+    opened.livePressed === "true" && opened.sourcePressed === "false",
+    "Vault B Live controls were not reachable.",
+  );
+  await delay(900);
+  opened = await waitForShowcase();
+  assert(opened.mode === "live", "Vault B changed mode when delayed workspace settings arrived.");
+  const vaultBSettings = await evaluate("window.threadleaf.getSettings()");
+  assert(
+    vaultBSettings?.settings?.workspaceByVault?.[vaultBId] === undefined,
+    "Opening Vault B unexpectedly created a persisted mode entry.",
+  );
+  await closeApplication();
+
+  phase = "vault B settings refresh error isolation";
+  await launchApplication({
+    vaultPath: vaultBPath,
+    env: { THREADLEAF_WORKSPACE_SETTINGS_ERROR: "1" },
+  });
+  await waitFor(async () => {
+    const snapshot = await evaluate("window.threadleaf.getSnapshot()");
+    return snapshot?.workspace?.state === "ready" && snapshot?.vault?.path === vaultBPath
+      ? snapshot
+      : null;
+  }, "Vault B did not become ready after the refresh-error restart");
+  await clickSelector('[data-note-path="Showcase.md"]');
+  opened = await waitForShowcase();
+  assert(
+    opened.mode === "live",
+    `Vault B fell back to an invalid mode after refresh failure: ${JSON.stringify(opened)}`,
+  );
+  await delay(500);
+  opened = await waitForShowcase();
+  assert(opened.mode === "live", "Vault B changed mode after a failed workspace settings refresh.");
+  await closeApplication();
+
+  phase = "vault A persisted restart and reachable controls";
+  await launchApplication({ vaultPath: vaultAPath });
+  await waitFor(async () => {
+    const snapshot = await evaluate("window.threadleaf.getSnapshot()");
+    return snapshot?.workspace?.state === "ready" && snapshot?.vault?.path === vaultAPath
+      ? snapshot
+      : null;
+  }, "Vault A did not become ready after Vault B");
+  opened = await waitForShowcase();
+  assert(
+    opened.mode === "source",
+    `Vault A lost its persisted Source mode after Vault B: ${JSON.stringify(opened)}`,
+  );
+  for (const selector of ["#edit-view", "#source-view", "#read-view"]) {
+    const control = await evaluate(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!(element instanceof HTMLButtonElement)) return { available: false };
+      const rect = element.getBoundingClientRect();
+      return { available: true, hidden: element.hidden, disabled: element.disabled, width: rect.width, height: rect.height };
+    })()`);
+    assert(
+      control.available &&
+        !control.hidden &&
+        !control.disabled &&
+        control.width > 0 &&
+        control.height > 0,
+      `Mode control was not reachable after vault isolation: ${selector} ${JSON.stringify(control)}`,
+    );
+  }
+  await evaluate('document.querySelector("#read-view")?.click(); true');
+  await waitFor(
+    async () => (await liveSurfaceState()).mode === "reading",
+    "Reading mode control did not respond",
+  );
+  await evaluate('document.querySelector("#source-view")?.click(); true');
+  opened = await waitFor(async () => {
+    const candidate = await waitForShowcase();
+    return candidate.mode === "source" ? candidate : null;
+  }, "Source mode control did not restore the persisted editing surface");
+  assert(
+    opened.sourcePressed === "true",
+    "Source mode was not pressed after the reachable-control check.",
+  );
   await closeApplication();
 
   console.log(
-    "Verified isolated virtual input and screenshots for default Live Preview, rich Markdown rendering, exact cursor reveal, task edit/undo/redo/save bytes, Source round trip, internal-link activation, pane-local modes, both themes, and restart persistence.",
+    "Verified isolated virtual input and screenshots for default Live Preview, rich Markdown rendering, exact cursor reveal, task edit/undo/redo/save bytes, Source round trip, internal-link activation, pane-local modes, A/B vault mode isolation, seeded stale localStorage, delayed/error refreshes, both themes, restart persistence, and reachable mode controls.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

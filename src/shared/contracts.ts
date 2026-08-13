@@ -41,7 +41,7 @@ import type {
   AppearancePackageReview,
 } from "./theme-packages";
 import type { WorkspaceLayoutSnapshot } from "./workspace-layout";
-import type { VaultWorkspaceSettings } from "./workspace-settings";
+import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "./workspace-settings";
 
 export type AppearanceUpdateResponse =
   | {
@@ -1051,6 +1051,10 @@ export interface ThreadleafBridge {
   setWorkspaceSettings(
     expectedVaultId: string,
     settings: VaultWorkspaceSettings,
+  ): Promise<WorkspaceSettingsUpdateResponse>;
+  setWorkspaceMode(
+    expectedVaultId: string,
+    mode: VaultWorkspaceMode,
   ): Promise<WorkspaceSettingsUpdateResponse>;
   resetWorkspaceSettings(expectedVaultId: string): Promise<WorkspaceSettingsUpdateResponse>;
   openDailyNote(expectedVaultId: string): Promise<NoteCreateResponse>;

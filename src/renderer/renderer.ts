@@ -795,6 +795,8 @@ let editorDraftPersistenceError: string | null = null;
 let editorDraftCheckedVaultId: string | null = null;
 let editorDraftRestoreRequest = 0;
 let pendingCleanDiskAcceptance = false;
+let modeVaultId: string | null = null;
+let modeInitialized = false;
 let documentViewMode: DocumentViewMode = "live";
 let editingViewMode: EditingViewMode = "live";
 let renderedPreviewPath: string | null = null;
@@ -841,6 +843,7 @@ let workspaceSettingsRequest = 0;
 let workspaceSettingsMessage = "Workspace preferences are private to this vault.";
 let workspaceSettingsMessageKind: "info" | "saved" | "error" = "info";
 let workspaceSettingsDraft: VaultWorkspaceSettings | null = null;
+let workspaceModeRequest = 0;
 let appearanceSnapshot: AppearanceSnapshot | null = null;
 let appearanceBusy = false;
 let appearanceRequest = 0;
@@ -963,6 +966,8 @@ interface WorkspacePaneSession {
   editorDraftCheckedVaultId: string | null;
   editorDraftRestoreRequest: number;
   pendingCleanDiskAcceptance: boolean;
+  modeVaultId: string | null;
+  modeInitialized: boolean;
   documentViewMode: DocumentViewMode;
   editingViewMode: EditingViewMode;
   renderedPreviewPath: string | null;
@@ -993,6 +998,8 @@ function createWorkspacePaneSession(): WorkspacePaneSession {
     editorDraftCheckedVaultId: null,
     editorDraftRestoreRequest: 0,
     pendingCleanDiskAcceptance: false,
+    modeVaultId: null,
+    modeInitialized: false,
     documentViewMode: "live",
     editingViewMode: "live",
     renderedPreviewPath: null,
@@ -1043,6 +1050,8 @@ function captureActivePaneSession(): void {
   session.editorDraftCheckedVaultId = editorDraftCheckedVaultId;
   session.editorDraftRestoreRequest = editorDraftRestoreRequest;
   session.pendingCleanDiskAcceptance = pendingCleanDiskAcceptance;
+  session.modeVaultId = modeVaultId;
+  session.modeInitialized = modeInitialized;
   session.documentViewMode = documentViewMode;
   session.editingViewMode = editingViewMode;
   session.renderedPreviewPath = renderedPreviewPath;
@@ -1088,6 +1097,16 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
   editorDraftCheckedVaultId = session.editorDraftCheckedVaultId;
   editorDraftRestoreRequest = session.editorDraftRestoreRequest;
   pendingCleanDiskAcceptance = session.pendingCleanDiskAcceptance;
+  // Mode state is pane-local, but it must never be carried into another vault.
+  if (session.modeVaultId !== currentSnapshot?.vault.id) {
+    session.modeVaultId = currentSnapshot?.vault.id ?? null;
+    session.modeInitialized = false;
+    session.documentViewMode = "live";
+    session.editingViewMode = "live";
+  }
+  session.modeVaultId = currentSnapshot?.vault.id ?? null;
+  modeVaultId = session.modeVaultId;
+  modeInitialized = session.modeInitialized;
   documentViewMode = session.documentViewMode;
   editingViewMode = session.editingViewMode;
   renderedPreviewPath = session.renderedPreviewPath;
@@ -2072,6 +2091,30 @@ function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
   const activeCanvas = workspacePaneSnapshot()?.activeCanvas;
   const hasCanvas = activeCanvas !== undefined && activeCanvas !== null;
+  const settingsPending = Boolean(currentSnapshot?.vault.id && hasNote && !settingsLoaded);
+  if (settingsPending) {
+    // The first settings snapshot is the only source of truth for a vault's
+    // persisted mode. Keep the note surface hidden until it arrives so a
+    // stale transient value cannot flash before the persisted preference wins.
+    elements.noteEmpty.hidden = true;
+    elements.noteEditorShell.hidden = true;
+    elements.notePreview.hidden = true;
+    elements.noteView.hidden = true;
+    elements.canvasView.hidden = !hasCanvas;
+    elements.pluginSurfaceHost.hidden = true;
+    elements.notePath.textContent = loadedNote?.path ?? "No note selected";
+    elements.editView.disabled = true;
+    elements.sourceView.disabled = true;
+    elements.readView.disabled = true;
+    elements.pluginView.disabled = true;
+    elements.editView.setAttribute("aria-pressed", "false");
+    elements.sourceView.setAttribute("aria-pressed", "false");
+    elements.readView.setAttribute("aria-pressed", "false");
+    elements.pluginView.setAttribute("aria-pressed", "false");
+    elements.noteView.dataset.view = "pending";
+    elements.noteEditorShell.dataset.editorMode = "pending";
+    return;
+  }
   const reading = hasNote && documentViewMode === "reading";
   const live = hasNote && documentViewMode === "live";
   const source = hasNote && documentViewMode === "source";
@@ -2255,6 +2298,59 @@ async function activatePluginSettings(pluginId: string): Promise<void> {
   }
 }
 
+function resetPaneDocumentModes(vaultId: string | null): void {
+  for (const paneId of ["primary", "secondary"] as const) {
+    runInPaneContext(paneId, () => {
+      modeVaultId = vaultId;
+      modeInitialized = false;
+      documentViewMode = "live";
+      editingViewMode = "live";
+      syncEditorPresentation();
+    });
+  }
+  activatePaneContext(activePaneContextId);
+  renderDocumentView();
+}
+
+function modeForDocumentView(mode: Exclude<DocumentViewMode, "plugin">): {
+  editorMode: VaultWorkspaceSettings["editorMode"];
+  documentView: VaultWorkspaceSettings["documentView"];
+} {
+  return {
+    editorMode: mode === "source" ? "source" : editingViewMode,
+    documentView: mode,
+  };
+}
+
+function persistDocumentMode(): void {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || !settingsLoaded) {
+    return;
+  }
+  const request = ++workspaceModeRequest;
+  const persistedDocumentView = documentViewMode === "plugin" ? editingViewMode : documentViewMode;
+  void window.threadleaf
+    .setWorkspaceMode(expectedVaultId, modeForDocumentView(persistedDocumentView))
+    .then((response) => {
+      if (
+        request !== workspaceModeRequest ||
+        response.status !== "updated" ||
+        response.vaultId !== currentSnapshot?.vault.id
+      ) {
+        return;
+      }
+      workspaceSettingsDraft = { ...response.settings };
+      applySettingsSnapshot(response.appSettings);
+    })
+    .catch((error) => {
+      if (request === workspaceModeRequest && currentSnapshot?.vault.id === expectedVaultId) {
+        showToast(
+          `Workspace mode was not saved: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
+}
+
 function setDocumentView(mode: DocumentViewMode, focus = true): void {
   if (
     !loadedNote &&
@@ -2270,12 +2366,11 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
     editingViewMode = mode;
   }
   documentViewMode = mode;
+  modeVaultId = currentSnapshot?.vault.id ?? null;
+  modeInitialized = true;
   if (mode !== "plugin") {
     pluginSettingsTargetId = null;
-    localStorage.setItem("threadleaf-document-view", mode);
-    if (mode === "live" || mode === "source") {
-      localStorage.setItem("threadleaf-editing-view", mode);
-    }
+    persistDocumentMode();
   }
   if (editingModeChanged) {
     syncEditorPresentation();
@@ -2303,12 +2398,18 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
   }
 }
 
-function applyWorkspaceViewDefaults(settings: VaultWorkspaceSettings): void {
+function applyWorkspaceViewDefaults(
+  settings: VaultWorkspaceSettings,
+  options: { force?: boolean } = {},
+): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
   for (const paneId of ["primary", "secondary"] as const) {
     runInPaneContext(paneId, () => {
-      if (dirty || saving) {
+      if (dirty || saving || (!options.force && modeInitialized && modeVaultId === vaultId)) {
         return;
       }
+      modeVaultId = vaultId;
+      modeInitialized = true;
       editingViewMode = settings.documentView === "source" ? "source" : settings.editorMode;
       documentViewMode = settings.documentView;
       syncEditorPresentation();
@@ -2589,7 +2690,6 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   settingsSnapshot = snapshot;
   settingsLoaded = true;
   updateShortcutLabels();
-  renderDocumentView();
   if (snapshot.warning && snapshot.warning !== lastSettingsWarning) {
     showToast(snapshot.warning);
   }
@@ -2607,6 +2707,7 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
     workspaceSettingsDraft = { ...nextWorkspaceSettings };
     applyWorkspaceViewDefaults(nextWorkspaceSettings);
   }
+  renderDocumentView();
   if (
     vaultId &&
     !appearanceBusy &&
@@ -3858,6 +3959,7 @@ async function saveWorkspaceSettings(): Promise<void> {
   if (!expectedVaultId || vaultOpening() || workspaceSettingsBusy) {
     return;
   }
+  const previousPreference = currentWorkspacePreference();
   const requestedSettings = captureWorkspaceSettingsDraft();
   workspaceSettingsBusy = true;
   workspaceSettingsMessage = "Saving private workspace preferences.";
@@ -3876,7 +3978,11 @@ async function saveWorkspaceSettings(): Promise<void> {
     }
     workspaceSettingsDraft = { ...response.settings };
     applySettingsSnapshot(response.appSettings);
-    applyWorkspaceViewDefaults(response.settings);
+    applyWorkspaceViewDefaults(response.settings, {
+      force:
+        previousPreference.editorMode !== response.settings.editorMode ||
+        previousPreference.documentView !== response.settings.documentView,
+    });
     workspaceSettingsMessage = "Workspace preferences saved privately for this vault.";
     workspaceSettingsMessageKind = "saved";
   } catch (error) {
@@ -3907,7 +4013,7 @@ async function resetWorkspaceSettings(): Promise<void> {
     }
     workspaceSettingsDraft = { ...response.settings };
     applySettingsSnapshot(response.appSettings);
-    applyWorkspaceViewDefaults(response.settings);
+    applyWorkspaceViewDefaults(response.settings, { force: true });
     workspaceSettingsMessage = "Safe workspace defaults restored for this vault.";
     workspaceSettingsMessageKind = "saved";
   } catch (error) {
@@ -7601,6 +7707,13 @@ async function togglePluginPopout(): Promise<void> {
 function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
+  if (previousVaultId !== snapshot.vault.id) {
+    workspaceModeRequest += 1;
+    resetPaneDocumentModes(snapshot.vault.id);
+    if (settingsLoaded && snapshot.vault.id) {
+      applyWorkspaceViewDefaults(currentWorkspacePreference());
+    }
+  }
   renderWorkspaceLayout(snapshot.workspaceLayout);
   if (snapshot.vault.id) {
     graphView.onSnapshot({
@@ -10456,22 +10569,7 @@ document.addEventListener("keydown", (event) => {
 
 updateShortcutLabels();
 
-const storedDocumentView = localStorage.getItem("threadleaf-document-view");
-const storedEditingView = localStorage.getItem("threadleaf-editing-view");
-for (const paneId of ["primary", "secondary"] as const) {
-  runInPaneContext(paneId, () => {
-    editingViewMode =
-      storedEditingView === "source" || storedDocumentView === "source" ? "source" : "live";
-    documentViewMode =
-      storedDocumentView === "reading"
-        ? "reading"
-        : storedDocumentView === "source" || storedDocumentView === "live"
-          ? storedDocumentView
-          : editingViewMode;
-    syncEditorPresentation();
-  });
-}
-activatePaneContext("primary");
+resetPaneDocumentModes(null);
 
 applyColorScheme("system");
 const handleSystemColorSchemeChange = (): void => {
@@ -10620,7 +10718,13 @@ void window.threadleaf
 void window.threadleaf
   .getSettings()
   .then(applySettingsSnapshot)
-  .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
+  .catch((error: unknown) => {
+    // A missing settings snapshot falls back to safe Live mode, but it must
+    // still release the startup gate so the editor is reachable.
+    settingsLoaded = true;
+    renderDocumentView();
+    showToast(error instanceof Error ? error.message : String(error));
+  });
 void window.threadleaf
   .getAccessibilityPreferences()
   .then(applyAccessibilityPreferences)

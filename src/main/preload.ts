@@ -66,7 +66,7 @@ import type {
   AppearancePackagePreviewResponse,
 } from "../shared/theme-packages";
 import type { WorkspaceDockId, WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
-import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
+import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "../shared/workspace-settings";
 
 const bridge: ThreadleafBridge = {
   exportSupportBundle: () =>
@@ -312,6 +312,12 @@ const bridge: ThreadleafBridge = {
       ipcChannels.setWorkspaceSettings,
       expectedVaultId,
       settings,
+    ) as Promise<WorkspaceSettingsUpdateResponse>,
+  setWorkspaceMode: (expectedVaultId, mode: VaultWorkspaceMode) =>
+    ipcRenderer.invoke(
+      ipcChannels.setWorkspaceMode,
+      expectedVaultId,
+      mode,
     ) as Promise<WorkspaceSettingsUpdateResponse>,
   resetWorkspaceSettings: (expectedVaultId) =>
     ipcRenderer.invoke(
