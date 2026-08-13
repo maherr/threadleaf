@@ -825,6 +825,102 @@ describe("WorkspaceRuntime", () => {
     ]);
   });
 
+  it("lists recoverable trash and restores exact bytes through the live index", async () => {
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Linked Note.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+    await workspace.deleteNote(note.path, note.revision, workspace.vaultId);
+
+    const trash = await workspace.getVaultTrash(workspace.vaultId);
+    expect(trash).toMatchObject({
+      status: "ready",
+      vaultId: workspace.vaultId,
+      total: 1,
+      truncated: false,
+      entries: [
+        {
+          path: "Linked Note.md",
+          trashPath: ".trash/Linked Note.md",
+          revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+          size: Buffer.byteLength(note.content),
+        },
+      ],
+    });
+    if (trash.status !== "ready" || !trash.entries[0]) {
+      throw new Error("Expected one recoverable trash entry.");
+    }
+
+    const restored = await workspace.restoreNote(
+      trash.entries[0].path,
+      trash.entries[0].revision,
+      workspace.vaultId,
+    );
+
+    expect(restored.outcome).toMatchObject({
+      status: "committed",
+      from: ".trash/Linked Note.md",
+      to: "Linked Note.md",
+    });
+    expect(restored.snapshot.workspace).toMatchObject({
+      files: [{ path: "Linked Note.md" }, { path: "Welcome.md", unresolvedCount: 0 }],
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).resolves.toBe(
+      note.content,
+    );
+    await expect(fs.stat(path.join(vaultPath, ".trash", "Linked Note.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(workspace.getVaultTrash(workspace.vaultId)).resolves.toMatchObject({
+      status: "ready",
+      total: 0,
+      entries: [],
+    });
+  });
+
+  it("keeps both files when a recovery entry changes or its destination is occupied", async () => {
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Linked Note.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) {
+      throw new Error("Expected an active note.");
+    }
+    await workspace.deleteNote(note.path, note.revision, workspace.vaultId);
+    const trash = await workspace.getVaultTrash(workspace.vaultId);
+    if (trash.status !== "ready" || !trash.entries[0]) {
+      throw new Error("Expected one recoverable trash entry.");
+    }
+
+    await fs.writeFile(path.join(vaultPath, ".trash", note.path), "new trash bytes", "utf8");
+    const stale = await workspace.restoreNote(
+      note.path,
+      trash.entries[0].revision,
+      workspace.vaultId,
+    );
+    expect(stale.outcome).toMatchObject({ status: "conflict", reason: "source-revision-changed" });
+    await expect(fs.stat(path.join(vaultPath, note.path))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    const currentTrash = await workspace.getVaultTrash(workspace.vaultId);
+    if (currentTrash.status !== "ready" || !currentTrash.entries[0]) {
+      throw new Error("Expected the changed recovery entry.");
+    }
+    await fs.writeFile(path.join(vaultPath, note.path), "replacement", "utf8");
+    const occupied = await workspace.restoreNote(
+      note.path,
+      currentTrash.entries[0].revision,
+      workspace.vaultId,
+    );
+    expect(occupied.outcome).toMatchObject({ status: "conflict", reason: "target-exists" });
+    await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe("replacement");
+    await expect(fs.readFile(path.join(vaultPath, ".trash", note.path), "utf8")).resolves.toBe(
+      "new trash bytes",
+    );
+  });
+
   it("rejects stale vaults, stale revisions, and occupied trash paths without changing tabs", async () => {
     const workspace = await openRuntime();
     const initial = await workspace.getSnapshot();

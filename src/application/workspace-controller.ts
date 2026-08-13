@@ -15,6 +15,7 @@ import type {
   NotePropertyRemoveResponse,
   NotePropertySetResponse,
   NotePropertyType,
+  NoteRestoreResponse,
   NoteSaveResponse,
   PluginEditorContext,
   RuntimeSnapshot,
@@ -24,6 +25,7 @@ import type {
   VaultNoteEmbedResponse,
   VaultSearchResponse,
   VaultSelectionSource,
+  VaultTrashResponse,
   WorkspacePaneId,
   WorkspaceSplitDirection,
 } from "../shared/contracts";
@@ -84,6 +86,12 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteDeleteResponse>;
+  getVaultTrash(expectedVaultId: string): Promise<VaultTrashResponse>;
+  restoreNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteRestoreResponse>;
   createNote(
     filePath: string,
     content: string,
@@ -548,6 +556,30 @@ export class WorkspaceController {
     expectedVaultId: string,
   ): Promise<NoteDeleteResponse> {
     return this.activeRuntime("trash a note").deleteNote(
+      filePath,
+      expectedRevision,
+      expectedVaultId,
+    );
+  }
+
+  async getVaultTrash(expectedVaultId: string): Promise<VaultTrashResponse> {
+    const runtime = this.activeRuntime("inspect recoverable trash");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.getVaultTrash(expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  restoreNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteRestoreResponse> {
+    return this.activeRuntime("restore a note").restoreNote(
       filePath,
       expectedRevision,
       expectedVaultId,

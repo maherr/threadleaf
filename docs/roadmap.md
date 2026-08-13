@@ -303,7 +303,9 @@ Exit gate: selected high-value plugins complete named workflows against public f
       search, and outline.
 - [x] Bounded global and local graph views with indexed filtering, local depth, optional orphans and
       direction, pointer and keyboard navigation, accessible note controls, and private preferences.
-- [ ] Bookmarks, desktop file recovery, and publish-ready export.
+- [x] Desktop file recovery with exact-revision restore, no-overwrite conflicts, filtering,
+      watcher and index convergence, native commands, and isolated virtual-input coverage.
+- [ ] Bookmarks and publish-ready export.
 - [ ] Keyboard navigation, screen-reader semantics, reduced motion, contrast, zoom, localization,
       bidirectional text, and touch-target audits across every reachable control.
 - [x] Unsigned Linux x64 AppImage and RPM artifacts with a stable application identity, complete

@@ -81,6 +81,7 @@ import {
   renderMarkdownPreview,
 } from "./markdown-preview";
 import { pluginViewTypeForPath } from "./plugin-view-model";
+import { RecoveryViewController } from "./recovery-view";
 import "./styles.css";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
 
@@ -160,6 +161,7 @@ const elements = {
   themeLabel: getElement("theme-label"),
   commandPalette: getDialog("command-palette"),
   graphDialog: getDialog("graph-dialog"),
+  recoveryDialog: getDialog("recovery-dialog"),
   paletteQuery: getInput("palette-query"),
   paletteClose: getButton("palette-close"),
   paletteCount: getElement("palette-count"),
@@ -492,6 +494,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.open-daily-note",
     label: "Open today's daily note",
     description: "Open today's note or create it through the recoverable writer.",
+  },
+  {
+    id: "workspace.open-file-recovery",
+    label: "Open file recovery",
+    description: "Inspect recoverable vault trash and restore exact note paths without overwrite.",
   },
   {
     id: "workspace.open-graph-view",
@@ -1180,6 +1187,27 @@ function commandCatalog(): RendererCommand[] {
       run: openTodaysDailyNote,
     },
     {
+      id: "workspace.open-file-recovery",
+      label: "Open file recovery",
+      category: "File",
+      keywords: ["recovery", "restore", "trash", "deleted", "files"],
+      shortcut: shortcutFor("workspace.open-file-recovery"),
+      enabled: Boolean(currentSnapshot?.vault.id && !opening && !readOnly && !busy),
+      disabledReason: opening
+        ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
+        : readOnly
+          ? "Open a writable local vault before restoring notes."
+          : currentSnapshot?.vault.id
+            ? "Threadleaf is finishing another action."
+            : "No vault is active.",
+      run: () => {
+        if (graphView.open) {
+          graphView.close(false);
+        }
+        return recoveryView.show();
+      },
+    },
+    {
       id: "workspace.open-graph-view",
       label: "Open vault graph",
       category: "View",
@@ -1189,7 +1217,12 @@ function commandCatalog(): RendererCommand[] {
       disabledReason: opening
         ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
         : "No vault is active.",
-      run: () => graphView.show("global"),
+      run: () => {
+        if (recoveryView.open) {
+          recoveryView.close(false);
+        }
+        return graphView.show("global");
+      },
     },
     {
       id: "workspace.open-local-graph",
@@ -1201,7 +1234,12 @@ function commandCatalog(): RendererCommand[] {
       disabledReason: opening
         ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
         : "Open a note before opening its local graph.",
-      run: () => graphView.show("local"),
+      run: () => {
+        if (recoveryView.open) {
+          recoveryView.close(false);
+        }
+        return graphView.show("local");
+      },
     },
     {
       id: "workspace.move-note",
@@ -5867,6 +5905,11 @@ function render(snapshot: RuntimeSnapshot): void {
       indexGeneration: snapshot.workspace?.indexGeneration ?? 0,
       rootPath: loadedNote?.path ?? null,
     });
+    recoveryView.onSnapshot({
+      vaultId: snapshot.vault.id,
+      vaultName: snapshot.vault.name,
+      readOnly: snapshot.vault.mode === "synthetic-read-only",
+    });
   }
   if (previousVaultId !== snapshot.vault.id) {
     for (const paneId of ["primary", "secondary"] as const) {
@@ -7517,6 +7560,32 @@ const graphView = new GraphViewController(elements.graphDialog, {
   report: showToast,
 });
 
+const recoveryView = new RecoveryViewController(elements.recoveryDialog, {
+  context: () => {
+    if (!currentSnapshot?.vault.id) {
+      return null;
+    }
+    return {
+      vaultId: currentSnapshot.vault.id,
+      vaultName: currentSnapshot.vault.name,
+      readOnly: currentSnapshot.vault.mode === "synthetic-read-only",
+    };
+  },
+  load: (expectedVaultId) => window.threadleaf.getVaultTrash(expectedVaultId),
+  restore: (path, expectedRevision, expectedVaultId) =>
+    window.threadleaf.restoreNote(path, expectedRevision, expectedVaultId),
+  renderSnapshot: render,
+  setPluginSurfaceVisible: (visible) => {
+    if (
+      (!visible && documentViewMode === "plugin") ||
+      (visible && !pluginSurfacePresentationVisible)
+    ) {
+      setPluginSurfacePresentationVisible(visible);
+    }
+  },
+  report: showToast,
+});
+
 for (const [paneId, pane] of paneElements) {
   bindWorkspacePaneEvents(paneId, pane);
 }
@@ -7803,6 +7872,7 @@ document.addEventListener("keydown", (event) => {
     if (
       elements.settingsDialog.open ||
       elements.graphDialog.open ||
+      elements.recoveryDialog.open ||
       elements.newNoteDialog.open ||
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
@@ -7824,6 +7894,7 @@ document.addEventListener("keydown", (event) => {
   if (targetId === "settings.open-keybindings") {
     if (
       elements.graphDialog.open ||
+      elements.recoveryDialog.open ||
       elements.newNoteDialog.open ||
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
@@ -7846,6 +7917,7 @@ document.addEventListener("keydown", (event) => {
     elements.commandPalette.open ||
     elements.settingsDialog.open ||
     elements.graphDialog.open ||
+    elements.recoveryDialog.open ||
     elements.newNoteDialog.open ||
     elements.templatePickerDialog.open ||
     elements.propertyDialog.open ||
@@ -7971,6 +8043,7 @@ window.addEventListener(
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
     pluginSurfaceResizeObserver.disconnect();
     graphView.destroy();
+    recoveryView.destroy();
     for (const session of paneSessions.values()) {
       session.editor?.destroy();
     }

@@ -557,6 +557,14 @@ transaction, removes the note from the derived index, closes its tab, selects th
 then left, and persists that workspace state best effort. Failure to persist workspace metadata
 cannot retroactively turn an already committed vault move into a failed deletion.
 
+Desktop File Recovery is a vault-bound projection over that same trash service. It reads at most
+500 recoverable Markdown entries per refresh, reports the full count when the catalog is larger,
+and keeps every entry bound to the revision that was displayed. Restore crosses validated IPC with
+the active vault identity, refuses a changed recovery source or occupied live destination, then
+attributes the committed rename to the watcher and refreshes the restored path in the derived
+index before publishing the next snapshot. The dialog filters original and `.trash/` paths,
+surfaces collision evidence without changing either copy, and exposes no permanent-delete action.
+
 ### Write authority
 
 Every mutation goes through one vault writer. It resolves and validates paths, compares a stable

@@ -11,6 +11,7 @@ import type {
   NotePropertyRemoveResponse,
   NotePropertySetResponse,
   NotePropertyType,
+  NoteRestoreResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
   VaultGraphRequest,
@@ -18,6 +19,7 @@ import type {
   VaultImageResponse,
   VaultNoteEmbedResponse,
   VaultSearchResponse,
+  VaultTrashResponse,
 } from "../shared/contracts";
 import {
   type VaultSelectionStore,
@@ -92,6 +94,11 @@ class FakeRuntime implements WorkspaceRuntimePort {
     confirmationId?: string;
   } | null = null;
   deletedNote: {
+    filePath: string;
+    expectedRevision: string;
+    expectedVaultId: string;
+  } | null = null;
+  restoredNote: {
     filePath: string;
     expectedRevision: string;
     expectedVaultId: string;
@@ -172,6 +179,26 @@ class FakeRuntime implements WorkspaceRuntimePort {
       truncated: false,
       nodes: [],
       edges: [],
+    };
+  }
+
+  async getVaultTrash(expectedVaultId: string): Promise<VaultTrashResponse> {
+    if (expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      total: 1,
+      truncated: false,
+      entries: [
+        {
+          path: "Notes/Recovered.md",
+          trashPath: ".trash/Notes/Recovered.md",
+          revision: "c".repeat(64),
+          size: 9,
+        },
+      ],
     };
   }
 
@@ -274,6 +301,23 @@ class FakeRuntime implements WorkspaceRuntimePort {
         from: filePath,
         to: `.trash/${filePath}`,
         transactionId: "delete",
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async restoreNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteRestoreResponse> {
+    this.restoredNote = { filePath, expectedRevision, expectedVaultId };
+    return {
+      outcome: {
+        status: "committed",
+        from: `.trash/${filePath}`,
+        to: filePath,
+        transactionId: "restore",
       },
       snapshot: this.#snapshot,
     };
@@ -892,6 +936,37 @@ describe("WorkspaceController", () => {
 
     expect(harness.runtimes[0]?.deletedNote).toEqual({
       filePath: "Notes/Current.md",
+      expectedRevision,
+      expectedVaultId,
+    });
+    await controller.close();
+  });
+
+  it("guards trash inspection by vault identity and forwards exact restore evidence", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+    const expectedRevision = "c".repeat(64);
+
+    await expect(controller.getVaultTrash("stale-vault")).resolves.toEqual({
+      status: "stale-vault",
+      vaultId: expectedVaultId,
+    });
+    await expect(controller.getVaultTrash(expectedVaultId)).resolves.toMatchObject({
+      status: "ready",
+      total: 1,
+      entries: [{ path: "Notes/Recovered.md", revision: expectedRevision }],
+    });
+    await controller.restoreNote("Notes/Recovered.md", expectedRevision, expectedVaultId);
+
+    expect(harness.runtimes[0]?.restoredNote).toEqual({
+      filePath: "Notes/Recovered.md",
       expectedRevision,
       expectedVaultId,
     });

@@ -1056,6 +1056,12 @@ function registerIpcHandlers(): void {
       );
     },
   );
+  ipcMain.handle(ipcChannels.vaultTrash, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Vault trash inspection requires a string vault identity.");
+    }
+    return workspaceController.getVaultTrash(expectedVaultId);
+  });
   ipcMain.handle(
     ipcChannels.loadVaultImage,
     (_event, sourceNotePath: unknown, target: unknown, expectedVaultId: unknown) => {
@@ -1360,6 +1366,19 @@ function registerIpcHandlers(): void {
         throw new Error("Delete note requires string path, revision, and vault values.");
       }
       return workspaceController.deleteNote(filePath, expectedRevision, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.restoreNote,
+    (_event, filePath: unknown, expectedRevision: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Restore note requires string path, revision, and vault values.");
+      }
+      return workspaceController.restoreNote(filePath, expectedRevision, expectedVaultId);
     },
   );
   ipcMain.handle(

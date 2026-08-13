@@ -76,7 +76,11 @@ bytes to the same path under vault-local `.trash/`; dedicated list and restore c
 recovery content outside the ordinary corpus and never overwrite either side of a collision. The
 desktop Trash action uses the same revision-bound service behind a confirmation that names both
 paths and the indexed-link impact. A committed move closes the note tab and selects its surviving
-neighbor; a stale revision or occupied trash path remains reviewable and changes nothing.
+neighbor; a stale revision or occupied trash path remains reviewable and changes nothing. Desktop
+File Recovery lists recoverable Markdown notes without returning them to the ordinary corpus,
+filters original and recovery paths, and restores the exact listed revision to its original path.
+If that path is occupied or the recovery entry changed, both copies remain untouched and the
+dialog explains the conflict; it intentionally offers no permanent-delete action.
 Headless property commands list and read the current indexed projection, then set or remove typed
 top-level YAML properties through a byte-preserving, revision-checked application service. The
 writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated

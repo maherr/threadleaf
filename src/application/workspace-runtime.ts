@@ -26,6 +26,8 @@ import type {
   NotePropertySetOutcome,
   NotePropertySetResponse,
   NotePropertyType,
+  NoteRestoreOutcome,
+  NoteRestoreResponse,
   NoteSaveOutcome,
   NoteSaveResponse,
   PluginEditorContext,
@@ -36,6 +38,7 @@ import type {
   VaultNoteEmbedResponse,
   VaultSearchResponse,
   VaultSelectionSource,
+  VaultTrashResponse,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
@@ -64,7 +67,12 @@ import {
   type RenderedNoteTemplate,
   renderNoteTemplate,
 } from "./note-template";
-import { trashMarkdownNote, vaultTrashDirectory } from "./note-trash";
+import {
+  listTrashedMarkdownNotes,
+  restoreTrashedMarkdownNote,
+  trashMarkdownNote,
+  vaultTrashDirectory,
+} from "./note-trash";
 import { projectVaultGraph } from "./vault-graph";
 import { loadVaultImage } from "./vault-image-service";
 import {
@@ -94,6 +102,8 @@ interface WorkspaceIndexProjection {
   backlinks: Map<string, string[]>;
   files: WorkspaceFileSummary[];
 }
+
+const MAX_DESKTOP_TRASH_ENTRIES = 500;
 
 interface SaveNoteRequest {
   path: string;
@@ -809,6 +819,47 @@ export class WorkspaceRuntime {
       expectedRevision,
       expectedVaultId,
     });
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async getVaultTrash(expectedVaultId: string): Promise<VaultTrashResponse> {
+    if (this.kernel.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    const trash = await listTrashedMarkdownNotes(this.kernel, MAX_DESKTOP_TRASH_ENTRIES);
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      total: trash.total,
+      truncated: trash.total > trash.entries.length,
+      entries: trash.entries,
+    };
+  }
+
+  async restoreNote(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteRestoreResponse> {
+    if (this.kernel.vaultId !== expectedVaultId) {
+      throw new Error("The active vault changed before this note could be restored.");
+    }
+    this.assertWritable("restore notes from trash");
+    const outcome: NoteRestoreOutcome = await restoreTrashedMarkdownNote(
+      this.kernel,
+      filePath,
+      expectedRevision,
+    );
+    if (outcome.status === "committed") {
+      const restored = await this.kernel.readText(outcome.to);
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "write",
+        path: outcome.to,
+        revision: restored.revision,
+      });
+      await this.indexReactor.index.refresh(this.kernel, outcome.to);
+    }
     return { outcome, snapshot: await this.publishSnapshot() };
   }
 

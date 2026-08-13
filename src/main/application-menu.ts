@@ -56,6 +56,7 @@ export function createApplicationMenuTemplate(
     action("New Note", "workspace.create-note"),
     action("Open Today's Daily Note", "workspace.open-daily-note"),
     action("Open Vault…", "workspace.open-vault"),
+    action("File Recovery…", "workspace.open-file-recovery"),
     { type: "separator" },
     action("Save Note", "editor.save-note"),
     action("Close Tab", "workspace.close-tab"),

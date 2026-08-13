@@ -4,6 +4,7 @@ export const nativeMenuCommandIds = [
   "workspace.open-vault",
   "workspace.create-note",
   "workspace.open-daily-note",
+  "workspace.open-file-recovery",
   "workspace.open-graph-view",
   "workspace.open-local-graph",
   "workspace.close-tab",

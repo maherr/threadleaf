@@ -558,6 +558,32 @@ export interface NoteDeleteResponse {
   snapshot: RuntimeSnapshot;
 }
 
+export interface VaultTrashEntry {
+  path: string;
+  trashPath: string;
+  revision: string;
+  size: number;
+}
+
+export type VaultTrashResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      total: number;
+      truncated: boolean;
+      entries: VaultTrashEntry[];
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type NoteRestoreOutcome =
+  | { status: "committed"; from: string; to: string; transactionId: string }
+  | { status: "conflict"; from: string; to: string; reason: string };
+
+export interface NoteRestoreResponse {
+  outcome: NoteRestoreOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
 export type VaultImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 export type VaultImageUnavailableReason =
@@ -746,6 +772,12 @@ export interface ThreadleafBridge {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteDeleteResponse>;
+  getVaultTrash(expectedVaultId: string): Promise<VaultTrashResponse>;
+  restoreNote(
+    path: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<NoteRestoreResponse>;
   createNote(path: string, content: string, expectedVaultId: string): Promise<NoteCreateResponse>;
   saveNote(
     path: string,

@@ -83,6 +83,10 @@ describe("recoverable Markdown trash", () => {
         },
       ],
     });
+    await expect(listTrashedMarkdownNotes(kernel, 0)).resolves.toEqual({
+      total: 1,
+      entries: [],
+    });
   });
 
   it("rejects a stale source revision and preserves the external edit", async () => {

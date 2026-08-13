@@ -90,6 +90,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   and revision binding, exact source and recovery paths, indexed-link impact, explicit collision
   errors, dirty-draft protection, command-palette and remappable-keyboard access, operation-aware
   watcher attribution, and deterministic neighbor selection after commit.
+- Desktop File Recovery with a bounded vault-bound catalog, original and recovery path filtering,
+  exact-revision restores, no-overwrite collision preservation, immediate watcher and index
+  convergence, native menu and command access, focused conflict diagnostics, and isolated
+  dark, light, narrow, and deuteranomaly verification.
 - Headless `properties`, `property:read`, `property:set`, and `property:remove` commands, with typed
   scalar and list serialization, conservative byte-preserving frontmatter patches, idempotent
   removal, mutation locking, revision conflicts, stable JSON, and explicit complex-YAML refusal.

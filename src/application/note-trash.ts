@@ -39,13 +39,15 @@ function trashLocationForReference(requestedPath: string): TrashLocation {
 
 export async function listTrashedMarkdownNotes(
   vault: VaultReadPort,
+  limit = Number.POSITIVE_INFINITY,
 ): Promise<TrashedMarkdownNoteList> {
   const prefix = `${vaultTrashDirectory}/`;
   const trashPaths = (await vault.listMarkdownPaths(vaultTrashDirectory)).filter((filePath) =>
     filePath.startsWith(prefix),
   );
+  const selectedPaths = trashPaths.slice(0, Math.max(0, Math.floor(limit)));
   const entries = await Promise.all(
-    trashPaths.map(async (trashPath) => {
+    selectedPaths.map(async (trashPath) => {
       const snapshot = await vault.readText(trashPath);
       return {
         path: trashPath.slice(prefix.length),
@@ -55,7 +57,7 @@ export async function listTrashedMarkdownNotes(
       };
     }),
   );
-  return { total: entries.length, entries };
+  return { total: trashPaths.length, entries };
 }
 
 export async function trashMarkdownNote(

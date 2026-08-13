@@ -467,6 +467,72 @@
     </dialog>
 
     <dialog
+      class="recovery-dialog"
+      id="recovery-dialog"
+      aria-labelledby="recovery-title"
+      aria-describedby="recovery-description"
+      aria-modal="true"
+    >
+      <div class="recovery-shell">
+        <header class="recovery-header">
+          <span class="recovery-mark" aria-hidden="true">↶</span>
+          <span class="recovery-heading-copy">
+            <small>Recoverable vault trash</small>
+            <strong id="recovery-title">File recovery</strong>
+            <span id="recovery-vault">Active vault</span>
+          </span>
+          <span
+            class="recovery-count"
+            id="recovery-entry-count"
+            role="status"
+            aria-label="Recoverable note count"
+            >0</span
+          >
+          <button id="recovery-close" type="button" aria-label="Close file recovery">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+
+        <p id="recovery-description" class="recovery-description">
+          Restore a Markdown note to its exact original path. Threadleaf never overwrites a live
+          note, and it provides no permanent-delete action here.
+        </p>
+
+        <search class="recovery-toolbar">
+          <label for="recovery-search">
+            <span class="sr-only">Filter recoverable notes</span>
+            <span aria-hidden="true">⌕</span>
+            <input
+              id="recovery-search"
+              type="search"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="200"
+              placeholder="Filter by original or recovery path"
+            />
+          </label>
+          <button id="recovery-refresh" type="button">
+            <span aria-hidden="true">↻</span>
+            Refresh
+          </button>
+        </search>
+
+        <p class="recovery-error" id="recovery-error" role="alert" tabindex="-1" hidden></p>
+        <div class="recovery-list-shell">
+          <ol id="recovery-list" class="recovery-list" aria-label="Recoverable notes"></ol>
+          <div id="recovery-empty" class="recovery-empty" hidden>
+            No recoverable notes are in this vault's .trash folder.
+          </div>
+        </div>
+
+        <footer class="recovery-footer">
+          <span><i aria-hidden="true"></i> Exact-path restore</span>
+          <span id="recovery-status" role="status" aria-live="polite">Ready</span>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog
       class="shortcut-settings modal"
       id="shortcut-settings"
       aria-labelledby="settings-title"

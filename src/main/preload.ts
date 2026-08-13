@@ -11,6 +11,7 @@ import type {
   NoteMoveResponse,
   NotePropertyRemoveResponse,
   NotePropertySetResponse,
+  NoteRestoreResponse,
   NoteSaveResponse,
   NoteTemplateRenderResponse,
   NoteWorkflowCatalogResponse,
@@ -27,6 +28,7 @@ import type {
   VaultNoteEmbedResponse,
   VaultOpenResponse,
   VaultSearchResponse,
+  VaultTrashResponse,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
@@ -124,6 +126,15 @@ const bridge: ThreadleafBridge = {
       request,
       expectedVaultId,
     ) as Promise<VaultGraphResponse>,
+  getVaultTrash: (expectedVaultId) =>
+    ipcRenderer.invoke(ipcChannels.vaultTrash, expectedVaultId) as Promise<VaultTrashResponse>,
+  restoreNote: (path, expectedRevision, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.restoreNote,
+      path,
+      expectedRevision,
+      expectedVaultId,
+    ) as Promise<NoteRestoreResponse>,
   loadVaultImage: (sourceNotePath, target, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.loadVaultImage,
