@@ -740,6 +740,10 @@ export class WorkspaceRuntime {
         options.workspaceSettings ??
         createDefaultVaultWorkspaceSettings(),
     );
+    // The restart policy is intentionally scoped to note panes and tabs. Docks, window bounds,
+    // and pop-out metadata live in the separate main-process layout controller. Load the private
+    // note workspace even under the fresh policy so later persistence retains revision authority,
+    // but only restore its panes when the policy explicitly requests it.
     if (options.workspaceStateStore) {
       try {
         persistedWorkspace = await options.workspaceStateStore.load(kernel.vaultId);

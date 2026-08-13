@@ -53,7 +53,7 @@ export class WorkspaceLayoutController {
   readonly #listeners = new Set<LayoutListener>();
   #document: WorkspaceLayoutDocument | null = null;
   #warning: string | null = null;
-  #writeTail: Promise<void> = Promise.resolve();
+  #operationTail: Promise<void> = Promise.resolve();
 
   constructor(options: WorkspaceLayoutControllerOptions) {
     this.#store = options.store;
@@ -61,41 +61,43 @@ export class WorkspaceLayoutController {
   }
 
   async activateVault(vaultId: string): Promise<WorkspaceLayoutSnapshot> {
-    this.#warning = null;
-    try {
-      this.#document = (await this.#store.load(vaultId)) ?? createDefaultWorkspaceLayout(vaultId);
-    } catch (error) {
-      this.#document = createDefaultWorkspaceLayout(vaultId);
-      this.#warning = `Could not read saved workspace layout: ${errorMessage(error)} The file was not changed.`;
-    }
-    if (
-      this.#document.popout.viewType &&
-      !this.#supportedPopoutViewTypes.has(this.#document.popout.viewType)
-    ) {
-      this.#warning = `Saved pop-out view ${this.#document.popout.viewType} is unavailable in this build.`;
-      this.#document = {
-        ...this.#document,
-        popout: {
-          ...this.#document.popout,
-          state: "degraded",
-          warning: this.#warning,
-        },
-      };
-    } else if (this.#document.popout.state === "open") {
-      const warning =
-        "The previous plugin pop-out was closed when Threadleaf restarted. Open its plugin view again in the main window.";
-      this.#document = {
-        ...this.#document,
-        popout: {
-          ...this.#document.popout,
-          state: "degraded",
-          warning,
-        },
-      };
-    }
-    const snapshot = this.snapshot();
-    this.publish(snapshot);
-    return snapshot;
+    return this.serialize(async () => {
+      this.#warning = null;
+      try {
+        this.#document = (await this.#store.load(vaultId)) ?? createDefaultWorkspaceLayout(vaultId);
+      } catch (error) {
+        this.#document = createDefaultWorkspaceLayout(vaultId);
+        this.#warning = `Could not read saved workspace layout: ${errorMessage(error)} The file was not changed.`;
+      }
+      if (
+        this.#document.popout.viewType &&
+        !this.#supportedPopoutViewTypes.has(this.#document.popout.viewType)
+      ) {
+        this.#warning = `Saved pop-out view ${this.#document.popout.viewType} is unavailable in this build.`;
+        this.#document = {
+          ...this.#document,
+          popout: {
+            ...this.#document.popout,
+            state: "degraded",
+            warning: this.#warning,
+          },
+        };
+      } else if (this.#document.popout.state === "open") {
+        const warning =
+          "The previous plugin pop-out was closed when Threadleaf restarted. Open its plugin view again in the main window.";
+        this.#document = {
+          ...this.#document,
+          popout: {
+            ...this.#document.popout,
+            state: "degraded",
+            warning,
+          },
+        };
+      }
+      const snapshot = this.snapshot();
+      this.publish(snapshot);
+      return snapshot;
+    });
   }
 
   get vaultId(): string {
@@ -129,12 +131,10 @@ export class WorkspaceLayoutController {
     expectedVaultId: string,
   ): Promise<WorkspaceLayoutSnapshot> {
     this.assertVault(expectedVaultId);
-    const document = this.requireDocument();
-    await this.persist({
+    return this.persist(expectedVaultId, (document) => ({
       ...document,
       docks: { ...document.docks, [dockId]: { ...document.docks[dockId], collapsed } },
-    });
-    return this.snapshot();
+    }));
   }
 
   async setMainWindowBounds(
@@ -142,8 +142,11 @@ export class WorkspaceLayoutController {
     expectedVaultId: string,
   ): Promise<WorkspaceLayoutSnapshot> {
     this.assertVault(expectedVaultId);
-    await this.persist({ ...this.requireDocument(), mainWindowBounds: bounds });
-    return this.snapshot();
+    const requestedBounds = { ...bounds };
+    return this.persist(expectedVaultId, (document) => ({
+      ...document,
+      mainWindowBounds: requestedBounds,
+    }));
   }
 
   async setPopout(
@@ -154,8 +157,14 @@ export class WorkspaceLayoutController {
     if (popout.viewType && !this.#supportedPopoutViewTypes.has(popout.viewType)) {
       throw new Error(`Pop-out view type is not supported: ${popout.viewType}`);
     }
-    await this.persist({ ...this.requireDocument(), popout });
-    return this.snapshot();
+    const requestedPopout = {
+      ...popout,
+      bounds: popout.bounds ? { ...popout.bounds } : null,
+    };
+    return this.persist(expectedVaultId, (document) => ({
+      ...document,
+      popout: requestedPopout,
+    }));
   }
 
   async reattachPopout(
@@ -163,8 +172,7 @@ export class WorkspaceLayoutController {
     warning: string | null = null,
   ): Promise<WorkspaceLayoutSnapshot> {
     this.assertVault(expectedVaultId);
-    const document = this.requireDocument();
-    await this.persist({
+    return this.persist(expectedVaultId, (document) => ({
       ...document,
       popout: {
         state: warning ? "degraded" : "closed",
@@ -173,8 +181,7 @@ export class WorkspaceLayoutController {
         bounds: document.popout.bounds,
         warning,
       },
-    });
-    return this.snapshot();
+    }));
   }
 
   private requireDocument(): WorkspaceLayoutDocument {
@@ -190,21 +197,30 @@ export class WorkspaceLayoutController {
     }
   }
 
-  private async persist(document: WorkspaceLayoutDocument): Promise<void> {
-    const normalized = parseWorkspaceLayout(document, this.vaultId);
-    const write = this.#writeTail
-      .catch(() => undefined)
-      .then(async () => {
-        const saved = await this.#store.save(normalized);
-        this.#document = saved;
-        this.#warning = null;
-        this.publish(this.snapshot());
-      });
-    this.#writeTail = write.then(
+  private persist(
+    expectedVaultId: string,
+    mutate: (document: WorkspaceLayoutDocument) => WorkspaceLayoutDocument,
+  ): Promise<WorkspaceLayoutSnapshot> {
+    return this.serialize(async () => {
+      this.assertVault(expectedVaultId);
+      const current = this.requireDocument();
+      const normalized = parseWorkspaceLayout(mutate(current), expectedVaultId);
+      const saved = parseWorkspaceLayout(await this.#store.save(normalized), expectedVaultId);
+      this.#document = saved;
+      this.#warning = null;
+      const snapshot = this.snapshot();
+      this.publish(snapshot);
+      return snapshot;
+    });
+  }
+
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#operationTail.then(operation, operation);
+    this.#operationTail = result.then(
       () => undefined,
       () => undefined,
     );
-    await write;
+    return result;
   }
 
   private publish(snapshot: WorkspaceLayoutSnapshot): void {

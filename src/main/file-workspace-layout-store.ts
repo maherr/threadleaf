@@ -1,5 +1,5 @@
 import path from "node:path";
-import { atomicWriteFile, readStableFile } from "../kernel/durability";
+import { atomicWriteFile, readStableFile, revisionOf } from "../kernel/durability";
 import { parseWorkspaceLayout, type WorkspaceLayoutDocument } from "../shared/workspace-layout";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -10,9 +10,25 @@ export interface WorkspaceLayoutStore {
   save(layout: WorkspaceLayoutDocument): Promise<WorkspaceLayoutDocument>;
 }
 
+export class WorkspaceLayoutConflictError extends Error {
+  readonly code = "WORKSPACE_LAYOUT_CONFLICT" as const;
+  readonly vaultId: string;
+  readonly expectedRevision: string | null;
+  readonly actualRevision: string | null;
+
+  constructor(vaultId: string, expectedRevision: string | null, actualRevision: string | null) {
+    super("The saved workspace layout changed outside Threadleaf. Reload it before saving.");
+    this.name = "WorkspaceLayoutConflictError";
+    this.vaultId = vaultId;
+    this.expectedRevision = expectedRevision;
+    this.actualRevision = actualRevision;
+  }
+}
+
 export class FileWorkspaceLayoutStore implements WorkspaceLayoutStore {
   readonly #directoryPath: string;
   #writeTail: Promise<void> = Promise.resolve();
+  readonly #expectedRevisionByVault = new Map<string, string | null>();
 
   constructor(directoryPath: string) {
     this.#directoryPath = path.resolve(directoryPath);
@@ -20,9 +36,11 @@ export class FileWorkspaceLayoutStore implements WorkspaceLayoutStore {
 
   async load(vaultId: string): Promise<WorkspaceLayoutDocument | null> {
     const snapshot = await readStableFile(this.filePath(vaultId));
-    return snapshot
+    const document = snapshot
       ? parseWorkspaceLayout(JSON.parse(decoder.decode(snapshot.bytes)), vaultId)
       : null;
+    this.#expectedRevisionByVault.set(vaultId, snapshot?.revision ?? null);
+    return document;
   }
 
   async save(layout: WorkspaceLayoutDocument): Promise<WorkspaceLayoutDocument> {
@@ -30,7 +48,24 @@ export class FileWorkspaceLayoutStore implements WorkspaceLayoutStore {
     const bytes = Buffer.from(`${JSON.stringify(normalized, null, 2)}\n`, "utf8");
     const write = this.#writeTail
       .catch(() => undefined)
-      .then(() => atomicWriteFile(this.filePath(normalized.vaultId), bytes));
+      .then(async () => {
+        const filePath = this.filePath(normalized.vaultId);
+        const current = await readStableFile(filePath);
+        const actualRevision = current?.revision ?? null;
+        const expectedRevision = this.#expectedRevisionByVault.get(normalized.vaultId);
+        if (
+          (expectedRevision !== undefined && actualRevision !== expectedRevision) ||
+          (expectedRevision === undefined && current !== null)
+        ) {
+          throw new WorkspaceLayoutConflictError(
+            normalized.vaultId,
+            expectedRevision ?? null,
+            actualRevision,
+          );
+        }
+        await atomicWriteFile(filePath, bytes);
+        this.#expectedRevisionByVault.set(normalized.vaultId, revisionOf(bytes));
+      });
     this.#writeTail = write.then(
       () => undefined,
       () => undefined,

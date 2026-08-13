@@ -226,6 +226,14 @@ between the two existing panes without a transient duplicate or lost tab. The le
 right inspector are stable docks whose collapsed state lives in a separate versioned, per-vault
 layout document under private application data. That document also stores bounded main and plugin
 window geometry. Display restoration clamps every window to a visible work area and minimum size.
+The file store records the SHA-256 revision of each loaded layout and compares it before every
+save. An external replacement, including a deletion or malformed edit, rejects the save and leaves
+the external bytes untouched; reloading the vault establishes the new revision explicitly.
+The vault workspace `restorePolicy` deliberately controls only the note panes and tabs in the
+separate workspace-state document. `fresh` starts those panes from the indexed notes while still
+restoring dock collapse, main-window bounds, and pop-out metadata from this layout document. A
+persisted open pop-out is always reported as degraded after restart because its native window is
+not live; its saved bounds remain available for the next explicit pop-out.
 
 A supported compatibility-plugin `WebContentsView` can detach from the main window into a native
 `BrowserWindow`; the view itself is reparented rather than recreated. Closing the window returns the

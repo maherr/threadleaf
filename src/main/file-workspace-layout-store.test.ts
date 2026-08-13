@@ -41,4 +41,63 @@ describe("FileWorkspaceLayoutStore", () => {
     await expect(store.load(vaultId)).rejects.toThrow("version 1");
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe(malformed);
   });
+
+  it("rejects an external replacement after load and preserves the external bytes", async () => {
+    const store = new FileWorkspaceLayoutStore(path.join(sandboxPath, "layouts"));
+    const filePath = path.join(sandboxPath, "layouts", `${vaultId}.json`);
+    const initial = createDefaultWorkspaceLayout(vaultId);
+    await store.save(initial);
+    await expect(store.load(vaultId)).resolves.toEqual(initial);
+
+    const external = createDefaultWorkspaceLayout(vaultId);
+    external.docks.right.collapsed = true;
+    const externalBytes = `${JSON.stringify(external, null, 2)}\n`;
+    await fs.writeFile(filePath, externalBytes, "utf8");
+
+    const local = createDefaultWorkspaceLayout(vaultId);
+    local.docks.left.collapsed = true;
+    await expect(store.save(local)).rejects.toMatchObject({
+      name: "WorkspaceLayoutConflictError",
+      code: "WORKSPACE_LAYOUT_CONFLICT",
+      vaultId,
+    });
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe(externalBytes);
+
+    const reloadedStore = new FileWorkspaceLayoutStore(path.join(sandboxPath, "layouts"));
+    await expect(reloadedStore.load(vaultId)).resolves.toEqual(external);
+    await expect(reloadedStore.save(local)).resolves.toEqual(local);
+  });
+
+  it("refuses a direct save over an existing file without a loaded revision", async () => {
+    const store = new FileWorkspaceLayoutStore(path.join(sandboxPath, "layouts"));
+    const initial = createDefaultWorkspaceLayout(vaultId);
+    await store.save(initial);
+
+    const replacement = createDefaultWorkspaceLayout(vaultId);
+    replacement.docks.left.collapsed = true;
+    const freshStore = new FileWorkspaceLayoutStore(path.join(sandboxPath, "layouts"));
+    await expect(freshStore.save(replacement)).rejects.toMatchObject({
+      name: "WorkspaceLayoutConflictError",
+      code: "WORKSPACE_LAYOUT_CONFLICT",
+    });
+    await expect(store.load(vaultId)).resolves.toEqual(initial);
+  });
+
+  it("treats an external deletion as a conflict instead of recreating the file", async () => {
+    const store = new FileWorkspaceLayoutStore(path.join(sandboxPath, "layouts"));
+    const filePath = path.join(sandboxPath, "layouts", `${vaultId}.json`);
+    const initial = createDefaultWorkspaceLayout(vaultId);
+    await store.save(initial);
+    await expect(store.load(vaultId)).resolves.toEqual(initial);
+    await fs.unlink(filePath);
+
+    const local = createDefaultWorkspaceLayout(vaultId);
+    local.docks.left.collapsed = true;
+    await expect(store.save(local)).rejects.toMatchObject({
+      name: "WorkspaceLayoutConflictError",
+      code: "WORKSPACE_LAYOUT_CONFLICT",
+      actualRevision: null,
+    });
+    await expect(fs.access(filePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });

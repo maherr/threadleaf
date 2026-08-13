@@ -412,7 +412,7 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
-  it("honors the vault-bound fresh restart policy without deleting saved state", async () => {
+  it("keeps the fresh restart policy scoped to note panes without deleting saved state", async () => {
     const state = new MemoryWorkspaceStateStore({
       openPaths: ["Welcome.md"],
       activePath: "Welcome.md",
