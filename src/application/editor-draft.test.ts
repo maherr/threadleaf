@@ -78,4 +78,13 @@ describe("parseEditorDraft", () => {
       "logical LF",
     );
   });
+
+  it("accepts literal U+FEFF editor text when the persisted BOM flag is false", () => {
+    const value = {
+      ...draft(),
+      content: "\uFEFFdraft text",
+      textRepresentation: { hasBom: false, lineEndingKinds: "", defaultLineEnding: "lf" as const },
+    };
+    expect(parseEditorDraft(value, vaultId)).toEqual(value);
+  });
 });

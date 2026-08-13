@@ -203,6 +203,29 @@ describe("live preview inline model", () => {
     }
   });
 
+  it("keeps raw script text opaque while mapping Markdown after its real close", () => {
+    const source = `<span><script>const html = "</div>"; \`unmatched\n[^hidden]: script text\n</script></span>\n**outside**`;
+    const mapping = buildLivePreviewMapping(source);
+    const outsideFrom = source.indexOf("**outside**");
+    expect(mapping.rendered).toContain('const html = "</div>";');
+    expect(mapping.rendered).toContain("`unmatched");
+    expect(mapping.rendered).toContain("script text");
+    expect(
+      mapping.tokens.some((token) => token.kind === "delimiter" && token.from === outsideFrom),
+    ).toBe(true);
+    expect(mapping.tokens.some((token) => token.from < outsideFrom && token.to > outsideFrom)).toBe(
+      false,
+    );
+
+    const fenced = "<span><script>\n```\n</script>\n```\n</span>\n**outside**";
+    const fencedMapping = buildLivePreviewMapping(fenced);
+    expect(
+      fencedMapping.tokens.some(
+        (token) => token.kind === "delimiter" && token.from === fenced.indexOf("**outside**"),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps math literal after mismatched or unclosed standalone fences", () => {
     for (const source of [
       ["~~~", "```", "$tilde$"].join("\n"),
@@ -482,5 +505,24 @@ describe("mapping measurement", () => {
     expect(metrics.tokenCount).toBeGreaterThan(0);
     expect(Number.isFinite(metrics.elapsedMs)).toBe(true);
     expect(metrics.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("uses monotonic protected-range traversal in a noisy long note", () => {
+    const lines = Array.from({ length: 4_000 }, (_, index) => {
+      const marker = index % 2 === 0 ? "`literal`" : "[[link]]";
+      return `noise ${index} ${marker} **visible**`;
+    });
+    const source = lines.join("\n");
+    const protectedRanges: { from: number; to: number }[] = [];
+    let lineFrom = 0;
+    for (const line of lines) {
+      protectedRanges.push({ from: lineFrom, to: lineFrom + Math.min(5, line.length) });
+      lineFrom += line.length + 1;
+    }
+    const stats = { lines: 0, protectedRangeChecks: 0 };
+    const mapping = buildLivePreviewMapping(source, { protectedRanges, stats });
+    expect(mapping.source).toBe(source);
+    expect(stats.lines).toBe(lines.length);
+    expect(stats.protectedRangeChecks).toBeLessThan(lines.length * 12);
   });
 });

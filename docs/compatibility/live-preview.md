@@ -99,6 +99,10 @@ The large-note regression fixture maps a note containing emphasis and inline mat
 normalizing source. The fixture asserts finite output, bounded segment shape, and source/render
 length invariants; it is not a machine-independent latency claim.
 
+The pure mapping and mounted jsdom tests are local seam evidence. They do not establish the
+canonical Electron workflow gate, which remains pending until `pnpm test:live-preview` completes;
+the public conformance record therefore remains `not-verified` until that gate passes.
+
 ## Acceptance gates
 
 1. Toggling Live, Source, and Read never changes the CodeMirror document or undo history.

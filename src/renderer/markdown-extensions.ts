@@ -262,6 +262,12 @@ const htmlVoidElements = new Set([
   "wbr",
 ]);
 
+// HTML raw-text and RCDATA elements do not parse nested markup.  While an
+// element is open, only its own end tag can end the element.  In particular,
+// a `</div>` in a script string must not close an enclosing div, and Markdown
+// delimiters inside the value must not become code, math, or embed syntax.
+const htmlRawTextElements = new Set(["script", "style", "textarea", "title"]);
+
 interface HtmlTagScan {
   kind: "opening" | "closing" | "standalone";
   name: string | null;
@@ -346,6 +352,26 @@ function scanHtmlTag(source: string, from: number): HtmlTagScan | null {
   };
 }
 
+function rawTextClosingTag(
+  source: string,
+  from: number,
+  name: string,
+): { from: number; to: number } | null {
+  let cursor = from;
+  while (cursor < source.length) {
+    const candidate = source.indexOf("<", cursor);
+    if (candidate < 0) return null;
+    if (source[candidate + 1] === "/") {
+      const tag = scanHtmlTag(source, candidate);
+      if (tag?.kind === "closing" && tag.name === name) {
+        return { from: candidate, to: tag.end };
+      }
+    }
+    cursor = candidate + 1;
+  }
+  return null;
+}
+
 function mergeMarkdownRanges(ranges: readonly MarkdownSourceRange[]): MarkdownSourceRange[] {
   const merged: MarkdownSourceRange[] = [];
   for (const range of ranges) {
@@ -427,6 +453,27 @@ export function markdownHtmlRanges(
     if (tag.kind === "opening") {
       if (tag.selfClosing || htmlVoidElements.has(name)) {
         if (openTags.length === 0) ranges.push({ from: index, to: tag.end });
+      } else if (htmlRawTextElements.has(name)) {
+        const open = { name, from: index };
+        openTags.push(open);
+        if (stats) stats.maxOpenTags = Math.max(stats.maxOpenTags, openTags.length);
+        const closing = rawTextClosingTag(source, tag.end, name);
+        if (!closing) {
+          index = source.length;
+          break;
+        }
+        openTags.pop();
+        if (openTags.length === 0) {
+          ranges.push({ from: open.from, to: closing.to });
+        }
+        // A Markdown fence discovered inside raw text is not real Markdown
+        // code. Discard any such range before resuming the outer HTML scan so
+        // it cannot hide the enclosing element's real closing tag.
+        while (codeIndex < codeRanges.length && (codeRanges[codeIndex]?.from ?? 0) < closing.to) {
+          codeIndex += 1;
+        }
+        index = closing.to;
+        continue;
       } else {
         const open = { name, from: index };
         openTags.push(open);

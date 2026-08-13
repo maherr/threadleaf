@@ -30,6 +30,10 @@ interface ParsedExternalText {
 
 function parseExternalText(source: string): ParsedExternalText {
   const start = source.startsWith("\uFEFF") ? 1 : 0;
+  return parseEditorText(source, start);
+}
+
+function parseEditorText(source: string, start = 0): ParsedExternalText {
   const editor: string[] = [];
   const lineEndings: ExternalLineEnding[] = [];
   for (let index = start; index < source.length; index += 1) {
@@ -52,8 +56,9 @@ function parseExternalText(source: string): ParsedExternalText {
   return { editorText: editor.join(""), lineEndings };
 }
 
-function normalizeEditorText(source: string): string {
-  return parseExternalText(source).editorText;
+/** Normalize line breaks in editor input without interpreting U+FEFF. */
+function normalizeInsertedEditorText(source: string): string {
+  return parseEditorText(source).editorText;
 }
 
 function defaultLineEnding(lineEndings: readonly ExternalLineEnding[]): ExternalLineEnding {
@@ -105,7 +110,7 @@ export function externalTextRepresentationFromDraft(
   editorText: string,
   persisted: EditorDraftTextRepresentation | null,
 ): ExternalTextRepresentation | null {
-  if (!persisted || normalizeEditorText(editorText) !== editorText) {
+  if (!persisted || normalizeInsertedEditorText(editorText) !== editorText) {
     return null;
   }
   if (
@@ -159,7 +164,10 @@ export function externalTextFromEditor(
   editorText: string,
   representation: ExternalTextRepresentation,
 ): string {
-  const normalized = normalizeEditorText(editorText);
+  // The editor document may contain a literal U+FEFF inserted by the user.
+  // Only the external load boundary interprets a leading U+FEFF as the file
+  // BOM; never strip it while serializing an editor edit.
+  const normalized = normalizeInsertedEditorText(editorText);
   const lines = normalized.split("\n");
   let external = representation.hasBom ? "\uFEFF" : "";
   for (let index = 0; index < lines.length; index += 1) {
@@ -193,13 +201,17 @@ export function applyEditorTextChanges(
   oldEditorText: string,
   changes: readonly EditorTextChange[],
 ): ExternalTextRepresentation {
-  let editorText = normalizeEditorText(oldEditorText);
+  // The editor already uses logical LF text. A leading U+FEFF here may be
+  // literal document content inserted after load, so never reinterpret it as
+  // the external file BOM at the edit boundary.
+  let editorText = normalizeInsertedEditorText(oldEditorText);
   let lineEndings = [...representation.lineEndings];
   const ordered = [...changes].sort((left, right) => right.from - left.from);
   for (const change of ordered) {
     const from = Math.max(0, Math.min(change.from, editorText.length));
     const to = Math.max(from, Math.min(change.to, editorText.length));
-    const inserted = normalizeEditorText(change.insert);
+    // A pasted U+FEFF is document text, not a new file-BOM marker.
+    const inserted = normalizeInsertedEditorText(change.insert);
     const startLine = newlineCount(editorText.slice(0, from));
     const removedBreaks = newlineCount(editorText.slice(from, to));
     const insertedBreaks = newlineCount(inserted);

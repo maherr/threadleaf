@@ -107,8 +107,6 @@ import {
   type PaletteCommandDescriptor,
 } from "./command-palette-model";
 import {
-  applyEditorTextChanges,
-  type EditorTextChange,
   type ExternalTextRepresentation,
   editorDraftMatchesDiskText,
   editorDraftTextRepresentation,
@@ -117,6 +115,14 @@ import {
   externalTextRepresentation,
   externalTextRepresentationFromDraft,
 } from "./editor-text";
+import {
+  applyEditorTextHistoryEntry,
+  captureEditorTextHistoryEntry,
+  type EditorTextHistoryChange,
+  type EditorTextHistoryEntry,
+  editorHistoryTarget,
+  representationAtEditorText,
+} from "./editor-text-history";
 import { GraphViewController } from "./graph-view";
 import {
   createLivePreviewExtension,
@@ -825,10 +831,6 @@ let workspaceKeyboardShortcutsBound = false;
 let loadedNote: WorkspaceNoteSnapshot | null = null;
 let loadedVaultId: string | null = null;
 let loadedTextRepresentation: ExternalTextRepresentation = externalTextRepresentation("");
-interface EditorTextHistoryEntry {
-  editorText: string;
-  representation: ExternalTextRepresentation;
-}
 let editorTextUndoHistory: EditorTextHistoryEntry[] = [];
 let editorTextRedoHistory: EditorTextHistoryEntry[] = [];
 let pendingDiskNote: WorkspaceNoteSnapshot | null = null;
@@ -1283,23 +1285,25 @@ function editorPresentationExtension(paneId: WorkspacePaneId) {
   return editingViewMode === "live" ? createLivePreviewExtension(livePreviewOptions(paneId)) : [];
 }
 
-function editorHistoryTarget(
-  history: readonly EditorTextHistoryEntry[],
-  editorText: string,
-): number {
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    if (history[index]?.editorText === editorText) {
-      return index;
-    }
-  }
-  return -1;
+function editorTextHistoryChanges(update: ViewUpdate): EditorTextHistoryChange[] {
+  const changes: EditorTextHistoryChange[] = [];
+  update.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+    changes.push({
+      from: fromA,
+      to: toA,
+      newFrom: fromB,
+      newTo: toB,
+      insert: inserted.toString(),
+      removedText: update.startState.doc.sliceString(fromA, toA),
+      removedLineEndings: [],
+      insertedLineEndings: [],
+    });
+  });
+  return changes;
 }
 
 function updateEditorTextRepresentation(update: ViewUpdate): void {
-  const changes: EditorTextChange[] = [];
-  update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-    changes.push({ from: fromA, to: toA, insert: inserted.toString() });
-  });
+  const changes = editorTextHistoryChanges(update);
   const nextEditorText = update.state.doc.toString();
   const userEvents = update.transactions.map((transaction) =>
     transaction.annotation(Transaction.userEvent),
@@ -1308,29 +1312,58 @@ function updateEditorTextRepresentation(update: ViewUpdate): void {
   const isRedo = userEvents.some((event) => event === "redo" || event?.startsWith("redo."));
   if (isUndo || isRedo) {
     const sourceHistory = isUndo ? editorTextUndoHistory : editorTextRedoHistory;
-    const targetIndex = editorHistoryTarget(sourceHistory, nextEditorText);
+    const targetIndex = editorHistoryTarget(
+      sourceHistory,
+      update.startState.doc.toString(),
+      nextEditorText,
+      isUndo ? "undo" : "redo",
+    );
     if (targetIndex >= 0) {
-      // CodeMirror may coalesce several edits into one undo event. Discard
-      // every snapshot from the matched state onward, rather than leaving
-      // intermediate grouped states for a later undo/redo to target.
-      const [target] = sourceHistory.splice(targetIndex);
-      const oppositeHistory = isUndo ? editorTextRedoHistory : editorTextUndoHistory;
-      oppositeHistory.push({
-        editorText: update.startState.doc.toString(),
-        representation: loadedTextRepresentation,
-      });
-      loadedTextRepresentation = target?.representation ?? loadedTextRepresentation;
+      if (isUndo) {
+        const moved = sourceHistory.splice(targetIndex);
+        for (let index = moved.length - 1; index >= 0; index -= 1) {
+          const entry = moved[index];
+          if (entry) {
+            loadedTextRepresentation = applyEditorTextHistoryEntry(
+              loadedTextRepresentation,
+              entry,
+              "reverse",
+            );
+          }
+        }
+        editorTextRedoHistory.unshift(...moved);
+      } else {
+        const moved = sourceHistory.splice(0, targetIndex + 1);
+        for (const entry of moved) {
+          loadedTextRepresentation = applyEditorTextHistoryEntry(
+            loadedTextRepresentation,
+            entry,
+            "forward",
+          );
+        }
+        editorTextUndoHistory.push(...moved);
+      }
       return;
     }
+    // An undo/redo that did not come from our tracked editor history (for
+    // example a newly installed CodeMirror history extension) must not be
+    // recorded as a normal edit. Rebase metadata to the visible document and
+    // wait for the next ordinary transaction to establish a fresh delta.
+    loadedTextRepresentation = representationAtEditorText(loadedTextRepresentation, nextEditorText);
+    editorTextUndoHistory = [];
+    editorTextRedoHistory = [];
+    return;
   }
-  editorTextUndoHistory.push({
-    editorText: update.startState.doc.toString(),
-    representation: loadedTextRepresentation,
-  });
-  loadedTextRepresentation = applyEditorTextChanges(
+  const entry = captureEditorTextHistoryEntry(
     loadedTextRepresentation,
     update.startState.doc.toString(),
     changes,
+  );
+  editorTextUndoHistory.push(entry);
+  loadedTextRepresentation = applyEditorTextHistoryEntry(
+    loadedTextRepresentation,
+    entry,
+    "forward",
   );
   editorTextRedoHistory = [];
 }

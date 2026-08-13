@@ -536,12 +536,12 @@ The Live Preview layer derives decorations from the CodeMirror syntax tree. Pres
 are hidden only on lines outside the cursor or selection. Every selected line exposes exact source,
 and clicking a rendered token moves the cursor into its source range before revealing it. Common
 headings, emphasis, links, tasks, lists, quotes, callouts, code blocks, tags, local raster images,
-and source-backed note-embed cards are covered by an isolated virtual-input corpus. Frontmatter,
-tables, raw HTML, and math have no complete first-class Live Preview editing contract. Their bytes
-remain in the canonical document, but supported decorations may appear within constructs that do
-not have explicit protection. Malformed or ambiguous mappings and unsupported nesting use source
-fallbacks rather than becoming a lossy rendering. Task controls dispatch an exact source
-transaction, so dirty state, undo, drafts, saves, conflicts, and recovery remain one path.
+and source-backed note-embed cards are covered by an isolated virtual-input corpus. Standard
+footnotes, valid GFM pipe tables, and bounded offline math are also mapped when their boundaries
+are unambiguous. Frontmatter, raw HTML including script, style, textarea, and title contents,
+malformed or ambiguous constructs, and unsupported nesting stay visible as source rather than
+becoming a lossy rendering. Task controls dispatch an exact source transaction, so dirty state,
+undo, drafts, saves, conflicts, and recovery remain one path.
 
 Reading view is an explicit document mode, not an implicit write or a second source of truth. It
 renders the current CodeMirror draft, including unsaved changes, without crossing the main-process
@@ -587,8 +587,9 @@ source boundaries, so generated widgets never become a second editable document.
 transclusion is locally resolved through bounded source-backed cards with path-plus-subpath cycle
 tracking, depth/count/byte limits, and an owning source path/range on every result. Composition,
 selection, undo, clipboard, and external-revision flows continue to operate on the one canonical
-CodeMirror document. The mapping fixture and isolated Xvfb integration check cover the exact-source,
-bounded-read, and no-implicit-write guarantees.
+CodeMirror document. The pure mapping fixture and mounted jsdom corpus cover exact-source,
+bounded-read, and no-implicit-write behavior for the local seam. The canonical Electron/Xvfb
+workflow remains a separate gate and is not claimed as verified until it runs successfully.
 
 ### Command-line boundary
 

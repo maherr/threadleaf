@@ -344,6 +344,23 @@ describe("Live Preview async ownership", () => {
     }
   });
 
+  it("keeps mounted raw script text opaque through a close-tag lookalike", async () => {
+    const source = `<span><script>const html = "</div>"; \`unmatched\n[^hidden]: script text\n</script></span>\n**outside**`;
+    const current = { path: "Current.md", vaultId: "vault-a" };
+    const { view, host } = editorFor(source, current, async () => {
+      throw new Error("The raw script fixture has no note embeds.");
+    });
+
+    await flushAsyncWork();
+    const strong = [...host.querySelectorAll<HTMLElement>(".tl-live-strong")];
+    expect(strong).toHaveLength(1);
+    expect(strong[0]?.dataset.tlSourceFrom).toBe(String(source.indexOf("**outside**")));
+    expect(host.querySelector(".tl-live-math, .tl-live-image, .tl-live-embed")).toBeNull();
+    expect(view.state.doc.toString()).toBe(`${source}\n\n`);
+    view.destroy();
+    host.remove();
+  });
+
   it("binds each table body widget to its own source line", async () => {
     const source = [
       "| Field | Value |",
@@ -369,6 +386,10 @@ describe("Live Preview async ownership", () => {
         String(source.indexOf("| owner") + "| owner | fixture |".length),
       ],
     ]);
+    const separator = host.querySelector<HTMLElement>(".tl-live-table-row-separator");
+    expect(separator?.getAttribute("aria-hidden")).toBeNull();
+    expect(separator?.getAttribute("aria-label")).toBe("Table alignment row");
+    expect(separator?.tabIndex).toBe(-1);
     view.destroy();
     host.remove();
   });

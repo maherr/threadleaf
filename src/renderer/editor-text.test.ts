@@ -82,6 +82,35 @@ describe("editor text representation boundary", () => {
     );
   });
 
+  it("preserves pasted U+FEFF as text without changing the document BOM flag", () => {
+    const withBom = "\uFEFFalpha\r\nbeta";
+    const initial = externalTextRepresentation(withBom);
+    const state = EditorState.create({ doc: editorTextFromExternal(withBom) });
+    const first = mutate(state, initial, [{ from: 0, to: 0, insert: "\uFEFFliteral\n" }]);
+
+    expect(first.representation.hasBom).toBe(true);
+    expect(first.state.doc.toString()).toBe("\uFEFFliteral\nalpha\nbeta");
+    expect(externalTextFromEditor(first.state.doc.toString(), first.representation)).toBe(
+      "\uFEFF\uFEFFliteral\r\nalpha\r\nbeta",
+    );
+
+    // A later edit must not reinterpret the already inserted leading marker.
+    const second = mutate(first.state, first.representation, [
+      { from: first.state.doc.length, to: first.state.doc.length, insert: "!" },
+    ]);
+    expect(externalTextFromEditor(second.state.doc.toString(), second.representation)).toBe(
+      "\uFEFF\uFEFFliteral\r\nalpha\r\nbeta!",
+    );
+
+    const withoutBom = externalTextRepresentation("alpha\nbeta");
+    const noBomState = EditorState.create({ doc: editorTextFromExternal("alpha\nbeta") });
+    const literal = mutate(noBomState, withoutBom, [{ from: 0, to: 0, insert: "\uFEFF" }]);
+    expect(literal.representation.hasBom).toBe(false);
+    expect(externalTextFromEditor(literal.state.doc.toString(), literal.representation)).toBe(
+      "\uFEFFalpha\nbeta",
+    );
+  });
+
   it.each([
     ["LF", "alpha\nbeta\n"],
     ["CRLF", "alpha\r\nbeta\r\n"],

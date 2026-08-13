@@ -114,9 +114,9 @@ export function parseEditorDraft(value: unknown, expectedVaultId: string): Persi
   if (Number.isNaN(timestamp.valueOf()) || timestamp.toISOString() !== value.updatedAt) {
     throw new Error("Editor draft update times must use canonical ISO-8601 UTC.");
   }
-  if (version === 3 && (value.content.startsWith("\uFEFF") || value.content.includes("\r"))) {
+  if (version === 3 && value.content.includes("\r")) {
     throw new Error(
-      "Version 3 editor draft content must use CodeMirror's logical LF representation.",
+      "Version 3 editor draft content must use CodeMirror's logical LF representation; a literal U+FEFF is valid editor text.",
     );
   }
   const textRepresentation =

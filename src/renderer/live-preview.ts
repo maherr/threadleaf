@@ -102,6 +102,11 @@ export interface LivePreviewMapping {
   mapRenderedSelection(selection: SourceRange, affinity?: SelectionAffinity): SourceRange;
 }
 
+export interface LivePreviewMappingScanStats {
+  lines: number;
+  protectedRangeChecks: number;
+}
+
 export type InlineTransclusionStatus =
   | "ready"
   | "missing"
@@ -179,6 +184,79 @@ function rangesIntersect(left: SourceRange, right: SourceRange): boolean {
 
 function intersectsAny(range: SourceRange, ranges: readonly SourceRange[]): boolean {
   return ranges.some((candidate) => rangesIntersect(range, candidate));
+}
+
+function mergeSourceRanges(ranges: readonly SourceRange[]): SourceRange[] {
+  const ordered = ranges
+    .filter((range) => range.from < range.to)
+    .map((range) => ({ from: range.from, to: range.to }))
+    .sort((left, right) => left.from - right.from || left.to - right.to);
+  const merged: SourceRange[] = [];
+  for (const range of ordered) {
+    const previous = merged.at(-1);
+    if (previous && range.from <= previous.to) {
+      previous.to = Math.max(previous.to, range.to);
+    } else {
+      merged.push(range);
+    }
+  }
+  return merged;
+}
+
+interface SourceRangeCursor {
+  index: number;
+}
+
+function rangesForLine(
+  line: SourceRange,
+  ranges: readonly SourceRange[],
+  cursor: SourceRangeCursor,
+  stats?: LivePreviewMappingScanStats,
+): SourceRange[] {
+  while (cursor.index < ranges.length) {
+    const candidate = ranges[cursor.index];
+    if (!candidate || candidate.to > line.from) break;
+    if (stats) stats.protectedRangeChecks += 1;
+    cursor.index += 1;
+  }
+  const local: SourceRange[] = [];
+  for (
+    let index = cursor.index;
+    index < ranges.length && (ranges[index]?.from ?? Number.POSITIVE_INFINITY) < line.to;
+    index += 1
+  ) {
+    const candidate = ranges[index];
+    if (!candidate) continue;
+    if (stats) stats.protectedRangeChecks += 1;
+    if (rangesIntersect(line, candidate)) local.push(candidate);
+  }
+  while (cursor.index < ranges.length) {
+    const candidate = ranges[cursor.index];
+    if (!candidate || candidate.to > line.to) break;
+    cursor.index += 1;
+  }
+  return local;
+}
+
+function subtractSourceRanges(
+  ranges: readonly SourceRange[],
+  masks: readonly SourceRange[],
+): SourceRange[] {
+  const remainder: SourceRange[] = [];
+  for (const range of ranges) {
+    let cursor = range.from;
+    for (const mask of masks) {
+      if (mask.to <= cursor) continue;
+      if (mask.from >= range.to) break;
+      if (cursor < mask.from) {
+        remainder.push({ from: cursor, to: Math.min(mask.from, range.to) });
+      }
+      cursor = Math.max(cursor, mask.to);
+      if (cursor >= range.to) break;
+    }
+    if (cursor < range.to) remainder.push({ from: cursor, to: range.to });
+  }
+  return mergeSourceRanges(remainder);
 }
 
 function parseWikiLink(raw: string, embed: boolean): LivePreviewLink | null {
@@ -967,17 +1045,34 @@ function mapRenderedPosition(
  */
 export function buildLivePreviewMapping(
   source: string,
-  options: { protectedRanges?: readonly SourceRange[] } = {},
+  options: {
+    protectedRanges?: readonly SourceRange[];
+    stats?: LivePreviewMappingScanStats;
+  } = {},
 ): LivePreviewMapping {
+  if (options.stats) {
+    options.stats.lines = 0;
+    options.stats.protectedRangeChecks = 0;
+  }
   const frontmatter = scanFrontmatter(source);
   if (frontmatter.status === "unresolved") {
     return unresolvedFrontmatterMapping(source);
   }
   const footnotes = collectFootnotes(source);
-  const codeRanges = markdownCodeRanges(source);
-  const htmlRanges = markdownHtmlRanges(source, codeRanges);
-  const protectedRanges = [...codeRanges, ...htmlRanges, ...(options.protectedRanges ?? [])];
-  const lineProtectedRanges = [...codeRanges, ...(options.protectedRanges ?? [])];
+  const codeRanges = mergeSourceRanges(markdownCodeRanges(source));
+  const htmlRanges = mergeSourceRanges(markdownHtmlRanges(source, codeRanges));
+  const requestedProtectedRanges = mergeSourceRanges([
+    ...codeRanges,
+    ...(options.protectedRanges ?? []),
+  ]);
+  const nonHtmlProtectedRanges = subtractSourceRanges(requestedProtectedRanges, htmlRanges);
+  const protectedRanges = mergeSourceRanges([...nonHtmlProtectedRanges, ...htmlRanges]);
+  // A code range nested inside raw HTML must not make the whole line look
+  // like Markdown code. Both lists are ordered once, then each line advances
+  // a cursor monotonically instead of rescanning every prior range.
+  const lineProtectedRanges = nonHtmlProtectedRanges;
+  const protectedCursor: SourceRangeCursor = { index: 0 };
+  const lineProtectedCursor: SourceRangeCursor = { index: 0 };
   const parsed: ParsedInlineToken[] = [];
   const lines = splitSourceLines(source);
   const lineStarts = sourceLineStarts(source);
@@ -989,6 +1084,7 @@ export function buildLivePreviewMapping(
   }
   let lineFrom = 0;
   for (const [lineIndex, line] of lines.entries()) {
+    if (options.stats) options.stats.lines += 1;
     const lineNumber = lineIndex + 1;
     const lineRange = sourceRange(lineFrom, lineFrom + line.length);
     // The pure mapping has no mounted CodeMirror syntax tree to hide behind.
@@ -996,12 +1092,19 @@ export function buildLivePreviewMapping(
     // slice, including code that merely resembles a table, task, frontmatter
     // marker, or math. HTML ranges are handled at token boundaries so ordinary
     // Markdown after a closing tag remains renderable.
-    const hasNonHtmlProtectedRange = lineProtectedRanges.some(
-      (range) =>
-        rangesIntersect(lineRange, range) &&
-        !htmlRanges.some((html) => html.from <= range.from && range.to <= html.to),
+    const localNonHtmlProtectedRanges = rangesForLine(
+      lineRange,
+      lineProtectedRanges,
+      lineProtectedCursor,
+      options.stats,
     );
-    if (hasNonHtmlProtectedRange) {
+    const localProtectedRanges = rangesForLine(
+      lineRange,
+      protectedRanges,
+      protectedCursor,
+      options.stats,
+    );
+    if (localNonHtmlProtectedRanges.length > 0) {
       lineFrom = lineStarts[lineIndex + 1] ?? source.length;
       continue;
     }
@@ -1013,7 +1116,7 @@ export function buildLivePreviewMapping(
       isFrontmatter || isFrontmatterFence || isTableLine || isFootnoteSourceLine;
     if (!sourceOnlyLine) {
       parsed.push(
-        ...parseLivePreviewLine(line, lineFrom, protectedRanges, {
+        ...parseLivePreviewLine(line, lineFrom, localProtectedRanges, {
           footnoteIds: footnotes.ids,
         }),
       );
@@ -1047,7 +1150,7 @@ export function buildLivePreviewMapping(
       }
       const from = lineFrom + match.index + match[0].length - marker.length;
       const to = from + marker.length;
-      if (!intersectsAny({ from, to }, protectedRanges)) {
+      if (!intersectsAny({ from, to }, localProtectedRanges)) {
         parsed.push({ from, to, kind: "task", label: marker });
       }
     }
@@ -1066,6 +1169,7 @@ export function buildLivePreviewMapping(
     mappedTokens.push({ token, operations: tokenOps, status });
   }
   lineFrom = 0;
+  const operationProtectedCursor: SourceRangeCursor = { index: 0 };
   let parsedIndex = 0;
   for (const [lineIndex, line] of lines.entries()) {
     const lineTo = lineFrom + line.length;
@@ -1081,8 +1185,14 @@ export function buildLivePreviewMapping(
       parsedIndex += 1;
     }
     const occupied = lineTokens.map((token) => sourceRange(token.from, token.to));
-    operations.push(...prefixOperations(line, lineFrom, occupied, protectedRanges));
-    operations.push(...delimiterOperations(line, lineFrom, occupied, protectedRanges));
+    const localProtectedRanges = rangesForLine(
+      sourceRange(lineFrom, lineTo),
+      protectedRanges,
+      operationProtectedCursor,
+      options.stats,
+    );
+    operations.push(...prefixOperations(line, lineFrom, occupied, localProtectedRanges));
+    operations.push(...delimiterOperations(line, lineFrom, occupied, localProtectedRanges));
     lineFrom = lineStarts[lineIndex + 1] ?? source.length;
   }
   const uniqueOperations = operations
@@ -2237,7 +2347,6 @@ class TableRowWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const frame = document.createElement("span");
     frame.className = `tl-live-table-widget tl-live-table-row-${this.kind}`;
-    frame.tabIndex = 0;
     frame.setAttribute("role", "row");
     sourceMetadata(frame, this.sourceFrom, this.sourceTo, "table");
     frame.title = "Click to edit the exact table source";
@@ -2251,9 +2360,14 @@ class TableRowWidget extends WidgetType {
       if (event.key === "Enter" || event.key === " ") reveal(event);
     });
     if (this.kind === "separator") {
-      frame.ariaHidden = "true";
+      // The alignment row is meaningful table structure and remains a
+      // source-reveal target, but it is not an interactive stop in the tab
+      // order. Do not hide it from assistive technology or expose a focusable
+      // span that contains no cells.
+      frame.setAttribute("aria-label", "Table alignment row");
       return frame;
     }
+    frame.tabIndex = 0;
     frame.style.setProperty("--tl-live-table-columns", String(this.columns));
     for (const cell of this.cells) {
       const element = document.createElement("span");
@@ -2338,6 +2452,11 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
   tableRanges.length = 0;
   tableRanges.push(...validTableRanges);
   const mathBlocks = collectVisibleMathBlocks(view, protectedRanges);
+  const orderedProtectedRanges = mergeSourceRanges([
+    ...subtractSourceRanges(protectedRanges, htmlRanges),
+    ...htmlRanges,
+  ]);
+  const lineProtectedCursor: SourceRangeCursor = { index: 0 };
   for (const range of tableRanges) {
     const source = view.state.doc.sliceString(range.from, range.to);
     const data = parseLiveTable(source);
@@ -2377,6 +2496,11 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
       continue;
     }
     const lineRange = { from: line.from, to: line.to };
+    const localAbsoluteProtectedRanges = rangesForLine(
+      lineRange,
+      orderedProtectedRanges,
+      lineProtectedCursor,
+    );
     const lineNumber = view.state.doc.lineAt(line.from).number;
     if (sourceOnlyLineNumbers.has(lineNumber)) {
       if (footnotes.definitionLines.has(lineNumber)) {
@@ -2406,15 +2530,13 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
       { from: line.from, to: Math.max(line.from + 1, line.to) },
       active,
     );
-    const tokens = parseLivePreviewLine(line.text, line.from, protectedRanges, {
+    const tokens = parseLivePreviewLine(line.text, line.from, localAbsoluteProtectedRanges, {
       footnoteIds: footnotes.ids,
     });
-    const localProtectedRanges = protectedRanges
-      .filter((range) => rangesIntersect(range, { from: line.from, to: line.to }))
-      .map((range) => ({
-        from: Math.max(0, range.from - line.from),
-        to: Math.min(line.text.length, range.to - line.from),
-      }));
+    const localProtectedRanges = localAbsoluteProtectedRanges.map((range) => ({
+      from: Math.max(0, range.from - line.from),
+      to: Math.min(line.text.length, range.to - line.from),
+    }));
     const lineMapping = buildLivePreviewMapping(line.text, {
       protectedRanges: localProtectedRanges,
     });

@@ -234,4 +234,25 @@ describe("raw HTML source protection", () => {
     const malformed = '<span><em title="unterminated> $x$ </span> $y$';
     expect(markdownHtmlRanges(malformed)).toEqual([{ from: 0, to: malformed.length }]);
   });
+
+  it("treats raw-text and RCDATA elements as opaque until their own closing tag", () => {
+    for (const name of ["script", "style", "textarea", "title"]) {
+      const source = `<div><${name}>const value = "</div>"; \`unmatched\n[^hidden]: raw text\n</${name}></div>\n**after**`;
+      const close = source.lastIndexOf("</div>") + "</div>".length;
+      expect(markdownHtmlRanges(source), name).toEqual([{ from: 0, to: close }]);
+      expect(markdownHtmlRanges(source).every((range) => range.to <= close)).toBe(true);
+    }
+  });
+
+  it("does not let a script close-tag lookalike consume source after the real close", () => {
+    const source = `<script>const html = "</div>"; \`unmatched\n</script>\n**after**`;
+    const close = source.indexOf("</script>") + "</script>".length;
+    expect(markdownHtmlRanges(source)).toEqual([{ from: 0, to: close }]);
+  });
+
+  it("does not let a fence inside raw text protect the outer closing tag", () => {
+    const source = "<div><script>\n```\n</script>\n```\n</div>\n**after**";
+    const close = source.indexOf("</div>") + "</div>".length;
+    expect(markdownHtmlRanges(source)).toEqual([{ from: 0, to: close }]);
+  });
 });

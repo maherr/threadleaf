@@ -450,6 +450,16 @@ Working $y$`);
     expect(anchor?.getAttribute("href")).toBe("#");
   });
 
+  it("keeps reading Markdown after a raw script close-tag lookalike", () => {
+    const source = `<span><script>const html = "</div>"; \`unmatched\n[^hidden]: script text\n</script></span>\n**after**\n\n[^shown]: visible note`;
+    const rendered = preview(source);
+
+    expect(rendered.querySelector("strong")?.textContent).toBe("after");
+    expect(rendered.querySelector(".preview-footnotes")?.textContent).toContain("visible note");
+    expect(rendered.textContent).not.toContain("script text");
+    expect(rendered.textContent).not.toContain("[^hidden]");
+  });
+
   it("uses inert placeholders for Markdown images before bounded hydration", () => {
     const rendered = preview("![Architecture](assets/architecture.png)");
     const placeholder = rendered.querySelector<HTMLElement>(".preview-asset-placeholder");
