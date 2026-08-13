@@ -1331,7 +1331,20 @@ export class ThemePackageManager {
     if (expectedRevision === null) {
       if ((await pathKind(targetPath)) !== "missing")
         throw new Error("Appearance package target appeared after review. No files were replaced.");
-      await fs.rename(stagePath, targetPath);
+      // A rename replaces a same-type file that appears after the check above. Use a
+      // same-directory hard link for first-install snippets so that the final install is
+      // no-clobber even when another process creates the target in this narrow window.
+      // Theme directories still use rename because Node has no portable directory
+      // equivalent to renameat2(RENAME_NOREPLACE).
+      if (targetKind === "file") {
+        await this.#linkFileNoReplace(
+          stagePath,
+          targetPath,
+          "Appearance package target appeared after review. No files were replaced.",
+        );
+      } else {
+        await fs.rename(stagePath, targetPath);
+      }
       await syncDirectory(parentPath);
       if ((await targetRevision(targetPath)) !== nextRevision) {
         await fs.rename(targetPath, stagePath).catch(() => undefined);
@@ -1350,7 +1363,15 @@ export class ThemePackageManager {
         throw new Error(
           "Appearance package changed during installation and was restored without modification.",
         );
-      await fs.rename(stagePath, targetPath);
+      if (targetKind === "file") {
+        await this.#linkFileNoReplace(
+          stagePath,
+          targetPath,
+          "Appearance package target appeared during installation and was preserved.",
+        );
+      } else {
+        await fs.rename(stagePath, targetPath);
+      }
       replacementInstalled = true;
       await syncDirectory(parentPath);
       if ((await targetRevision(targetPath)) !== nextRevision)
@@ -1366,6 +1387,20 @@ export class ThemePackageManager {
       await syncDirectory(parentPath).catch(() => undefined);
       throw error;
     }
+  }
+
+  async #linkFileNoReplace(
+    stagePath: string,
+    targetPath: string,
+    collisionMessage: string,
+  ): Promise<void> {
+    try {
+      await fs.link(stagePath, targetPath);
+    } catch (error) {
+      if (errorCode(error) === "EEXIST") throw new Error(collisionMessage);
+      throw error;
+    }
+    await fs.unlink(stagePath);
   }
 
   async #captureHistory(

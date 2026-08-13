@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyAppearanceCss } from "../renderer/appearance-renderer";
 import { createDefaultVaultAppearance } from "../shared/appearance";
 import {
@@ -249,6 +249,77 @@ describe("appearance package archive inspection", () => {
 });
 
 describe("theme and snippet package manager", () => {
+  it("does not replace a snippet created after the final missing-target check", async () => {
+    const manager = await openManager([packageFor("snippet", snippetId, "1.0.0")]);
+    const review = await manager.preview(vaultPath, vaultId, {
+      action: "install",
+      kind: "snippet",
+      packageId: snippetId,
+    });
+    const realLink = fs.link.bind(fs);
+    let injected = false;
+    const link = vi.spyOn(fs, "link").mockImplementation(async (sourcePath, targetPath) => {
+      if (!injected && String(targetPath) === snippetPath()) {
+        injected = true;
+        await fs.writeFile(snippetPath(), "external concurrent file\n", "utf8");
+      }
+      return realLink(sourcePath, targetPath);
+    });
+
+    try {
+      await expect(manager.apply(vaultPath, vaultId, review.reviewId)).rejects.toThrow(
+        "target appeared after review",
+      );
+    } finally {
+      link.mockRestore();
+    }
+
+    expect(await fs.readFile(snippetPath(), "utf8")).toBe("external concurrent file\n");
+  });
+
+  it("does not replace a snippet created after the reviewed target moves to rollback", async () => {
+    const manager = await openManager([
+      packageFor("snippet", snippetId, "1.0.0"),
+      packageFor("snippet", snippetId, "2.0.0"),
+    ]);
+    const install = await manager.preview(vaultPath, vaultId, {
+      action: "install",
+      kind: "snippet",
+      packageId: snippetId,
+      version: "1.0.0",
+    });
+    await manager.apply(vaultPath, vaultId, install.reviewId);
+    const update = await manager.preview(vaultPath, vaultId, {
+      action: "install",
+      kind: "snippet",
+      packageId: snippetId,
+      version: "2.0.0",
+    });
+    const realLink = fs.link.bind(fs);
+    let injected = false;
+    const link = vi.spyOn(fs, "link").mockImplementation(async (sourcePath, targetPath) => {
+      if (
+        !injected &&
+        String(targetPath) === snippetPath() &&
+        path.basename(String(sourcePath)).startsWith(".threadleaf-appearance-stage-")
+      ) {
+        injected = true;
+        await fs.writeFile(snippetPath(), "external concurrent file\n", "utf8");
+      }
+      return realLink(sourcePath, targetPath);
+    });
+
+    try {
+      await expect(manager.apply(vaultPath, vaultId, update.reviewId)).rejects.toThrow(
+        "target appeared during installation",
+      );
+    } finally {
+      link.mockRestore();
+    }
+
+    expect(await fs.readFile(snippetPath(), "utf8")).toBe("external concurrent file\n");
+  });
+
   it("keeps preview isolated and installs a theme without changing private selection", async () => {
     const manager = await openManager();
     const unrelatedSettings = Buffer.from('{"workspace":"keep"}\n', "utf8");
