@@ -1,4 +1,4 @@
-import { type PluginManifestData, parsePluginId } from "./plugins";
+import { type PluginCapabilityReport, type PluginManifestData, parsePluginId } from "./plugins";
 
 export const pluginPackageActions = ["install", "uninstall", "rollback"] as const;
 
@@ -42,6 +42,43 @@ export interface PluginPackageLicenseEvidence {
   size: number;
 }
 
+export interface PluginPackageInspectionProvenance {
+  kind: "fixture" | "local" | "release";
+  pluginId: string;
+  version: string;
+  releaseTag: string;
+  sourceUrl: string | null;
+  releaseUrl: string | null;
+  indexUrl: string | null;
+  indexSha256: string | null;
+}
+
+/**
+ * The one persisted authority receipt for an exact reviewed package. It is deliberately a
+ * compact projection of the full inspector report: enough to bind the installed bytes,
+ * provenance, and static authority report without retaining runtime paths or source snippets.
+ */
+export interface PluginPackageInspectionReceipt {
+  schemaVersion: 1;
+  tool: {
+    id: "threadleaf-plugin-package-inspector";
+    version: string;
+  };
+  overall: "pass" | "fail" | "blocked";
+  exactPackage: {
+    id: string;
+    version: string;
+    bundleSha256: string;
+    manifestSha256: string;
+    stylesSha256: string | null;
+    provenance: PluginPackageInspectionProvenance;
+  };
+  assets: PluginPackageAssetEvidence[];
+  staticAuthority: PluginCapabilityReport;
+  compatibilityLevel: 0 | 1 | 2 | 3;
+  limitations: string[];
+}
+
 export interface PluginPackageReview {
   reviewId: string;
   vaultId: string;
@@ -56,6 +93,7 @@ export interface PluginPackageReview {
   indexSha256: string | null;
   assets: PluginPackageAssetEvidence[];
   license: PluginPackageLicenseEvidence | null;
+  inspection: PluginPackageInspectionReceipt | null;
   createdAt: string;
   expiresAt: string;
   warnings: string[];

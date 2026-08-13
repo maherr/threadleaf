@@ -67,9 +67,13 @@ The community package index repository has no declared license, so Threadleaf do
 it or describe it as the future Threadleaf-owned open directory. The source adapter, review schema,
 and package manager are AGPL code and can be replaced without changing the vault package format.
 
-The offline [automated package inspection](package-inspection.md) is a separate pre-distribution
-gate. It consumes exact asset bytes and digests, runs the static and disposable-runtime checks,
-and can produce a candidate only after every required stage passes.
+The offline [automated package inspection](package-inspection.md) is the authority gate used by the
+review workflow. It consumes exact asset bytes and digests, runs the static and disposable-runtime
+checks, and can produce a candidate only after every required stage passes. Review retains its
+compact inspection receipt, including exact manifest, bundle, stylesheet, provenance, and static
+authority hashes, so package management and enablement consume one receipt rather than separate
+inspection results. A non-passing report remains explicitly Level 0 if an exact package is retained
+for a user's separate authority decision; it never becomes compatibility evidence.
 
 Search downloads registry metadata only. Selecting Review downloads bounded release and license
 bytes into private staging for 15 minutes. The review displays the exact version, repository,
@@ -90,9 +94,12 @@ runtime. Every resulting package remains disabled. The operations have these dat
 
 The manager retains at most five complete prior package versions per plugin. A receipt is stored
 both privately and beside the package. Discovery verifies the exact `manifest.json`, `main.js`,
-optional `styles.css`, receipt, and retained license before managed code is eligible to run. Any
+optional `styles.css`, inspection receipt, and retained license before managed code is eligible to
+run. For a reviewed package, discovery carries the receipt's static authority report forward to the
+grant and enablement gates; it does not independently replace that report with a second scan. Any
 change marks the package invalid, unloads or excludes it during reconciliation, disables its enable
-control, and requires a new reviewed install.
+control, and requires a new reviewed install. Unmanaged packages remain visible and use a static
+discovery report until reviewed.
 
 Every apply has a durable private journal with intent, staged, package-mutated, and
 metadata-committed phases. The old directory and private inventory state remain recoverable until

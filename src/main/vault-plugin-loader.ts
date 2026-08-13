@@ -1,9 +1,11 @@
 import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import { readStableFileWithinLimit } from "../kernel/durability";
+import type { PluginPackageInspectionReceipt } from "../shared/plugin-packages";
 import {
   createPluginCompatibilityReport,
   maxPluginBundleBytes,
+  type PluginCapabilityReport,
   type PluginCatalogSnapshot,
   type PluginPackageSummary,
   parsePluginId,
@@ -13,10 +15,12 @@ import {
   type VaultPluginSettings,
 } from "../shared/plugins";
 import { scanPluginCapabilities } from "./plugin-capability-scanner";
+import { verifyPluginPackageInspectionReceipt } from "./plugin-inspection-receipt";
 import { validateAppearanceCss } from "./vault-appearance-loader";
 
 const maxManifestBytes = 64 * 1024;
 const maxPluginStylesheetBytes = 2 * 1024 * 1024;
+const maxPluginReceiptBytes = 256 * 1024;
 const maxCombinedPluginCssBytes = 4 * 1024 * 1024;
 const maxCatalogEntries = 256;
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -28,6 +32,7 @@ export interface DiscoveredVaultPlugin {
   directoryPath: string;
   mainPath: string | null;
   stylesheetPath: string | null;
+  inspection: PluginPackageInspectionReceipt | null;
 }
 
 export interface VaultPluginDiscovery {
@@ -50,6 +55,10 @@ function errorCode(error: unknown): string | null {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isContained(rootPath: string, targetPath: string): boolean {
@@ -278,14 +287,45 @@ async function inspectPlugin(
     if (!mainPath) {
       throw new Error("main.js is missing");
     }
-    const capabilityReport = scanPluginCapabilities(
-      await readBoundedBytes(mainPath, maxPluginBundleBytes),
-    );
+    const mainBytes = await readBoundedBytes(mainPath, maxPluginBundleBytes);
     const stylesheetPath = await optionalContainedFile(
       directoryPath,
       "styles.css",
       maxPluginStylesheetBytes,
     );
+    const inspectionPath = await optionalContainedFile(
+      directoryPath,
+      ".threadleaf-package.json",
+      maxPluginReceiptBytes,
+    );
+    let inspection: PluginPackageInspectionReceipt | null = null;
+    let capabilityReport: PluginCapabilityReport;
+    if (inspectionPath) {
+      const inspectionBytes = await readBoundedBytes(inspectionPath, maxPluginReceiptBytes);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(inspectionBytes));
+      } catch {
+        throw new Error("managed package receipt is not valid UTF-8 JSON");
+      }
+      if (!isRecord(parsed) || !("inspection" in parsed)) {
+        throw new Error("managed package receipt is missing its inspection evidence");
+      }
+      const verified = verifyPluginPackageInspectionReceipt(parsed.inspection, folderId, manifest, {
+        manifest: await readBoundedBytes(manifestPath, maxManifestBytes),
+        main: mainBytes,
+        styles: stylesheetPath
+          ? await readBoundedBytes(stylesheetPath, maxPluginStylesheetBytes)
+          : null,
+      });
+      if (!verified.receipt) {
+        throw new Error(`managed package inspection receipt is invalid: ${verified.error}`);
+      }
+      inspection = verified.receipt;
+      capabilityReport = inspection.staticAuthority;
+    } else {
+      capabilityReport = scanPluginCapabilities(mainBytes);
+    }
     return {
       summary: {
         ...manifest,
@@ -300,6 +340,7 @@ async function inspectPlugin(
       directoryPath,
       mainPath,
       stylesheetPath,
+      inspection,
     };
   } catch (error) {
     const message = errorMessage(error);
@@ -308,6 +349,7 @@ async function inspectPlugin(
       directoryPath,
       mainPath: null,
       stylesheetPath: null,
+      inspection: null,
     };
   }
 }

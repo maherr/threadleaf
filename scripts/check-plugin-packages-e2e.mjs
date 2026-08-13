@@ -454,6 +454,17 @@ try {
     "The installed receipt differs from the reviewed exact version.",
   );
   assert(
+    receipt.inspection &&
+      Number.isInteger(receipt.inspection.compatibilityLevel) &&
+      receipt.inspection.compatibilityLevel <= 3 &&
+      receipt.inspection.staticAuthority?.staticOnly === true,
+    "The installed receipt did not retain one bounded static inspection authority.",
+  );
+  assert(
+    receipt.inspection.limitations?.some((limitation) => limitation.includes("not a sandbox")),
+    "The installed inspection receipt omitted its non-sandbox limitation.",
+  );
+  assert(
     (await fs.readFile(path.join(pluginPath, "LICENSE.threadleaf.txt"), "utf8")).includes(
       "GNU AFFERO GENERAL PUBLIC LICENSE",
     ),

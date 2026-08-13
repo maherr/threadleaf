@@ -9,6 +9,7 @@ import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { PluginHost } from "../runtime/plugin-host";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { PluginIntegrationSnapshot, RuntimeSnapshot } from "../shared/contracts";
+import type { PluginPackageInspectionReceipt } from "../shared/plugin-packages";
 import {
   maxPluginBundleBytes,
   type PluginCapabilityReport,
@@ -17,6 +18,7 @@ import {
   parsePluginManifest,
 } from "../shared/plugins";
 import { scanPluginCapabilities } from "./plugin-capability-scanner";
+import { parsePluginPackageInspectionReceipt } from "./plugin-inspection-receipt";
 
 /** Bumped when the machine-readable inspection report changes shape or meaning. */
 export const pluginPackageInspectionSchemaVersion = 1 as const;
@@ -1749,9 +1751,65 @@ export function candidateFromInspection(
   report: PluginPackageInspectionReport,
 ): PluginPackageRegistryCandidate {
   if (!report.candidate || report.overall !== "pass") {
-    throw new Error("Registry candidate requires every exact-package inspection gate to pass.");
+    const failed = report.stages
+      .filter((stage) => stage.status !== "pass")
+      .map((stage) => `${stage.id}:${stage.status}`)
+      .join(", ");
+    throw new Error(
+      `Registry candidate requires every exact-package inspection gate to pass${failed ? ` (${failed})` : ""}.`,
+    );
   }
   return structuredClone(report.candidate);
+}
+
+/**
+ * Retain only the exact package authority needed by review, apply, and enablement. The receipt
+ * deliberately carries the inspector's Level 3 ceiling and its static-inspection limitations.
+ */
+export function inspectionReceiptFromReport(
+  report: PluginPackageInspectionReport,
+): PluginPackageInspectionReceipt {
+  if (!report.staticAuthority) {
+    throw new Error("A package inspection receipt requires a static authority report.");
+  }
+  const candidate = report.candidate && report.overall === "pass" ? report.candidate : null;
+  const asset = (filename: PluginPackageAssetEvidence["filename"]): PluginPackageAssetEvidence => {
+    const evidence = report.input.assets.find((item) => item.filename === filename);
+    if (!evidence) {
+      throw new Error(`A package inspection receipt requires ${filename} evidence.`);
+    }
+    return evidence;
+  };
+  const main = asset("main.js");
+  const manifest = asset("manifest.json");
+  const styles = report.input.assets.find((item) => item.filename === "styles.css") ?? null;
+  const overall = candidate ? "pass" : report.overall === "pass" ? "fail" : report.overall;
+  const limitations = candidate
+    ? candidate.limitations
+    : [
+        `Exact-package inspection did not pass all required gates (${overall}); no compatibility level is claimed.`,
+        ...report.limitations,
+        ...report.stages
+          .filter((stage) => stage.status !== "pass")
+          .map((stage) => `Inspection stage ${stage.id} did not pass.`),
+      ];
+  return parsePluginPackageInspectionReceipt({
+    schemaVersion: 1,
+    tool: report.tool,
+    overall,
+    exactPackage: candidate?.exactPackage ?? {
+      id: report.input.pluginId,
+      version: report.input.version,
+      bundleSha256: main.sha256,
+      manifestSha256: manifest.sha256,
+      stylesSha256: styles?.sha256 ?? null,
+      provenance: report.input.provenance,
+    },
+    assets: report.input.assets,
+    staticAuthority: report.staticAuthority,
+    compatibilityLevel: candidate?.compatibilityLevel ?? 0,
+    limitations,
+  });
 }
 
 /** Write a candidate only after the caller has an all-gates-passed inspection report. */

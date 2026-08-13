@@ -2,8 +2,10 @@
 
 `pnpm test:plugin-package-inspection` runs the offline package-inspection fixture. It builds the
 inspector, materializes each exact fixture package in a temporary disposable vault, and checks the
-machine-readable result. The check does not fetch a release, open a user vault, or update the
-authored compatibility registry.
+machine-readable result. `pnpm test:plugin-package-authority` then drives an exact fixture through
+review, inspection receipt, apply, discovery, grant, enablement, and changed-bundle rejection.
+These checks do not fetch a release, open a user vault, or update the authored compatibility
+registry.
 
 The input is an exact `manifest.json`, `main.js`, and optional `styles.css` byte set. Every asset
 has a declared SHA-256 digest, and provenance carries the exact package version and release tag.
@@ -25,6 +27,17 @@ The report's compatibility level stops at Level 3 (activation plus registration 
 requires a named end-to-end workflow and is not manufactured by this package check. A candidate can
 be written only from an all-gates-passed exact report. The candidate remains bound to the manifest,
 bundle, stylesheet, and provenance digests.
+
+Reviewed package management retains one compact inspection receipt from this report. The receipt
+binds the exact manifest, `main.js`, optional stylesheet, release provenance, and static authority
+report to their SHA-256 digests. Review stages the receipt, apply stores it beside the package,
+and managed discovery uses its static authority report for grant and enablement decisions. It does
+not run a second independent capability scan for a reviewed package. Missing or changed receipt
+evidence, or any changed bound asset, makes the managed package invalid and blocks enablement.
+Unmanaged packages remain discoverable as compatibility input and use the ordinary static scanner
+until they pass the reviewed package workflow. A strict report that does not pass may still be
+retained as a Level 0 receipt for an exact user-reviewed package; it carries the failure status and
+does not claim compatibility or a workflow result.
 
 Network authority is blocked by default. A caller may opt into `deterministic-fixture` mode only
 with an explicit runtime factory that supplies the local fixture; the inspector does not pretend to

@@ -8,12 +8,20 @@ import type {
   PluginPackageApplyOutcome,
   PluginPackageAssetEvidence,
   PluginPackageIndexSnapshot,
+  PluginPackageInspectionReceipt,
   PluginPackageLicenseEvidence,
   PluginPackagePreviewRequest,
   PluginPackageReview,
 } from "../shared/plugin-packages";
 import { type PluginManifestData, parsePluginId, parsePluginManifest } from "../shared/plugins";
 import type { OpenPluginPackage, PluginPackageSource } from "./open-plugin-package-source";
+import { verifyPluginPackageInspectionReceipt } from "./plugin-inspection-receipt";
+import {
+  exactInputFromPackage,
+  inspectionReceiptFromReport,
+  inspectPluginPackage,
+  type PluginPackageInspectionReport,
+} from "./plugin-package-inspection";
 
 const reviewLifetimeMs = 15 * 60_000;
 const maxHistoryEntries = 5;
@@ -42,6 +50,7 @@ interface PackageReceipt {
     sha256: string;
     size: number;
   } | null;
+  inspection: PluginPackageInspectionReceipt;
 }
 
 interface InventoryFile {
@@ -87,6 +96,9 @@ export interface PluginPackageManagerHooks {
     phase: PackageTransactionPhase,
     pluginId: string,
   ) => Promise<void> | void;
+  inspectPackage?: (
+    input: Parameters<typeof inspectPluginPackage>[0],
+  ) => Promise<PluginPackageInspectionReport>;
 }
 
 const transactionPhases = new Set<PackageTransactionPhase>([
@@ -354,8 +366,10 @@ async function removeTree(filePath: string): Promise<void> {
 }
 
 function receiptFromReview(review: PluginPackageReview, installedAt: string): PackageReceipt {
-  if (!review.manifest) {
-    throw new Error("Remote package review is missing its validated manifest.");
+  if (!review.manifest || !review.inspection) {
+    throw new Error(
+      "Remote package review is missing its validated manifest or inspection receipt.",
+    );
   }
   return {
     version: 1,
@@ -368,6 +382,7 @@ function receiptFromReview(review: PluginPackageReview, installedAt: string): Pa
     installedAt,
     assets: review.assets,
     license: review.license,
+    inspection: review.inspection,
   };
 }
 
@@ -390,6 +405,12 @@ export class PluginPackageManager {
     this.#source = source;
     this.#clock = clock;
     this.#hooks = hooks;
+  }
+
+  async #inspectRemotePackage(pkg: OpenPluginPackage): Promise<PluginPackageInspectionReceipt> {
+    const input = exactInputFromPackage(pkg);
+    const report = await (this.#hooks.inspectPackage?.(input) ?? inspectPluginPackage(input));
+    return inspectionReceiptFromReport(report);
   }
 
   async initialize(): Promise<void> {
@@ -498,6 +519,7 @@ export class PluginPackageManager {
 
     if (action === "install") {
       const pkg = await this.#source.getPackage(pluginId, request.version);
+      const inspection = await this.#inspectRemotePackage(pkg);
       const operation =
         kind === "missing"
           ? "install"
@@ -529,12 +551,16 @@ export class PluginPackageManager {
           sha256: pkg.license.sha256,
           size: pkg.license.bytes.byteLength,
         },
+        inspection,
         createdAt: createdAt.toISOString(),
         expiresAt: expiresAt.toISOString(),
         warnings: [
           ...pkg.warnings,
           "The package will be installed disabled and will not execute during this operation.",
           "Compatibility plugins are trusted desktop code, not sandboxed extensions.",
+          inspection.overall === "pass"
+            ? `Offline exact-package inspection passed at compatibility level ${inspection.compatibilityLevel}; static inspection is not a sandbox.`
+            : `Offline exact-package inspection did not pass all gates; no compatibility level is claimed. Static inspection is not a sandbox.`,
           "Close other applications using this vault before applying the reviewed package.",
         ],
       };
@@ -566,6 +592,7 @@ export class PluginPackageManager {
         indexSha256: null,
         assets: [],
         license: null,
+        inspection: null,
         createdAt: createdAt.toISOString(),
         expiresAt: expiresAt.toISOString(),
         warnings: [
@@ -613,6 +640,7 @@ export class PluginPackageManager {
       indexSha256: null,
       assets: await this.#assetEvidence(snapshotPath),
       license: await this.#licenseEvidence(snapshotPath),
+      inspection: await this.#inspectionReceipt(snapshotPath),
       createdAt: createdAt.toISOString(),
       expiresAt: expiresAt.toISOString(),
       warnings: [
@@ -1152,8 +1180,8 @@ export class PluginPackageManager {
     stagingPath: string,
     review: PluginPackageReview,
   ): Promise<PackageReceipt> {
-    if (!review.manifest) {
-      throw new Error("Rollback package is missing a manifest.");
+    if (!review.manifest || !review.inspection) {
+      throw new Error("Rollback package is missing a manifest or inspection receipt.");
     }
     const assets = await this.#assetEvidence(stagingPath);
     const license = await this.#licenseEvidence(stagingPath);
@@ -1168,6 +1196,7 @@ export class PluginPackageManager {
       installedAt: this.#clock().toISOString(),
       assets,
       license,
+      inspection: review.inspection,
     };
   }
 
@@ -1195,6 +1224,41 @@ export class PluginPackageManager {
       sha256: snapshot.revision,
       size: snapshot.size,
     };
+  }
+
+  async #inspectionReceipt(directoryPath: string): Promise<PluginPackageInspectionReceipt> {
+    const snapshot = await readStableFile(path.join(directoryPath, receiptFilename));
+    if (!snapshot) {
+      throw new Error("Retained rollback package is missing its inspection receipt.");
+    }
+    const parsed: unknown = JSON.parse(decoder.decode(snapshot.bytes));
+    if (!isRecord(parsed) || !("inspection" in parsed)) {
+      throw new Error("Retained rollback package is missing its inspection receipt.");
+    }
+    const manifestFile = await readStableFile(path.join(directoryPath, "manifest.json"));
+    const mainFile = await readStableFile(path.join(directoryPath, "main.js"));
+    const stylesFile = await readStableFile(path.join(directoryPath, "styles.css"));
+    const manifest = manifestFile
+      ? parsePluginManifest(JSON.parse(decoder.decode(manifestFile.bytes)))
+      : null;
+    if (!manifestFile || !manifest || !mainFile) {
+      throw new Error("Retained rollback package is missing its inspected code assets.");
+    }
+    const manifestBytes = manifestFile.bytes;
+    const verified = verifyPluginPackageInspectionReceipt(
+      parsed.inspection,
+      manifest.id,
+      manifest,
+      {
+        manifest: manifestBytes,
+        main: mainFile.bytes,
+        styles: stylesFile?.bytes ?? null,
+      },
+    );
+    if (!verified.receipt) {
+      throw new Error(`Retained rollback package inspection is invalid: ${verified.error}`);
+    }
+    return verified.receipt;
   }
 
   async #recordCurrent(
@@ -1764,6 +1828,7 @@ export class PluginPackageManager {
         typeof parsed.pluginVersion !== "string" ||
         !parsed.pluginVersion.trim() ||
         !Array.isArray(parsed.assets) ||
+        !("inspection" in parsed) ||
         (parsed.license !== null && !isRecord(parsed.license))
       ) {
         return "changed";
@@ -1791,6 +1856,7 @@ export class PluginPackageManager {
         return "changed";
       }
       const directoryPath = this.#pluginPath(vaultPath, pluginId);
+      const assetSnapshots = new Map<string, { bytes: Buffer; size: number; revision: string }>();
       for (const filename of allowedAssets) {
         const evidence = assets.get(filename);
         const installed = await readStableFile(path.join(directoryPath, filename));
@@ -1803,9 +1869,25 @@ export class PluginPackageManager {
         ) {
           return "changed";
         }
+        if (installed) {
+          assetSnapshots.set(filename, installed);
+        }
       }
       const manifest = await currentManifest(directoryPath);
       if (!manifest || manifest.id !== pluginId || manifest.version !== receipt.pluginVersion) {
+        return "changed";
+      }
+      const inspection = verifyPluginPackageInspectionReceipt(
+        parsed.inspection,
+        pluginId,
+        manifest,
+        {
+          manifest: assetSnapshots.get("manifest.json")?.bytes ?? Buffer.alloc(0),
+          main: assetSnapshots.get("main.js")?.bytes ?? Buffer.alloc(0),
+          styles: assetSnapshots.get("styles.css")?.bytes ?? null,
+        },
+      );
+      if (!inspection.receipt) {
         return "changed";
       }
       const installedReceipt = await readStableFile(path.join(directoryPath, receiptFilename));

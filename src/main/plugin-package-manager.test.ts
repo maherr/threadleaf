@@ -21,7 +21,7 @@ function packageFor(version: string): OpenPluginPackage {
     id: pluginId,
     name: "Fixture Plugin",
     version,
-    minAppVersion: "1.0.0",
+    minAppVersion: "0.1.0",
     description: "Fixture package",
     author: "Fixture author",
     isDesktopOnly: false,
@@ -29,7 +29,13 @@ function packageFor(version: string): OpenPluginPackage {
   const manifest = { ...rawManifest, authorUrl: null };
   const manifestBytes = Buffer.from(JSON.stringify(rawManifest), "utf8");
   const mainBytes = Buffer.from(
-    `module.exports = class Fixture { version = "${version}"; };`,
+    `const { Plugin } = require("obsidian");
+module.exports = class Fixture extends Plugin {
+  onload() {
+    this.addCommand({ id: "fixture-command", name: "Fixture", callback: () => {} });
+  }
+};
+const fixtureVersion = "${version}";`,
     "utf8",
   );
   const stylesBytes = Buffer.from(`.fixture { --fixture-version: "${version}"; }`, "utf8");
