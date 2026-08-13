@@ -605,6 +605,22 @@ function navigationHistoryForPaths(
   return { back, forward };
 }
 
+function navigationHistoryWithoutPaths(
+  history: WorkspaceNavigationHistory | undefined,
+  excludedPaths: readonly (string | null)[],
+): WorkspaceNavigationHistory | undefined {
+  if (!history) {
+    return undefined;
+  }
+  const availablePaths = new Set([...history.back, ...history.forward]);
+  for (const filePath of excludedPaths) {
+    if (filePath) {
+      availablePaths.delete(filePath);
+    }
+  }
+  return navigationHistoryForPaths(history, availablePaths);
+}
+
 function remapNavigationHistoryPath(
   history: WorkspaceNavigationHistory | undefined,
   from: string,
@@ -2149,6 +2165,11 @@ export class WorkspaceRuntime {
       state.activePaneId === request.paneId
         ? (closingPane.activePath ?? survivor.activePath)
         : survivor.activePath;
+    const retainedHistory =
+      state.activePaneId === request.paneId
+        ? closingPane.navigationHistory
+        : survivor.navigationHistory;
+    const navigationHistory = navigationHistoryWithoutPaths(retainedHistory, [activePath]);
     await this.adoptWorkspaceState(
       createWorkspaceLayout(
         this.kernel.vaultId,
@@ -2163,6 +2184,7 @@ export class WorkspaceRuntime {
             ],
             pinnedPaths: [...survivorPinnedPaths, ...closingPinnedPaths],
             activePath,
+            ...(navigationHistory ? { navigationHistory } : {}),
           },
         ],
         "primary",
@@ -2193,17 +2215,36 @@ export class WorkspaceRuntime {
       throw new Error(`The source pane does not contain this tab: ${normalizedPath}`);
     }
     const sourceWasPinned = source.pinnedPaths.includes(normalizedPath);
+    const targetPreviousActivePath = target.activePath;
     source.openPaths.splice(sourceIndex, 1);
     source.pinnedPaths = source.pinnedPaths.filter((pinnedPath) => pinnedPath !== normalizedPath);
     if (source.activePath === normalizedPath) {
       source.activePath =
         source.openPaths[sourceIndex] ?? source.openPaths[sourceIndex - 1] ?? null;
     }
+    const sourceHistory = navigationHistoryWithoutPaths(source.navigationHistory, [
+      normalizedPath,
+      source.activePath,
+    ]);
+    if (sourceHistory) {
+      source.navigationHistory = sourceHistory;
+    } else {
+      delete source.navigationHistory;
+    }
     if (!target.openPaths.includes(normalizedPath)) {
       target.openPaths.push(normalizedPath);
     }
     if (sourceWasPinned && !target.pinnedPaths.includes(normalizedPath)) {
       target.pinnedPaths.push(normalizedPath);
+    }
+    const targetHistory =
+      targetPreviousActivePath && targetPreviousActivePath !== normalizedPath
+        ? recordNavigation(target.navigationHistory, targetPreviousActivePath, normalizedPath)
+        : navigationHistoryWithoutPaths(target.navigationHistory, [normalizedPath]);
+    if (targetHistory) {
+      target.navigationHistory = targetHistory;
+    } else {
+      delete target.navigationHistory;
     }
     target.activePath = normalizedPath;
     await this.adoptWorkspaceState(

@@ -903,6 +903,69 @@ describe("WorkspaceRuntime", () => {
     });
   });
 
+  it("reconciles both pane histories when an active tab moves between panes", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+    await workspace.openNote("Welcome.md", "primary");
+
+    const moved = await workspace.moveNoteToWorkspacePane(
+      "Welcome.md",
+      "primary",
+      "secondary",
+      workspace.vaultId,
+    );
+
+    expect(moved.workspace?.panes).toMatchObject([
+      {
+        id: "primary",
+        activeNote: { path: "Linked Note.md" },
+        canGoBack: false,
+        canGoForward: false,
+      },
+      {
+        id: "secondary",
+        activeNote: { path: "Welcome.md" },
+        canGoBack: true,
+        canGoForward: false,
+      },
+    ]);
+    expect(store.saved.at(-1)?.panes).toMatchObject([
+      { navigationHistory: { back: [], forward: [] } },
+      { navigationHistory: { back: ["Linked Note.md"], forward: [] } },
+    ]);
+
+    const back = await workspace.goBack(workspace.vaultId, "secondary");
+    expect(back.workspace?.panes[1]).toMatchObject({
+      activeNote: { path: "Linked Note.md" },
+      canGoBack: false,
+      canGoForward: true,
+    });
+  });
+
+  it("retains the focused pane history when collapsing a split layout", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md", "primary");
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+
+    const collapsed = await workspace.closeWorkspacePane("secondary", workspace.vaultId);
+    expect(collapsed.workspace?.panes[0]).toMatchObject({
+      activeNote: { path: "Welcome.md" },
+      canGoBack: true,
+      canGoForward: false,
+    });
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: ["Linked Note.md"],
+      forward: [],
+    });
+
+    const back = await workspace.goBack(workspace.vaultId, "primary");
+    expect(back.workspace?.activeNote?.path).toBe("Linked Note.md");
+  });
+
   it("splits into independent panes, focuses them, moves tabs, and closes a pane", async () => {
     const workspace = await openRuntime();
 

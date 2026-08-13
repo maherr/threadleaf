@@ -1650,10 +1650,10 @@ function commandCatalog(): RendererCommand[] {
       keywords: ["back", "history", "previous", "note", "navigation"],
       shortcut: shortcutFor("workspace.go-back"),
       enabled: Boolean(
-        workspacePaneSnapshot()?.canGoBack && !opening && !busy && !paneSaving && !paneDirty,
+        workspacePaneSnapshot()?.canGoBack && !opening && !busy && !saving && !dirty,
       ),
-      disabledReason: paneDirty
-        ? "Save or revert drafts before navigating note history."
+      disabledReason: dirty
+        ? "Save or revert the open draft before navigating note history."
         : workspacePaneSnapshot()?.canGoBack
           ? "Threadleaf is finishing another action."
           : "No earlier note is available in this pane's history.",
@@ -1666,10 +1666,10 @@ function commandCatalog(): RendererCommand[] {
       keywords: ["forward", "history", "next", "note", "navigation"],
       shortcut: shortcutFor("workspace.go-forward"),
       enabled: Boolean(
-        workspacePaneSnapshot()?.canGoForward && !opening && !busy && !paneSaving && !paneDirty,
+        workspacePaneSnapshot()?.canGoForward && !opening && !busy && !saving && !dirty,
       ),
-      disabledReason: paneDirty
-        ? "Save or revert drafts before navigating note history."
+      disabledReason: dirty
+        ? "Save or revert the open draft before navigating note history."
         : workspacePaneSnapshot()?.canGoForward
           ? "Threadleaf is finishing another action."
           : "No later note is available in this pane's history.",
@@ -1779,9 +1779,9 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["quick", "switch", "note", "file", "open", "title", "path"],
       shortcut: shortcutFor("workspace.quick-switcher"),
-      enabled: Boolean(!opening && !busy && !paneSaving && !paneDirty),
-      disabledReason: paneDirty
-        ? "Save or revert drafts before opening the quick switcher."
+      enabled: Boolean(!opening && !busy && !saving && !dirty),
+      disabledReason: dirty
+        ? "Save or revert the open draft before opening the quick switcher."
         : opening
           ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
           : "Threadleaf is finishing another action.",
@@ -2848,9 +2848,9 @@ function openQuickSwitcher(): void {
     showToast("Wait for the vault index to finish opening.");
     return;
   }
-  if (busy || anyPaneDirty() || anyPaneSaving()) {
-    if (anyPaneDirty()) {
-      showToast("Save or revert drafts before opening the quick switcher.");
+  if (busy || dirty || saving) {
+    if (dirty) {
+      showToast("Save or revert the open draft before opening the quick switcher.");
     }
     return;
   }
@@ -7859,6 +7859,7 @@ function renderWorkspacePanes(
   snapshot: RuntimeSnapshot,
   workspace: RuntimeSnapshot["workspace"],
 ): WorkspaceNoteSnapshot | null {
+  captureActivePaneSession();
   const availablePaneIds = new Set(workspace?.panes.map((pane) => pane.id) ?? ["primary"]);
   const activePaneId = workspace?.activePaneId ?? "primary";
   const paneCount = availablePaneIds.size;
@@ -7887,14 +7888,15 @@ function renderWorkspacePanes(
       "aria-pressed",
       String(paneCount > 1 && workspace?.splitDirection === "horizontal"),
     );
-    const historyBlocked = busy || anyPaneSaving() || anyPaneDirty();
+    const session = paneSession(paneId);
+    const historyBlocked = busy || session.saving || session.dirty;
     pane.navigateBack.disabled = !available || historyBlocked || !paneSnapshot?.canGoBack;
     pane.navigateForward.disabled = !available || historyBlocked || !paneSnapshot?.canGoForward;
-    pane.navigateBack.title = anyPaneDirty()
-      ? "Save or revert drafts before navigating note history"
+    pane.navigateBack.title = session.dirty
+      ? "Save or revert the open draft before navigating note history"
       : "Go back in note history";
-    pane.navigateForward.title = anyPaneDirty()
-      ? "Save or revert drafts before navigating note history"
+    pane.navigateForward.title = session.dirty
+      ? "Save or revert the open draft before navigating note history"
       : "Go forward in note history";
   }
 
@@ -10940,7 +10942,8 @@ document.addEventListener("keydown", (event) => {
       elements.moveNoteDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.pluginPackageReviewDialog.open ||
-      elements.pluginAuthorityReviewDialog.open
+      elements.pluginAuthorityReviewDialog.open ||
+      elements.appearancePackageReviewDialog.open
     ) {
       return;
     }

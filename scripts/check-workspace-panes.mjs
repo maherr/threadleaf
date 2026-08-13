@@ -674,6 +674,31 @@ try {
     "Enter did not open the selected quick-switcher note",
   );
 
+  assert(
+    await evaluate(`(() => {
+      const dialog = document.querySelector('#appearance-package-review-dialog');
+      if (!(dialog instanceof HTMLDialogElement)) return false;
+      dialog.showModal();
+      return dialog.open;
+    })()`),
+    "The appearance review modal guard could not be armed.",
+  );
+  await pressKey("O", "KeyO", 2 | 8);
+  await delay(100);
+  assert(
+    (await evaluate("document.querySelector('#quick-switcher')?.open === true")) === false,
+    "The quick-switcher hotkey opened over appearance package review.",
+  );
+  assert(
+    await evaluate(`(() => {
+      const dialog = document.querySelector('#appearance-package-review-dialog');
+      if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return false;
+      dialog.close();
+      return !dialog.open;
+    })()`),
+    "The synthetic appearance review modal could not be disarmed.",
+  );
+
   await pressKey("[", "BracketLeft", 2);
   await waitFor(
     async () => (await paneState("primary"))?.path === "Welcome.md",
@@ -764,6 +789,32 @@ try {
     paneTabPaths(current, "primary").join("\n") === "Welcome.md",
     `Opening the secondary note changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
   );
+
+  phase = "inactive dirty pane independence";
+  const inactiveDraftMarker = "THREADLEAF-INACTIVE-DRAFT";
+  await appendToPane("primary", `\n\n${inactiveDraftMarker}`);
+  await focusPaneEditor("secondary");
+  assert(
+    await evaluate(`(() => {
+      const back = document.querySelector('[data-pane-id="secondary"] [id^="navigate-back"]');
+      return back instanceof HTMLButtonElement && !back.disabled;
+    })()`),
+    "A dirty inactive pane disabled history in the clean active pane.",
+  );
+  await pressKey("O", "KeyO", 2 | 8);
+  await waitFor(
+    () => evaluate("document.querySelector('#quick-switcher')?.open === true"),
+    "A dirty inactive pane blocked the clean active pane quick switcher",
+  );
+  await captureScreenshot("workspace-clean-pane-with-inactive-draft");
+  await pressKey("Escape", "Escape");
+  await focusPaneEditor("primary");
+  await clickSelector('[data-pane-id="primary"] [id^="revert-note"]');
+  await waitFor(
+    async () => !(await paneState("primary"))?.text.includes(inactiveDraftMarker),
+    "The inactive-pane independence draft did not revert cleanly",
+  );
+  await focusPaneEditor("secondary");
 
   phase = "independent pane editing";
   const primaryMarker = "THREADLEAF-PRIMARY-DRAFT";
