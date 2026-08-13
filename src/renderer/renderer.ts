@@ -69,6 +69,7 @@ import {
   movePaletteSelection,
   type PaletteCommandDescriptor,
 } from "./command-palette-model";
+import { GraphViewController } from "./graph-view";
 import {
   createLivePreviewExtension,
   type LivePreviewLink,
@@ -158,6 +159,7 @@ const elements = {
   themeToggle: getButton("theme-toggle"),
   themeLabel: getElement("theme-label"),
   commandPalette: getDialog("command-palette"),
+  graphDialog: getDialog("graph-dialog"),
   paletteQuery: getInput("palette-query"),
   paletteClose: getButton("palette-close"),
   paletteCount: getElement("palette-count"),
@@ -490,6 +492,16 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.open-daily-note",
     label: "Open today's daily note",
     description: "Open today's note or create it through the recoverable writer.",
+  },
+  {
+    id: "workspace.open-graph-view",
+    label: "Open vault graph",
+    description: "Explore all indexed note connections without changing the vault.",
+  },
+  {
+    id: "workspace.open-local-graph",
+    label: "Open local graph",
+    description: "Explore the connected neighborhood around the active note.",
   },
   {
     id: "workspace.move-note",
@@ -1166,6 +1178,30 @@ function commandCatalog(): RendererCommand[] {
             ? "Save or revert drafts before opening today's note."
             : "Threadleaf is finishing another action.",
       run: openTodaysDailyNote,
+    },
+    {
+      id: "workspace.open-graph-view",
+      label: "Open vault graph",
+      category: "View",
+      keywords: ["graph", "links", "connections", "network", "global"],
+      shortcut: shortcutFor("workspace.open-graph-view"),
+      enabled: Boolean(currentSnapshot?.vault.id && !opening),
+      disabledReason: opening
+        ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+        : "No vault is active.",
+      run: () => graphView.show("global"),
+    },
+    {
+      id: "workspace.open-local-graph",
+      label: "Open local graph",
+      category: "View",
+      keywords: ["graph", "links", "connections", "network", "local", "note"],
+      shortcut: shortcutFor("workspace.open-local-graph"),
+      enabled: Boolean(currentSnapshot?.vault.id && loadedNote && !opening),
+      disabledReason: opening
+        ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+        : "Open a note before opening its local graph.",
+      run: () => graphView.show("local"),
     },
     {
       id: "workspace.move-note",
@@ -5824,6 +5860,14 @@ function renderWorkspacePanes(
 function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
+  if (snapshot.vault.id) {
+    graphView.onSnapshot({
+      vaultId: snapshot.vault.id,
+      vaultName: snapshot.vault.name,
+      indexGeneration: snapshot.workspace?.indexGeneration ?? 0,
+      rootPath: loadedNote?.path ?? null,
+    });
+  }
   if (previousVaultId !== snapshot.vault.id) {
     for (const paneId of ["primary", "secondary"] as const) {
       runInPaneContext(paneId, () => {
@@ -7448,6 +7492,31 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   });
 }
 
+const graphView = new GraphViewController(elements.graphDialog, {
+  context: () => {
+    if (!currentSnapshot?.vault.id) {
+      return null;
+    }
+    return {
+      vaultId: currentSnapshot.vault.id,
+      vaultName: currentSnapshot.vault.name,
+      indexGeneration: currentSnapshot.workspace?.indexGeneration ?? 0,
+      rootPath: loadedNote?.path ?? null,
+    };
+  },
+  load: (request, expectedVaultId) => window.threadleaf.getVaultGraph(request, expectedVaultId),
+  openNote: (path) => openNote(path),
+  setPluginSurfaceVisible: (visible) => {
+    if (
+      (!visible && documentViewMode === "plugin") ||
+      (visible && !pluginSurfacePresentationVisible)
+    ) {
+      setPluginSurfacePresentationVisible(visible);
+    }
+  },
+  report: showToast,
+});
+
 for (const [paneId, pane] of paneElements) {
   bindWorkspacePaneEvents(paneId, pane);
 }
@@ -7733,6 +7802,7 @@ document.addEventListener("keydown", (event) => {
   if (targetId === "ui.command-palette") {
     if (
       elements.settingsDialog.open ||
+      elements.graphDialog.open ||
       elements.newNoteDialog.open ||
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
@@ -7753,6 +7823,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (targetId === "settings.open-keybindings") {
     if (
+      elements.graphDialog.open ||
       elements.newNoteDialog.open ||
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
@@ -7774,6 +7845,7 @@ document.addEventListener("keydown", (event) => {
   if (
     elements.commandPalette.open ||
     elements.settingsDialog.open ||
+    elements.graphDialog.open ||
     elements.newNoteDialog.open ||
     elements.templatePickerDialog.open ||
     elements.propertyDialog.open ||
@@ -7898,6 +7970,7 @@ window.addEventListener(
     unsubscribeMenuCommand();
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
     pluginSurfaceResizeObserver.disconnect();
+    graphView.destroy();
     for (const session of paneSessions.values()) {
       session.editor?.destroy();
     }

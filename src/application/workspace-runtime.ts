@@ -30,6 +30,8 @@ import type {
   NoteSaveResponse,
   PluginEditorContext,
   RuntimeSnapshot,
+  VaultGraphRequest,
+  VaultGraphResponse,
   VaultImageResponse,
   VaultNoteEmbedResponse,
   VaultSearchResponse,
@@ -63,6 +65,7 @@ import {
   renderNoteTemplate,
 } from "./note-template";
 import { trashMarkdownNote, vaultTrashDirectory } from "./note-trash";
+import { projectVaultGraph } from "./vault-graph";
 import { loadVaultImage } from "./vault-image-service";
 import {
   activeWorkspacePane,
@@ -838,6 +841,22 @@ export class WorkspaceRuntime {
         results: [],
       };
     }
+  }
+
+  async getVaultGraph(
+    request: VaultGraphRequest,
+    expectedVaultId: string,
+  ): Promise<VaultGraphResponse> {
+    if (this.kernel.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    const projection = projectVaultGraph(this.indexReactor.index.snapshot(), request);
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      indexGeneration: this.indexReactor.index.generation,
+      ...projection,
+    };
   }
 
   loadVaultImage(

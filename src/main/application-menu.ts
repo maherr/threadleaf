@@ -123,6 +123,9 @@ export function createApplicationMenuTemplate(
     {
       label: "View",
       submenu: [
+        action("Open Vault Graph", "workspace.open-graph-view"),
+        action("Open Local Graph", "workspace.open-local-graph"),
+        { type: "separator" },
         action("Toggle Reading View", "editor.toggle-reading-view"),
         action("Toggle Live Preview or Source", "editor.toggle-source-mode"),
         action("Toggle Light or Dark Theme", "appearance.toggle-theme"),

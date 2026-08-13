@@ -1406,6 +1406,49 @@ describe("WorkspaceRuntime", () => {
     });
   });
 
+  it("projects the current link index through the active-vault graph boundary", async () => {
+    const workspace = await openRuntime();
+
+    await expect(
+      workspace.getVaultGraph(
+        {
+          mode: "global",
+          rootPath: null,
+          depth: 1,
+          query: "",
+          includeOrphans: false,
+        },
+        workspace.vaultId,
+      ),
+    ).resolves.toMatchObject({
+      status: "ready",
+      vaultId: workspace.vaultId,
+      totalNodes: 2,
+      totalEdges: 2,
+      nodes: [
+        { path: "Linked Note.md", neighborCount: 1 },
+        { path: "Welcome.md", neighborCount: 1 },
+      ],
+      edges: [
+        { source: "Linked Note.md", target: "Welcome.md", occurrences: 2 },
+        { source: "Welcome.md", target: "Linked Note.md", occurrences: 2 },
+      ],
+    });
+
+    await expect(
+      workspace.getVaultGraph(
+        {
+          mode: "local",
+          rootPath: "Welcome.md",
+          depth: 1,
+          query: "",
+          includeOrphans: false,
+        },
+        "stale-vault",
+      ),
+    ).resolves.toEqual({ status: "stale-vault", vaultId: workspace.vaultId });
+  });
+
   it("loads local raster images through the active-vault identity boundary", async () => {
     const workspace = await openRuntime();
     const imageBytes = Buffer.from(

@@ -14,6 +14,7 @@ import {
 import { AppSettingsController } from "../application/app-settings-controller";
 import { AppUpdateController } from "../application/app-update-controller";
 import { parseEditorDraft } from "../application/editor-draft";
+import { parseVaultGraphRequest } from "../application/vault-graph";
 import { WorkspaceController } from "../application/workspace-controller";
 import { atomicWriteFile } from "../kernel/durability";
 import { FixedStateRoot } from "../kernel/ports";
@@ -1043,6 +1044,18 @@ function registerIpcHandlers(): void {
     }
     return workspaceController.searchVault(query);
   });
+  ipcMain.handle(
+    ipcChannels.vaultGraph,
+    (_event, requestValue: unknown, expectedVaultId: unknown) => {
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Vault graph requires a string vault identity.");
+      }
+      return workspaceController.getVaultGraph(
+        parseVaultGraphRequest(requestValue),
+        expectedVaultId,
+      );
+    },
+  );
   ipcMain.handle(
     ipcChannels.loadVaultImage,
     (_event, sourceNotePath: unknown, target: unknown, expectedVaultId: unknown) => {

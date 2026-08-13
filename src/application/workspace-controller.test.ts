@@ -13,6 +13,8 @@ import type {
   NotePropertyType,
   NoteSaveResponse,
   RuntimeSnapshot,
+  VaultGraphRequest,
+  VaultGraphResponse,
   VaultImageResponse,
   VaultNoteEmbedResponse,
   VaultSearchResponse,
@@ -150,6 +152,26 @@ class FakeRuntime implements WorkspaceRuntimePort {
       total: 0,
       truncated: false,
       results: [],
+    };
+  }
+
+  async getVaultGraph(
+    request: VaultGraphRequest,
+    expectedVaultId: string,
+  ): Promise<VaultGraphResponse> {
+    if (expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      indexGeneration: 1,
+      ...request,
+      totalNodes: 0,
+      totalEdges: 0,
+      truncated: false,
+      nodes: [],
+      edges: [],
     };
   }
 

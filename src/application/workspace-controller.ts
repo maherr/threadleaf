@@ -18,6 +18,8 @@ import type {
   NoteSaveResponse,
   PluginEditorContext,
   RuntimeSnapshot,
+  VaultGraphRequest,
+  VaultGraphResponse,
   VaultImageResponse,
   VaultNoteEmbedResponse,
   VaultSearchResponse,
@@ -40,6 +42,7 @@ export interface WorkspaceRuntimePort {
   readonly vaultPath: string;
   getSnapshot(): Promise<RuntimeSnapshot>;
   searchVault(query: string): Promise<VaultSearchResponse>;
+  getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse>;
   loadVaultImage(
     sourceNotePath: string,
     target: string,
@@ -427,6 +430,21 @@ export class WorkspaceController {
 
   searchVault(query: string): Promise<VaultSearchResponse> {
     return this.activeRuntime("search").searchVault(query);
+  }
+
+  async getVaultGraph(
+    request: VaultGraphRequest,
+    expectedVaultId: string,
+  ): Promise<VaultGraphResponse> {
+    const runtime = this.activeRuntime("open the graph");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.getVaultGraph(request, expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
   }
 
   async loadVaultImage(

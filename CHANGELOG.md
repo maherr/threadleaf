@@ -257,6 +257,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   date, and time expansion; private per-vault workflow settings; no-rewrite opening of an existing
   daily note; insertion at the CodeMirror selection; native menus and commands; and isolated X11
   virtual-input verification in light and dark themes.
+- Bounded global and local vault graphs derived from the rebuildable metadata index, with path,
+  title, and tag filtering; optional orphan notes and direction arrows; one-to-four-step local
+  traversal; deterministic layout; pointer and keyboard pan and zoom; focusable note nodes; an
+  equivalent visible-note list; persisted private view preferences; stale-vault guards; and
+  isolated X11 virtual-input verification in light, dark, and simulated deuteranomaly views.
 
 ### Fixed
 

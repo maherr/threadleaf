@@ -114,6 +114,15 @@ open or create today's note, insert a selected template at the CodeMirror select
 current date or time. Existing daily notes are opened without rewriting them. The native CLI offers
 the same explicit template expansion and daily-note behavior for headless workflows.
 
+The desktop now projects global and local vault graphs from the same disposable metadata index as
+links, backlinks, search, and the CLI. Open Vault Graph and Open Local Graph are available in the
+View menu and command palette. Global graphs can filter indexed notes by path, title, or tag and can
+include unconnected notes. Local graphs keep the active note visible and traverse one to four link
+steps. Direction arrows, zoom, pointer panning, keyboard panning, focusable nodes, and an equivalent
+visible-note list keep the view useful without making color or precise pointer control the only way
+to navigate. Projection limits and truncation are explicit, and opening or closing a graph never
+writes to the vault.
+
 Vault appearance support now discovers standard `.obsidian/themes/<name>/theme.css` packages and
 `.obsidian/snippets/*.css` files without changing them. A per-vault selection, base color scheme,
 and enabled snippet order are stored in Threadleaf's private application settings. Custom CSS is

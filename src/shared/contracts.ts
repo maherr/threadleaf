@@ -272,6 +272,48 @@ export interface VaultSearchResponse {
   results: VaultSearchResult[];
 }
 
+export type VaultGraphMode = "global" | "local";
+
+export interface VaultGraphRequest {
+  mode: VaultGraphMode;
+  rootPath: string | null;
+  depth: number;
+  query: string;
+  includeOrphans: boolean;
+}
+
+export interface VaultGraphNode {
+  path: string;
+  title: string;
+  tags: string[];
+  incomingCount: number;
+  outgoingCount: number;
+  neighborCount: number;
+  distance: number | null;
+}
+
+export interface VaultGraphEdge {
+  source: string;
+  target: string;
+  occurrences: number;
+}
+
+export interface VaultGraphProjection extends VaultGraphRequest {
+  totalNodes: number;
+  totalEdges: number;
+  truncated: boolean;
+  nodes: VaultGraphNode[];
+  edges: VaultGraphEdge[];
+}
+
+export type VaultGraphResponse =
+  | ({
+      status: "ready";
+      vaultId: string;
+      indexGeneration: number;
+    } & VaultGraphProjection)
+  | { status: "stale-vault"; vaultId: string };
+
 export interface WorkspaceSnapshot {
   state: "ready" | "degraded";
   indexGeneration: number;
@@ -634,6 +676,7 @@ export interface ThreadleafBridge {
   reloadPlugins(expectedVaultId: string): Promise<PluginUpdateResponse>;
   getMigrationPreview(expectedVaultId: string): Promise<MigrationPreviewResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
+  getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse>;
   loadVaultImage(
     sourceNotePath: string,
     target: string,

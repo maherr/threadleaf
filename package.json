@@ -53,6 +53,7 @@
     "test:plugin-packages-e2e": "pnpm run build && node scripts/check-plugin-packages-e2e.mjs",
     "test:plugin-recovery": "pnpm run build && node scripts/check-plugin-recovery.mjs",
     "test:editor-reliability": "pnpm run build && node scripts/check-editor-reliability.mjs",
+    "test:graph-view": "pnpm run build && node scripts/check-graph-view.mjs",
     "test:representative-vault": "pnpm run build && node scripts/check-representative-vault.mjs",
     "test:startup-readiness": "pnpm run build && node scripts/check-startup-readiness.mjs",
     "test:support-bundle": "pnpm run build && node scripts/check-support-bundle.mjs",

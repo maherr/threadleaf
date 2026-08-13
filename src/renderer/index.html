@@ -333,6 +333,140 @@
     </dialog>
 
     <dialog
+      class="graph-dialog"
+      id="graph-dialog"
+      aria-labelledby="graph-title"
+      aria-describedby="graph-context"
+      aria-modal="true"
+    >
+      <div class="graph-shell">
+        <header class="graph-header">
+          <span class="graph-mark" aria-hidden="true">⌬</span>
+          <span class="graph-heading-copy">
+            <small>Indexed connections</small>
+            <strong id="graph-title">Vault graph</strong>
+            <span id="graph-context">Active vault</span>
+          </span>
+          <button id="graph-close" type="button" aria-label="Close graph">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+
+        <aside class="graph-controls" aria-label="Graph controls">
+          <fieldset class="graph-mode-switch">
+            <legend>Scope</legend>
+            <span>
+              <button id="graph-mode-global" type="button" aria-pressed="true">All notes</button>
+              <button id="graph-mode-local" type="button" aria-pressed="false">Local</button>
+            </span>
+          </fieldset>
+
+          <label class="graph-search-field" for="graph-search">
+            <span>Filter notes</span>
+            <span class="graph-search-input">
+              <span aria-hidden="true">⌕</span>
+              <input
+                id="graph-search"
+                type="search"
+                autocomplete="off"
+                spellcheck="false"
+                maxlength="200"
+                placeholder="Path, title, or tag"
+              />
+            </span>
+          </label>
+
+          <label class="graph-select-field" id="graph-depth-field" for="graph-depth" hidden>
+            <span>Link depth</span>
+            <select id="graph-depth">
+              <option value="1">1 step</option>
+              <option value="2">2 steps</option>
+              <option value="3">3 steps</option>
+              <option value="4">4 steps</option>
+            </select>
+          </label>
+
+          <div class="graph-toggles">
+            <label>
+              <input id="graph-orphans" type="checkbox" />
+              <span>Show unconnected notes</span>
+            </label>
+            <label>
+              <input id="graph-arrows" type="checkbox" checked />
+              <span>Show link direction</span>
+            </label>
+          </div>
+
+          <fieldset class="graph-navigation">
+            <legend>View</legend>
+            <div>
+              <button id="graph-zoom-out" type="button" aria-label="Zoom graph out">−</button>
+              <output id="graph-zoom-value" aria-live="polite">100%</output>
+              <button id="graph-zoom-in" type="button" aria-label="Zoom graph in">＋</button>
+              <button id="graph-reset-view" type="button">Reset</button>
+            </div>
+          </fieldset>
+
+          <section class="graph-note-browser" aria-labelledby="graph-note-browser-title">
+            <header>
+              <strong id="graph-note-browser-title">Visible notes</strong>
+              <small>Open from list</small>
+            </header>
+            <div id="graph-node-list" class="graph-node-list"></div>
+          </section>
+        </aside>
+
+        <main class="graph-viewport">
+          <div class="graph-canvas-shell">
+            <div
+              id="graph-interaction"
+              class="graph-interaction"
+              role="application"
+              aria-label="Interactive note graph"
+              aria-describedby="graph-canvas-description"
+              aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + - 0"
+            >
+              <span id="graph-canvas-description" class="sr-only">
+                Use the arrow keys to pan, plus or minus to zoom, and zero to reset. Tab to a note
+                and press Enter to open it.
+              </span>
+              <svg
+                id="graph-canvas"
+                class="graph-canvas"
+                viewBox="0 0 1000 700"
+                role="img"
+                aria-labelledby="graph-canvas-title"
+              >
+                <title id="graph-canvas-title">Interactive note graph</title>
+                <defs>
+                  <marker
+                    id="graph-arrowhead"
+                    viewBox="0 0 10 10"
+                    refX="17"
+                    refY="5"
+                    markerWidth="5"
+                    markerHeight="5"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z"></path>
+                  </marker>
+                </defs>
+                <rect id="graph-pan-surface" width="1000" height="700"></rect>
+                <g id="graph-scene"></g>
+              </svg>
+            </div>
+            <div id="graph-empty" class="graph-empty" hidden>No linked notes match these options.</div>
+          </div>
+          <footer class="graph-statusbar">
+            <span class="graph-status-key"><i aria-hidden="true"></i> Note</span>
+            <span class="graph-status-key"><i aria-hidden="true"></i> Directed link</span>
+            <span id="graph-status" role="status" aria-live="polite">Ready</span>
+          </footer>
+        </main>
+      </div>
+    </dialog>
+
+    <dialog
       class="shortcut-settings modal"
       id="shortcut-settings"
       aria-labelledby="settings-title"

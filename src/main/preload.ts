@@ -21,6 +21,8 @@ import type {
   PluginUpdateResponse,
   RuntimeSnapshot,
   ThreadleafBridge,
+  VaultGraphRequest,
+  VaultGraphResponse,
   VaultImageResponse,
   VaultNoteEmbedResponse,
   VaultOpenResponse,
@@ -116,6 +118,12 @@ const bridge: ThreadleafBridge = {
     ) as Promise<MigrationPreviewResponse>,
   searchVault: (query) =>
     ipcRenderer.invoke(ipcChannels.searchVault, query) as Promise<VaultSearchResponse>,
+  getVaultGraph: (request: VaultGraphRequest, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.vaultGraph,
+      request,
+      expectedVaultId,
+    ) as Promise<VaultGraphResponse>,
   loadVaultImage: (sourceNotePath, target, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.loadVaultImage,
