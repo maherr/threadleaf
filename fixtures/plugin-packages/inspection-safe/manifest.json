@@ -1,0 +1,9 @@
+{
+  "id": "inspection-safe",
+  "name": "Inspection Safe Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "0.1.0",
+  "description": "Offline exact-package inspection fixture.",
+  "author": "Threadleaf fixtures",
+  "isDesktopOnly": false
+}

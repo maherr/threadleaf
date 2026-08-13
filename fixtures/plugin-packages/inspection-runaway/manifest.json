@@ -1,0 +1,9 @@
+{
+  "id": "inspection-runaway",
+  "name": "Inspection Runaway Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "0.1.0",
+  "description": "Bounded timeout fixture.",
+  "author": "Threadleaf fixtures",
+  "isDesktopOnly": false
+}

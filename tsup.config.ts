@@ -5,6 +5,7 @@ export default defineConfig({
     cli: "src/cli/main.ts",
     corpus: "src/corpus/main.ts",
     main: "src/main/main.ts",
+    "plugin-inspection": "src/main/plugin-package-inspection.ts",
     "plugin-renderer": "src/plugin-renderer/renderer.ts",
     preload: "src/main/preload.ts",
   },

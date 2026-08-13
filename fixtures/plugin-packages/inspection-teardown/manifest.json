@@ -1,0 +1,9 @@
+{
+  "id": "inspection-teardown",
+  "name": "Inspection Teardown Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "0.1.0",
+  "description": "Teardown failure fixture.",
+  "author": "Threadleaf fixtures",
+  "isDesktopOnly": false
+}

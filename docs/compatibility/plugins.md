@@ -58,6 +58,10 @@ The community package index repository has no declared license, so Threadleaf do
 it or describe it as the future Threadleaf-owned open directory. The source adapter, review schema,
 and package manager are AGPL code and can be replaced without changing the vault package format.
 
+The offline [automated package inspection](package-inspection.md) is a separate pre-distribution
+gate. It consumes exact asset bytes and digests, runs the static and disposable-runtime checks,
+and can produce a candidate only after every required stage passes.
+
 Search downloads registry metadata only. Selecting Review downloads bounded release and license
 bytes into private staging for 15 minutes. The review displays the exact version, repository,
 registry digest, release-asset sizes and complete SHA-256 digests, retained license identity and

@@ -78,6 +78,11 @@ injected selection, interrupted-write recovery, and zero vault writes for reads.
 require an explicit vault, remain offline, and report argument or behavior compatibility rather than
 byte-identical output or active GUI control.
 
+The separate [automated package inspection](package-inspection.md) consumes an exact package byte
+set before distribution or enablement. It adds bounded trusted activation, registration, cleanup,
+timeout, and disposable-vault evidence without treating static inspection as a sandbox. Its
+candidate level stops at Level 3 because a named workflow is required for Level 4.
+
 ## Native note transclusion fixture
 
 Reading view recognizes wiki and Markdown note embeds without changing source bytes. The verified
