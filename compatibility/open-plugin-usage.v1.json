@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "family": "markdown-processors",
+  "classification": "desktop-compatibility-only",
+  "threadleafVersion": "0.1.0-beta.3",
+  "methodology": {
+    "kind": "static-bundle-and-public-source-measurement",
+    "bundleBytes": "Exact release main.js bytes were hashed locally; source code was inspected only through the public repository at the same release tag.",
+    "dynamicCalls": "Dynamic module/API selection is not resolved by this inventory and remains listed explicitly per bundle.",
+    "proprietaryCode": false
+  },
+  "implementedMembers": [
+    {
+      "member": "Plugin.registerMarkdownPostProcessor",
+      "contract": "docs/compatibility/open-plugin-api.md#public-signatures",
+      "behavior": "docs/compatibility/open-plugin-api.md#observable-behavior",
+      "capability": "workspace-ui"
+    },
+    {
+      "member": "Plugin.registerMarkdownCodeBlockProcessor",
+      "contract": "docs/compatibility/open-plugin-api.md#public-signatures",
+      "behavior": "docs/compatibility/open-plugin-api.md#observable-behavior",
+      "capability": "workspace-ui"
+    },
+    {
+      "member": "MarkdownRenderChild",
+      "contract": "docs/compatibility/open-plugin-api.md#public-signatures",
+      "behavior": "docs/compatibility/open-plugin-api.md#observable-behavior",
+      "capability": "workspace-ui"
+    },
+    {
+      "member": "MarkdownPostProcessorContext",
+      "contract": "docs/compatibility/open-plugin-api.md#public-signatures",
+      "behavior": "docs/compatibility/open-plugin-api.md#observable-behavior",
+      "capability": "workspace-ui"
+    }
+  ],
+  "corpus": [
+    {
+      "plugin": {
+        "id": "obsidian-tasks-plugin",
+        "name": "Tasks",
+        "version": "8.3.0",
+        "repository": "https://github.com/obsidian-tasks-group/obsidian-tasks",
+        "releaseTag": "8.3.0",
+        "manifestUrl": "https://github.com/obsidian-tasks-group/obsidian-tasks/releases/download/8.3.0/manifest.json",
+        "manifestSha256": "cb42d563bbcd5fe5510017ac035d701305fc6068cafd8538257e547a167f9637",
+        "bundleUrl": "https://github.com/obsidian-tasks-group/obsidian-tasks/releases/download/8.3.0/main.js",
+        "bundleSha256": "170ac0af4160812fe6c5412b961b2222a97c5423ad978a538109c6d3321f0f52",
+        "bundleSizeBytes": 899314,
+        "license": {
+          "spdxId": "MIT",
+          "url": "https://github.com/obsidian-tasks-group/obsidian-tasks/blob/8.3.0/LICENSE",
+          "sha256": "88debbb735b26a9f2b022da623acc41867149887e2f34ea2e8bbe94f1c9b9bad"
+        }
+      },
+      "sourceLocations": [
+        {
+          "member": "Plugin.registerMarkdownPostProcessor",
+          "url": "https://github.com/obsidian-tasks-group/obsidian-tasks/blob/8.3.0/src/Obsidian/InlineRenderer.ts#L31",
+          "path": "src/Obsidian/InlineRenderer.ts",
+          "line": 31
+        },
+        {
+          "member": "Plugin.registerMarkdownCodeBlockProcessor",
+          "url": "https://github.com/obsidian-tasks-group/obsidian-tasks/blob/8.3.0/src/Renderer/QueryRenderer.ts#L45",
+          "path": "src/Renderer/QueryRenderer.ts",
+          "line": 45
+        },
+        {
+          "member": "MarkdownRenderChild",
+          "url": "https://github.com/obsidian-tasks-group/obsidian-tasks/blob/8.3.0/src/Obsidian/InlineRenderer.ts#L55",
+          "path": "src/Obsidian/InlineRenderer.ts",
+          "line": 55
+        }
+      ],
+      "observed": [
+        "Plugin.registerMarkdownPostProcessor",
+        "Plugin.registerMarkdownCodeBlockProcessor",
+        "MarkdownRenderChild",
+        "MarkdownPostProcessorContext.sourcePath",
+        "MarkdownPostProcessorContext.getSectionInfo",
+        "MarkdownPostProcessorContext.addChild"
+      ],
+      "unresolvedOrDynamic": [
+        {
+          "kind": "dynamic-module-or-api-selection",
+          "status": "unresolved",
+          "evidence": "The release bundle is generated and contains runtime-selected module references outside this family.",
+          "impact": "No additional compatibility member is inferred from this evidence."
+        }
+      ],
+      "classification": "selected-family-usage",
+      "requiredCapabilities": ["workspace-ui", "vault-read", "vault-write"]
+    },
+    {
+      "plugin": {
+        "id": "dataview",
+        "name": "Dataview",
+        "version": "0.5.68",
+        "repository": "https://github.com/blacksmithgu/obsidian-dataview",
+        "releaseTag": "0.5.68",
+        "manifestUrl": "https://github.com/blacksmithgu/obsidian-dataview/releases/download/0.5.68/manifest.json",
+        "manifestSha256": "9235db47112da81b85591c79ecb9ae2574e5e72207056e976472f90616286185",
+        "bundleUrl": "https://github.com/blacksmithgu/obsidian-dataview/releases/download/0.5.68/main.js",
+        "bundleSha256": "794e9eaede73920bb8d54b0eda4f5de2182d698cc638774500f24f14bcd4da0b",
+        "bundleSizeBytes": 2377639,
+        "license": {
+          "spdxId": "MIT",
+          "url": "https://github.com/blacksmithgu/obsidian-dataview/blob/0.5.68/LICENSE.txt",
+          "sha256": "17aef9ec4eb5b89ff105e257ae1d5c84adb3af0b6f596ae1c5726093bec6801c"
+        }
+      },
+      "sourceLocations": [
+        {
+          "member": "Plugin.registerMarkdownPostProcessor",
+          "url": "https://github.com/blacksmithgu/obsidian-dataview/blob/0.5.68/src/main.ts#L78",
+          "path": "src/main.ts",
+          "line": 78
+        },
+        {
+          "member": "Plugin.registerMarkdownCodeBlockProcessor",
+          "url": "https://github.com/blacksmithgu/obsidian-dataview/blob/0.5.68/src/main.ts#L200",
+          "path": "src/main.ts",
+          "line": 200
+        },
+        {
+          "member": "MarkdownPostProcessorContext",
+          "url": "https://github.com/blacksmithgu/obsidian-dataview/blob/0.5.68/src/main.ts#L80",
+          "path": "src/main.ts",
+          "line": 80
+        }
+      ],
+      "observed": [
+        "Plugin.registerMarkdownPostProcessor",
+        "Plugin.registerMarkdownCodeBlockProcessor",
+        "MarkdownPostProcessor.sortOrder",
+        "MarkdownPostProcessorContext.sourcePath",
+        "MarkdownPostProcessorContext.getSectionInfo"
+      ],
+      "unresolvedOrDynamic": [
+        {
+          "kind": "dynamic-module-or-api-selection",
+          "status": "unresolved",
+          "evidence": "The release bundle contains dynamically selected query and renderer paths not attributed to this family.",
+          "impact": "No additional compatibility member is inferred from this evidence."
+        }
+      ],
+      "classification": "selected-family-usage",
+      "requiredCapabilities": ["workspace-ui", "vault-read"]
+    },
+    {
+      "plugin": {
+        "id": "obsidian-excalidraw-plugin",
+        "name": "Excalidraw",
+        "version": "2.25.3",
+        "repository": "https://github.com/zsviczian/obsidian-excalidraw-plugin",
+        "releaseTag": "2.25.3",
+        "manifestUrl": "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/download/2.25.3/manifest.json",
+        "manifestSha256": "43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e",
+        "bundleUrl": "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/download/2.25.3/main.js",
+        "bundleSha256": "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6",
+        "bundleSizeBytes": 4898048,
+        "license": {
+          "spdxId": "AGPL-3.0",
+          "url": "https://github.com/zsviczian/obsidian-excalidraw-plugin/blob/2.25.3/LICENSE",
+          "sha256": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef"
+        }
+      },
+      "sourceLocations": [
+        {
+          "member": "Plugin.registerMarkdownCodeBlockProcessor",
+          "url": "https://github.com/zsviczian/obsidian-excalidraw-plugin/blob/2.25.3/src/core/main.ts#L1295",
+          "path": "src/core/main.ts",
+          "line": 1295
+        },
+        {
+          "member": "Plugin.registerMarkdownPostProcessor",
+          "url": "https://github.com/zsviczian/obsidian-excalidraw-plugin/blob/2.25.3/src/core/main.ts#L1316",
+          "path": "src/core/main.ts",
+          "line": 1316
+        },
+        {
+          "member": "MarkdownPostProcessorContext",
+          "url": "https://github.com/zsviczian/obsidian-excalidraw-plugin/blob/2.25.3/src/core/managers/MarkdownPostProcessor.ts#L1049",
+          "path": "src/core/managers/MarkdownPostProcessor.ts",
+          "line": 1049
+        }
+      ],
+      "observed": [
+        "Plugin.registerMarkdownPostProcessor",
+        "Plugin.registerMarkdownCodeBlockProcessor",
+        "MarkdownPostProcessorContext.sourcePath",
+        "MarkdownPostProcessorContext.addChild"
+      ],
+      "unresolvedOrDynamic": [
+        {
+          "kind": "dynamic-module-or-api-selection",
+          "status": "unresolved",
+          "evidence": "The release bundle contains dynamic script and module paths, including CodeMirror integration.",
+          "impact": "CodeMirror editor extensions remain outside this implementation lane."
+        }
+      ],
+      "classification": "selected-family-usage",
+      "requiredCapabilities": [
+        "workspace-ui",
+        "vault-read",
+        "vault-write",
+        "network",
+        "dynamic-code"
+      ]
+    },
+    {
+      "plugin": {
+        "id": "obsidian-kanban",
+        "name": "Kanban",
+        "version": "2.0.51",
+        "repository": "https://github.com/mgmeyers/obsidian-kanban",
+        "releaseTag": "2.0.51",
+        "manifestUrl": "https://github.com/mgmeyers/obsidian-kanban/releases/download/2.0.51/manifest.json",
+        "manifestSha256": "24976787097ead467969e014a35654e7a80e4db49a977689a48afadfa15e1854",
+        "bundleUrl": "https://github.com/mgmeyers/obsidian-kanban/releases/download/2.0.51/main.js",
+        "bundleSha256": "a7e3bd4cf25f9b7f53a841c44ce990db0ef5f7954ebcab17ae6dca80310c39ac",
+        "bundleSizeBytes": 990749,
+        "license": {
+          "spdxId": "GPL-3.0",
+          "url": "https://github.com/mgmeyers/obsidian-kanban/blob/2.0.51/LICENSE.md",
+          "sha256": "8b1ba204bb69a0ade2bfcf65ef294a920f6bb361b317dba43c7ef29d96332b9b"
+        }
+      },
+      "sourceLocations": [
+        {
+          "member": "adjacent-view-family",
+          "url": "https://github.com/mgmeyers/obsidian-kanban/tree/2.0.51/src",
+          "path": "src",
+          "line": null
+        }
+      ],
+      "observed": ["Plugin.registerView", "Plugin.registerEditorSuggest", "Plugin.addRibbonIcon"],
+      "unresolvedOrDynamic": [
+        {
+          "kind": "unresolved-adjacent-family",
+          "status": "out-of-lane",
+          "evidence": "The bundle uses views and editor suggestions but does not provide evidence for Markdown processor execution in this lane.",
+          "impact": "No view or editor member is inferred or advertised here."
+        }
+      ],
+      "classification": "negative-adjacent-family",
+      "requiredCapabilities": ["workspace-ui", "vault-read", "vault-write"]
+    },
+    {
+      "plugin": {
+        "id": "obsidian-git",
+        "name": "Git",
+        "version": "2.39.0",
+        "repository": "https://github.com/Vinzent03/obsidian-git",
+        "releaseTag": "2.39.0",
+        "manifestUrl": "https://github.com/Vinzent03/obsidian-git/releases/download/2.39.0/manifest.json",
+        "manifestSha256": "270410edd6e64f51d974343c6e29ec8399502f6e057ae5d6264d259b104f625c",
+        "bundleUrl": "https://github.com/Vinzent03/obsidian-git/releases/download/2.39.0/main.js",
+        "bundleSha256": "d5a74036cf17c1a02957c1f33f59e47cf3af83525641c4374ca1fa09d95f3eb4",
+        "bundleSizeBytes": 727717,
+        "license": {
+          "spdxId": "MIT",
+          "url": "https://github.com/Vinzent03/obsidian-git/blob/2.39.0/LICENSE",
+          "sha256": "b9c17ede4874ca24c60e397096cfb51c33fc1474b8bdb0cf02e90ace5912cada"
+        }
+      },
+      "sourceLocations": [
+        {
+          "member": "adjacent-editor-family",
+          "url": "https://github.com/Vinzent03/obsidian-git/tree/2.39.0/src",
+          "path": "src",
+          "line": null
+        }
+      ],
+      "observed": [
+        "Plugin.registerEditorExtension",
+        "Plugin.addStatusBarItem",
+        "Plugin.registerView"
+      ],
+      "unresolvedOrDynamic": [
+        {
+          "kind": "unresolved-adjacent-family",
+          "status": "out-of-lane",
+          "evidence": "The bundle uses editor extensions, status items, and views but does not provide evidence for Markdown processor execution in this lane.",
+          "impact": "No editor, status, or view member is inferred or advertised here."
+        }
+      ],
+      "classification": "negative-adjacent-family",
+      "requiredCapabilities": [
+        "workspace-ui",
+        "vault-read",
+        "vault-write",
+        "filesystem",
+        "subprocess"
+      ]
+    }
+  ],
+  "registryClaim": {
+    "status": "not-added",
+    "reason": "This inventory records measured usage only. No external plugin compatibility level is raised until an unchanged exact bundle passes a production-path workflow gate."
+  }
+}

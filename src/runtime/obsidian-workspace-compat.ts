@@ -1,4 +1,9 @@
 import type { PluginIntegrationSnapshot } from "../shared/contracts";
+import type {
+  MarkdownCodeBlockProcessor,
+  MarkdownPostProcessor,
+  MarkdownPostProcessorContext,
+} from "./obsidian-compat";
 import type { CompatibilityEventRef } from "./obsidian-components";
 
 type EventCallback = (...args: unknown[]) => unknown;
@@ -372,6 +377,14 @@ interface ExtensionRegistration extends OwnedRegistration {
   viewType: string;
 }
 
+interface MarkdownProcessorRegistration extends OwnedRegistration {
+  codeBlockLanguage: string | null;
+  codeBlockProcessor: MarkdownCodeBlockProcessor | null;
+  defaultSortOrder: number;
+  processor: MarkdownPostProcessor;
+  sequence: number;
+}
+
 export interface CompatibilitySettingTab {
   containerEl: HTMLElement;
   display(): unknown;
@@ -386,12 +399,13 @@ export class CompatibilityIntegrationRegistry {
   private readonly editorExtensions = new Set<unknown>();
   private readonly editorSuggests = new Set<unknown>();
   private readonly extensions: ExtensionRegistration[] = [];
-  private readonly markdownPostProcessors = new Set<unknown>();
+  private readonly markdownPostProcessors: MarkdownProcessorRegistration[] = [];
   private readonly ribbonItems = new Set<HTMLElement>();
   private readonly settingTabs = new Set<SettingTabRegistration>();
   private readonly statusBarItems = new Set<HTMLElement>();
   private readonly views = new Map<string, ViewRegistration>();
   private readonly icons = new Map<string, string>();
+  private nextMarkdownProcessorSequence = 0;
 
   registerView(ownerId: string, type: string, creator: (leaf: unknown) => unknown): () => void {
     if (this.views.has(type)) {
@@ -444,9 +458,158 @@ export class CompatibilityIntegrationRegistry {
     return () => this.editorExtensions.delete(editorExtension);
   }
 
-  registerMarkdownPostProcessor(postProcessor: unknown): () => void {
-    this.markdownPostProcessors.add(postProcessor);
-    return () => this.markdownPostProcessors.delete(postProcessor);
+  registerMarkdownPostProcessor(
+    ownerId: string,
+    postProcessor: MarkdownPostProcessor,
+    sortOrder?: number,
+  ): () => void;
+  registerMarkdownPostProcessor(
+    postProcessor: MarkdownPostProcessor,
+    sortOrder?: number,
+  ): () => void;
+  registerMarkdownPostProcessor(
+    ownerOrProcessor: string | MarkdownPostProcessor,
+    processorOrSortOrder?: MarkdownPostProcessor | number,
+    sortOrder?: number,
+  ): () => void {
+    const ownerId = typeof ownerOrProcessor === "string" ? ownerOrProcessor : "";
+    const postProcessor =
+      typeof ownerOrProcessor === "string" ? processorOrSortOrder : ownerOrProcessor;
+    const requestedSortOrder =
+      typeof ownerOrProcessor === "string"
+        ? sortOrder
+        : typeof processorOrSortOrder === "number"
+          ? processorOrSortOrder
+          : undefined;
+    if (typeof postProcessor !== "function") {
+      throw new Error("Markdown post processor registration requires a function.");
+    }
+    const defaultSortOrder = validateMarkdownSortOrder(requestedSortOrder ?? 0);
+    const registration: MarkdownProcessorRegistration = {
+      ownerId,
+      codeBlockLanguage: null,
+      codeBlockProcessor: null,
+      defaultSortOrder,
+      processor: postProcessor,
+      sequence: this.nextMarkdownProcessorSequence++,
+    };
+    this.markdownPostProcessors.push(registration);
+    return () => {
+      const index = this.markdownPostProcessors.indexOf(registration);
+      if (index >= 0) {
+        this.markdownPostProcessors.splice(index, 1);
+      }
+    };
+  }
+
+  registerMarkdownCodeBlockProcessor(
+    ownerId: string,
+    language: string,
+    handler: MarkdownCodeBlockProcessor,
+    sortOrder?: number,
+    registeredProcessor?: MarkdownPostProcessor,
+  ): () => void;
+  registerMarkdownCodeBlockProcessor(
+    language: string,
+    handler: MarkdownCodeBlockProcessor,
+    sortOrder?: number,
+    registeredProcessor?: MarkdownPostProcessor,
+  ): () => void;
+  registerMarkdownCodeBlockProcessor(
+    ownerOrLanguage: string,
+    languageOrHandler: string | MarkdownCodeBlockProcessor,
+    handlerOrSortOrder?: MarkdownCodeBlockProcessor | number,
+    sortOrderOrRegistered?: number | MarkdownPostProcessor,
+    registeredProcessor?: MarkdownPostProcessor,
+  ): () => void {
+    const ownerId = typeof languageOrHandler === "string" ? ownerOrLanguage : "";
+    const language = typeof languageOrHandler === "string" ? languageOrHandler : ownerOrLanguage;
+    const handler = typeof languageOrHandler === "string" ? handlerOrSortOrder : languageOrHandler;
+    const requestedSortOrder =
+      typeof languageOrHandler === "string"
+        ? typeof sortOrderOrRegistered === "number"
+          ? sortOrderOrRegistered
+          : undefined
+        : typeof handlerOrSortOrder === "number"
+          ? handlerOrSortOrder
+          : undefined;
+    const effectiveRegisteredProcessor =
+      typeof languageOrHandler === "string"
+        ? registeredProcessor
+        : typeof sortOrderOrRegistered === "function"
+          ? sortOrderOrRegistered
+          : undefined;
+    const normalizedLanguage = asciiLowercase(language.trim());
+    if (!normalizedLanguage) {
+      throw new Error("Markdown code block processor registration requires a language.");
+    }
+    if (typeof handler !== "function") {
+      throw new Error("Markdown code block processor registration requires a function.");
+    }
+    const defaultSortOrder = validateMarkdownSortOrder(requestedSortOrder ?? 0);
+    const processor =
+      effectiveRegisteredProcessor ??
+      (((_element: HTMLElement, _context: MarkdownPostProcessorContext) => {
+        throw new Error(
+          `Markdown code block processor for ${normalizedLanguage} can only run on a fenced block.`,
+        );
+      }) as MarkdownPostProcessor);
+    if (requestedSortOrder !== undefined) {
+      processor.sortOrder = defaultSortOrder;
+    }
+    const registration: MarkdownProcessorRegistration = {
+      ownerId,
+      codeBlockLanguage: normalizedLanguage,
+      codeBlockProcessor: handler,
+      defaultSortOrder,
+      processor,
+      sequence: this.nextMarkdownProcessorSequence++,
+    };
+    this.markdownPostProcessors.push(registration);
+    return () => {
+      const index = this.markdownPostProcessors.indexOf(registration);
+      if (index >= 0) {
+        this.markdownPostProcessors.splice(index, 1);
+      }
+    };
+  }
+
+  async runMarkdownPostProcessors(
+    rootElement: HTMLElement,
+    context: MarkdownPostProcessorContext,
+  ): Promise<void> {
+    const registrations = [...this.markdownPostProcessors].sort(compareMarkdownProcessors);
+    const codeBlocks = [...rootElement.querySelectorAll<HTMLElement>("pre > code")];
+    for (const codeBlock of codeBlocks) {
+      const language = codeBlockLanguage(codeBlock);
+      if (!language) {
+        continue;
+      }
+      const matches = registrations.filter(
+        (registration) => registration.codeBlockLanguage === language,
+      );
+      if (matches.length === 0) {
+        continue;
+      }
+      const source = codeBlock.textContent?.replace(/(?:\r\n|\r|\n)$/u, "") ?? "";
+      const replacement = rootElement.ownerDocument.createElement("div");
+      replacement.className = "markdown-code-block";
+      const preformatted = codeBlock.parentElement;
+      if (!preformatted) {
+        continue;
+      }
+      preformatted.replaceWith(replacement);
+      for (const registration of matches) {
+        await registration.codeBlockProcessor?.(source, replacement, context);
+      }
+    }
+
+    for (const registration of registrations) {
+      if (registration.codeBlockLanguage !== null) {
+        continue;
+      }
+      await registration.processor(rootElement, context);
+    }
   }
 
   addRibbonItem(element: HTMLElement): () => void {
@@ -503,7 +666,7 @@ export class CompatibilityIntegrationRegistry {
             left.extension.localeCompare(right.extension) ||
             left.viewType.localeCompare(right.viewType),
         ),
-      markdownPostProcessors: this.markdownPostProcessors.size,
+      markdownPostProcessors: this.markdownPostProcessors.length,
       ribbonItems: this.ribbonItems.size,
       settingTabs: this.settingTabs.size,
       settingTabPluginIds: [...new Set([...this.settingTabs].map(({ ownerId }) => ownerId))].sort(),
@@ -511,4 +674,40 @@ export class CompatibilityIntegrationRegistry {
       viewTypes: [...this.views.keys()].sort(),
     };
   }
+}
+
+function validateMarkdownSortOrder(value: number): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error("Markdown processor sort order must be a finite integer.");
+  }
+  return value;
+}
+
+function markdownSortOrder(registration: MarkdownProcessorRegistration): number {
+  const candidate = registration.processor.sortOrder;
+  return candidate === undefined
+    ? registration.defaultSortOrder
+    : validateMarkdownSortOrder(candidate);
+}
+
+function compareMarkdownProcessors(
+  left: MarkdownProcessorRegistration,
+  right: MarkdownProcessorRegistration,
+): number {
+  return markdownSortOrder(left) - markdownSortOrder(right) || left.sequence - right.sequence;
+}
+
+function codeBlockLanguage(codeBlock: HTMLElement): string | null {
+  const languageClass = [...codeBlock.classList].find((className) =>
+    asciiLowercase(className).startsWith("language-"),
+  );
+  if (!languageClass) {
+    return null;
+  }
+  const language = asciiLowercase(languageClass.slice("language-".length).trim());
+  return language || null;
+}
+
+function asciiLowercase(value: string): string {
+  return value.replace(/[A-Z]/gu, (character) => character.toLowerCase());
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type Dirent,
   promises as fs,
@@ -82,6 +83,42 @@ export interface Command {
   callback?: () => unknown | Promise<unknown>;
   checkCallback?: (checking: boolean) => boolean | undefined | Promise<boolean | undefined>;
 }
+
+export interface MarkdownSectionInformation {
+  text: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+export class MarkdownRenderChild extends Component {
+  readonly containerEl: HTMLElement;
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.containerEl = containerEl;
+  }
+}
+
+export interface MarkdownPostProcessorContext {
+  readonly docId: string;
+  readonly sourcePath: string;
+  readonly frontmatter: Record<string, unknown> | null | undefined;
+  addChild(child: MarkdownRenderChild): void;
+  getSectionInfo(element: HTMLElement): MarkdownSectionInformation | null;
+}
+
+export type MarkdownPostProcessor = {
+  // biome-ignore lint/suspicious/noConfusingVoidType: This mirrors the public Obsidian callback contract.
+  (element: HTMLElement, context: MarkdownPostProcessorContext): Promise<unknown> | void;
+  sortOrder?: number;
+};
+
+export type MarkdownCodeBlockProcessor = (
+  source: string,
+  element: HTMLElement,
+  context: MarkdownPostProcessorContext,
+  // biome-ignore lint/suspicious/noConfusingVoidType: This mirrors the public Obsidian callback contract.
+) => Promise<unknown> | void;
 
 interface RegisteredCommand extends Command {
   ownerId: string;
@@ -1167,11 +1204,11 @@ const compatibilityMarkdown = new MarkdownIt({
 // biome-ignore lint/complexity/noStaticOnlyClass: community plugins instantiate this public API by name.
 export class MarkdownRenderer {
   static async render(
-    _app: App,
+    app: App,
     markdown: string,
     element: HTMLElement,
-    _sourcePath: string,
-    _component: Component,
+    sourcePath: string,
+    component: Component,
   ): Promise<void> {
     const template = element.ownerDocument.createElement("template");
     template.innerHTML = compatibilityMarkdown.render(markdown);
@@ -1204,6 +1241,33 @@ export class MarkdownRenderer {
       }
     }
     element.append(template.content);
+    const normalizedSourcePath = normalizePath(sourcePath);
+    const sourceLines = markdown.split(/\r\n|\r|\n/u);
+    const parsedFrontmatter = parseFrontmatter(markdown);
+    const frontmatter =
+      parsedFrontmatter && Object.keys(parsedFrontmatter).length === 0 ? null : parsedFrontmatter;
+    const context: MarkdownPostProcessorContext = {
+      docId: `${normalizedSourcePath || "<memory>"}:${createHash("sha256").update(markdown, "utf8").digest("hex")}`,
+      sourcePath: normalizedSourcePath,
+      frontmatter,
+      addChild: (child) => {
+        if (!(child instanceof MarkdownRenderChild)) {
+          throw new Error("Markdown processor children must extend MarkdownRenderChild.");
+        }
+        component.addChild(child);
+      },
+      getSectionInfo: (sectionElement) => {
+        if (sectionElement !== element && !element.contains(sectionElement)) {
+          return null;
+        }
+        return {
+          text: markdown,
+          lineStart: 0,
+          lineEnd: Math.max(0, sourceLines.length - 1),
+        };
+      },
+    };
+    await app.compatibility.runMarkdownPostProcessors(element, context);
   }
 }
 
@@ -1466,13 +1530,43 @@ export class Plugin extends Component {
     );
   }
 
-  registerMarkdownPostProcessor<T>(postProcessor: T, _sortOrder?: number): T {
-    this.register(this.app.compatibility.registerMarkdownPostProcessor(postProcessor));
+  registerMarkdownPostProcessor(
+    postProcessor: MarkdownPostProcessor,
+    sortOrder?: number,
+  ): MarkdownPostProcessor {
+    this.register(
+      this.app.compatibility.registerMarkdownPostProcessor(
+        this.manifest.id,
+        postProcessor,
+        sortOrder,
+      ),
+    );
     return postProcessor;
   }
 
-  registerMarkdownCodeBlockProcessor<T>(_language: string, processor: T, sortOrder?: number): T {
-    return this.registerMarkdownPostProcessor(processor, sortOrder);
+  registerMarkdownCodeBlockProcessor(
+    language: string,
+    processor: MarkdownCodeBlockProcessor,
+    sortOrder?: number,
+  ): MarkdownPostProcessor {
+    const registered = ((_element: HTMLElement, _context: MarkdownPostProcessorContext) => {
+      throw new Error(
+        `Markdown code block processor for ${language.trim()} can only run on a fenced block.`,
+      );
+    }) as MarkdownPostProcessor;
+    if (sortOrder !== undefined) {
+      registered.sortOrder = sortOrder;
+    }
+    this.register(
+      this.app.compatibility.registerMarkdownCodeBlockProcessor(
+        this.manifest.id,
+        language,
+        processor,
+        sortOrder,
+        registered,
+      ),
+    );
+    return registered;
   }
 
   registerEditorExtension(extension: unknown): void {
@@ -1548,6 +1642,7 @@ export interface ObsidianCompatibilityModule {
   Keymap: typeof Keymap;
   MarkdownView: typeof MarkdownView;
   MarkdownRenderer: typeof MarkdownRenderer;
+  MarkdownRenderChild: typeof MarkdownRenderChild;
   MetadataCache: typeof MetadataCache;
   Menu: typeof Menu;
   MenuItem: typeof MenuItem;
@@ -1973,6 +2068,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Keymap,
     MarkdownView,
     MarkdownRenderer,
+    MarkdownRenderChild,
     MetadataCache,
     Menu: BoundMenu,
     MenuItem,

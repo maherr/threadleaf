@@ -1,0 +1,130 @@
+# Measured Markdown processor compatibility
+
+This document is the public contract for the measured Markdown processor family in the trusted
+desktop compatibility runtime. It is normative for the signatures and observable behavior below.
+The measured usage inventory in [`compatibility/open-plugin-usage.v1.json`](../../compatibility/open-plugin-usage.v1.json)
+is evidence of why these members are implemented; it is not a claim that every plugin API exists.
+
+## Scope and classification
+
+The family contains Markdown post processors, fenced-code block processors, and the render-child
+context used to manage their lifecycle. It is available to existing CommonJS plugins in the
+trusted desktop compatibility renderer. It is classified as desktop compatibility only. It is not
+a portable native-extension API and is not available to mobile clients.
+
+The host keeps the existing capability and grant boundary. A bundle that registers a processor is
+reported under the existing `workspace-ui` capability. Registration does not grant vault writes,
+network access, filesystem access, subprocesses, or any other authority.
+
+## Named workflows
+
+This family unlocks three bounded desktop workflows represented by the measured corpus:
+
+- Render a plugin's fenced task, query, or drawing block into a replacement element (Tasks,
+  Dataview, and Excalidraw).
+- Post-process rendered Markdown in deterministic order, including context-sensitive inline
+  decoration (Tasks and Excalidraw).
+- Keep processor-created DOM children alive and release them with the render component (Tasks and
+  Excalidraw).
+
+These are compatibility workflows, not claims that the corresponding plugins are fully supported.
+
+## Public signatures
+
+The following signatures are compatible with the public Obsidian API definitions, with the
+bounded behavior described below:
+
+```ts
+export interface MarkdownSectionInformation {
+  text: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+export class MarkdownRenderChild extends Component {
+  readonly containerEl: HTMLElement;
+  constructor(containerEl: HTMLElement);
+}
+
+export interface MarkdownPostProcessorContext {
+  readonly docId: string;
+  readonly sourcePath: string;
+  readonly frontmatter: Record<string, unknown> | null | undefined;
+  addChild(child: MarkdownRenderChild): void;
+  getSectionInfo(element: HTMLElement): MarkdownSectionInformation | null;
+}
+
+export type MarkdownPostProcessor = {
+  (element: HTMLElement, context: MarkdownPostProcessorContext): Promise<unknown> | void;
+  sortOrder?: number;
+};
+
+export type MarkdownCodeBlockProcessor = (
+  source: string,
+  element: HTMLElement,
+  context: MarkdownPostProcessorContext,
+) => Promise<unknown> | void;
+
+class Plugin {
+  registerMarkdownPostProcessor(
+    processor: MarkdownPostProcessor,
+    sortOrder?: number,
+  ): MarkdownPostProcessor;
+
+  registerMarkdownCodeBlockProcessor(
+    language: string,
+    processor: MarkdownCodeBlockProcessor,
+    sortOrder?: number,
+  ): MarkdownPostProcessor;
+}
+```
+
+`MarkdownRenderChild` is also exported from the `obsidian` compatibility module. `Component` is
+the existing lifecycle base class.
+
+## Observable behavior
+
+1. `registerMarkdownPostProcessor` and `registerMarkdownCodeBlockProcessor` reject a non-function
+   processor, an empty language, a non-finite sort order, or a non-integer sort order with an
+   `Error`. A post-processor registration returns the exact callback object supplied by the caller.
+   A code-block registration returns the public registration callback wrapper; its `sortOrder`
+   property is mutable after registration and the supplied block handler remains separate.
+2. Fenced-code processors run first. A fenced block is selected when its language, after trimming
+   and ASCII case folding, equals the registered language. The host removes the original
+   `<pre><code>` element, creates one empty `<div class="markdown-code-block">`, and passes the
+   source without the Markdown fence or one trailing line ending. A block with no matching
+   processor remains unchanged.
+3. Ordinary post processors run after fenced-code processors. Both stages run in ascending
+   `sortOrder`; equal orders retain registration order. A callback's current `sortOrder` property
+   takes precedence over the value passed to registration. Each callback is awaited before the
+   next callback starts.
+4. A processor receives the rendered root element for the current call. `sourcePath` is the
+   normalized path supplied to `MarkdownRenderer.render`, or an empty string for an in-memory
+   render. `frontmatter` is the parsed top-level YAML mapping when the source begins with a valid
+   frontmatter block, `null` for an explicit empty mapping, and `undefined` when no valid mapping
+   is available. `docId` is deterministic for the source path and exact Markdown bytes.
+5. `getSectionInfo(element)` returns `null` when the element is outside the current render root.
+   For an element inside the root it returns the complete source text and zero-based inclusive
+   `lineStart` and `lineEnd` for this bounded render. This explicit whole-render fallback is
+   stable even when a parser cannot map an individual HTML node to source lines.
+6. `context.addChild(child)` requires a `MarkdownRenderChild`. The child is attached to the
+   component passed to `MarkdownRenderer.render`; it is loaded immediately when that component is
+   already loaded and is unloaded with the component. A child does not grant filesystem or host
+   authority.
+7. A synchronous throw or rejected promise is an explicit render failure. The host stops the
+   current processor sequence and rejects the render promise. It does not convert a failure into a
+   successful no-op, hide it in diagnostics, or affect registrations owned by another plugin.
+8. Unloading a plugin removes all of its processor registrations. A sibling plugin's processors,
+   and a processor's already-created child component, remain independent until their own owner or
+   render component is unloaded.
+
+## Explicit limits
+
+This slice does not implement `MarkdownPreviewRenderer` static global registration, arbitrary
+renderer section partitioning, inline Live Preview processors, editor extensions, or plugin-owned
+network and filesystem adapters. Those names are not advertised by this contract. A bundle that
+requires one of those unsupported members must fail during activation or render rather than
+receiving a silent no-op shim.
+
+The compatibility host remains trusted. Static capability evidence is a review aid, not a runtime
+sandbox, and a successful processor workflow does not imply universal plugin compatibility.

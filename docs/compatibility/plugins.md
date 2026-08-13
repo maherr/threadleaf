@@ -47,6 +47,12 @@ the plugin's normal `saveData` path on close, restores it on reopen, and removes
 close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
 not implied by those results.
 
+The measured Markdown processor family has a separate public contract in
+[`open-plugin-api.md`](open-plugin-api.md). It covers fenced-block replacement, ordered Markdown
+post-processing, render-child lifecycle, context metadata, and explicit failure behavior; those
+bounded workflows do not raise the compatibility level of any external plugin until its exact
+bundle passes a named host workflow.
+
 ## Reviewed package management
 
 The Community package index uses a replaceable source interface. Its current compatibility adapter
