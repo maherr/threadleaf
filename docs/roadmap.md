@@ -343,8 +343,8 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [ ] Add freeform split groups, general floating windows, broader command discovery, and persistent
       non-plugin view placement.
 - [ ] Complete the existing Source, Live Preview, and Reading modes with footnotes, rendered
-      tables, math, diagrams, and large-document editing beyond the current source fallback, with
-      reliable IME and undo.
+      tables, math, diagrams, and large-document editing beyond the current partial and
+      source-fallback behavior, with reliable IME and undo.
 - [ ] JSON Canvas editing and embedding plus first-class attachment browsing, rename, preview,
       drag-and-drop, paste, and missing-file recovery.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,

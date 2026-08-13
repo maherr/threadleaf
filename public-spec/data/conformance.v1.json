@@ -187,7 +187,7 @@
       ],
       "fixtures": [],
       "limitations": [
-        "Unsupported tables, HTML, math, malformed syntax, and inline Live Preview processors remain source-visible."
+        "Frontmatter, tables, raw HTML, and math have no complete first-class Live Preview editing contract. Their bytes remain in the canonical document, but supported decorations may appear within constructs that do not have explicit protection; rejected malformed mappings use source fallbacks."
       ]
     },
     {

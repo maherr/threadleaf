@@ -264,12 +264,11 @@ The current Linux build has crossed the daily-drive beta handoff: real-scale cop
 editor and crash recovery, isolated compatibility plugins, unchanged Excalidraw workflows,
 installable packages, privacy-safe feedback, and a distinct-package upgrade and rollback sequence
 all pass. Keep an ordinary external backup while field testing. Live Preview now provides
-fine-grained source/decorated cursor mapping and bounded source-backed inline note transclusion. It
-deliberately keeps frontmatter, tables, HTML, malformed links, nested destinations, and other
-unsupported or ambiguous constructs visible as source. Math is not rendered as math and has no
-complete editing contract, so complex constructs may remain source or receive only narrower existing
-decorations. Completing rendered and editable support for tables, math, diagrams, and large-document
-editing beyond the current source fallback remains open.
+fine-grained source/decorated cursor mapping and bounded source-backed inline note transclusion.
+Frontmatter, tables, raw HTML, and math have no complete first-class Live Preview editing contract.
+Their bytes remain canonical, but supported decorations may appear within unprotected content;
+malformed or rejected mappings use source fallbacks. Completing rendered and editable support for
+tables, math, diagrams, and large-document editing beyond the current partial behavior remains open.
 Broad community-plugin compatibility remains measured per plugin rather than assumed.
 
 Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather

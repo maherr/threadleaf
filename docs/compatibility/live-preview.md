@@ -35,9 +35,11 @@ anchored to its owning source range and cannot create a phantom editable positio
 cross a mapped token therefore reveal its complete source line before editing.
 
 Link, alias, emphasis, strike, inline-code, task, callout, and list delimiters are mapped only when
-their boundaries are unambiguous. A malformed link, nested destination, unsupported table or HTML
-construct, or any token that fails the safe projection check becomes one `fallback` identity range.
-Fallback ranges stay source-visible and are never replaced by a widget or hidden delimiter.
+their boundaries are unambiguous. A malformed link, nested destination, or other candidate mapping
+that fails the safe projection check becomes one `fallback` identity range. Those rejected mapping
+ranges stay source-visible and are never replaced by a widget or hidden delimiter. Tables and raw
+HTML do not yet have a complete construct-wide contract: their bytes remain canonical, while
+otherwise supported decorations may still appear inside unprotected content.
 
 Note transclusions are source-backed cards. `resolveInlineTransclusions` accepts a bounded local
 document snapshot, carries the owning path and source range on every node, and stops on path plus
@@ -74,9 +76,11 @@ External links remain non-navigating in this release, matching Reading mode's sa
 
 ## Honest fallback
 
-Frontmatter, tables, HTML, math, malformed links, nested destinations that cannot be parsed without
-guessing, and other unsupported constructs stay visible as source. Styling a source fallback is
-allowed; replacing it with a lossy approximation is not.
+Frontmatter, tables, raw HTML, and math have no complete first-class Live Preview editing contract.
+Their bytes remain in the canonical document, but supported decorations may appear within
+constructs that do not have explicit protection. Malformed links, nested destinations that cannot
+be parsed without guessing, and other rejected mappings use source fallbacks. Styling a source
+fallback is allowed; replacing it with a lossy approximation is not.
 
 ## Acceptance gates
 

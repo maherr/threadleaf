@@ -537,9 +537,11 @@ are hidden only on lines outside the cursor or selection. Every selected line ex
 and clicking a rendered token moves the cursor into its source range before revealing it. Common
 headings, emphasis, links, tasks, lists, quotes, callouts, code blocks, tags, local raster images,
 and source-backed note-embed cards are covered by an isolated virtual-input corpus. Frontmatter,
-tables, HTML, math, malformed or ambiguous constructs, and unsupported nesting stay visible as
-source rather than becoming a lossy rendering. Task controls dispatch an exact source transaction,
-so dirty state, undo, drafts, saves, conflicts, and recovery remain one path.
+tables, raw HTML, and math have no complete first-class Live Preview editing contract. Their bytes
+remain in the canonical document, but supported decorations may appear within constructs that do
+not have explicit protection. Malformed or ambiguous mappings and unsupported nesting use source
+fallbacks rather than becoming a lossy rendering. Task controls dispatch an exact source
+transaction, so dirty state, undo, drafts, saves, conflicts, and recovery remain one path.
 
 Reading view is an explicit document mode, not an implicit write or a second source of truth. It
 renders the current CodeMirror draft, including unsaved changes, without crossing the main-process
