@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "threadleaf.same-vault.v1",
+  "root": "vault",
+  "files": [
+    {"path": ".obsidian/app.json", "size": 150, "sha256": "60625e1be8b899258756dee8844e9322439088fc03fb7b520b16085971ce2aed"},
+    {"path": ".obsidian/appearance.json", "size": 98, "sha256": "9553e6b2d03a9d744786e02d314767e4ecc2a52147e659e064f02ddbb0cb4dcd"},
+    {"path": ".obsidian/snippets/fixture.css", "size": 135, "sha256": "9702f521f319657fc13f223db64a0e26eed020f077fcde5769f48e6d4ef1d3f6"},
+    {"path": ".obsidian/workspace.json", "size": 196, "sha256": "ffa998e840716a1e7f44ef095bf67b98e961316316621260f5956dd86371e649"},
+    {"path": "Attachments/diagram.svg", "size": 154, "sha256": "62c71f169fd489dc6cd9b2186c6f40eb4c6a5ecdcc74ee3d220fb552c57dd37a"},
+    {"path": "Attachments/notes.txt", "size": 87, "sha256": "fa7b1cd430f9a94896e42a3e6ca05842f6e1efbf53b2ed87225ace7828a3cabd"},
+    {"path": "Boards/Overview.canvas", "size": 523, "sha256": "cc64bd9449fbbfe73ec5bc54bfa5356ad1a0c7f959da2293b7cc7f03bfb97ed0"},
+    {"path": "Notes/Index.md", "size": 893, "sha256": "bb49805583fae51fcc95f1f820e8e214557ea9b7ff75dfeb73d4d376aef3d37f"},
+    {"path": "Notes/Malformed.md", "size": 156, "sha256": "4f7f98501839fba6184948a8c9bd5dacedd7e452863aa1d59fd4d2945fe99202"},
+    {"path": "Notes/Relative.md", "size": 199, "sha256": "098215c90060760748c688711c2cfe8fe3a6ae25bd9cee36722721aa3a2c02fd"},
+    {"path": "Notes/Root Target.md", "size": 79, "sha256": "7e824463ac85572773be939b4eac18e880e6694d472e3af20e676b4d75439f88"},
+    {"path": "Notes/Target.md", "size": 422, "sha256": "beacfd12873320865bac347b9f1b226703ee4f72609fab5f8cd0b7330df582c1"},
+    {"path": "Notes/Unicode.md", "size": 99, "sha256": "57858a8bccbcd0f4837ffdde8eb3d11e3a8cdaeaa902e13d989744c7b4c2f06b"},
+    {"path": "Notes/UNICODE.md", "size": 93, "sha256": "77ec956fccaecb138310316e131fa3dd03d2a37ea520df5c53170ff670ac3d52"},
+    {"path": "Notes/Unicodé.md", "size": 104, "sha256": "eed0278cae20841ee66774a04d8dabad422adf7334b260a86cc8bc6d0a5f72a1"},
+    {"path": "One/Duplicate.md", "size": 18, "sha256": "0c5d36dcca09334ce880e1a3aad2321ddcbad93d5aaa5a89c276977bd658ab1d"},
+    {"path": "Other/Target.md", "size": 88, "sha256": "15f1adf7427e8fe8e02e3b8fcee858e58a83dfacadff5bfb6b6256f457c2f8d9"},
+    {"path": "Two/Duplicate.md", "size": 19, "sha256": "8dfc5ecb0eb6b6d75d15e6f60c14cb130a9717d2cc73e741f822f6a738618f12"}
+  ]
+}

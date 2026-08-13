@@ -1,0 +1,4 @@
+/* Read-only compatibility input. It is not Threadleaf application state. */
+.corpus-fixture-marker {
+  --fixture-value: "preserve";
+}

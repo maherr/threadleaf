@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "threadleaf.same-vault.v1",
+  "license": "CC0-1.0",
+  "canonicalRoot": "vault",
+  "manifest": "manifest.json",
+  "cases": [
+    {
+      "id": "links.resolution-and-anchors",
+      "category": "links",
+      "support": "supported",
+      "surface": "metadata-index-and-cli",
+      "source": {"files": ["Notes/Index.md", "Notes/Target.md", "Notes/Root Target.md"]},
+      "operation": {"kind": "index-and-cli-links", "path": "Notes/Index.md"},
+      "expected": {
+        "links": [
+          {"target": "Target", "alias": "near alias", "status": "resolved", "path": "Notes/Target.md"},
+          {"target": "/Root Target", "subpath": "#Résumé", "alias": "root alias", "status": "resolved", "path": "Notes/Root Target.md"},
+          {"target": "Target.md", "syntax": "markdown", "subpath": "#Section", "status": "resolved", "path": "Notes/Target.md"},
+          {"target": "Attachments/diagram.svg", "embed": true, "status": "unresolved"},
+          {"target": "Target", "embed": true, "subpath": "#Section", "status": "resolved", "path": "Notes/Target.md"},
+          {"target": "Target", "embed": true, "subpath": "^stable-block", "status": "resolved", "path": "Notes/Target.md"},
+          {"target": "Missing Note", "status": "unresolved"},
+          {"target": "Duplicate", "status": "ambiguous", "candidates": ["One/Duplicate.md", "Two/Duplicate.md"]}
+        ],
+        "ignoredOccurrences": 6
+      },
+      "allowedVariance": ["revision", "transactionId", "absolute paths in diagnostics"]
+    },
+    {
+      "id": "links.unicode-and-case",
+      "category": "links",
+      "support": "supported",
+      "surface": "metadata-index-and-cli",
+      "source": {"files": ["Notes/Unicode.md", "Notes/Unicodé.md", "Notes/Relative.md"]},
+      "operation": {
+        "kind": "index-and-file-resolution",
+        "ambiguousTargets": ["unicode", "UNICODE"],
+        "normalizedTarget": "Unicodé"
+      },
+      "expected": {
+        "fileResolution": "ambiguous",
+        "normalization": "NFC-case-insensitive",
+        "exitCode": 3,
+        "normalizedPath": "Notes/Unicodé.md"
+      },
+      "allowedVariance": ["error wording may differ while ambiguity and all candidates remain explicit"]
+    },
+    {
+      "id": "aliases.frontmatter-and-cli",
+      "category": "aliases",
+      "support": "supported",
+      "surface": "metadata-index-and-cli",
+      "source": {"files": ["Notes/Index.md", "Notes/Target.md"]},
+      "operation": {"kind": "alias-catalog", "path": "Notes/Index.md"},
+      "expected": {"aliases": ["Départ", "Start"], "sourcePath": "Notes/Index.md"},
+      "allowedVariance": ["catalog may include source paths in verbose mode"]
+    },
+    {
+      "id": "embeds.heading-block-and-failure",
+      "category": "embeds",
+      "support": "supported",
+      "surface": "note-embed-service",
+      "source": {"files": ["Notes/Index.md", "Notes/Target.md"]},
+      "operation": {"kind": "load-heading-and-block", "source": "Notes/Index.md", "target": "Target"},
+      "expected": {
+        "heading": {"status": "ready", "path": "Notes/Target.md", "kind": "heading", "startLine": 11, "contains": ["## Section", "### Child"], "excludes": ["## Later"]},
+        "block": {"status": "ready", "path": "Notes/Target.md", "kind": "block", "content": "A paragraph with a stable block marker."},
+        "missing": {"status": "unavailable", "reason": "subpath-missing"}
+      },
+      "allowedVariance": ["revision", "vaultId", "byte counts"]
+    },
+    {
+      "id": "attachments.exact-byte-roundtrip",
+      "category": "attachments",
+      "support": "supported",
+      "surface": "vault-kernel",
+      "source": {"files": ["Attachments/diagram.svg", "Attachments/notes.txt"]},
+      "operation": {"kind": "read-write-binary-roundtrip"},
+      "expected": {"status": "committed", "allAttachmentBytesEqualManifest": true, "mimeIndependent": true},
+      "allowedVariance": ["revision", "transactionId"]
+    },
+    {
+      "id": "frontmatter.typed-and-malformed",
+      "category": "frontmatter",
+      "support": "supported",
+      "surface": "property-service",
+      "source": {"files": ["Notes/Index.md", "Notes/Malformed.md"]},
+      "operation": {"kind": "inspect-and-no-write-malformed", "typed": "Notes/Index.md", "malformed": "Notes/Malformed.md"},
+      "expected": {"typedEditable": true, "typedKinds": ["list", "text"], "malformedEditable": false, "malformedBytesUnchanged": true},
+      "allowedVariance": ["human diagnostic wording"]
+    },
+    {
+      "id": "rename.rewrite-and-exclusion",
+      "category": "rename",
+      "support": "supported",
+      "surface": "note-move-service",
+      "source": {"files": ["Notes/Target.md", "Notes/Index.md", "Notes/Relative.md"]},
+      "operation": {"kind": "preview-and-commit", "from": "Notes/Target.md", "to": "Archive/Renamed Target.md", "updateLinks": true},
+      "expected": {"previewRequiresConfirmation": true, "status": "committed", "destination": "Archive/Renamed Target.md", "codeAndCommentsPreserved": true, "sourceNoLongerExists": true},
+      "allowedVariance": ["confirmationId", "revision", "transactionId", "conflict suffixes only if an external race is deliberately injected"]
+    },
+    {
+      "id": "rename.ambiguous-refusal",
+      "category": "rename",
+      "support": "supported",
+      "surface": "note-move-service",
+      "source": {"files": ["One/Duplicate.md", "Two/Duplicate.md", "Notes/Index.md"]},
+      "operation": {"kind": "move-one-ambiguous-candidate", "from": "One/Duplicate.md", "to": "Archive/First.md"},
+      "expected": {"status": "blocked", "writes": [], "sourcePreserved": true},
+      "allowedVariance": ["blocker wording"]
+    },
+    {
+      "id": "canvas.byte-preservation",
+      "category": "json-canvas",
+      "support": "supported",
+      "surface": "vault-kernel",
+      "source": {"files": ["Boards/Overview.canvas"]},
+      "operation": {"kind": "read-parse-and-roundtrip"},
+      "expected": {"validJson": true, "nodes": 2, "edges": 1, "bytesUnchanged": true},
+      "allowedVariance": []
+    },
+    {
+      "id": "obsidian.read-only-coexistence",
+      "category": "obsidian",
+      "support": "supported",
+      "surface": "read-only-cli-and-kernel",
+      "source": {"files": [".obsidian/app.json", ".obsidian/appearance.json", ".obsidian/workspace.json", ".obsidian/snippets/fixture.css"]},
+      "operation": {"kind": "catalog-read-and-vault-mutation"},
+      "expected": {"allObsidianBytesUnchanged": true, "threadleafStateOutsideVault": true, "privateTreeNotIndexed": true},
+      "allowedVariance": ["CLI catalog diagnostics"]
+    },
+    {
+      "id": "external.atomic-edit-conflict",
+      "category": "external-edits",
+      "support": "supported",
+      "surface": "vault-kernel",
+      "source": {"files": ["Notes/Target.md"]},
+      "operation": {"kind": "stale-write-after-external-atomic-save", "path": "Notes/Target.md"},
+      "expected": {"status": "conflict", "externalBytesWin": true, "proposalRetained": true, "noSilentOverwrite": true},
+      "allowedVariance": ["conflict filename suffix", "revision", "transactionId"]
+    },
+    {
+      "id": "roundtrip.every-canonical-byte",
+      "category": "roundtrip",
+      "support": "supported",
+      "surface": "read-only-kernel-and-cli",
+      "source": {"files": "manifest"},
+      "operation": {"kind": "open-read-close-no-write"},
+      "expected": {"everyManifestByteEqual": true, "noVaultPrivateWrites": true},
+      "allowedVariance": []
+    },
+    {
+      "id": "canvas.editing-unsupported",
+      "category": "json-canvas",
+      "support": "unsupported",
+      "surface": "native-canvas-editor",
+      "source": {"files": ["Boards/Overview.canvas"]},
+      "operation": {"kind": "edit-json-canvas"},
+      "expected": {"status": "unsupported", "reason": "Canvas editing is not part of the current native behavior surface."},
+      "allowedVariance": []
+    }
+  ]
+}

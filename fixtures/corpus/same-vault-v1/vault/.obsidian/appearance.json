@@ -1,0 +1,6 @@
+{
+  "baseFontSize": 16,
+  "accentColor": "#0072B2",
+  "theme": "",
+  "cssSnippets": ["fixture"]
+}

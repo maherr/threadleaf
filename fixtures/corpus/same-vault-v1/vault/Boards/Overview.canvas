@@ -1,0 +1,31 @@
+{
+  "nodes": [
+    {
+      "id": "node-index",
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 320,
+      "height": 120,
+      "text": "[[Notes/Index]]"
+    },
+    {
+      "id": "node-target",
+      "type": "file",
+      "x": 420,
+      "y": 0,
+      "width": 320,
+      "height": 120,
+      "file": "Notes/Target.md"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-index-target",
+      "fromNode": "node-index",
+      "toNode": "node-target",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ]
+}

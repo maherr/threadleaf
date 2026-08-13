@@ -1,0 +1,10 @@
+{
+  "main": {
+    "id": "synthetic-corpus-layout",
+    "type": "split",
+    "children": ["Notes/Index.md", "Boards/Overview.canvas"]
+  },
+  "unknown": {
+    "mustRemain": ["exact", "bytes"]
+  }
+}

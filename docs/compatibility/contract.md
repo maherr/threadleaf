@@ -86,6 +86,17 @@ block-range embeds, SVG rendering, or arbitrary plugin-defined embed processors.
 separate bounded corpus and explicit exclusions are documented in
 [Live Preview compatibility](live-preview.md).
 
+## Same-vault behavior corpus
+
+The repository's implementation-neutral same-vault corpus covers links, aliases, heading and block
+anchors, note embeds, attachments, typed and malformed frontmatter, rename rewrites and exclusions,
+Unicode and ambiguity, external atomic saves, JSON Canvas byte preservation, and `.obsidian/`
+coexistence. Its manifest, provenance, case schema, and contribution contract live in
+[Same-vault behavior corpus](same-vault.md). The executable gate runs supported cases through the
+public kernel, application services, and CLI on temporary copies, compares every canonical byte,
+and reports unsupported cases separately. It does not treat an untested external application as a
+pass or require an external product during offline checks.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

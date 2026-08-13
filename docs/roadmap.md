@@ -183,7 +183,7 @@ normal external vault backup and the privacy-safe feedback workflow.
 
 ## Phase 3: Compatibility alpha
 
-- [ ] Build an executable same-vault behavior corpus for links, aliases, embeds, attachments,
+- [x] Build an executable same-vault behavior corpus for links, aliases, embeds, attachments,
       frontmatter, rename semantics, JSON Canvas, and `.obsidian/` coexistence.
 - [ ] Broaden the public API from measured open-plugin usage, with one conformance fixture for each
       supported method, event, component, and lifecycle edge.

@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     cli: "src/cli/main.ts",
+    corpus: "src/corpus/main.ts",
     main: "src/main/main.ts",
     "plugin-renderer": "src/plugin-renderer/renderer.ts",
     preload: "src/main/preload.ts",

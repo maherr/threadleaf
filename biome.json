@@ -26,7 +26,9 @@
     {
       "includes": [
         "compatibility/registry.v1.json",
-        "src/generated/plugin-compatibility-registry.ts"
+        "src/generated/plugin-compatibility-registry.ts",
+        "fixtures/corpus/same-vault-v1/cases.json",
+        "fixtures/corpus/same-vault-v1/manifest.json"
       ],
       "formatter": {
         "enabled": false

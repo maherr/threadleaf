@@ -1,0 +1,1 @@
+Attachment bytes are user-owned data and must survive a same-vault round trip exactly.
