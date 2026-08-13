@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:fixture-schema",
+  "type": "object",
+  "required": ["schemaVersion", "uri", "fixtures"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "uri": {
+      "const": "urn:threadleaf:spec:v1:fixtures"
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "root",
+          "canonicalRoot",
+          "schemaVersion",
+          "license",
+          "licensePath",
+          "licenseSha256",
+          "provenancePath",
+          "provenanceSha256",
+          "manifestPath",
+          "manifestSha256",
+          "casesPath",
+          "casesSha256",
+          "cases",
+          "files",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "canonicalRoot": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "license": {
+            "type": "string"
+          },
+          "licensePath": {
+            "type": "string"
+          },
+          "licenseSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "provenancePath": {
+            "type": "string"
+          },
+          "provenanceSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "manifestPath": {
+            "type": "string"
+          },
+          "manifestSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "casesPath": {
+            "type": "string"
+          },
+          "casesSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "cases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "category", "support"],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string"
+                },
+                "support": {
+                  "enum": ["supported", "unsupported"]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "bytes", "sha256"],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "observation": {
+            "type": "object",
+            "required": ["path", "sha256", "status", "method", "source"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "status": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "source": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

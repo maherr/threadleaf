@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:theme-schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "uri",
+    "threadleafVersion",
+    "colorSchemes",
+    "assetIds",
+    "limits",
+    "cascade",
+    "gates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "uri": {
+      "const": "urn:threadleaf:spec:v1:themes"
+    },
+    "threadleafVersion": {
+      "type": "string"
+    },
+    "colorSchemes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "assetIds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "prefix", "source"],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "limits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "bytes", "unit", "display", "source"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unit": {
+            "enum": ["bytes", "entries"]
+          },
+          "display": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "cascade": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["order", "layer", "source"],
+        "properties": {
+          "order": {
+            "type": "integer"
+          },
+          "layer": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "command"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[^/][^\\n]*$"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

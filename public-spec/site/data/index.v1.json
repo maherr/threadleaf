@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "uri": "urn:threadleaf:spec:v1",
+  "threadleafVersion": "0.1.0-beta.3",
+  "versionPolicy": {
+    "specification": "v1",
+    "compatibility": "Exact Threadleaf version and exact fixture or bundle release are required for a verified claim.",
+    "uri": "urn:threadleaf:spec:v1"
+  },
+  "labels": {
+    "normative": "Normative requirements are eligible for conformance and use MUST or MUST NOT.",
+    "informative": "Informative context explains scope, provenance, or an explicit gap."
+  },
+  "datasets": [
+    "api.v1.json",
+    "cli.v1.json",
+    "themes.v1.json",
+    "fixtures.v1.json",
+    "conformance.v1.json",
+    "registry.v1.json"
+  ],
+  "schemas": [
+    "index.v1.schema.json",
+    "api.v1.schema.json",
+    "cli.v1.schema.json",
+    "theme.v1.schema.json",
+    "fixture.v1.schema.json",
+    "conformance.v1.schema.json",
+    "registry.v1.schema.json",
+    "case.v1.schema.json"
+  ],
+  "sources": [
+    "docs/compatibility/contract.md",
+    "docs/cli.md",
+    "docs/compatibility/themes.md",
+    "docs/compatibility/migration.md",
+    "docs/compatibility/live-preview.md",
+    "docs/compatibility/excalidraw-roundtrip.md",
+    "docs/compatibility/open-plugin-api.md",
+    "docs/compatibility/package-inspection.md",
+    "docs/compatibility/native-extensions.md",
+    "compatibility/plugin-evidence.v1.json",
+    "fixtures/corpus/same-vault-v1/manifest.json",
+    "fixtures/corpus/same-vault-v1/cases.json",
+    "fixtures/corpus/same-vault-v1/PROVENANCE.md",
+    "fixtures/corpus/same-vault-v1/LICENSE",
+    "fixtures/corpus/excalidraw-roundtrip-v1/manifest.json",
+    "fixtures/corpus/excalidraw-roundtrip-v1/cases.json",
+    "fixtures/corpus/excalidraw-roundtrip-v1/PROVENANCE.md",
+    "fixtures/corpus/excalidraw-roundtrip-v1/LICENSE",
+    "fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json"
+  ],
+  "generatedBy": "scripts/generate-public-spec.mjs"
+}

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:cli-schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "uri",
+    "threadleafVersion",
+    "cliSchemaVersion",
+    "commands",
+    "exitCodes",
+    "outputFormats",
+    "gates",
+    "source"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "uri": {
+      "const": "urn:threadleaf:spec:v1:cli"
+    },
+    "threadleafVersion": {
+      "type": "string"
+    },
+    "cliSchemaVersion": {
+      "type": "integer"
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "syntax", "output", "authority", "status", "source", "documentation"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "syntax": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "output": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "documentation": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "exitCodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "code"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "outputFormats": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "command"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[^/][^\\n]*$"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:case-schema",
+  "type": "object",
+  "required": ["schemaVersion", "corpusId", "license", "canonicalRoot", "manifest", "cases"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "corpusId": {
+      "type": "string"
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonicalRoot": {
+      "type": "string"
+    },
+    "manifest": {
+      "type": "string"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "support",
+          "surface",
+          "source",
+          "operation",
+          "expected",
+          "allowedVariance"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "support": {
+            "enum": ["supported", "unsupported"]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "source": {
+            "type": "object"
+          },
+          "operation": {
+            "type": "object"
+          },
+          "expected": {
+            "type": "object"
+          },
+          "allowedVariance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

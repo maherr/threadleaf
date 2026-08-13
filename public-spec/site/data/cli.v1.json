@@ -1,0 +1,456 @@
+{
+  "schemaVersion": 1,
+  "uri": "urn:threadleaf:spec:v1:cli",
+  "threadleafVersion": "0.1.0-beta.3",
+  "cliSchemaVersion": 1,
+  "commands": [
+    {
+      "id": "help",
+      "syntax": [],
+      "output": "See the CLI contract for the native projection.",
+      "authority": "Native CLI contract",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "vault.info",
+      "syntax": ["vault info", "vault:info"],
+      "output": "Canonical path and note, heading, tag, and link counts",
+      "authority": "Read-only kernel plus derived index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "file",
+      "syntax": ["file"],
+      "output": "Path, name, extension, byte size, and filesystem timestamps",
+      "authority": "Safe visible-file inventory",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "files",
+      "syntax": ["files"],
+      "output": "Sorted visible file paths with folder, extension, and count filters",
+      "authority": "Safe visible-file inventory",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "folder",
+      "syntax": ["folder"],
+      "output": "Recursive file count, folder count, and byte size",
+      "authority": "Safe visible-file inventory",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "folders",
+      "syntax": ["folders"],
+      "output": "Sorted visible folder paths with parent and count filters",
+      "authority": "Safe visible-file inventory",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "wordcount",
+      "syntax": ["wordcount"],
+      "output": "Unicode word and grapheme-character counts for one Markdown note",
+      "authority": "Read-only kernel",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "read",
+      "syntax": ["read"],
+      "output": "UTF-8 note content",
+      "authority": "Read-only kernel",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "search",
+      "syntax": ["search"],
+      "output": "Ranked matching paths with folder, limit, case, count, and text/JSON controls",
+      "authority": "Derived metadata and full-text index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "search.context",
+      "syntax": ["search:context"],
+      "output": "Grep-style matching source lines with folder, limit, case, and text/JSON controls",
+      "authority": "Derived metadata and full-text index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "links",
+      "syntax": ["links"],
+      "output": "Ordered outgoing targets, totals, and rich occurrence resolution states",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "backlinks",
+      "syntax": ["backlinks"],
+      "output": "Resolved source notes, totals, counts, and JSON/TSV/CSV formats",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "unresolved",
+      "syntax": ["unresolved"],
+      "output": "Grouped non-resolved targets plus counts, sources, and rich occurrences",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "orphans",
+      "syntax": ["orphans"],
+      "output": "Notes with no resolved incoming source",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "deadends",
+      "syntax": ["deadends"],
+      "output": "Notes with no parsed outgoing internal-link occurrence",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "outline",
+      "syntax": ["outline"],
+      "output": "Ordered headings in tree, Markdown, JSON, total, or rich source-line form",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "create",
+      "syntax": ["create"],
+      "output": "Created Markdown path and revision, optionally rendered from a template",
+      "authority": "Recoverable no-clobber writer plus bounded template reader",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "daily",
+      "syntax": ["daily"],
+      "output": "Opened or created daily-note path, outcome, and selected template",
+      "authority": "Read-before-create plus recoverable no-clobber writer",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "daily.path",
+      "syntax": ["daily:path"],
+      "output": "Expected daily-note path, whether or not it exists",
+      "authority": "Explicit folder and Moment-compatible date format",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "daily.read",
+      "syntax": ["daily:read"],
+      "output": "Saved daily-note content and path in JSON",
+      "authority": "Explicit daily-note path plus read-only kernel",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "daily.append",
+      "syntax": ["daily:append"],
+      "output": "Updated daily-note path and revision",
+      "authority": "Shared revision-checked text mutation service",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "daily.prepend",
+      "syntax": ["daily:prepend"],
+      "output": "Updated daily-note path and revision",
+      "authority": "Shared revision-checked text mutation service",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "append",
+      "syntax": ["append"],
+      "output": "Updated Markdown path and revision",
+      "authority": "Revision-checked recoverable writer",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "prepend",
+      "syntax": ["prepend"],
+      "output": "Updated Markdown path and revision",
+      "authority": "Revision-checked recoverable writer",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "move",
+      "syntax": ["move"],
+      "output": "Preview or committed source, destination, rewrites, and written revisions",
+      "authority": "Whole-vault proof plus compound recovery journal",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "rename",
+      "syntax": ["rename"],
+      "output": "Preview or committed same-folder destination, rewrites, and written revisions",
+      "authority": "Whole-vault proof plus compound recovery journal",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "delete",
+      "syntax": ["delete"],
+      "output": "Source and recoverable trash paths",
+      "authority": "Revision-checked recoverable rename",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "trash.list",
+      "syntax": ["trash list", "trash:list"],
+      "output": "Original path, trash path, revision, and byte size",
+      "authority": "Dedicated read-only trash inspection",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "restore",
+      "syntax": ["restore"],
+      "output": "Trash and restored paths",
+      "authority": "Revision-checked recoverable rename",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "properties",
+      "syntax": ["properties"],
+      "output": "Sorted indexed property names and values for one note",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "property.read",
+      "syntax": ["property:read"],
+      "output": "One indexed property value or an explicit absent result",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "property.set",
+      "syntax": ["property:set"],
+      "output": "Typed property value, note revision, and transaction",
+      "authority": "Revision-checked recoverable writer",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "property.remove",
+      "syntax": ["property:remove"],
+      "output": "Committed removal or explicit no-write missing result",
+      "authority": "Revision-checked recoverable writer",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "tasks",
+      "syntax": ["tasks"],
+      "output": "Vault-wide or targeted-note Markdown tasks with status filters and optional count/location output",
+      "authority": "Read-only kernel plus Markdown task scanner",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "task",
+      "syntax": ["task"],
+      "output": "One targeted task line, optionally with a new checkbox status",
+      "authority": "Read-only scanner or revision-checked recoverable writer",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "aliases",
+      "syntax": ["aliases"],
+      "output": "Frontmatter aliases across the vault or one targeted note, optionally with source paths",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "tags",
+      "syntax": ["tags"],
+      "output": "Unique tag catalog with occurrence counts across the vault or one targeted note",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "tag",
+      "syntax": ["tag"],
+      "output": "Occurrence total and carrying files for one tag",
+      "authority": "Derived metadata index",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "templates",
+      "syntax": ["templates"],
+      "output": "Sorted contained Markdown template paths and total",
+      "authority": "Shared bounded template catalog reader",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "template.read",
+      "syntax": ["template:read"],
+      "output": "UTF-8 template content, optionally resolved with a title",
+      "authority": "Shared bounded template reader and production renderer",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "random.read",
+      "syntax": ["random:read"],
+      "output": "One selected Markdown note, always including its path",
+      "authority": "Sorted Markdown corpus and injected or process-random selector",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "plugins",
+      "syntax": ["plugins"],
+      "output": "Sorted community-plugin package catalog, with optional versions and TSV, CSV, or compact JSON output",
+      "authority": "Contained static package inspection; never evaluates plugin code",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "plugin",
+      "syntax": ["plugin"],
+      "output": "One safe community-plugin package projection by ID",
+      "authority": "Contained static package inspection; never reads enablement or settings",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "themes",
+      "syntax": ["themes"],
+      "output": "Sorted community-theme catalog, with optional versions",
+      "authority": "Shared bounded appearance catalog; never reads active selection",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "theme",
+      "syntax": ["theme"],
+      "output": "One community-theme projection by explicit name",
+      "authority": "Shared bounded appearance catalog; never reads active selection",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "snippets",
+      "syntax": ["snippets"],
+      "output": "Sorted CSS snippet names",
+      "authority": "Shared bounded appearance catalog; never reads enabled selection",
+      "status": "implemented",
+      "source": "src/cli/command-line.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    }
+  ],
+  "exitCodes": [
+    {
+      "name": "success",
+      "code": 0
+    },
+    {
+      "name": "internal",
+      "code": 1
+    },
+    {
+      "name": "usage",
+      "code": 2
+    },
+    {
+      "name": "vault",
+      "code": 3
+    },
+    {
+      "name": "query",
+      "code": 4
+    },
+    {
+      "name": "conflict",
+      "code": 5
+    }
+  ],
+  "outputFormats": ["human-readable", "json", "tsv", "csv"],
+  "gates": [
+    {
+      "path": "src/cli/command-line.test.ts",
+      "command": "pnpm test"
+    }
+  ],
+  "source": ["src/cli/command-line.ts", "docs/cli.md"]
+}

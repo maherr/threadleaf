@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "uri": "urn:threadleaf:spec:v1:fixtures",
+  "fixtures": [
+    {
+      "id": "threadleaf.same-vault.v1",
+      "root": "fixtures/corpus/same-vault-v1",
+      "canonicalRoot": "vault",
+      "schemaVersion": 1,
+      "license": "CC0-1.0",
+      "licensePath": "fixtures/corpus/same-vault-v1/LICENSE",
+      "licenseSha256": "ac7473b5408160fcb40f5bc90c4253ffcee9e5e62035817631a43243feb158be",
+      "provenancePath": "fixtures/corpus/same-vault-v1/PROVENANCE.md",
+      "provenanceSha256": "0f8eed60c89c1a0488d3f23f47cf2d197bcd65ce296a2e55495799e2f56c0bb1",
+      "manifestPath": "fixtures/corpus/same-vault-v1/manifest.json",
+      "manifestSha256": "c245bedd226cfcf530323e4b728466bdc5cfa8220ff1a45d547be17db4b4c08b",
+      "casesPath": "fixtures/corpus/same-vault-v1/cases.json",
+      "casesSha256": "fe1d7326885deaa67c0bdd1eba663fd552b63815f3547df7ea9df8cfa4fc502b",
+      "cases": [
+        {
+          "id": "links.resolution-and-anchors",
+          "category": "links",
+          "support": "supported"
+        },
+        {
+          "id": "links.unicode-and-case",
+          "category": "links",
+          "support": "supported"
+        },
+        {
+          "id": "aliases.frontmatter-and-cli",
+          "category": "aliases",
+          "support": "supported"
+        },
+        {
+          "id": "embeds.heading-block-and-failure",
+          "category": "embeds",
+          "support": "supported"
+        },
+        {
+          "id": "attachments.exact-byte-roundtrip",
+          "category": "attachments",
+          "support": "supported"
+        },
+        {
+          "id": "frontmatter.typed-and-malformed",
+          "category": "frontmatter",
+          "support": "supported"
+        },
+        {
+          "id": "rename.rewrite-and-exclusion",
+          "category": "rename",
+          "support": "supported"
+        },
+        {
+          "id": "rename.ambiguous-refusal",
+          "category": "rename",
+          "support": "supported"
+        },
+        {
+          "id": "canvas.byte-preservation",
+          "category": "json-canvas",
+          "support": "supported"
+        },
+        {
+          "id": "obsidian.read-only-coexistence",
+          "category": "obsidian",
+          "support": "supported"
+        },
+        {
+          "id": "external.atomic-edit-conflict",
+          "category": "external-edits",
+          "support": "supported"
+        },
+        {
+          "id": "roundtrip.every-canonical-byte",
+          "category": "roundtrip",
+          "support": "supported"
+        },
+        {
+          "id": "canvas.editing-roundtrip",
+          "category": "json-canvas",
+          "support": "supported"
+        }
+      ],
+      "files": [
+        {
+          "path": "vault/.obsidian/app.json",
+          "bytes": 150,
+          "sha256": "60625e1be8b899258756dee8844e9322439088fc03fb7b520b16085971ce2aed"
+        },
+        {
+          "path": "vault/.obsidian/appearance.json",
+          "bytes": 98,
+          "sha256": "9553e6b2d03a9d744786e02d314767e4ecc2a52147e659e064f02ddbb0cb4dcd"
+        },
+        {
+          "path": "vault/.obsidian/snippets/fixture.css",
+          "bytes": 135,
+          "sha256": "9702f521f319657fc13f223db64a0e26eed020f077fcde5769f48e6d4ef1d3f6"
+        },
+        {
+          "path": "vault/.obsidian/workspace.json",
+          "bytes": 196,
+          "sha256": "ffa998e840716a1e7f44ef095bf67b98e961316316621260f5956dd86371e649"
+        },
+        {
+          "path": "vault/Attachments/diagram.svg",
+          "bytes": 154,
+          "sha256": "62c71f169fd489dc6cd9b2186c6f40eb4c6a5ecdcc74ee3d220fb552c57dd37a"
+        },
+        {
+          "path": "vault/Attachments/notes.txt",
+          "bytes": 87,
+          "sha256": "fa7b1cd430f9a94896e42a3e6ca05842f6e1efbf53b2ed87225ace7828a3cabd"
+        },
+        {
+          "path": "vault/Boards/Overview.canvas",
+          "bytes": 523,
+          "sha256": "cc64bd9449fbbfe73ec5bc54bfa5356ad1a0c7f959da2293b7cc7f03bfb97ed0"
+        },
+        {
+          "path": "vault/Notes/Index.md",
+          "bytes": 893,
+          "sha256": "bb49805583fae51fcc95f1f820e8e214557ea9b7ff75dfeb73d4d376aef3d37f"
+        },
+        {
+          "path": "vault/Notes/Malformed.md",
+          "bytes": 156,
+          "sha256": "4f7f98501839fba6184948a8c9bd5dacedd7e452863aa1d59fd4d2945fe99202"
+        },
+        {
+          "path": "vault/Notes/Relative.md",
+          "bytes": 199,
+          "sha256": "098215c90060760748c688711c2cfe8fe3a6ae25bd9cee36722721aa3a2c02fd"
+        },
+        {
+          "path": "vault/Notes/Root Target.md",
+          "bytes": 79,
+          "sha256": "7e824463ac85572773be939b4eac18e880e6694d472e3af20e676b4d75439f88"
+        },
+        {
+          "path": "vault/Notes/Target.md",
+          "bytes": 422,
+          "sha256": "beacfd12873320865bac347b9f1b226703ee4f72609fab5f8cd0b7330df582c1"
+        },
+        {
+          "path": "vault/Notes/Unicode.md",
+          "bytes": 99,
+          "sha256": "57858a8bccbcd0f4837ffdde8eb3d11e3a8cdaeaa902e13d989744c7b4c2f06b"
+        },
+        {
+          "path": "vault/Notes/UNICODE.md",
+          "bytes": 93,
+          "sha256": "77ec956fccaecb138310316e131fa3dd03d2a37ea520df5c53170ff670ac3d52"
+        },
+        {
+          "path": "vault/Notes/Unicodé.md",
+          "bytes": 104,
+          "sha256": "eed0278cae20841ee66774a04d8dabad422adf7334b260a86cc8bc6d0a5f72a1"
+        },
+        {
+          "path": "vault/One/Duplicate.md",
+          "bytes": 18,
+          "sha256": "0c5d36dcca09334ce880e1a3aad2321ddcbad93d5aaa5a89c276977bd658ab1d"
+        },
+        {
+          "path": "vault/Other/Target.md",
+          "bytes": 88,
+          "sha256": "15f1adf7427e8fe8e02e3b8fcee858e58a83dfacadff5bfb6b6256f457c2f8d9"
+        },
+        {
+          "path": "vault/Two/Duplicate.md",
+          "bytes": 19,
+          "sha256": "8dfc5ecb0eb6b6d75d15e6f60c14cb130a9717d2cc73e741f822f6a738618f12"
+        }
+      ],
+      "source": [
+        "fixtures/corpus/same-vault-v1/manifest.json",
+        "fixtures/corpus/same-vault-v1/cases.json",
+        "fixtures/corpus/same-vault-v1/PROVENANCE.md",
+        "fixtures/corpus/same-vault-v1/LICENSE"
+      ]
+    },
+    {
+      "id": "threadleaf.excalidraw-roundtrip.v1",
+      "root": "fixtures/corpus/excalidraw-roundtrip-v1",
+      "canonicalRoot": "vault",
+      "schemaVersion": 1,
+      "license": "CC0-1.0",
+      "licensePath": "fixtures/corpus/excalidraw-roundtrip-v1/LICENSE",
+      "licenseSha256": "1108689f1bab6476f329d73735ed941aaf1069e86b0a1436e0ffd1ee3f7e0eb1",
+      "provenancePath": "fixtures/corpus/excalidraw-roundtrip-v1/PROVENANCE.md",
+      "provenanceSha256": "79e005ded92636a6329c2b31c357eeab0d4aa964a675029e94b8e8ca3d907013",
+      "manifestPath": "fixtures/corpus/excalidraw-roundtrip-v1/manifest.json",
+      "manifestSha256": "aae684b741c6360d7f2370640eac01025a22fc503ff8829aed3c7e4d15410a2f",
+      "casesPath": "fixtures/corpus/excalidraw-roundtrip-v1/cases.json",
+      "casesSha256": "e497a46d501e71dfdcec5594a50a737573321a062daa21a85d7159fb0fc9dc88",
+      "cases": [
+        {
+          "id": "markdown.uncompressed-semantic-edit",
+          "category": "markdown-scene",
+          "support": "supported"
+        },
+        {
+          "id": "markdown.compressed-byte-preservation",
+          "category": "markdown-scene",
+          "support": "supported"
+        },
+        {
+          "id": "native.excalidraw-byte-preservation",
+          "category": "native-scene",
+          "support": "supported"
+        },
+        {
+          "id": "attachments.manifest-and-reference",
+          "category": "attachments",
+          "support": "supported"
+        },
+        {
+          "id": "attachments.rename-reference-rewrite",
+          "category": "attachments",
+          "support": "supported"
+        },
+        {
+          "id": "external-edit.revision-conflict",
+          "category": "external-edits",
+          "support": "supported"
+        },
+        {
+          "id": "workflow.packaged-electron",
+          "category": "electron-workflow",
+          "support": "supported"
+        },
+        {
+          "id": "obsidian.manual-roundtrip",
+          "category": "external-application",
+          "support": "unsupported"
+        }
+      ],
+      "files": [
+        {
+          "path": "vault/.obsidian/app.json",
+          "bytes": 84,
+          "sha256": "e471e83f8b4e12219bef8d45ed08e8d971ce41436b4c2b457cfa19335d7671e4"
+        },
+        {
+          "path": "vault/.obsidian/workspace.json",
+          "bytes": 180,
+          "sha256": "b80591b8addccfe4736be369fad1220d6bd1840d1751fb1c4a0c6563debcb0ae"
+        },
+        {
+          "path": "vault/Assets/Ébauche/diagram.svg",
+          "bytes": 360,
+          "sha256": "dfdafe29fb9903f7a61cbdd11abc6447376a322c4ede7c4a0fc1a320a5584b11"
+        },
+        {
+          "path": "vault/Assets/Ébauche/notes.txt",
+          "bytes": 76,
+          "sha256": "1ed9b9be6725387bea54e854007840872d3c830c3b72f0dd999caa6c441246e7"
+        },
+        {
+          "path": "vault/Drawings/Compressed Scene.excalidraw.md",
+          "bytes": 431,
+          "sha256": "38c778e6f0f4825a39359d44a46020dcb607ad792f8efbc9c4efbd34f6ec037d"
+        },
+        {
+          "path": "vault/Drawings/Native Scene.excalidraw",
+          "bytes": 1071,
+          "sha256": "d128c56ec40ecf03f16699ce434a5b45110f6226a2389bd55b415598689c4731"
+        },
+        {
+          "path": "vault/Drawings/Unicode Scene.excalidraw.md",
+          "bytes": 2819,
+          "sha256": "2f3816379c44b670f6abc75a31e6b922c1f2b1f48a3e08b15fd48b65fbf126a6"
+        },
+        {
+          "path": "vault/Notes/External.md",
+          "bytes": 104,
+          "sha256": "c35c17c7285d17e95f590473bbca9075e3fa0176515d19a4a0b3b29cb7c5b336"
+        },
+        {
+          "path": "vault/Notes/Source.md",
+          "bytes": 251,
+          "sha256": "b2888212edc43050483f6d093dc0ca48b80f6c0b1b0963f3e107e35eda4e1af6"
+        }
+      ],
+      "source": [
+        "fixtures/corpus/excalidraw-roundtrip-v1/manifest.json",
+        "fixtures/corpus/excalidraw-roundtrip-v1/cases.json",
+        "fixtures/corpus/excalidraw-roundtrip-v1/PROVENANCE.md",
+        "fixtures/corpus/excalidraw-roundtrip-v1/LICENSE",
+        "fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json"
+      ],
+      "observation": {
+        "path": "fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json",
+        "sha256": "2fb6dacd8058fdf1973635a327e1dcb3eadc7a804f55570c274de91b6973280c",
+        "status": "unverified",
+        "method": "manual-only",
+        "source": "No official Obsidian run was performed for this corpus."
+      }
+    }
+  ]
+}

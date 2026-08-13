@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:registry-schema",
+  "type": "object",
+  "required": ["schemaVersion", "generatedBy", "threadleafVersion", "entries"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "generatedBy": {
+      "type": "string"
+    },
+    "threadleafVersion": {
+      "type": "string"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plugin",
+          "threadleafVersion",
+          "lastTested",
+          "compatibilityLevel",
+          "summary",
+          "evidenceMode",
+          "requiredCapabilities",
+          "platforms",
+          "workflows",
+          "failures",
+          "limitations"
+        ],
+        "properties": {
+          "plugin": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "version", "repository", "license", "bundleSha256"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "repository": {
+                "type": "string",
+                "format": "uri"
+              },
+              "license": {
+                "type": "string"
+              },
+              "bundleSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          "threadleafVersion": {
+            "type": "string"
+          },
+          "lastTested": {
+            "type": "string",
+            "format": "date"
+          },
+          "compatibilityLevel": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "summary": {
+            "type": "string"
+          },
+          "evidenceMode": {
+            "type": "string"
+          },
+          "requiredCapabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "status", "limits"],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "limits": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            }
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "name", "status", "gates"],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": ["passed", "not-verified", "unsupported"]
+                },
+                "gates": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path", "command"],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "pattern": "^[^/][^\\n]*$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  }
+}

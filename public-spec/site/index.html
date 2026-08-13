@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Offline, versioned Threadleaf compatibility specification." />
+    <title>Threadleaf public compatibility specification v1</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <a class="wordmark" href="#top" aria-label="Threadleaf public specification home">
+          <span class="wordmark-mark" aria-hidden="true">TL</span>
+          <span>Threadleaf <span class="wordmark-subtitle">public contract</span></span>
+        </a>
+        <div class="masthead-actions">
+          <span class="version-chip">spec v1 · app 0.1.0-beta.3</span>
+          <button class="theme-toggle" type="button" aria-pressed="false" data-theme-toggle>
+            <span aria-hidden="true">◐</span> <span data-theme-label>Use dark scheme</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <nav class="section-nav" aria-label="Specification sections">
+      <div class="section-nav-inner">
+        <a href="#overview">Overview</a>
+        <a href="#conformance">Conformance</a>
+        <a href="#api">API</a>
+        <a href="#cli">CLI</a>
+        <a href="#themes">Themes</a>
+        <a href="#registry">Registry</a>
+        <a href="#fixtures">Fixtures</a>
+        <a href="#gaps">Gaps</a>
+        <a href="#contributing">Contribute</a>
+      </div>
+    </nav>
+
+    <main id="content" tabindex="-1">
+      <section id="top" class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow">VERSIONED · OFFLINE · EVIDENCE-BOUND</p>
+          <h1 id="page-title">A compatibility contract another open implementation can use.</h1>
+          <p class="hero-lede">
+            Threadleaf publishes portable vault behavior, desktop compatibility boundaries, and
+            exact fixture evidence as machine-readable v1. The site is a view over
+            the source datasets, not a second authority.
+          </p>
+          <nav class="hero-links" aria-label="Primary specification links">
+            <a class="button button-primary" href="#conformance">Read the evidence</a>
+            <a class="button button-secondary" href="data/index.v1.json">Download the index</a>
+          </nav>
+        </div>
+        <aside class="hero-card" aria-label="Specification facts">
+          <div class="hero-card-heading">At a glance</div>
+          <dl class="fact-list">
+              <div><dt>Specification</dt><dd><code>urn:threadleaf:spec:v1</code></dd></div>
+              <div><dt>Exact app release</dt><dd><code>0.1.0-beta.3</code></dd></div>
+              <div><dt>Verified claims</dt><dd>2 registry entries · 13 corpus cases</dd></div>
+              <div><dt>Generated from</dt><dd><code>scripts/generate-public-spec.mjs</code></dd></div>
+          </dl>
+        </aside>
+      </section>
+
+      <section id="overview" class="content-section" aria-labelledby="overview-title">
+        <div class="section-heading">
+          <p class="eyebrow">01 · ORIENTATION</p>
+          <h2 id="overview-title">One source, two audiences</h2>
+        </div>
+        <div class="prose-grid">
+          <div>
+            <p>
+              Normative requirements use <strong>MUST</strong> or <strong>MUST NOT</strong> and
+              are eligible for conformance. Informative notes explain scope, provenance, or a gap.
+              A passing row always names the exact app release and an executable gate.
+            </p>
+            <p>
+              Consumers can validate the JSON datasets and run the linked fixtures without
+              Electron, an account, or a network connection. The rendered tables below are
+              generated from those same datasets.
+            </p>
+          </div>
+          <div class="callout callout-blue">
+            <strong>Version policy</strong>
+            <p>
+              Select one `urn:threadleaf:spec:v1` contract. Do not silently reinterpret a new
+              schema or a different exact plugin release as this version.
+            </p>
+            <a href="../v1/index.md">Read the normative source</a>
+          </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat"><strong>11</strong><span>authority capabilities</span></div>
+            <div class="stat"><strong>46</strong><span>native CLI commands</span></div>
+            <div class="stat"><strong>2</strong><span>exact registry entries</span></div>
+            <div class="stat"><strong>13</strong><span>corpus cases</span></div>
+        </div>
+      </section>
+
+      <section id="conformance" class="content-section" aria-labelledby="conformance-title">
+        <div class="section-heading">
+          <p class="eyebrow">02 · PROOF</p>
+          <h2 id="conformance-title">Conformance claims</h2>
+          <p>These are the measured public claims at app version <code>0.1.0-beta.3</code>.</p>
+        </div>
+        <div class="table-tools">
+          <label for="table-filter">Filter tables</label>
+          <input id="table-filter" type="search" placeholder="Search a command, gate, or contract" data-table-filter />
+          <span class="filter-count" aria-live="polite" data-filter-count>All rows</span>
+        </div>
+        <div class="table-wrap">
+          <table data-filter-table>
+            <caption>Normative claims with exact gates and visible limitations</caption>
+            <thead><tr><th scope="col">Contract</th><th scope="col">State</th><th scope="col">Version</th><th scope="col">Executable gate</th><th scope="col">Limitations</th></tr></thead>
+            <tbody><tr><th scope="row">Same-vault behavior corpus</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm corpus:check</code> via <a href="../../src/corpus/same-vault-corpus.ts">src/corpus/same-vault-corpus.ts</a></td><td>An unsupported case remains unsupported and is not counted as a pass.</td></tr>
+<tr><th scope="row">Excalidraw format and round-trip corpus</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm corpus:check</code> via <a href="../../src/corpus/excalidraw-roundtrip-corpus.ts">src/corpus/excalidraw-roundtrip-corpus.ts</a><br /><code>pnpm test</code> via <a href="../../src/kernel/excalidraw-roundtrip.test.ts">src/kernel/excalidraw-roundtrip.test.ts</a><br /><code>pnpm test:excalidraw-roundtrip</code> via <a href="../../scripts/check-excalidraw-roundtrip.mjs">scripts/check-excalidraw-roundtrip.mjs</a></td><td>The official Obsidian observation is explicitly unsupported and unverified; no pass is inferred without a recorded manual run. The packaged plugin workflow is an exact release observation, not universal Excalidraw parity.</td></tr>
+<tr><th scope="row">Exact-version plugin evidence registry</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm compatibility:check</code> via <a href="../../scripts/generate-plugin-compatibility-registry.mjs">scripts/generate-plugin-compatibility-registry.mjs</a><br /><code>pnpm test</code> via <a href="../../src/runtime/plugin-host.test.ts">src/runtime/plugin-host.test.ts</a></td><td>A package without an exact production-path fixture remains discovered at level 0.</td></tr>
+<tr><th scope="row">Theme and snippet catalog</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/main/vault-appearance-loader.test.ts">src/main/vault-appearance-loader.test.ts</a><br /><code>pnpm test:appearance-watcher</code> via <a href="../../scripts/check-appearance-watcher.mjs">scripts/check-appearance-watcher.mjs</a><br /><code>pnpm test</code> via <a href="../../src/main/theme-package-manager.test.ts">src/main/theme-package-manager.test.ts</a></td><td>Package lifecycle is offline and local-file-only; no network theme store or remote package source is claimed.</td></tr>
+<tr><th scope="row">Native command-line contract</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/cli/command-line.test.ts">src/cli/command-line.test.ts</a></td><td>Familiar external CLI spellings are separate compatibility targets and may remain unsupported.</td></tr>
+<tr><th scope="row">Reviewed migration apply, recovery, and rollback</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/main/obsidian-migration-loader.test.ts">src/main/obsidian-migration-loader.test.ts</a><br /><code>pnpm test</code> via <a href="../../src/main/obsidian-migration-transaction.test.ts">src/main/obsidian-migration-transaction.test.ts</a><br /><code>pnpm test:migration-apply</code> via <a href="../../scripts/check-migration-apply.mjs">scripts/check-migration-apply.mjs</a></td><td>Apply and rollback never write .obsidian or vault Markdown bytes, and plugin code is not executed inside the transaction.</td></tr>
+<tr><th scope="row">Live Preview and source mapping</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/renderer/live-preview.test.ts">src/renderer/live-preview.test.ts</a><br /><code>pnpm test:live-preview</code> via <a href="../../scripts/check-live-preview.mjs">scripts/check-live-preview.mjs</a></td><td>Unsupported tables, HTML, math, malformed syntax, and inline Live Preview processors remain source-visible.</td></tr>
+<tr><th scope="row">JSON Canvas byte and editing boundary</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/application/json-canvas.test.ts">src/application/json-canvas.test.ts</a><br /><code>pnpm test:json-canvas</code> via <a href="../../scripts/check-json-canvas.mjs">scripts/check-json-canvas.mjs</a></td><td>Canvas editing is not a claim about arbitrary proprietary canvas extensions or unsupported node types.</td></tr>
+<tr><th scope="row">Workspace panes, docks, pop-outs, and settings</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test:workspace-panes</code> via <a href="../../scripts/check-workspace-panes.mjs">scripts/check-workspace-panes.mjs</a><br /><code>pnpm test:workspace-docks-popouts</code> via <a href="../../scripts/check-workspace-docks-popouts.mjs">scripts/check-workspace-docks-popouts.mjs</a><br /><code>pnpm test</code> via <a href="../../src/shared/workspace-settings.test.ts">src/shared/workspace-settings.test.ts</a></td><td>Private application state is not a portable vault format and is not written into .obsidian.</td></tr>
+<tr><th scope="row">Markdown processor compatibility</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/runtime/obsidian-markdown-processors.test.ts">src/runtime/obsidian-markdown-processors.test.ts</a></td><td>Inline Live Preview processors, arbitrary section partitioning, and plugin-owned network or filesystem adapters are unsupported.</td></tr>
+<tr><th scope="row">Exact plugin package inspection</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/main/plugin-package-inspection.test.ts">src/main/plugin-package-inspection.test.ts</a><br /><code>pnpm test:plugin-package-inspection</code> via <a href="../../scripts/check-plugin-package-inspection-e2e.mjs">scripts/check-plugin-package-inspection-e2e.mjs</a></td><td>Inspection and cleanup are not an OS sandbox; synchronous code, unobserved paths, and host authority outside the disposable root remain outside coverage.</td></tr>
+<tr><th scope="row">Native extension capability foundation</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm test</code> via <a href="../../src/native-extension/native-extension.test.ts">src/native-extension/native-extension.test.ts</a></td><td>The first host is in-process and reports sandboxed: false; production bundle evaluation and OS process isolation are not wired into this foundation. Desktop navigation, subprocess, secrets, and dynamic-code ports are trusted desktop escapes, not portable sandboxed capabilities.</td></tr>
+<tr><th scope="row">Public specification build</th><td><span class="status status-verified"><span aria-hidden="true">✓</span> verified</span></td><td><code>0.1.0-beta.3</code></td><td><code>pnpm public-spec:check</code> via <a href="../../scripts/check-public-spec.mjs">scripts/check-public-spec.mjs</a></td><td>Publishing the generated site remains a maintainer-authorized operation.</td></tr></tbody>
+          </table>
+        </div>
+        <p class="source-note">Source: <a href="data/conformance.v1.json"><code>conformance.v1.json</code></a> and the linked evidence files.</p>
+      </section>
+
+      <section id="api" class="content-section" aria-labelledby="api-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">03 · VOCABULARY</p><h2 id="api-title">Compatibility API vocabulary</h2></div><a class="dataset-link" href="data/api.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">The authority report is a static review aid for the trusted compatibility host. It is not a runtime sandbox.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Measured plugin authority vocabulary</caption><thead><tr><th scope="col">Identifier</th><th scope="col">Label</th><th scope="col">Meaning</th><th scope="col">Source</th></tr></thead><tbody><tr><th scope="row"><code>vault-read</code></th><td>Read vault content</td><td>References APIs that can inspect notes, attachments, or vault metadata.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>vault-write</code></th><td>Change vault content</td><td>References APIs that can create, edit, move, rename, or delete vault files.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>network</code></th><td>Use the network</td><td>References browser or Node networking APIs that can contact remote services.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>filesystem</code></th><td>Access the host filesystem</td><td>References Node filesystem APIs outside Threadleaf&#39;s vault abstraction.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>subprocess</code></th><td>Run host processes</td><td>References Node child-process APIs that can launch programs or shell commands.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>host-environment</code></th><td>Inspect the host environment</td><td>References environment, operating-system, or home-directory information.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>clipboard</code></th><td>Read or change the clipboard</td><td>References browser or Electron clipboard APIs.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>external-navigation</code></th><td>Open external destinations</td><td>References APIs that can open a browser, application, or external URL.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>editor-extension</code></th><td>Extend the editor</td><td>References CodeMirror or Obsidian editor-extension APIs.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>workspace-ui</code></th><td>Change workspace UI</td><td>References commands, views, settings, ribbon, status, or Markdown render hooks.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr>
+<tr><th scope="row"><code>dynamic-code</code></th><td>Evaluate dynamic code</td><td>References runtime code evaluation or dynamically selected modules.</td><td><a href="../../src/shared/plugins.ts">src/shared/plugins.ts</a></td></tr></tbody></table></div>
+        <details class="details-card"><summary>Compatibility levels</summary><ol class="level-list"><li><strong>L0, discovered.</strong> A valid manifest and bounded bundle were found.</li><li><strong>L1, loaded.</strong> The bundle evaluated and an instance was constructed.</li><li><strong>L2, activated.</strong> <code>onload</code> completed without an uncaught error.</li><li><strong>L3, integrated.</strong> Named commands, events, views, or processors registered.</li><li><strong>L4, workflow verified.</strong> A named workflow passed end to end.</li></ol></details>
+      </section>
+
+      <section id="cli" class="content-section" aria-labelledby="cli-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">04 · AUTOMATION</p><h2 id="cli-title">Headless CLI surface</h2></div><a class="dataset-link" href="data/cli.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">The CLI uses the same vault kernel and rebuildable metadata index. Every command requires an explicit vault path.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Versioned native command identifiers and their documented forms</caption><thead><tr><th scope="col">Command ID</th><th scope="col">Native form</th><th scope="col">Authority</th></tr></thead><tbody><tr><th scope="row"><code>help</code></th><td><span class="muted">native form</span></td><td>Native CLI contract</td></tr>
+<tr><th scope="row"><code>vault.info</code></th><td><code>vault info</code><br /><code>vault:info</code></td><td>Read-only kernel plus derived index</td></tr>
+<tr><th scope="row"><code>file</code></th><td><code>file</code></td><td>Safe visible-file inventory</td></tr>
+<tr><th scope="row"><code>files</code></th><td><code>files</code></td><td>Safe visible-file inventory</td></tr>
+<tr><th scope="row"><code>folder</code></th><td><code>folder</code></td><td>Safe visible-file inventory</td></tr>
+<tr><th scope="row"><code>folders</code></th><td><code>folders</code></td><td>Safe visible-file inventory</td></tr>
+<tr><th scope="row"><code>wordcount</code></th><td><code>wordcount</code></td><td>Read-only kernel</td></tr>
+<tr><th scope="row"><code>read</code></th><td><code>read</code></td><td>Read-only kernel</td></tr>
+<tr><th scope="row"><code>search</code></th><td><code>search</code></td><td>Derived metadata and full-text index</td></tr>
+<tr><th scope="row"><code>search.context</code></th><td><code>search:context</code></td><td>Derived metadata and full-text index</td></tr>
+<tr><th scope="row"><code>links</code></th><td><code>links</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>backlinks</code></th><td><code>backlinks</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>unresolved</code></th><td><code>unresolved</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>orphans</code></th><td><code>orphans</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>deadends</code></th><td><code>deadends</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>outline</code></th><td><code>outline</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>create</code></th><td><code>create</code></td><td>Recoverable no-clobber writer plus bounded template reader</td></tr>
+<tr><th scope="row"><code>daily</code></th><td><code>daily</code></td><td>Read-before-create plus recoverable no-clobber writer</td></tr>
+<tr><th scope="row"><code>daily.path</code></th><td><code>daily:path</code></td><td>Explicit folder and Moment-compatible date format</td></tr>
+<tr><th scope="row"><code>daily.read</code></th><td><code>daily:read</code></td><td>Explicit daily-note path plus read-only kernel</td></tr>
+<tr><th scope="row"><code>daily.append</code></th><td><code>daily:append</code></td><td>Shared revision-checked text mutation service</td></tr>
+<tr><th scope="row"><code>daily.prepend</code></th><td><code>daily:prepend</code></td><td>Shared revision-checked text mutation service</td></tr>
+<tr><th scope="row"><code>append</code></th><td><code>append</code></td><td>Revision-checked recoverable writer</td></tr>
+<tr><th scope="row"><code>prepend</code></th><td><code>prepend</code></td><td>Revision-checked recoverable writer</td></tr>
+<tr><th scope="row"><code>move</code></th><td><code>move</code></td><td>Whole-vault proof plus compound recovery journal</td></tr>
+<tr><th scope="row"><code>rename</code></th><td><code>rename</code></td><td>Whole-vault proof plus compound recovery journal</td></tr>
+<tr><th scope="row"><code>delete</code></th><td><code>delete</code></td><td>Revision-checked recoverable rename</td></tr>
+<tr><th scope="row"><code>trash.list</code></th><td><code>trash list</code><br /><code>trash:list</code></td><td>Dedicated read-only trash inspection</td></tr>
+<tr><th scope="row"><code>restore</code></th><td><code>restore</code></td><td>Revision-checked recoverable rename</td></tr>
+<tr><th scope="row"><code>properties</code></th><td><code>properties</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>property.read</code></th><td><code>property:read</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>property.set</code></th><td><code>property:set</code></td><td>Revision-checked recoverable writer</td></tr>
+<tr><th scope="row"><code>property.remove</code></th><td><code>property:remove</code></td><td>Revision-checked recoverable writer</td></tr>
+<tr><th scope="row"><code>tasks</code></th><td><code>tasks</code></td><td>Read-only kernel plus Markdown task scanner</td></tr>
+<tr><th scope="row"><code>task</code></th><td><code>task</code></td><td>Read-only scanner or revision-checked recoverable writer</td></tr>
+<tr><th scope="row"><code>aliases</code></th><td><code>aliases</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>tags</code></th><td><code>tags</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>tag</code></th><td><code>tag</code></td><td>Derived metadata index</td></tr>
+<tr><th scope="row"><code>templates</code></th><td><code>templates</code></td><td>Shared bounded template catalog reader</td></tr>
+<tr><th scope="row"><code>template.read</code></th><td><code>template:read</code></td><td>Shared bounded template reader and production renderer</td></tr>
+<tr><th scope="row"><code>random.read</code></th><td><code>random:read</code></td><td>Sorted Markdown corpus and injected or process-random selector</td></tr>
+<tr><th scope="row"><code>plugins</code></th><td><code>plugins</code></td><td>Contained static package inspection; never evaluates plugin code</td></tr>
+<tr><th scope="row"><code>plugin</code></th><td><code>plugin</code></td><td>Contained static package inspection; never reads enablement or settings</td></tr>
+<tr><th scope="row"><code>themes</code></th><td><code>themes</code></td><td>Shared bounded appearance catalog; never reads active selection</td></tr>
+<tr><th scope="row"><code>theme</code></th><td><code>theme</code></td><td>Shared bounded appearance catalog; never reads active selection</td></tr>
+<tr><th scope="row"><code>snippets</code></th><td><code>snippets</code></td><td>Shared bounded appearance catalog; never reads enabled selection</td></tr></tbody></table></div>
+        <div class="inline-links"><a href="../../docs/cli.md">Full CLI guide</a><a href="data/cli.v1.json">Exit codes and output formats</a></div>
+      </section>
+
+      <section id="themes" class="content-section" aria-labelledby="themes-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">05 · APPEARANCE</p><h2 id="themes-title">Themes and snippets</h2></div><a class="dataset-link" href="data/themes.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">Appearance inputs remain ordinary vault files. Containment, byte bounds, UTF-8 decoding, and CSS policy are part of the contract.</p>
+        <div class="theme-pills"><span class="pill">system</span><span class="pill">light</span><span class="pill">dark</span></div>
+        <div class="table-wrap"><table data-filter-table><caption>Appearance loader limits</caption><thead><tr><th scope="col">Limit</th><th scope="col">Bound</th><th scope="col">Source</th></tr></thead><tbody><tr><th scope="row">themeCssBytes</th><td>2,097,152 bytes</td><td><a href="../../src/main/vault-appearance-loader.ts">src/main/vault-appearance-loader.ts</a></td></tr>
+<tr><th scope="row">snippetCssBytes</th><td>524,288 bytes</td><td><a href="../../src/main/vault-appearance-loader.ts">src/main/vault-appearance-loader.ts</a></td></tr>
+<tr><th scope="row">manifestBytes</th><td>65,536 bytes</td><td><a href="../../src/main/vault-appearance-loader.ts">src/main/vault-appearance-loader.ts</a></td></tr>
+<tr><th scope="row">combinedActiveCssBytes</th><td>4,194,304 bytes</td><td><a href="../../src/main/vault-appearance-loader.ts">src/main/vault-appearance-loader.ts</a></td></tr>
+<tr><th scope="row">catalogEntries</th><td>256 entries</td><td><a href="../../src/main/vault-appearance-loader.ts">src/main/vault-appearance-loader.ts</a></td></tr></tbody></table></div>
+        <ol class="cascade" aria-label="Appearance cascade order"><li><b>1</b> Threadleaf baseline</li><li><b>2</b> selected theme</li><li><b>3</b> enabled snippets</li></ol>
+      </section>
+
+      <section id="registry" class="content-section" aria-labelledby="registry-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">06 · EXACT RELEASES</p><h2 id="registry-title">Plugin evidence registry</h2></div><a class="dataset-link" href="data/registry.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">Discovery is not execution. A row applies only to the exact plugin release and exact Threadleaf version shown.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Generated exact-version compatibility rows</caption><thead><tr><th scope="col">Plugin</th><th scope="col">Plugin version</th><th scope="col">Threadleaf</th><th scope="col">Level</th><th scope="col">Evidence mode</th><th scope="col">Last tested</th></tr></thead><tbody><tr><th scope="row">Excalidraw</th><td><code>2.25.3</code></td><td><code>0.1.0-beta.3</code></td><td><span class="level">L4</span></td><td>composed</td><td>2026-08-12</td></tr>
+<tr><th scope="row">Threadleaf Compatibility Fixture</th><td><code>0.1.0</code></td><td><code>0.1.0-beta.3</code></td><td><span class="level">L4</span></td><td>direct</td><td>2026-08-12</td></tr></tbody></table></div>
+        <p class="source-note">Generated from <a href="../../compatibility/plugin-evidence.v1.json"><code>plugin-evidence.v1.json</code></a>, not hand-authored in this page.</p>
+      </section>
+
+      <section id="fixtures" class="content-section" aria-labelledby="fixtures-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">07 · REPRODUCTION</p><h2 id="fixtures-title">Fixtures, hashes, provenance</h2></div><a class="dataset-link" href="data/fixtures.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">The same-vault and Excalidraw fixtures are synthetic, CC0-licensed, and checked byte by byte before their corpus gates run. Each row carries license, provenance, manifest, case, and canonical-file SHA-256 digests.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Public fixture manifest and case digest</caption><thead><tr><th scope="col">Fixture</th><th scope="col">License</th><th scope="col">Cases</th><th scope="col">Manifest</th><th scope="col">Cases file</th></tr></thead><tbody><tr><th scope="row">threadleaf.same-vault.v1</th><td>CC0-1.0</td><td>13</td><td><a href="../../fixtures/corpus/same-vault-v1/manifest.json">fixtures/corpus/same-vault-v1/manifest.json</a><br /><code>c245bedd226cfcf530323e4b728466bdc5cfa8220ff1a45d547be17db4b4c08b</code></td><td><a href="../../fixtures/corpus/same-vault-v1/cases.json">fixtures/corpus/same-vault-v1/cases.json</a><br /><code>fe1d7326885deaa67c0bdd1eba663fd552b63815f3547df7ea9df8cfa4fc502b</code></td></tr>
+<tr><th scope="row">threadleaf.excalidraw-roundtrip.v1</th><td>CC0-1.0</td><td>8</td><td><a href="../../fixtures/corpus/excalidraw-roundtrip-v1/manifest.json">fixtures/corpus/excalidraw-roundtrip-v1/manifest.json</a><br /><code>aae684b741c6360d7f2370640eac01025a22fc503ff8829aed3c7e4d15410a2f</code></td><td><a href="../../fixtures/corpus/excalidraw-roundtrip-v1/cases.json">fixtures/corpus/excalidraw-roundtrip-v1/cases.json</a><br /><code>e497a46d501e71dfdcec5594a50a737573321a062daa21a85d7159fb0fc9dc88</code></td></tr></tbody></table></div>
+        <div class="callout callout-orange"><strong>Private data boundary</strong><p>Contributors MUST remove private vault bytes, credentials, copied application assets, and network-derived output. Unsupported cases remain visible rather than being made to pass.</p><a href="../v1/contributing.md">Contribution requirements</a></div>
+        <p class="source-note">The Excalidraw corpus includes an explicit official Obsidian manual protocol record. Its status is <code>unverified</code> because no official Obsidian run, screenshots, or generated bytes are retained.</p>
+      </section>
+
+      <section id="gaps" class="content-section" aria-labelledby="gaps-title">
+        <div class="section-heading"><p class="eyebrow">08 · HONEST LIMITS</p><h2 id="gaps-title">Visible gaps</h2><p>These items are informative context only. None is a normative promise or implied roadmap deadline.</p></div>
+        <div class="table-wrap"><table data-filter-table><caption>Behavior that remains unverified or outside the current contract</caption><thead><tr><th scope="col">Area</th><th scope="col">State</th><th scope="col">Reason</th><th scope="col">Source</th></tr></thead><tbody><tr><th scope="row">Official Obsidian round-trip observation</th><td><span class="status status-not-verified"><span aria-hidden="true">?</span> not-verified</span></td><td>The synthetic Excalidraw corpus records an explicit manual protocol, but no official Obsidian run, result, screenshot, or generated bytes are retained.</td><td><a href="../../fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json">fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json</a></td></tr>
+<tr><th scope="row">Native extension production bundle wiring</th><td><span class="status status-not-verified"><span aria-hidden="true">?</span> not-verified</span></td><td>The native capability host is exercised through a typed fixture entrypoint; production bundle evaluation and OS process isolation are not wired into this foundation.</td><td><a href="../../docs/compatibility/native-extensions.md">docs/compatibility/native-extensions.md</a></td></tr>
+<tr><th scope="row">Trusted community plugin sandbox</th><td><span class="status status-not-verified"><span aria-hidden="true">?</span> not-verified</span></td><td>Community plugin inspection and grants make trust explicit but do not sandbox Node-capable plugin code or prove absence of omitted authority.</td><td><a href="../../docs/compatibility/contract.md">docs/compatibility/contract.md</a></td></tr>
+<tr><th scope="row">Universal community plugin parity</th><td><span class="status status-not-verified"><span aria-hidden="true">?</span> not-verified</span></td><td>Compatibility is measured per exact release and named workflow; discovery, static inspection, or one plugin pass is not universal parity.</td><td><a href="../../docs/compatibility/contract.md">docs/compatibility/contract.md</a></td></tr></tbody></table></div>
+      </section>
+
+      <section id="contributing" class="content-section final-section" aria-labelledby="contributing-title">
+        <div class="section-heading"><p class="eyebrow">09 · PARTICIPATE</p><h2 id="contributing-title">Contribute a case</h2></div>
+        <div class="prose-grid">
+          <div><p>Propose a deterministic case with source bytes, operation, expected result, allowed variance, provenance, and license. Keep it implementation-neutral and runnable offline.</p><a class="button button-primary" href="../v1/contributing.md">Read the contributor contract</a></div>
+          <aside class="checklist" aria-label="Contribution checklist"><div><span aria-hidden="true">01</span><strong>Pin</strong><p>Pin schema, fixture, and app versions.</p></div><div><span aria-hidden="true">02</span><strong>Prove</strong><p>Link an executable gate and exact bytes.</p></div><div><span aria-hidden="true">03</span><strong>Declare</strong><p>Record provenance, license, limits, and gaps.</p></div></aside>
+        </div>
+      </section>
+    </main>
+    <footer class="footer"><div><strong>Threadleaf public contract</strong><span>Generated locally from repository evidence.</span></div><a href="../v1/index.md">Normative source</a><a href="data/index.v1.json">Dataset index</a></footer>
+  </body>
+</html>

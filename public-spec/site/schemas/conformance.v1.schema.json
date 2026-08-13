@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:conformance-schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "uri",
+    "threadleafVersion",
+    "terminology",
+    "claims",
+    "gaps",
+    "registryEntries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "uri": {
+      "const": "urn:threadleaf:spec:v1:conformance"
+    },
+    "threadleafVersion": {
+      "type": "string"
+    },
+    "terminology": {
+      "type": "object",
+      "required": ["normative", "informative", "verified", "notVerified"],
+      "properties": {
+        "normative": {
+          "type": "string"
+        },
+        "informative": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "string"
+        },
+        "notVerified": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "label",
+          "scope",
+          "threadleafVersion",
+          "evidence",
+          "gates",
+          "fixtures",
+          "limitations"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["verified", "not-verified", "unsupported"]
+          },
+          "label": {
+            "enum": ["normative", "informative"]
+          },
+          "scope": {
+            "type": "string"
+          },
+          "threadleafVersion": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "gates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "command"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^[^/][^\\n]*$"
+                },
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "fixtures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status", "label", "reason", "source"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["verified", "not-verified", "unsupported"]
+          },
+          "label": {
+            "enum": ["normative", "informative"]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "registryEntries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "version", "threadleafVersion", "compatibilityLevel"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "threadleafVersion": {
+            "type": "string"
+          },
+          "compatibilityLevel": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

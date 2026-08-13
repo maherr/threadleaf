@@ -1,0 +1,385 @@
+{
+  "schemaVersion": 1,
+  "uri": "urn:threadleaf:spec:v1:conformance",
+  "threadleafVersion": "0.1.0-beta.3",
+  "terminology": {
+    "normative": "A normative requirement uses MUST or MUST NOT and is eligible for conformance.",
+    "informative": "An informative note explains scope or a gap and is not an acceptance claim.",
+    "verified": "A verified claim has at least one executable gate and exact Threadleaf version.",
+    "notVerified": "A not-verified claim is visible context and cannot be presented as passing."
+  },
+  "claims": [
+    {
+      "id": "same-vault-corpus",
+      "title": "Same-vault behavior corpus",
+      "status": "verified",
+      "label": "normative",
+      "scope": "The checked-in corpus cases marked supported run through public kernel, application, and CLI surfaces.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": [
+        "fixtures/corpus/same-vault-v1/manifest.json",
+        "fixtures/corpus/same-vault-v1/cases.json",
+        "fixtures/corpus/same-vault-v1/PROVENANCE.md",
+        "fixtures/corpus/same-vault-v1/LICENSE"
+      ],
+      "gates": [
+        {
+          "path": "src/corpus/same-vault-corpus.ts",
+          "command": "pnpm corpus:check"
+        }
+      ],
+      "fixtures": ["threadleaf.same-vault.v1"],
+      "limitations": ["An unsupported case remains unsupported and is not counted as a pass."]
+    },
+    {
+      "id": "excalidraw-roundtrip-corpus",
+      "title": "Excalidraw format and round-trip corpus",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Native scenes, Markdown scene fences, opaque compressed payloads, attachments, and revision conflicts have explicit byte or semantic contracts.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": [
+        "fixtures/corpus/excalidraw-roundtrip-v1/manifest.json",
+        "fixtures/corpus/excalidraw-roundtrip-v1/cases.json",
+        "fixtures/corpus/excalidraw-roundtrip-v1/PROVENANCE.md",
+        "fixtures/corpus/excalidraw-roundtrip-v1/LICENSE",
+        "fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json",
+        "docs/compatibility/excalidraw-roundtrip.md"
+      ],
+      "gates": [
+        {
+          "path": "src/corpus/excalidraw-roundtrip-corpus.ts",
+          "command": "pnpm corpus:check"
+        },
+        {
+          "path": "src/kernel/excalidraw-roundtrip.test.ts",
+          "command": "pnpm test"
+        },
+        {
+          "path": "scripts/check-excalidraw-roundtrip.mjs",
+          "command": "pnpm test:excalidraw-roundtrip"
+        }
+      ],
+      "fixtures": ["threadleaf.excalidraw-roundtrip.v1"],
+      "limitations": [
+        "The official Obsidian observation is explicitly unsupported and unverified; no pass is inferred without a recorded manual run.",
+        "The packaged plugin workflow is an exact release observation, not universal Excalidraw parity."
+      ]
+    },
+    {
+      "id": "plugin-compatibility-registry",
+      "title": "Exact-version plugin evidence registry",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Only exact plugin and Threadleaf versions in the generated registry carry a measured level.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": ["compatibility/plugin-evidence.v1.json", "compatibility/registry.v1.json"],
+      "gates": [
+        {
+          "path": "scripts/generate-plugin-compatibility-registry.mjs",
+          "command": "pnpm compatibility:check"
+        },
+        {
+          "path": "src/runtime/plugin-host.test.ts",
+          "command": "pnpm test"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "A package without an exact production-path fixture remains discovered at level 0."
+      ]
+    },
+    {
+      "id": "theme-catalog-and-loader",
+      "title": "Theme and snippet catalog",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Contained theme and snippet discovery, bounded loading, CSS rejection, and watcher behavior.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": [
+        "docs/compatibility/themes.md",
+        "src/shared/appearance.ts",
+        "src/main/vault-appearance-loader.ts",
+        "src/main/theme-package-manager.ts"
+      ],
+      "gates": [
+        {
+          "path": "src/main/vault-appearance-loader.test.ts",
+          "command": "pnpm test"
+        },
+        {
+          "path": "scripts/check-appearance-watcher.mjs",
+          "command": "pnpm test:appearance-watcher"
+        },
+        {
+          "path": "src/main/theme-package-manager.test.ts",
+          "command": "pnpm test"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "Package lifecycle is offline and local-file-only; no network theme store or remote package source is claimed."
+      ]
+    },
+    {
+      "id": "native-cli",
+      "title": "Native command-line contract",
+      "status": "verified",
+      "label": "normative",
+      "scope": "The current versioned native CLI command IDs, syntax aliases, exit codes, and output contracts are executable without Electron or network access.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": ["src/cli/command-line.ts", "docs/cli.md"],
+      "gates": [
+        {
+          "path": "src/cli/command-line.test.ts",
+          "command": "pnpm test"
+        }
+      ],
+      "fixtures": ["threadleaf.same-vault.v1"],
+      "limitations": [
+        "Familiar external CLI spellings are separate compatibility targets and may remain unsupported."
+      ]
+    },
+    {
+      "id": "migration-preview-and-apply",
+      "title": "Reviewed migration apply, recovery, and rollback",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Migration preview is bounded and read-only; reviewed selections apply only private Threadleaf state through a journal with interruption recovery and rollback conflict checks.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": ["docs/compatibility/migration.md", "src/main/obsidian-migration-transaction.ts"],
+      "gates": [
+        {
+          "path": "src/main/obsidian-migration-loader.test.ts",
+          "command": "pnpm test"
+        },
+        {
+          "path": "src/main/obsidian-migration-transaction.test.ts",
+          "command": "pnpm test"
+        },
+        {
+          "path": "scripts/check-migration-apply.mjs",
+          "command": "pnpm test:migration-apply"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "Apply and rollback never write .obsidian or vault Markdown bytes, and plugin code is not executed inside the transaction."
+      ]
+    },
+    {
+      "id": "live-preview-source-mapping",
+      "title": "Live Preview and source mapping",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Live, Source, and Read modes share canonical Markdown bytes, bounded UTF-16 source mappings, reveal rules, and explicit source fallbacks.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": ["docs/compatibility/live-preview.md", "src/renderer/live-preview.ts"],
+      "gates": [
+        {
+          "path": "src/renderer/live-preview.test.ts",
+          "command": "pnpm test"
+        },
+        {
+          "path": "scripts/check-live-preview.mjs",
+          "command": "pnpm test:live-preview"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "Unsupported tables, HTML, math, malformed syntax, and inline Live Preview processors remain source-visible."
+      ]
+    },
+    {
+      "id": "json-canvas",
+      "title": "JSON Canvas byte and editing boundary",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Canvas documents are parsed, rendered, edited, and saved through the recoverable vault boundary while preserving unrelated JSON structure and file bytes on no-op round trips.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": [
+        "src/application/json-canvas.ts",
+        "src/shared/json-canvas.ts",
+        "docs/compatibility/contract.md"
+      ],
+      "gates": [
+        {
+          "path": "src/application/json-canvas.test.ts",
+          "command": "pnpm test"
+        },
+        {
+          "path": "scripts/check-json-canvas.mjs",
+          "command": "pnpm test:json-canvas"
+        }
+      ],
+      "fixtures": ["threadleaf.same-vault.v1"],
+      "limitations": [
+        "Canvas editing is not a claim about arbitrary proprietary canvas extensions or unsupported node types."
+      ]
+    },
+    {
+      "id": "workspace-docks-settings",
+      "title": "Workspace panes, docks, pop-outs, and settings",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Per-vault workspace panes, pinned tabs, docks, plugin pop-outs, application settings, and key bindings persist outside the vault with revision and recovery checks.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": [
+        "docs/architecture.md",
+        "src/shared/workspace-layout.ts",
+        "src/shared/workspace-settings.ts"
+      ],
+      "gates": [
+        {
+          "path": "scripts/check-workspace-panes.mjs",
+          "command": "pnpm test:workspace-panes"
+        },
+        {
+          "path": "scripts/check-workspace-docks-popouts.mjs",
+          "command": "pnpm test:workspace-docks-popouts"
+        },
+        {
+          "path": "src/shared/workspace-settings.test.ts",
+          "command": "pnpm test"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "Private application state is not a portable vault format and is not written into .obsidian."
+      ]
+    },
+    {
+      "id": "markdown-processors",
+      "title": "Markdown processor compatibility",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Trusted desktop plugins can register bounded fenced-code and post-processing callbacks with deterministic ordering, context, failure, and child lifecycle behavior.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": [
+        "docs/compatibility/open-plugin-api.md",
+        "src/runtime/obsidian-markdown-processors.ts"
+      ],
+      "gates": [
+        {
+          "path": "src/runtime/obsidian-markdown-processors.test.ts",
+          "command": "pnpm test"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "Inline Live Preview processors, arbitrary section partitioning, and plugin-owned network or filesystem adapters are unsupported."
+      ]
+    },
+    {
+      "id": "plugin-package-inspection",
+      "title": "Exact plugin package inspection",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Exact package bytes and manifests are checked before activation, including static authority evidence, bounded trusted activation, registration inventory, cleanup, timeout, and disposable-root diffs.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": [
+        "docs/compatibility/package-inspection.md",
+        "src/main/plugin-package-inspection.ts"
+      ],
+      "gates": [
+        {
+          "path": "src/main/plugin-package-inspection.test.ts",
+          "command": "pnpm test"
+        },
+        {
+          "path": "scripts/check-plugin-package-inspection-e2e.mjs",
+          "command": "pnpm test:plugin-package-inspection"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "Inspection and cleanup are not an OS sandbox; synchronous code, unobserved paths, and host authority outside the disposable root remain outside coverage."
+      ]
+    },
+    {
+      "id": "native-extension-foundation",
+      "title": "Native extension capability foundation",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Versioned manifests, exact bundle and authority digests, per-vault grants, typed capability ports, revocation, safe mode, deadlines, teardown, and cross-vault checks form the native foundation.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": ["docs/compatibility/native-extensions.md", "src/native-extension/host.ts"],
+      "gates": [
+        {
+          "path": "src/native-extension/native-extension.test.ts",
+          "command": "pnpm test"
+        }
+      ],
+      "fixtures": [],
+      "limitations": [
+        "The first host is in-process and reports sandboxed: false; production bundle evaluation and OS process isolation are not wired into this foundation.",
+        "Desktop navigation, subprocess, secrets, and dynamic-code ports are trusted desktop escapes, not portable sandboxed capabilities."
+      ]
+    },
+    {
+      "id": "public-spec-build",
+      "title": "Public specification build",
+      "status": "verified",
+      "label": "normative",
+      "scope": "Generated tables, schemas, local links, anchors, fixture hashes, exact versions, and offline assets are checked together.",
+      "threadleafVersion": "0.1.0-beta.3",
+      "evidence": ["public-spec/template.html", "public-spec/styles.css", "public-spec/site.js"],
+      "gates": [
+        {
+          "path": "scripts/check-public-spec.mjs",
+          "command": "pnpm public-spec:check"
+        }
+      ],
+      "fixtures": [],
+      "limitations": ["Publishing the generated site remains a maintainer-authorized operation."]
+    }
+  ],
+  "gaps": [
+    {
+      "id": "official-obsidian-roundtrip",
+      "title": "Official Obsidian round-trip observation",
+      "status": "not-verified",
+      "label": "informative",
+      "reason": "The synthetic Excalidraw corpus records an explicit manual protocol, but no official Obsidian run, result, screenshot, or generated bytes are retained.",
+      "source": "fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json"
+    },
+    {
+      "id": "native-extension-production-wiring",
+      "title": "Native extension production bundle wiring",
+      "status": "not-verified",
+      "label": "informative",
+      "reason": "The native capability host is exercised through a typed fixture entrypoint; production bundle evaluation and OS process isolation are not wired into this foundation.",
+      "source": "docs/compatibility/native-extensions.md#lifecycle-and-trust"
+    },
+    {
+      "id": "trusted-plugin-sandbox",
+      "title": "Trusted community plugin sandbox",
+      "status": "not-verified",
+      "label": "informative",
+      "reason": "Community plugin inspection and grants make trust explicit but do not sandbox Node-capable plugin code or prove absence of omitted authority.",
+      "source": "docs/compatibility/contract.md#compatibility-host-resource-policy"
+    },
+    {
+      "id": "universal-plugin-parity",
+      "title": "Universal community plugin parity",
+      "status": "not-verified",
+      "label": "informative",
+      "reason": "Compatibility is measured per exact release and named workflow; discovery, static inspection, or one plugin pass is not universal parity.",
+      "source": "docs/compatibility/contract.md#evidence-sources"
+    }
+  ],
+  "registryEntries": [
+    {
+      "id": "obsidian-excalidraw-plugin",
+      "version": "2.25.3",
+      "threadleafVersion": "0.1.0-beta.3",
+      "compatibilityLevel": 4
+    },
+    {
+      "id": "threadleaf-fixture",
+      "version": "0.1.0",
+      "threadleafVersion": "0.1.0-beta.3",
+      "compatibilityLevel": 4
+    }
+  ]
+}

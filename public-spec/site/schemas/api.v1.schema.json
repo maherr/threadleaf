@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:api-schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "uri",
+    "threadleafVersion",
+    "implementationClassifications",
+    "compatibilityLevels",
+    "capabilities",
+    "surfaces"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "uri": {
+      "const": "urn:threadleaf:spec:v1:api"
+    },
+    "threadleafVersion": {
+      "type": "string"
+    },
+    "implementationClassifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "source"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "compatibilityLevels": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["level", "name", "evidence"],
+        "properties": {
+          "level": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "name": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "description", "source"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "classification", "status", "source"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

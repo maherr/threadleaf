@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "uri": "urn:threadleaf:spec:v1:themes",
+  "threadleafVersion": "0.1.0-beta.3",
+  "colorSchemes": ["system", "light", "dark"],
+  "assetIds": [
+    {
+      "kind": "theme",
+      "prefix": "obsidian-theme:",
+      "source": "src/shared/appearance.ts#appearanceAssetIdPatterns"
+    },
+    {
+      "kind": "snippet",
+      "prefix": "obsidian-snippet:",
+      "source": "src/shared/appearance.ts#appearanceAssetIdPatterns"
+    }
+  ],
+  "limits": [
+    {
+      "id": "themeCssBytes",
+      "bytes": 2097152,
+      "unit": "bytes",
+      "source": "src/main/vault-appearance-loader.ts#maxThemeBytes",
+      "display": "2,097,152 bytes"
+    },
+    {
+      "id": "snippetCssBytes",
+      "bytes": 524288,
+      "unit": "bytes",
+      "source": "src/main/vault-appearance-loader.ts#maxSnippetBytes",
+      "display": "524,288 bytes"
+    },
+    {
+      "id": "manifestBytes",
+      "bytes": 65536,
+      "unit": "bytes",
+      "source": "src/main/vault-appearance-loader.ts#maxManifestBytes",
+      "display": "65,536 bytes"
+    },
+    {
+      "id": "combinedActiveCssBytes",
+      "bytes": 4194304,
+      "unit": "bytes",
+      "source": "src/main/vault-appearance-loader.ts#maxCombinedCssBytes",
+      "display": "4,194,304 bytes"
+    },
+    {
+      "id": "catalogEntries",
+      "bytes": 256,
+      "unit": "entries",
+      "source": "src/main/vault-appearance-loader.ts#maxCatalogEntries",
+      "display": "256 entries"
+    }
+  ],
+  "cascade": [
+    {
+      "order": 1,
+      "layer": "Threadleaf baseline",
+      "source": "docs/compatibility/themes.md#Cascade-order"
+    },
+    {
+      "order": 2,
+      "layer": "Selected theme",
+      "source": "docs/compatibility/themes.md#Cascade-order"
+    },
+    {
+      "order": 3,
+      "layer": "Enabled snippets in persisted order",
+      "source": "docs/compatibility/themes.md#Cascade-order"
+    }
+  ],
+  "gates": [
+    {
+      "path": "src/main/vault-appearance-loader.test.ts",
+      "command": "pnpm test"
+    },
+    {
+      "path": "scripts/check-appearance-watcher.mjs",
+      "command": "pnpm test:appearance-watcher"
+    }
+  ]
+}

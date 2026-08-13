@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Offline, versioned Threadleaf compatibility specification." />
+    <title>Threadleaf public compatibility specification @@SPEC_VERSION@@</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <a class="wordmark" href="#top" aria-label="Threadleaf public specification home">
+          <span class="wordmark-mark" aria-hidden="true">TL</span>
+          <span>Threadleaf <span class="wordmark-subtitle">public contract</span></span>
+        </a>
+        <div class="masthead-actions">
+          <span class="version-chip">spec @@SPEC_VERSION@@ · app @@THREADLEAF_VERSION@@</span>
+          <button class="theme-toggle" type="button" aria-pressed="false" data-theme-toggle>
+            <span aria-hidden="true">◐</span> <span data-theme-label>Use dark scheme</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <nav class="section-nav" aria-label="Specification sections">
+      <div class="section-nav-inner">
+        <a href="#overview">Overview</a>
+        <a href="#conformance">Conformance</a>
+        <a href="#api">API</a>
+        <a href="#cli">CLI</a>
+        <a href="#themes">Themes</a>
+        <a href="#registry">Registry</a>
+        <a href="#fixtures">Fixtures</a>
+        <a href="#gaps">Gaps</a>
+        <a href="#contributing">Contribute</a>
+      </div>
+    </nav>
+
+    <main id="content" tabindex="-1">
+      <section id="top" class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow">VERSIONED · OFFLINE · EVIDENCE-BOUND</p>
+          <h1 id="page-title">A compatibility contract another open implementation can use.</h1>
+          <p class="hero-lede">
+            Threadleaf publishes portable vault behavior, desktop compatibility boundaries, and
+            exact fixture evidence as machine-readable @@SPEC_VERSION@@. The site is a view over
+            the source datasets, not a second authority.
+          </p>
+          <nav class="hero-links" aria-label="Primary specification links">
+            <a class="button button-primary" href="#conformance">Read the evidence</a>
+            <a class="button button-secondary" href="data/index.v1.json">Download the index</a>
+          </nav>
+        </div>
+        <aside class="hero-card" aria-label="Specification facts">
+          <div class="hero-card-heading">At a glance</div>
+          <dl class="fact-list">
+              <div><dt>Specification</dt><dd><code>urn:threadleaf:spec:@@SPEC_VERSION@@</code></dd></div>
+              <div><dt>Exact app release</dt><dd><code>@@THREADLEAF_VERSION@@</code></dd></div>
+              <div><dt>Verified claims</dt><dd>@@REGISTRY_COUNT@@ registry entries · @@CASE_COUNT@@ corpus cases</dd></div>
+              <div><dt>Generated from</dt><dd><code>@@GENERATED_BY@@</code></dd></div>
+          </dl>
+        </aside>
+      </section>
+
+      <section id="overview" class="content-section" aria-labelledby="overview-title">
+        <div class="section-heading">
+          <p class="eyebrow">01 · ORIENTATION</p>
+          <h2 id="overview-title">One source, two audiences</h2>
+        </div>
+        <div class="prose-grid">
+          <div>
+            <p>
+              Normative requirements use <strong>MUST</strong> or <strong>MUST NOT</strong> and
+              are eligible for conformance. Informative notes explain scope, provenance, or a gap.
+              A passing row always names the exact app release and an executable gate.
+            </p>
+            <p>
+              Consumers can validate the JSON datasets and run the linked fixtures without
+              Electron, an account, or a network connection. The rendered tables below are
+              generated from those same datasets.
+            </p>
+          </div>
+          <div class="callout callout-blue">
+            <strong>Version policy</strong>
+            <p>
+              Select one `urn:threadleaf:spec:v1` contract. Do not silently reinterpret a new
+              schema or a different exact plugin release as this version.
+            </p>
+            <a href="../v1/index.md">Read the normative source</a>
+          </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat"><strong>@@CAPABILITY_COUNT@@</strong><span>authority capabilities</span></div>
+            <div class="stat"><strong>@@COMMAND_COUNT@@</strong><span>native CLI commands</span></div>
+            <div class="stat"><strong>@@REGISTRY_COUNT@@</strong><span>exact registry entries</span></div>
+            <div class="stat"><strong>@@CASE_COUNT@@</strong><span>corpus cases</span></div>
+        </div>
+      </section>
+
+      <section id="conformance" class="content-section" aria-labelledby="conformance-title">
+        <div class="section-heading">
+          <p class="eyebrow">02 · PROOF</p>
+          <h2 id="conformance-title">Conformance claims</h2>
+          <p>These are the measured public claims at app version <code>@@THREADLEAF_VERSION@@</code>.</p>
+        </div>
+        <div class="table-tools">
+          <label for="table-filter">Filter tables</label>
+          <input id="table-filter" type="search" placeholder="Search a command, gate, or contract" data-table-filter />
+          <span class="filter-count" aria-live="polite" data-filter-count>All rows</span>
+        </div>
+        <div class="table-wrap">
+          <table data-filter-table>
+            <caption>Normative claims with exact gates and visible limitations</caption>
+            <thead><tr><th scope="col">Contract</th><th scope="col">State</th><th scope="col">Version</th><th scope="col">Executable gate</th><th scope="col">Limitations</th></tr></thead>
+            <tbody>@@CONFORMANCE_ROWS@@</tbody>
+          </table>
+        </div>
+        <p class="source-note">Source: <a href="data/conformance.v1.json"><code>conformance.v1.json</code></a> and the linked evidence files.</p>
+      </section>
+
+      <section id="api" class="content-section" aria-labelledby="api-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">03 · VOCABULARY</p><h2 id="api-title">Compatibility API vocabulary</h2></div><a class="dataset-link" href="data/api.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">The authority report is a static review aid for the trusted compatibility host. It is not a runtime sandbox.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Measured plugin authority vocabulary</caption><thead><tr><th scope="col">Identifier</th><th scope="col">Label</th><th scope="col">Meaning</th><th scope="col">Source</th></tr></thead><tbody>@@API_ROWS@@</tbody></table></div>
+        <details class="details-card"><summary>Compatibility levels</summary><ol class="level-list"><li><strong>L0, discovered.</strong> A valid manifest and bounded bundle were found.</li><li><strong>L1, loaded.</strong> The bundle evaluated and an instance was constructed.</li><li><strong>L2, activated.</strong> <code>onload</code> completed without an uncaught error.</li><li><strong>L3, integrated.</strong> Named commands, events, views, or processors registered.</li><li><strong>L4, workflow verified.</strong> A named workflow passed end to end.</li></ol></details>
+      </section>
+
+      <section id="cli" class="content-section" aria-labelledby="cli-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">04 · AUTOMATION</p><h2 id="cli-title">Headless CLI surface</h2></div><a class="dataset-link" href="data/cli.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">The CLI uses the same vault kernel and rebuildable metadata index. Every command requires an explicit vault path.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Versioned native command identifiers and their documented forms</caption><thead><tr><th scope="col">Command ID</th><th scope="col">Native form</th><th scope="col">Authority</th></tr></thead><tbody>@@CLI_ROWS@@</tbody></table></div>
+        <div class="inline-links"><a href="../../docs/cli.md">Full CLI guide</a><a href="data/cli.v1.json">Exit codes and output formats</a></div>
+      </section>
+
+      <section id="themes" class="content-section" aria-labelledby="themes-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">05 · APPEARANCE</p><h2 id="themes-title">Themes and snippets</h2></div><a class="dataset-link" href="data/themes.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">Appearance inputs remain ordinary vault files. Containment, byte bounds, UTF-8 decoding, and CSS policy are part of the contract.</p>
+        <div class="theme-pills"><span class="pill">system</span><span class="pill">light</span><span class="pill">dark</span></div>
+        <div class="table-wrap"><table data-filter-table><caption>Appearance loader limits</caption><thead><tr><th scope="col">Limit</th><th scope="col">Bound</th><th scope="col">Source</th></tr></thead><tbody>@@THEME_ROWS@@</tbody></table></div>
+        <ol class="cascade" aria-label="Appearance cascade order"><li><b>1</b> Threadleaf baseline</li><li><b>2</b> selected theme</li><li><b>3</b> enabled snippets</li></ol>
+      </section>
+
+      <section id="registry" class="content-section" aria-labelledby="registry-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">06 · EXACT RELEASES</p><h2 id="registry-title">Plugin evidence registry</h2></div><a class="dataset-link" href="data/registry.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">Discovery is not execution. A row applies only to the exact plugin release and exact Threadleaf version shown.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Generated exact-version compatibility rows</caption><thead><tr><th scope="col">Plugin</th><th scope="col">Plugin version</th><th scope="col">Threadleaf</th><th scope="col">Level</th><th scope="col">Evidence mode</th><th scope="col">Last tested</th></tr></thead><tbody>@@REGISTRY_ROWS@@</tbody></table></div>
+        <p class="source-note">Generated from <a href="../../compatibility/plugin-evidence.v1.json"><code>plugin-evidence.v1.json</code></a>, not hand-authored in this page.</p>
+      </section>
+
+      <section id="fixtures" class="content-section" aria-labelledby="fixtures-title">
+        <div class="section-heading split-heading"><div><p class="eyebrow">07 · REPRODUCTION</p><h2 id="fixtures-title">Fixtures, hashes, provenance</h2></div><a class="dataset-link" href="data/fixtures.v1.json">JSON dataset ↗</a></div>
+        <p class="section-intro">The same-vault and Excalidraw fixtures are synthetic, CC0-licensed, and checked byte by byte before their corpus gates run. Each row carries license, provenance, manifest, case, and canonical-file SHA-256 digests.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Public fixture manifest and case digest</caption><thead><tr><th scope="col">Fixture</th><th scope="col">License</th><th scope="col">Cases</th><th scope="col">Manifest</th><th scope="col">Cases file</th></tr></thead><tbody>@@FIXTURE_ROWS@@</tbody></table></div>
+        <div class="callout callout-orange"><strong>Private data boundary</strong><p>Contributors MUST remove private vault bytes, credentials, copied application assets, and network-derived output. Unsupported cases remain visible rather than being made to pass.</p><a href="../v1/contributing.md">Contribution requirements</a></div>
+        <p class="source-note">The Excalidraw corpus includes an explicit official Obsidian manual protocol record. Its status is <code>unverified</code> because no official Obsidian run, screenshots, or generated bytes are retained.</p>
+      </section>
+
+      <section id="gaps" class="content-section" aria-labelledby="gaps-title">
+        <div class="section-heading"><p class="eyebrow">08 · HONEST LIMITS</p><h2 id="gaps-title">Visible gaps</h2><p>These items are informative context only. None is a normative promise or implied roadmap deadline.</p></div>
+        <div class="table-wrap"><table data-filter-table><caption>Behavior that remains unverified or outside the current contract</caption><thead><tr><th scope="col">Area</th><th scope="col">State</th><th scope="col">Reason</th><th scope="col">Source</th></tr></thead><tbody>@@GAP_ROWS@@</tbody></table></div>
+      </section>
+
+      <section id="contributing" class="content-section final-section" aria-labelledby="contributing-title">
+        <div class="section-heading"><p class="eyebrow">09 · PARTICIPATE</p><h2 id="contributing-title">Contribute a case</h2></div>
+        <div class="prose-grid">
+          <div><p>Propose a deterministic case with source bytes, operation, expected result, allowed variance, provenance, and license. Keep it implementation-neutral and runnable offline.</p><a class="button button-primary" href="../v1/contributing.md">Read the contributor contract</a></div>
+          <aside class="checklist" aria-label="Contribution checklist"><div><span aria-hidden="true">01</span><strong>Pin</strong><p>Pin schema, fixture, and app versions.</p></div><div><span aria-hidden="true">02</span><strong>Prove</strong><p>Link an executable gate and exact bytes.</p></div><div><span aria-hidden="true">03</span><strong>Declare</strong><p>Record provenance, license, limits, and gaps.</p></div></aside>
+        </div>
+      </section>
+    </main>
+    <footer class="footer"><div><strong>Threadleaf public contract</strong><span>Generated locally from repository evidence.</span></div><a href="../v1/index.md">Normative source</a><a href="data/index.v1.json">Dataset index</a></footer>
+  </body>
+</html>

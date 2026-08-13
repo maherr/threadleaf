@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$id": "urn:threadleaf:spec:v1:index-schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "uri",
+    "threadleafVersion",
+    "versionPolicy",
+    "labels",
+    "datasets",
+    "schemas",
+    "sources",
+    "generatedBy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "uri": {
+      "const": "urn:threadleaf:spec:v1"
+    },
+    "threadleafVersion": {
+      "type": "string"
+    },
+    "versionPolicy": {
+      "type": "object",
+      "required": ["specification", "compatibility", "uri"],
+      "properties": {
+        "specification": {
+          "const": "v1"
+        },
+        "compatibility": {
+          "type": "string"
+        },
+        "uri": {
+          "const": "urn:threadleaf:spec:v1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "labels": {
+      "type": "object",
+      "required": ["normative", "informative"],
+      "properties": {
+        "normative": {
+          "type": "string"
+        },
+        "informative": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "schemas": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "generatedBy": {
+      "type": "string"
+    }
+  }
+}

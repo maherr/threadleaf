@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "uri": "urn:threadleaf:spec:v1:api",
+  "threadleafVersion": "0.1.0-beta.3",
+  "implementationClassifications": [
+    {
+      "id": "portable-native",
+      "label": "Portable native",
+      "source": "docs/compatibility/contract.md#Evidence sources"
+    },
+    {
+      "id": "desktop-compatibility-only",
+      "label": "Desktop compatibility only",
+      "source": "docs/compatibility/contract.md#Levels"
+    },
+    {
+      "id": "unavailable",
+      "label": "Unavailable",
+      "source": "docs/compatibility/contract.md#Levels"
+    }
+  ],
+  "compatibilityLevels": [
+    {
+      "level": 0,
+      "name": "Discovered",
+      "evidence": "Valid manifest and bundle found."
+    },
+    {
+      "level": 1,
+      "name": "Loaded",
+      "evidence": "Bundle evaluated and plugin instance constructed."
+    },
+    {
+      "level": 2,
+      "name": "Activated",
+      "evidence": "onload completed without an uncaught error."
+    },
+    {
+      "level": 3,
+      "name": "Integrated",
+      "evidence": "Commands, events, views, or processors registered as expected."
+    },
+    {
+      "level": 4,
+      "name": "Workflow verified",
+      "evidence": "A representative user workflow passed end to end."
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "vault-read",
+      "label": "Read vault content",
+      "description": "References APIs that can inspect notes, attachments, or vault metadata.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "vault-write",
+      "label": "Change vault content",
+      "description": "References APIs that can create, edit, move, rename, or delete vault files.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "network",
+      "label": "Use the network",
+      "description": "References browser or Node networking APIs that can contact remote services.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "filesystem",
+      "label": "Access the host filesystem",
+      "description": "References Node filesystem APIs outside Threadleaf's vault abstraction.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "subprocess",
+      "label": "Run host processes",
+      "description": "References Node child-process APIs that can launch programs or shell commands.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "host-environment",
+      "label": "Inspect the host environment",
+      "description": "References environment, operating-system, or home-directory information.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "clipboard",
+      "label": "Read or change the clipboard",
+      "description": "References browser or Electron clipboard APIs.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "external-navigation",
+      "label": "Open external destinations",
+      "description": "References APIs that can open a browser, application, or external URL.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "editor-extension",
+      "label": "Extend the editor",
+      "description": "References CodeMirror or Obsidian editor-extension APIs.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "workspace-ui",
+      "label": "Change workspace UI",
+      "description": "References commands, views, settings, ribbon, status, or Markdown render hooks.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    },
+    {
+      "id": "dynamic-code",
+      "label": "Evaluate dynamic code",
+      "description": "References runtime code evaluation or dynamically selected modules.",
+      "source": "src/shared/plugins.ts#pluginCapabilityDefinitions"
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "vault-kernel",
+      "classification": "portable-native",
+      "status": "measured",
+      "source": "docs/compatibility/contract.md#Same-vault behavior corpus"
+    },
+    {
+      "id": "cli",
+      "classification": "portable-native",
+      "status": "measured",
+      "source": "docs/cli.md#JSON-contract"
+    },
+    {
+      "id": "theme-loader",
+      "classification": "desktop-compatibility-only",
+      "status": "measured",
+      "source": "docs/compatibility/themes.md#Loader-boundaries"
+    },
+    {
+      "id": "community-plugin-runtime",
+      "classification": "desktop-compatibility-only",
+      "status": "measured",
+      "source": "docs/compatibility/contract.md#Compatibility-host-resource-policy"
+    },
+    {
+      "id": "migration-preview",
+      "classification": "desktop-compatibility-only",
+      "status": "measured",
+      "source": "docs/compatibility/migration.md#Source-boundary"
+    },
+    {
+      "id": "migration-apply-recovery-rollback",
+      "classification": "desktop-compatibility-only",
+      "status": "measured",
+      "source": "docs/compatibility/migration.md#Evidence"
+    },
+    {
+      "id": "excalidraw-roundtrip",
+      "classification": "portable-native",
+      "status": "measured",
+      "source": "docs/compatibility/excalidraw-roundtrip.md#Round-trip claims"
+    },
+    {
+      "id": "live-preview",
+      "classification": "portable-native",
+      "status": "measured",
+      "source": "docs/compatibility/live-preview.md#Source/decorated mapping"
+    },
+    {
+      "id": "json-canvas",
+      "classification": "portable-native",
+      "status": "measured",
+      "source": "docs/compatibility/contract.md#Same-vault behavior corpus"
+    },
+    {
+      "id": "workspace-docks-settings",
+      "classification": "desktop-compatibility-only",
+      "status": "measured",
+      "source": "docs/architecture.md#Workspace panes, tabs, and draft ownership"
+    },
+    {
+      "id": "markdown-processors",
+      "classification": "desktop-compatibility-only",
+      "status": "measured",
+      "source": "docs/compatibility/open-plugin-api.md#Observable behavior"
+    },
+    {
+      "id": "plugin-package-inspection",
+      "classification": "desktop-compatibility-only",
+      "status": "measured",
+      "source": "docs/compatibility/package-inspection.md"
+    },
+    {
+      "id": "native-extension-foundation",
+      "classification": "portable-native",
+      "status": "measured",
+      "source": "docs/compatibility/native-extensions.md#Enforced ports"
+    }
+  ]
+}
