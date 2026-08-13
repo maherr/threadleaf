@@ -3681,8 +3681,11 @@ function applyAppearanceSnapshot(snapshot: AppearanceSnapshot): void {
   if (snapshot.vaultId !== currentSnapshot?.vault.id) {
     return;
   }
+  const previousCss = appearanceSnapshot?.css;
   appearanceSnapshot = snapshot;
-  appearanceStyle.textContent = snapshot.css;
+  if (previousCss !== snapshot.css) {
+    appearanceStyle.textContent = snapshot.css;
+  }
   applyColorScheme(snapshot.preference.colorScheme);
   const warningKey = snapshot.warnings.join("\n");
   if (warningKey && warningKey !== lastAppearanceWarning) {
@@ -8301,6 +8304,21 @@ systemColorScheme.addEventListener("change", handleSystemColorSchemeChange);
 const unsubscribe = window.threadleaf.onSnapshot(render);
 const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
 const unsubscribeAppUpdate = window.threadleaf.onAppUpdate(applyAppUpdateSnapshot);
+const unsubscribeAppearance = window.threadleaf.onAppearance((snapshot) => {
+  if (snapshot.vaultId !== currentSnapshot?.vault.id) {
+    return;
+  }
+  appearanceRequest += 1;
+  appearanceBusy = false;
+  applyAppearanceSnapshot(snapshot);
+  appearanceMessage =
+    snapshot.warnings.length > 0
+      ? "Appearance files changed. Review the diagnostic below; saved selections were kept."
+      : `${snapshot.themes.length} themes and ${snapshot.snippets.length} snippets reloaded after a file change.`;
+  appearanceMessageKind = snapshot.warnings.length > 0 ? "error" : "saved";
+  renderSettings();
+  renderPaletteResults();
+});
 const unsubscribeMenuCommand = window.threadleaf.onMenuCommand((commandId) => {
   const openDialog = document.querySelector<HTMLDialogElement>("dialog[open]");
   if (commandId === "ui.command-palette") {
@@ -8372,6 +8390,7 @@ window.addEventListener(
     unsubscribe();
     unsubscribeSettings();
     unsubscribeAppUpdate();
+    unsubscribeAppearance();
     unsubscribeMenuCommand();
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
     pluginSurfaceResizeObserver.disconnect();

@@ -13,6 +13,7 @@ export const ipcChannels = {
   settings: "threadleaf:settings",
   settingsChanged: "threadleaf:settings-changed",
   appearance: "threadleaf:appearance",
+  appearanceChanged: "threadleaf:appearance-changed",
   setVaultAppearance: "threadleaf:set-vault-appearance",
   plugins: "threadleaf:plugins",
   searchPluginPackages: "threadleaf:search-plugin-packages",

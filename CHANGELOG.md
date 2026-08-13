@@ -170,6 +170,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Single-read target activation that seeds watcher and metadata state from the same stable Markdown
   snapshots, excludes dot-prefixed trees from ordinary corpus activity, caches index-generation
   projections, and verifies both full-vault readiness and clean exit.
+- Main-process live reloading for selected Obsidian-compatible themes and CSS snippets. The
+  generation-bound watcher observes only appearance sources and their replacement sentinels,
+  coalesces external save storms into bounded loader rescans, preserves private selections through
+  missing or invalid files, and never writes `.obsidian/` or exposes filesystem authority to the
+  renderer. An isolated X11 Electron fixture verifies live computed-style updates, diagnostics,
+  restoration, source-byte preservation, and dark and light captures.
 - Virtualized file navigation with a bounded overscan window, full scroll geometry, active-note
   reveal, and absolute accessible item positions for large vaults.
 - Plugin startup safe mode through `THREADLEAF_SAFE_PLUGINS=1` or `--safe-plugins`, preserving the

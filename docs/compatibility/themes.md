@@ -64,6 +64,27 @@ An unavailable, oversized, malformed, or rejected selection produces a visible w
 back only for that asset. One invalid snippet does not discard a valid selected theme or other
 snippets.
 
+## Live updates
+
+For a real active vault, one main-process watcher observes the theme and snippet source roots and
+the minimal parent sentinels needed to notice either root being replaced. It filters unrelated
+vault and `.obsidian` activity. Relevant create, change, delete, and rename notifications are
+debounced into a complete bounded reload through the same loader described above. The watcher never
+guesses a partial catalog update. Backend errors, notification overflow, unnamed or ambiguous
+events, and root replacement also take that full-reload path.
+
+The watcher is bound to the active vault identity and canonical path. A vault switch or shutdown
+closes it, and a late reload is discarded before it can update a newer vault. No watcher path or
+filesystem capability reaches the renderer. The only renderer result is the existing typed
+appearance snapshot, applied through the ordinary theme-then-snippet cascade.
+
+Changing an unselected asset refreshes the catalog but leaves unchanged active CSS in place.
+Changing, deleting, or invalidating a selected asset updates the live workspace. A missing or
+invalid selection remains private intent, displays the usual diagnostic, and leaves the rest of the
+appearance usable. Restoring a valid selected file heals it automatically. Watching is read-only:
+it does not write `.obsidian/`, private settings, or any vault file. The explicit Reload command
+remains available as a manual recovery action.
+
 ## Recovery
 
 Ctrl/Cmd+Alt+L invokes the default recovery action. It clears the selected community theme and all
@@ -84,7 +105,6 @@ or permanently clear them.
 ## Remaining work
 
 - Preview a theme or snippet before persisting it.
-- Watch appearance files and reapply them without manual reload.
 - Install, update, roll back, uninstall, and export packages through an open index.
 - Generate selector and token coverage from representative open community themes.
 - Add high-contrast, zoom, high-DPI, localization, and committed screenshot matrices.

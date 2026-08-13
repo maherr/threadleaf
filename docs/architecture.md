@@ -289,9 +289,19 @@ visible in safe mode, and a remappable recovery action clears the saved custom s
 retaining the base color scheme. Missing and invalid assets produce visible warnings and leave the
 rest of the workspace usable.
 
-Discovery is explicit in this phase. The user reloads changed files from Settings or the command
-palette; a future watcher must preserve the same containment, stale-vault, diagnostics, and safe
-mode boundaries. See the [theme compatibility contract](compatibility/themes.md).
+Appearance discovery remains available through Settings and the command palette, including an
+explicit Reload command. A separate main-process appearance watcher starts only for a real,
+kernel-backed active vault and is bound to that vault identity and path. It observes the theme and
+snippet sources plus only the parent sentinels needed to notice source-root replacement, filtering
+all unrelated vault and `.obsidian` activity. Relevant create, change, delete, and rename events
+are debounced into one complete bounded loader rescan. Backend errors, unnamed or ambiguous events,
+overflow, and source-root replacement take the same conservative full-rescan path rather than
+guessing an incremental catalog change. Vault supersession and shutdown close every handle before a
+late result can cross the active-vault boundary. The watcher has no write path and reloads through
+the existing contained loader, then sends the existing typed appearance snapshot over IPC. An
+unselected asset update refreshes the catalog without replacing unchanged active CSS, and no
+read-only source edit writes private selection state. See the
+[theme compatibility contract](compatibility/themes.md).
 
 ### Community plugin lifecycle boundary
 

@@ -144,7 +144,9 @@ and enabled snippet order are stored in Threadleaf's private application setting
 size bounded, path contained, checked for network-capable and legacy executable constructs, and
 applied under the renderer content-security policy. Missing or invalid selections degrade to the
 default appearance with visible diagnostics. A startup safe mode and a recovery shortcut disable
-custom CSS without preventing catalog inspection.
+custom CSS without preventing catalog inspection. While a real vault is active, Threadleaf also
+watches the selected vault's theme and snippet sources. External edits, atomic saves, deletes, and
+restorations are coalesced into a bounded reload without changing `.obsidian/` or private settings.
 
 Community-plugin management now discovers standard `.obsidian/plugins/<id>/manifest.json`,
 `main.js`, and optional `styles.css` packages through bounded, path-contained reads. Threadleaf
@@ -335,10 +337,11 @@ filesystem tool.
 
 The Appearance section follows the operating-system scheme by default and can pin light or dark.
 It discovers community themes and CSS snippets from the active vault, applies a selected theme
-before the enabled snippets, and exposes an explicit file reload. Ctrl/Cmd+Shift+L toggles the base
-scheme. Ctrl/Cmd+Alt+L clears the current vault's custom theme and snippet selection while retaining
-the base scheme. Start with `THREADLEAF_SAFE_APPEARANCE=1` or `--safe-appearance` to suppress all
-custom CSS for that process while keeping the saved selection available for diagnosis.
+before the enabled snippets, and automatically reloads relevant external file changes. The explicit
+Reload control remains available for recovery. Ctrl/Cmd+Shift+L toggles the base scheme.
+Ctrl/Cmd+Alt+L clears the current vault's custom theme and snippet selection while retaining the
+base scheme. Start with `THREADLEAF_SAFE_APPEARANCE=1` or `--safe-appearance` to suppress all custom
+CSS for that process while keeping the saved selection available for diagnosis.
 
 The Community plugins section discovers installed packages without executing them. Restricted mode
 is the default for a vault with no saved Threadleaf plugin preference. Turn it off, then enable only

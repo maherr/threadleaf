@@ -22,13 +22,18 @@ import { VaultPathPolicy } from "../kernel/path-policy";
 import { FixedStateRoot } from "../kernel/ports";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
-import { type AppearanceResponse, parseVaultAppearanceSettings } from "../shared/appearance";
+import {
+  type AppearanceResponse,
+  type AppearanceSnapshot,
+  parseVaultAppearanceSettings,
+} from "../shared/appearance";
 import {
   type NotePropertyType,
   notePropertyTypes,
   type PluginPackageApplyResponse,
   type PluginSurfaceBounds,
   type PluginUpdateResponse,
+  type RuntimeSnapshot,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettings } from "../shared/key-bindings";
@@ -60,6 +65,10 @@ import {
   type PublishNoteExportResponse,
 } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
+import {
+  AppearanceWatcherLifecycle,
+  type AppearanceWatchTarget,
+} from "./appearance-watcher-lifecycle";
 import { createApplicationMenuTemplate } from "./application-menu";
 import {
   readDevelopmentPickerOverride,
@@ -90,6 +99,7 @@ import {
   readDevelopmentSupportBundlePath,
 } from "./support-bundle";
 import { loadVaultAppearance } from "./vault-appearance-loader";
+import { VaultAppearanceWatcher } from "./vault-appearance-watcher";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
 const applicationId = "org.threadleaf.Threadleaf";
@@ -125,6 +135,7 @@ let pluginSurfaceCss = "";
 const pluginSurfaceCssKeys = new Map<WebContents, string>();
 let pluginSurfaceTheme: "dark" | "light" = "dark";
 let pluginSurfacePresentationVisible = true;
+let appearanceWatcherLifecycle: AppearanceWatcherLifecycle | null = null;
 
 async function applyPluginSurfaceTheme(
   theme: "dark" | "light",
@@ -458,6 +469,49 @@ function appearanceSafeMode(): boolean {
   return (
     process.argv.includes("--safe-appearance") || process.env.THREADLEAF_SAFE_APPEARANCE === "1"
   );
+}
+
+function appearanceWatchTarget(snapshot: RuntimeSnapshot): AppearanceWatchTarget | null {
+  return snapshot.vault.mode === "kernel-backed" && snapshot.vault.id
+    ? { vaultId: snapshot.vault.id, vaultPath: snapshot.vault.path }
+    : null;
+}
+
+function broadcastAppearance(appearance: AppearanceSnapshot): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send(ipcChannels.appearanceChanged, appearance);
+    }
+  }
+}
+
+async function reloadAppearanceFromWatcher(target: AppearanceWatchTarget): Promise<void> {
+  const response = await currentAppearance(target.vaultId);
+  if (
+    response.status !== "ready" ||
+    workspaceController.vaultId !== target.vaultId ||
+    workspaceController.vaultPath !== target.vaultPath
+  ) {
+    return;
+  }
+  broadcastAppearance(response.appearance);
+}
+
+function reconcileAppearanceWatcher(snapshot: RuntimeSnapshot): void {
+  appearanceWatcherLifecycle?.reconcile(appearanceWatchTarget(snapshot));
+}
+
+function createAppearanceWatcherLifecycle(): AppearanceWatcherLifecycle {
+  return new AppearanceWatcherLifecycle({
+    createWatcher: (target, onInvalidation) =>
+      VaultAppearanceWatcher.open({
+        vaultPath: target.vaultPath,
+        onInvalidation,
+        onError: (error) => console.error("Threadleaf appearance watcher error:", error),
+      }),
+    reload: reloadAppearanceFromWatcher,
+    reportError: (error) => console.error("Threadleaf appearance watcher lifecycle failed:", error),
+  });
 }
 
 function pluginSafeMode(): boolean {
@@ -1772,6 +1826,7 @@ function registerIpcHandlers(): void {
     await applyPluginSurfaceTheme(theme);
   });
   workspaceController.onSnapshot((snapshot) => {
+    reconcileAppearanceWatcher(snapshot);
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(ipcChannels.snapshotChanged, snapshot);
     }
@@ -1844,8 +1899,14 @@ const recoverMainRenderer = createMainRendererRecoveryHandler({
 });
 
 const gracefulShutdownHandler = createGracefulShutdownHandler({
-  prepare: detachPluginView,
-  close: () => workspaceController?.close(),
+  prepare: () => {
+    detachPluginView();
+    appearanceWatcherLifecycle?.reconcile(null);
+  },
+  close: async () => {
+    await appearanceWatcherLifecycle?.close();
+    await workspaceController?.close();
+  },
   finalize: () => {
     compatibilityPluginViews.clear();
     compatibilityPluginWebContents.clear();
@@ -1872,7 +1933,9 @@ app.whenReady().then(async () => {
     new FileNoteBookmarkStore(join(app.getPath("userData"), "bookmarks")),
   );
   workspaceController = await createWorkspaceController();
+  appearanceWatcherLifecycle = createAppearanceWatcherLifecycle();
   registerIpcHandlers();
+  reconcileAppearanceWatcher(await workspaceController.getSnapshot());
   await createWindow();
 
   app.on("activate", async () => {

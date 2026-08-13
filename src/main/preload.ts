@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppUpdateSnapshot } from "../shared/app-updates";
-import type { AppearanceResponse } from "../shared/appearance";
+import type { AppearanceResponse, AppearanceSnapshot } from "../shared/appearance";
 import type {
   AppearanceUpdateResponse,
   EditorDraftClearResponse,
@@ -62,6 +62,13 @@ const bridge: ThreadleafBridge = {
   getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
   getAppearance: (expectedVaultId) =>
     ipcRenderer.invoke(ipcChannels.appearance, expectedVaultId) as Promise<AppearanceResponse>,
+  onAppearance: (listener) => {
+    const subscription = (_event: Electron.IpcRendererEvent, snapshot: AppearanceSnapshot) => {
+      listener(snapshot);
+    };
+    ipcRenderer.on(ipcChannels.appearanceChanged, subscription);
+    return () => ipcRenderer.removeListener(ipcChannels.appearanceChanged, subscription);
+  },
   setVaultAppearance: (expectedVaultId, appearance) =>
     ipcRenderer.invoke(
       ipcChannels.setVaultAppearance,

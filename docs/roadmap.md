@@ -282,8 +282,11 @@ Exit gate: selected high-value plugins complete named workflows against public f
       behavior, and a versioned public theme contract.
 - [x] Discover, enable, disable, reload, diagnose, and select existing vault themes and snippets
       per vault without mutating `.obsidian/`.
-- [ ] Add preview-before-commit, package install, update, rollback, uninstall, file watching,
-      conflict diagnostics, and portable theme export.
+- [x] Watch active-vault theme and snippet source files, coalesce external save storms into bounded
+      loader rescans, preserve missing or invalid private selections, and reload valid restorations
+      without mutating `.obsidian/`.
+- [ ] Add preview-before-commit, package install, update, rollback, uninstall, broader conflict
+      diagnostics, and portable theme export.
 - [x] Expose an initial Obsidian-theme compatibility layer for common variables, workspace classes,
       Markdown views, file navigation, tabs, and status bars.
 - [ ] Expand the compatibility layer through measured open-theme usage, icon and component states,

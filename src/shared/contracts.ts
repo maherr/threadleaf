@@ -676,6 +676,7 @@ export interface ThreadleafBridge {
   markStartupShellReady(): void;
   getSettings(): Promise<AppSettingsSnapshot>;
   getAppearance(expectedVaultId: string): Promise<AppearanceResponse>;
+  onAppearance(listener: (snapshot: AppearanceSnapshot) => void): () => void;
   setVaultAppearance(
     expectedVaultId: string,
     appearance: VaultAppearanceSettings,
