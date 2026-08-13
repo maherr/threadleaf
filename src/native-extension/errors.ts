@@ -25,6 +25,7 @@ export interface NativeExtensionErrorDetails {
   capability?: NativeExtensionCapabilityId;
   operation?: string;
   vaultId?: string;
+  cause?: unknown;
 }
 
 /** Stable machine-readable failure for SDK and host callers. */
@@ -39,7 +40,7 @@ export class NativeExtensionError extends Error {
     message: string,
     details: NativeExtensionErrorDetails = {},
   ) {
-    super(message);
+    super(message, details.cause === undefined ? undefined : { cause: details.cause });
     this.name = "NativeExtensionError";
     this.code = code;
     this.capability = details.capability ?? null;

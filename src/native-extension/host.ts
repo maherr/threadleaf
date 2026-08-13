@@ -502,30 +502,51 @@ export class NativeExtensionHost {
     const teardownCallbacks = new Set<() => void | Promise<void>>();
     let terminated = false;
     let settled = false;
-    let cleanupPromise: Promise<void> | null = null;
+    let cleanupPromise: Promise<NativeExtensionError | null> | null = null;
     let resolveOutcome:
       | ((outcome: { ok: true; value: Output } | { ok: false; error: unknown }) => void)
       | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let active: ActiveInvocation;
-    const cleanup = async (): Promise<void> => {
-      cleanupPromise ??= this.runTeardown(teardownCallbacks, manifest.id);
-      await cleanupPromise;
-    };
-    const finishFailure = async (error: NativeExtensionError): Promise<void> => {
-      if (settled || terminated) {
+    const terminate = (): void => {
+      if (terminated) {
         return;
       }
       terminated = true;
       active.terminated = true;
       controller.abort();
-      await cleanup();
+    };
+    const cleanup = async (): Promise<NativeExtensionError | null> => {
+      cleanupPromise ??= this.runTeardown(teardownCallbacks, manifest.id, vaultId);
+      return cleanupPromise;
+    };
+    const combineTeardownFailure = (
+      executionError: unknown,
+      teardownError: NativeExtensionError,
+    ): NativeExtensionError => {
+      const executionMessage =
+        executionError instanceof Error ? executionError.message : "Native extension failed.";
+      return new NativeExtensionError(
+        "teardown",
+        `${teardownError.message} Original execution failure: ${executionMessage}`,
+        { operation: "execute", vaultId, cause: executionError },
+      );
+    };
+    const finishFailure = async (error: NativeExtensionError): Promise<void> => {
+      if (settled || terminated) {
+        return;
+      }
+      terminate();
+      const teardownError = await cleanup();
       settled = true;
       if (timer) {
         clearTimeout(timer);
       }
       this.#active.delete(key);
-      resolveOutcome?.({ ok: false, error });
+      resolveOutcome?.({
+        ok: false,
+        error: teardownError ? combineTeardownFailure(error, teardownError) : error,
+      });
     };
     active = {
       vaultId,
@@ -562,8 +583,9 @@ export class NativeExtensionHost {
             if (settled || terminated) {
               return;
             }
-            void cleanup().then(() => {
-              if (settled || terminated) {
+            terminate();
+            void cleanup().then((teardownError) => {
+              if (settled) {
                 return;
               }
               settled = true;
@@ -571,15 +593,20 @@ export class NativeExtensionHost {
                 clearTimeout(timer);
               }
               this.#active.delete(key);
-              resolve({ ok: true, value: value as Output });
+              resolve(
+                teardownError
+                  ? { ok: false, error: teardownError }
+                  : { ok: true, value: value as Output },
+              );
             });
           },
           (error: unknown) => {
             if (settled || terminated) {
               return;
             }
-            void cleanup().then(() => {
-              if (settled || terminated) {
+            terminate();
+            void cleanup().then((teardownError) => {
+              if (settled) {
                 return;
               }
               settled = true;
@@ -587,7 +614,10 @@ export class NativeExtensionHost {
               if (timer) {
                 clearTimeout(timer);
               }
-              resolve({ ok: false, error });
+              resolve({
+                ok: false,
+                error: teardownError ? combineTeardownFailure(error, teardownError) : error,
+              });
             });
           },
         );
@@ -603,7 +633,11 @@ export class NativeExtensionHost {
     const message =
       outcome.error instanceof Error ? outcome.error.message : "Native extension failed.";
     this.recordDiagnostic(manifest.id, message);
-    throw new NativeExtensionError("extension-failed", message, { operation: "execute", vaultId });
+    throw new NativeExtensionError("extension-failed", message, {
+      operation: "execute",
+      vaultId,
+      cause: outcome.error,
+    });
   }
 
   async stop(vaultId: string, extensionId: string): Promise<void> {
@@ -1094,9 +1128,11 @@ export class NativeExtensionHost {
   private async runTeardown(
     callbacks: Set<() => void | Promise<void>>,
     extensionId: string,
-  ): Promise<void> {
+    vaultId: string,
+  ): Promise<NativeExtensionError | null> {
     const pending = [...callbacks];
     callbacks.clear();
+    let firstFailure: NativeExtensionError | null = null;
     for (const callback of pending) {
       let timeout: ReturnType<typeof setTimeout> | null = null;
       try {
@@ -1113,13 +1149,20 @@ export class NativeExtensionHost {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Native extension teardown failed.";
-        this.recordDiagnostic(extensionId, message);
+        const failure = new NativeExtensionError("teardown", message, {
+          operation: "teardown",
+          vaultId,
+          cause: error,
+        });
+        firstFailure ??= failure;
+        this.recordDiagnostic(extensionId, failure.message);
       } finally {
         if (timeout) {
           clearTimeout(timeout);
         }
       }
     }
+    return firstFailure;
   }
 
   private async stopByKey(key: string, reason: "teardown"): Promise<void> {

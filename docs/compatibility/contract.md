@@ -196,6 +196,13 @@ public port call can run. A changed bundle, authority growth, stale grant, revoc
 cross-vault request, undeclared request, missing adapter, timeout, and teardown each have a typed
 failure. The portable fixture reads a note and writes a summary only through public vault ports.
 
+Invocation and teardown deadlines are in-process availability limits: they abort the context signal
+and reject later guarded port calls, but do not cancel already-running extension code or undo an
+adapter operation that has already started. A teardown callback failure takes precedence as a typed
+`NativeExtensionError` with code `teardown`; when execution also failed, the execution error remains
+available as its `cause`. This host is an API boundary, not an OS sandbox or production bundle
+isolation mechanism.
+
 This fixture measures a capability boundary, not universal native-code isolation. The host reports
 `sandboxed: false` because this first implementation is in-process. Desktop navigation,
 subprocess, secrets, and dynamic-code ports are explicit trusted desktop escapes; they are not

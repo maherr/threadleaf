@@ -256,6 +256,95 @@ describe("native extension manifest and capability host", () => {
     await host.close();
   });
 
+  it("surfaces throwing teardown as a typed failure and preserves both failure causes", async () => {
+    const fake = fakeVault();
+    const host = hostWith(fake.port);
+    const teardownError = new Error("teardown exploded");
+    let secondTeardownRan = false;
+    const successfulExecution = bundle("throwing-teardown", [], async (context) => {
+      context.onTeardown(() => {
+        throw teardownError;
+      });
+      context.onTeardown(() => {
+        secondTeardownRan = true;
+      });
+      return "ok";
+    });
+    host.register(successfulExecution);
+    await host.grant(vaultId, "throwing-teardown");
+    await expect(host.execute(vaultId, "throwing-teardown", undefined)).rejects.toMatchObject({
+      name: "NativeExtensionError",
+      code: "teardown",
+      cause: teardownError,
+    });
+    expect(secondTeardownRan).toBe(true);
+
+    const executionError = new Error("entrypoint exploded");
+    const failedExecution = bundle("both-fail", [], async (context) => {
+      context.onTeardown(() => {
+        throw teardownError;
+      });
+      throw executionError;
+    });
+    host.register(failedExecution);
+    await host.grant(vaultId, "both-fail");
+    await expect(host.execute(vaultId, "both-fail", undefined)).rejects.toMatchObject({
+      name: "NativeExtensionError",
+      code: "teardown",
+      cause: executionError,
+      message: expect.stringContaining("entrypoint exploded"),
+    });
+    await host.close();
+  });
+
+  it("surfaces a teardown deadline and blocks late guarded calls without cancelling the entrypoint", async () => {
+    const fake = fakeVault();
+    let continued = false;
+    let lateError: unknown;
+    const host = hostWith(fake.port, { invocationTimeoutMs: 5, teardownTimeoutMs: 5 });
+    const extension = bundle("late-work", ["vault.write"], async (context) => {
+      context.onTeardown(() => new Promise<void>(() => undefined));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      continued = true;
+      try {
+        await context.vault.writeText({
+          vaultId: context.vaultId,
+          relativePath: "Late.md",
+          content: "late",
+          expectedRevision: null,
+        });
+      } catch (error) {
+        lateError = error;
+      }
+      return "late";
+    });
+    host.register(extension);
+    await host.grant(vaultId, "late-work");
+    await expectCode(host.execute(vaultId, "late-work", undefined), "teardown");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(continued).toBe(true);
+    expect(lateError).toMatchObject({
+      name: "NativeExtensionError",
+      code: "teardown",
+    });
+    expect(fake.writes).toEqual([]);
+    await host.close();
+  });
+
+  it("surfaces a teardown deadline after a successful invocation", async () => {
+    const fake = fakeVault();
+    const host = hostWith(fake.port, { teardownTimeoutMs: 5 });
+    const extension = bundle("teardown-deadline", [], async (context) => {
+      context.onTeardown(() => new Promise<void>(() => undefined));
+      return "ok";
+    });
+    host.register(extension);
+    await host.grant(vaultId, "teardown-deadline");
+    await expectCode(host.execute(vaultId, "teardown-deadline", undefined), "teardown");
+    expect((await host.inspect(vaultId, "teardown-deadline")).active).toBe(false);
+    await host.close();
+  });
+
   it("labels desktop escapes and rejects them from the portable runtime", async () => {
     const fake = fakeVault();
     const portableHost = hostWith(fake.port);

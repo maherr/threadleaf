@@ -56,8 +56,16 @@ choice and are delegated to the host's recoverable writer.
 `grant`, `revoke`, `setSafeMode`, `inspect`, `execute`, `stop`, and `close` are host operations.
 Revocation and safe mode preserve the saved grant while preventing execution. A running invocation
 receives an abort signal and teardown callbacks. The host enforces an invocation deadline and a
-bounded teardown deadline; timeout and teardown are typed failures, and a stopped context cannot
-make another port call.
+bounded teardown deadline; timeout and teardown are typed failures. An ended invocation cannot make
+another port call. Teardown callbacks are all attempted, but the first callback or deadline
+failure is returned as `NativeExtensionError` with code `teardown`. If entrypoint execution also
+failed, that original failure is retained as the returned teardown error's `cause`.
+
+These are in-process deadlines, not cancellation or sandboxing. A deadline aborts the context signal
+and prevents later guarded port calls, but it cannot stop JavaScript that is already running or undo
+an adapter operation that already started. Code that retains references outside the guarded context
+is not contained by this host. The capability boundary therefore remains an API and availability
+boundary, not an OS sandbox, worker isolation boundary, or guarantee of rollback for late effects.
 
 Inspection deliberately reports `sandboxed: false`. The capability host in this version is an
 in-process API boundary, not an OS sandbox, seccomp policy, worker isolation boundary, or guarantee
