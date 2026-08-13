@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   optionalPayloadString,
   optionalPluginEditorContext,
+  optionalPluginMutationWaitOptions,
   parsePluginEditorContext,
+  parsePluginMutationWaitOptions,
   parsePluginRendererRequest,
   parsePluginRendererResponse,
   parsePluginVaultCreateBinaryRequest,
@@ -219,5 +221,18 @@ describe("plugin renderer protocol", () => {
     expect(() => parsePluginEditorContext({ ...context, revision: "stale" })).toThrow(
       "SHA-256 revision",
     );
+  });
+
+  it("validates generic mutation barrier bounds", () => {
+    const request = parsePluginRendererRequest({
+      id: "wait",
+      operation: "wait-for-mutations",
+      payload: { quietMs: 0, timeoutMs: 250 },
+    });
+    expect(optionalPluginMutationWaitOptions(request)).toEqual({ quietMs: 0, timeoutMs: 250 });
+    expect(parsePluginMutationWaitOptions({ timeoutMs: 10 })).toEqual({ timeoutMs: 10 });
+    expect(() => parsePluginMutationWaitOptions({ quietMs: -1 })).toThrow("safe integer");
+    expect(() => parsePluginMutationWaitOptions({ timeoutMs: 0 })).toThrow("safe integer");
+    expect(() => parsePluginMutationWaitOptions([])).toThrow("object");
   });
 });

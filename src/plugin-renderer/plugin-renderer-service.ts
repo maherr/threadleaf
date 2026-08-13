@@ -5,6 +5,7 @@ import { PluginHost } from "../runtime/plugin-host";
 import {
   optionalPayloadString,
   optionalPluginEditorContext,
+  optionalPluginMutationWaitOptions,
   type PluginRendererRequest,
   type PluginVaultCreateBinaryRequest,
   type PluginVaultCreateBinaryResponse,
@@ -135,6 +136,10 @@ export class PluginRendererService {
         return this.requireHost().runCommand(
           requirePayloadString(request, "commandId"),
           optionalPluginEditorContext(request),
+        );
+      case "wait-for-mutations":
+        return this.requireHost().waitForPluginMutations(
+          optionalPluginMutationWaitOptions(request),
         );
       case "unload-plugin":
         return this.requireHost().unloadPlugin(optionalPayloadString(request, "pluginId"));

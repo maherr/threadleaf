@@ -1,5 +1,10 @@
 import type { PluginEditorContext, RuntimeSnapshot } from "./contracts";
 
+export interface PluginMutationWaitOptions {
+  quietMs?: number;
+  timeoutMs?: number;
+}
+
 export const pluginRendererChannels = {
   ready: "threadleaf:plugin-renderer-ready",
   request: "threadleaf:plugin-renderer-request",
@@ -106,6 +111,7 @@ export const pluginRendererOperations = [
   "run-command",
   "unload-all",
   "unload-plugin",
+  "wait-for-mutations",
 ] as const;
 
 export type PluginRendererOperation = (typeof pluginRendererOperations)[number];
@@ -215,6 +221,61 @@ export function optionalPluginEditorContext(
 ): PluginEditorContext | undefined {
   const value = request.payload?.editorContext;
   return value === undefined ? undefined : parsePluginEditorContext(value);
+}
+
+function optionalMutationWaitDuration(
+  request: PluginRendererRequest,
+  key: keyof PluginMutationWaitOptions,
+  minimum: number,
+): number | undefined {
+  const value = request.payload?.[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
+    throw new Error(
+      `${request.operation} requires ${key} to be a safe integer of at least ${minimum}.`,
+    );
+  }
+  return value;
+}
+
+export function optionalPluginMutationWaitOptions(
+  request: PluginRendererRequest,
+): PluginMutationWaitOptions | undefined {
+  const quietMs = optionalMutationWaitDuration(request, "quietMs", 0);
+  const timeoutMs = optionalMutationWaitDuration(request, "timeoutMs", 1);
+  if (quietMs === undefined && timeoutMs === undefined) {
+    return undefined;
+  }
+  return {
+    ...(quietMs === undefined ? {} : { quietMs }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
+}
+
+export function parsePluginMutationWaitOptions(value: unknown): PluginMutationWaitOptions {
+  if (value === undefined) {
+    return {};
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Plugin mutation wait options must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  const quietMs = candidate.quietMs;
+  const timeoutMs = candidate.timeoutMs;
+  if (
+    (quietMs !== undefined &&
+      (typeof quietMs !== "number" || !Number.isSafeInteger(quietMs) || quietMs < 0)) ||
+    (timeoutMs !== undefined &&
+      (typeof timeoutMs !== "number" || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1))
+  ) {
+    throw new Error("Plugin mutation wait options require safe integer quiet and timeout values.");
+  }
+  return {
+    ...(quietMs === undefined ? {} : { quietMs }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
 }
 
 export function parsePluginVaultWriteRequest(value: unknown): PluginVaultWriteRequest {

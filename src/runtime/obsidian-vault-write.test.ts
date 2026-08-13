@@ -473,4 +473,43 @@ describe("Obsidian compatibility vault writes", () => {
     await mutation;
     await expect(vault.waitForSettledMutations(1, 100)).resolves.toBeUndefined();
   });
+
+  it("reports generic barrier timeout diagnostics for a pending binary export", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-binary-timeout-"));
+    temporaryDirectories.push(rootPath);
+    const filePath = "Drawing.png";
+    const initialBytes = Uint8Array.from([137, 80, 78, 71, 0]);
+    await fs.writeFile(path.join(rootPath, filePath), initialBytes);
+    const committed = {
+      status: "committed" as const,
+      path: filePath,
+      revision: revisionOf(Uint8Array.from([137, 80, 78, 71, 1])),
+      transactionId: "pending-binary-write",
+    };
+    let resolveWrite!: (value: typeof committed) => void;
+    const pendingWrite = new Promise<typeof committed>((resolve) => {
+      resolveWrite = resolve;
+    });
+    const writeBinary = vi.fn(() => pendingWrite);
+    const vault = new Vault(rootPath, undefined, {
+      writeBinary,
+      writeText: vi.fn(),
+    });
+    const file = vault.getFileByPath(filePath);
+    if (!file) {
+      throw new Error("Pending binary fixture was not discovered.");
+    }
+
+    const mutation = vault.modifyBinary(file, Uint8Array.from([137, 80, 78, 71, 1]).buffer);
+    await vi.waitFor(() => expect(writeBinary).toHaveBeenCalledOnce());
+    await expect(vault.waitForPluginMutations({ quietMs: 1, timeoutMs: 25 })).rejects.toThrow(
+      "Active operations: modify-binary.",
+    );
+
+    resolveWrite(committed);
+    await mutation;
+    await expect(
+      vault.waitForPluginMutations({ quietMs: 1, timeoutMs: 100 }),
+    ).resolves.toBeUndefined();
+  });
 });

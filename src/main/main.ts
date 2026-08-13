@@ -51,6 +51,7 @@ import { parseVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import { parsePluginPackagePreviewRequest } from "../shared/plugin-packages";
 import {
   parsePluginEditorContext,
+  parsePluginMutationWaitOptions,
   parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
@@ -2747,6 +2748,13 @@ function registerIpcHandlers(): void {
       commandId,
       editorContext === undefined ? undefined : parsePluginEditorContext(editorContext),
     );
+  });
+  ipcMain.handle(ipcChannels.waitForPluginMutations, (event, optionsValue: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Waiting for plugin mutations requires the active Threadleaf window.");
+    }
+    const options = parsePluginMutationWaitOptions(optionsValue);
+    return serializePluginOperation(() => workspaceController.waitForPluginMutations(options));
   });
   ipcMain.handle(ipcChannels.reloadPlugin, (_event, pluginId: unknown) => {
     if (pluginId !== undefined && typeof pluginId !== "string") {

@@ -52,6 +52,7 @@ export const defaultPluginResourcePolicy: PluginResourcePolicy = {
     "run-command": 30_000,
     "unload-all": 10_000,
     "unload-plugin": 10_000,
+    "wait-for-mutations": 10_000,
   },
   memoryCeilingBytes: 512 * 1024 * 1024,
   cpuBudgetPercent: 60,

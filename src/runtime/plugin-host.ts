@@ -9,6 +9,7 @@ import type { VaultReadPort } from "../kernel/ports";
 import type {
   PluginEditorContext,
   PluginEditorUpdate,
+  PluginMutationWaitOptions,
   PluginSummary,
   RuntimeEvent,
   RuntimeEventKind,
@@ -223,6 +224,11 @@ export class PluginHost implements PluginRuntimePort {
       record.summary = { ...record.summary, compatibilityLevel: 4 };
       this.lastPluginId = ownerId ?? this.lastPluginId;
     }
+    return this.getSnapshot();
+  }
+
+  async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
+    await this.vault.waitForPluginMutations(options);
     return this.getSnapshot();
   }
 

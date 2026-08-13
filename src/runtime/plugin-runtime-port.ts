@@ -1,6 +1,7 @@
 import type { ActionRegistry } from "../application/action-registry";
 import type {
   PluginEditorContext,
+  PluginMutationWaitOptions,
   PluginResourceDiagnostic,
   RuntimeSnapshot,
 } from "../shared/contracts";
@@ -34,6 +35,7 @@ export interface PluginRuntimePort {
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   close(): Promise<void>;

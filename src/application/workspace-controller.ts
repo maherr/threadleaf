@@ -21,6 +21,7 @@ import type {
   NoteRestoreResponse,
   NoteSaveResponse,
   PluginEditorContext,
+  PluginMutationWaitOptions,
   RuntimeSnapshot,
   VaultAttachmentResponse,
   VaultGraphRequest,
@@ -213,6 +214,7 @@ export interface WorkspaceRuntimePort {
     commandId: string,
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot>;
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
@@ -935,6 +937,10 @@ export class WorkspaceController {
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
     return this.activeRuntime("run a plugin command").runPluginCommand(commandId, editorContext);
+  }
+
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("wait for plugin mutations").waitForPluginMutations(options);
   }
 
   markPluginLayoutReady(): Promise<RuntimeSnapshot> {

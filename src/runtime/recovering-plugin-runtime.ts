@@ -1,6 +1,7 @@
 import path from "node:path";
 import type {
   PluginEditorContext,
+  PluginMutationWaitOptions,
   PluginResourceDiagnostic,
   PluginSummary,
   RuntimeEvent,
@@ -158,6 +159,12 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     return this.runSnapshot(
       { operation: "run-command", ...(ownerId ? { pluginId: ownerId } : {}) },
       (runtime) => runtime.runCommand(commandId, editorContext),
+    );
+  }
+
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "wait-for-mutations" }, (runtime) =>
+      runtime.waitForPluginMutations(options),
     );
   }
 

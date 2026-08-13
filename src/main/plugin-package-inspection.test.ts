@@ -159,6 +159,9 @@ function fakeRuntime(
     async runCommand() {
       return runtimeSnapshot(pluginId);
     },
+    async waitForPluginMutations() {
+      return runtimeSnapshot(pluginId, loaded ? "loaded" : "unloaded");
+    },
     async unloadAllPlugins() {
       loaded = false;
       return runtimeSnapshot(

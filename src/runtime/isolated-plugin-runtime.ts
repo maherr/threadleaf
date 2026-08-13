@@ -2,6 +2,7 @@ import path from "node:path";
 import type {
   PluginEditorContext,
   PluginIntegrationSnapshot,
+  PluginMutationWaitOptions,
   PluginResourceDiagnostic,
   PluginSummary,
   RuntimeEvent,
@@ -145,6 +146,13 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       this.rememberSlotSnapshot(ownerId, snapshot);
       this.lastPluginId = ownerId;
       return this.mergeSnapshot(ownerId, snapshot);
+    });
+  }
+
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      await this.updateEverySlot((slot) => slot.runtime.waitForPluginMutations(options));
+      return this.mergeSnapshot();
     });
   }
 

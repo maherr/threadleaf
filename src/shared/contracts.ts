@@ -25,7 +25,10 @@ import type {
   PluginResourceDiagnosticReason,
   PluginResourceMetric,
 } from "./plugin-resource-policy";
-import type { PluginRendererOperation } from "./plugin-runtime-protocol";
+import type { PluginMutationWaitOptions, PluginRendererOperation } from "./plugin-runtime-protocol";
+
+export type { PluginMutationWaitOptions } from "./plugin-runtime-protocol";
+
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
@@ -1022,6 +1025,7 @@ export interface ThreadleafBridge {
   ): Promise<NoteWorkflowValueResponse>;
   chooseVault(): Promise<VaultOpenResponse>;
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;

@@ -596,19 +596,19 @@ async function clickExportButton(label) {
   );
 }
 
-async function waitForVaultFile(relativePath, label) {
+async function completeVaultExport(relativePath, label) {
+  await evaluate(cdp, "window.threadleaf.waitForPluginMutations()");
   const absolute = path.join(vaultPath, relativePath);
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    try {
-      const bytes = await fs.readFile(absolute);
-      if (bytes.length > 0) return bytes;
-    } catch {
-      // The plugin export is still writing through the compatibility vault.
-    }
-    await delay(80);
+  let bytes;
+  try {
+    bytes = await fs.readFile(absolute);
+  } catch (error) {
+    throw new Error(
+      `${label} mutation completion returned without creating ${relativePath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  throw new Error(`${label} did not create ${relativePath}.`);
+  assert(bytes.length > 0, `${label} created an empty ${relativePath}.`);
+  return bytes;
 }
 
 async function exportPublicFixtures() {
@@ -620,7 +620,7 @@ async function exportPublicFixtures() {
     "Excalidraw export dialog",
   );
   await clickExportButton("PNG to Vault");
-  const png = await waitForVaultFile("Drawings/Unicode Scene.excalidraw.png", "PNG export");
+  const png = await completeVaultExport("Drawings/Unicode Scene.excalidraw.png", "PNG export");
   assert(
     png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
     "Plugin PNG export signature is invalid.",
@@ -633,7 +633,7 @@ async function exportPublicFixtures() {
     "second Excalidraw export dialog",
   );
   await clickExportButton("SVG to Vault");
-  const svg = await waitForVaultFile("Drawings/Unicode Scene.excalidraw.svg", "SVG export");
+  const svg = await completeVaultExport("Drawings/Unicode Scene.excalidraw.svg", "SVG export");
   const svgText = svg.toString("utf8");
   assert(/^<svg[\s>]/u.test(svgText.trim()), "Plugin SVG export is not XML-shaped.");
   assert(svgText.includes("<svg"), "Plugin SVG export has no SVG root.");

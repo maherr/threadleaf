@@ -77,6 +77,7 @@ export const ipcChannels = {
   saveEditorDraft: "threadleaf:save-editor-draft",
   clearEditorDraft: "threadleaf:clear-editor-draft",
   runCommand: "threadleaf:run-command",
+  waitForPluginMutations: "threadleaf:wait-for-plugin-mutations",
   reloadPlugin: "threadleaf:reload-plugin",
   unloadPlugin: "threadleaf:unload-plugin",
   markPluginLayoutReady: "threadleaf:mark-plugin-layout-ready",

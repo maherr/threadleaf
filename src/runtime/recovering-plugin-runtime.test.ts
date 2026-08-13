@@ -101,6 +101,10 @@ class FakePluginRuntime implements PluginRuntimePort {
     return this.getSnapshot();
   }
 
+  waitForPluginMutations(): Promise<RuntimeSnapshot> {
+    return this.getSnapshot();
+  }
+
   async unloadAllPlugins(): Promise<RuntimeSnapshot> {
     this.loaded.clear();
     return this.getSnapshot();
@@ -249,6 +253,7 @@ describe("RecoveringPluginRuntime", () => {
       openPluginView: getSnapshot,
       reloadPlugin: getSnapshot,
       runCommand: getSnapshot,
+      waitForPluginMutations: getSnapshot,
       unloadAllPlugins: getSnapshot,
       unloadPlugin: getSnapshot,
     };

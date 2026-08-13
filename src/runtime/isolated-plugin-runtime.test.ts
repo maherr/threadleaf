@@ -37,6 +37,7 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   readonly loadCalls: Array<{ directory: string; hash: string | undefined }> = [];
   readonly markLayoutReady = vi.fn(async () => this.snapshot());
   readonly runCalls: string[] = [];
+  readonly waitForPluginMutations = vi.fn(async () => this.snapshot());
   readonly instanceId: number;
   pluginId: string | null = null;
   pluginState: PluginSummary["state"] = "empty";

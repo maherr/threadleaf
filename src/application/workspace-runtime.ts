@@ -34,6 +34,7 @@ import type {
   NoteSaveOutcome,
   NoteSaveResponse,
   PluginEditorContext,
+  PluginMutationWaitOptions,
   RuntimeSnapshot,
   VaultAttachmentResponse,
   VaultGraphRequest,
@@ -1488,6 +1489,10 @@ export class WorkspaceRuntime {
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
     return this.publishSnapshot(await this.pluginHost.runCommand(commandId, editorContext));
+  }
+
+  async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
+    return this.publishSnapshot(await this.pluginHost.waitForPluginMutations(options));
   }
 
   async markPluginLayoutReady(): Promise<RuntimeSnapshot> {

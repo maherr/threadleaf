@@ -9,6 +9,7 @@ import {
 import { FatalPluginRuntimeError, type PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type {
   PluginEditorContext,
+  PluginMutationWaitOptions,
   PluginResourceDiagnostic,
   RuntimeSnapshot,
 } from "../shared/contracts";
@@ -254,6 +255,13 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
       commandId,
       ...(editorContext ? { editorContext } : {}),
     });
+  }
+
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot(
+      "wait-for-mutations",
+      options && Object.keys(options).length > 0 ? { ...options } : undefined,
+    );
   }
 
   unloadAllPlugins(): Promise<RuntimeSnapshot> {

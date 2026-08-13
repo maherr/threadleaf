@@ -4,6 +4,7 @@ import path from "node:path";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it } from "vitest";
 import { revisionOf } from "../kernel/durability";
+import type { Vault } from "../runtime/obsidian-compat";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import type {
   PluginRendererRequest,
@@ -463,6 +464,111 @@ module.exports = class RendererFixture extends Plugin {
         "has not been initialized",
       );
     } finally {
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("waits for fire-and-forget binary writes and preserves conflict copies", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-renderer-barrier-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const filePath = "Exports/Drawing.png";
+    const absoluteFilePath = path.join(vaultPath, filePath);
+    const initialBytes = Uint8Array.from([137, 80, 78, 71, 0, 1]);
+    const updatedBytes = Uint8Array.from([137, 80, 78, 71, 2, 3, 4]);
+    const conflictBytes = Uint8Array.from([137, 80, 78, 71, 5, 6, 7]);
+    const conflictPath = "Exports/Drawing.threadleaf-conflict.png";
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    installObsidianDomCompatibility(dom.window);
+    exposeDom(dom);
+    let releaseWrite!: () => void;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let writeStarted!: () => void;
+    const writeStartedSignal = new Promise<void>((resolve) => {
+      writeStarted = resolve;
+    });
+    let writeMode: "delayed" | "conflict" = "delayed";
+    const service = new PluginRendererService({
+      createFolder: async ({ folderPath }) => ({ path: folderPath, created: false }),
+      createText: async () => {
+        throw new Error("The barrier fixture does not create text files.");
+      },
+      writeText: async () => {
+        throw new Error("The barrier fixture does not write text files.");
+      },
+      writeBinary: async ({
+        content,
+        expectedRevision,
+        filePath: requestedPath,
+        vaultPath: root,
+      }) => {
+        const bytes = new Uint8Array(content);
+        if (writeMode === "delayed") {
+          writeStarted();
+          await writeGate;
+          await fs.writeFile(path.join(root, requestedPath), bytes);
+          writeMode = "conflict";
+          return {
+            status: "committed" as const,
+            path: requestedPath,
+            revision: revisionOf(bytes),
+            transactionId: "barrier-write",
+          };
+        }
+        await fs.writeFile(path.join(root, conflictPath), bytes);
+        return {
+          status: "conflict" as const,
+          path: requestedPath,
+          currentRevision: expectedRevision,
+          conflictPath,
+          transactionId: "barrier-conflict",
+        };
+      },
+    });
+    try {
+      await fs.mkdir(path.dirname(absoluteFilePath), { recursive: true });
+      await fs.writeFile(absoluteFilePath, initialBytes);
+      await service.handle(
+        request("initialize", {
+          vaultPath,
+          packageJsonPath: path.resolve("package.json"),
+        }),
+      );
+      const app = (globalThis as unknown as { app: { vault: Vault } }).app;
+      const file = app.vault.getFileByPath(filePath);
+      if (!file) {
+        throw new Error("Barrier fixture file was not discovered.");
+      }
+      await app.vault.readBinary(file);
+      const mutation = app.vault.modifyBinary(file, updatedBytes.buffer);
+      await writeStartedSignal;
+      const barrier = service.handle(request("wait-for-mutations", { quietMs: 1, timeoutMs: 250 }));
+      await expect(
+        Promise.race([barrier.then(() => "settled"), Promise.resolve("pending")]),
+      ).resolves.toBe("pending");
+      releaseWrite();
+      await mutation;
+      const completed = await barrier;
+      if (!completed) {
+        throw new Error("Mutation barrier returned no renderer snapshot.");
+      }
+      expect(completed.vault?.path).toBe(await fs.realpath(vaultPath));
+      await expect(fs.readFile(absoluteFilePath)).resolves.toEqual(Buffer.from(updatedBytes));
+
+      await expect(app.vault.modifyBinary(file, conflictBytes.buffer)).rejects.toThrow(
+        conflictPath,
+      );
+      await expect(fs.readFile(absoluteFilePath)).resolves.toEqual(Buffer.from(updatedBytes));
+      await expect(fs.readFile(path.join(vaultPath, conflictPath))).resolves.toEqual(
+        Buffer.from(conflictBytes),
+      );
+    } finally {
+      releaseWrite();
+      await service.close();
       dom.window.close();
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }

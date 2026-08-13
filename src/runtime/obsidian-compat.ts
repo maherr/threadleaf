@@ -23,6 +23,7 @@ import type {
   VaultWriteResult,
 } from "../kernel/ports";
 import type { CommandSummary, NoteCreateOutcome } from "../shared/contracts";
+import type { PluginMutationWaitOptions } from "../shared/plugin-runtime-protocol";
 import { Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
 import { Menu, MenuItem, MenuSeparator } from "./obsidian-menu-compat";
@@ -767,6 +768,10 @@ export class Vault {
     throw new Error(
       `Plugin vault mutations did not settle before the compatibility timeout.${detail}`,
     );
+  }
+
+  waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<void> {
+    return this.waitForSettledMutations(options?.quietMs, options?.timeoutMs);
   }
 
   private async trackMutation<T>(

@@ -434,6 +434,7 @@ describe("WorkspaceRuntime", () => {
         compatibilityLevel = 4;
         return pluginSnapshot();
       },
+      waitForPluginMutations: async () => pluginSnapshot(),
       unloadAllPlugins: async () => pluginSnapshot(),
       unloadPlugin: async () => pluginSnapshot(),
     };
