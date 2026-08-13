@@ -105,6 +105,7 @@ export interface LivePreviewMapping {
 export interface LivePreviewMappingScanStats {
   lines: number;
   protectedRangeChecks: number;
+  rawTextSteps: number;
 }
 
 export type InlineTransclusionStatus =
@@ -1053,6 +1054,7 @@ export function buildLivePreviewMapping(
   if (options.stats) {
     options.stats.lines = 0;
     options.stats.protectedRangeChecks = 0;
+    options.stats.rawTextSteps = 0;
   }
   const frontmatter = scanFrontmatter(source);
   if (frontmatter.status === "unresolved") {
@@ -1060,7 +1062,9 @@ export function buildLivePreviewMapping(
   }
   const footnotes = collectFootnotes(source);
   const codeRanges = mergeSourceRanges(markdownCodeRanges(source));
-  const htmlRanges = mergeSourceRanges(markdownHtmlRanges(source, codeRanges));
+  const htmlStats = options.stats ? { steps: 0, maxOpenTags: 0, rawTextSteps: 0 } : undefined;
+  const htmlRanges = mergeSourceRanges(markdownHtmlRanges(source, codeRanges, htmlStats));
+  if (options.stats) options.stats.rawTextSteps = htmlStats?.rawTextSteps ?? 0;
   const requestedProtectedRanges = mergeSourceRanges([
     ...codeRanges,
     ...(options.protectedRanges ?? []),

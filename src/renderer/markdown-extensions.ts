@@ -356,18 +356,43 @@ function rawTextClosingTag(
   source: string,
   from: number,
   name: string,
+  stats?: MarkdownHtmlRangeScanStats,
 ): { from: number; to: number } | null {
-  let cursor = from;
-  while (cursor < source.length) {
-    const candidate = source.indexOf("<", cursor);
-    if (candidate < 0) return null;
-    if (source[candidate + 1] === "/") {
-      const tag = scanHtmlTag(source, candidate);
-      if (tag?.kind === "closing" && tag.name === name) {
-        return { from: candidate, to: tag.end };
+  // Raw-text bodies only need a matching end tag. Do not call scanHtmlTag for
+  // every closing-tag-shaped byte: an incomplete nonmatching tag can make
+  // htmlTagEnd walk to EOF, and repeating that walk turns malformed source
+  // into a quadratic scan. Nonmatching candidates are skipped one character
+  // at a time; only a matching name gets one bounded-to-EOF tag-end scan.
+  for (let cursor = from; cursor < source.length; cursor += 1) {
+    if (stats) stats.rawTextSteps += 1;
+    if (source[cursor] !== "<" || source[cursor + 1] !== "/") continue;
+
+    const nameStart = cursor + 2;
+    const nameEnd = nameStart + name.length;
+    if (nameEnd > source.length || source.slice(nameStart, nameEnd).toLowerCase() !== name) {
+      continue;
+    }
+    const boundary = source[nameEnd] ?? "";
+    if (boundary && !/[\s/>]/u.test(boundary)) continue;
+
+    let quote: "'" | '"' | null = null;
+    for (let end = nameEnd; end < source.length; end += 1) {
+      if (stats) stats.rawTextSteps += 1;
+      const character = source[end] ?? "";
+      if (quote) {
+        if (character === quote) quote = null;
+        continue;
+      }
+      if (character === "'" || character === '"') {
+        quote = character;
+      } else if (character === ">") {
+        return { from: cursor, to: end + 1 };
       }
     }
-    cursor = candidate + 1;
+    // Match scanHtmlTag's source-visible behavior for an incomplete matching
+    // closer: the protected raw-text range extends through the remaining
+    // source even though no complete tag delimiter was found.
+    return { from: cursor, to: source.length };
   }
   return null;
 }
@@ -388,6 +413,7 @@ function mergeMarkdownRanges(ranges: readonly MarkdownSourceRange[]): MarkdownSo
 export interface MarkdownHtmlRangeScanStats {
   steps: number;
   maxOpenTags: number;
+  rawTextSteps: number;
 }
 
 /**
@@ -411,6 +437,7 @@ export function markdownHtmlRanges(
   if (stats) {
     stats.steps = 0;
     stats.maxOpenTags = 0;
+    stats.rawTextSteps = 0;
   }
   let codeIndex = 0;
   const insideCode = (position: number): boolean => {
@@ -457,7 +484,7 @@ export function markdownHtmlRanges(
         const open = { name, from: index };
         openTags.push(open);
         if (stats) stats.maxOpenTags = Math.max(stats.maxOpenTags, openTags.length);
-        const closing = rawTextClosingTag(source, tag.end, name);
+        const closing = rawTextClosingTag(source, tag.end, name, stats);
         if (!closing) {
           index = source.length;
           break;

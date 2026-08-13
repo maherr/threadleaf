@@ -519,10 +519,37 @@ describe("mapping measurement", () => {
       protectedRanges.push({ from: lineFrom, to: lineFrom + Math.min(5, line.length) });
       lineFrom += line.length + 1;
     }
-    const stats = { lines: 0, protectedRangeChecks: 0 };
+    const stats = { lines: 0, protectedRangeChecks: 0, rawTextSteps: 0 };
     const mapping = buildLivePreviewMapping(source, { protectedRanges, stats });
     expect(mapping.source).toBe(source);
     expect(stats.lines).toBe(lines.length);
     expect(stats.protectedRangeChecks).toBeLessThan(lines.length * 12);
+  });
+
+  it("keeps malformed raw-text closer noise linear on direct and mapping paths", () => {
+    const directSteps: number[] = [];
+    const mappingSteps: number[] = [];
+    for (const size of [2_000, 4_000, 8_000]) {
+      const source = `<script>${"</a ".repeat(size)}`;
+      const directStats = { steps: 0, maxOpenTags: 0, rawTextSteps: 0 };
+      expect(markdownHtmlRanges(source, undefined, directStats)).toEqual([
+        { from: 0, to: source.length },
+      ]);
+      expect(directStats.rawTextSteps).toBeGreaterThan(0);
+      expect(directStats.rawTextSteps).toBeLessThan(source.length * 2);
+      directSteps.push(directStats.rawTextSteps);
+
+      const mappingStats = { lines: 0, protectedRangeChecks: 0, rawTextSteps: 0 };
+      const mapping = buildLivePreviewMapping(source, { stats: mappingStats });
+      expect(mapping.source).toBe(source);
+      expect(mapping.rendered).toBe(source);
+      expect(mappingStats.rawTextSteps).toBe(directStats.rawTextSteps);
+      mappingSteps.push(mappingStats.rawTextSteps);
+    }
+    for (const steps of [directSteps, mappingSteps]) {
+      expect(steps[0]).toBeGreaterThan(0);
+      expect(steps[1]).toBeLessThan((steps[0] ?? 0) * 3);
+      expect(steps[2]).toBeLessThan((steps[1] ?? 0) * 3);
+    }
   });
 });

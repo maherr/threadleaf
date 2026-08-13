@@ -219,7 +219,7 @@ describe("raw HTML source protection", () => {
 
     const size = 4_096;
     const source = "<span>".repeat(size) + "</missing>".repeat(size) + "</span>".repeat(size);
-    const stats = { steps: 0, maxOpenTags: 0 };
+    const stats = { steps: 0, maxOpenTags: 0, rawTextSteps: 0 };
     expect(markdownHtmlRanges(source, undefined, stats)).toEqual([{ from: 0, to: source.length }]);
     expect(stats.maxOpenTags).toBe(size);
     expect(stats.steps).toBeLessThan(source.length);
