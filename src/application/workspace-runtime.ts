@@ -15,6 +15,9 @@ import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type {
+  CanvasAttachmentResponse,
+  CanvasLoadResponse,
+  CanvasSaveResponse,
   NoteCreateOutcome,
   NoteCreateResponse,
   NoteDeleteOutcome,
@@ -40,6 +43,8 @@ import type {
   VaultSearchResponse,
   VaultSelectionSource,
   VaultTrashResponse,
+  WorkspaceCanvasSnapshot,
+  WorkspaceCanvasSummary,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
@@ -53,6 +58,13 @@ import {
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
 import { ActionRegistry } from "./action-registry";
+import { loadCanvasAttachment } from "./canvas-attachment-service";
+import {
+  isCanvasPath,
+  loadJsonCanvas,
+  saveJsonCanvas,
+  titleForJsonCanvasPath,
+} from "./canvas-service";
 import { createMarkdownNote } from "./note-creation";
 import { type DailyNoteResult, openOrCreateDailyNote } from "./note-daily";
 import { loadVaultNoteEmbed } from "./note-embed-service";
@@ -678,9 +690,11 @@ export class WorkspaceRuntime {
     );
 
     if (restoredWorkspace) {
-      const availablePaths = new Set(
-        indexReactor.index.snapshot().documents.map((document) => document.path),
-      );
+      const visible = await kernel.listVisiblePaths();
+      const availablePaths = new Set([
+        ...indexReactor.index.snapshot().documents.map((document) => document.path),
+        ...visible.files.filter(isCanvasPath),
+      ]);
       const panes = restoredWorkspace.panes.map((pane) => {
         const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
         return {
@@ -1001,6 +1015,58 @@ export class WorkspaceRuntime {
       subpath,
       expectedVaultId,
     );
+  }
+
+  loadCanvas(filePath: string, expectedVaultId: string): Promise<CanvasLoadResponse> {
+    return loadJsonCanvas(this.kernel, filePath, expectedVaultId, { readOnly: this.readOnly });
+  }
+
+  loadCanvasAttachment(
+    sourceCanvasPath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<CanvasAttachmentResponse> {
+    return loadCanvasAttachment(this.kernel, sourceCanvasPath, target, expectedVaultId);
+  }
+
+  async saveCanvas(
+    filePath: string,
+    content: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<CanvasSaveResponse> {
+    if (this.readOnly) {
+      return {
+        outcome: { status: "read-only", path: filePath },
+        snapshot: await this.publishSnapshot(),
+      };
+    }
+    const outcome = await saveJsonCanvas(
+      this.kernel,
+      filePath,
+      content,
+      expectedRevision,
+      expectedVaultId,
+    );
+    if (outcome.status === "committed") {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "write",
+        path: outcome.path,
+        revision: outcome.revision,
+      });
+    } else if (outcome.status === "conflict") {
+      const conflict = await this.kernel.readBinary(outcome.conflictPath, 8 * 1024 * 1024);
+      if (conflict.status === "ready") {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "write",
+          path: outcome.conflictPath,
+          revision: conflict.snapshot.revision,
+        });
+      }
+    }
+    return { outcome, snapshot: await this.publishSnapshot() };
   }
 
   async saveNote(
@@ -1465,13 +1531,21 @@ export class WorkspaceRuntime {
 
   private async selectNote(request: OpenNoteRequest): Promise<void> {
     const filePath = normalizeVaultPath(request.path);
-    const exists = this.indexReactor.index
-      .snapshot()
-      .documents.some((document) => document.path === filePath);
-    if (!exists) {
-      throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
+    if (isCanvasPath(filePath)) {
+      const visible = await this.kernel.listVisiblePaths();
+      if (!visible.files.includes(filePath)) {
+        throw new Error(`Canvas is not present in the active vault: ${filePath}`);
+      }
+      await this.kernel.readBinary(filePath, 8 * 1024 * 1024);
+    } else {
+      const exists = this.indexReactor.index
+        .snapshot()
+        .documents.some((document) => document.path === filePath);
+      if (!exists) {
+        throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
+      }
+      await this.kernel.readText(filePath);
     }
-    await this.kernel.readText(filePath);
     const paneId = request.paneId ?? this.#activePaneId;
     this.workspacePane(paneId);
     const state = this.currentWorkspaceState();
@@ -2086,6 +2160,12 @@ export class WorkspaceRuntime {
 
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const index = this.indexReactor.index.snapshot();
+    const visible = await this.kernel.listVisiblePaths();
+    const canvasPaths = visible.files.filter(isCanvasPath);
+    const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
+      path: filePath,
+      title: titleForJsonCanvasPath(filePath),
+    }));
     let projection = this.#indexProjection;
     if (!projection || projection.generation !== this.indexReactor.index.generation) {
       const documents = new Map(index.documents.map((document) => [document.path, document]));
@@ -2110,8 +2190,9 @@ export class WorkspaceRuntime {
       this.#indexProjection = projection;
     }
     const { documents, backlinks, files } = projection;
+    const availablePaths = new Set([...documents.keys(), ...canvasPaths]);
     const reconciledPanes = this.#panes.map((pane) => {
-      const openPaths = pane.openPaths.filter((filePath) => documents.has(filePath));
+      const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
       return {
         id: pane.id,
         openPaths,
@@ -2174,19 +2255,49 @@ export class WorkspaceRuntime {
       noteSnapshots.set(filePath, pending);
       return pending;
     };
+    const canvasSnapshots = new Map<string, Promise<WorkspaceCanvasSnapshot>>();
+    const loadCanvasSnapshot = (filePath: string): Promise<WorkspaceCanvasSnapshot> => {
+      const cached = canvasSnapshots.get(filePath);
+      if (cached) {
+        return cached;
+      }
+      const pending = loadJsonCanvas(this.kernel, filePath, this.kernel.vaultId, {
+        readOnly: this.readOnly,
+      }).then((response) => {
+        if (response.status !== "ready") {
+          throw new Error(
+            response.status === "unavailable" ? response.message : "The active vault changed.",
+          );
+        }
+        return response.canvas;
+      });
+      canvasSnapshots.set(filePath, pending);
+      return pending;
+    };
     const snapshotState = reconciledState;
     const panes: WorkspacePaneSnapshot[] = await Promise.all(
-      snapshotState.panes.map(async (pane) => ({
-        id: pane.id,
-        active: pane.id === snapshotState.activePaneId,
-        tabs: pane.openPaths.map((filePath) => ({
-          path: filePath,
-          title: displayTitleFromVaultPath(filePath),
-          active: filePath === pane.activePath,
-          pinned: pane.pinnedPaths.includes(filePath),
-        })),
-        activeNote: pane.activePath ? await loadNoteSnapshot(pane.activePath) : null,
-      })),
+      snapshotState.panes.map(async (pane) => {
+        const activeCanvas =
+          pane.activePath && isCanvasPath(pane.activePath)
+            ? await loadCanvasSnapshot(pane.activePath)
+            : null;
+        const activeNote =
+          pane.activePath && !activeCanvas ? await loadNoteSnapshot(pane.activePath) : null;
+        return {
+          id: pane.id,
+          active: pane.id === snapshotState.activePaneId,
+          tabs: pane.openPaths.map((filePath) => ({
+            path: filePath,
+            title: isCanvasPath(filePath)
+              ? titleForJsonCanvasPath(filePath)
+              : displayTitleFromVaultPath(filePath),
+            active: filePath === pane.activePath,
+            pinned: pane.pinnedPaths.includes(filePath),
+          })),
+          activeNote,
+          ...(activeCanvas ? { activeCanvas } : {}),
+        };
+      }),
     );
     const activePane = panes.find(({ id }) => id === snapshotState.activePaneId);
     if (!activePane) {
@@ -2196,6 +2307,7 @@ export class WorkspaceRuntime {
       state: this.#watcherError ? "degraded" : "ready",
       indexGeneration: this.indexReactor.index.generation,
       files,
+      ...(canvasFiles.length > 0 ? { canvasFiles } : {}),
       panes,
       activePaneId: snapshotState.activePaneId,
       splitDirection: snapshotState.splitDirection,

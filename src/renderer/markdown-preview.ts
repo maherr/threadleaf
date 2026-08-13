@@ -1,6 +1,7 @@
 import DOMPurify, { type Config } from "dompurify";
 import MarkdownIt, { type RendererRule, type StateInline } from "markdown-it";
 import type {
+  CanvasLoadResponse,
   VaultAttachmentResponse,
   VaultImageResponse,
   VaultNoteEmbedResponse,
@@ -58,6 +59,7 @@ const sanitizeConfig = {
     "data-threadleaf-attachment-target",
     "data-threadleaf-attachment-status",
     "data-threadleaf-asset",
+    "data-threadleaf-canvas-embed",
     "data-threadleaf-embed",
     "data-threadleaf-external-url",
     "data-threadleaf-link",
@@ -185,6 +187,10 @@ function attachmentPlaceholder(target: string, label: string): string {
   return `<span class="preview-attachment-placeholder" role="status" aria-label="Loading local attachment ${escapeAttribute(label)}" data-threadleaf-attachment-target="${escapeAttribute(target)}" data-threadleaf-attachment-alt="${escapeAttribute(label)}">Attachment: ${escapeText(label)}</span>`;
 }
 
+function canvasEmbedPlaceholder(target: string, label: string): string {
+  return `<span class="preview-canvas-embed-placeholder" role="status" aria-label="Loading embedded canvas ${escapeAttribute(label)}" data-threadleaf-canvas-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-alt="${escapeAttribute(label)}">Embedded canvas: ${escapeText(label)}</span>`;
+}
+
 const markdown = new MarkdownIt({
   breaks: false,
   html: true,
@@ -211,6 +217,9 @@ markdown.renderer.rules.threadleaf_wikilink = (tokens, index) => {
   const label = link.alias ?? fallback;
   if (link.embed && /\.(?:gif|jpe?g|png|webp)$/iu.test(link.target)) {
     return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(link.target)}" data-threadleaf-alt="${escapeAttribute(link.alias ?? "")}">Image: ${escapeText(label)}</span>`;
+  }
+  if (link.embed && link.target.toLocaleLowerCase("en-US").endsWith(".canvas")) {
+    return canvasEmbedPlaceholder(link.target, label);
   }
   if (link.embed && isMarkdownNoteTarget(link.target, link.subpath, true)) {
     return noteEmbedPlaceholder(link.target, link.subpath, label);
@@ -270,6 +279,9 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
   if (isMarkdownNoteTarget(target, subpath, false)) {
     return noteEmbedPlaceholder(target, subpath, label);
   }
+  if (target.toLocaleLowerCase("en-US").endsWith(".canvas")) {
+    return canvasEmbedPlaceholder(target, label);
+  }
   if (!/^.*\.(?:gif|jpe?g|png|webp)$/iu.test(target)) {
     return attachmentPlaceholder(target, label);
   }
@@ -288,10 +300,18 @@ interface PreviewHydrationBudget {
   attachmentCount: number;
   noteEmbedBytes: number;
   noteEmbedCount: number;
+  canvasEmbedCount: number;
 }
 
 function createPreviewHydrationBudget(): PreviewHydrationBudget {
-  return { imageBytes: 0, imageCount: 0, attachmentCount: 0, noteEmbedBytes: 0, noteEmbedCount: 0 };
+  return {
+    imageBytes: 0,
+    imageCount: 0,
+    attachmentCount: 0,
+    noteEmbedBytes: 0,
+    noteEmbedCount: 0,
+    canvasEmbedCount: 0,
+  };
 }
 
 function noteEmbedIdentity(path: string, subpath: string | null): string {
@@ -434,6 +454,7 @@ export interface PreviewNoteEmbedHydrationOptions {
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse>;
+  loadCanvas?(path: string, expectedVaultId: string): Promise<CanvasLoadResponse>;
   decorateLinks(
     root: HTMLElement,
     links: readonly WorkspaceLinkSummary[],
@@ -692,6 +713,71 @@ function createNoteEmbed(
   return { body, embed };
 }
 
+function markCanvasEmbedUnavailable(
+  placeholder: HTMLElement,
+  label: string,
+  message: string,
+): void {
+  placeholder.className = "preview-canvas-embed preview-canvas-embed-unavailable";
+  placeholder.setAttribute("role", "note");
+  placeholder.setAttribute("aria-label", `Embedded canvas unavailable: ${label}`);
+  placeholder.textContent = `Embedded canvas unavailable: ${message}`;
+}
+
+function createCanvasEmbed(
+  placeholder: HTMLElement,
+  response: Extract<CanvasLoadResponse, { status: "ready" }>,
+): HTMLElement {
+  const embed = placeholder.ownerDocument.createElement("section");
+  embed.className = "preview-canvas-embed";
+  embed.dataset.threadleafCanvasEmbedStatus = "ready";
+  embed.dataset.threadleafPath = response.canvas.path;
+  embed.dataset.threadleafRevision = response.canvas.revision;
+  embed.setAttribute("aria-label", `Embedded canvas ${response.canvas.path}`);
+  const header = placeholder.ownerDocument.createElement("header");
+  header.className = "preview-canvas-embed-header";
+  const marker = placeholder.ownerDocument.createElement("span");
+  marker.textContent = "▦";
+  marker.ariaHidden = "true";
+  const open = placeholder.ownerDocument.createElement("button");
+  open.type = "button";
+  open.className = "preview-canvas-embed-open";
+  open.dataset.threadleafOpenPath = response.canvas.path;
+  open.textContent = response.canvas.path;
+  open.ariaLabel = `Open canvas ${response.canvas.path}`;
+  header.append(marker, open);
+  const body = placeholder.ownerDocument.createElement("ul");
+  body.className = "preview-canvas-embed-objects";
+  for (const node of response.canvas.document?.nodes ?? []) {
+    if (!node || typeof node !== "object") {
+      continue;
+    }
+    const item = placeholder.ownerDocument.createElement("li");
+    const value =
+      node.type === "text" && typeof node.text === "string"
+        ? node.text
+        : node.type === "file" && typeof node.file === "string"
+          ? node.file
+          : node.type === "link" && typeof node.url === "string"
+            ? `External link (inactive): ${node.url}`
+            : node.type;
+    item.textContent = `${node.type}: ${value}`;
+    body.append(item);
+  }
+  if ((response.canvas.document?.nodes?.length ?? 0) === 0) {
+    const item = placeholder.ownerDocument.createElement("li");
+    item.textContent = "Canvas has no objects.";
+    body.append(item);
+  }
+  embed.append(header, body);
+  if (response.canvas.diagnostics.length > 0) {
+    const warning = placeholder.ownerDocument.createElement("p");
+    warning.textContent = `Read-only: ${response.canvas.diagnostics.length} validation issue(s).`;
+    embed.append(warning);
+  }
+  return embed;
+}
+
 async function hydrateNoteEmbedTree(
   root: HTMLElement,
   sourceNotePath: string,
@@ -715,6 +801,42 @@ async function hydrateNoteEmbedTree(
       budget,
       ...(options.isCurrent ? { isCurrent: options.isCurrent } : {}),
     });
+  }
+  const canvasPlaceholders = [
+    ...root.querySelectorAll<HTMLElement>(
+      ".preview-canvas-embed-placeholder[data-threadleaf-canvas-embed]",
+    ),
+  ];
+  for (const placeholder of canvasPlaceholders) {
+    if ((options.isCurrent && !options.isCurrent()) || !root.contains(placeholder)) {
+      return;
+    }
+    const label =
+      placeholder.dataset.threadleafAlt || placeholder.dataset.threadleafTarget || "canvas";
+    if (budget.canvasEmbedCount >= maxNoteEmbedsPerPreview) {
+      markCanvasEmbedUnavailable(placeholder, label, "the embedded-canvas limit was reached");
+      continue;
+    }
+    budget.canvasEmbedCount += 1;
+    if (!options.loadCanvas) {
+      markCanvasEmbedUnavailable(placeholder, label, "canvas loading is unavailable");
+      continue;
+    }
+    try {
+      const response = await options.loadCanvas(
+        placeholder.dataset.threadleafTarget ?? "",
+        options.expectedVaultId,
+      );
+      if (response.status === "stale-vault" || response.vaultId !== options.expectedVaultId) {
+        markCanvasEmbedUnavailable(placeholder, label, "the active vault changed");
+      } else if (response.status === "unavailable") {
+        markCanvasEmbedUnavailable(placeholder, label, response.message);
+      } else {
+        placeholder.replaceWith(createCanvasEmbed(placeholder, response));
+      }
+    } catch {
+      markCanvasEmbedUnavailable(placeholder, label, "the canvas request failed");
+    }
   }
   const placeholders = [
     ...root.querySelectorAll<HTMLElement>(

@@ -113,6 +113,14 @@
             id="file-list"
             aria-label="Markdown files"
           ></nav>
+          <section class="canvas-shelf" aria-labelledby="canvas-heading">
+            <header class="canvas-shelf-header">
+              <span aria-hidden="true">▦</span>
+              <strong id="canvas-heading">Canvases</strong>
+              <output id="canvas-file-count" aria-label="Canvas count">0</output>
+            </header>
+            <nav id="canvas-file-list" class="canvas-file-list" aria-label="JSON Canvas files"></nav>
+          </section>
 
           <div class="navigator-foot">
             <span><strong id="index-status">Indexing</strong> derived index</span>
@@ -232,6 +240,12 @@
               hidden
             ></section>
           </article>
+          <section
+            class="canvas-view workspace-leaf-content"
+            id="canvas-view"
+            aria-label="JSON Canvas editor"
+            hidden
+          ></section>
           <section
             class="plugin-surface-host"
             id="plugin-surface-host"

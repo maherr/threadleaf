@@ -8,6 +8,9 @@ import type {
 import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  CanvasAttachmentResponse,
+  CanvasLoadResponse,
+  CanvasSaveResponse,
   NoteCreateOutcome,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -62,6 +65,18 @@ export interface WorkspaceRuntimePort {
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse>;
+  loadCanvas?(filePath: string, expectedVaultId: string): Promise<CanvasLoadResponse>;
+  loadCanvasAttachment?(
+    sourceCanvasPath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<CanvasAttachmentResponse>;
+  saveCanvas?(
+    filePath: string,
+    content: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<CanvasSaveResponse>;
   openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
   closeNote(
     filePath: string,
@@ -526,6 +541,40 @@ export class WorkspaceController {
     return response;
   }
 
+  async loadCanvas(filePath: string, expectedVaultId: string): Promise<CanvasLoadResponse> {
+    const runtime = this.activeRuntime("load a canvas");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    if (!runtime.loadCanvas) {
+      throw new Error("The active runtime does not provide Canvas support.");
+    }
+    const response = await runtime.loadCanvas(filePath, expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async loadCanvasAttachment(
+    sourceCanvasPath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<CanvasAttachmentResponse> {
+    const runtime = this.activeRuntime("load a canvas attachment");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    if (!runtime.loadCanvasAttachment) {
+      throw new Error("The active runtime does not provide Canvas attachment support.");
+    }
+    const response = await runtime.loadCanvasAttachment(sourceCanvasPath, target, expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
   openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
     return this.activeRuntime("open a note").openNote(filePath, paneId);
   }
@@ -781,6 +830,19 @@ export class WorkspaceController {
       expectedRevision,
       expectedVaultId,
     );
+  }
+
+  saveCanvas(
+    filePath: string,
+    content: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<CanvasSaveResponse> {
+    const runtime = this.activeRuntime("save a canvas");
+    if (!runtime.saveCanvas) {
+      throw new Error("The active runtime does not provide Canvas support.");
+    }
+    return runtime.saveCanvas(filePath, content, expectedRevision, expectedVaultId);
   }
 
   setNoteProperty(

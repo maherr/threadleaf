@@ -8,6 +8,9 @@ import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { AppearanceResponse, AppearanceSnapshot } from "../shared/appearance";
 import type {
   AppearanceUpdateResponse,
+  CanvasAttachmentResponse,
+  CanvasLoadResponse,
+  CanvasSaveResponse,
   EditorDraftClearResponse,
   EditorDraftReadResponse,
   EditorDraftSaveResponse,
@@ -200,6 +203,19 @@ const bridge: ThreadleafBridge = {
       subpath,
       expectedVaultId,
     ) as Promise<VaultNoteEmbedResponse>,
+  loadCanvas: (filePath, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.loadCanvas,
+      filePath,
+      expectedVaultId,
+    ) as Promise<CanvasLoadResponse>,
+  loadCanvasAttachment: (sourceCanvasPath, target, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.loadCanvasAttachment,
+      sourceCanvasPath,
+      target,
+      expectedVaultId,
+    ) as Promise<CanvasAttachmentResponse>,
   setKeyBinding: (targetId, binding) =>
     ipcRenderer.invoke(
       ipcChannels.setKeyBinding,
@@ -308,6 +324,14 @@ const bridge: ThreadleafBridge = {
       expectedRevision,
       expectedVaultId,
     ) as Promise<NoteSaveResponse>,
+  saveCanvas: (filePath, content, expectedRevision, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.saveCanvas,
+      filePath,
+      content,
+      expectedRevision,
+      expectedVaultId,
+    ) as Promise<CanvasSaveResponse>,
   setNoteProperty: (filePath, name, rawValue, type, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.setNoteProperty,

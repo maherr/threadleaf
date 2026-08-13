@@ -1697,6 +1697,25 @@ function registerIpcHandlers(): void {
       );
     },
   );
+  ipcMain.handle(ipcChannels.loadCanvas, (_event, filePath: unknown, expectedVaultId: unknown) => {
+    if (typeof filePath !== "string" || typeof expectedVaultId !== "string") {
+      throw new Error("Load canvas requires string path and vault values.");
+    }
+    return workspaceController.loadCanvas(filePath, expectedVaultId);
+  });
+  ipcMain.handle(
+    ipcChannels.loadCanvasAttachment,
+    (_event, sourceCanvasPath: unknown, target: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof sourceCanvasPath !== "string" ||
+        typeof target !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Load canvas attachment requires string source, target, and vault values.");
+      }
+      return workspaceController.loadCanvasAttachment(sourceCanvasPath, target, expectedVaultId);
+    },
+  );
   ipcMain.handle(ipcChannels.setKeyBinding, (_event, targetId: unknown, binding: unknown) => {
     if (
       typeof targetId !== "string" ||
@@ -2069,6 +2088,26 @@ function registerIpcHandlers(): void {
         throw new Error("Save note requires string path, content, revision, and vault values.");
       }
       return workspaceController.saveNote(filePath, content, expectedRevision, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.saveCanvas,
+    (
+      _event,
+      filePath: unknown,
+      content: unknown,
+      expectedRevision: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof content !== "string" ||
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Save canvas requires string path, content, revision, and vault values.");
+      }
+      return workspaceController.saveCanvas(filePath, content, expectedRevision, expectedVaultId);
     },
   );
   ipcMain.handle(

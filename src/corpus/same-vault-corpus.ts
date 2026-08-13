@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  MutableJsonCanvas,
+  parseJsonCanvas,
+  serializeJsonCanvas,
+} from "../application/json-canvas";
 import { loadVaultNoteEmbed } from "../application/note-embed-service";
 import { moveMarkdownNote } from "../application/note-move";
 import {
@@ -79,7 +84,7 @@ const requiredCaseIds = [
   "obsidian.read-only-coexistence",
   "external.atomic-edit-conflict",
   "roundtrip.every-canonical-byte",
-  "canvas.editing-unsupported",
+  "canvas.editing-roundtrip",
 ] as const;
 
 function fail(message: string): never {
@@ -685,6 +690,40 @@ async function runCanvasCase(
   );
 }
 
+async function runCanvasEditingCase(
+  vaultPath: string,
+  statePath: string,
+  entry: CorpusCase,
+): Promise<void> {
+  const kernel = await openKernel(vaultPath, statePath, false);
+  const read = await kernel.readBinary("Boards/Overview.canvas", 1024 * 1024);
+  assert(read.status === "ready", `${entry.id} canvas is not readable`);
+  const parsed = parseJsonCanvas(read.snapshot.bytes);
+  assert(parsed.status === "ready" && parsed.document, `${entry.id} canvas is malformed`);
+  const model = new MutableJsonCanvas(parsed.document);
+  model.editText("node-index", "Edited by corpus");
+  const proposal = serializeJsonCanvas(model.snapshot());
+  const result = await kernel.writeBinary(
+    "Boards/Overview.canvas",
+    new TextEncoder().encode(proposal),
+    read.snapshot.revision,
+  );
+  equalJson(result.status, "committed", `${entry.id} status`);
+  const after = await kernel.readBinary("Boards/Overview.canvas", 1024 * 1024);
+  assert(after.status === "ready", `${entry.id} edited canvas disappeared`);
+  const edited = parseJsonCanvas(after.snapshot.bytes);
+  assert(edited.status === "ready" && edited.document, `${entry.id} output is malformed`);
+  const textNode = edited.document.nodes?.find((node) => node.id === "node-index");
+  assert(textNode?.type === "text", `${entry.id} edited text node disappeared`);
+  equalJson(textNode.text, entry.expected.editedText, `${entry.id} text edit`);
+  equalJson(edited.document.nodes?.length, entry.expected.nodes, `${entry.id} node count`);
+  equalJson(edited.document.edges?.length, entry.expected.edges, `${entry.id} edge count`);
+  assert(
+    after.snapshot.bytes.toString("hex") !== read.snapshot.bytes.toString("hex"),
+    `${entry.id} did not change the edited bytes`,
+  );
+}
+
 async function runObsidianCase(
   vaultPath: string,
   statePath: string,
@@ -786,6 +825,8 @@ async function runCase(entry: CorpusCase, manifest: CorpusManifest): Promise<str
       await runAmbiguousRenameCase(vaultPath, statePath, entry);
     } else if (entry.id === "canvas.byte-preservation") {
       await runCanvasCase(vaultPath, statePath, entry);
+    } else if (entry.id === "canvas.editing-roundtrip") {
+      await runCanvasEditingCase(vaultPath, statePath, entry);
     } else if (entry.id === "obsidian.read-only-coexistence") {
       await runObsidianCase(vaultPath, statePath, entry);
     } else if (entry.id === "external.atomic-edit-conflict") {

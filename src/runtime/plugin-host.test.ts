@@ -37,7 +37,11 @@ describe("PluginHost", () => {
     expect(host.app.metadataCache.getFileCache(welcome)?.frontmatter).toEqual({
       kind: "compatibility-fixture",
     });
-    expect(host.app.metadataCache.getCachedFiles()).toEqual(["Linked Note.md", "Welcome.md"]);
+    expect(host.app.metadataCache.getCachedFiles()).toEqual([
+      "Boards/Overview.canvas",
+      "Linked Note.md",
+      "Welcome.md",
+    ]);
     const linked = host.app.metadataCache.getFirstLinkpathDest("Linked Note#Heading", "Welcome.md");
     expect(linked?.path).toBe("Linked Note.md");
     expect(linked && host.app.metadataCache.fileToLinktext(linked, "Welcome.md", true)).toBe(

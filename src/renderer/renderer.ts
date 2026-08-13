@@ -38,6 +38,7 @@ import type {
   RuntimeSnapshot,
   VaultSearchResponse,
   VaultSearchResult,
+  WorkspaceCanvasSummary,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
@@ -81,6 +82,7 @@ import {
   type VaultPluginSettings,
 } from "../shared/plugins";
 import { maximumPublishNoteHtmlBytes, publishNoteExportVersion } from "../shared/publish-export";
+import { CanvasViewController } from "./canvas-view";
 import {
   filterPaletteCommands,
   firstEnabledPaletteIndex,
@@ -121,6 +123,8 @@ const elements = {
   bookmarkCount: getElement("bookmark-count"),
   bookmarkList: getElement("bookmark-list"),
   fileList: getElement("file-list"),
+  canvasFileCount: getElement("canvas-file-count"),
+  canvasFileList: getElement("canvas-file-list"),
   indexStatus: getElement("index-status"),
   recoveryCount: getElement("recovery-count"),
   workspacePanes: getElement("workspace-panes"),
@@ -133,6 +137,7 @@ const elements = {
   notePath: getElement("note-path"),
   noteEmpty: getElement("note-empty"),
   noteView: getElement("note-view"),
+  canvasView: getElement("canvas-view"),
   noteTitle: getElement("note-title"),
   noteStats: getElement("note-stats"),
   noteTags: getElement("note-tags"),
@@ -376,6 +381,7 @@ const paneElementKeys = [
   "notePath",
   "noteEmpty",
   "noteView",
+  "canvasView",
   "noteTitle",
   "noteStats",
   "noteTags",
@@ -463,6 +469,7 @@ function paneElementsFor(
     notePath: element("note-path"),
     noteEmpty: element("note-empty"),
     noteView: element("note-view"),
+    canvasView: element("canvas-view"),
     noteTitle: element("note-title"),
     noteStats: element("note-stats"),
     noteTags: element("note-tags"),
@@ -494,6 +501,35 @@ const paneElements = new Map<WorkspacePaneId, WorkspacePaneElements>([
   ["primary", paneElementsFor("primary", elements.workspacePane)],
   ["secondary", paneElementsFor("secondary", secondaryPaneRoot)],
 ]);
+
+const canvasViews = new Map<WorkspacePaneId, CanvasViewController>();
+for (const [paneId, pane] of paneElements) {
+  canvasViews.set(
+    paneId,
+    new CanvasViewController(pane.canvasView, {
+      openPath: async (path) => {
+        await openNote(path, undefined, paneId);
+      },
+      save: (path, content, revision) => {
+        const vaultId = currentSnapshot?.vault.id;
+        if (!vaultId) {
+          return Promise.resolve({
+            outcome: { status: "read-only", path } as const,
+            snapshot: currentSnapshot as RuntimeSnapshot,
+          });
+        }
+        return window.threadleaf.saveCanvas(path, content, revision, vaultId);
+      },
+      loadAttachment: (source, target) => {
+        const vaultId = currentSnapshot?.vault.id;
+        if (!vaultId) {
+          return Promise.resolve({ status: "stale-vault", vaultId: "" } as const);
+        }
+        return window.threadleaf.loadCanvasAttachment(source, target, vaultId);
+      },
+    }),
+  );
+}
 
 interface EditNoticeState {
   kind: "external" | "conflict";
@@ -1937,6 +1973,7 @@ function renderReadingView(): void {
         window.threadleaf.loadVaultAttachment(sourceNotePath, target, expectedVaultId),
       loadNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
         window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, expectedVaultId),
+      loadCanvas: (path, expectedVaultId) => window.threadleaf.loadCanvas(path, expectedVaultId),
       decorateLinks: decoratePreviewLinks,
       isCurrent: () =>
         previewHydrationRequest === request &&
@@ -1949,6 +1986,8 @@ function renderReadingView(): void {
 
 function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
+  const activeCanvas = workspacePaneSnapshot()?.activeCanvas;
+  const hasCanvas = activeCanvas !== undefined && activeCanvas !== null;
   const reading = hasNote && documentViewMode === "reading";
   const live = hasNote && documentViewMode === "live";
   const source = hasNote && documentViewMode === "source";
@@ -1960,10 +1999,11 @@ function renderDocumentView(): void {
   const visiblePluginViewType = pluginSettings
     ? "threadleaf-plugin-settings"
     : (pluginViewType ?? (plugin ? (currentSnapshot?.pluginSurface?.viewType ?? null) : null));
-  elements.noteEmpty.hidden = hasNote || plugin;
+  elements.noteEmpty.hidden = hasNote || hasCanvas || plugin;
   elements.noteEditorShell.hidden = reading;
   elements.notePreview.hidden = !reading;
   elements.noteView.hidden = !hasNote || plugin;
+  elements.canvasView.hidden = !hasCanvas;
   elements.pluginSurfaceHost.hidden = !plugin;
   elements.noteView.dataset.view = reading ? "reading" : documentViewMode;
   elements.noteEditorShell.dataset.editorMode = editingViewMode;
@@ -6054,6 +6094,7 @@ async function exportCurrentNoteAsHtml(): Promise<void> {
         window.threadleaf.loadVaultAttachment(sourceNotePath, target, vaultId),
       loadNoteEmbed: (sourceNotePath, target, subpath, vaultId) =>
         window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, vaultId),
+      loadCanvas: (path, vaultId) => window.threadleaf.loadCanvas(path, vaultId),
       decorateLinks: decoratePreviewLinks,
       isCurrent: () => publishExportIdentityIsCurrent(expectedVaultId, note.path, note.revision),
     });
@@ -6749,14 +6790,41 @@ function renderWorkspacePanes(
     if (paneId !== activePaneId && documentViewMode === "plugin") {
       documentViewMode = editingViewMode;
     }
+    if (pane.activeCanvas) {
+      const paneUi = paneElements.get(paneId);
+      if (!paneUi) continue;
+      if (loadedNote || dirty) {
+        replaceEditorDocument(null, null);
+      }
+      loadedNote = null;
+      loadedVaultId = null;
+      paneUi.noteEmpty.hidden = true;
+      paneUi.noteView.hidden = true;
+      paneUi.canvasView.hidden = false;
+      paneUi.notePath.textContent = pane.activeCanvas.path;
+      canvasViews.get(paneId)?.render(pane.activeCanvas);
+      displayedNotes.set(paneId, null);
+      continue;
+    }
     const displayedNote = reconcileEditor(pane.activeNote, snapshot.vault.id);
     displayedNotes.set(paneId, displayedNote);
+    const paneUi = paneElements.get(paneId);
+    if (paneUi) {
+      paneUi.canvasView.hidden = true;
+    }
     renderNote(displayedNote);
   }
 
   activatePaneContext(activePaneId);
   const displayedNote = displayedNotes.get(activePaneId) ?? null;
-  renderNote(displayedNote);
+  if (workspace?.panes.find((pane) => pane.id === activePaneId)?.activeCanvas) {
+    renderNote(null);
+    elements.noteEmpty.hidden = true;
+    elements.noteView.hidden = true;
+    elements.canvasView.hidden = false;
+  } else {
+    renderNote(displayedNote);
+  }
   return displayedNote;
 }
 
@@ -6863,6 +6931,11 @@ function render(snapshot: RuntimeSnapshot): void {
   elements.fileCount.textContent = opening
     ? "…"
     : String(workspace?.files.length ?? snapshot.vault.markdownFileCount);
+  const activePane = workspace?.panes.find((pane) => pane.id === workspace?.activePaneId);
+  renderCanvasFiles(
+    workspace?.canvasFiles ?? [],
+    activePane?.activeCanvas?.path ?? activePane?.activeNote?.path ?? null,
+  );
   const needsAttention =
     !opening && (workspace?.state === "degraded" || snapshot.vault.warning !== null);
   elements.runtimeState.textContent = opening
@@ -7101,6 +7174,40 @@ function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): 
 
   if (files.length === 0) {
     renderEmpty(elements.fileList, "No Markdown notes found.");
+  }
+}
+
+function renderCanvasFiles(files: WorkspaceCanvasSummary[], activePath: string | null): void {
+  elements.canvasFileCount.textContent = String(files.length);
+  elements.canvasFileList.replaceChildren();
+  if (files.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "canvas-shelf-empty";
+    empty.textContent = "No JSON Canvases found.";
+    elements.canvasFileList.append(empty);
+    return;
+  }
+  for (const file of files) {
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "canvas-file-item";
+    open.dataset.canvasPath = file.path;
+    open.setAttribute("aria-current", String(file.path === activePath));
+    open.setAttribute("aria-label", `Open canvas ${file.path}`);
+    const mark = document.createElement("span");
+    mark.className = "canvas-file-glyph";
+    mark.textContent = "▦";
+    mark.ariaHidden = "true";
+    const copy = document.createElement("span");
+    copy.className = "canvas-file-copy";
+    const title = document.createElement("strong");
+    title.textContent = file.title;
+    const path = document.createElement("small");
+    path.textContent = file.path;
+    copy.append(title, path);
+    open.append(mark, copy);
+    open.addEventListener("click", () => void openNote(file.path));
+    elements.canvasFileList.append(open);
   }
 }
 
@@ -7435,6 +7542,7 @@ function renderVaultSearchResults(activePath: string | null, indexedCount: numbe
 }
 
 function renderNote(note: WorkspaceNoteSnapshot | null): void {
+  elements.canvasView.hidden = true;
   elements.noteEmpty.hidden = note !== null;
   elements.noteView.hidden = note === null;
   if (!note) {
@@ -8242,7 +8350,9 @@ async function openNote(
       }
     });
   }
-  return loadedNote?.path === filePath;
+  return (
+    loadedNote?.path === filePath || workspacePaneSnapshot(paneId)?.activeCanvas?.path === filePath
+  );
 }
 
 async function chooseVault(): Promise<void> {
@@ -8600,6 +8710,11 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     const attachmentAction = event.target.closest<HTMLButtonElement>(".preview-attachment-action");
     if (attachmentAction) {
       activatePreviewAttachmentAction(attachmentAction);
+      return;
+    }
+    const canvasOpen = event.target.closest<HTMLButtonElement>(".preview-canvas-embed-open");
+    if (canvasOpen) {
+      void activatePreviewEmbed(canvasOpen);
       return;
     }
     const anchor = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-link]");

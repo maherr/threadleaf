@@ -1,0 +1,54 @@
+{
+  "nodes": [
+    {
+      "id": "welcome",
+      "type": "text",
+      "x": 80,
+      "y": 80,
+      "width": 260,
+      "height": 120,
+      "text": "Welcome to Threadleaf Canvas"
+    },
+    {
+      "id": "linked-note",
+      "type": "file",
+      "x": 420,
+      "y": 80,
+      "width": 260,
+      "height": 120,
+      "file": "Linked Note.md"
+    },
+    {
+      "id": "group",
+      "type": "group",
+      "x": 40,
+      "y": 40,
+      "width": 700,
+      "height": 240,
+      "label": "Start here"
+    },
+    {
+      "id": "external",
+      "type": "link",
+      "x": 80,
+      "y": 340,
+      "width": 300,
+      "height": 100,
+      "url": "https://example.test/inactive"
+    }
+  ],
+  "edges": [
+    {
+      "id": "welcome-to-note",
+      "fromNode": "welcome",
+      "fromSide": "right",
+      "fromEnd": "arrow",
+      "toNode": "linked-note",
+      "toSide": "left",
+      "label": "read next"
+    }
+  ],
+  "threadleafFixture": {
+    "unknownField": "preserve me"
+  }
+}

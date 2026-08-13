@@ -5,6 +5,7 @@ import type {
 } from "./accessibility-preferences";
 import type { AppUpdateSnapshot } from "./app-updates";
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
+import type { CanvasDiagnostic, JsonCanvasDocument } from "./json-canvas";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
 import type {
   MigrationApplyOutcome,
@@ -242,6 +243,11 @@ export interface WorkspaceFileSummary {
   unresolvedCount: number;
 }
 
+export interface WorkspaceCanvasSummary {
+  path: string;
+  title: string;
+}
+
 export interface WorkspaceTabSummary {
   path: string;
   title: string;
@@ -297,6 +303,15 @@ export interface WorkspaceNoteSnapshot {
   backlinks: string[];
   properties: WorkspacePropertySummary[];
   propertyEditor: WorkspacePropertyEditorSnapshot;
+}
+
+export interface WorkspaceCanvasSnapshot {
+  path: string;
+  title: string;
+  revision: string;
+  document: JsonCanvasDocument | null;
+  diagnostics: CanvasDiagnostic[];
+  readOnly: boolean;
 }
 
 export interface EditorDraftSnapshot {
@@ -397,6 +412,7 @@ export interface WorkspaceSnapshot {
   state: "ready" | "degraded";
   indexGeneration: number;
   files: WorkspaceFileSummary[];
+  canvasFiles?: WorkspaceCanvasSummary[];
   panes: WorkspacePaneSnapshot[];
   activePaneId: WorkspacePaneId;
   splitDirection: WorkspaceSplitDirection | null;
@@ -417,7 +433,95 @@ export interface WorkspacePaneSnapshot {
   active: boolean;
   tabs: WorkspaceTabSummary[];
   activeNote: WorkspaceNoteSnapshot | null;
+  activeCanvas?: WorkspaceCanvasSnapshot | null;
 }
+
+export type CanvasUnavailableReason =
+  | "invalid"
+  | "private"
+  | "missing"
+  | "outside-vault"
+  | "too-large"
+  | "unreadable"
+  | "unsupported";
+
+export type CanvasLoadResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      canvas: WorkspaceCanvasSnapshot;
+    }
+  | {
+      status: "unavailable";
+      vaultId: string;
+      path: string;
+      reason: CanvasUnavailableReason;
+      message: string;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type CanvasSaveOutcome =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+    }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      transactionId: string;
+    }
+  | { status: "read-only"; path: string };
+
+export interface CanvasSaveResponse {
+  outcome: CanvasSaveOutcome;
+  snapshot: RuntimeSnapshot;
+}
+
+export type CanvasAttachmentMimeType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/gif"
+  | "image/webp"
+  | "application/pdf"
+  | "text/plain"
+  | "application/octet-stream";
+
+export type CanvasAttachmentPreview = "image" | "text" | "binary";
+
+export type CanvasAttachmentUnavailableReason =
+  | "external"
+  | "invalid"
+  | "private"
+  | "missing"
+  | "outside-vault"
+  | "too-large"
+  | "unsupported"
+  | "unreadable";
+
+export type CanvasAttachmentResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      path: string;
+      mimeType: CanvasAttachmentMimeType;
+      preview: CanvasAttachmentPreview;
+      size: number;
+      revision: string;
+      base64?: string;
+      text?: string;
+      truncated?: boolean;
+    }
+  | {
+      status: "unavailable";
+      vaultId: string;
+      reason: CanvasAttachmentUnavailableReason;
+      message: string;
+    }
+  | { status: "stale-vault"; vaultId: string };
 
 export type NoteSaveOutcome =
   | {
@@ -857,6 +961,18 @@ export interface ThreadleafBridge {
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse>;
+  loadCanvas(path: string, expectedVaultId: string): Promise<CanvasLoadResponse>;
+  saveCanvas(
+    path: string,
+    content: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<CanvasSaveResponse>;
+  loadCanvasAttachment(
+    sourceCanvasPath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<CanvasAttachmentResponse>;
   setKeyBinding(targetId: ShortcutTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
   resetKeyBindings(): Promise<AppSettingsSnapshot>;
   getNoteWorkflows(expectedVaultId: string): Promise<NoteWorkflowCatalogResponse>;

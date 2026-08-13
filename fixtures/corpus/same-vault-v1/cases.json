@@ -151,13 +151,13 @@
       "allowedVariance": []
     },
     {
-      "id": "canvas.editing-unsupported",
+      "id": "canvas.editing-roundtrip",
       "category": "json-canvas",
-      "support": "unsupported",
+      "support": "supported",
       "surface": "native-canvas-editor",
       "source": {"files": ["Boards/Overview.canvas"]},
-      "operation": {"kind": "edit-json-canvas"},
-      "expected": {"status": "unsupported", "reason": "Canvas editing is not part of the current native behavior surface."},
+      "operation": {"kind": "edit-json-canvas", "node": "node-index", "field": "text"},
+      "expected": {"status": "committed", "editedText": "Edited by corpus", "nodes": 2, "edges": 1, "bytesChanged": true},
       "allowedVariance": []
     }
   ]
