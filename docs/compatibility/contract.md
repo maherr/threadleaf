@@ -53,6 +53,20 @@ light and dark schemes against a copied real-world Obsidian configuration. These
 safe preview boundary, not completed import behavior. See the
 [migration contract](migration.md) for the source limits and candidate rules.
 
+## Headless catalog fixture
+
+The headless CLI has a separate Level 0 catalog fixture for discovered community-plugin packages,
+community themes, and CSS snippets. It reuses the contained desktop loaders but never evaluates a
+plugin bundle or applies catalog CSS. The fixture covers public command names and arguments,
+deterministic text and JSON, empty and missing sources, malformed manifests, oversized bundles and
+CSS, external symlinks, and no-write behavior.
+
+Its projection is intentionally narrower than migration preview or desktop settings. It exposes
+only safe catalog metadata and numeric diagnostics. Private enablement and active selection, plugin
+settings values, raw hotkeys, vault identity, absolute paths, source code, CSS, and raw loader
+errors cannot enter CLI output. Core-plugin, action, hotkey, and workspace inventory remain outside
+this fixture until a safe headless authority and executable behavior contract exist.
+
 ## Native note transclusion fixture
 
 Reading view recognizes wiki and Markdown note embeds without changing source bytes. The verified

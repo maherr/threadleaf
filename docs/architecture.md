@@ -518,6 +518,17 @@ server, copy proprietary implementation details, or create a second mutation pat
 command uses the same containment, revision, recovery-journal, conflict, and watcher contracts as
 the desktop application. See the [CLI guide](cli.md).
 
+The headless compatibility catalog family (`plugins`, `plugin`, `themes`, `theme`, and `snippets`)
+uses the desktop's existing bounded contained plugin and appearance loaders, then projects only a
+small safe catalog. It never evaluates plugin bundles, applies CSS, reads a private enablement,
+appearance, hotkey, or workspace setting, or writes `.obsidian/` or Threadleaf state. The catalog
+adapter drops vault identity, absolute paths, CSS, source code, private selections, raw hotkeys, and
+loader error text before command output. Source state and numeric diagnostics remain explicit so a
+missing, unreadable, invalid, or bounded-out source does not look like an empty healthy catalog.
+`plugins filter=core`, active-theme lookup, catalog mutation, action or hotkey inventory, and
+workspace or tab inspection stay omitted until a safe headless authority and executable contract
+exist.
+
 The desktop and CLI call one note-creation service. A shared bounded template reader layers exact
 `title`, `date`, and `time` expansion over that service without changing Markdown authority. Daily
 notes derive a contained Markdown path from per-vault folder and Moment-compatible date-format

@@ -23,10 +23,16 @@ export interface AppearanceSnippetSummary {
   source: "obsidian-vault";
 }
 
+export type AppearanceCatalogSourceState = "present" | "missing" | "unreadable";
+
 export interface AppearanceSnapshot {
   vaultId: string;
   preference: VaultAppearanceSettings;
   safeMode: boolean;
+  themeSourceState: AppearanceCatalogSourceState;
+  snippetSourceState: AppearanceCatalogSourceState;
+  themeDiagnostics: number;
+  snippetDiagnostics: number;
   themes: AppearanceThemeSummary[];
   snippets: AppearanceSnippetSummary[];
   activeThemeId: string | null;

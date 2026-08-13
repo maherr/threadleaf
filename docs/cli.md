@@ -43,6 +43,11 @@ threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" [toggle|done|todo
 threadleaf --vault /path/to/vault aliases [path="Folder/Note.md"] [total|verbose]
 threadleaf --vault /path/to/vault tags [path="Folder/Note.md"] [sort=count] [total|counts]
 threadleaf --vault /path/to/vault tag name=project [total|verbose]
+threadleaf --vault /path/to/vault plugins [filter=community] [versions] [format=json|tsv|csv]
+threadleaf --vault /path/to/vault plugin id=<plugin-id>
+threadleaf --vault /path/to/vault themes [versions]
+threadleaf --vault /path/to/vault theme name=<theme-name>
+threadleaf --vault /path/to/vault snippets
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
@@ -82,6 +87,11 @@ During development, prefix the same arguments with `pnpm cli`.
 | `aliases` | Frontmatter aliases across the vault or one targeted note, optionally with source paths | Derived metadata index |
 | `tags` | Unique tag catalog with occurrence counts across the vault or one targeted note | Derived metadata index |
 | `tag` | Occurrence total and carrying files for one tag | Derived metadata index |
+| `plugins` | Sorted community-plugin package catalog, with optional versions and TSV, CSV, or compact JSON output | Contained static package inspection; never evaluates plugin code |
+| `plugin` | One safe community-plugin package projection by ID | Contained static package inspection; never reads enablement or settings |
+| `themes` | Sorted community-theme catalog, with optional versions | Shared bounded appearance catalog; never reads active selection |
+| `theme` | One community-theme projection by explicit name | Shared bounded appearance catalog; never reads active selection |
+| `snippets` | Sorted CSS snippet names | Shared bounded appearance catalog; never reads enabled selection |
 
 The visible file inventory includes ordinary attachments, Canvas documents, and other user files.
 The Markdown note corpus remains the narrower input to read, search, graph, task, property, and
@@ -336,6 +346,11 @@ threadleaf --vault /path/to/vault task path="Folder/Note.md" line=12 status="?"
 threadleaf --vault /path/to/vault aliases file="Note" verbose
 threadleaf --vault /path/to/vault tags path="Folder/Note.md" counts
 threadleaf --vault /path/to/vault tag name=project verbose
+threadleaf --vault /path/to/vault plugins filter=community versions format=csv
+threadleaf --vault /path/to/vault plugin id=<plugin-id>
+threadleaf --vault /path/to/vault themes versions
+threadleaf --vault /path/to/vault theme name=<theme-name>
+threadleaf --vault /path/to/vault snippets
 ```
 
 This is argument compatibility, not yet a claim of byte-for-byte output compatibility. Each added
@@ -344,6 +359,30 @@ explicit vault selection, structured JSON, headless execution, and script-safe d
 where a compatibility spelling follows another application's convention. `file=` performs the
 unique basename resolution described above, while `path=` remains exact. The target behavior is
 covered by cross-command executable fixtures rather than claimed from argument parsing alone.
+
+## Compatibility catalogs
+
+`plugins`, `plugin`, `themes`, `theme`, and `snippets` are a deliberately read-only catalog family.
+They inspect only the existing contained `.obsidian/plugins`, `.obsidian/themes`, and
+`.obsidian/snippets` sources through the same bounded loaders used by the desktop. They never
+execute `main.js`, apply CSS, load a running Electron window, access an account or network, write a
+vault file, or make `.obsidian/` Threadleaf state.
+
+`plugins` supports the public `filter=community`, `versions`, and `format=json|tsv|csv` spellings.
+`filter=core` returns `USAGE`: Threadleaf has no safe headless authority for a core-plugin catalog.
+`plugin` requires `id=<plugin-id>`. `themes versions` adds versions to human output. `theme` requires
+`name=<theme-name>` and matches names case-insensitively after safe Unicode normalization. It never
+falls back to the active theme because that choice is private application state. `snippets` lists
+names only. Global `--json` returns the versioned Threadleaf envelope; command-level
+`plugins format=json` returns the compact catalog payload used by that compatibility spelling.
+
+The safe projection contains catalog labels, IDs, versions, package state, stylesheet discovery,
+and compatibility evidence only. It omits plugin settings values, enabled plugin and snippet
+selection, active theme choice, raw hotkeys, source code, CSS, filesystem absolute paths, vault
+identity, and loader error text. JSON reports a source state of `present`, `missing`, or
+`unreadable`; human output names a missing or unreadable source explicitly. Invalid or skipped
+plugin entries retain their package state, while skipped sources retain numeric diagnostic counts.
+Detailed loader errors stay out of script output. Ordering is deterministic.
 
 ## Current compatibility boundary
 
@@ -358,6 +397,9 @@ native contract. Search and graph flags are executable compatibility
 targets, but ranked query grammar and exact byte-for-byte formatting still require a live reference
 corpus. The task subset does not yet support `active`, `daily`, or alternate `format` output. Alias
 and tag commands do not yet support `active` or alternate `format` output.
+Catalog inspection intentionally omits core plugins, enabled-state and active-theme queries,
+catalog mutations, action inventory, hotkey inventory, and workspace or tab inventory because the
+current headless authority either does not exist or is private application state.
 `trash list`, `trash:list`, and `restore` are native Threadleaf recovery commands rather than
 claimed Obsidian CLI compatibility.
 

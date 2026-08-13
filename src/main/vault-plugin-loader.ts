@@ -30,6 +30,7 @@ export interface DiscoveredVaultPlugin {
 }
 
 export interface VaultPluginDiscovery {
+  sourceState: "present" | "missing" | "unreadable";
   plugins: DiscoveredVaultPlugin[];
   warnings: string[];
 }
@@ -323,9 +324,10 @@ export async function discoverVaultPlugins(vaultPath: string): Promise<VaultPlug
     entries = await fs.readdir(canonicalPluginsPath, { withFileTypes: true });
   } catch (error) {
     if (new Set(["ENOENT", "ENOTDIR"]).has(errorCode(error) ?? "")) {
-      return { plugins: [], warnings: [] };
+      return { sourceState: "missing", plugins: [], warnings: [] };
     }
     return {
+      sourceState: "unreadable",
       plugins: [],
       warnings: [`Could not inspect .obsidian/plugins: ${errorMessage(error)}`],
     };
@@ -354,7 +356,7 @@ export async function discoverVaultPlugins(vaultPath: string): Promise<VaultPlug
       warnings.push(`An invalid plugin folder was skipped: ${errorMessage(error)}`);
     }
   }
-  return { plugins, warnings };
+  return { sourceState: "present", plugins, warnings };
 }
 
 export async function loadVaultPluginCatalog(

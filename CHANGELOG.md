@@ -70,6 +70,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `query=` argument compatibility without requiring a running Electron process.
 - Headless graph and outline commands for ordered outgoing links, grouped backlinks with occurrence
   counts, unresolved and ambiguous links, orphans, syntax-level dead ends, and line-aware headings.
+- Read-only Obsidian-style `plugins`, `plugin`, `themes`, `theme`, and `snippets` catalog commands,
+  backed by bounded contained desktop loaders with deterministic text and JSON, explicit source
+  states, no plugin execution or writes, and private-state-safe projections.
 - State-free read-only kernel opening so CLI inspection creates no application or vault data.
 - Ordered session tabs with deduplicated note activation, safe neighbor selection on close,
   external rename and deletion reconciliation, dirty-draft guards, remappable keyboard actions,

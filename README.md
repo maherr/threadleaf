@@ -107,6 +107,10 @@ race keeps the proposed note as a conflict copy.
 Headless alias and tag catalogs reuse the rebuildable metadata index. They can inspect the full
 vault or one targeted note, retain frontmatter aliases with their source paths, distinguish unique tag
 names from occurrence totals, and report every document carrying a requested tag.
+The same headless surface now offers read-only community-plugin, theme, and CSS snippet catalogs
+through the existing bounded desktop loaders. These familiar command names remain intentionally
+narrow: they require an explicit vault, never execute plugin code or apply CSS, never read private
+enablement or active selections, and never write `.obsidian/` or Threadleaf state.
 Read-only file and folder commands inventory ordinary notes, attachments, Canvas documents, and
 empty folders without exposing application-private trees. They support recursive folder and
 extension filters, metadata and byte totals, explicit duplicate-name failures, and Unicode-aware
@@ -371,11 +375,12 @@ THREADLEAF_VAULT_PATH=/absolute/path/to/disposable-vault pnpm start
 This non-packaged development override is not persisted and is ignored by packaged builds. The
 `pnpm check` gate verifies the packaged Electron entry points and confirms that renderer assets
 remain loadable over `file://`. It also executes the built CLI against disposable synthetic-vault
-copies, validates its versioned JSON envelope, proves an exact property set/read/remove round trip,
-proves alias and tag catalog output, proves an exact task read/status/toggle round trip, and proves
-exact-byte delete and restore behavior. It also resolves a packaged `file=` command by unique note
-name so basename compatibility cannot pass only in source-level tests, and exercises visible-file
-inventory plus Unicode word counting.
+copies, validates its versioned JSON envelope, proves plugin, theme, and snippet catalog output
+without executing a fixture bundle or writing state, proves an exact property set/read/remove round
+trip, proves alias and tag catalog output, proves an exact task read/status/toggle round trip, and
+proves exact-byte delete and restore behavior. It also resolves a packaged `file=` command by unique
+note name so basename compatibility cannot pass only in source-level tests, and exercises
+visible-file inventory plus Unicode word counting.
 
 The Linux editor reliability probe exercises the real Electron and CodeMirror path against a
 disposable vault, including Unicode composition, undo and redo, cursor retention, dirty-navigation
@@ -476,6 +481,11 @@ pnpm cli --vault /absolute/path/to/vault task path="Daily/Today.md" line=12 stat
 pnpm cli --vault /absolute/path/to/vault aliases verbose
 pnpm cli --vault /absolute/path/to/vault tags sort=count counts
 pnpm cli --vault /absolute/path/to/vault tag name=project verbose
+pnpm cli --vault /absolute/path/to/vault plugins filter=community versions format=csv
+pnpm cli --vault /absolute/path/to/vault plugin id=<plugin-id>
+pnpm cli --vault /absolute/path/to/vault themes versions
+pnpm cli --vault /absolute/path/to/vault theme name=<theme-name>
+pnpm cli --vault /absolute/path/to/vault snippets
 ```
 
 See the [CLI guide](docs/cli.md) for the output contract, exit codes, and currently supported

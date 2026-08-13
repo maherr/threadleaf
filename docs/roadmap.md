@@ -129,6 +129,10 @@ equivalence through the real writer-to-watcher seam.
 - [x] Initial Obsidian-compatible appearance variables and workspace class aliases, verified in
       default and synthetic compatibility themes at minimum desktop size and under moderate
       deuteranomaly.
+- [x] Headless read-only compatibility catalogs for discovered community plugins, themes, and CSS
+      snippets, including `plugins`, `plugin`, `themes`, `theme`, and `snippets`; public argument
+      spellings, deterministic human and versioned JSON output, bounded contained loaders, and no
+      code execution or private-state disclosure.
 - [ ] Remaining CLI commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
 - [x] Two independently editable panes, horizontal and vertical splits, tab transfer, pane

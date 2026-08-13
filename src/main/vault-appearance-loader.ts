@@ -1,6 +1,7 @@
 import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import type {
+  AppearanceCatalogSourceState,
   AppearanceSnapshot,
   AppearanceSnippetSummary,
   AppearanceThemeSummary,
@@ -23,6 +24,11 @@ interface ThemeCandidate {
 interface SnippetCandidate {
   summary: AppearanceSnippetSummary;
   cssPath: string;
+}
+
+interface AppearanceCandidateDiscovery<TCandidate> {
+  candidates: TCandidate[];
+  sourceState: AppearanceCatalogSourceState;
 }
 
 interface VaultAppearanceLoaderOptions {
@@ -114,7 +120,10 @@ async function readThemeManifest(
   }
 }
 
-async function discoverThemes(vaultPath: string, warnings: string[]): Promise<ThemeCandidate[]> {
+async function discoverThemes(
+  vaultPath: string,
+  warnings: string[],
+): Promise<AppearanceCandidateDiscovery<ThemeCandidate>> {
   const themesPath = path.join(vaultPath, ".obsidian", "themes");
   let canonicalThemesPath: string;
   let entries: Dirent<string>[];
@@ -123,10 +132,10 @@ async function discoverThemes(vaultPath: string, warnings: string[]): Promise<Th
     entries = await fs.readdir(canonicalThemesPath, { withFileTypes: true });
   } catch (error) {
     if (new Set(["ENOENT", "ENOTDIR"]).has(errorCode(error) ?? "")) {
-      return [];
+      return { candidates: [], sourceState: "missing" };
     }
     warnings.push(`Could not inspect .obsidian/themes: ${errorMessage(error)}`);
-    return [];
+    return { candidates: [], sourceState: "unreadable" };
   }
 
   const candidates: ThemeCandidate[] = [];
@@ -174,13 +183,13 @@ async function discoverThemes(vaultPath: string, warnings: string[]): Promise<Th
       warnings.push(`Theme ${oneLine(entry.name, "Unnamed")} was skipped: ${errorMessage(error)}`);
     }
   }
-  return candidates;
+  return { candidates, sourceState: "present" };
 }
 
 async function discoverSnippets(
   vaultPath: string,
   warnings: string[],
-): Promise<SnippetCandidate[]> {
+): Promise<AppearanceCandidateDiscovery<SnippetCandidate>> {
   const snippetsPath = path.join(vaultPath, ".obsidian", "snippets");
   let canonicalSnippetsPath: string;
   let entries: Dirent<string>[];
@@ -189,10 +198,10 @@ async function discoverSnippets(
     entries = await fs.readdir(canonicalSnippetsPath, { withFileTypes: true });
   } catch (error) {
     if (new Set(["ENOENT", "ENOTDIR"]).has(errorCode(error) ?? "")) {
-      return [];
+      return { candidates: [], sourceState: "missing" };
     }
     warnings.push(`Could not inspect .obsidian/snippets: ${errorMessage(error)}`);
-    return [];
+    return { candidates: [], sourceState: "unreadable" };
   }
 
   const candidates: SnippetCandidate[] = [];
@@ -239,7 +248,7 @@ async function discoverSnippets(
       );
     }
   }
-  return candidates;
+  return { candidates, sourceState: "present" };
 }
 
 function stripComments(css: string): string {
@@ -282,10 +291,12 @@ export async function loadVaultAppearance(
   const preference = parseVaultAppearanceSettings(options.preference);
   const themeWarnings: string[] = [];
   const snippetWarnings: string[] = [];
-  const [themeCandidates, snippetCandidates] = await Promise.all([
+  const [themeDiscovery, snippetDiscovery] = await Promise.all([
     discoverThemes(options.vaultPath, themeWarnings),
     discoverSnippets(options.vaultPath, snippetWarnings),
   ]);
+  const themeCandidates = themeDiscovery.candidates;
+  const snippetCandidates = snippetDiscovery.candidates;
   const warnings = [...themeWarnings, ...snippetWarnings];
   const themes = themeCandidates.map((candidate) => candidate.summary);
   const snippets = snippetCandidates.map((candidate) => candidate.summary);
@@ -300,6 +311,10 @@ export async function loadVaultAppearance(
       vaultId: options.vaultId,
       preference,
       safeMode: true,
+      themeSourceState: themeDiscovery.sourceState,
+      snippetSourceState: snippetDiscovery.sourceState,
+      themeDiagnostics: themeWarnings.length,
+      snippetDiagnostics: snippetWarnings.length,
       themes,
       snippets,
       activeThemeId: null,
@@ -356,6 +371,10 @@ export async function loadVaultAppearance(
     vaultId: options.vaultId,
     preference,
     safeMode: false,
+    themeSourceState: themeDiscovery.sourceState,
+    snippetSourceState: snippetDiscovery.sourceState,
+    themeDiagnostics: themeWarnings.length,
+    snippetDiagnostics: snippetWarnings.length,
     themes,
     snippets,
     activeThemeId,

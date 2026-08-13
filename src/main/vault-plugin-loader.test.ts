@@ -82,6 +82,7 @@ describe("vault plugin loader", () => {
 
     const discovery = await discoverVaultPlugins(vaultPath);
 
+    expect(discovery.sourceState).toBe("present");
     expect(discovery.plugins.map((plugin) => plugin.summary.id)).toEqual(["drawing", "search"]);
     expect(discovery.plugins[0]?.summary).toMatchObject({
       name: "Drawing",
@@ -101,6 +102,25 @@ describe("vault plugin loader", () => {
       capabilityGrantState: "required",
     });
     expect(discovery.warnings).toEqual([]);
+  });
+
+  it("reports missing and uncontained plugin source directories without following them", async () => {
+    await expect(discoverVaultPlugins(vaultPath)).resolves.toMatchObject({
+      sourceState: "missing",
+      plugins: [],
+      warnings: [],
+    });
+
+    const outsidePath = path.join(sandboxPath, "outside-plugins");
+    await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
+    await fs.mkdir(outsidePath);
+    await fs.symlink(outsidePath, path.join(vaultPath, ".obsidian", "plugins"));
+
+    await expect(discoverVaultPlugins(vaultPath)).resolves.toMatchObject({
+      sourceState: "unreadable",
+      plugins: [],
+      warnings: [expect.stringContaining("Could not inspect .obsidian/plugins")],
+    });
   });
 
   it("applies CSS only for privately enabled plugins outside restricted mode", async () => {

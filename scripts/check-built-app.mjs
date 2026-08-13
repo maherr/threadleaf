@@ -157,7 +157,150 @@ async function verifyBuiltCliMutations() {
     );
     await mkdir(path.join(vaultPath, "Assets"));
     await writeFile(path.join(vaultPath, "Assets", "Asset.canvas"), "{}", "utf8");
+    const pluginDirectory = path.join(vaultPath, ".obsidian", "plugins", "built-catalog");
+    const executionMarker = path.join(scratchPath, "plugin-code-executed");
+    await mkdir(pluginDirectory, { recursive: true });
+    await writeFile(
+      path.join(pluginDirectory, "manifest.json"),
+      JSON.stringify({ id: "built-catalog", name: "Built catalog", version: "1.2.3" }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(pluginDirectory, "main.js"),
+      `require("node:fs").writeFileSync(${JSON.stringify(executionMarker)}, "executed");`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(pluginDirectory, "styles.css"),
+      "body { --built-catalog: 1; }",
+      "utf8",
+    );
+    const themeDirectory = path.join(vaultPath, ".obsidian", "themes", "Built Theme");
+    await mkdir(themeDirectory, { recursive: true });
+    await writeFile(path.join(themeDirectory, "theme.css"), "body { --built-theme: 1; }", "utf8");
+    await writeFile(
+      path.join(themeDirectory, "manifest.json"),
+      JSON.stringify({ name: "Built Theme", version: "2.0.0" }),
+      "utf8",
+    );
+    await mkdir(path.join(vaultPath, ".obsidian", "snippets"), { recursive: true });
+    await writeFile(
+      path.join(vaultPath, ".obsidian", "snippets", "built-snippet.css"),
+      "body { --built-snippet: 1; }",
+      "utf8",
+    );
     const environment = { ...process.env, XDG_STATE_HOME: statePath };
+
+    const catalogPlugins = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "plugins", "filter=community", "versions", "format=json"],
+      { encoding: "utf8", env: environment },
+    );
+    const catalogPluginsData =
+      catalogPlugins.status === 0 ? JSON.parse(catalogPlugins.stdout) : null;
+    if (
+      catalogPlugins.stderr !== "" ||
+      catalogPluginsData?.sourceState !== "present" ||
+      catalogPluginsData?.plugins?.[0]?.id !== "built-catalog" ||
+      catalogPluginsData.plugins[0]?.version !== "1.2.3"
+    ) {
+      throw new Error(
+        `Built CLI plugin catalog smoke test failed: ${catalogPlugins.stderr || `exit ${catalogPlugins.status}`}`,
+      );
+    }
+
+    const catalogPlugin = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "plugin", "id=built-catalog"],
+      { encoding: "utf8", env: environment },
+    );
+    const catalogPluginEnvelope =
+      catalogPlugin.status === 0 ? JSON.parse(catalogPlugin.stdout) : null;
+    if (
+      catalogPlugin.stderr !== "" ||
+      catalogPluginEnvelope?.command !== "plugin" ||
+      catalogPluginEnvelope.data?.plugin?.name !== "Built catalog" ||
+      catalogPluginEnvelope.data?.plugin?.stylesheetDiscovered !== true
+    ) {
+      throw new Error(
+        `Built CLI plugin detail smoke test failed: ${catalogPlugin.stderr || `exit ${catalogPlugin.status}`}`,
+      );
+    }
+
+    const catalogThemes = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "themes", "versions"],
+      { encoding: "utf8", env: environment },
+    );
+    if (
+      catalogThemes.status !== 0 ||
+      catalogThemes.stderr !== "" ||
+      catalogThemes.stdout !== "Built Theme\t2.0.0\nThreadleaf Fixture\t0.1.0\n"
+    ) {
+      throw new Error(
+        `Built CLI theme catalog smoke test failed: ${catalogThemes.stderr || `exit ${catalogThemes.status}`}`,
+      );
+    }
+
+    const catalogTheme = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "theme", "name=Built Theme"],
+      { encoding: "utf8", env: environment },
+    );
+    const catalogThemeEnvelope = catalogTheme.status === 0 ? JSON.parse(catalogTheme.stdout) : null;
+    if (
+      catalogTheme.stderr !== "" ||
+      catalogThemeEnvelope?.command !== "theme" ||
+      catalogThemeEnvelope.data?.theme?.id !== "obsidian-theme:Built%20Theme"
+    ) {
+      throw new Error(
+        `Built CLI theme detail smoke test failed: ${catalogTheme.stderr || `exit ${catalogTheme.status}`}`,
+      );
+    }
+
+    const catalogSnippets = spawnSync(
+      process.execPath,
+      [cliPath, "--vault", vaultPath, "--json", "snippets"],
+      { encoding: "utf8", env: environment },
+    );
+    const catalogSnippetsEnvelope =
+      catalogSnippets.status === 0 ? JSON.parse(catalogSnippets.stdout) : null;
+    if (
+      catalogSnippets.stderr !== "" ||
+      catalogSnippetsEnvelope?.command !== "snippets" ||
+      catalogSnippetsEnvelope.data?.snippets?.[0]?.name !== "built-snippet"
+    ) {
+      throw new Error(
+        `Built CLI snippet catalog smoke test failed: ${catalogSnippets.stderr || `exit ${catalogSnippets.status}`}`,
+      );
+    }
+    for (const output of [
+      catalogPlugins.stdout,
+      catalogPlugin.stdout,
+      catalogThemes.stdout,
+      catalogTheme.stdout,
+      catalogSnippets.stdout,
+    ]) {
+      if (
+        output.includes(vaultPath) ||
+        output.includes(executionMarker) ||
+        output.includes("--built-")
+      ) {
+        throw new Error("Built CLI catalog output exposed private source details.");
+      }
+    }
+    for (const missingPath of [executionMarker, statePath]) {
+      try {
+        await access(missingPath);
+        throw new Error(
+          `Built CLI catalog inspection unexpectedly wrote ${path.basename(missingPath)}.`,
+        );
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+          throw error;
+        }
+      }
+    }
 
     const fileInfo = spawnSync(
       process.execPath,
@@ -447,5 +590,5 @@ try {
 }
 
 console.log(
-  `Verified Electron entry points, headless CLI inventory, wordcount, search and graph formats, property, alias, tag, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
+  `Verified Electron entry points, headless CLI inventory, compatibility catalogs, wordcount, search and graph formats, property, alias, tag, task, and recovery behavior, and ${assetPaths.length} relative renderer assets.`,
 );

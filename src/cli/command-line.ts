@@ -48,6 +48,16 @@ import {
   normalizeNoteWorkflowFile,
   normalizeNoteWorkflowFolder,
 } from "../shared/note-workflows";
+import { parsePluginId } from "../shared/plugins";
+import {
+  type CliPluginCatalog,
+  type CliPluginCatalogEntry,
+  type CliSnippetCatalogEntry,
+  type CliThemeCatalogEntry,
+  catalogLookupKey,
+  readAppearanceCatalog,
+  readCommunityPluginCatalog,
+} from "./compatibility-catalog";
 
 export const cliSchemaVersion = 1;
 
@@ -94,7 +104,12 @@ type CliCommandId =
   | "task"
   | "aliases"
   | "tags"
-  | "tag";
+  | "tag"
+  | "plugins"
+  | "plugin"
+  | "themes"
+  | "theme"
+  | "snippets";
 
 interface CliBaseCommand {
   id: CliCommandId;
@@ -323,6 +338,32 @@ interface CliTagCommand extends CliVaultCommand {
   verbose: boolean;
 }
 
+interface CliPluginsCommand extends CliVaultCommand {
+  id: "plugins";
+  filter: "community";
+  versions: boolean;
+  format: CliTabularFormat;
+}
+
+interface CliPluginCommand extends CliVaultCommand {
+  id: "plugin";
+  pluginId: string;
+}
+
+interface CliThemesCommand extends CliVaultCommand {
+  id: "themes";
+  versions: boolean;
+}
+
+interface CliThemeCommand extends CliVaultCommand {
+  id: "theme";
+  themeName: string;
+}
+
+interface CliSnippetsCommand extends CliVaultCommand {
+  id: "snippets";
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
@@ -352,7 +393,12 @@ export type ParsedCliCommand =
   | CliTaskCommand
   | CliAliasesCommand
   | CliTagsCommand
-  | CliTagCommand;
+  | CliTagCommand
+  | CliPluginsCommand
+  | CliPluginCommand
+  | CliThemesCommand
+  | CliThemeCommand
+  | CliSnippetsCommand;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -1217,6 +1263,150 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     }
     return { id: "tag", json, vaultPath, tagName, totalOnly, verbose };
   }
+  if (name === "plugins") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("plugins accepts filter, versions, and format arguments only.");
+    }
+    let filter: CliPluginsCommand["filter"] = "community";
+    let hasFilter = false;
+    let versions = false;
+    let format: CliTabularFormat = "tsv";
+    let hasFormat = false;
+    for (const value of values) {
+      if (value.startsWith("filter=")) {
+        if (hasFilter) {
+          usageFailure("plugins filter may be supplied only once.");
+        }
+        const requestedFilter = value.slice("filter=".length);
+        if (requestedFilter === "core") {
+          usageFailure(
+            "plugins filter=core is unavailable because Threadleaf has no safe headless core-plugin catalog.",
+          );
+        }
+        if (requestedFilter !== "community") {
+          usageFailure("plugins filter must be community.");
+        }
+        filter = requestedFilter;
+        hasFilter = true;
+      } else if (value === "versions") {
+        if (versions) {
+          usageFailure("plugins versions may be supplied only once.");
+        }
+        versions = true;
+      } else if (value.startsWith("format=")) {
+        if (hasFormat) {
+          usageFailure("plugins format may be supplied only once.");
+        }
+        format = parseTabularFormat(value.slice("format=".length), "plugins");
+        hasFormat = true;
+      } else {
+        usageFailure(`Unsupported plugins argument: ${value}`);
+      }
+    }
+    return { id: "plugins", json, vaultPath, filter, versions, format };
+  }
+  if (name === "plugin") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("plugin accepts id=<plugin-id> only.");
+    }
+    let pluginId: string | null = null;
+    for (const value of values) {
+      if (!value.startsWith("id=")) {
+        usageFailure(`Unsupported plugin argument: ${value}`);
+      }
+      if (pluginId !== null) {
+        usageFailure("plugin id may be supplied only once.");
+      }
+      try {
+        pluginId = parsePluginId(value.slice("id=".length));
+      } catch (error) {
+        usageFailure(error instanceof Error ? error.message : "plugin id is invalid.");
+      }
+    }
+    if (pluginId === null) {
+      usageFailure("plugin requires id=<plugin-id>.");
+    }
+    return { id: "plugin", json, vaultPath, pluginId };
+  }
+  if (name === "themes") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks ||
+      values.some((value) => value !== "versions") ||
+      values.filter((value) => value === "versions").length > 1
+    ) {
+      usageFailure("themes accepts only the optional versions flag.");
+    }
+    return { id: "themes", json, vaultPath, versions: values.includes("versions") };
+  }
+  if (name === "theme") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("theme accepts name=<theme-name> only.");
+    }
+    let themeName: string | null = null;
+    for (const value of values) {
+      if (!value.startsWith("name=")) {
+        usageFailure(`Unsupported theme argument: ${value}`);
+      }
+      if (themeName !== null) {
+        usageFailure("theme name may be supplied only once.");
+      }
+      themeName = value.slice("name=".length);
+      if (!catalogLookupKey(themeName)) {
+        usageFailure("theme name requires a value.");
+      }
+    }
+    if (themeName === null) {
+      usageFailure(
+        "theme requires name=<theme-name>; active-theme selection remains private application state.",
+      );
+    }
+    return { id: "theme", json, vaultPath, themeName };
+  }
+  if (name === "snippets") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks ||
+      values.length > 0
+    ) {
+      usageFailure("snippets does not accept arguments.");
+    }
+    return { id: "snippets", json, vaultPath };
+  }
   if (
     name === "properties" ||
     name === "property:read" ||
@@ -1810,6 +2000,11 @@ Usage:
   threadleaf --vault <path> [--json] aliases [path=<note.md>] [total|verbose]
   threadleaf --vault <path> [--json] tags [path=<note.md>] [sort=count] [total|counts]
   threadleaf --vault <path> [--json] tag name=<tag> [total|verbose]
+  threadleaf --vault <path> [--json] plugins [filter=community] [versions] [format=json|tsv|csv]
+  threadleaf --vault <path> [--json] plugin id=<plugin-id>
+  threadleaf --vault <path> [--json] themes [versions]
+  threadleaf --vault <path> [--json] theme name=<theme-name>
+  threadleaf --vault <path> [--json] snippets
 
 Compatibility spellings:
   threadleaf --vault <path> file file=<name>
@@ -1841,6 +2036,11 @@ Compatibility spellings:
   threadleaf --vault <path> aliases [file=<note-name>] [total|verbose]
   threadleaf --vault <path> tags [path=<note.md>] [sort=count] [total|counts]
   threadleaf --vault <path> tag name=<tag> [total|verbose]
+  threadleaf --vault <path> plugins filter=community versions format=csv
+  threadleaf --vault <path> plugin id=<plugin-id>
+  threadleaf --vault <path> themes versions
+  threadleaf --vault <path> theme name=<theme-name>
+  threadleaf --vault <path> snippets
 
 Target rules:
   Positional note targets and path= are exact vault-relative paths.
@@ -1849,6 +2049,7 @@ Target rules:
   The file info command uses the same rule across every visible vault file type.
 
 Commands are headless and never require a running Electron process.
+Plugin, theme, and snippet catalogs never execute code or expose private application selections.
 `;
 
 function decodeContentEscapes(value: string): string {
@@ -2615,6 +2816,81 @@ async function executeCommand(
     if (command.id === "trash.list") {
       return listTrashedMarkdownNotes(kernel);
     }
+    if (command.id === "plugins") {
+      return {
+        filter: command.filter,
+        ...(await readCommunityPluginCatalog(kernel.paths.rootPath)),
+      };
+    }
+    if (command.id === "plugin") {
+      const catalog = await readCommunityPluginCatalog(kernel.paths.rootPath);
+      const plugin = catalog.plugins.find((candidate) => candidate.id === command.pluginId);
+      if (!plugin) {
+        throw new CliFailure(
+          "VAULT",
+          cliExitCodes.vault,
+          `No discovered community plugin matches id=${command.pluginId}.`,
+          {
+            details: {
+              sourceState: catalog.sourceState,
+              diagnostics: catalog.diagnostics,
+            },
+          },
+        );
+      }
+      return {
+        sourceState: catalog.sourceState,
+        diagnostics: catalog.diagnostics,
+        plugin,
+      };
+    }
+    if (command.id === "themes" || command.id === "theme" || command.id === "snippets") {
+      const catalog = await readAppearanceCatalog(kernel.paths.rootPath, kernel.vaultId);
+      if (command.id === "themes") {
+        return {
+          sourceState: catalog.themeSourceState,
+          diagnostics: catalog.themeDiagnostics,
+          total: catalog.themes.length,
+          themes: catalog.themes,
+        };
+      }
+      if (command.id === "snippets") {
+        return {
+          sourceState: catalog.snippetSourceState,
+          diagnostics: catalog.snippetDiagnostics,
+          total: catalog.snippets.length,
+          snippets: catalog.snippets,
+        };
+      }
+      const themeName = catalogLookupKey(command.themeName);
+      const matches = catalog.themes.filter((theme) => catalogLookupKey(theme.name) === themeName);
+      if (matches.length === 0) {
+        throw new CliFailure(
+          "VAULT",
+          cliExitCodes.vault,
+          `No discovered community theme matches name=${command.themeName}.`,
+          {
+            details: {
+              sourceState: catalog.themeSourceState,
+              diagnostics: catalog.themeDiagnostics,
+            },
+          },
+        );
+      }
+      if (matches.length > 1) {
+        throw new CliFailure(
+          "VAULT",
+          cliExitCodes.vault,
+          `Theme name is ambiguous: ${command.themeName}.`,
+          { details: { matches } },
+        );
+      }
+      return {
+        sourceState: catalog.themeSourceState,
+        diagnostics: catalog.themeDiagnostics,
+        theme: matches[0],
+      };
+    }
 
     const index = await MetadataIndex.build(kernel);
     if (command.id === "search" || command.id === "search.context") {
@@ -2799,12 +3075,117 @@ function tabularRows(rows: Array<Array<string | number>>, format: "tsv" | "csv")
     .join("\n")}\n`;
 }
 
+function catalogSourceMessage(label: string, sourceState: "present" | "missing" | "unreadable") {
+  if (sourceState === "missing") {
+    return `No ${label} catalog source was found.\n`;
+  }
+  if (sourceState === "unreadable") {
+    return `${label} catalog source could not be inspected.\n`;
+  }
+  return null;
+}
+
+function catalogDiagnosticSuffix(diagnostics: number): string {
+  return diagnostics > 0
+    ? `Catalog diagnostics: ${diagnostics}. Details are withheld from CLI output.\n`
+    : "";
+}
+
 function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "help") {
     return cliHelp;
   }
   if (command.id === "read") {
     return (data as { content: string }).content;
+  }
+  if (command.id === "plugins") {
+    const result = data as CliPluginCatalog & { filter: "community" };
+    if (command.format === "json") {
+      return compatibilityJson(result);
+    }
+    const sourceMessage = catalogSourceMessage("community plugin", result.sourceState);
+    if (sourceMessage) {
+      return `${sourceMessage}${catalogDiagnosticSuffix(result.diagnostics)}`;
+    }
+    if (result.plugins.length === 0) {
+      return `No community plugins.\n${catalogDiagnosticSuffix(result.diagnostics)}`;
+    }
+    return `${tabularRows(
+      result.plugins.map((plugin) => [
+        plugin.id,
+        plugin.name,
+        ...(command.versions ? [plugin.version] : []),
+        plugin.state,
+      ]),
+      command.format,
+    )}${catalogDiagnosticSuffix(result.diagnostics)}`;
+  }
+  if (command.id === "plugin") {
+    const result = data as {
+      sourceState: "present" | "missing" | "unreadable";
+      diagnostics: number;
+      plugin: CliPluginCatalogEntry;
+    };
+    return [
+      `Plugin: ${result.plugin.id}`,
+      `Name: ${result.plugin.name}`,
+      `Version: ${result.plugin.version}`,
+      `Package state: ${result.plugin.state}`,
+      `Stylesheet: ${result.plugin.stylesheetDiscovered ? "present" : "absent"}`,
+      `Compatibility evidence: level ${result.plugin.compatibilityLevel} (${result.plugin.compatibilityStatus})`,
+      "",
+    ].join("\n");
+  }
+  if (command.id === "themes") {
+    const result = data as {
+      sourceState: "present" | "missing" | "unreadable";
+      diagnostics: number;
+      total: number;
+      themes: CliThemeCatalogEntry[];
+    };
+    const sourceMessage = catalogSourceMessage("community theme", result.sourceState);
+    if (sourceMessage) {
+      return `${sourceMessage}${catalogDiagnosticSuffix(result.diagnostics)}`;
+    }
+    if (result.themes.length === 0) {
+      return `No community themes.\n${catalogDiagnosticSuffix(result.diagnostics)}`;
+    }
+    return `${result.themes
+      .map((theme) =>
+        command.versions ? `${theme.name}\t${theme.version ?? "unknown"}` : theme.name,
+      )
+      .join("\n")}\n${catalogDiagnosticSuffix(result.diagnostics)}`;
+  }
+  if (command.id === "theme") {
+    const result = data as {
+      sourceState: "present" | "missing" | "unreadable";
+      diagnostics: number;
+      theme: CliThemeCatalogEntry;
+    };
+    return [
+      `Theme: ${result.theme.name}`,
+      `ID: ${result.theme.id}`,
+      `Version: ${result.theme.version ?? "unknown"}`,
+      "",
+    ].join("\n");
+  }
+  if (command.id === "snippets") {
+    const result = data as {
+      sourceState: "present" | "missing" | "unreadable";
+      diagnostics: number;
+      total: number;
+      snippets: CliSnippetCatalogEntry[];
+    };
+    const sourceMessage = catalogSourceMessage("CSS snippet", result.sourceState);
+    if (sourceMessage) {
+      return `${sourceMessage}${catalogDiagnosticSuffix(result.diagnostics)}`;
+    }
+    if (result.snippets.length === 0) {
+      return `No CSS snippets.\n${catalogDiagnosticSuffix(result.diagnostics)}`;
+    }
+    return `${result.snippets.map((snippet) => snippet.name).join("\n")}\n${catalogDiagnosticSuffix(
+      result.diagnostics,
+    )}`;
   }
   if (command.id === "file") {
     const result = data as {

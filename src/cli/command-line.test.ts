@@ -65,6 +65,49 @@ async function invoke(args: readonly string[]) {
   return { exitCode, stdout: captured.stdout(), stderr: captured.stderr() };
 }
 
+async function writePlugin(
+  id: string,
+  options: { manifest?: string; main?: string; stylesheet?: string } = {},
+): Promise<string> {
+  const directory = path.join(vaultPath, ".obsidian", "plugins", id);
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(
+    path.join(directory, "manifest.json"),
+    options.manifest ?? JSON.stringify({ id, name: id, version: "1.0.0" }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(directory, "main.js"),
+    options.main ?? "module.exports = {};",
+    "utf8",
+  );
+  if (options.stylesheet !== undefined) {
+    await fs.writeFile(path.join(directory, "styles.css"), options.stylesheet, "utf8");
+  }
+  return directory;
+}
+
+async function writeTheme(
+  folder: string,
+  options: { css?: string; manifest?: string } = {},
+): Promise<string> {
+  const directory = path.join(vaultPath, ".obsidian", "themes", folder);
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, "theme.css"), options.css ?? "body {}", "utf8");
+  if (options.manifest !== undefined) {
+    await fs.writeFile(path.join(directory, "manifest.json"), options.manifest, "utf8");
+  }
+  return directory;
+}
+
+async function writeSnippet(filename: string, css = "body {}"): Promise<string> {
+  const directory = path.join(vaultPath, ".obsidian", "snippets");
+  await fs.mkdir(directory, { recursive: true });
+  const filePath = path.join(directory, filename);
+  await fs.writeFile(filePath, css, "utf8");
+  return filePath;
+}
+
 describe("Threadleaf CLI arguments", () => {
   it("parses native commands and the measured compatibility spellings", () => {
     expect(parseCliArguments(["--vault", "/vault", "vault", "info"])).toMatchObject({
@@ -333,6 +376,34 @@ describe("Threadleaf CLI arguments", () => {
       tagName: "project",
       totalOnly: true,
     });
+    expect(
+      parseCliArguments([
+        "--vault=/vault",
+        "plugins",
+        "filter=community",
+        "versions",
+        "format=csv",
+      ]),
+    ).toMatchObject({ id: "plugins", filter: "community", versions: true, format: "csv" });
+    expect(parseCliArguments(["--vault=/vault", "plugins", "format=json"])).toMatchObject({
+      id: "plugins",
+      filter: "community",
+      versions: false,
+      format: "json",
+    });
+    expect(parseCliArguments(["--vault=/vault", "plugin", "id=fixture-plugin"])).toMatchObject({
+      id: "plugin",
+      pluginId: "fixture-plugin",
+    });
+    expect(parseCliArguments(["--vault=/vault", "themes", "versions"])).toMatchObject({
+      id: "themes",
+      versions: true,
+    });
+    expect(parseCliArguments(["--vault=/vault", "theme", "name=Paper"])).toMatchObject({
+      id: "theme",
+      themeName: "Paper",
+    });
+    expect(parseCliArguments(["--vault=/vault", "snippets"])).toMatchObject({ id: "snippets" });
     for (const name of ["links", "backlinks", "outline"] as const) {
       expect(parseCliArguments(["--vault=/vault", name, "path=Folder/Note.md"])).toMatchObject({
         id: name,
@@ -441,6 +512,43 @@ describe("Threadleaf CLI arguments", () => {
     expect(() => parseCliArguments(["--vault=/vault", "tags", "sort=name"])).toThrow("sort=count");
     expect(() => parseCliArguments(["--vault=/vault", "tag", "name=two words"])).toThrow(
       "tag names accept",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "plugins", "filter=core"])).toThrow(
+      "no safe headless core-plugin catalog",
+    );
+    expect(() =>
+      parseCliArguments(["--vault=/vault", "plugins", "filter=community", "filter=community"]),
+    ).toThrow("only once");
+    expect(() => parseCliArguments(["--vault=/vault", "plugins", "versions", "versions"])).toThrow(
+      "only once",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "plugins", "format=md"])).toThrow(
+      "json, tsv, or csv",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "plugin"])).toThrow(
+      "requires id=<plugin-id>",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "plugin", "id=../outside"])).toThrow(
+      "Plugin identifier",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "plugin", "id=one", "id=two"])).toThrow(
+      "only once",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "themes", "versions", "versions"])).toThrow(
+      "only the optional versions",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "themes", "format=json"])).toThrow(
+      "only the optional versions",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "theme"])).toThrow("active-theme selection");
+    expect(() => parseCliArguments(["--vault=/vault", "theme", "name="])).toThrow(
+      "requires a value",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "theme", "name=One", "name=Two"])).toThrow(
+      "only once",
+    );
+    expect(() => parseCliArguments(["--vault=/vault", "snippets", "enabled"])).toThrow(
+      "does not accept arguments",
     );
   });
 
@@ -1656,6 +1764,367 @@ describe("Threadleaf CLI alias and tag workflows", () => {
 
     const absent = await invoke(["--vault", vaultPath, "tag", "name=missing", "total"]);
     expect(absent.stdout).toBe("0\n");
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("Threadleaf CLI compatibility catalogs", () => {
+  it("projects contained plugin, theme, and snippet catalogs without executing code or exposing private state", async () => {
+    const executionMarker = path.join(sandboxPath, "plugin-code-executed");
+    const pluginDirectory = await writePlugin("catalog-plugin", {
+      manifest: JSON.stringify({ id: "catalog-plugin", name: "Catalog plugin", version: "1.2.3" }),
+      main: `require("node:fs").writeFileSync(${JSON.stringify(executionMarker)}, "executed");`,
+      stylesheet: "body { --catalog-plugin: ready; }",
+    });
+    await writePlugin("broken-plugin", { manifest: "{", main: "throw new Error('not executed');" });
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "community-plugins.json"),
+      '["catalog-plugin", "PRIVATE_PLUGIN_SELECTION"]',
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "appearance.json"),
+      '{"theme":"PRIVATE_THEME_SELECTION","enabledSnippets":["PRIVATE_SNIPPET_SELECTION"]}',
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "hotkeys.json"),
+      '{"PRIVATE_HOTKEY_MAPPING":"Mod+Shift+P"}',
+      "utf8",
+    );
+    await writeTheme("Aether", {
+      css: "body { --aether-private-css: no-output; }",
+      manifest: JSON.stringify({ name: "Aether", version: "2.0.0" }),
+    });
+    await writeTheme("Paper", {
+      css: "body { --paper-private-css: no-output; }",
+      manifest: JSON.stringify({ name: "Paper", version: "1.0.0" }),
+    });
+    await writeSnippet("alpha.css", "body { --alpha-private-css: no-output; }");
+    await writeSnippet("zeta.css", "body { --zeta-private-css: no-output; }");
+
+    const pluginMainBefore = await fs.readFile(path.join(pluginDirectory, "main.js"));
+    const pluginManifestBefore = await fs.readFile(path.join(pluginDirectory, "manifest.json"));
+    const pluginStylesheetBefore = await fs.readFile(path.join(pluginDirectory, "styles.css"));
+
+    const defaultPlugins = await invoke(["--vault", vaultPath, "plugins"]);
+    expect(defaultPlugins).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout:
+        "broken-plugin\tbroken-plugin\tinvalid\ncatalog-plugin\tCatalog plugin\tready\nCatalog diagnostics: 1. Details are withheld from CLI output.\n",
+      stderr: "",
+    });
+
+    const versionedPlugins = await invoke([
+      "--vault",
+      vaultPath,
+      "plugins",
+      "filter=community",
+      "versions",
+      "format=csv",
+    ]);
+    expect(versionedPlugins).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout:
+        "broken-plugin,broken-plugin,unknown,invalid\ncatalog-plugin,Catalog plugin,1.2.3,ready\nCatalog diagnostics: 1. Details are withheld from CLI output.\n",
+      stderr: "",
+    });
+
+    const compatibilityPlugins = await invoke([
+      "--vault",
+      vaultPath,
+      "plugins",
+      "filter=community",
+      "format=json",
+    ]);
+    expect(JSON.parse(compatibilityPlugins.stdout)).toMatchObject({
+      sourceState: "present",
+      diagnostics: 1,
+      invalid: 1,
+      total: 2,
+      filter: "community",
+      plugins: [
+        { id: "broken-plugin", state: "invalid", version: "unknown" },
+        {
+          id: "catalog-plugin",
+          name: "Catalog plugin",
+          version: "1.2.3",
+          state: "ready",
+          stylesheetDiscovered: true,
+        },
+      ],
+    });
+
+    const pluginEnvelope = await invoke(["--json", "--vault", vaultPath, "plugins"]);
+    const parsedPluginEnvelope = JSON.parse(pluginEnvelope.stdout);
+    expect(parsedPluginEnvelope).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      command: "plugins",
+      data: { sourceState: "present", total: 2, invalid: 1 },
+    });
+
+    const pluginDetail = await invoke(["--vault", vaultPath, "plugin", "id=catalog-plugin"]);
+    expect(pluginDetail).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout:
+        "Plugin: catalog-plugin\nName: Catalog plugin\nVersion: 1.2.3\nPackage state: ready\nStylesheet: present\nCompatibility evidence: level 0 (unverified)\n",
+      stderr: "",
+    });
+    const pluginDetailEnvelope = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "plugin",
+      "id=catalog-plugin",
+    ]);
+    expect(JSON.parse(pluginDetailEnvelope.stdout)).toMatchObject({
+      schemaVersion: 1,
+      command: "plugin",
+      data: {
+        sourceState: "present",
+        plugin: { id: "catalog-plugin", name: "Catalog plugin", state: "ready" },
+      },
+    });
+
+    const themes = await invoke(["--vault", vaultPath, "themes"]);
+    expect(themes).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Aether\nPaper\n",
+      stderr: "",
+    });
+    const versionedThemes = await invoke(["--vault", vaultPath, "themes", "versions"]);
+    expect(versionedThemes).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Aether\t2.0.0\nPaper\t1.0.0\n",
+      stderr: "",
+    });
+    const themesEnvelope = await invoke(["--json", "--vault", vaultPath, "themes", "versions"]);
+    expect(JSON.parse(themesEnvelope.stdout)).toMatchObject({
+      schemaVersion: 1,
+      command: "themes",
+      data: {
+        sourceState: "present",
+        total: 2,
+        themes: [
+          { id: "obsidian-theme:Aether", name: "Aether", version: "2.0.0" },
+          { id: "obsidian-theme:Paper", name: "Paper", version: "1.0.0" },
+        ],
+      },
+    });
+
+    const theme = await invoke(["--vault", vaultPath, "theme", "name=paper"]);
+    expect(theme).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "Theme: Paper\nID: obsidian-theme:Paper\nVersion: 1.0.0\n",
+      stderr: "",
+    });
+    const themeEnvelope = await invoke(["--json", "--vault", vaultPath, "theme", "name=Aether"]);
+    expect(JSON.parse(themeEnvelope.stdout)).toMatchObject({
+      schemaVersion: 1,
+      command: "theme",
+      data: { sourceState: "present", theme: { name: "Aether", version: "2.0.0" } },
+    });
+
+    const snippets = await invoke(["--vault", vaultPath, "snippets"]);
+    expect(snippets).toEqual({
+      exitCode: cliExitCodes.success,
+      stdout: "alpha\nzeta\n",
+      stderr: "",
+    });
+    const snippetsEnvelope = await invoke(["--json", "--vault", vaultPath, "snippets"]);
+    expect(JSON.parse(snippetsEnvelope.stdout)).toMatchObject({
+      schemaVersion: 1,
+      command: "snippets",
+      data: {
+        sourceState: "present",
+        total: 2,
+        snippets: [
+          { id: "obsidian-snippet:alpha.css", name: "alpha" },
+          { id: "obsidian-snippet:zeta.css", name: "zeta" },
+        ],
+      },
+    });
+
+    const repeatPlugins = await invoke(["--json", "--vault", vaultPath, "plugins"]);
+    const repeatThemes = await invoke(["--vault", vaultPath, "themes", "versions"]);
+    const repeatSnippets = await invoke(["--vault", vaultPath, "snippets"]);
+    expect(repeatPlugins.stdout).toBe(pluginEnvelope.stdout);
+    expect(repeatThemes.stdout).toBe(versionedThemes.stdout);
+    expect(repeatSnippets.stdout).toBe(snippets.stdout);
+
+    const allOutput = [
+      defaultPlugins.stdout,
+      versionedPlugins.stdout,
+      compatibilityPlugins.stdout,
+      pluginEnvelope.stdout,
+      pluginDetail.stdout,
+      pluginDetailEnvelope.stdout,
+      themes.stdout,
+      themesEnvelope.stdout,
+      theme.stdout,
+      themeEnvelope.stdout,
+      snippets.stdout,
+      snippetsEnvelope.stdout,
+    ].join("\n");
+    for (const privateValue of [
+      vaultPath,
+      "PRIVATE_PLUGIN_SELECTION",
+      "PRIVATE_THEME_SELECTION",
+      "PRIVATE_SNIPPET_SELECTION",
+      "PRIVATE_HOTKEY_MAPPING",
+      "--aether-private-css",
+      "--alpha-private-css",
+    ]) {
+      expect(allOutput).not.toContain(privateValue);
+    }
+    await expect(fs.stat(executionMarker)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(path.join(pluginDirectory, "main.js"))).resolves.toEqual(
+      pluginMainBefore,
+    );
+    await expect(fs.readFile(path.join(pluginDirectory, "manifest.json"))).resolves.toEqual(
+      pluginManifestBefore,
+    );
+    await expect(fs.readFile(path.join(pluginDirectory, "styles.css"))).resolves.toEqual(
+      pluginStylesheetBefore,
+    );
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("makes missing and uncontained sources explicit without exposing their paths", async () => {
+    const missingPlugins = await invoke(["--vault", vaultPath, "plugins"]);
+    const missingThemes = await invoke(["--vault", vaultPath, "themes"]);
+    const missingSnippets = await invoke(["--vault", vaultPath, "snippets"]);
+    expect(missingPlugins.stdout).toBe("No community plugin catalog source was found.\n");
+    expect(missingThemes.stdout).toBe("No community theme catalog source was found.\n");
+    expect(missingSnippets.stdout).toBe("No CSS snippet catalog source was found.\n");
+
+    const missingPluginDetail = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "plugin",
+      "id=missing",
+    ]);
+    const missingThemeDetail = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "theme",
+      "name=Missing",
+    ]);
+    expect(missingPluginDetail.exitCode).toBe(cliExitCodes.vault);
+    expect(missingThemeDetail.exitCode).toBe(cliExitCodes.vault);
+    expect(JSON.parse(missingPluginDetail.stderr)).toMatchObject({
+      command: "plugin",
+      error: { code: "VAULT", details: { sourceState: "missing", diagnostics: 0 } },
+    });
+    expect(JSON.parse(missingThemeDetail.stderr)).toMatchObject({
+      command: "theme",
+      error: { code: "VAULT", details: { sourceState: "missing", diagnostics: 0 } },
+    });
+
+    const outsidePlugins = path.join(sandboxPath, "outside-plugins");
+    const outsideThemes = path.join(sandboxPath, "outside-themes");
+    const outsideSnippets = path.join(sandboxPath, "outside-snippets");
+    await Promise.all([
+      fs.mkdir(outsidePlugins),
+      fs.mkdir(outsideThemes),
+      fs.mkdir(outsideSnippets),
+    ]);
+    await Promise.all([
+      fs.symlink(outsidePlugins, path.join(vaultPath, ".obsidian", "plugins")),
+      fs.symlink(outsideThemes, path.join(vaultPath, ".obsidian", "themes")),
+      fs.symlink(outsideSnippets, path.join(vaultPath, ".obsidian", "snippets")),
+    ]);
+
+    const unsafePlugins = await invoke(["--json", "--vault", vaultPath, "plugins"]);
+    const unsafeThemes = await invoke(["--json", "--vault", vaultPath, "themes"]);
+    const unsafeSnippets = await invoke(["--json", "--vault", vaultPath, "snippets"]);
+    expect(JSON.parse(unsafePlugins.stdout)).toMatchObject({
+      command: "plugins",
+      data: { sourceState: "unreadable", total: 0, diagnostics: 1 },
+    });
+    expect(JSON.parse(unsafeThemes.stdout)).toMatchObject({
+      command: "themes",
+      data: { sourceState: "unreadable", total: 0, diagnostics: 1 },
+    });
+    expect(JSON.parse(unsafeSnippets.stdout)).toMatchObject({
+      command: "snippets",
+      data: { sourceState: "unreadable", total: 0, diagnostics: 1 },
+    });
+    const unsafeOutput = `${unsafePlugins.stdout}\n${unsafeThemes.stdout}\n${unsafeSnippets.stdout}`;
+    for (const privateValue of [
+      outsidePlugins,
+      outsideThemes,
+      outsideSnippets,
+      sandboxPath,
+      vaultPath,
+    ]) {
+      expect(unsafeOutput).not.toContain(privateValue);
+    }
+    await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps malformed and oversized catalog sources bounded and explicit", async () => {
+    const oversizedPluginDirectory = await writePlugin("oversized-plugin", {
+      manifest: JSON.stringify({
+        id: "oversized-plugin",
+        name: "Oversized plugin",
+        version: "1.0.0",
+      }),
+    });
+    await fs.writeFile(
+      path.join(oversizedPluginDirectory, "main.js"),
+      Buffer.alloc(16 * 1024 * 1024 + 1, 0x61),
+    );
+    await writePlugin("malformed-plugin", { manifest: "not-json" });
+    const oversizedThemeDirectory = await writeTheme("Oversized theme", {
+      manifest: JSON.stringify({ name: "Oversized theme", version: "1.0.0" }),
+    });
+    await fs.writeFile(
+      path.join(oversizedThemeDirectory, "theme.css"),
+      Buffer.alloc(2 * 1024 * 1024 + 1, 0x61),
+    );
+    await writeTheme("Malformed theme", { manifest: "not-json" });
+    await writeSnippet("oversized.css", "placeholder");
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "snippets", "oversized.css"),
+      Buffer.alloc(512 * 1024 + 1, 0x61),
+    );
+
+    const plugins = await invoke(["--json", "--vault", vaultPath, "plugins"]);
+    const themes = await invoke(["--json", "--vault", vaultPath, "themes"]);
+    const snippets = await invoke(["--json", "--vault", vaultPath, "snippets"]);
+    expect(JSON.parse(plugins.stdout)).toMatchObject({
+      command: "plugins",
+      data: {
+        sourceState: "present",
+        diagnostics: 2,
+        invalid: 2,
+        total: 2,
+        plugins: [
+          { id: "malformed-plugin", state: "invalid" },
+          { id: "oversized-plugin", state: "invalid" },
+        ],
+      },
+    });
+    expect(JSON.parse(themes.stdout)).toMatchObject({
+      command: "themes",
+      data: {
+        sourceState: "present",
+        diagnostics: 2,
+        total: 1,
+        themes: [{ name: "Malformed theme", version: null }],
+      },
+    });
+    expect(JSON.parse(snippets.stdout)).toMatchObject({
+      command: "snippets",
+      data: { sourceState: "present", diagnostics: 1, total: 0, snippets: [] },
+    });
+    const output = `${plugins.stdout}\n${themes.stdout}\n${snippets.stdout}`;
+    expect(output).not.toContain("file exceeds");
+    expect(output).not.toContain(sandboxPath);
     await expect(fs.stat(statePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

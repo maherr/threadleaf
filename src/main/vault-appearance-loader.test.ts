@@ -131,7 +131,22 @@ describe("vault appearance loader", () => {
         preference: { colorScheme: "system", themeId: null, enabledSnippetIds: [] },
         safeMode: false,
       }),
-    ).resolves.toMatchObject({ themes: [], snippets: [], css: "", warnings: [] });
+    ).resolves.toMatchObject({
+      themes: [],
+      snippets: [],
+      css: "",
+      warnings: [],
+      themeDiagnostics: 0,
+      snippetDiagnostics: 0,
+    });
+    await expect(
+      loadVaultAppearance({
+        vaultPath,
+        vaultId: "d".repeat(64),
+        preference: { colorScheme: "system", themeId: null, enabledSnippetIds: [] },
+        safeMode: false,
+      }),
+    ).resolves.toMatchObject({ themeSourceState: "missing", snippetSourceState: "missing" });
   });
 
   it("keeps concurrent discovery diagnostics in deterministic theme-then-snippet order", async () => {
@@ -154,5 +169,11 @@ describe("vault appearance loader", () => {
       "Could not inspect .obsidian/themes: path resolves outside its appearance directory",
       "Could not inspect .obsidian/snippets: path resolves outside its appearance directory",
     ]);
+    expect(appearance).toMatchObject({
+      themeSourceState: "unreadable",
+      snippetSourceState: "unreadable",
+      themeDiagnostics: 1,
+      snippetDiagnostics: 1,
+    });
   });
 });
