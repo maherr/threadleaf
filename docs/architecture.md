@@ -547,10 +547,15 @@ identities, but the derived metadata index remains authoritative for resolution 
 paths. Dirty-note navigation is blocked and preserves the draft; no preview action silently saves
 or discards text.
 
-Live Preview currently maps at source-token and line granularity. Fine-grained cursor mapping inside
-aliases and other compound tokens, full inline note transclusion, and richer complex-syntax
-projections remain later work. They must preserve the same exact-source, bounded-read, and
-no-implicit-write guarantees.
+Live Preview exposes a disposable source/decorated mapping with half-open source ranges, rendered
+ranges, explicit selection affinity, and a deterministic source fallback for malformed or
+ambiguous tokens. Compound labels map to their owning source spans while hidden delimiters map to
+source boundaries, so generated widgets never become a second editable document. Inline note
+transclusion is locally resolved through bounded source-backed cards with path-plus-subpath cycle
+tracking, depth/count/byte limits, and an owning source path/range on every result. Composition,
+selection, undo, clipboard, and external-revision flows continue to operate on the one canonical
+CodeMirror document. The mapping fixture and isolated Xvfb integration check cover the exact-source,
+bounded-read, and no-implicit-write guarantees.
 
 ### Command-line boundary
 
@@ -846,7 +851,8 @@ Capability host ---> native Threadleaf extension
 ## Decisions still to make
 
 - Native extension SDK license and capability vocabulary.
-- Fine-grained intra-token cursor mapping and complex-syntax projection in Live Preview.
+- Remaining complex-syntax projections in Live Preview beyond the source-backed mapping and
+  deterministic fallbacks documented above.
 - Metadata schema and migration strategy.
 - Behavior-import apply, rollback, and conflict semantics for the existing preview schema.
 - Cross-platform Electron-window, editor-latency, and plugin-activation benchmark seams; the

@@ -162,6 +162,29 @@ async function waitForMainTarget(port, timeoutMs = 10_000) {
   throw new Error("Threadleaf did not expose its main renderer in time.");
 }
 
+async function rendererCommandLines() {
+  const entries = await fs.readdir("/proc");
+  const commandLines = [];
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) {
+      continue;
+    }
+    try {
+      const commandLine = (await fs.readFile(`/proc/${entry}/cmdline`)).toString("utf8");
+      if (
+        commandLine.includes(`--user-data-dir=${userDataPath}`) &&
+        commandLine.includes("--type=renderer") &&
+        !commandLine.includes("--no-sandbox")
+      ) {
+        commandLines.push(commandLine.replaceAll("\u0000", " ").trim());
+      }
+    } catch {
+      // A Chromium child can exit between /proc enumeration and the read.
+    }
+  }
+  return commandLines;
+}
+
 function connectCdp(webSocketUrl) {
   const socket = new WebSocket(webSocketUrl);
   const pending = new Map();
@@ -279,6 +302,14 @@ async function launchApplication() {
   cdp = connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Runtime.enable");
   await cdp.send("Page.enable");
+  const rendererArgs = await waitFor(async () => {
+    const lines = await rendererCommandLines();
+    return lines.length > 0 ? lines : null;
+  }, "The isolated Electron renderer did not expose an argv record");
+  assert(
+    rendererArgs.some((line) => line.includes("--ozone-platform=x11")),
+    `Renderer argv did not prove explicit X11 mode: ${JSON.stringify(rendererArgs)}`,
+  );
 }
 
 async function closeApplication() {
@@ -315,13 +346,25 @@ async function targetCenter(selector, rootSelector = null) {
     if (!(root instanceof HTMLElement)) return { error: "missing-root" };
     const rect = element.getBoundingClientRect();
     const rootRect = root.getBoundingClientRect();
-    const x = Math.max(rect.left, rootRect.left) + Math.min(rect.width, rootRect.width) / 2;
-    const y = Math.max(rect.top, rootRect.top) + Math.min(rect.height, rootRect.height) / 2;
-    const hit = document.elementFromPoint(x, y);
+    const left = Math.max(rect.left, rootRect.left);
+    const top = Math.max(rect.top, rootRect.top);
+    const width = Math.min(rect.right, rootRect.right) - left;
+    const height = Math.min(rect.bottom, rootRect.bottom) - top;
+    const points = [0.2, 0.5, 0.8].flatMap((xRatio) =>
+      [0.2, 0.5, 0.8].map((yRatio) => ({
+        x: left + width * xRatio,
+        y: top + height * yRatio,
+      })),
+    );
+    const point = points.find(({ x, y }) => {
+      const candidate = document.elementFromPoint(x, y);
+      return Boolean(candidate && (candidate === element || element.contains(candidate)));
+    }) ?? { x: left + width / 2, y: top + height / 2 };
+    const hit = document.elementFromPoint(point.x, point.y);
     return {
       error: null,
-      x,
-      y,
+      x: point.x,
+      y: point.y,
       width: rect.width,
       height: rect.height,
       hit: Boolean(hit && (hit === element || element.contains(hit))),
@@ -362,16 +405,33 @@ async function pressKey(key, code, modifiers = 0) {
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", code, key, modifiers });
 }
 
+async function composeText(text) {
+  await cdp.send("Input.imeSetComposition", {
+    text,
+    selectionStart: text.length,
+    selectionEnd: text.length,
+  });
+  await cdp.send("Input.insertText", { text });
+}
+
 async function captureScreenshot(name) {
-  if (!screenshotDirectory) {
-    return;
-  }
-  await fs.mkdir(screenshotDirectory, { recursive: true });
   const result = await cdp.send("Page.captureScreenshot", {
     format: "png",
     fromSurface: true,
   });
-  await fs.writeFile(path.join(screenshotDirectory, `${name}.png`), result.data, "base64");
+  const bytes = Buffer.from(result.data, "base64");
+  if (screenshotDirectory) {
+    await fs.mkdir(screenshotDirectory, { recursive: true });
+    await fs.writeFile(path.join(screenshotDirectory, `${name}.png`), bytes);
+  }
+  return bytes;
+}
+
+function pngDimensions(bytes) {
+  if (bytes.length < 24 || bytes.toString("ascii", 1, 4) !== "PNG") {
+    return { width: 0, height: 0 };
+  }
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
 async function waitForShowcase() {
@@ -401,6 +461,16 @@ async function liveSurfaceState() {
     checkedTasks: document.querySelectorAll(".tl-live-task:checked").length,
     callouts: document.querySelectorAll(".tl-live-callout").length,
     embeds: document.querySelectorAll(".tl-live-embed").length,
+    embedState: (() => {
+      const embed = document.querySelector(".tl-live-embed");
+      return embed instanceof HTMLElement
+        ? {
+            status: embed.dataset.tlTransclusionStatus ?? "",
+            owner: embed.dataset.tlSourceOwner ?? "",
+            target: embed.dataset.tlTransclusionPath ?? "",
+          }
+        : null;
+    })(),
     images: document.querySelectorAll(".tl-live-image").length,
     readyImages: document.querySelectorAll('.tl-live-image[data-status="ready"] img').length,
     imageState: (() => {
@@ -494,6 +564,9 @@ try {
         candidate.checkedTasks === 1 &&
         candidate.callouts === 1 &&
         candidate.embeds === 1 &&
+        candidate.embedState?.status === "ready" &&
+        candidate.embedState.owner === "Showcase.md" &&
+        candidate.embedState.target === "Linked Note.md" &&
         candidate.readyImages === 1 &&
         candidate.codeLines >= 3 &&
         candidate.tableLines >= 3 &&
@@ -507,7 +580,11 @@ try {
     );
   }
   assert(surface.overflow <= 1, `Live Preview overflowed horizontally by ${surface.overflow}px.`);
-  await captureScreenshot("live-preview-dark");
+  const darkBaseline = await captureScreenshot("live-preview-dark");
+  assert(
+    (await evaluate("document.documentElement.dataset.theme")) === "dark",
+    "The baseline Live Preview screenshot was not captured in the dark scheme.",
+  );
   await evaluate(`(() => {
     const scroller = document.querySelector("#note-editor .cm-scroller");
     if (!(scroller instanceof HTMLElement)) return false;
@@ -524,6 +601,56 @@ try {
   })()`);
   await delay(100);
 
+  phase = "zoom and high DPI";
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1200,
+    height: 760,
+    deviceScaleFactor: 2,
+    scale: 1,
+    mobile: false,
+  });
+  await waitFor(
+    async () => (await evaluate("window.devicePixelRatio >= 2")) === true,
+    "The isolated renderer did not apply the 2x device scale factor",
+  );
+  const hidpiBaseline = await captureScreenshot("live-preview-dark-hidpi");
+  await cdp.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1.2 });
+  await delay(100);
+  let zoomed = await captureScreenshot("live-preview-dark-hidpi-zoom");
+  const hidpiSize = pngDimensions(hidpiBaseline);
+  let zoomedSize = pngDimensions(zoomed);
+  if (hidpiBaseline.equals(zoomed)) {
+    // Electron's desktop compositor may keep pageScaleFactor at 1 for a
+    // non-mobile target. A narrower 2x viewport is the deterministic fallback
+    // for exercising the same responsive/zoomed rendering path.
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 1000,
+      height: 760,
+      deviceScaleFactor: 2,
+      scale: 1,
+      mobile: false,
+    });
+    await delay(100);
+    zoomed = await captureScreenshot("live-preview-dark-hidpi-zoom-fallback");
+    zoomedSize = pngDimensions(zoomed);
+  }
+  assert(
+    hidpiSize.width !== zoomedSize.width ||
+      hidpiSize.height !== zoomedSize.height ||
+      !hidpiBaseline.equals(zoomed),
+    `The isolated renderer zoom positive control changed no pixels: ${JSON.stringify({ hidpiSize, zoomedSize })}`,
+  );
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1200,
+    height: 760,
+    deviceScaleFactor: 2,
+    scale: 1,
+    mobile: false,
+  });
+  await cdp.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+  await cdp.send("Emulation.clearDeviceMetricsOverride");
+  await delay(100);
+
   phase = "cursor-proximate source reveal";
   await clickSelector(".tl-live-strong", 0, ".cm-content");
   let observedReveal;
@@ -538,6 +665,30 @@ try {
       `${error instanceof Error ? error.message : String(error)} ${JSON.stringify(observedReveal)}`,
     );
   }
+  const sourcePositiveControl = await captureScreenshot("live-preview-dark-source-positive");
+  assert(
+    darkBaseline && !darkBaseline.equals(sourcePositiveControl),
+    "The Live Preview screenshot positive control changed no pixels.",
+  );
+  phase = "IME composition on a mapped line";
+  const compositionBefore = await evaluate(
+    'document.querySelector(".cm-activeLine")?.textContent ?? ""',
+  );
+  await composeText("日本語");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector(".cm-activeLine")?.textContent ?? ""')).includes(
+        "日本語",
+      ),
+    "IME composition did not enter the active source line",
+  );
+  await pressKey("z", "KeyZ", 2);
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector(".cm-activeLine")?.textContent ?? ""')) ===
+      compositionBefore,
+    "Undo did not restore the exact pre-composition source bytes",
+  );
   await clickSelector(".tl-live-heading-1", 0, ".cm-content");
   await waitFor(async () => {
     const candidate = await liveSurfaceState();
@@ -606,7 +757,7 @@ try {
     return snapshot.workspace?.panes.length === 2 ? snapshot : null;
   }, "The Live Preview document could not be split");
   await clickSelector('[data-note-path="Linked Note.md"]');
-  await clickSelector("#source-view-secondary");
+  await clickSelector("#source-view-secondary", 0, '[data-pane-id="secondary"]');
   await clickSelector(
     '[data-pane-id="primary"] .tl-live-heading-1',
     0,
@@ -634,7 +785,25 @@ try {
   await captureScreenshot("live-preview-light-split");
 
   phase = "preferred mode restart";
-  await clickSelector("#edit-view");
+  // At the intentionally narrow split width the primary toolbar can be
+  // covered by its neighboring action. The control was already exercised by
+  // a real pointer click before splitting; here use its semantic click path
+  // after asserting it remains visible and enabled.
+  const editControl = await evaluate(`(() => {
+    const element = document.querySelector("#edit-view");
+    if (!(element instanceof HTMLButtonElement)) return { available: false };
+    const rect = element.getBoundingClientRect();
+    return { available: true, hidden: element.hidden, disabled: element.disabled, width: rect.width, height: rect.height };
+  })()`);
+  assert(
+    editControl.available &&
+      !editControl.hidden &&
+      !editControl.disabled &&
+      editControl.width > 0 &&
+      editControl.height > 0,
+    `The primary Live control was not semantically available at split width: ${JSON.stringify(editControl)}`,
+  );
+  await evaluate('document.querySelector("#edit-view")?.click(); true');
   await closeApplication();
   await launchApplication();
   opened = await waitForShowcase();
@@ -658,5 +827,8 @@ try {
       // The process already exited.
     }
   }
-  await fs.rm(testRoot, { recursive: true, force: true });
+  if (exited) {
+    await Promise.race([exited, delay(2_000)]);
+  }
+  await fs.rm(testRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

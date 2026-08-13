@@ -1052,6 +1052,8 @@ function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
     },
     loadImage: (sourceNotePath, target, expectedVaultId) =>
       window.threadleaf.loadVaultImage(sourceNotePath, target, expectedVaultId),
+    loadNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
+      window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, expectedVaultId),
   };
 }
 

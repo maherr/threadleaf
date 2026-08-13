@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "offsetUnit": "utf16-code-unit",
+  "cases": [
+    {
+      "id": "wiki-alias-delimiters",
+      "source": "A [[Notes/Plan.md#Today|the plan]] B",
+      "tokens": [
+        { "kind": "link", "from": 2, "to": 34, "status": "mapped", "renderedText": "the plan" }
+      ],
+      "roundTrips": [2, 3, 23, 24, 33, 34]
+    },
+    {
+      "id": "markdown-link-delimiters",
+      "source": "[label](Notes/Plan.md#Today)",
+      "tokens": [
+        { "kind": "link", "from": 0, "to": 28, "status": "mapped", "renderedText": "label" }
+      ],
+      "roundTrips": [0, 1, 6, 7, 27, 28]
+    },
+    {
+      "id": "nested-emphasis",
+      "source": "***strong *nested* text***",
+      "tokens": [
+        { "kind": "delimiter", "from": 0, "to": 2, "status": "mapped", "renderedText": "" },
+        { "kind": "delimiter", "from": 2, "to": 3, "status": "mapped", "renderedText": "" },
+        { "kind": "delimiter", "from": 10, "to": 11, "status": "mapped", "renderedText": "" },
+        { "kind": "delimiter", "from": 17, "to": 18, "status": "mapped", "renderedText": "" },
+        { "kind": "delimiter", "from": 23, "to": 25, "status": "mapped", "renderedText": "" },
+        { "kind": "delimiter", "from": 25, "to": 26, "status": "mapped", "renderedText": "" }
+      ],
+      "roundTrips": [0, 2, 3, 10, 11, 17, 18, 23, 25, 26]
+    },
+    {
+      "id": "inline-code-is-source",
+      "source": "`[[not a link]]` and `*not emphasis*`",
+      "protected": [[0, 16], [21, 38]],
+      "tokens": [],
+      "roundTrips": [0, 3, 15, 16, 21, 24, 37, 38]
+    },
+    {
+      "id": "task-and-callout",
+      "source": "> [!note]+ - [ ] pending",
+      "tokens": [
+        { "kind": "callout", "from": 2, "to": 10, "status": "mapped", "renderedText": "note" },
+        { "kind": "task", "from": 13, "to": 16, "status": "mapped", "renderedText": "☐" }
+      ],
+      "roundTrips": [2, 10, 13, 16]
+    },
+    {
+      "id": "frontmatter-and-table-source-fallback",
+      "source": "---\ntitle: Atlas\n---\n| Name | Value |\n| --- | --- |\n| x | y |",
+      "tokens": [
+        { "kind": "source-block", "from": 0, "to": 3, "status": "fallback", "renderedText": "---" },
+        {
+          "kind": "source-block",
+          "from": 4,
+          "to": 16,
+          "status": "fallback",
+          "renderedText": "title: Atlas"
+        },
+        {
+          "kind": "source-block",
+          "from": 17,
+          "to": 20,
+          "status": "fallback",
+          "renderedText": "---"
+        },
+        {
+          "kind": "source-block",
+          "from": 21,
+          "to": 37,
+          "status": "fallback",
+          "renderedText": "| Name | Value |"
+        },
+        {
+          "kind": "source-block",
+          "from": 38,
+          "to": 51,
+          "status": "fallback",
+          "renderedText": "| --- | --- |"
+        },
+        {
+          "kind": "source-block",
+          "from": 52,
+          "to": 61,
+          "status": "fallback",
+          "renderedText": "| x | y |"
+        }
+      ],
+      "roundTrips": [0, 3, 4, 16, 17, 20, 21, 37, 38, 51, 52, 61]
+    },
+    {
+      "id": "malformed-link-fallback",
+      "source": "[unsafe](Notes/(nested).md) and [[ok|alias]]",
+      "tokens": [
+        {
+          "kind": "link",
+          "from": 0,
+          "to": 27,
+          "status": "fallback",
+          "renderedText": "[unsafe](Notes/(nested).md)"
+        },
+        { "kind": "link", "from": 32, "to": 44, "status": "mapped", "renderedText": "alias" }
+      ],
+      "fallbackContains": "[unsafe](Notes/(nested).md)"
+    },
+    {
+      "id": "unicode-tag-boundary",
+      "source": "before #résumé/été after",
+      "tokens": [
+        { "kind": "tag", "from": 7, "to": 18, "status": "mapped", "renderedText": "#résumé/été" }
+      ],
+      "roundTrips": [7, 8, 17, 18]
+    }
+  ]
+}

@@ -141,8 +141,9 @@ equivalence through the real writer-to-watcher seam.
 - [x] Default Live Preview plus explicit Source and Read modes, line-proximate exact-source reveal,
       common Markdown presentation, editable tasks, bounded local images, honest source fallback,
       pane-local state, and isolated virtual-input coverage in both themes.
-- [ ] Fine-grained intra-token cursor mapping, inline note transclusion, and richer complex-syntax
-      projection in Live Preview.
+- [x] Fine-grained source/decorated cursor mapping, bounded inline note transclusion, deterministic
+      complex-syntax fallback, and isolated IME, zoom, high-DPI, and visual-positive-control checks
+      in Live Preview.
 - [x] Bounded whole-note, heading, and block-ID transclusions in Reading view, with recursive
       rendering, exact source controls, nested links and raster images, and explicit safety limits.
 - [x] Ordered desktop top-level property inspection and typed add, edit, and remove controls for
@@ -320,9 +321,9 @@ Exit gate: selected high-value plugins complete named workflows against public f
       positive-control screenshots.
 - [ ] Split groups, draggable tabs, side docks, floating windows, pop-out views, history, quick
       switcher, command discovery, and persistent workspace layouts beyond the current pane layout.
-- [ ] Complete the existing Source, Live Preview, and Reading modes with fine-grained mapping,
-      inline block and heading transclusion, footnotes, rendered tables, math, diagrams, and
-      large-document editing with reliable IME and undo.
+- [ ] Complete the existing Source, Live Preview, and Reading modes with footnotes, rendered
+      tables, math, diagrams, and large-document editing beyond the current source fallback, with
+      reliable IME and undo.
 - [ ] JSON Canvas editing and embedding plus first-class attachment browsing, rename, preview,
       drag-and-drop, paste, and missing-file recovery.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,

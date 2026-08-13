@@ -20,6 +20,31 @@ line containing any selection endpoint, plus every line crossed by a selection, 
 Clicking a rendered token moves the cursor to its source range and reveals that line. This is the
 primary cursor-to-source invariant.
 
+## Source/decorated mapping
+
+The editor keeps one canonical UTF-16 source document. Live Preview builds a disposable projection
+with `buildLivePreviewMapping(source)`. Its segments are half-open source and rendered ranges. A
+segment is either an identity text slice, a source-backed label, a non-editable generated widget,
+or a zero-width hidden delimiter. Mapping never decodes or normalizes the source string, so the
+source field remains byte-for-byte equivalent to the editor document when it is encoded.
+
+Projection positions use an explicit selection affinity: `before` chooses the source side before a
+hidden delimiter, `after` chooses the side after it, and `inside` chooses the nearest side of a
+zero-width segment. Reverse mapping always returns a source offset; generated widget text is
+anchored to its owning source range and cannot create a phantom editable position. Selections that
+cross a mapped token therefore reveal its complete source line before editing.
+
+Link, alias, emphasis, strike, inline-code, task, callout, and list delimiters are mapped only when
+their boundaries are unambiguous. A malformed link, nested destination, unsupported table or HTML
+construct, or any token that fails the safe projection check becomes one `fallback` identity range.
+Fallback ranges stay source-visible and are never replaced by a widget or hidden delimiter.
+
+Note transclusions are source-backed cards. `resolveInlineTransclusions` accepts a bounded local
+document snapshot, carries the owning path and source range on every node, and stops on path plus
+subpath cycles, depth, fragment, or byte limits. The renderer may show a short read-only excerpt,
+but edits and source reveals always target the owning note. Missing, external, stale, and limited
+targets remain visibly labeled rather than becoming generated editable text.
+
 The following never become hidden state:
 
 - Markdown text and destinations
