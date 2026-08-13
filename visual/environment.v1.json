@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux-x64",
+  "display": {
+    "server": "Xvfb",
+    "screen": "1440x840x24",
+    "compositor": "X11",
+    "electronArgv": ["--ozone-platform=x11", "--disable-gpu"]
+  },
+  "electron": "43.3.0",
+  "nodeMajor": 22,
+  "capture": {
+    "format": "png",
+    "encoding": "RGBA8",
+    "captureBeyondViewport": false,
+    "fromSurface": true,
+    "viewportScaleFactors": [1, 2],
+    "pageScaleFactors": [1, 1.25]
+  },
+  "fonts": {
+    "source": "Chromium and host system fonts resolved by Electron",
+    "networkFetch": false,
+    "proprietaryAssets": false
+  }
+}

@@ -1,0 +1,38 @@
+/* Synthetic theme used only by the committed visual-regression fixture. */
+
+.theme-light {
+  --background-primary: #fbf7ea;
+  --background-primary-alt: #fffdf7;
+  --background-secondary: #dfe9e8;
+  --background-secondary-alt: #edf2ef;
+  --background-modifier-border: #b8c8c5;
+  --background-modifier-border-hover: #779b98;
+  --background-modifier-error: #f8dfc2;
+  --text-normal: #18292d;
+  --text-muted: #405c61;
+  --text-faint: #4f666a;
+  --interactive-accent: #0072b2;
+  --text-accent: #005b8f;
+  --text-error: #9b4e00;
+}
+
+.theme-dark {
+  --background-primary: #152326;
+  --background-primary-alt: #1c2e32;
+  --background-secondary: #0e181a;
+  --background-secondary-alt: #122024;
+  --background-modifier-border: #345055;
+  --background-modifier-border-hover: #55757a;
+  --background-modifier-error: #f0a35b;
+  --text-normal: #edf5f3;
+  --text-muted: #bed0cd;
+  --text-faint: #91aaa7;
+  --interactive-accent: #67b7e7;
+  --text-accent: #9bd2f2;
+  --text-error: #f0a35b;
+}
+
+.markdown-preview-view h1,
+.markdown-source-view .cm-header-1 {
+  color: var(--text-accent);
+}

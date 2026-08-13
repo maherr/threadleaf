@@ -58,6 +58,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build and verify Linux packages
         run: pnpm run release:linux
+      - name: Run committed visual regression matrix
+        env:
+          THREADLEAF_VISUAL_REQUIRED: "1"
+        run: pnpm run visual:check
       - name: Upload Linux packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -95,6 +99,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check source on macOS
         run: pnpm check
+      - name: Check visual matrix integrity
+        run: pnpm run visual:integrity
       - name: Build unsigned native package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -150,6 +156,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check source on Windows
         run: pnpm check
+      - name: Check visual matrix integrity
+        run: pnpm run visual:integrity
       - name: Build unsigned native package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"

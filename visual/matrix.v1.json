@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "id": "threadleaf-core-visual-regression",
+  "environment": "visual/environment.v1.json",
+  "renderer": {
+    "electron": "43.3.0",
+    "nodeMajor": 22,
+    "display": "xvfb-x11",
+    "window": { "width": 1180, "height": 820 },
+    "minimum": { "width": 860, "height": 640 }
+  },
+  "fixture": {
+    "root": "fixtures/vaults/visual-regression",
+    "treeSha256": "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff",
+    "requiredFiles": [
+      "00 Overview.md",
+      "01 Linked Note.md",
+      "02 Empty Note.md",
+      "03 Missing Target.md",
+      "04 Long Text.md",
+      ".obsidian/plugins/threadleaf-fixture/main.js",
+      ".obsidian/plugins/threadleaf-fixture/manifest.json",
+      ".obsidian/plugins/threadleaf-fixture/styles.css",
+      ".obsidian/snippets/visual-spacing.css",
+      ".obsidian/themes/Threadleaf Visual/manifest.json",
+      ".obsidian/themes/Threadleaf Visual/theme.css"
+    ]
+  },
+  "viewports": [
+    { "id": "laptop", "width": 1180, "height": 820, "deviceScaleFactor": 1, "zoom": 1 },
+    { "id": "minimum", "width": 860, "height": 640, "deviceScaleFactor": 1, "zoom": 1 },
+    { "id": "high-dpi", "width": 1180, "height": 820, "deviceScaleFactor": 2, "zoom": 1 },
+    { "id": "zoom-125", "width": 1180, "height": 820, "deviceScaleFactor": 1, "zoom": 1.25 }
+  ],
+  "themes": ["dark", "light"],
+  "cases": [
+    {
+      "id": "workspace-live-dark",
+      "surface": "note-live",
+      "viewport": "laptop",
+      "theme": "dark",
+      "screenshot": "workspace-live-dark.png"
+    },
+    {
+      "id": "workspace-source-light",
+      "surface": "note-source",
+      "viewport": "laptop",
+      "theme": "light",
+      "screenshot": "workspace-source-light.png"
+    },
+    {
+      "id": "workspace-reading-light",
+      "surface": "note-reading",
+      "viewport": "laptop",
+      "theme": "light",
+      "screenshot": "workspace-reading-light.png"
+    },
+    {
+      "id": "settings-appearance-dark",
+      "surface": "settings",
+      "viewport": "laptop",
+      "theme": "dark",
+      "screenshot": "settings-appearance-dark.png"
+    },
+    {
+      "id": "settings-plugin-diagnostics-light",
+      "surface": "community-plugin-settings",
+      "viewport": "laptop",
+      "theme": "light",
+      "screenshot": "settings-plugin-diagnostics-light.png"
+    },
+    {
+      "id": "accessibility-high-contrast-dark",
+      "surface": "accessibility-preferences",
+      "viewport": "laptop",
+      "theme": "dark",
+      "screenshot": "accessibility-high-contrast-dark.png"
+    },
+    {
+      "id": "command-palette-light",
+      "surface": "command-palette",
+      "viewport": "laptop",
+      "theme": "light",
+      "screenshot": "command-palette-light.png"
+    },
+    {
+      "id": "split-pinned-dark",
+      "surface": "split-pinned-tabs",
+      "viewport": "laptop",
+      "theme": "dark",
+      "screenshot": "split-pinned-dark.png"
+    },
+    {
+      "id": "graph-dark",
+      "surface": "graph",
+      "viewport": "laptop",
+      "theme": "dark",
+      "screenshot": "graph-dark.png"
+    },
+    {
+      "id": "recovery-light",
+      "surface": "recovery",
+      "viewport": "laptop",
+      "theme": "light",
+      "screenshot": "recovery-light.png"
+    },
+    {
+      "id": "empty-note-light",
+      "surface": "empty-state",
+      "viewport": "laptop",
+      "theme": "light",
+      "screenshot": "empty-note-light.png"
+    },
+    {
+      "id": "missing-link-dark",
+      "surface": "error-state",
+      "viewport": "laptop",
+      "theme": "dark",
+      "screenshot": "missing-link-dark.png"
+    },
+    {
+      "id": "long-text-dark",
+      "surface": "long-text",
+      "viewport": "laptop",
+      "theme": "dark",
+      "screenshot": "long-text-dark.png"
+    },
+    {
+      "id": "minimum-light",
+      "surface": "minimum-viewport",
+      "viewport": "minimum",
+      "theme": "light",
+      "screenshot": "minimum-light.png"
+    },
+    {
+      "id": "high-dpi-dark",
+      "surface": "high-dpi",
+      "viewport": "high-dpi",
+      "theme": "dark",
+      "screenshot": "high-dpi-dark.png"
+    },
+    {
+      "id": "zoom-125-light",
+      "surface": "zoom",
+      "viewport": "zoom-125",
+      "theme": "light",
+      "screenshot": "zoom-125-light.png"
+    }
+  ],
+  "unsupported": []
+}

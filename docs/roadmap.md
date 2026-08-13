@@ -314,8 +314,11 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [x] Verify default and synthetic compatibility themes at minimum desktop size in both schemes,
       with live computed-style contrast, focusable names, non-color state cues, and moderate and
       stress deuteranomaly checks.
-- [ ] Add committed visual regression coverage for ordinary laptop size, high DPI, zoom, long
-      translations, reduced motion, high contrast, and representative open community themes.
+- [x] Add committed visual regression coverage for ordinary laptop size, high DPI, zoom, long
+      text, reduced motion, high contrast, compact/error states, and a hermetic synthetic
+      compatibility theme, with an integrity manifest and a measured red control.
+- [ ] Add representative open community themes to the committed visual matrix without bundling
+      third-party packages or assets.
 - [x] Per-pane pinned tabs with private compatible persistence, deterministic leading-region
       ordering, close and Markdown-trash refusal, rename, delete, prune, transfer, collapse, and
       restart reconciliation, plus per-tab accessible controls, command-palette, native-menu, and

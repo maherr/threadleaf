@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "coordinateSpace": "normalized-capture",
+  "defaultThreshold": {
+    "maxMeanAbsoluteRgb": 0.085,
+    "maxChangedPixelRatio": 0.22,
+    "changedPixelDelta": 18
+  },
+  "cases": {
+    "workspace-live-dark": {
+      "requiredSelectors": ["#runtime-state", "#file-list", "#note-editor-shell", ".inspector"],
+      "regions": [
+        { "id": "topbar", "x": 0, "y": 0, "width": 1, "height": 0.13 },
+        { "id": "navigator", "x": 0, "y": 0.13, "width": 0.24, "height": 0.82 },
+        { "id": "note-stage", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 },
+        { "id": "inspector", "x": 0.76, "y": 0.13, "width": 0.24, "height": 0.82 }
+      ]
+    },
+    "workspace-source-light": {
+      "requiredSelectors": [
+        "#runtime-state",
+        "#note-editor",
+        "#source-view[aria-pressed=\"true\"]"
+      ],
+      "regions": [{ "id": "editor", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 }]
+    },
+    "workspace-reading-light": {
+      "requiredSelectors": ["#note-preview", "#read-view[aria-pressed=\"true\"]"],
+      "regions": [{ "id": "reading", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 }]
+    },
+    "settings-appearance-dark": {
+      "requiredSelectors": [
+        "#shortcut-settings[open]",
+        "[data-settings-page=\"appearance\"]:not([hidden])",
+        "#appearance-theme"
+      ],
+      "regions": [{ "id": "settings", "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8 }]
+    },
+    "settings-plugin-diagnostics-light": {
+      "requiredSelectors": [
+        "#shortcut-settings[open]",
+        "[data-settings-page=\"plugins\"]:not([hidden])",
+        "#plugin-status",
+        "#plugin-list",
+        ".plugin-row[data-plugin-id=\"threadleaf-fixture\"]"
+      ],
+      "regions": [{ "id": "plugins", "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8 }]
+    },
+    "accessibility-high-contrast-dark": {
+      "requiredSelectors": [
+        "#shortcut-settings[open]",
+        "[data-settings-page=\"accessibility\"]:not([hidden])",
+        "#accessibility-high-contrast",
+        "#accessibility-reduced-motion",
+        ":root[data-threadleaf-high-contrast=\"true\"][data-threadleaf-reduced-motion=\"true\"][data-threadleaf-reduced-transparency=\"true\"]"
+      ],
+      "regions": [{ "id": "accessibility", "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8 }]
+    },
+    "command-palette-light": {
+      "requiredSelectors": ["#command-palette[open]", "#palette-query", "#palette-results"],
+      "regions": [{ "id": "palette", "x": 0.25, "y": 0.17, "width": 0.5, "height": 0.66 }]
+    },
+    "split-pinned-dark": {
+      "requiredSelectors": [
+        "#workspace-pane-secondary:not([hidden])",
+        ".note-tab[data-pinned=\"true\"]",
+        ".note-tabs-pin-divider"
+      ],
+      "regions": [
+        { "id": "tabs", "x": 0.24, "y": 0.13, "width": 0.76, "height": 0.15 },
+        { "id": "split", "x": 0.24, "y": 0.28, "width": 0.76, "height": 0.67 }
+      ]
+    },
+    "graph-dark": {
+      "requiredSelectors": ["#graph-dialog[open]", "#graph-canvas", ".graph-node", "#graph-status"],
+      "regions": [{ "id": "graph", "x": 0.08, "y": 0.08, "width": 0.84, "height": 0.84 }]
+    },
+    "recovery-light": {
+      "requiredSelectors": [
+        "#recovery-dialog[open]",
+        "#recovery-list",
+        ".recovery-row",
+        "#recovery-status"
+      ],
+      "regions": [{ "id": "recovery", "x": 0.13, "y": 0.1, "width": 0.74, "height": 0.8 }]
+    },
+    "empty-note-light": {
+      "requiredSelectors": ["#note-empty:not([hidden])", "#note-path"],
+      "regions": [{ "id": "empty", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 }]
+    },
+    "missing-link-dark": {
+      "requiredSelectors": ["#note-view", "#outgoing-list", "#note-path"],
+      "regions": [{ "id": "error", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 }]
+    },
+    "long-text-dark": {
+      "requiredSelectors": ["#note-preview", "#note-path", ".markdown-preview-view"],
+      "regions": [{ "id": "long-text", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 }]
+    },
+    "minimum-light": {
+      "requiredSelectors": ["#runtime-state", "#note-view", "#file-list"],
+      "regions": [{ "id": "minimum", "x": 0, "y": 0, "width": 1, "height": 1 }]
+    },
+    "high-dpi-dark": {
+      "requiredSelectors": ["#runtime-state", "#note-view", "#file-list"],
+      "regions": [{ "id": "high-dpi", "x": 0, "y": 0, "width": 1, "height": 1 }]
+    },
+    "zoom-125-light": {
+      "requiredSelectors": ["#runtime-state", "#note-view", "#file-list"],
+      "regions": [{ "id": "zoom", "x": 0, "y": 0, "width": 1, "height": 1 }]
+    }
+  }
+}

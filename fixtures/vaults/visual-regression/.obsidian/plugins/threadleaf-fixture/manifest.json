@@ -1,0 +1,9 @@
+{
+  "id": "threadleaf-fixture",
+  "name": "Threadleaf Compatibility Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Synthetic local plugin used by the visual-regression fixture.",
+  "author": "Threadleaf contributors",
+  "isDesktopOnly": true
+}

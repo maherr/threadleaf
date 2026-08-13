@@ -1,0 +1,6 @@
+/* Synthetic snippet used to make the active appearance state visible in captures. */
+
+.markdown-source-view .cm-content,
+.markdown-preview-view {
+  padding-inline: var(--file-margins, 44px);
+}
