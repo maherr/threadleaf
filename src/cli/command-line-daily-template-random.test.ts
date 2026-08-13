@@ -197,6 +197,33 @@ describe("headless daily, template, and random compatibility", () => {
     });
   });
 
+  it("daily prepends preserve a leading BOM through the recoverable writer", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Journal", "Today.md"),
+      Buffer.from("\ufeff---\r\ntags: [daily]\r\n---\r\nBody\r\n", "utf8"),
+    );
+
+    const result = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "daily:prepend",
+      "folder=Journal",
+      "format=[Today]",
+      "content=Lead",
+    ]);
+
+    expect(result.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: true,
+      command: "daily.prepend",
+      data: { status: "committed", path: "Journal/Today.md" },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Journal", "Today.md"))).resolves.toEqual(
+      Buffer.from("\ufeff---\r\ntags: [daily]\r\n---\r\nLead\r\nBody\r\n", "utf8"),
+    );
+  });
+
   it("lists templates deterministically and resolves a bounded UTF-8 template without mutating it", async () => {
     const source = await fs.readFile(path.join(vaultPath, "Templates", "Daily.md"));
     const listed = await invoke(["--json", "--vault", vaultPath, "templates", "folder=Templates"]);
@@ -282,6 +309,47 @@ describe("headless daily, template, and random compatibility", () => {
     await expect(
       invoke(["--vault", vaultPath, "template:read", "name=Missing", "folder=Templates"]),
     ).resolves.toMatchObject({ exitCode: cliExitCodes.vault });
+  });
+
+  it("resolves template names by NFC in both composed and decomposed directions", async () => {
+    const composedFolder = path.join(vaultPath, "Templates", "Composed");
+    const decomposedFolder = path.join(vaultPath, "Templates", "Decomposed");
+    await fs.mkdir(composedFolder, { recursive: true });
+    await fs.mkdir(decomposedFolder, { recursive: true });
+    const composedName = "Caf\u00e9.md";
+    const decomposedName = "Cafe\u0301.md";
+    await fs.writeFile(path.join(composedFolder, composedName), "composed\n", "utf8");
+    await fs.writeFile(path.join(decomposedFolder, decomposedName), "decomposed\n", "utf8");
+
+    const composedResult = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "template:read",
+      "name=Cafe\u0301",
+      "folder=Templates/Composed",
+    ]);
+    expect(composedResult.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(composedResult.stdout)).toMatchObject({
+      ok: true,
+      command: "template.read",
+      data: { path: `Templates/Composed/${composedName}`, content: "composed\n" },
+    });
+
+    const decomposedResult = await invoke([
+      "--json",
+      "--vault",
+      vaultPath,
+      "template:read",
+      "name=Caf\u00e9",
+      "folder=Templates/Decomposed",
+    ]);
+    expect(decomposedResult.exitCode).toBe(cliExitCodes.success);
+    expect(JSON.parse(decomposedResult.stdout)).toMatchObject({
+      ok: true,
+      command: "template.read",
+      data: { path: `Templates/Decomposed/${decomposedName}`, content: "decomposed\n" },
+    });
   });
 
   it("rejects ambiguous template names and missing template folders", async () => {

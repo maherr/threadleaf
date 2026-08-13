@@ -55,6 +55,32 @@ describe("note text transformations", () => {
       "Lead\n---\nkey: value",
     );
   });
+
+  it("keeps a leading BOM at byte zero for every prepend boundary", () => {
+    const cases = [
+      ["empty", "", "Lead"],
+      ["BOM-only", "\ufeff", "\ufeffLead"],
+      ["BOM body with LF", "\ufeffBody", "\ufeffLead\nBody"],
+      ["BOM body with CRLF", "\ufeffBody\r\n", "\ufeffLead\r\nBody\r\n"],
+      [
+        "BOM frontmatter with LF",
+        "\ufeff---\ntags: [one]\n---\nBody",
+        "\ufeff---\ntags: [one]\n---\nLead\nBody",
+      ],
+      [
+        "BOM frontmatter with CRLF",
+        "\ufeff---\r\ntags: [one]\r\n---\r\nBody",
+        "\ufeff---\r\ntags: [one]\r\n---\r\nLead\r\nBody",
+      ],
+      ["frontmatter without BOM", "---\nkey: value\n---\nBody", "---\nkey: value\n---\nLead\nBody"],
+      ["BOM with unterminated frontmatter", "\ufeff---\nkey: value", "\ufeffLead\n---\nkey: value"],
+    ] as const;
+
+    for (const [label, current, expected] of cases) {
+      expect(applyNoteTextMutation(current, "Lead", "prepend", false), label).toBe(expected);
+    }
+    expect(applyNoteTextMutation("\ufeffBody", "Lead", "prepend", true)).toBe("\ufeffLeadBody");
+  });
 });
 
 describe("recovery-backed note text mutation", () => {
@@ -108,6 +134,44 @@ describe("recovery-backed note text mutation", () => {
     }
     await expect(fs.readFile(path.join(vaultPath, result.conflictPath), "utf8")).resolves.toBe(
       "Original\nProposed addition",
+    );
+  });
+
+  it("keeps a BOM at byte zero in a recoverable prepend and conflict copy", async () => {
+    await fs.writeFile(path.join(vaultPath, "Note.md"), "\ufeffOriginal\r\n", "utf8");
+    const kernel = await openKernel();
+    const racingVault: VaultMutationPort = {
+      getName: () => kernel.getName(),
+      listMarkdownPaths: (directory) => kernel.listMarkdownPaths(directory),
+      readText: (relativePath) => kernel.readText(relativePath),
+      writeText: async (relativePath, content, expectedRevision) => {
+        await fs.writeFile(path.join(vaultPath, relativePath), "External winner", "utf8");
+        return kernel.writeText(relativePath, content, expectedRevision);
+      },
+      renameFile: (sourcePath, targetPath, expectedSourceRevision) =>
+        kernel.renameFile(sourcePath, targetPath, expectedSourceRevision),
+      writeMany: (requests) => kernel.writeMany(requests),
+      moveWithWrites: (request) => kernel.moveWithWrites(request),
+    };
+
+    const result = await mutateMarkdownNoteText(racingVault, "Note.md", "Lead", "prepend", false);
+
+    expect(result).toMatchObject({
+      status: "conflict",
+      path: "Note.md",
+      conflictPath: expect.stringContaining("conflict"),
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Note.md"), "utf8")).resolves.toBe(
+      "External winner",
+    );
+    if (result.status !== "conflict") {
+      throw new Error("Expected a conflict result.");
+    }
+    await expect(fs.readFile(path.join(vaultPath, result.conflictPath), "utf8")).resolves.toBe(
+      "\ufeffLead\r\nOriginal\r\n",
+    );
+    await expect(fs.readFile(path.join(vaultPath, result.conflictPath))).resolves.toEqual(
+      Buffer.from("\ufeffLead\r\nOriginal\r\n", "utf8"),
     );
   });
 });

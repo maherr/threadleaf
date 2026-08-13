@@ -2840,9 +2840,15 @@ async function resolveCliTemplatePath(
   const normalizedFolder = await requireVisibleFolder(kernel, folder, "Template folder");
   const templates = await listNoteTemplates(kernel, normalizedFolder);
   if (targetKind === "name" && !requestedPath.includes("/")) {
-    const requestedName = path.posix.basename(requestedPath).toLocaleLowerCase("en-US");
+    const requestedName = path.posix
+      .basename(requestedPath)
+      .normalize("NFC")
+      .toLocaleLowerCase("en-US");
     const matches = templates.filter((templatePath) => {
-      const basename = path.posix.basename(templatePath).toLocaleLowerCase("en-US");
+      const basename = path.posix
+        .basename(templatePath)
+        .normalize("NFC")
+        .toLocaleLowerCase("en-US");
       return basename === requestedName;
     });
     if (matches.length === 0) {

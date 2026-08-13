@@ -8,13 +8,14 @@ function lineEndingFor(content: string): "\n" | "\r\n" {
 }
 
 function frontmatterBodyOffset(content: string): number {
-  const opening = /^\ufeff?---[\t ]*(?:\r?\n)/.exec(content);
+  const bomOffset = content.startsWith("\ufeff") ? 1 : 0;
+  const opening = /^---[\t ]*(?:\r?\n)/.exec(content.slice(bomOffset));
   if (!opening) {
-    return 0;
+    return bomOffset;
   }
-  const remaining = content.slice(opening[0].length);
+  const remaining = content.slice(bomOffset + opening[0].length);
   const closing = /^(?:---|\.\.\.)[\t ]*(?:\r?\n|$)/m.exec(remaining);
-  return closing ? opening[0].length + closing.index + closing[0].length : 0;
+  return closing ? bomOffset + opening[0].length + closing.index + closing[0].length : bomOffset;
 }
 
 export function applyNoteTextMutation(
@@ -32,7 +33,10 @@ export function applyNoteTextMutation(
   const insertionOffset = frontmatterBodyOffset(currentContent);
   const prefix = currentContent.slice(0, insertionOffset);
   const body = currentContent.slice(insertionOffset);
-  const frontmatterSeparator = prefix.length > 0 && !prefix.endsWith("\n") ? lineEnding : "";
+  const bomOffset = currentContent.startsWith("\ufeff") ? 1 : 0;
+  const hasFrontmatter = insertionOffset > bomOffset;
+  const frontmatterSeparator =
+    hasFrontmatter && prefix.length > 0 && !prefix.endsWith("\n") ? lineEnding : "";
   const bodySeparator = !inline && body.length > 0 ? lineEnding : "";
   return `${prefix}${frontmatterSeparator}${content}${bodySeparator}${body}`;
 }
