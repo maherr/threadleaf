@@ -179,7 +179,14 @@ function runtimeFixture(): RuntimeSnapshot {
         {
           id: "primary",
           active: true,
-          tabs: [{ path: "PRIVATE_NOTE_PATH.md", title: "PRIVATE_NOTE_TITLE", active: true }],
+          tabs: [
+            {
+              path: "PRIVATE_NOTE_PATH.md",
+              title: "PRIVATE_NOTE_TITLE",
+              active: true,
+              pinned: true,
+            },
+          ],
           activeNote: {
             path: "PRIVATE_NOTE_PATH.md",
             title: "PRIVATE_NOTE_TITLE",
@@ -209,7 +216,9 @@ function runtimeFixture(): RuntimeSnapshot {
       ],
       activePaneId: "primary",
       splitDirection: null,
-      tabs: [{ path: "PRIVATE_NOTE_PATH.md", title: "PRIVATE_NOTE_TITLE", active: true }],
+      tabs: [
+        { path: "PRIVATE_NOTE_PATH.md", title: "PRIVATE_NOTE_TITLE", active: true, pinned: true },
+      ],
       activeNote: {
         path: "PRIVATE_NOTE_PATH.md",
         title: "PRIVATE_NOTE_TITLE",

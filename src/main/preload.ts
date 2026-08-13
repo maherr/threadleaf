@@ -217,6 +217,13 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       paneId,
     ) as Promise<RuntimeSnapshot>,
+  toggleTabPin: (filePath, paneId, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.toggleTabPin,
+      filePath,
+      paneId,
+      expectedVaultId,
+    ) as Promise<RuntimeSnapshot>,
   splitWorkspace: (direction, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.splitWorkspace,

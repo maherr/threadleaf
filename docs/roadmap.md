@@ -300,8 +300,14 @@ Exit gate: selected high-value plugins complete named workflows against public f
       stress deuteranomaly checks.
 - [ ] Add committed visual regression coverage for ordinary laptop size, high DPI, zoom, long
       translations, reduced motion, high contrast, and representative open community themes.
-- [ ] Split groups, draggable tabs, pinned tabs, side docks, floating windows, pop-out views,
-      history, quick switcher, command discovery, and persistent workspace layouts.
+- [x] Per-pane pinned tabs with private compatible persistence, deterministic leading-region
+      ordering, close and Markdown-trash refusal, rename, delete, prune, transfer, collapse, and
+      restart reconciliation, plus per-tab accessible controls, command-palette, native-menu, and
+      remappable-hotkey access. Isolated X11 Electron coverage drives real pointer and keyboard
+      input, verifies the refusal and restart, and captures dark, light, minimum-width, and visual
+      positive-control screenshots.
+- [ ] Split groups, draggable tabs, side docks, floating windows, pop-out views, history, quick
+      switcher, command discovery, and persistent workspace layouts beyond the current pane layout.
 - [ ] Complete the existing Source, Live Preview, and Reading modes with fine-grained mapping,
       inline block and heading transclusion, footnotes, rendered tables, math, diagrams, and
       large-document editing with reliable IME and undo.

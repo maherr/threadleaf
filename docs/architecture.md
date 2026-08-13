@@ -157,26 +157,35 @@ later save uses the ordinary conflict-copy boundary.
 ### Workspace panes, tabs, and draft ownership
 
 The workspace runtime owns one or two panes. Each pane has an ordered, deduplicated list of open
-Markdown paths and one active path; the layout also records the focused pane and a horizontal or
-vertical split direction. Opening an existing entry reactivates it in that pane. Closing the active
-entry selects the next entry to its right, then the nearest entry to its left. Tabs move explicitly
-between panes, and closing the secondary pane transfers its remaining tabs without discarding an
-unsaved draft. Incremental watcher moves remap open paths and deletions remove them, while every
-published snapshot filters both lists against the current derived index. Each navigation request
-carries the expected vault identity, so a delayed renderer action cannot target a similarly named
-note after a vault switch.
+Markdown paths, an ordered pinned-path subset, and one active path; the layout also records the
+focused pane and a horizontal or vertical split direction. Normalization emits the pinned subset
+first, then ordinary tabs. Pinning moves a path to the end of that leading region; unpinning moves
+it to the beginning of the ordinary region without disturbing the relative order of other tabs.
+Opening an existing entry reactivates it in that pane. Closing the active entry selects the next
+entry to its right, then the nearest entry to its left. A pinned tab is rejected before close or
+Markdown-trash work begins, so no draft or vault bytes can be discarded through either route.
+Tabs move explicitly between panes, retaining their pin even when the destination already owns the
+path. Closing the secondary pane merges surviving pinned paths, incoming pinned paths, then the
+two ordinary regions without discarding an unsaved draft. Internal and watcher-driven renames remap
+pins; deletes and missing-path reconciliation prune them. Every published snapshot makes pin state
+explicit, and the narrow main-process toggle IPC validates the vault identity, pane ID, and current
+pane membership before mutation. Each navigation request carries the expected vault identity, so a
+delayed renderer action cannot target a similarly named note after a vault switch.
 
 Panes and tabs are derived workspace state stored per vault in a versioned document under the
 operating system's application-data directory. The store keys documents by vault identity,
 validates and normalizes every path, writes atomically with private file permissions, and never
 writes layout files into the vault or `.obsidian/`. Its in-memory version 2 model restores exact tab
-order, active notes, focused pane, and split direction. The on-disk document uses a version 1
-envelope whose ordered tabs and active path are an exact projection of the focused pane, plus a
-`layoutVersion: 2` extension containing the complete layout. This lets the previous daily-driver
-build reopen the focused-pane projection during rollback while the current build rejects any
-mismatched projection or malformed extension. Missing notes are pruned and repaired state is
-persisted. An explicit empty document restores an empty workspace instead of falling back to the
-first note. Malformed state fails visibly without rewriting the invalid bytes.
+order, pin membership, active notes, focused pane, and split direction. The on-disk document uses a
+version 1 envelope whose ordered tabs and active path are an exact projection of the focused pane,
+plus a `layoutVersion: 2` extension containing the complete layout. Each layout pane adds an
+optional `pinnedPaths` member. Older layout-version-2 documents migrate losslessly with an empty
+pinned region, while earlier readers ignore that unknown pane member and retain the valid focused
+pane projection. This lets the previous daily-driver build reopen the focused-pane projection during
+rollback while the current build rejects any mismatched projection or malformed extension. Missing
+notes are pruned and repaired state is persisted. An explicit empty document restores an empty
+workspace instead of falling back to the first note. Malformed state fails visibly without rewriting
+the invalid bytes.
 
 The renderer retains the complete ordered file projection for filtering and navigation, but mounts
 only the visible fixed-height rows plus a small overscan window. Spacer geometry preserves native
@@ -198,7 +207,9 @@ draft.
 The native application menu is constructed in the main process with platform roles for ordinary
 editing and window behavior. Product commands and accelerators are derived from the same saved key
 bindings as renderer controls, then dispatched over the narrow bridge to the focused workspace.
-The menu therefore adds an operating-system entry point without creating a second command model.
+The tab Pin or Unpin control, command palette, native Workspace entry, and remappable hotkey target
+all dispatch the same action. The menu therefore adds an operating-system entry point without
+creating a second command model.
 
 ### Application settings and key bindings
 

@@ -86,6 +86,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A rollback-compatible workspace document that keeps a validated version 1 projection of the
   active pane beside the complete version 2 layout extension, allowing the previous daily-driver
   build to reopen and write the same private state without touching vault files.
+- Ordered per-pane pinned workspace tabs with an explicit private `pinnedPaths` layout member,
+  deterministic pin and unpin placement, close and Markdown-trash refusal, rename and watcher
+  reconciliation, pane transfer and collapse preservation, and rollback-safe focused-pane
+  projection. The visible Pin or Unpin tab control, command palette, native Workspace menu, and
+  remappable hotkey target share one vault-bound action. Isolated X11 Electron coverage drives real
+  pointer and keyboard input, verifies restart persistence and close refusal, and captures dark,
+  light, minimum-width, and visual-positive-control evidence.
 - Native desktop File, Edit, Workspace, View, and Help menus whose accelerators follow the saved
   key bindings and whose commands target the focused workspace through the shared action surface.
 - Desktop move and rename through the whole-vault link-integrity preflight, with vault and revision

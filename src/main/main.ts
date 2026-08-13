@@ -1440,6 +1440,19 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.toggleTabPin,
+    (_event, filePath: unknown, paneId: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        (paneId !== "primary" && paneId !== "secondary") ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Toggle tab pin requires a string path, pane, and vault identity.");
+      }
+      return workspaceController.toggleTabPin(filePath, paneId, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
     ipcChannels.splitWorkspace,
     (_event, direction: unknown, expectedVaultId: unknown) => {
       if (

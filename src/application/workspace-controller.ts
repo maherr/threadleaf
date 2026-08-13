@@ -62,6 +62,11 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
     paneId?: WorkspacePaneId,
   ): Promise<RuntimeSnapshot>;
+  toggleTabPin(
+    filePath: string,
+    paneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
   splitWorkspace(
     direction: WorkspaceSplitDirection,
     expectedVaultId: string,
@@ -503,6 +508,14 @@ export class WorkspaceController {
     paneId?: WorkspacePaneId,
   ): Promise<RuntimeSnapshot> {
     return this.activeRuntime("close a note").closeNote(filePath, expectedVaultId, paneId);
+  }
+
+  toggleTabPin(
+    filePath: string,
+    paneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("toggle a tab pin").toggleTabPin(filePath, paneId, expectedVaultId);
   }
 
   splitWorkspace(

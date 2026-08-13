@@ -39,6 +39,7 @@ export const ipcChannels = {
   chooseVault: "threadleaf:choose-vault",
   openNote: "threadleaf:open-note",
   closeNote: "threadleaf:close-note",
+  toggleTabPin: "threadleaf:toggle-tab-pin",
   splitWorkspace: "threadleaf:split-workspace",
   focusWorkspacePane: "threadleaf:focus-workspace-pane",
   closeWorkspacePane: "threadleaf:close-workspace-pane",

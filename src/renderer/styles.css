@@ -1017,7 +1017,7 @@ h2 {
 
 .note-tab {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 25px;
+  grid-template-columns: minmax(0, 1fr) 38px 25px;
   min-width: 104px;
   max-width: 190px;
   flex: 1 1 150px;
@@ -1031,7 +1031,12 @@ h2 {
   box-shadow: inset 0 -3px 0 var(--accent);
 }
 
+.note-tab[data-pinned="true"] {
+  border-top: 2px solid var(--accent-strong);
+}
+
 .note-tab-activate,
+.note-tab-pin,
 .note-tab-close {
   min-width: 0;
   border: 0;
@@ -1057,6 +1062,15 @@ h2 {
   opacity: 0.72;
 }
 
+.note-tab[data-pinned="true"] .note-tab-mark {
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 1;
+}
+
 .note-tab-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1074,10 +1088,26 @@ h2 {
 
 .note-tab-activate:hover,
 .note-tab-activate:focus-visible,
+.note-tab-pin:hover:not(:disabled),
+.note-tab-pin:focus-visible,
 .note-tab-close:hover:not(:disabled),
 .note-tab-close:focus-visible {
   color: var(--ink);
   background: color-mix(in srgb, var(--accent-soft) 58%, transparent);
+}
+
+.note-tab-pin {
+  padding: 0 3px;
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.note-tab-pin:disabled {
+  cursor: not-allowed;
+  opacity: 0.32;
 }
 
 .note-tab-close {
@@ -1090,6 +1120,12 @@ h2 {
 .note-tab-close:disabled {
   cursor: not-allowed;
   opacity: 0.32;
+}
+
+.note-tabs-pin-divider {
+  align-self: stretch;
+  flex: 0 0 3px;
+  border-right: 2px double var(--line-strong);
 }
 
 .note-tabs-empty {

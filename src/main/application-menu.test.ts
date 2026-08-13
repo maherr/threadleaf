@@ -69,9 +69,16 @@ describe("application menu", () => {
     );
     expect(item(template, "Edit", "Insert Template…").accelerator).toBeUndefined();
     expect(item(template, "Workspace", "Split Right").accelerator).toBeUndefined();
+    expect(item(template, "Workspace", "Toggle Pin for Current Tab").accelerator).toBeUndefined();
 
     item(template, "Workspace", "Split Right").click?.({} as never, undefined, {} as never);
     expect(dispatch).toHaveBeenCalledWith("workspace.split-right");
+    item(template, "Workspace", "Toggle Pin for Current Tab").click?.(
+      {} as never,
+      undefined,
+      {} as never,
+    );
+    expect(dispatch).toHaveBeenCalledWith("workspace.toggle-tab-pin");
   });
 
   it("places settings and quit in the macOS application menu", () => {

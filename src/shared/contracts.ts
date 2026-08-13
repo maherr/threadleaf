@@ -169,6 +169,7 @@ export interface WorkspaceTabSummary {
   path: string;
   title: string;
   active: boolean;
+  pinned: boolean;
 }
 
 export type WorkspacePaneId = "primary" | "secondary";
@@ -755,6 +756,11 @@ export interface ThreadleafBridge {
     path: string,
     expectedVaultId: string,
     paneId?: WorkspacePaneId,
+  ): Promise<RuntimeSnapshot>;
+  toggleTabPin(
+    path: string,
+    paneId: WorkspacePaneId,
+    expectedVaultId: string,
   ): Promise<RuntimeSnapshot>;
   splitWorkspace(
     direction: WorkspaceSplitDirection,

@@ -30,7 +30,14 @@ describe("FileWorkspaceStateStore", () => {
     await store.save({
       version: 2,
       vaultId,
-      panes: [{ id: "primary", openPaths: ["First.md", "Second.md"], activePath: "Second.md" }],
+      panes: [
+        {
+          id: "primary",
+          openPaths: ["First.md", "Second.md"],
+          pinnedPaths: ["First.md"],
+          activePath: "Second.md",
+        },
+      ],
       activePaneId: "primary",
       splitDirection: null,
     });
@@ -38,8 +45,13 @@ describe("FileWorkspaceStateStore", () => {
       version: 2,
       vaultId,
       panes: [
-        { id: "primary", openPaths: ["Second.md"], activePath: "Second.md" },
-        { id: "secondary", openPaths: ["Third.md"], activePath: "Third.md" },
+        { id: "primary", openPaths: ["Second.md"], pinnedPaths: [], activePath: "Second.md" },
+        {
+          id: "secondary",
+          openPaths: ["Third.md"],
+          pinnedPaths: ["Third.md"],
+          activePath: "Third.md",
+        },
       ],
       activePaneId: "secondary",
       splitDirection: "horizontal",
@@ -49,8 +61,13 @@ describe("FileWorkspaceStateStore", () => {
       version: 2,
       vaultId,
       panes: [
-        { id: "primary", openPaths: ["Second.md"], activePath: "Second.md" },
-        { id: "secondary", openPaths: ["Third.md"], activePath: "Third.md" },
+        { id: "primary", openPaths: ["Second.md"], pinnedPaths: [], activePath: "Second.md" },
+        {
+          id: "secondary",
+          openPaths: ["Third.md"],
+          pinnedPaths: ["Third.md"],
+          activePath: "Third.md",
+        },
       ],
       activePaneId: "secondary",
       splitDirection: "horizontal",
@@ -62,9 +79,63 @@ describe("FileWorkspaceStateStore", () => {
       layoutVersion: 2,
       openPaths: ["Third.md"],
       activePath: "Third.md",
+      panes: [
+        {
+          id: "primary",
+          openPaths: ["Second.md"],
+          pinnedPaths: [],
+          activePath: "Second.md",
+        },
+        {
+          id: "secondary",
+          openPaths: ["Third.md"],
+          pinnedPaths: ["Third.md"],
+          activePath: "Third.md",
+        },
+      ],
     });
     const stat = await fs.stat(filePath);
     expect(stat.mode & 0o777).toBe(0o600);
+  });
+
+  it("keeps each vault's pinned workspace state isolated for deterministic vault switches", async () => {
+    const store = new FileWorkspaceStateStore(workspaceDirectory);
+    const otherVaultId = "b".repeat(64);
+    await store.save({
+      version: 2,
+      vaultId,
+      panes: [
+        {
+          id: "primary",
+          openPaths: ["First.md", "Second.md"],
+          pinnedPaths: ["First.md"],
+          activePath: "Second.md",
+        },
+      ],
+      activePaneId: "primary",
+      splitDirection: null,
+    });
+    await store.save({
+      version: 2,
+      vaultId: otherVaultId,
+      panes: [
+        {
+          id: "primary",
+          openPaths: ["Other.md"],
+          pinnedPaths: ["Other.md"],
+          activePath: "Other.md",
+        },
+      ],
+      activePaneId: "primary",
+      splitDirection: null,
+    });
+
+    await expect(store.load(vaultId)).resolves.toMatchObject({
+      panes: [{ openPaths: ["First.md", "Second.md"], pinnedPaths: ["First.md"] }],
+    });
+    await expect(store.load(otherVaultId)).resolves.toMatchObject({
+      panes: [{ openPaths: ["Other.md"], pinnedPaths: ["Other.md"] }],
+    });
   });
 
   it("rejects malformed state without rewriting it", async () => {

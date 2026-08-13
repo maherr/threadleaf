@@ -117,14 +117,18 @@ extension filters, metadata and byte totals, explicit duplicate-name failures, a
 word and grapheme-character counts.
 Runtime-owned panes keep one ordered entry per open note in each pane, reactivate an existing entry
 instead of duplicating it, follow externally renamed notes, and remove externally deleted notes.
-The workspace can split right or down, move the active tab between panes, collapse back to one
-pane, and keep independent CodeMirror selection, undo, and protected crash-draft state in both.
-Tab order, active notes, focused pane, and split direction restore per vault from versioned private
-application data. The stored document also retains a validated one-pane projection that the prior
-daily-driver build can read during rollback. An intentionally empty workspace stays empty, missing
-notes are pruned on restore, and malformed state remains available for diagnosis behind a visible
-warning without rewriting its bytes. Native application menus dispatch the same saved-keybinding
-actions to the focused workspace. No workspace metadata is written into the vault or `.obsidian/`.
+Each pane also has a stable leading pinned region. Pinning moves a tab to that region's end;
+unpinning moves it to the beginning of the ordinary region. Pinned tabs use both a text marker and
+an accessible Pin or Unpin control, cannot be closed or trashed until unpinned, and are available
+through the command palette, native Workspace menu, and a remappable hotkey target. The workspace
+can split right or down, move the active tab between panes, collapse back to one pane, and keep
+independent CodeMirror selection, undo, and protected crash-draft state in both. Tab order, pins,
+active notes, focused pane, and split direction restore per vault from versioned private application
+data. The stored document also retains a validated one-pane projection that the prior daily-driver
+build can read during rollback. An intentionally empty workspace stays empty, missing notes are
+pruned on restore, and malformed state remains available for diagnosis behind a visible warning
+without rewriting its bytes. Native application menus dispatch the same saved-keybinding actions to
+the focused workspace. No workspace metadata is written into the vault or `.obsidian/`.
 
 Daily notes and templates now use the same recovery-backed note-creation path as New. Settings can
 choose a template folder, default date and time formats, daily-note folder and date format, and an

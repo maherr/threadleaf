@@ -10,7 +10,6 @@ import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows
 import { WorkspaceRuntime } from "./workspace-runtime";
 import {
   createWorkspaceLayout,
-  createWorkspaceState,
   type PersistedWorkspaceState,
   parseWorkspaceState,
   type WorkspaceStateStore,
@@ -27,9 +26,19 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
   readonly saved: PersistedWorkspaceState[] = [];
   loadError: Error | null = null;
   saveError: Error | null = null;
-  readonly #initial: { openPaths: string[]; activePath: string | null } | null;
+  readonly #initial: {
+    openPaths: string[];
+    pinnedPaths?: string[];
+    activePath: string | null;
+  } | null;
 
-  constructor(initial: { openPaths: string[]; activePath: string | null } | null = null) {
+  constructor(
+    initial: {
+      openPaths: string[];
+      pinnedPaths?: string[];
+      activePath: string | null;
+    } | null = null,
+  ) {
     this.#initial = initial;
   }
 
@@ -41,7 +50,19 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
       return parseWorkspaceState(this.value, vaultId);
     }
     return this.#initial
-      ? createWorkspaceState(vaultId, this.#initial.openPaths, this.#initial.activePath)
+      ? createWorkspaceLayout(
+          vaultId,
+          [
+            {
+              id: "primary",
+              openPaths: this.#initial.openPaths,
+              ...(this.#initial.pinnedPaths ? { pinnedPaths: this.#initial.pinnedPaths } : {}),
+              activePath: this.#initial.activePath,
+            },
+          ],
+          "primary",
+          null,
+        )
       : null;
   }
 
@@ -206,6 +227,7 @@ describe("WorkspaceRuntime", () => {
         source: "workspace",
       },
       { id: "workspace.split", name: "Split workspace", source: "workspace" },
+      { id: "workspace.toggle-tab-pin", name: "Toggle tab pin", source: "workspace" },
     ]);
 
     const opened = await workspace.openNote("Welcome.md");
@@ -319,14 +341,14 @@ describe("WorkspaceRuntime", () => {
 
     const welcome = await workspace.openNote("Welcome.md");
     expect(welcome.workspace?.tabs).toEqual([
-      { path: "Linked Note.md", title: "Linked Note", active: false },
-      { path: "Welcome.md", title: "Welcome", active: true },
+      { path: "Linked Note.md", title: "Linked Note", active: false, pinned: false },
+      { path: "Welcome.md", title: "Welcome", active: true, pinned: false },
     ]);
 
     const reused = await workspace.openNote("Linked Note.md");
     expect(reused.workspace?.tabs).toEqual([
-      { path: "Linked Note.md", title: "Linked Note", active: true },
-      { path: "Welcome.md", title: "Welcome", active: false },
+      { path: "Linked Note.md", title: "Linked Note", active: true, pinned: false },
+      { path: "Welcome.md", title: "Welcome", active: false, pinned: false },
     ]);
 
     const closedActive = await workspace.closeNote("Linked Note.md", workspace.vaultId);
@@ -341,6 +363,169 @@ describe("WorkspaceRuntime", () => {
     await expect(workspace.closeNote("Welcome.md", "stale-vault")).rejects.toThrow(
       "active vault changed",
     );
+  });
+
+  it("orders pinned tabs, refuses destructive closes, and persists their private state", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let workspace = await openRuntime(store);
+    const opened = await workspace.openNote("Welcome.md");
+    const activeNote = opened.workspace?.activeNote;
+    if (!activeNote) {
+      throw new Error("Expected Welcome.md to be active.");
+    }
+
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    const bothPinned = await workspace.toggleTabPin("Linked Note.md", "primary", workspace.vaultId);
+    expect(bothPinned.workspace?.tabs).toEqual([
+      { path: "Welcome.md", title: "Welcome", active: true, pinned: true },
+      { path: "Linked Note.md", title: "Linked Note", active: false, pinned: true },
+    ]);
+
+    const unpinned = await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    expect(unpinned.workspace?.tabs).toEqual([
+      { path: "Linked Note.md", title: "Linked Note", active: false, pinned: true },
+      { path: "Welcome.md", title: "Welcome", active: true, pinned: false },
+    ]);
+    const repinned = await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    expect(
+      repinned.workspace?.tabs.map(({ path: filePath, pinned }) => ({ filePath, pinned })),
+    ).toEqual([
+      { filePath: "Linked Note.md", pinned: true },
+      { filePath: "Welcome.md", pinned: true },
+    ]);
+
+    const before = await fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8");
+    await expect(workspace.closeNote("Welcome.md", workspace.vaultId)).rejects.toThrow(
+      "Unpin this tab before closing it.",
+    );
+    await expect(
+      workspace.deleteNote("Welcome.md", activeNote.revision, workspace.vaultId),
+    ).rejects.toThrow("Unpin this tab before closing it.");
+    await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(before);
+    await expect(
+      workspace.toggleTabPin("Missing.md", "primary", workspace.vaultId),
+    ).rejects.toThrow("does not contain this tab");
+    await expect(workspace.toggleTabPin("Welcome.md", "primary", "stale-vault")).rejects.toThrow(
+      "active vault changed",
+    );
+
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    await workspace.closeNote("Welcome.md", workspace.vaultId);
+    await workspace.close();
+    runtime = undefined;
+
+    workspace = await openRuntime(store);
+    expect((await workspace.getSnapshot()).workspace?.tabs).toEqual([
+      { path: "Linked Note.md", title: "Linked Note", active: true, pinned: true },
+    ]);
+    expect(store.saved.at(-1)?.panes[0]).toMatchObject({
+      openPaths: ["Linked Note.md"],
+      pinnedPaths: ["Linked Note.md"],
+    });
+  });
+
+  it("does not adopt a pin change when its private workspace write fails", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    store.saveError = new Error("workspace disk unavailable");
+
+    await expect(
+      workspace.toggleTabPin("Linked Note.md", "primary", workspace.vaultId),
+    ).rejects.toThrow("Could not save workspace state: workspace disk unavailable");
+    expect((await workspace.getSnapshot()).workspace?.tabs).toEqual([
+      { path: "Linked Note.md", title: "Linked Note", active: true, pinned: false },
+    ]);
+  });
+
+  it("keeps pinned ordering through pane split, transfer, collapse, and restart", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+    const created = await workspace.createNote("Third", "# Third\n", workspace.vaultId);
+    if (created.outcome.status !== "committed") {
+      throw new Error("Expected the third note to be created.");
+    }
+    await workspace.toggleTabPin("Third.md", "primary", workspace.vaultId);
+
+    const moved = await workspace.moveNoteToWorkspacePane(
+      "Third.md",
+      "primary",
+      "secondary",
+      workspace.vaultId,
+    );
+    expect(moved.workspace?.panes).toMatchObject([
+      {
+        id: "primary",
+        tabs: [
+          { path: "Welcome.md", pinned: true },
+          { path: "Linked Note.md", pinned: false },
+        ],
+      },
+      {
+        id: "secondary",
+        tabs: [
+          { path: "Welcome.md", pinned: true },
+          { path: "Third.md", pinned: true, active: true },
+        ],
+      },
+    ]);
+
+    const collapsed = await workspace.closeWorkspacePane("secondary", workspace.vaultId);
+    expect(collapsed.workspace).toMatchObject({
+      activePaneId: "primary",
+      splitDirection: null,
+      panes: [
+        {
+          id: "primary",
+          tabs: [
+            { path: "Welcome.md", pinned: true, active: false },
+            { path: "Third.md", pinned: true, active: true },
+            { path: "Linked Note.md", pinned: false, active: false },
+          ],
+        },
+      ],
+    });
+    await workspace.close();
+    runtime = undefined;
+
+    workspace = await openRuntime(store);
+    expect((await workspace.getSnapshot()).workspace).toMatchObject({
+      activePaneId: "primary",
+      splitDirection: null,
+      tabs: [
+        { path: "Welcome.md", pinned: true, active: false },
+        { path: "Third.md", pinned: true, active: true },
+        { path: "Linked Note.md", pinned: false, active: false },
+      ],
+    });
+  });
+
+  it("promotes an existing destination tab when a pinned copy moves between panes", async () => {
+    const workspace = await openRuntime();
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+    await workspace.toggleTabPin("Linked Note.md", "primary", workspace.vaultId);
+
+    const moved = await workspace.moveNoteToWorkspacePane(
+      "Linked Note.md",
+      "primary",
+      "secondary",
+      workspace.vaultId,
+    );
+
+    expect(moved.workspace).toMatchObject({
+      activePaneId: "secondary",
+      panes: [
+        { id: "primary", tabs: [] },
+        {
+          id: "secondary",
+          tabs: [{ path: "Linked Note.md", pinned: true, active: true }],
+        },
+      ],
+    });
   });
 
   it("splits into independent panes, focuses them, moves tabs, and closes a pane", async () => {
@@ -418,7 +603,10 @@ describe("WorkspaceRuntime", () => {
         {
           id: "primary",
           active: true,
-          tabs: [{ path: "Linked Note.md", active: true }],
+          tabs: [
+            { path: "Linked Note.md", active: false },
+            { path: "Welcome.md", active: true },
+          ],
         },
       ],
     });
@@ -462,6 +650,7 @@ describe("WorkspaceRuntime", () => {
   it("restores ordered tabs, chooses a surviving active note, and prunes stale paths", async () => {
     const store = new MemoryWorkspaceStateStore({
       openPaths: ["Welcome.md", "Missing.md", "Linked Note.md"],
+      pinnedPaths: ["Welcome.md", "Missing.md"],
       activePath: "Missing.md",
     });
     const workspace = await openRuntime(store);
@@ -470,8 +659,8 @@ describe("WorkspaceRuntime", () => {
 
     expect(snapshot.workspace).toMatchObject({
       tabs: [
-        { path: "Welcome.md", active: false },
-        { path: "Linked Note.md", active: true },
+        { path: "Welcome.md", active: false, pinned: true },
+        { path: "Linked Note.md", active: true, pinned: false },
       ],
       activeNote: { path: "Linked Note.md" },
     });
@@ -479,6 +668,7 @@ describe("WorkspaceRuntime", () => {
       panes: [
         {
           openPaths: ["Welcome.md", "Linked Note.md"],
+          pinnedPaths: ["Welcome.md"],
           activePath: "Linked Note.md",
         },
       ],
@@ -642,21 +832,28 @@ describe("WorkspaceRuntime", () => {
   });
 
   it("keeps open tabs aligned with external note renames and deletions", async () => {
-    const workspace = await openRuntime();
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
     await workspace.openNote("Welcome.md");
+    const pinned = await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    expect(pinned.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
 
     await fs.rename(path.join(vaultPath, "Welcome.md"), path.join(vaultPath, "Renamed.md"));
     const renamed = await workspace.reconcileNow();
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Renamed.md"]);
     expect(renamed.workspace).toMatchObject({
       tabs: [
-        { path: "Linked Note.md", active: false },
-        { path: "Renamed.md", active: true },
+        { path: "Renamed.md", active: true, pinned: true },
+        { path: "Linked Note.md", active: false, pinned: false },
       ],
       activeNote: { path: "Renamed.md" },
     });
 
     await fs.unlink(path.join(vaultPath, "Renamed.md"));
     const deleted = await workspace.reconcileNow();
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
     expect(deleted.workspace).toMatchObject({
       tabs: [{ path: "Linked Note.md", active: true }],
       activeNote: { path: "Linked Note.md" },
@@ -664,12 +861,17 @@ describe("WorkspaceRuntime", () => {
   });
 
   it("moves an open note through the link-safe service and remaps its tab", async () => {
-    const workspace = await openRuntime();
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
     const opened = await workspace.openNote("Welcome.md");
     const note = opened.workspace?.activeNote;
     if (!note) {
       throw new Error("Expected an active note.");
     }
+    const pinned = await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    expect(pinned.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
 
     const moved = await workspace.moveNote(
       note.path,
@@ -677,6 +879,7 @@ describe("WorkspaceRuntime", () => {
       note.revision,
       workspace.vaultId,
     );
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Archive/Welcome.md"]);
 
     expect(moved.outcome).toMatchObject({
       status: "committed",
@@ -685,8 +888,8 @@ describe("WorkspaceRuntime", () => {
     });
     expect(moved.snapshot.workspace).toMatchObject({
       tabs: [
-        { path: "Linked Note.md", active: false },
-        { path: "Archive/Welcome.md", active: true },
+        { path: "Archive/Welcome.md", active: true, pinned: true },
+        { path: "Linked Note.md", active: false, pinned: false },
       ],
       activeNote: { path: "Archive/Welcome.md", content: note.content },
     });
@@ -866,6 +1069,8 @@ describe("WorkspaceRuntime", () => {
     });
     expect(restored.snapshot.workspace).toMatchObject({
       files: [{ path: "Linked Note.md" }, { path: "Welcome.md", unresolvedCount: 0 }],
+      tabs: [],
+      activeNote: null,
     });
     await expect(fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).resolves.toBe(
       note.content,
@@ -1053,6 +1258,32 @@ describe("WorkspaceRuntime", () => {
     await expect(
       workspace.createPluginNote("Excalidraw/Wrong.md", "", "stale-vault"),
     ).rejects.toThrow("active vault changed");
+  });
+
+  it("refuses plugin-owned Markdown trash while the same tab is pinned", async () => {
+    const workspace = await openRuntime();
+    const created = await workspace.createPluginNote(
+      "Excalidraw/Pinned.excalidraw.md",
+      "pinned drawing",
+      workspace.vaultId,
+    );
+    if (created.status !== "committed") {
+      throw new Error("Expected the plugin Markdown note to be created.");
+    }
+    await workspace.openNote(created.path);
+    await workspace.toggleTabPin(created.path, "primary", workspace.vaultId);
+
+    await expect(
+      workspace.trashPluginFile(created.path, created.revision, workspace.vaultId),
+    ).rejects.toThrow("Unpin this tab before closing it.");
+    await expect(
+      fs.readFile(path.join(vaultPath, "Excalidraw", "Pinned.excalidraw.md"), "utf8"),
+    ).resolves.toBe("pinned drawing");
+
+    await workspace.toggleTabPin(created.path, "primary", workspace.vaultId);
+    await expect(
+      workspace.trashPluginFile(created.path, created.revision, workspace.vaultId),
+    ).resolves.toMatchObject({ status: "committed", from: created.path });
   });
 
   it("creates and revision-binds plugin text and binary files outside the Markdown index", async () => {
@@ -1743,6 +1974,7 @@ describe("WorkspaceRuntime", () => {
         source: "workspace",
       },
       { id: "workspace.split", name: "Split workspace", source: "workspace" },
+      { id: "workspace.toggle-tab-pin", name: "Toggle tab pin", source: "workspace" },
     ]);
     await expect(workspace.openNote("Welcome.md")).resolves.toMatchObject({
       workspace: { activeNote: { path: "Welcome.md" } },

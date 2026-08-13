@@ -86,6 +86,11 @@ class FakeRuntime implements WorkspaceRuntimePort {
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
   noteEmbedLoader: (() => Promise<VaultNoteEmbedResponse>) | null = null;
   closedNote: { filePath: string; expectedVaultId: string } | null = null;
+  toggledTabPin: {
+    filePath: string;
+    paneId: "primary" | "secondary";
+    expectedVaultId: string;
+  } | null = null;
   movedNote: {
     filePath: string;
     targetPath: string;
@@ -243,6 +248,15 @@ class FakeRuntime implements WorkspaceRuntimePort {
 
   async closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {
     this.closedNote = { filePath, expectedVaultId };
+    return this.#snapshot;
+  }
+
+  async toggleTabPin(
+    filePath: string,
+    paneId: "primary" | "secondary",
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    this.toggledTabPin = { filePath, paneId, expectedVaultId };
     return this.#snapshot;
   }
 
@@ -884,6 +898,27 @@ describe("WorkspaceController", () => {
 
     expect(harness.runtimes[0]?.closedNote).toEqual({
       filePath: "Notes/Current.md",
+      expectedVaultId,
+    });
+    await controller.close();
+  });
+
+  it("forwards a tab pin toggle with its pane membership and active vault identity", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+
+    await controller.toggleTabPin("Notes/Current.md", "secondary", expectedVaultId);
+
+    expect(harness.runtimes[0]?.toggledTabPin).toEqual({
+      filePath: "Notes/Current.md",
+      paneId: "secondary",
       expectedVaultId,
     });
     await controller.close();

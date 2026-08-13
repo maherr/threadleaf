@@ -168,6 +168,12 @@ interface MoveNoteToPaneRequest {
   expectedVaultId: string;
 }
 
+interface ToggleTabPinRequest {
+  path: string;
+  paneId: WorkspacePaneId;
+  expectedVaultId: string;
+}
+
 interface MoveNoteRequest {
   path: string;
   targetPath: string;
@@ -324,6 +330,26 @@ function parseMoveNoteToPaneRequest(payload: unknown): MoveNoteToPaneRequest {
   };
 }
 
+function parseToggleTabPinRequest(payload: unknown): ToggleTabPinRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("paneId" in payload) ||
+    (payload.paneId !== "primary" && payload.paneId !== "secondary") ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error("Toggle tab pin requires a path, pane, and vault identity.");
+  }
+  return {
+    path: payload.path,
+    paneId: payload.paneId,
+    expectedVaultId: payload.expectedVaultId,
+  };
+}
+
 function parseCreateNoteRequest(payload: unknown): CreateNoteRequest {
   if (
     typeof payload !== "object" ||
@@ -468,7 +494,9 @@ function workspaceStatesEqual(
         pane.id === other.id &&
         pane.activePath === other.activePath &&
         pane.openPaths.length === other.openPaths.length &&
-        pane.openPaths.every((filePath, pathIndex) => filePath === other.openPaths[pathIndex])
+        pane.openPaths.every((filePath, pathIndex) => filePath === other.openPaths[pathIndex]) &&
+        pane.pinnedPaths.length === other.pinnedPaths.length &&
+        pane.pinnedPaths.every((filePath, pathIndex) => filePath === other.pinnedPaths[pathIndex])
       );
     })
   );
@@ -485,7 +513,9 @@ export class WorkspaceRuntime {
   readonly #baseWarning: string | null;
   readonly #workspaceStateStore: WorkspaceStateStore | undefined;
 
-  #panes: PersistedWorkspacePane[] = [{ id: "primary", openPaths: [], activePath: null }];
+  #panes: PersistedWorkspacePane[] = [
+    { id: "primary", openPaths: [], pinnedPaths: [], activePath: null },
+  ];
   #activePaneId: WorkspacePaneId = "primary";
   #splitDirection: WorkspaceSplitDirection | null = null;
   #workspaceLoadWarning: string | null;
@@ -583,6 +613,12 @@ export class WorkspaceRuntime {
         execute: (payload) => this.moveNoteToPaneThroughState(parseMoveNoteToPaneRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
+        id: "workspace.toggle-tab-pin",
+        name: "Toggle tab pin",
+        source: "workspace",
+        execute: (payload) => this.toggleTabPinThroughState(parseToggleTabPinRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
         id: "workspace.move-note",
         name: "Move or rename note",
         source: "workspace",
@@ -671,6 +707,7 @@ export class WorkspaceRuntime {
         return {
           id: pane.id,
           openPaths,
+          pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
           activePath:
             pane.activePath && openPaths.includes(pane.activePath)
               ? pane.activePath
@@ -787,6 +824,19 @@ export class WorkspaceRuntime {
       path: filePath,
       fromPaneId,
       toPaneId,
+      expectedVaultId,
+    });
+    return this.publishSnapshot();
+  }
+
+  async toggleTabPin(
+    filePath: string,
+    paneId: WorkspacePaneId,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.toggle-tab-pin", {
+      path: filePath,
+      paneId,
       expectedVaultId,
     });
     return this.publishSnapshot();
@@ -1222,6 +1272,9 @@ export class WorkspaceRuntime {
     if (hasPrivateVaultSegment(normalizedSource)) {
       throw new Error(`Plugin trash cannot target private application paths: ${filePath}`);
     }
+    if (normalizedSource.toLowerCase().endsWith(".md")) {
+      this.assertNoPinnedWorkspaceTabsForRemoval(normalizedSource);
+    }
     const outcome = await this.kernel.renameFile(
       normalizedSource,
       `${vaultTrashDirectory}/${normalizedSource}`,
@@ -1334,6 +1387,7 @@ export class WorkspaceRuntime {
     this.#panes = state.panes.map((pane) => ({
       id: pane.id,
       openPaths: [...pane.openPaths],
+      pinnedPaths: [...pane.pinnedPaths],
       activePath: pane.activePath,
     }));
     this.#activePaneId = state.activePaneId;
@@ -1435,12 +1489,19 @@ export class WorkspaceRuntime {
         continue;
       }
       pane.openPaths.splice(index, 1);
+      pane.pinnedPaths = pane.pinnedPaths.filter((pinnedPath) => pinnedPath !== filePath);
       if (pane.activePath === filePath) {
         pane.activePath = pane.openPaths[index] ?? pane.openPaths[index - 1] ?? null;
       }
       changed = true;
     }
     return changed;
+  }
+
+  private assertNoPinnedWorkspaceTabsForRemoval(filePath: string): void {
+    if (this.#panes.some((pane) => pane.pinnedPaths.includes(filePath))) {
+      throw new Error("Unpin this tab before closing it.");
+    }
   }
 
   private moveOpenPath(from: string, to: string): boolean {
@@ -1453,8 +1514,12 @@ export class WorkspaceRuntime {
       const targetIndex = pane.openPaths.indexOf(to);
       if (targetIndex === -1) {
         pane.openPaths[sourceIndex] = to;
+        pane.pinnedPaths = pane.pinnedPaths.map((pinnedPath) =>
+          pinnedPath === from ? to : pinnedPath,
+        );
       } else {
         pane.openPaths.splice(sourceIndex, 1);
+        pane.pinnedPaths = pane.pinnedPaths.filter((pinnedPath) => pinnedPath !== from);
       }
       if (pane.activePath === from) {
         pane.activePath = to;
@@ -1475,6 +1540,9 @@ export class WorkspaceRuntime {
     if (index === -1) {
       return;
     }
+    if (pane.pinnedPaths.includes(normalizedPath)) {
+      throw new Error("Unpin this tab before closing it.");
+    }
     const state = this.currentWorkspaceState();
     const nextPane = state.panes.find(({ id }) => id === paneId);
     if (!nextPane) {
@@ -1482,6 +1550,9 @@ export class WorkspaceRuntime {
     }
     const openPaths = nextPane.openPaths.filter((filePath) => filePath !== normalizedPath);
     nextPane.openPaths = openPaths;
+    nextPane.pinnedPaths = nextPane.pinnedPaths.filter(
+      (pinnedPath) => pinnedPath !== normalizedPath,
+    );
     nextPane.activePath =
       nextPane.activePath === normalizedPath
         ? (openPaths[index] ?? openPaths[index - 1] ?? null)
@@ -1519,6 +1590,7 @@ export class WorkspaceRuntime {
     state.panes.push({
       id: "secondary",
       openPaths: activePath ? [activePath] : [],
+      pinnedPaths: activePath && sourcePane.pinnedPaths.includes(activePath) ? [activePath] : [],
       activePath,
     });
     await this.adoptWorkspaceState(
@@ -1549,17 +1621,39 @@ export class WorkspaceRuntime {
       return;
     }
     const survivor = state.panes.find(({ id }) => id !== request.paneId);
-    if (!survivor) {
-      throw new Error("The remaining workspace pane is missing.");
+    const closingPane = state.panes.find(({ id }) => id === request.paneId);
+    if (!survivor || !closingPane) {
+      throw new Error("The remaining or closing workspace pane is missing.");
     }
+    const survivorPaths = new Set(survivor.openPaths);
+    const survivorPinnedPaths = [...survivor.pinnedPaths];
+    const closingPinnedPaths = closingPane.pinnedPaths.filter(
+      (filePath) => !survivorPaths.has(filePath),
+    );
+    const survivorOrdinaryPaths = survivor.openPaths.filter(
+      (filePath) => !survivorPinnedPaths.includes(filePath),
+    );
+    const closingOrdinaryPaths = closingPane.openPaths.filter(
+      (filePath) => !closingPane.pinnedPaths.includes(filePath) && !survivorPaths.has(filePath),
+    );
+    const activePath =
+      state.activePaneId === request.paneId
+        ? (closingPane.activePath ?? survivor.activePath)
+        : survivor.activePath;
     await this.adoptWorkspaceState(
       createWorkspaceLayout(
         this.kernel.vaultId,
         [
           {
             id: "primary",
-            openPaths: [...survivor.openPaths],
-            activePath: survivor.activePath,
+            openPaths: [
+              ...survivorPinnedPaths,
+              ...closingPinnedPaths,
+              ...survivorOrdinaryPaths,
+              ...closingOrdinaryPaths,
+            ],
+            pinnedPaths: [...survivorPinnedPaths, ...closingPinnedPaths],
+            activePath,
           },
         ],
         "primary",
@@ -1589,7 +1683,9 @@ export class WorkspaceRuntime {
     if (sourceIndex === -1) {
       throw new Error(`The source pane does not contain this tab: ${normalizedPath}`);
     }
+    const sourceWasPinned = source.pinnedPaths.includes(normalizedPath);
     source.openPaths.splice(sourceIndex, 1);
+    source.pinnedPaths = source.pinnedPaths.filter((pinnedPath) => pinnedPath !== normalizedPath);
     if (source.activePath === normalizedPath) {
       source.activePath =
         source.openPaths[sourceIndex] ?? source.openPaths[sourceIndex - 1] ?? null;
@@ -1597,12 +1693,54 @@ export class WorkspaceRuntime {
     if (!target.openPaths.includes(normalizedPath)) {
       target.openPaths.push(normalizedPath);
     }
+    if (sourceWasPinned && !target.pinnedPaths.includes(normalizedPath)) {
+      target.pinnedPaths.push(normalizedPath);
+    }
     target.activePath = normalizedPath;
     await this.adoptWorkspaceState(
       createWorkspaceLayout(
         this.kernel.vaultId,
         state.panes,
         request.toPaneId,
+        state.splitDirection,
+      ),
+      true,
+    );
+  }
+
+  private async toggleTabPinThroughState(request: ToggleTabPinRequest): Promise<void> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this tab pin could be updated.");
+    }
+    const normalizedPath = normalizeVaultPath(request.path);
+    this.workspacePane(request.paneId);
+    const state = this.currentWorkspaceState();
+    const pane = state.panes.find(({ id }) => id === request.paneId);
+    if (!pane?.openPaths.includes(normalizedPath)) {
+      throw new Error(`The workspace pane does not contain this tab: ${normalizedPath}`);
+    }
+    const currentlyPinned = pane.pinnedPaths.includes(normalizedPath);
+    if (currentlyPinned) {
+      const pinnedPaths = pane.pinnedPaths.filter((filePath) => filePath !== normalizedPath);
+      const ordinaryPaths = pane.openPaths.filter(
+        (filePath) => filePath !== normalizedPath && !pinnedPaths.includes(filePath),
+      );
+      pane.pinnedPaths = pinnedPaths;
+      pane.openPaths = [...pinnedPaths, normalizedPath, ...ordinaryPaths];
+    } else {
+      const pinnedPaths = [...pane.pinnedPaths, normalizedPath];
+      const pinnedPathSet = new Set(pinnedPaths);
+      pane.pinnedPaths = pinnedPaths;
+      pane.openPaths = [
+        ...pinnedPaths,
+        ...pane.openPaths.filter((filePath) => !pinnedPathSet.has(filePath)),
+      ];
+    }
+    await this.adoptWorkspaceState(
+      createWorkspaceLayout(
+        this.kernel.vaultId,
+        state.panes,
+        state.activePaneId,
         state.splitDirection,
       ),
       true,
@@ -1669,7 +1807,9 @@ export class WorkspaceRuntime {
       throw new Error("The active vault changed before this note could be moved to trash.");
     }
     this.assertWritable("move notes to trash");
-    const outcome = await trashMarkdownNote(this.kernel, request.path, request.expectedRevision);
+    const normalizedPath = normalizeVaultPath(request.path);
+    this.assertNoPinnedWorkspaceTabsForRemoval(normalizedPath);
+    const outcome = await trashMarkdownNote(this.kernel, normalizedPath, request.expectedRevision);
     if (outcome.status !== "committed") {
       return outcome;
     }
@@ -1955,6 +2095,7 @@ export class WorkspaceRuntime {
       return {
         id: pane.id,
         openPaths,
+        pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
         activePath:
           pane.activePath && openPaths.includes(pane.activePath)
             ? pane.activePath
@@ -2013,19 +2154,21 @@ export class WorkspaceRuntime {
       noteSnapshots.set(filePath, pending);
       return pending;
     };
+    const snapshotState = reconciledState;
     const panes: WorkspacePaneSnapshot[] = await Promise.all(
-      this.#panes.map(async (pane) => ({
+      snapshotState.panes.map(async (pane) => ({
         id: pane.id,
-        active: pane.id === this.#activePaneId,
+        active: pane.id === snapshotState.activePaneId,
         tabs: pane.openPaths.map((filePath) => ({
           path: filePath,
           title: displayTitleFromVaultPath(filePath),
           active: filePath === pane.activePath,
+          pinned: pane.pinnedPaths.includes(filePath),
         })),
         activeNote: pane.activePath ? await loadNoteSnapshot(pane.activePath) : null,
       })),
     );
-    const activePane = panes.find(({ id }) => id === this.#activePaneId);
+    const activePane = panes.find(({ id }) => id === snapshotState.activePaneId);
     if (!activePane) {
       throw new Error("The active workspace pane is missing from its snapshot.");
     }
@@ -2034,8 +2177,8 @@ export class WorkspaceRuntime {
       indexGeneration: this.indexReactor.index.generation,
       files,
       panes,
-      activePaneId: this.#activePaneId,
-      splitDirection: this.#splitDirection,
+      activePaneId: snapshotState.activePaneId,
+      splitDirection: snapshotState.splitDirection,
       tabs: activePane.tabs,
       activeNote: activePane.activeNote,
       recoveryActionCount: this.kernel.startupRecoveryActions.length,

@@ -29,6 +29,7 @@ describe("workspace state", () => {
         {
           id: "primary",
           openPaths: ["Notes/First.md", "Second.MD"],
+          pinnedPaths: [],
           activePath: "Notes/First.md",
         },
       ],
@@ -41,10 +42,16 @@ describe("workspace state", () => {
     const state = createWorkspaceLayout(
       vaultId,
       [
-        { id: "primary", openPaths: ["First.md", "Shared.md"], activePath: "First.md" },
+        {
+          id: "primary",
+          openPaths: ["First.md", "Shared.md"],
+          pinnedPaths: ["Shared.md"],
+          activePath: "First.md",
+        },
         {
           id: "secondary",
           openPaths: ["Second.md", "Shared.md"],
+          pinnedPaths: ["Shared.md"],
           activePath: "Shared.md",
         },
       ],
@@ -56,10 +63,16 @@ describe("workspace state", () => {
       version: 2,
       vaultId,
       panes: [
-        { id: "primary", openPaths: ["First.md", "Shared.md"], activePath: "First.md" },
+        {
+          id: "primary",
+          openPaths: ["Shared.md", "First.md"],
+          pinnedPaths: ["Shared.md"],
+          activePath: "First.md",
+        },
         {
           id: "secondary",
-          openPaths: ["Second.md", "Shared.md"],
+          openPaths: ["Shared.md", "Second.md"],
+          pinnedPaths: ["Shared.md"],
           activePath: "Shared.md",
         },
       ],
@@ -73,10 +86,16 @@ describe("workspace state", () => {
     const state = createWorkspaceLayout(
       vaultId,
       [
-        { id: "primary", openPaths: ["First.md"], activePath: "First.md" },
+        {
+          id: "primary",
+          openPaths: ["First.md"],
+          pinnedPaths: [],
+          activePath: "First.md",
+        },
         {
           id: "secondary",
           openPaths: ["Second.md", "Shared.md"],
+          pinnedPaths: ["Shared.md"],
           activePath: "Shared.md",
         },
       ],
@@ -89,8 +108,22 @@ describe("workspace state", () => {
     expect(document).toMatchObject({
       version: 1,
       layoutVersion: 2,
-      openPaths: ["Second.md", "Shared.md"],
+      openPaths: ["Shared.md", "Second.md"],
       activePath: "Shared.md",
+      panes: [
+        {
+          id: "primary",
+          openPaths: ["First.md"],
+          pinnedPaths: [],
+          activePath: "First.md",
+        },
+        {
+          id: "secondary",
+          openPaths: ["Shared.md", "Second.md"],
+          pinnedPaths: ["Shared.md"],
+          activePath: "Shared.md",
+        },
+      ],
     });
     expect(parseWorkspaceState(document, vaultId)).toEqual(state);
     expect(() => parseWorkspaceState({ ...document, activePath: "Second.md" }, vaultId)).toThrow(
@@ -102,7 +135,7 @@ describe("workspace state", () => {
     expect(createWorkspaceState(vaultId, [], null)).toEqual({
       version: 2,
       vaultId,
-      panes: [{ id: "primary", openPaths: [], activePath: null }],
+      panes: [{ id: "primary", openPaths: [], pinnedPaths: [], activePath: null }],
       activePaneId: "primary",
       splitDirection: null,
     });
@@ -128,6 +161,68 @@ describe("workspace state", () => {
     expect(() => createWorkspaceState(vaultId, ["Note.md"], null)).toThrow(
       "must identify its active path",
     );
+    expect(() =>
+      createWorkspaceLayout(
+        vaultId,
+        [
+          {
+            id: "primary",
+            openPaths: ["Note.md"],
+            pinnedPaths: ["Missing.md"],
+            activePath: "Note.md",
+          },
+        ],
+        "primary",
+        null,
+      ),
+    ).toThrow("must also be open");
+    expect(() =>
+      createWorkspaceLayout(
+        vaultId,
+        [
+          {
+            id: "primary",
+            openPaths: ["Note.md"],
+            pinnedPaths: ["Note.md", "Note.md"],
+            activePath: "Note.md",
+          },
+        ],
+        "primary",
+        null,
+      ),
+    ).toThrow("duplicate pinned");
+  });
+
+  it("normalizes the pinned region first while retaining the version 1 projection", () => {
+    const state = parseWorkspaceState(
+      {
+        version: 1,
+        layoutVersion: 2,
+        vaultId,
+        openPaths: ["Pinned.md", "Ordinary.md", "Later.md"],
+        activePath: "Pinned.md",
+        panes: [
+          {
+            id: "primary",
+            openPaths: ["Ordinary.md", "Pinned.md", "Later.md"],
+            pinnedPaths: ["Pinned.md"],
+            activePath: "Pinned.md",
+          },
+        ],
+        activePaneId: "primary",
+        splitDirection: null,
+      },
+      vaultId,
+    );
+
+    expect(state.panes).toEqual([
+      {
+        id: "primary",
+        openPaths: ["Pinned.md", "Ordinary.md", "Later.md"],
+        pinnedPaths: ["Pinned.md"],
+        activePath: "Pinned.md",
+      },
+    ]);
   });
 
   it("rejects malformed pane topology", () => {

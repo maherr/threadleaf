@@ -9,6 +9,19 @@ export type WorkspaceSplitDirection = "horizontal" | "vertical";
 export interface PersistedWorkspacePane {
   id: WorkspacePaneId;
   openPaths: string[];
+  /**
+   * Ordered members of the leading pinned tab region. This remains an optional
+   * layoutVersion 2 member on disk so prior readers can retain the focused-pane
+   * version 1 projection while current readers normalize an absent field to [].
+   */
+  pinnedPaths: string[];
+  activePath: string | null;
+}
+
+export interface WorkspacePaneInput {
+  id: WorkspacePaneId;
+  openPaths: readonly string[];
+  pinnedPaths?: readonly string[];
   activePath: string | null;
 }
 
@@ -70,19 +83,38 @@ function normalizePane(value: unknown): PersistedWorkspacePane {
     !isRecord(value) ||
     !isPaneId(value.id) ||
     !Array.isArray(value.openPaths) ||
+    !(value.pinnedPaths === undefined || Array.isArray(value.pinnedPaths)) ||
     !(value.activePath === null || typeof value.activePath === "string")
   ) {
-    throw new Error("Each workspace pane requires an ID, ordered tabs, and an active path.");
+    throw new Error(
+      "Each workspace pane requires an ID, ordered tabs, pinned tabs, and an active path.",
+    );
   }
   if (value.openPaths.length > maximumPersistedWorkspaceTabs) {
     throw new Error(
       `A workspace pane cannot contain more than ${maximumPersistedWorkspaceTabs} tabs.`,
     );
   }
-  const openPaths = value.openPaths.map(normalizeWorkspacePath);
-  if (new Set(openPaths).size !== openPaths.length) {
+  const rawOpenPaths = value.openPaths.map(normalizeWorkspacePath);
+  if (new Set(rawOpenPaths).size !== rawOpenPaths.length) {
     throw new Error("A workspace pane cannot contain duplicate tabs.");
   }
+  const pinnedPaths = (value.pinnedPaths ?? []).map(normalizeWorkspacePath);
+  if (new Set(pinnedPaths).size !== pinnedPaths.length) {
+    throw new Error("A workspace pane cannot contain duplicate pinned tabs.");
+  }
+  if (pinnedPaths.length > rawOpenPaths.length) {
+    throw new Error("A workspace pane cannot pin more tabs than it opens.");
+  }
+  const openPathSet = new Set(rawOpenPaths);
+  if (pinnedPaths.some((filePath) => !openPathSet.has(filePath))) {
+    throw new Error("Pinned workspace tabs must also be open in their pane.");
+  }
+  const pinnedPathSet = new Set(pinnedPaths);
+  const openPaths = [
+    ...pinnedPaths,
+    ...rawOpenPaths.filter((filePath) => !pinnedPathSet.has(filePath)),
+  ];
   const activePath = value.activePath === null ? null : normalizeWorkspacePath(value.activePath);
   if (activePath !== null && !openPaths.includes(activePath)) {
     throw new Error("The active workspace path must also be an open tab in its pane.");
@@ -90,7 +122,7 @@ function normalizePane(value: unknown): PersistedWorkspacePane {
   if (activePath === null && openPaths.length > 0) {
     throw new Error("A workspace pane with open tabs must identify its active path.");
   }
-  return { id: value.id, openPaths, activePath };
+  return { id: value.id, openPaths, pinnedPaths, activePath };
 }
 
 function normalizeVersionTwo(
@@ -238,7 +270,7 @@ export function createWorkspaceState(
 
 export function createWorkspaceLayout(
   vaultId: string,
-  panes: readonly PersistedWorkspacePane[],
+  panes: readonly WorkspacePaneInput[],
   activePaneId: WorkspacePaneId,
   splitDirection: WorkspaceSplitDirection | null,
 ): PersistedWorkspaceState {
@@ -249,6 +281,7 @@ export function createWorkspaceLayout(
       panes: panes.map((pane) => ({
         id: pane.id,
         openPaths: [...pane.openPaths],
+        ...(pane.pinnedPaths ? { pinnedPaths: [...pane.pinnedPaths] } : {}),
         activePath: pane.activePath,
       })),
       activePaneId,
@@ -280,6 +313,7 @@ export function createWorkspaceStateDocument(
     panes: normalized.panes.map((pane) => ({
       id: pane.id,
       openPaths: [...pane.openPaths],
+      pinnedPaths: [...pane.pinnedPaths],
       activePath: pane.activePath,
     })),
     activePaneId: normalized.activePaneId,

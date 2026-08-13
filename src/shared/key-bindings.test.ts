@@ -45,6 +45,7 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.create-note"]).toBe("Mod+N");
     expect(parsed.keyBindings["workspace.move-note"]).toBe("Mod+Shift+M");
     expect(parsed.keyBindings["workspace.delete-note"]).toBeNull();
+    expect(parsed.keyBindings["workspace.toggle-tab-pin"]).toBeNull();
     expect(parsed.keyBindings["workspace.close-tab"]).toBe("Mod+W");
     expect(parsed.keyBindings["workspace.next-tab"]).toBe("Alt+ArrowRight");
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
@@ -73,6 +74,14 @@ describe("key bindings", () => {
     expect(() => updateKeyBinding(original, "editor.revert-note", "Mod+S")).toThrow(
       "editor.save-note",
     );
+  });
+
+  it("allows tab pinning to be remapped like every shared application action", () => {
+    const original = createDefaultAppSettings();
+    const updated = updateKeyBinding(original, "workspace.toggle-tab-pin", "Alt+P");
+
+    expect(updated.keyBindings["workspace.toggle-tab-pin"]).toBe("Alt+P");
+    expect(original.keyBindings["workspace.toggle-tab-pin"]).toBeNull();
   });
 
   it("loads version 2 appearance settings and preserves them through shortcut updates", () => {

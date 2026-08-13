@@ -522,6 +522,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     description: "Keep or remove the current note in this vault's private bookmark shelf.",
   },
   {
+    id: "workspace.toggle-tab-pin",
+    label: "Toggle pin for current tab",
+    description: "Keep the current tab in this pane's leading pinned tab region.",
+  },
+  {
     id: "workspace.open-graph-view",
     label: "Open vault graph",
     description: "Explore all indexed note connections without changing the vault.",
@@ -1171,6 +1176,7 @@ function commandCatalog(): RendererCommand[] {
   const opening = vaultOpening();
   const readOnly = readOnlyVault();
   const tabs = opening ? [] : (workspacePaneSnapshot()?.tabs ?? []);
+  const activeTab = tabs.find((tab) => tab.active) ?? null;
   const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
   const paneDirty = anyPaneDirty();
   const paneSaving = anyPaneSaving();
@@ -1313,6 +1319,20 @@ function commandCatalog(): RendererCommand[] {
       run: toggleCurrentNoteBookmark,
     },
     {
+      id: "workspace.toggle-tab-pin",
+      label: activeTab?.pinned ? "Unpin current tab" : "Pin current tab",
+      category: "Workspace",
+      keywords: ["pin", "unpin", "tab", "keep", "workspace"],
+      shortcut: shortcutFor("workspace.toggle-tab-pin"),
+      enabled: Boolean(activeTab && loadedVaultId && !opening && !busy && !saving),
+      disabledReason: opening
+        ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+        : !activeTab
+          ? "No note tab is active."
+          : "Threadleaf is finishing another action.",
+      run: toggleCurrentTabPin,
+    },
+    {
       id: "workspace.move-note",
       label: "Move or rename current note",
       category: "Workspace",
@@ -1360,12 +1380,16 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["close", "tab", "note"],
       shortcut: shortcutFor("workspace.close-tab"),
-      enabled: Boolean(loadedNote && loadedVaultId && !busy && !saving && !dirty),
+      enabled: Boolean(
+        loadedNote && loadedVaultId && !busy && !saving && !dirty && !activeTab?.pinned,
+      ),
       disabledReason: !loadedNote
         ? "No note tab is active."
-        : dirty
-          ? "Save or revert the current note before closing it."
-          : "Threadleaf is finishing another action.",
+        : activeTab?.pinned
+          ? "Unpin the current tab before closing it."
+          : dirty
+            ? "Save or revert the current note before closing it."
+            : "Threadleaf is finishing another action.",
       run: closeActiveTab,
     },
     {
@@ -4031,7 +4055,7 @@ function packageOperationLabel(operation: PluginPackageReview["operation"]): str
   }[operation];
 }
 
-function pluginPackageErrorMessage(error: unknown): string {
+function ipcErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/^Error invoking remote method '[^']+': Error: /u, "");
 }
@@ -4063,7 +4087,7 @@ async function searchOpenPluginIndex(): Promise<void> {
     pluginMessageKind = "saved";
   } catch (error) {
     if (request === pluginPackageRequest) {
-      pluginMessage = pluginPackageErrorMessage(error);
+      pluginMessage = ipcErrorMessage(error);
       pluginMessageKind = "error";
     }
   } finally {
@@ -4272,7 +4296,7 @@ async function previewPluginPackage(requestValue: PluginPackagePreviewRequest): 
     openPluginPackageReview(response.review);
   } catch (error) {
     if (request === pluginPackageRequest) {
-      pluginMessage = pluginPackageErrorMessage(error);
+      pluginMessage = ipcErrorMessage(error);
       pluginMessageKind = "error";
     }
   } finally {
@@ -4344,7 +4368,7 @@ async function applyPluginPackageReview(): Promise<void> {
     void refreshMigrationPreview("Migration preview refreshed after the package change.");
   } catch (error) {
     if (request === pluginPackageRequest) {
-      const message = `${pluginPackageErrorMessage(error)} Review the exact package again before another apply.`;
+      const message = `${ipcErrorMessage(error)} Review the exact package again before another apply.`;
       pluginPackageReview = null;
       pluginMessage = message;
       pluginMessageKind = "error";
@@ -6237,11 +6261,21 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
 
   const runtimeActivePath = tabs.find((tab) => tab.active)?.path ?? null;
   let activeTab: HTMLElement | null = null;
+  let renderedPinnedTab = false;
   for (const tab of tabs) {
+    if (!tab.pinned && renderedPinnedTab) {
+      const divider = document.createElement("span");
+      divider.className = "note-tabs-pin-divider";
+      divider.setAttribute("role", "separator");
+      divider.ariaLabel = "End of pinned tabs";
+      elements.noteTabs.append(divider);
+      renderedPinnedTab = false;
+    }
     const isActive = tab.path === displayedPath;
     const wrapper = document.createElement("div");
     wrapper.className = "note-tab workspace-tab-header";
     wrapper.dataset.active = String(isActive);
+    wrapper.dataset.pinned = String(tab.pinned);
 
     const activate = document.createElement("button");
     activate.type = "button";
@@ -6250,13 +6284,16 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     activate.setAttribute("aria-selected", String(isActive));
     activate.setAttribute("aria-controls", elements.noteView.id);
     activate.tabIndex = isActive || (!displayedPath && tab.path === runtimeActivePath) ? 0 : -1;
+    activate.dataset.notePath = tab.path;
     activate.title = tab.path;
-    activate.ariaLabel = `${isActive ? "Current note" : "Open note"}: ${tab.path}`;
+    activate.ariaLabel = `${tab.pinned ? "Pinned " : ""}${
+      isActive ? "current note" : "open note"
+    }: ${tab.path}`;
 
     const mark = document.createElement("span");
     mark.className = "note-tab-mark";
     mark.ariaHidden = "true";
-    mark.textContent = "◇";
+    mark.textContent = tab.pinned ? "PIN" : "◇";
     const title = document.createElement("span");
     title.className = "note-tab-title";
     title.textContent = tab.title;
@@ -6274,21 +6311,41 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
       void cycleTab(event.key === "ArrowRight" ? 1 : -1, paneId);
     });
 
+    const pin = document.createElement("button");
+    pin.type = "button";
+    pin.className = "note-tab-pin";
+    pin.dataset.notePath = tab.path;
+    pin.dataset.pinned = String(tab.pinned);
+    pin.ariaPressed = String(tab.pinned);
+    pin.ariaLabel = `${tab.pinned ? "Unpin" : "Pin"} ${tab.path}`;
+    pin.title = `${tab.pinned ? "Unpin" : "Pin"} ${tab.path}`;
+    pin.textContent = tab.pinned ? "Unpin" : "Pin";
+    pin.disabled = busy || saving;
+    pin.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void toggleTabPin(tab.path, paneId);
+    });
+
     const close = document.createElement("button");
     close.type = "button";
     close.className = "note-tab-close";
+    close.dataset.notePath = tab.path;
     close.ariaLabel = `Close ${tab.path}`;
     close.textContent = "×";
-    close.disabled = busy || saving || (isActive && dirty);
-    close.title =
-      isActive && dirty ? "Save or revert this note before closing it" : `Close ${tab.path}`;
+    close.disabled = busy || saving || (!tab.pinned && isActive && dirty);
+    close.title = tab.pinned
+      ? `Unpin ${tab.path} before closing it`
+      : isActive && dirty
+        ? "Save or revert this note before closing it"
+        : `Close ${tab.path}`;
     close.addEventListener("click", (event) => {
       event.stopPropagation();
       void closeTab(tab.path, paneId);
     });
 
-    wrapper.append(activate, close);
+    wrapper.append(activate, pin, close);
     elements.noteTabs.append(wrapper);
+    renderedPinnedTab = tab.pinned;
   }
   if (activeTab) {
     const tab = activeTab;
@@ -7384,14 +7441,19 @@ async function closeTab(
   if (busy || saving) {
     return;
   }
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId) {
+    return;
+  }
+  const tab = workspacePaneSnapshot(paneId)?.tabs.find((candidate) => candidate.path === filePath);
+  if (tab?.pinned) {
+    await runAction(() => window.threadleaf.closeNote(filePath, expectedVaultId, paneId));
+    return;
+  }
   if (loadedNote?.path === filePath && dirty) {
     showToast("Save or revert the current note before closing its tab.");
     setDocumentView("source");
     editor.focus();
-    return;
-  }
-  const expectedVaultId = currentSnapshot?.vault.id;
-  if (!expectedVaultId) {
     return;
   }
   await runAction(() => window.threadleaf.closeNote(filePath, expectedVaultId, paneId));
@@ -7406,6 +7468,26 @@ async function closeTab(
       elements.fileSearch.focus();
     }
   });
+}
+
+async function toggleTabPin(
+  filePath: string,
+  paneId: WorkspacePaneId = activePaneContextId,
+): Promise<void> {
+  activatePaneContext(paneId);
+  if (busy || saving) {
+    return;
+  }
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId) {
+    return;
+  }
+  await runAction(() => window.threadleaf.toggleTabPin(filePath, paneId, expectedVaultId));
+}
+
+function toggleCurrentTabPin(): Promise<void> {
+  const tab = workspacePaneSnapshot()?.tabs.find((candidate) => candidate.active);
+  return tab ? toggleTabPin(tab.path) : Promise.resolve();
 }
 
 function closeActiveTab(): Promise<void> {
@@ -7597,7 +7679,7 @@ async function runAction(action: () => Promise<RuntimeSnapshot>): Promise<void> 
     setActionState(true);
     render(await action());
   } catch (error) {
-    showToast(error instanceof Error ? error.message : String(error));
+    showToast(ipcErrorMessage(error));
   } finally {
     setActionState(false);
   }
