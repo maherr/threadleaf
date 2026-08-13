@@ -148,8 +148,10 @@ equivalence through the real writer-to-watcher seam.
 - [x] Ordered desktop top-level property inspection and typed add, edit, and remove controls for
       text, list, number, checkbox, date, and datetime values, with revision binding, exact-byte
       preservation, explicit unsupported shapes, and packaged visual and behavior tests.
-- [ ] Nested and complex property editing, broader attachment types, and non-note non-raster wiki
-      embeds.
+- [x] Loss-preserving nested and complex property edits, broader magic-byte attachment metadata,
+      passive non-note non-raster wiki embeds, recoverable attachment moves, bounded media probes,
+      and packaged X11 visual fixtures. Destructive YAML normalization and shell actions remain
+      explicitly unsupported until their separate preservation and capability contracts exist.
 
 Exit gate: a real vault can be used daily without enabling compatibility plugins.
 

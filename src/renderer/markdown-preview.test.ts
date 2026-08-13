@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import type {
+  VaultAttachmentResponse,
   VaultImageResponse,
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
@@ -9,6 +10,7 @@ import type {
 import {
   addPreviewSourceControls,
   hydrateMarkdownPreview,
+  hydrateMarkdownPreviewAttachments,
   hydrateMarkdownPreviewImages,
   renderMarkdownPreview,
 } from "./markdown-preview";
@@ -502,5 +504,37 @@ describe("Markdown reading view", () => {
     );
     expect(bounded?.textContent).toBe("Image unavailable: Two");
     expect(bounded?.title).toContain("64 MiB");
+  });
+
+  it("renders passive attachment metadata without decoding or embedding arbitrary bytes", async () => {
+    const rendered = preview("![[Assets/report.pdf|Report]]\n\n![[Assets/unknown.bin|Unknown]]");
+    expect(rendered.querySelectorAll(".preview-attachment-placeholder")).toHaveLength(2);
+    const requested: string[] = [];
+    await hydrateMarkdownPreviewAttachments(rendered, {
+      sourceNotePath: "Current.md",
+      expectedVaultId: "vault-a",
+      loadAttachment: async (_source, target): Promise<VaultAttachmentResponse> => {
+        requested.push(target);
+        return {
+          status: "ready",
+          vaultId: "vault-a",
+          attachment: {
+            path: target,
+            kind: target.endsWith("pdf") ? "pdf" : "unsupported",
+            mimeType: target.endsWith("pdf") ? "application/pdf" : null,
+            size: 12,
+            revision: "f".repeat(64),
+            actions: { open: true, reveal: true, inline: false },
+          },
+        };
+      },
+    });
+    expect(requested).toEqual(["Assets/report.pdf", "Assets/unknown.bin"]);
+    const cards = rendered.querySelectorAll<HTMLElement>(".preview-attachment-card");
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.textContent).toContain("application/pdf");
+    expect(cards[1]?.textContent).toContain("unsupported");
+    expect(rendered.querySelectorAll("img, video, audio, iframe")).toHaveLength(0);
+    expect(rendered.querySelectorAll(".preview-attachment-action")).toHaveLength(4);
   });
 });

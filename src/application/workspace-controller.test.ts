@@ -14,6 +14,7 @@ import type {
   NoteRestoreResponse,
   NoteSaveResponse,
   RuntimeSnapshot,
+  VaultAttachmentResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -84,6 +85,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
   readonly #snapshot: RuntimeSnapshot;
   readonly #listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
+  attachmentLoader: (() => Promise<VaultAttachmentResponse>) | null = null;
   noteEmbedLoader: (() => Promise<VaultNoteEmbedResponse>) | null = null;
   closedNote: { filePath: string; expectedVaultId: string } | null = null;
   toggledTabPin: {
@@ -219,6 +221,24 @@ class FakeRuntime implements WorkspaceRuntimePort {
       size: 1,
       revision: "a".repeat(64),
       base64: "AA==",
+    };
+  }
+
+  async loadVaultAttachment(): Promise<VaultAttachmentResponse> {
+    if (this.attachmentLoader) {
+      return this.attachmentLoader();
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      attachment: {
+        path: "report.pdf",
+        kind: "pdf",
+        mimeType: "application/pdf",
+        size: 1,
+        revision: "b".repeat(64),
+        actions: { open: true, reveal: true, inline: false },
+      },
     };
   }
 

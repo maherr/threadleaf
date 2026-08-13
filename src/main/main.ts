@@ -1658,6 +1658,19 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.loadVaultAttachment,
+    (_event, sourceNotePath: unknown, target: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof sourceNotePath !== "string" ||
+        typeof target !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Load vault attachment requires string note, target, and vault values.");
+      }
+      return workspaceController.loadVaultAttachment(sourceNotePath, target, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
     ipcChannels.loadVaultNoteEmbed,
     (
       _event,

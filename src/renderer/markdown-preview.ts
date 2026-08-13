@@ -1,6 +1,7 @@
 import DOMPurify, { type Config } from "dompurify";
 import MarkdownIt, { type RendererRule, type StateInline } from "markdown-it";
 import type {
+  VaultAttachmentResponse,
   VaultImageResponse,
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
@@ -53,6 +54,9 @@ const sanitizeConfig = {
     "colspan",
     "data-source-line",
     "data-threadleaf-alt",
+    "data-threadleaf-attachment-alt",
+    "data-threadleaf-attachment-target",
+    "data-threadleaf-attachment-status",
     "data-threadleaf-asset",
     "data-threadleaf-embed",
     "data-threadleaf-external-url",
@@ -164,8 +168,21 @@ function isMarkdownNoteTarget(target: string, subpath: string | null, wiki: bool
   return wiki && normalized !== "" && !/\.[^/]+$/u.test(normalized);
 }
 
+function isLocalAttachmentTarget(target: string): boolean {
+  // Plugin-owned drawing files remain ordinary links until a declared plugin
+  // renderer claims them.  These extensions are the passive formats handled by
+  // the bounded attachment metadata service.
+  return /\.(?:bin|pdf|rtf|txt|csv|docx?|xlsx?|pptx?|zip|7z|tar|gz|mp3|m4a|flac|ogg|wav|mp4|m4v|mov|avi|mkv|webm)$/iu.test(
+    target,
+  );
+}
+
 function noteEmbedPlaceholder(target: string, subpath: string | null, label: string): string {
   return `<span class="preview-note-embed-placeholder" role="status" aria-label="Loading embedded note ${escapeAttribute(label)}" data-threadleaf-note-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-subpath="${escapeAttribute(subpath ?? "")}" data-threadleaf-alt="${escapeAttribute(label)}">Embedded note: ${escapeText(label)}</span>`;
+}
+
+function attachmentPlaceholder(target: string, label: string): string {
+  return `<span class="preview-attachment-placeholder" role="status" aria-label="Loading local attachment ${escapeAttribute(label)}" data-threadleaf-attachment-target="${escapeAttribute(target)}" data-threadleaf-attachment-alt="${escapeAttribute(label)}">Attachment: ${escapeText(label)}</span>`;
 }
 
 const markdown = new MarkdownIt({
@@ -197,6 +214,9 @@ markdown.renderer.rules.threadleaf_wikilink = (tokens, index) => {
   }
   if (link.embed && isMarkdownNoteTarget(link.target, link.subpath, true)) {
     return noteEmbedPlaceholder(link.target, link.subpath, label);
+  }
+  if (link.embed && isLocalAttachmentTarget(link.target)) {
+    return attachmentPlaceholder(link.target, label);
   }
   const classes = link.embed ? "internal-link preview-embed-link" : "internal-link";
   return `<a href="#" class="${classes}" data-threadleaf-link="wiki" data-threadleaf-target="${escapeAttribute(link.target)}" data-threadleaf-subpath="${escapeAttribute(link.subpath ?? "")}" data-threadleaf-embed="${String(link.embed)}">${escapeText(label)}</a>`;
@@ -250,6 +270,9 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
   if (isMarkdownNoteTarget(target, subpath, false)) {
     return noteEmbedPlaceholder(target, subpath, label);
   }
+  if (!/^.*\.(?:gif|jpe?g|png|webp)$/iu.test(target)) {
+    return attachmentPlaceholder(target, label);
+  }
   return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(source)}" data-threadleaf-alt="${escapeAttribute(alt)}">Image: ${escapeText(label)}</span>`;
 };
 
@@ -262,12 +285,13 @@ const maxNoteEmbedDepth = 4;
 interface PreviewHydrationBudget {
   imageBytes: number;
   imageCount: number;
+  attachmentCount: number;
   noteEmbedBytes: number;
   noteEmbedCount: number;
 }
 
 function createPreviewHydrationBudget(): PreviewHydrationBudget {
-  return { imageBytes: 0, imageCount: 0, noteEmbedBytes: 0, noteEmbedCount: 0 };
+  return { imageBytes: 0, imageCount: 0, attachmentCount: 0, noteEmbedBytes: 0, noteEmbedCount: 0 };
 }
 
 function noteEmbedIdentity(path: string, subpath: string | null): string {
@@ -399,6 +423,11 @@ export interface PreviewNoteEmbedHydrationOptions {
   sourceNotePath: string;
   expectedVaultId: string;
   loadImage: PreviewImageHydrationOptions["loadImage"];
+  loadAttachment?(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultAttachmentResponse>;
   loadNoteEmbed(
     sourceNotePath: string,
     target: string,
@@ -411,6 +440,157 @@ export interface PreviewNoteEmbedHydrationOptions {
     sourceNotePath: string,
   ): void;
   isCurrent?(): boolean;
+}
+
+const maxAttachmentsPerPreview = 128;
+
+function attachmentLabel(placeholder: HTMLElement): string {
+  return (
+    placeholder.dataset.threadleafAttachmentAlt ||
+    placeholder.dataset.threadleafAttachmentTarget ||
+    "attachment"
+  );
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1_024) return `${size} B`;
+  if (size < 1_024 * 1_024) return `${(size / 1_024).toFixed(1)} KiB`;
+  return `${(size / (1_024 * 1_024)).toFixed(1)} MiB`;
+}
+
+function markAttachmentUnavailable(
+  placeholder: HTMLElement,
+  label: string,
+  status: string,
+  message: string,
+): void {
+  placeholder.className = "preview-attachment-card preview-attachment-unavailable";
+  placeholder.dataset.threadleafAttachmentStatus = status;
+  placeholder.setAttribute("role", "note");
+  placeholder.setAttribute("aria-label", `Attachment unavailable: ${label}`);
+  placeholder.title = message;
+  placeholder.replaceChildren();
+  const marker = placeholder.ownerDocument.createElement("span");
+  marker.className = "preview-attachment-marker";
+  marker.ariaHidden = "true";
+  marker.textContent = "×";
+  const copy = placeholder.ownerDocument.createElement("span");
+  copy.className = "preview-attachment-copy";
+  const title = placeholder.ownerDocument.createElement("strong");
+  title.textContent = `Attachment unavailable: ${label}`;
+  const detail = placeholder.ownerDocument.createElement("span");
+  detail.textContent = message;
+  copy.append(title, detail);
+  placeholder.append(marker, copy);
+}
+
+function createAttachmentCard(
+  placeholder: HTMLElement,
+  response: Extract<VaultAttachmentResponse, { status: "ready" }>,
+  label: string,
+): HTMLElement {
+  const document = placeholder.ownerDocument;
+  const card = document.createElement("section");
+  card.className = "preview-attachment-card";
+  card.dataset.threadleafAttachmentStatus = "ready";
+  card.dataset.threadleafAttachmentPath = response.attachment.path;
+  card.dataset.threadleafAttachmentRevision = response.attachment.revision;
+  card.setAttribute("role", "group");
+  card.setAttribute("aria-label", `Local attachment ${response.attachment.path}`);
+
+  const marker = document.createElement("span");
+  marker.className = "preview-attachment-marker";
+  marker.ariaHidden = "true";
+  marker.textContent = response.attachment.kind === "unsupported" ? "?" : "↗";
+  const body = document.createElement("span");
+  body.className = "preview-attachment-copy";
+  const title = document.createElement("strong");
+  title.textContent = label || response.attachment.path;
+  const detail = document.createElement("span");
+  detail.textContent = `${response.attachment.kind} · ${response.attachment.mimeType ?? "unknown format"} · ${formatAttachmentSize(response.attachment.size)}`;
+  body.append(title, detail);
+  const actions = document.createElement("span");
+  actions.className = "preview-attachment-actions";
+  for (const action of ["open", "reveal"] as const) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "preview-attachment-action";
+    button.dataset.threadleafAttachmentAction = action;
+    button.dataset.threadleafAttachmentPath = response.attachment.path;
+    button.textContent = action === "open" ? "Open" : "Reveal";
+    button.title = `${action === "open" ? "Open" : "Reveal"} ${response.attachment.path}`;
+    actions.append(button);
+  }
+  card.append(marker, body, actions);
+  return card;
+}
+
+export async function hydrateMarkdownPreviewAttachments(
+  root: HTMLElement,
+  options: Omit<
+    Pick<
+      PreviewNoteEmbedHydrationOptions,
+      "sourceNotePath" | "expectedVaultId" | "loadAttachment" | "isCurrent"
+    >,
+    "loadAttachment"
+  > & {
+    loadAttachment: NonNullable<PreviewNoteEmbedHydrationOptions["loadAttachment"]>;
+    budget?: PreviewHydrationBudget;
+  },
+): Promise<void> {
+  const placeholders = [
+    ...root.querySelectorAll<HTMLElement>(
+      ".preview-attachment-placeholder[data-threadleaf-attachment-target]",
+    ),
+  ];
+  const budget = options.budget ?? createPreviewHydrationBudget();
+  const loadAttachment = options.loadAttachment;
+  for (const placeholder of placeholders) {
+    if ((options.isCurrent && !options.isCurrent()) || !root.contains(placeholder)) return;
+    const label = attachmentLabel(placeholder);
+    if (budget.attachmentCount >= maxAttachmentsPerPreview) {
+      markAttachmentUnavailable(
+        placeholder,
+        label,
+        "preview-limit",
+        `Reading view loads at most ${maxAttachmentsPerPreview} local attachments at once.`,
+      );
+      continue;
+    }
+    budget.attachmentCount += 1;
+    const target = placeholder.dataset.threadleafAttachmentTarget ?? "";
+    placeholder.dataset.threadleafAttachmentStatus = "loading";
+    placeholder.ariaBusy = "true";
+    let response: VaultAttachmentResponse;
+    try {
+      response = await loadAttachment(options.sourceNotePath, target, options.expectedVaultId);
+    } catch {
+      if ((!options.isCurrent || options.isCurrent()) && root.contains(placeholder)) {
+        markAttachmentUnavailable(
+          placeholder,
+          label,
+          "unreadable",
+          "The local attachment request failed.",
+        );
+      }
+      continue;
+    }
+    if ((options.isCurrent && !options.isCurrent()) || !root.contains(placeholder)) return;
+    if (response.status === "stale-vault" || response.vaultId !== options.expectedVaultId) {
+      markAttachmentUnavailable(
+        placeholder,
+        label,
+        "stale-vault",
+        "The active vault changed before this attachment finished loading.",
+      );
+      continue;
+    }
+    if (response.status === "unavailable") {
+      markAttachmentUnavailable(placeholder, label, response.reason, response.message);
+      continue;
+    }
+    placeholder.replaceWith(createAttachmentCard(placeholder, response, label));
+  }
 }
 
 function noteEmbedLabel(placeholder: HTMLElement): string {
@@ -527,6 +707,15 @@ async function hydrateNoteEmbedTree(
     budget,
     ...(options.isCurrent ? { isCurrent: options.isCurrent } : {}),
   });
+  if (options.loadAttachment) {
+    await hydrateMarkdownPreviewAttachments(root, {
+      sourceNotePath,
+      expectedVaultId: options.expectedVaultId,
+      loadAttachment: options.loadAttachment,
+      budget,
+      ...(options.isCurrent ? { isCurrent: options.isCurrent } : {}),
+    });
+  }
   const placeholders = [
     ...root.querySelectorAll<HTMLElement>(
       ".preview-note-embed-placeholder[data-threadleaf-note-embed]",

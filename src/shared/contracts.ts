@@ -701,6 +701,45 @@ export type VaultImageResponse =
       vaultId: string;
     };
 
+export type VaultAttachmentKind =
+  | "image"
+  | "pdf"
+  | "audio"
+  | "video"
+  | "document"
+  | "text"
+  | "archive"
+  | "unsupported";
+
+export interface VaultAttachmentMetadata {
+  path: string;
+  kind: VaultAttachmentKind;
+  mimeType: string | null;
+  size: number;
+  revision: string;
+  actions: { open: boolean; reveal: boolean; inline: false };
+}
+
+export type VaultAttachmentUnavailableReason =
+  | "external"
+  | "invalid"
+  | "private"
+  | "missing"
+  | "outside-vault"
+  | "too-large"
+  | "unreadable";
+
+export type VaultAttachmentResponse =
+  | { status: "ready"; vaultId: string; attachment: VaultAttachmentMetadata }
+  | {
+      status: "unavailable";
+      vaultId: string;
+      reason: VaultAttachmentUnavailableReason;
+      message: string;
+      attachment?: Pick<VaultAttachmentMetadata, "path" | "actions">;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
 export type VaultNoteEmbedUnavailableReason =
   | "external"
   | "invalid"
@@ -807,6 +846,11 @@ export interface ThreadleafBridge {
     target: string,
     expectedVaultId: string,
   ): Promise<VaultImageResponse>;
+  loadVaultAttachment(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultAttachmentResponse>;
   loadVaultNoteEmbed(
     sourceNotePath: string,
     target: string,

@@ -518,19 +518,25 @@ The first renderer uses Markdown-it for deterministic block parsing and DOMPurif
 element and attribute allowlist. Raw HTML is accepted only after sanitization. Scripts, event
 handlers, forms, styles, media elements, and active URLs are removed. Markdown images and
 Obsidian-style wiki embeds first become inert placeholders. A dedicated read-only image service may
-replace raster placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. A separate note-embed
-service resolves indexed Markdown identities and extracts either the whole note, one heading
-through its descendants, or one block ID. It returns exact path, revision, source range, content
-bytes, and nested-link summaries. The renderer sanitizes every returned fragment through the same
-Markdown pipeline, then recursively hydrates its nested notes and raster images.
+replace raster placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. A separate attachment
+service resolves local non-note embeds by contained path, bounded stable read, and magic bytes
+instead of trusting a filename extension. PDF, audio, video, document, text, archive, and unknown
+bytes become metadata cards with explicit open/reveal affordances; no attachment payload is injected
+as executable or inline media content, and those affordances remain inert until a future native
+shell capability is reviewed. A separate note-embed service resolves indexed Markdown identities
+and extracts either the whole note, one heading through its descendants, or one block ID. It
+returns exact path, revision, source range, content bytes, and nested-link summaries. The renderer
+sanitizes every returned fragment through the same Markdown pipeline, then recursively hydrates its
+nested notes, raster images, and passive attachment cards.
 
-Both services receive the source note, raw target, and expected vault identity. The main process
-resolves note-relative and vault-rooted paths, follows symlinks only within the vault, excludes
-`.obsidian/`, `.git/`, and transaction artifacts, rechecks the active runtime after asynchronous
-reads, and never returns a filesystem URL. Image reads are stable and limited to 10 MiB each. One
-preview accepts at most 128 images and 64 MiB of decoded image input. Note reads are limited to 2
-MiB each, 32 expanded fragments, 8 MiB of returned Markdown, and four recursive levels. A
-path-and-subpath ancestry set stops cycles while allowing finite same-note section embeds.
+All three services receive the source note, raw target, and expected vault identity. The main
+process resolves note-relative and vault-rooted paths, follows symlinks only within the vault,
+excludes `.obsidian/`, `.git/`, and transaction artifacts, rechecks the active runtime after
+asynchronous reads, and never returns a filesystem URL. Image reads are stable and limited to 10
+MiB each; general attachment reads are bounded at 16 MiB. One preview accepts at most 128 images,
+128 passive attachments, and 64 MiB of decoded image input. Note reads are limited to 2 MiB each,
+32 expanded fragments, 8 MiB of returned Markdown, and four recursive levels. A path-and-subpath
+ancestry set stops cycles while allowing finite same-note section embeds.
 Oversized, missing, ambiguous, external, malformed, unsupported, stale-vault, and out-of-vault
 targets remain labeled placeholders. SVG and unsupported non-note wiki embeds remain inert.
 External links also stay inert during beta rather than broadening IPC for shell access prematurely.
@@ -606,13 +612,16 @@ complete YAML frontmatter block. Default separators follow the note's LF or CRLF
 inline mode inserts no separator. The kernel preserves the whole proposal as a conflict copy when
 the source revision changes.
 
-Property set and remove use a separate frontmatter-mutation service over the same revision-checked
-writer. It patches one simple top-level mapping entry, preserves the BOM, line endings, unrelated
-frontmatter lines, comments, order, and complete body, and removes an empty frontmatter envelope
-after its final property is removed. Text and list members are always quoted when serialized;
-number, checkbox, date, and datetime inputs are validated before a proposal exists. Duplicate keys,
-quoted or spaced keys, JSON frontmatter, nested mappings, and block scalars fail closed in this
-initial boundary. A revision race preserves the complete proposed file as a conflict copy.
+Property set and remove use frontmatter mutation services over the same revision-checked writer.
+The original typed service handles the deliberately narrow top-level property contract. The complex
+service adds dotted and indexed paths, nested scalar leaves, and safe mapping additions through
+line-range patches, preserving the BOM, line endings, unrelated frontmatter lines, comments, order,
+quoting, and complete body. It parses and reports duplicate keys, anchors, aliases, tags, block
+scalars, flow collections, and syntax errors without normalizing them; a requested mutation that
+would cross one of those opaque ranges is rejected with a reason. A revision-bound preview carries
+the exact base revision and proposed bytes into the recoverable writer, so a race preserves the
+complete proposal as a conflict copy. Nested mapping/list replacement, destructive normalization,
+and absent list-index creation remain unsupported by design.
 
 The desktop property inspector derives an ordered presentation from the same authoritative note
 snapshot. It classifies editable text, list, number, checkbox, date, and datetime values while

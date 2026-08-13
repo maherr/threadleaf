@@ -30,6 +30,7 @@ import type {
   PluginUpdateResponse,
   RuntimeSnapshot,
   ThreadleafBridge,
+  VaultAttachmentResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -184,6 +185,13 @@ const bridge: ThreadleafBridge = {
       target,
       expectedVaultId,
     ) as Promise<VaultImageResponse>,
+  loadVaultAttachment: (sourceNotePath, target, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.loadVaultAttachment,
+      sourceNotePath,
+      target,
+      expectedVaultId,
+    ) as Promise<VaultAttachmentResponse>,
   loadVaultNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.loadVaultNoteEmbed,

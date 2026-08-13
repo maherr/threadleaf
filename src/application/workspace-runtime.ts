@@ -32,6 +32,7 @@ import type {
   NoteSaveResponse,
   PluginEditorContext,
   RuntimeSnapshot,
+  VaultAttachmentResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -73,6 +74,7 @@ import {
   trashMarkdownNote,
   vaultTrashDirectory,
 } from "./note-trash";
+import { loadVaultAttachment } from "./vault-attachment-service";
 import { projectVaultGraph } from "./vault-graph";
 import { loadVaultImage } from "./vault-image-service";
 import {
@@ -975,6 +977,14 @@ export class WorkspaceRuntime {
     expectedVaultId: string,
   ): Promise<VaultImageResponse> {
     return loadVaultImage(this.kernel, sourceNotePath, target, expectedVaultId);
+  }
+
+  loadVaultAttachment(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultAttachmentResponse> {
+    return loadVaultAttachment(this.kernel, sourceNotePath, target, expectedVaultId);
   }
 
   loadVaultNoteEmbed(

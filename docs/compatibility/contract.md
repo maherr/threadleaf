@@ -113,6 +113,27 @@ public kernel, application services, and CLI on temporary copies, compares every
 and reports unsupported cases separately. It does not treat an untested external application as a
 pass or require an external product during offline checks.
 
+## Complex properties and passive attachments
+
+The same-vault fixture also covers dotted and indexed nested property paths, exact scalar patches,
+mapping additions, list-leaf removal, CRLF and BOM preservation, comments, quoted values, duplicate
+keys, anchors, tags, multiline scalars, flow values, malformed frontmatter, and revision races.
+The complex property service uses a line-range proposal rather than a serializer. Unsupported
+constructs remain readable and byte-identical; a mutation that would normalize one is reported as
+unsupported instead of silently choosing a winner or rewriting unknown YAML.
+
+Local non-note embeds are resolved only inside the active vault. A bounded read classifies PDFs,
+common documents, audio, video, text, archives, and unknown bytes by magic bytes, never by filename
+extension. The reading view shows metadata and explicit open/reveal affordances without injecting
+bytes into an executable or media element. Relative Markdown links and wiki embeds are rewritten
+by the recoverable attachment move planner, with case/NFC-aware duplicate-basename refusal and
+revision-bound external-edit conflicts. Media metadata probes use a fast seek, one-second bounded
+sampling, capped output, and a kill deadline; no arbitrary decode is part of offline reading view.
+The packaged fixture runs under explicit X11 Xvfb with a dedicated profile and vault, proves the
+renderer argv, exact attachment bytes, and both light and dark screenshots plus a visual positive
+control. Shell actions remain intentionally inert until a separately reviewed native capability is
+implemented.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

@@ -1931,6 +1931,8 @@ function renderReadingView(): void {
       expectedVaultId: vaultId,
       loadImage: (sourceNotePath, target, expectedVaultId) =>
         window.threadleaf.loadVaultImage(sourceNotePath, target, expectedVaultId),
+      loadAttachment: (sourceNotePath, target, expectedVaultId) =>
+        window.threadleaf.loadVaultAttachment(sourceNotePath, target, expectedVaultId),
       loadNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
         window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, expectedVaultId),
       decorateLinks: decoratePreviewLinks,
@@ -2267,6 +2269,22 @@ async function activatePreviewEmbed(openButton: HTMLButtonElement): Promise<void
   } else if (subpath?.startsWith("^")) {
     showToast("Opened the source note. Block-anchor scrolling is not available yet.");
   }
+}
+
+function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): void {
+  const action = actionButton.dataset.threadleafAttachmentAction;
+  const target = actionButton.dataset.threadleafAttachmentPath;
+  if (!target || (action !== "open" && action !== "reveal")) {
+    return;
+  }
+  // The card deliberately exposes the safe action metadata without granting a
+  // renderer-originated shell/network capability.  A future native bridge can
+  // consume these data attributes without changing the byte-preserving loader.
+  showToast(
+    action === "open"
+      ? `Opening local attachments is not enabled yet: ${target}`
+      : `Revealing local attachments is not enabled yet: ${target}`,
+  );
 }
 
 async function runCompatibilityCommand(commandId: string): Promise<void> {
@@ -6030,6 +6048,8 @@ async function exportCurrentNoteAsHtml(): Promise<void> {
       expectedVaultId,
       loadImage: (sourceNotePath, target, vaultId) =>
         window.threadleaf.loadVaultImage(sourceNotePath, target, vaultId),
+      loadAttachment: (sourceNotePath, target, vaultId) =>
+        window.threadleaf.loadVaultAttachment(sourceNotePath, target, vaultId),
       loadNoteEmbed: (sourceNotePath, target, subpath, vaultId) =>
         window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, vaultId),
       decorateLinks: decoratePreviewLinks,
@@ -8573,6 +8593,11 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     const embedOpen = event.target.closest<HTMLButtonElement>(".preview-note-embed-open");
     if (embedOpen) {
       void activatePreviewEmbed(embedOpen);
+      return;
+    }
+    const attachmentAction = event.target.closest<HTMLButtonElement>(".preview-attachment-action");
+    if (attachmentAction) {
+      activatePreviewAttachmentAction(attachmentAction);
       return;
     }
     const anchor = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-link]");

@@ -50,8 +50,10 @@ normal source transactions. An explicit reading view renders the current editor 
 sanitized Markdown subset, keeps unsaved text off disk, resolves internal links through the derived
 index, and provides source-line controls that return to the matching CodeMirror line. Sniffed local
 PNG, JPEG, GIF, and WebP attachments now render through a
-vault-scoped, size-bounded main-process service; external, oversized, unsupported, private, and
-out-of-vault targets stay explicit placeholders. Whole-note, heading, and block-ID note embeds now
+vault-scoped, size-bounded main-process service; PDFs, audio, video, common documents, text,
+archives, and unknown bytes resolve to safe metadata cards by magic bytes. External, oversized,
+unsupported, private, and out-of-vault targets stay explicit placeholders. Whole-note, heading, and
+block-ID note embeds now
 render recursively through a separate read-only service with exact source controls and explicit
 cycle, depth, count, byte, containment, and stale-vault limits. A headless CLI now inspects vaults,
 lists and reads notes, returns either ranked search paths or grep-style matching lines, and creates
@@ -96,6 +98,9 @@ Headless property commands list and read the current indexed projection, then se
 top-level YAML properties through a byte-preserving, revision-checked application service. The
 writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated
 frontmatter and body bytes, and refuses complex YAML shapes instead of reserializing them blindly.
+The nested property service adds dotted and indexed scalar paths and safe mapping additions through
+the same recovery-backed preview and mutation boundary. It reports duplicate keys, anchors, tags,
+multiline scalars, flow values, and syntax errors as read-only reasons rather than normalizing them.
 The desktop right inspector presents those top-level properties in source order and uses the same
 service for typed add, edit, and remove actions. Dirty notes, stale revisions, read-only vaults, and
 unsupported complex values remain explicit no-write states instead of silently normalizing YAML.
@@ -342,13 +347,16 @@ Reading view previews the current draft without saving it; clicking a source-lin
 to the exact source line. Relative and vault-rooted Markdown images plus Obsidian-style raster wiki
 embeds render without exposing filesystem paths or general file access to the renderer. Wiki and
 Markdown note embeds can include a whole note, a heading and its descendants, or a block ID. Nested
-embeds retain links, local raster images, and source controls; visible placeholders explain cycles,
-limits, missing targets, ambiguous targets, and unsafe paths. Ctrl/Cmd+N opens the New note dialog
+embeds retain links, local raster images, passive attachment metadata cards, and source controls;
+visible placeholders explain cycles, limits, missing targets, ambiguous targets, and unsafe paths.
+Open and Reveal attachment affordances remain inert until a native capability is separately reviewed.
+Ctrl/Cmd+N opens the New note dialog
 and selects the resulting empty Markdown note for editing.
 The Properties section in the right inspector lists top-level frontmatter in source order. Add,
 Edit, and Remove support text, list, number, checkbox, date, and datetime values. Each mutation is
-bound to the displayed note revision and preserves all unrelated Markdown bytes. Complex YAML is
-shown read-only until a lossless editor exists for that shape.
+bound to the displayed note revision and preserves all unrelated Markdown bytes. Nested and complex
+paths use the same lossless application service; unsupported normalization remains read-only with a
+reason.
 Ctrl/Cmd+Shift+M opens Move for the active clean note. Threadleaf commits only when the projected
 vault resolver preserves every internal-link meaning. It presents the exact rewrite count before
 enabling confirmation; for unusually large moves, the dialog names the first 100 target updates
@@ -427,6 +435,14 @@ captures dark, light, and compact layouts when a screenshot directory is supplie
 
 ```sh
 THREADLEAF_PROPERTY_SCREENSHOT_DIR=/tmp/threadleaf-property-visual pnpm run test:packaged
+```
+
+The packaged attachment gate uses an explicit X11 Xvfb display, a dedicated Electron profile and
+fixture vault, and CDP to prove renderer argv, magic-byte metadata cards, exact Markdown and binary
+bytes, and dark, light, and positive-control screenshots:
+
+```sh
+THREADLEAF_ATTACHMENT_SCREENSHOT_DIR=/tmp/threadleaf-attachment-visual pnpm run test:packaged-attachments
 ```
 
 The representative-vault gate makes a private temporary copy, runs the packaged desktop behavior

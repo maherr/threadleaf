@@ -19,6 +19,7 @@ import type {
   NoteSaveResponse,
   PluginEditorContext,
   RuntimeSnapshot,
+  VaultAttachmentResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -50,6 +51,11 @@ export interface WorkspaceRuntimePort {
     target: string,
     expectedVaultId: string,
   ): Promise<VaultImageResponse>;
+  loadVaultAttachment(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultAttachmentResponse>;
   loadVaultNoteEmbed(
     sourceNotePath: string,
     target: string,
@@ -476,6 +482,22 @@ export class WorkspaceController {
       return { status: "stale-vault", vaultId: runtime.vaultId };
     }
     const response = await runtime.loadVaultImage(sourceNotePath, target, expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async loadVaultAttachment(
+    sourceNotePath: string,
+    target: string,
+    expectedVaultId: string,
+  ): Promise<VaultAttachmentResponse> {
+    const runtime = this.activeRuntime("load an attachment");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.loadVaultAttachment(sourceNotePath, target, expectedVaultId);
     if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
       return { status: "stale-vault", vaultId: this.#runtime.vaultId };
     }
