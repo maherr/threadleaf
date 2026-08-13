@@ -110,9 +110,12 @@ import {
   applyEditorTextChanges,
   type EditorTextChange,
   type ExternalTextRepresentation,
+  editorDraftMatchesDiskText,
+  editorDraftTextRepresentation,
   editorTextFromExternal,
   externalTextFromEditor,
   externalTextRepresentation,
+  externalTextRepresentationFromDraft,
 } from "./editor-text";
 import { GraphViewController } from "./graph-view";
 import {
@@ -9489,13 +9492,14 @@ function currentEditorDraft(): EditorDraftSnapshot | null {
   editorDraftId ??= window.crypto.randomUUID();
   const selection = editor.state.selection.main;
   return {
-    version: 2,
+    version: 3,
     draftId: editorDraftId,
     vaultId: loadedVaultId,
     paneId: activePaneContextId,
     path: loadedNote.path,
     baseRevision: loadedNote.revision,
     content: editor.state.doc.toString(),
+    textRepresentation: editorDraftTextRepresentation(loadedTextRepresentation),
     selection: { anchor: selection.anchor, head: selection.head },
     updatedAt: new Date().toISOString(),
   };
@@ -9678,13 +9682,12 @@ async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): 
     }
   }
 
-  // The editor draft is stored in CodeMirror's LF-only logical form, while
-  // the disk snapshot may retain CR, CRLF, or a BOM. Compare the logical
-  // documents here so an untouched CRLF note is not resurrected as a false
-  // dirty draft merely because its external spelling differs.
+  // Version-3 drafts retain their external spelling metadata. Preserve a
+  // stale disk file with logically identical text but a distinct BOM or line
+  // ending sequence through the same conflict-safe recovery path.
   if (
     diskNote &&
-    editorTextFromExternal(diskNote.content) === editorTextFromExternal(draft.content)
+    editorDraftMatchesDiskText(draft.content, draft.textRepresentation, diskNote.content)
   ) {
     clearPersistedEditorDraft(draft.vaultId, draft.draftId, paneId);
     return;
@@ -9700,7 +9703,9 @@ async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): 
     }
     loadedNote = restoredNote;
     loadedVaultId = draft.vaultId;
-    loadedTextRepresentation = externalTextRepresentation(diskNote?.content ?? draft.content);
+    loadedTextRepresentation =
+      externalTextRepresentationFromDraft(draft.content, draft.textRepresentation) ??
+      externalTextRepresentation(diskNote?.content ?? draft.content);
     editorTextUndoHistory = [];
     editorTextRedoHistory = [];
     syncEditorPresentation();

@@ -5,13 +5,14 @@ const vaultId = "a".repeat(64);
 
 function draft() {
   return {
-    version: 2,
+    version: 3,
     draftId: "9ee6115a-d87e-4c87-8cb8-b444695200cf",
     vaultId,
     paneId: "secondary",
     path: "Notes/Active.md",
     baseRevision: "b".repeat(64),
     content: "draft text",
+    textRepresentation: { hasBom: false, lineEndingKinds: "", defaultLineEnding: "lf" },
     selection: { anchor: 5, head: 10 },
     updatedAt: "2026-08-12T08:00:00.000Z",
   };
@@ -22,13 +23,18 @@ describe("parseEditorDraft", () => {
     expect(parseEditorDraft(draft(), vaultId)).toEqual(draft());
   });
 
-  it("migrates a version 1 draft into the primary workspace pane", () => {
+  it("migrates version 1 and 2 drafts into version 3 private state", () => {
     const legacy = { ...draft(), version: 1 };
     delete (legacy as { paneId?: string }).paneId;
+    delete (legacy as { textRepresentation?: unknown }).textRepresentation;
     expect(parseEditorDraft(legacy, vaultId)).toEqual({
       ...draft(),
       paneId: "primary",
+      textRepresentation: null,
     });
+    const versionTwo = { ...draft(), version: 2 };
+    delete (versionTwo as { textRepresentation?: unknown }).textRepresentation;
+    expect(parseEditorDraft(versionTwo, vaultId)).toEqual({ ...draft(), textRepresentation: null });
   });
 
   it("rejects crossed vaults, unsafe paths, invalid revisions, and escaped selections", () => {
@@ -55,6 +61,21 @@ describe("parseEditorDraft", () => {
     ).toThrow("cannot exceed");
     expect(() => parseEditorDraft({ ...draft(), updatedAt: "2026-08-12" }, vaultId)).toThrow(
       "canonical",
+    );
+  });
+
+  it("rejects malformed version 3 external text metadata", () => {
+    expect(() =>
+      parseEditorDraft(
+        {
+          ...draft(),
+          textRepresentation: { hasBom: true, lineEndingKinds: "l", defaultLineEnding: "lf" },
+        },
+        vaultId,
+      ),
+    ).toThrow("representation");
+    expect(() => parseEditorDraft({ ...draft(), content: "draft\rtext" }, vaultId)).toThrow(
+      "logical LF",
     );
   });
 });

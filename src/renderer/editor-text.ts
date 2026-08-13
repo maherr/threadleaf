@@ -4,7 +4,9 @@
  * external line-ending and BOM representation.  A line-ending entry belongs
  * to the newline immediately before the next logical line.
  */
-export type ExternalLineEnding = "lf" | "crlf" | "cr";
+import type { EditorDraftLineEnding, EditorDraftTextRepresentation } from "../shared/contracts";
+
+export type ExternalLineEnding = EditorDraftLineEnding;
 
 export interface ExternalTextRepresentation {
   hasBom: boolean;
@@ -70,6 +72,83 @@ export function externalTextRepresentation(source: string): ExternalTextRepresen
     defaultLineEnding: defaultLineEnding(parsed.lineEndings),
     editorText: parsed.editorText,
   };
+}
+
+function draftLineEndingKind(ending: ExternalLineEnding): "l" | "c" | "r" {
+  return ending === "lf" ? "l" : ending === "crlf" ? "c" : "r";
+}
+
+function lineEndingFromDraftKind(kind: string): ExternalLineEnding | null {
+  return kind === "l" ? "lf" : kind === "c" ? "crlf" : kind === "r" ? "cr" : null;
+}
+
+/**
+ * Persist only the external spelling metadata that a logical editor draft
+ * needs. The source remains the draft's existing LF-only content.
+ */
+export function editorDraftTextRepresentation(
+  representation: ExternalTextRepresentation,
+): EditorDraftTextRepresentation {
+  return {
+    hasBom: representation.hasBom,
+    lineEndingKinds: representation.lineEndings.map(draftLineEndingKind).join(""),
+    defaultLineEnding: representation.defaultLineEnding,
+  };
+}
+
+/**
+ * Reconstruct the external save boundary for a version-3 private draft. A
+ * malformed or legacy metadata envelope deliberately falls back to the disk
+ * snapshot instead of guessing at source bytes.
+ */
+export function externalTextRepresentationFromDraft(
+  editorText: string,
+  persisted: EditorDraftTextRepresentation | null,
+): ExternalTextRepresentation | null {
+  if (!persisted || normalizeEditorText(editorText) !== editorText) {
+    return null;
+  }
+  if (
+    typeof persisted.hasBom !== "boolean" ||
+    typeof persisted.lineEndingKinds !== "string" ||
+    (persisted.defaultLineEnding !== "lf" &&
+      persisted.defaultLineEnding !== "crlf" &&
+      persisted.defaultLineEnding !== "cr") ||
+    persisted.lineEndingKinds.length !== newlineCount(editorText)
+  ) {
+    return null;
+  }
+  const lineEndings: ExternalLineEnding[] = [];
+  for (const kind of persisted.lineEndingKinds) {
+    const ending = lineEndingFromDraftKind(kind);
+    if (!ending) return null;
+    lineEndings.push(ending);
+  }
+  return {
+    hasBom: persisted.hasBom,
+    lineEndings,
+    defaultLineEnding: persisted.defaultLineEnding,
+    editorText,
+  };
+}
+
+/**
+ * Decide whether a recovered private draft is already present on disk. Version
+ * 3 drafts compare their reconstructed external bytes, so a stale disk file
+ * with the same logical text but different BOM or endings still takes the
+ * conflict-safe recovery path. Legacy drafts retain their former logical-text
+ * comparison because they did not persist representation metadata.
+ */
+export function editorDraftMatchesDiskText(
+  editorText: string,
+  persisted: EditorDraftTextRepresentation | null,
+  diskText: string,
+): boolean {
+  const representation = externalTextRepresentationFromDraft(editorText, persisted);
+  if (representation) {
+    return externalTextFromEditor(editorText, representation) === diskText;
+  }
+  return editorTextFromExternal(editorText) === editorTextFromExternal(diskText);
 }
 
 export function editorTextFromExternal(source: string): string {

@@ -349,14 +349,28 @@ export interface WorkspaceCanvasSnapshot {
   readOnly: boolean;
 }
 
+export type EditorDraftLineEnding = "lf" | "crlf" | "cr";
+
+/**
+ * Private load/save-boundary metadata for a logical CodeMirror draft. It
+ * contains no vault path or source text: one compact code per logical newline
+ * is enough to restore the original external representation after a crash.
+ */
+export interface EditorDraftTextRepresentation {
+  hasBom: boolean;
+  lineEndingKinds: string;
+  defaultLineEnding: EditorDraftLineEnding;
+}
+
 export interface EditorDraftSnapshot {
-  version: 2;
+  version: 3;
   draftId: string;
   vaultId: string;
   paneId: WorkspacePaneId;
   path: string;
   baseRevision: string;
   content: string;
+  textRepresentation: EditorDraftTextRepresentation | null;
   selection: PluginEditorSelection;
   updatedAt: string;
 }

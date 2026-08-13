@@ -1,5 +1,9 @@
 import { normalizeVaultPath } from "../kernel/path-policy";
-import type { EditorDraftSnapshot } from "../shared/contracts";
+import type {
+  EditorDraftLineEnding,
+  EditorDraftSnapshot,
+  EditorDraftTextRepresentation,
+} from "../shared/contracts";
 
 export const maximumEditorDraftBytes = 64 * 1024 * 1024;
 
@@ -32,13 +36,50 @@ function normalizeMarkdownPath(value: unknown): string {
   return normalized;
 }
 
+function logicalNewlineCount(value: string): number {
+  let count = 0;
+  for (const character of value) {
+    if (character === "\n") count += 1;
+  }
+  return count;
+}
+
+function isLineEnding(value: unknown): value is EditorDraftLineEnding {
+  return value === "lf" || value === "crlf" || value === "cr";
+}
+
+function parseTextRepresentation(value: unknown, content: string): EditorDraftTextRepresentation {
+  if (
+    !isRecord(value) ||
+    typeof value.hasBom !== "boolean" ||
+    typeof value.lineEndingKinds !== "string" ||
+    !/^[lcr]*$/u.test(value.lineEndingKinds) ||
+    !isLineEnding(value.defaultLineEnding) ||
+    value.lineEndingKinds.length !== logicalNewlineCount(content)
+  ) {
+    throw new Error(
+      "Version 3 editor drafts require bounded external text representation metadata.",
+    );
+  }
+  return {
+    hasBom: value.hasBom,
+    lineEndingKinds: value.lineEndingKinds,
+    defaultLineEnding: value.defaultLineEnding,
+  };
+}
+
 export function parseEditorDraft(value: unknown, expectedVaultId: string): PersistedEditorDraft {
   if (!sha256Pattern.test(expectedVaultId)) {
     throw new Error("Editor drafts require a lowercase SHA-256 vault identity.");
   }
+  if (!isRecord(value)) {
+    throw new Error(
+      "Editor drafts require version 1, 2, or 3, exact vault and revision identities, content, selection, and an update time.",
+    );
+  }
+  const version = value.version;
   if (
-    !isRecord(value) ||
-    (value.version !== 1 && value.version !== 2) ||
+    (version !== 1 && version !== 2 && version !== 3) ||
     value.vaultId !== expectedVaultId ||
     typeof value.draftId !== "string" ||
     !draftIdPattern.test(value.draftId) ||
@@ -51,12 +92,12 @@ export function parseEditorDraft(value: unknown, expectedVaultId: string): Persi
     typeof value.updatedAt !== "string"
   ) {
     throw new Error(
-      "Editor drafts require version 1 or 2, exact vault and revision identities, content, selection, and an update time.",
+      "Editor drafts require version 1, 2, or 3, exact vault and revision identities, content, selection, and an update time.",
     );
   }
-  const paneId = value.version === 1 ? "primary" : value.paneId;
+  const paneId = version === 1 ? "primary" : value.paneId;
   if (paneId !== "primary" && paneId !== "secondary") {
-    throw new Error("Version 2 editor drafts require a workspace pane identity.");
+    throw new Error("Version 2 and 3 editor drafts require a workspace pane identity.");
   }
 
   const path = normalizeMarkdownPath(value.path);
@@ -73,15 +114,23 @@ export function parseEditorDraft(value: unknown, expectedVaultId: string): Persi
   if (Number.isNaN(timestamp.valueOf()) || timestamp.toISOString() !== value.updatedAt) {
     throw new Error("Editor draft update times must use canonical ISO-8601 UTC.");
   }
+  if (version === 3 && (value.content.startsWith("\uFEFF") || value.content.includes("\r"))) {
+    throw new Error(
+      "Version 3 editor draft content must use CodeMirror's logical LF representation.",
+    );
+  }
+  const textRepresentation =
+    version === 3 ? parseTextRepresentation(value.textRepresentation, value.content) : null;
 
   return {
-    version: 2,
+    version: 3,
     draftId: value.draftId,
     vaultId: expectedVaultId,
     paneId,
     path,
     baseRevision: value.baseRevision,
     content: value.content,
+    textRepresentation,
     selection: { anchor, head },
     updatedAt: value.updatedAt,
   };

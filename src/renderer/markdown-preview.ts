@@ -16,42 +16,8 @@ import {
   safeMathLimits,
   scanFrontmatter,
   scanInlineMath,
-  sourceLineStarts,
   splitSourceLines,
 } from "./markdown-extensions";
-
-const sourceOnlySentinelCandidates = [
-  "\u2060",
-  "\u2061",
-  "\u2062",
-  "\u2063",
-  "\uFFF9",
-  "\uFFFA",
-] as const;
-
-function sourceOnlySentinelFor(source: string): string {
-  const used = new Set(source);
-  const preferred = sourceOnlySentinelCandidates.find((candidate) => !used.has(candidate));
-  if (preferred) return preferred;
-
-  // A note can contain every preferred marker. Pick an unused private-use
-  // code point without repeatedly rescanning the full source.
-  for (let code = 0xe000; code <= 0xf8ff; code += 1) {
-    const candidate = String.fromCharCode(code);
-    if (!used.has(candidate)) return candidate;
-  }
-
-  // This is only reachable for an unusually adversarial source containing
-  // the entire BMP private-use range. A two-unit marker is still selected by
-  // bounded probes, and is checked against the source before use.
-  for (const first of sourceOnlySentinelCandidates) {
-    for (const second of sourceOnlySentinelCandidates) {
-      const candidate = `${first}${second}`;
-      if (!source.includes(candidate)) return candidate;
-    }
-  }
-  return "\u2060\u2061";
-}
 
 export interface PreviewWikiLink extends Record<string, unknown> {
   target: string;
@@ -115,6 +81,7 @@ const sanitizeConfig = {
     "data-threadleaf-math",
     "data-threadleaf-link",
     "data-threadleaf-note-embed",
+    "data-threadleaf-source-fallback",
     "data-threadleaf-subpath",
     "data-threadleaf-table",
     "data-threadleaf-target",
@@ -172,10 +139,6 @@ function parseWikiLink(raw: string, embed: boolean): PreviewWikiLink {
 
 function wikiLinkRule(state: StateInline, silent: boolean): boolean {
   const start = state.pos;
-  const environment = previewEnvironment(state.env);
-  if (environment && isSourceOnlyPosition(state.src, start, environment)) {
-    return false;
-  }
   const embed = state.src[start] === "!";
   const markerStart = embed ? start + 1 : start;
   if (state.src.slice(markerStart, markerStart + 2) !== "[[") {
@@ -202,9 +165,6 @@ interface MarkdownPreviewEnvironment {
   threadleafFootnotes: FootnoteCollection;
   threadleafFootnoteReferences: Map<string, number>;
   threadleafSourceText: string;
-  threadleafLineStarts: readonly number[];
-  threadleafSourceOnlyLineStarts: ReadonlySet<number>;
-  threadleafSourceOnlySentinel: string;
   threadleafInlineMathSource: string | null;
   threadleafInlineMathCandidates: ReadonlyMap<number, InlineMathCandidate | null> | null;
   threadleafInlineMathRejectedRanges: ReadonlyMap<number, { from: number; to: number }>;
@@ -230,56 +190,9 @@ function isEscaped(source: string, position: number): boolean {
   return slashes % 2 === 1;
 }
 
-function sourceLineStart(position: number, lineStarts: readonly number[]): number {
-  if (lineStarts.length === 0) {
-    return 0;
-  }
-  let low = 0;
-  let high = lineStarts.length - 1;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if ((lineStarts[middle] ?? 0) <= position) {
-      low = middle;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return lineStarts[low] ?? 0;
-}
-
-function isSourceOnlyPosition(
-  source: string,
-  position: number,
-  environment: MarkdownPreviewEnvironment,
-): boolean {
-  const before = Math.max(0, position - 1);
-  const localStart =
-    Math.max(source.lastIndexOf("\n", before), source.lastIndexOf("\r", before)) + 1;
-  if (
-    environment.threadleafSourceOnlySentinel !== "" &&
-    source.slice(localStart, localStart + environment.threadleafSourceOnlySentinel.length) ===
-      environment.threadleafSourceOnlySentinel
-  ) {
-    return true;
-  }
-  if (
-    source === environment.threadleafSourceText &&
-    environment.threadleafSourceOnlyLineStarts.size > 0 &&
-    environment.threadleafSourceOnlyLineStarts.has(
-      sourceLineStart(position, environment.threadleafLineStarts),
-    )
-  ) {
-    return true;
-  }
-  return false;
-}
-
 function footnoteReferenceRule(state: StateInline, silent: boolean): boolean {
   const start = state.pos;
   const environment = previewEnvironment(state.env);
-  if (environment && isSourceOnlyPosition(state.src, start, environment)) {
-    return false;
-  }
   if (state.src[start] !== "[" || state.src[start + 1] !== "^") {
     return false;
   }
@@ -302,9 +215,6 @@ function footnoteReferenceRule(state: StateInline, silent: boolean): boolean {
 function mathInlineRule(state: StateInline, silent: boolean): boolean {
   const start = state.pos;
   const environment = previewEnvironment(state.env);
-  if (environment && isSourceOnlyPosition(state.src, start, environment)) {
-    return false;
-  }
   if (!environment) {
     return false;
   }
@@ -324,6 +234,15 @@ function mathInlineRule(state: StateInline, silent: boolean): boolean {
   if (candidate === undefined) {
     return false;
   }
+  const rejected = environment.threadleafInlineMathRejectedRanges.get(start);
+  if (rejected) {
+    if (!silent) {
+      const token = state.push("text", "", 0);
+      token.content = state.src.slice(rejected.from, rejected.to);
+    }
+    state.pos = rejected.to;
+    return true;
+  }
   if (candidate === null) {
     if (!environment.threadleafInlineMathUnmatchedOpeners.has(start)) {
       return false;
@@ -333,15 +252,6 @@ function mathInlineRule(state: StateInline, silent: boolean): boolean {
       token.content = state.src.slice(start);
     }
     state.pos = state.src.length;
-    return true;
-  }
-  const rejected = environment.threadleafInlineMathRejectedRanges.get(start);
-  if (rejected) {
-    if (!silent) {
-      const token = state.push("text", "", 0);
-      token.content = state.src.slice(rejected.from, rejected.to);
-    }
-    state.pos = rejected.to;
     return true;
   }
   if (!silent) {
@@ -360,10 +270,6 @@ function mathBlockRule(
 ): boolean {
   const beginning = state.bMarks[startLine] ?? 0;
   const end = state.eMarks[startLine] ?? beginning;
-  const environment = previewEnvironment(state.env);
-  if (environment && isSourceOnlyPosition(state.src, beginning, environment)) {
-    return false;
-  }
   const marker = state.src.slice(beginning, end).trim();
   const closing = marker === "$$" ? "$$" : marker === "\\[" ? "\\]" : null;
   if (!closing) return false;
@@ -380,7 +286,17 @@ function mathBlockRule(
   }
   if (closingLine < 0) return false;
   const content = state.getLines(startLine + 1, closingLine, state.blkIndent, true).trim();
-  if (!renderSafeMath(content)) return false;
+  if (!renderSafeMath(content)) {
+    if (silent) return true;
+    const closingEnd = state.eMarks[closingLine] ?? beginning;
+    const token = state.push("threadleaf_source_fallback", "pre", 0);
+    token.block = true;
+    token.map = [startLine, closingLine + 1];
+    token.meta = { kind: "math" };
+    token.content = state.src.slice(beginning, closingEnd);
+    state.line = closingLine + 1;
+    return true;
+  }
   if (silent) return true;
   const token = state.push("threadleaf_math_block", "div", 0);
   token.block = true;
@@ -406,17 +322,21 @@ function maskFrontmatter(source: string): string {
   );
 }
 
-function protectSourceOnlyLines(
-  source: string,
-  sourceOnlyLines: ReadonlySet<number>,
-  sentinel: string,
-): string {
+function literalizeSourceOnlyLines(source: string, sourceOnlyLines: ReadonlySet<number>): string {
   if (sourceOnlyLines.size === 0) return source;
   const lines = splitSourceLines(source);
+  const literalize = (line: string): string =>
+    [...line]
+      .map((character) =>
+        character === " " || character === "\t"
+          ? character
+          : `&#x${(character.codePointAt(0) ?? 0).toString(16)};`,
+      )
+      .join("");
   return joinSourceLines(
     source,
     lines.map((line, index) =>
-      sourceOnlyLines.has(index + 1) && /\S/u.test(line) ? `${sentinel}${line}` : line,
+      sourceOnlyLines.has(index + 1) && /\S/u.test(line) ? literalize(line) : line,
     ),
   );
 }
@@ -469,8 +389,6 @@ function renderFootnoteSection(
   const footnoteEnvironment: MarkdownPreviewEnvironment = {
     ...environment,
     threadleafSourceText: "",
-    threadleafSourceOnlyLineStarts: new Set(),
-    threadleafSourceOnlySentinel: "",
     threadleafInlineMathSource: null,
     threadleafInlineMathCandidates: null,
     threadleafInlineMathRejectedRanges: new Map(),
@@ -553,6 +471,13 @@ markdown.renderer.rules.threadleaf_math_block = (tokens, index) => {
   const rendered = renderSafeMath(expression);
   if (!rendered) return escapeText(`$$\n${expression}\n$$`);
   return `<div class="preview-math-block" role="math" data-threadleaf-math="block" aria-label="${escapeAttribute(rendered.text)}">${rendered.html}</div>`;
+};
+
+markdown.renderer.rules.threadleaf_source_fallback = (tokens, index) => {
+  const token = tokens[index];
+  const line = token?.attrGet("data-source-line");
+  const sourceLine = line ? ` data-source-line="${escapeAttribute(String(line))}"` : "";
+  return `<pre class="preview-source-fallback" data-threadleaf-source-fallback="math"${sourceLine}>${escapeText(token?.content ?? "")}</pre>`;
 };
 
 markdown.renderer.rules.threadleaf_footnote_ref = (tokens, index, _options, env) => {
@@ -1314,44 +1239,26 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
     return fallback;
   }
   const footnotes = collectFootnotes(source);
-  const sourceOnlyLineStarts = new Set<number>();
-  const sourceLines = splitSourceLines(source);
-  const lineStarts: number[] = [];
   const sourceOnlyLines = new Set(footnotes.definitionLines);
   if (frontmatter.status === "resolved" && frontmatter.closingLine !== null) {
     for (let lineNumber = 1; lineNumber <= frontmatter.closingLine; lineNumber += 1) {
       sourceOnlyLines.add(lineNumber);
     }
   }
-  const sourceOffsets = sourceLineStarts(source);
-  const sourceOnlySentinel = sourceOnlySentinelFor(source);
-  for (const [index] of sourceLines.entries()) {
-    const sourceOffset = sourceOffsets[index] ?? 0;
-    lineStarts.push(sourceOffset);
-    if (sourceOnlyLines.has(index + 1)) {
-      sourceOnlyLineStarts.add(sourceOffset);
-    }
-  }
   const environment: MarkdownPreviewEnvironment = {
     threadleafFootnotes: footnotes,
     threadleafFootnoteReferences: new Map(),
-    threadleafSourceText: protectSourceOnlyLines(
+    threadleafSourceText: literalizeSourceOnlyLines(
       maskFrontmatter(footnotes.body),
-      footnotes.definitionLines,
-      sourceOnlySentinel,
+      sourceOnlyLines,
     ),
-    threadleafLineStarts: lineStarts,
-    threadleafSourceOnlyLineStarts: sourceOnlyLineStarts,
-    threadleafSourceOnlySentinel: sourceOnlySentinel,
     threadleafInlineMathSource: null,
     threadleafInlineMathCandidates: null,
     threadleafInlineMathRejectedRanges: new Map(),
     threadleafInlineMathUnmatchedOpeners: new Set(),
     threadleafInlineMathCandidatesSeen: 0,
   };
-  const bodyHtml = markdown
-    .render(environment.threadleafSourceText, environment)
-    .replaceAll(sourceOnlySentinel, "");
+  const bodyHtml = markdown.render(environment.threadleafSourceText, environment);
   const html = bodyHtml + renderFootnoteSection(footnotes, environment);
   const fragment = DOMPurify.sanitize(html, sanitizeConfig);
   for (const anchor of fragment.querySelectorAll<HTMLAnchorElement>("a")) {

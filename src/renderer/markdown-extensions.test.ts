@@ -76,4 +76,23 @@ describe("bounded offline math", () => {
     expect(collection.definitions).toEqual([]);
     expect(collection.definitionLines.size).toBe(0);
   });
+
+  it("does not collect footnotes from mismatched or insufficient fenced-code closers", () => {
+    for (const source of [
+      ["~~~", "```", "[^inside]: tilde code must stay source."].join("\n"),
+      ["~~~~", "~~~", "[^inside]: a shorter tilde fence must not close the block."].join("\n"),
+      ["```", "~~~", "[^inside]: backtick code must stay source after a tilde fence."].join("\n"),
+      ["~~~", "[^inside]: an unclosed tilde fence must stay code."].join("\n"),
+      ["```", "[^inside]: an unclosed backtick fence must stay code."].join("\n"),
+    ]) {
+      expect(collectFootnotes(source).definitions).toEqual([]);
+    }
+  });
+
+  it("collects definitions after a matching fence closer without treating code as a definition", () => {
+    const source = ["~~~~", "[^inside]: code", "~~~~", "", "[^outside]: footnote"].join("\n");
+    expect(collectFootnotes(source).definitions.map((definition) => definition.id)).toEqual([
+      "outside",
+    ]);
+  });
 });

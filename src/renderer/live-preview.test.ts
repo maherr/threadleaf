@@ -130,6 +130,40 @@ describe("live preview inline model", () => {
     ]);
   });
 
+  it("derives code protection for standalone mappings", () => {
+    const source = [
+      "`$inline$`",
+      "$outside$",
+      "~~~",
+      "$tilde$",
+      "- [ ] $taskLikeCode$",
+      "| $tableLikeCode$ |",
+      "~~~",
+      "```",
+      "$backtick$",
+      "```",
+    ].join("\n");
+    const mapping = buildLivePreviewMapping(source);
+
+    expect(
+      mapping.tokens.filter((token) => token.kind === "math").map((token) => token.sourceText),
+    ).toEqual(["$outside$"]);
+    expect(mapping.tokens.some((token) => token.sourceText.includes("taskLikeCode"))).toBe(false);
+    expect(mapping.tokens.some((token) => token.sourceText.includes("tableLikeCode"))).toBe(false);
+    expect(mapping.rendered).toContain("| $tableLikeCode$ |");
+  });
+
+  it("keeps math literal after mismatched or unclosed standalone fences", () => {
+    for (const source of [
+      ["~~~", "```", "$tilde$"].join("\n"),
+      ["```", "~~~", "$backtick$"].join("\n"),
+    ]) {
+      expect(
+        buildLivePreviewMapping(source).tokens.filter((token) => token.kind === "math"),
+      ).toEqual([]);
+    }
+  });
+
   it("prefers one complete wiki token over Markdown-looking inner brackets", () => {
     const source = "![[image.webp]] [[Note|Alias]]";
     const tokens = parseLivePreviewLine(source, 0);

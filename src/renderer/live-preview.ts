@@ -17,6 +17,7 @@ import {
   collectFootnotes,
   createSafeMathElement,
   findInlineMathClose,
+  markdownCodeRanges,
   renderSafeMath,
   scanFrontmatter,
   sourceLineStarts,
@@ -972,6 +973,7 @@ export function buildLivePreviewMapping(
     return unresolvedFrontmatterMapping(source);
   }
   const footnotes = collectFootnotes(source);
+  const protectedRanges = [...markdownCodeRanges(source), ...(options.protectedRanges ?? [])];
   const parsed: ParsedInlineToken[] = [];
   const lines = splitSourceLines(source);
   const lineStarts = sourceLineStarts(source);
@@ -984,6 +986,14 @@ export function buildLivePreviewMapping(
   let lineFrom = 0;
   for (const [lineIndex, line] of lines.entries()) {
     const lineNumber = lineIndex + 1;
+    const lineRange = sourceRange(lineFrom, lineFrom + line.length);
+    // The pure mapping has no mounted CodeMirror syntax tree to hide behind.
+    // Leave every protected code line as an identity slice, including code
+    // that merely resembles a table, task, frontmatter marker, or math.
+    if (intersectsAny(lineRange, protectedRanges)) {
+      lineFrom = lineStarts[lineIndex + 1] ?? source.length;
+      continue;
+    }
     const isFrontmatter = frontmatterLines.has(lineNumber);
     const isFrontmatterFence = /^\s*---\s*\r?$/u.test(line);
     const isTableLine = /^\s*\|.*\|\s*$/u.test(line);
@@ -992,7 +1002,7 @@ export function buildLivePreviewMapping(
       isFrontmatter || isFrontmatterFence || isTableLine || isFootnoteSourceLine;
     if (!sourceOnlyLine) {
       parsed.push(
-        ...parseLivePreviewLine(line, lineFrom, options.protectedRanges ?? [], {
+        ...parseLivePreviewLine(line, lineFrom, protectedRanges, {
           footnoteIds: footnotes.ids,
         }),
       );
@@ -1026,7 +1036,7 @@ export function buildLivePreviewMapping(
       }
       const from = lineFrom + match.index + match[0].length - marker.length;
       const to = from + marker.length;
-      if (!intersectsAny({ from, to }, options.protectedRanges ?? [])) {
+      if (!intersectsAny({ from, to }, protectedRanges)) {
         parsed.push({ from, to, kind: "task", label: marker });
       }
     }
@@ -1060,10 +1070,8 @@ export function buildLivePreviewMapping(
       parsedIndex += 1;
     }
     const occupied = lineTokens.map((token) => sourceRange(token.from, token.to));
-    operations.push(...prefixOperations(line, lineFrom, occupied, options.protectedRanges ?? []));
-    operations.push(
-      ...delimiterOperations(line, lineFrom, occupied, options.protectedRanges ?? []),
-    );
+    operations.push(...prefixOperations(line, lineFrom, occupied, protectedRanges));
+    operations.push(...delimiterOperations(line, lineFrom, occupied, protectedRanges));
     lineFrom = lineStarts[lineIndex + 1] ?? source.length;
   }
   const uniqueOperations = operations

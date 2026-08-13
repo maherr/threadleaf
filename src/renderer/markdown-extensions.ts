@@ -68,6 +68,135 @@ export function sourceLineStarts(source: string): number[] {
   return starts;
 }
 
+export interface MarkdownSourceRange {
+  from: number;
+  to: number;
+}
+
+interface MarkdownFence {
+  marker: "`" | "~";
+  length: number;
+}
+
+function stripLineCarriageReturn(line: string): string {
+  return line.replace(/\r$/u, "");
+}
+
+function fenceRun(line: string): { fence: MarkdownFence; trailing: string } | null {
+  const match = /^ {0,3}(`+|~+)(.*)$/u.exec(stripLineCarriageReturn(line));
+  const run = match?.[1];
+  if (!run || run.length < 3) {
+    return null;
+  }
+  const marker = run[0];
+  if (marker !== "`" && marker !== "~") {
+    return null;
+  }
+  return {
+    fence: { marker, length: run.length },
+    trailing: match?.[2] ?? "",
+  };
+}
+
+function openingFence(line: string): MarkdownFence | null {
+  const run = fenceRun(line);
+  // A backtick fence cannot carry another backtick in its info string. Treat
+  // that line as ordinary source rather than accidentally changing fence state.
+  if (!run || (run.fence.marker === "`" && run.trailing.includes("`"))) {
+    return null;
+  }
+  return run.fence;
+}
+
+function closesFence(line: string, opening: MarkdownFence): boolean {
+  const run = fenceRun(line);
+  return Boolean(
+    run &&
+      run.fence.marker === opening.marker &&
+      run.fence.length >= opening.length &&
+      /^[ \t]*$/u.test(run.trailing),
+  );
+}
+
+function escapedAt(source: string, position: number): boolean {
+  let slashes = 0;
+  for (let index = position - 1; index >= 0 && source[index] === "\\"; index -= 1) {
+    slashes += 1;
+  }
+  return slashes % 2 === 1;
+}
+
+function inlineCodeRanges(line: string, lineFrom: number): MarkdownSourceRange[] {
+  const ranges: MarkdownSourceRange[] = [];
+  for (let index = 0; index < line.length; ) {
+    if (line[index] !== "`" || escapedAt(line, index)) {
+      index += 1;
+      continue;
+    }
+    let openerEnd = index;
+    while (line[openerEnd] === "`") openerEnd += 1;
+    const length = openerEnd - index;
+    let cursor = openerEnd;
+    let closeEnd = -1;
+    while (cursor < line.length) {
+      if (line[cursor] !== "`") {
+        cursor += 1;
+        continue;
+      }
+      let candidateEnd = cursor;
+      while (line[candidateEnd] === "`") candidateEnd += 1;
+      if (candidateEnd - cursor === length) {
+        closeEnd = candidateEnd;
+        break;
+      }
+      cursor = candidateEnd;
+    }
+    if (closeEnd < 0) {
+      index = openerEnd;
+      continue;
+    }
+    ranges.push({ from: lineFrom + index, to: lineFrom + closeEnd });
+    index = closeEnd;
+  }
+  return ranges;
+}
+
+/**
+ * Source-only code ranges for the standalone Live Preview mapping. The mounted
+ * editor uses its syntax tree too, but this bounded scanner keeps the public
+ * pure mapping honest when no CodeMirror view is available.
+ */
+export function markdownCodeRanges(source: string): MarkdownSourceRange[] {
+  const ranges: MarkdownSourceRange[] = [];
+  const lines = splitSourceLines(source);
+  const starts = sourceLineStarts(source);
+  let opening: MarkdownFence | null = null;
+  let fenceFrom = 0;
+
+  for (const [index, line] of lines.entries()) {
+    const lineFrom = starts[index] ?? source.length;
+    const lineTo = lineFrom + line.length;
+    if (opening) {
+      if (closesFence(line, opening)) {
+        ranges.push({ from: fenceFrom, to: lineTo });
+        opening = null;
+      }
+      continue;
+    }
+    const nextOpening = openingFence(line);
+    if (nextOpening) {
+      opening = nextOpening;
+      fenceFrom = lineFrom;
+      continue;
+    }
+    ranges.push(...inlineCodeRanges(line, lineFrom));
+  }
+  if (opening) {
+    ranges.push({ from: fenceFrom, to: source.length });
+  }
+  return ranges;
+}
+
 export function joinSourceLines(source: string, lines: readonly string[]): string {
   const originalLines = sourceLinesWithEndings(source);
   const bytes = (ending: SourceLine["ending"]): string =>
@@ -185,10 +314,6 @@ function collectFootnoteSourceLines(
   }
 }
 
-function isFenceLine(line: string): boolean {
-  return /^ {0,3}(?:`{3,}|~{3,})/u.test(line.replace(/\r$/u, ""));
-}
-
 /**
  * Extract standard Markdown footnote definitions while retaining line count
  * and line offsets in the temporary body passed to Markdown-it.
@@ -210,7 +335,7 @@ export function collectFootnotes(source: string): FootnoteCollection {
   const candidates: CandidateFootnote[] = [];
   const definitionLines = new Set<number>();
   const markerIndexes = new Set<number>();
-  let inFence = false;
+  let fence: MarkdownFence | null = null;
   let inFrontmatter = false;
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -227,11 +352,15 @@ export function collectFootnotes(source: string): FootnoteCollection {
       }
       continue;
     }
-    if (isFenceLine(line)) {
-      inFence = !inFence;
+    if (fence) {
+      if (closesFence(line, fence)) {
+        fence = null;
+      }
       continue;
     }
-    if (inFence) {
+    const nextFence = openingFence(line);
+    if (nextFence) {
+      fence = nextFence;
       continue;
     }
     if (looksLikeFootnoteDefinition(originalLine)) {

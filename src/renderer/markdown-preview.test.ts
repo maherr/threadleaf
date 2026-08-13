@@ -92,6 +92,16 @@ describe("Markdown reading view", () => {
     expect(rendered.textContent).toContain("[^dup]: second definition");
   });
 
+  it("does not turn mismatched fenced code into a rendered footnote", () => {
+    const source = ["~~~", "```", "[^inside]: This remains code, not a definition."].join("\n");
+    const rendered = preview(source);
+
+    expect(rendered.querySelector(".preview-footnotes")).toBeNull();
+    expect(rendered.querySelector("pre code")?.textContent).toContain(
+      "[^inside]: This remains code, not a definition.",
+    );
+  });
+
   it("renders supported offline math and leaves unknown commands source-visible", () => {
     const rendered = preview(
       [
@@ -113,12 +123,39 @@ describe("Markdown reading view", () => {
     expect(rendered.innerHTML).not.toContain("<script");
   });
 
+  it("renders rejected math and malformed footnote source literally", () => {
+    const rejectedMath = preview(String.raw`$\notARealCommand{*em* <strong>html</strong>}$`);
+    expect(rejectedMath.querySelector("em")).toBeNull();
+    expect(rejectedMath.querySelector("strong")).toBeNull();
+    expect(rejectedMath.textContent).toContain(
+      String.raw`$\notARealCommand{*em* <strong>html</strong>}$`,
+    );
+
+    const malformedSource =
+      "[^bad id]: <strong>formatted</strong> and *emphasized* <script>bad()</script> $x$\n    continuation";
+    const malformedFootnote = preview(malformedSource);
+    expect(malformedFootnote.querySelector("strong")).toBeNull();
+    expect(malformedFootnote.querySelector("em")).toBeNull();
+    expect(malformedFootnote.querySelector("script")).toBeNull();
+    expect(malformedFootnote.textContent).toContain(
+      "[^bad id]: <strong>formatted</strong> and *emphasized* <script>bad()</script> $x$",
+    );
+    expect(malformedFootnote.querySelector("[data-source-line='1']")?.textContent).toContain(
+      "[^bad id]: <strong>formatted</strong>",
+    );
+  });
+
   it("keeps malformed display math source-visible", () => {
-    const source = ["$$", "\\notARealCommand{x}", "$$"].join("\n");
+    const source = ["$$", "\\notARealCommand{*em* <strong>html</strong>}", "$$"].join("\n");
     const rendered = preview(source);
     expect(rendered.querySelector(".preview-math-block")).toBeNull();
+    expect(rendered.querySelector("em")).toBeNull();
+    expect(rendered.querySelector("strong")).toBeNull();
     expect(rendered.textContent).toContain("$$");
-    expect(rendered.textContent).toContain("\\notARealCommand{x}");
+    expect(rendered.textContent).toContain("\\notARealCommand{*em* <strong>html</strong>}");
+    expect(
+      rendered.querySelector(".preview-block[data-source-line='1'] .preview-source-fallback"),
+    ).not.toBeNull();
   });
 
   it("keeps an over-budget unclosed display block fully source-visible", () => {

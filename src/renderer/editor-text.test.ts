@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   applyEditorTextChanges,
   type EditorTextChange,
+  editorDraftMatchesDiskText,
+  editorDraftTextRepresentation,
   editorTextFromExternal,
   externalTextFromEditor,
   externalTextRepresentation,
+  externalTextRepresentationFromDraft,
 } from "./editor-text";
 
 function mutate(
@@ -77,6 +80,57 @@ describe("editor text representation boundary", () => {
     expect(externalTextFromEditor("alpha\nbeta", externalTextRepresentation("alpha\nbeta"))).toBe(
       "alpha\nbeta",
     );
+  });
+
+  it.each([
+    ["LF", "alpha\nbeta\n"],
+    ["CRLF", "alpha\r\nbeta\r\n"],
+    ["CR", "alpha\rbeta\r"],
+    ["mixed", "alpha\r\nbeta\ngamma\r"],
+    ["BOM LF", "\uFEFFalpha\nbeta\n"],
+    ["BOM CRLF", "\uFEFFalpha\r\nbeta\r\n"],
+    ["BOM CR", "\uFEFFalpha\rbeta\r"],
+    ["BOM mixed", "\uFEFFalpha\r\nbeta\ngamma\r"],
+  ])(
+    "keeps exact %s bytes through missing or stale-disk draft recovery and save payloads",
+    (_label, external) => {
+      const editorText = editorTextFromExternal(external);
+      const persisted = editorDraftTextRepresentation(externalTextRepresentation(external));
+
+      // Missing-disk recovery and stale-disk conflict-copy recovery must use
+      // the draft's own external representation, not a missing or changed
+      // disk snapshot.
+      const recovered = externalTextRepresentationFromDraft(editorText, persisted);
+      expect(recovered).not.toBeNull();
+      expect(externalTextFromEditor(editorText, recovered as NonNullable<typeof recovered>)).toBe(
+        external,
+      );
+
+      const savedPayload = externalTextFromEditor(
+        `${editorText}changed`,
+        recovered as NonNullable<typeof recovered>,
+      );
+      expect(savedPayload).toBe(`${external}changed`);
+    },
+  );
+
+  it("keeps a version-3 draft when a stale disk copy changes only its spelling", () => {
+    const external = "\uFEFFalpha\r\nbeta\r\n";
+    const editorText = editorTextFromExternal(external);
+    const persisted = editorDraftTextRepresentation(externalTextRepresentation(external));
+
+    expect(editorDraftMatchesDiskText(editorText, persisted, external)).toBe(true);
+    expect(editorDraftMatchesDiskText(editorText, persisted, "alpha\nbeta\n")).toBe(false);
+  });
+
+  it("fails closed for a malformed private text representation", () => {
+    expect(
+      externalTextRepresentationFromDraft("alpha\nbeta", {
+        hasBom: true,
+        lineEndingKinds: "cc",
+        defaultLineEnding: "crlf",
+      }),
+    ).toBeNull();
   });
 
   it("restores the saved line-ending snapshot when a real CodeMirror edit is undone", () => {

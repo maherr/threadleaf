@@ -11,13 +11,14 @@ const vaultId = "a".repeat(64);
 
 function draft(draftId = "9ee6115a-d87e-4c87-8cb8-b444695200cf"): PersistedEditorDraft {
   return {
-    version: 2,
+    version: 3,
     draftId,
     vaultId,
     paneId: "primary",
     path: "Active.md",
     baseRevision: "b".repeat(64),
     content: "unsaved text",
+    textRepresentation: { hasBom: false, lineEndingKinds: "", defaultLineEnding: "lf" },
     selection: { anchor: 3, head: 8 },
     updatedAt: "2026-08-12T08:00:00.000Z",
   };
