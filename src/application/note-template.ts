@@ -4,7 +4,7 @@ import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/
 import { normalizeNoteWorkflowFile, normalizeNoteWorkflowFolder } from "../shared/note-workflows";
 
 export const DEFAULT_TEMPLATE_MAX_BYTES = 1024 * 1024;
-const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const textDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const templateVariablePattern = /{{(title|date|time)(?::([^}\r\n]+))?}}/g;
 
 export interface TemplateBinarySnapshot {

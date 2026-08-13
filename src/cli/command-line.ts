@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import moment from "moment";
+import moment, { type Moment } from "moment";
 import { createMarkdownNote } from "../application/note-creation";
 import { openOrCreateDailyNote } from "../application/note-daily";
 import { movedMarkdownPath, moveMarkdownNote, renamedMarkdownPath } from "../application/note-move";
@@ -19,7 +19,13 @@ import {
   mutateMarkdownTask,
   readMarkdownTask,
 } from "../application/note-task";
-import { noteTemplateTitle, renderNoteTemplate } from "../application/note-template";
+import {
+  dailyNotePath,
+  listNoteTemplates,
+  loadNoteTemplate,
+  noteTemplateTitle,
+  renderNoteTemplate,
+} from "../application/note-template";
 import { mutateMarkdownNoteText } from "../application/note-text-mutation";
 import {
   listTrashedMarkdownNotes,
@@ -89,6 +95,10 @@ type CliCommandId =
   | "outline"
   | "create"
   | "daily"
+  | "daily.path"
+  | "daily.read"
+  | "daily.append"
+  | "daily.prepend"
   | "append"
   | "prepend"
   | "move"
@@ -105,6 +115,9 @@ type CliCommandId =
   | "aliases"
   | "tags"
   | "tag"
+  | "templates"
+  | "template.read"
+  | "random.read"
   | "plugins"
   | "plugin"
   | "themes"
@@ -234,6 +247,40 @@ interface CliDailyCommand extends CliVaultCommand {
   templatePath: string | null;
   dateFormat: string;
   timeFormat: string;
+}
+
+interface CliDailyPathCommand extends CliVaultCommand {
+  id: "daily.path" | "daily.read";
+  folder: string;
+  format: string;
+}
+
+interface CliDailyTextCommand extends CliVaultCommand {
+  id: "daily.append" | "daily.prepend";
+  folder: string;
+  format: string;
+  content: string;
+  inline: boolean;
+}
+
+interface CliTemplatesCommand extends CliVaultCommand {
+  id: "templates";
+  folder: string;
+  totalOnly: boolean;
+}
+
+interface CliTemplateReadCommand extends CliVaultCommand {
+  id: "template.read";
+  folder: string;
+  templatePath: string;
+  templateTargetKind: "name" | "path";
+  title: string | null;
+  resolve: boolean;
+}
+
+interface CliRandomReadCommand extends CliVaultCommand {
+  id: "random.read";
+  folder: string;
 }
 
 interface CliTextMutationCommand extends CliVaultCommand {
@@ -381,6 +428,8 @@ export type ParsedCliCommand =
   | CliVaultMetadataCommand
   | CliCreateCommand
   | CliDailyCommand
+  | CliDailyPathCommand
+  | CliDailyTextCommand
   | CliTextMutationCommand
   | CliMoveCommand
   | CliTrashMutationCommand
@@ -394,6 +443,9 @@ export type ParsedCliCommand =
   | CliAliasesCommand
   | CliTagsCommand
   | CliTagCommand
+  | CliTemplatesCommand
+  | CliTemplateReadCommand
+  | CliRandomReadCommand
   | CliPluginsCommand
   | CliPluginCommand
   | CliThemesCommand
@@ -407,6 +459,10 @@ export interface CliIo {
 
 export interface CliRunOptions {
   stateRoot?: StateRootPort;
+  /** Injectable clock for deterministic daily/template fixtures. */
+  now?: Moment;
+  /** Injectable index selector for deterministic random-note fixtures. */
+  randomSelector?: (paths: readonly string[]) => number | string;
 }
 
 class CliFailure extends Error {
@@ -1263,6 +1319,139 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     }
     return { id: "tag", json, vaultPath, tagName, totalOnly, verbose };
   }
+  if (name === "templates") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("templates accepts folder and total arguments only.");
+    }
+    const defaults = createDefaultVaultNoteWorkflowSettings();
+    let folder = defaults.templateFolder;
+    let folderSet = false;
+    let totalOnly = false;
+    for (const value of values) {
+      if (value.startsWith("folder=")) {
+        if (folderSet) {
+          usageFailure("templates folder may be supplied only once.");
+        }
+        folder = pathArgument(() =>
+          normalizeNoteWorkflowFolder(value.slice("folder=".length), "Template folder"),
+        );
+        folderSet = true;
+      } else if (value === "total") {
+        if (totalOnly) {
+          usageFailure("templates total may be supplied only once.");
+        }
+        totalOnly = true;
+      } else {
+        usageFailure(`Unsupported templates argument: ${value}`);
+      }
+    }
+    return { id: "templates", json, vaultPath, folder, totalOnly };
+  }
+  if (name === "template:read") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("template:read accepts name, folder, title, and resolve arguments only.");
+    }
+    const defaults = createDefaultVaultNoteWorkflowSettings();
+    let folder = defaults.templateFolder;
+    let templatePath: string | null = null;
+    let templateTargetKind: CliTemplateReadCommand["templateTargetKind"] | null = null;
+    let title: string | null = null;
+    let resolve = false;
+    let folderSet = false;
+    let titleSet = false;
+    for (const value of values) {
+      if (value.startsWith("name=") || value.startsWith("path=")) {
+        if (templatePath !== null) {
+          usageFailure("template:read accepts one template name.");
+        }
+        templateTargetKind = value.startsWith("path=") ? "path" : "name";
+        templatePath = pathArgument(() =>
+          normalizeNoteWorkflowFile(value.slice(value.indexOf("=") + 1), "Template name"),
+        );
+      } else if (value.startsWith("folder=")) {
+        if (folderSet) {
+          usageFailure("template:read folder may be supplied only once.");
+        }
+        folder = pathArgument(() =>
+          normalizeNoteWorkflowFolder(value.slice("folder=".length), "Template folder"),
+        );
+        folderSet = true;
+      } else if (value.startsWith("title=")) {
+        if (titleSet) {
+          usageFailure("template:read title may be supplied only once.");
+        }
+        title = value.slice("title=".length);
+        titleSet = true;
+      } else if (value === "resolve") {
+        if (resolve) {
+          usageFailure("template:read resolve may be supplied only once.");
+        }
+        resolve = true;
+      } else if (templatePath === null && !value.includes("=")) {
+        templateTargetKind = "name";
+        templatePath = pathArgument(() => normalizeNoteWorkflowFile(value, "Template name"));
+      } else {
+        usageFailure(`Unsupported template:read argument: ${value}`);
+      }
+    }
+    if (templatePath === null) {
+      usageFailure("template:read requires name=<template>.");
+    }
+    return {
+      id: "template.read",
+      json,
+      vaultPath,
+      folder,
+      templatePath,
+      templateTargetKind: templateTargetKind as CliTemplateReadCommand["templateTargetKind"],
+      title,
+      resolve,
+    };
+  }
+  if (name === "random:read") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("random:read accepts only the optional folder argument.");
+    }
+    let folder = "";
+    let folderSet = false;
+    for (const value of values) {
+      if (!value.startsWith("folder=")) {
+        usageFailure(`Unsupported random:read argument: ${value}`);
+      }
+      if (folderSet) {
+        usageFailure("random:read folder may be supplied only once.");
+      }
+      folder = pathArgument(() =>
+        normalizeNoteWorkflowFolder(value.slice("folder=".length), "Random-note folder"),
+      );
+      folderSet = true;
+    }
+    return { id: "random.read", json, vaultPath, folder };
+  }
   if (name === "plugins") {
     if (
       directory !== null ||
@@ -1828,6 +2017,113 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       timeFormat,
     };
   }
+  if (name === "daily:path" || name === "daily:read") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure(`${name} received an option that it does not accept.`);
+    }
+    const defaults = createDefaultVaultNoteWorkflowSettings();
+    let folder = defaults.dailyNoteFolder;
+    let format = defaults.dailyNoteDateFormat;
+    let folderSet = false;
+    let formatSet = false;
+    for (const value of values) {
+      if (value.startsWith("folder=")) {
+        if (folderSet) {
+          usageFailure(`${name} folder may be supplied only once.`);
+        }
+        folder = pathArgument(() =>
+          normalizeNoteWorkflowFolder(value.slice("folder=".length), `${name} folder`),
+        );
+        folderSet = true;
+      } else if (value.startsWith("format=")) {
+        if (formatSet) {
+          usageFailure(`${name} format may be supplied only once.`);
+        }
+        format = parseMomentFormat(value.slice("format=".length), `${name} format`);
+        formatSet = true;
+      } else {
+        usageFailure(`Unsupported ${name} argument: ${value}`);
+      }
+    }
+    return {
+      id: name === "daily:path" ? "daily.path" : "daily.read",
+      json,
+      vaultPath,
+      folder,
+      format,
+    };
+  }
+  if (name === "daily:append" || name === "daily:prepend") {
+    if (
+      directory !== null ||
+      limit !== null ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure(`${name} received an option that it does not accept.`);
+    }
+    const defaults = createDefaultVaultNoteWorkflowSettings();
+    let folder = defaults.dailyNoteFolder;
+    let format = defaults.dailyNoteDateFormat;
+    let parameterContent: string | null = null;
+    let folderSet = false;
+    let formatSet = false;
+    let inlineFlag = inline;
+    for (const value of values) {
+      if (value.startsWith("folder=")) {
+        if (folderSet) {
+          usageFailure(`${name} folder may be supplied only once.`);
+        }
+        folder = pathArgument(() =>
+          normalizeNoteWorkflowFolder(value.slice("folder=".length), `${name} folder`),
+        );
+        folderSet = true;
+      } else if (value.startsWith("format=")) {
+        if (formatSet) {
+          usageFailure(`${name} format may be supplied only once.`);
+        }
+        format = parseMomentFormat(value.slice("format=".length), `${name} format`);
+        formatSet = true;
+      } else if (value.startsWith("content=")) {
+        if (parameterContent !== null) {
+          usageFailure(`${name} content may be supplied only once.`);
+        }
+        parameterContent = value.slice("content=".length);
+      } else if (value === "inline") {
+        if (inlineFlag) {
+          usageFailure(`${name} inline may be supplied only once.`);
+        }
+        inlineFlag = true;
+      } else {
+        usageFailure(`Unsupported ${name} argument: ${value}`);
+      }
+    }
+    if (content !== null && parameterContent !== null) {
+      usageFailure(`${name} content may be supplied as an option or parameter, not both.`);
+    }
+    const decodedContent = decodeContentEscapes(content ?? parameterContent ?? "");
+    if (!decodedContent) {
+      usageFailure(`${name} requires non-empty content.`);
+    }
+    return {
+      id: name === "daily:append" ? "daily.append" : "daily.prepend",
+      json,
+      vaultPath,
+      folder,
+      format,
+      content: decodedContent,
+      inline: inlineFlag,
+    };
+  }
   if (name === "append" || name === "prepend") {
     if (
       directory !== null ||
@@ -1984,6 +2280,10 @@ Usage:
   threadleaf --vault <path> [--json] outline <note.md> [format=tree|md|json] [total]
   threadleaf --vault <path> [--json] create <note> [--content <text> | template=<note.md>] [date-format=<format>] [time-format=<format>]
   threadleaf --vault <path> [--json] daily [folder=<path>] [format=<format>] [template=<note.md>] [date-format=<format>] [time-format=<format>]
+  threadleaf --vault <path> [--json] daily:path [folder=<path>] [format=<format>]
+  threadleaf --vault <path> [--json] daily:read [folder=<path>] [format=<format>]
+  threadleaf --vault <path> [--json] daily:append [folder=<path>] [format=<format>] content=<text> [inline]
+  threadleaf --vault <path> [--json] daily:prepend [folder=<path>] [format=<format>] content=<text> [inline]
   threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
   threadleaf --vault <path> [--json] move <note> --to <path> [--update-links]
@@ -2000,6 +2300,9 @@ Usage:
   threadleaf --vault <path> [--json] aliases [path=<note.md>] [total|verbose]
   threadleaf --vault <path> [--json] tags [path=<note.md>] [sort=count] [total|counts]
   threadleaf --vault <path> [--json] tag name=<tag> [total|verbose]
+  threadleaf --vault <path> [--json] templates [folder=<path>] [total]
+  threadleaf --vault <path> [--json] template:read name=<template> [folder=<path>] [title=<title>] [resolve]
+  threadleaf --vault <path> [--json] random:read [folder=<path>]
   threadleaf --vault <path> [--json] plugins [filter=community] [versions] [format=json|tsv|csv]
   threadleaf --vault <path> [--json] plugin id=<plugin-id>
   threadleaf --vault <path> [--json] themes [versions]
@@ -2021,6 +2324,10 @@ Compatibility spellings:
   threadleaf --vault <path> outline path=<note.md> format=md
   threadleaf --vault <path> create path=<note> [content=<text> | template=<note.md>]
   threadleaf --vault <path> daily folder=Journal format=YYYY/MMMM/YYYY-MM-DD template=Templates/Daily.md
+  threadleaf --vault <path> daily:path folder=Journal format=YYYY/MMMM/YYYY-MM-DD
+  threadleaf --vault <path> daily:read folder=Journal format=YYYY/MMMM/YYYY-MM-DD
+  threadleaf --vault <path> daily:append folder=Journal format=YYYY/MMMM/YYYY-MM-DD content=<text>
+  threadleaf --vault <path> daily:prepend folder=Journal format=YYYY/MMMM/YYYY-MM-DD content=<text>
   threadleaf --vault <path> append path=<note> content=<text> [inline]
   threadleaf --vault <path> prepend path=<note> content=<text> [inline]
   threadleaf --vault <path> move path=<note> to=<path>
@@ -2036,6 +2343,9 @@ Compatibility spellings:
   threadleaf --vault <path> aliases [file=<note-name>] [total|verbose]
   threadleaf --vault <path> tags [path=<note.md>] [sort=count] [total|counts]
   threadleaf --vault <path> tag name=<tag> [total|verbose]
+  threadleaf --vault <path> templates folder=<path> total
+  threadleaf --vault <path> template:read name=<template> title=<title> resolve
+  threadleaf --vault <path> random:read folder=<path>
   threadleaf --vault <path> plugins filter=community versions format=csv
   threadleaf --vault <path> plugin id=<plugin-id>
   threadleaf --vault <path> themes versions
@@ -2508,10 +2818,83 @@ function deadEndNotes(snapshot: MetadataIndexSnapshot) {
   return { total: files.length, files };
 }
 
+async function requireVisibleFolder(
+  kernel: VaultKernel,
+  folder: string,
+  label: string,
+): Promise<string> {
+  const normalizedFolder = normalizeVaultDirectoryPath(folder);
+  const inventory = await kernel.listVisiblePaths(normalizedFolder);
+  if (!inventory.exists) {
+    throw new Error(`${label} is not visible in this vault: ${normalizedFolder || "."}`);
+  }
+  return normalizedFolder;
+}
+
+async function resolveCliTemplatePath(
+  kernel: VaultKernel,
+  folder: string,
+  requestedPath: string,
+  targetKind: CliTemplateReadCommand["templateTargetKind"],
+): Promise<string> {
+  const normalizedFolder = await requireVisibleFolder(kernel, folder, "Template folder");
+  const templates = await listNoteTemplates(kernel, normalizedFolder);
+  if (targetKind === "name" && !requestedPath.includes("/")) {
+    const requestedName = path.posix.basename(requestedPath).toLocaleLowerCase("en-US");
+    const matches = templates.filter((templatePath) => {
+      const basename = path.posix.basename(templatePath).toLocaleLowerCase("en-US");
+      return basename === requestedName;
+    });
+    if (matches.length === 0) {
+      throw new Error(
+        `No template named ${requestedPath} is present in ${normalizedFolder || "the vault root"}.`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(`Ambiguous template name ${requestedPath}. Matches: ${matches.join(", ")}`);
+    }
+    return matches[0] as string;
+  }
+
+  const candidate =
+    normalizedFolder !== "" && !requestedPath.startsWith(`${normalizedFolder}/`)
+      ? normalizeNoteWorkflowFile(`${normalizedFolder}/${requestedPath}`, "Template path")
+      : normalizeNoteWorkflowFile(requestedPath, "Template path");
+  if (!templates.includes(candidate)) {
+    throw new Error(
+      `Template is not present in ${normalizedFolder || "the vault root"}: ${candidate}`,
+    );
+  }
+  return candidate;
+}
+
+function cliNow(options: CliRunOptions): Moment {
+  return (options.now ?? moment()).clone();
+}
+
+function selectRandomNote(
+  paths: readonly string[],
+  selector: ((paths: readonly string[]) => number | string) | undefined,
+): string {
+  const selected = selector ? selector(paths) : Math.floor(Math.random() * paths.length);
+  if (typeof selected === "number") {
+    if (!Number.isInteger(selected) || selected < 0 || selected >= paths.length) {
+      throw new Error("The random-note selector returned an invalid index.");
+    }
+    return paths[selected] as string;
+  }
+  if (typeof selected === "string" && paths.includes(selected)) {
+    return selected;
+  }
+  throw new Error("The random-note selector returned a path outside the candidate set.");
+}
+
 function isCliMutationCommand(command: Exclude<ParsedCliCommand, CliHelpCommand>): boolean {
   return (
     command.id === "create" ||
     command.id === "daily" ||
+    command.id === "daily.append" ||
+    command.id === "daily.prepend" ||
     command.id === "append" ||
     command.id === "prepend" ||
     command.id === "move" ||
@@ -2537,7 +2920,7 @@ async function executeCommand(
         ? (
             await renderNoteTemplate(kernel, command.templatePath, {
               title: noteTemplateTitle(command.filePath),
-              now: moment(),
+              now: cliNow(options),
               dateFormat: command.dateFormat,
               timeFormat: command.timeFormat,
             })
@@ -2573,7 +2956,7 @@ async function executeCommand(
           templateDateFormat: command.dateFormat,
           templateTimeFormat: command.timeFormat,
         },
-        moment(),
+        cliNow(options),
       );
       if (result.outcome.status === "conflict") {
         throw new CliFailure(
@@ -2584,6 +2967,32 @@ async function executeCommand(
         );
       }
       return result;
+    }
+    if (command.id === "daily.path") {
+      return { path: dailyNotePath(command.folder, command.format, cliNow(options)) };
+    }
+    if (command.id === "daily.read") {
+      const filePath = dailyNotePath(command.folder, command.format, cliNow(options));
+      return await kernel.readText(filePath);
+    }
+    if (command.id === "daily.append" || command.id === "daily.prepend") {
+      const filePath = dailyNotePath(command.folder, command.format, cliNow(options));
+      const outcome = await mutateMarkdownNoteText(
+        kernel,
+        filePath,
+        command.content,
+        command.id === "daily.append" ? "append" : "prepend",
+        command.inline,
+      );
+      if (outcome.status === "conflict") {
+        throw new CliFailure(
+          "CONFLICT",
+          cliExitCodes.conflict,
+          `The note changed during ${command.id === "daily.append" ? "append" : "prepend"}. The proposed version was preserved as ${outcome.conflictPath}.`,
+          { details: outcome },
+        );
+      }
+      return outcome;
     }
     if (command.id === "move" || command.id === "rename") {
       const sourcePath = await resolveCliMarkdownTarget(
@@ -2812,6 +3221,61 @@ async function executeCommand(
       }
       const note = await kernel.readText(filePath);
       return note;
+    }
+    if (command.id === "templates") {
+      const folder = await requireVisibleFolder(kernel, command.folder, "Template folder");
+      const templates = await listNoteTemplates(kernel, folder);
+      return { folder, total: templates.length, templates };
+    }
+    if (command.id === "template.read") {
+      const templatePath = await resolveCliTemplatePath(
+        kernel,
+        command.folder,
+        command.templatePath,
+        command.templateTargetKind,
+      );
+      const title = command.title ?? noteTemplateTitle(templatePath);
+      if (!command.resolve) {
+        const template = await loadNoteTemplate(kernel, templatePath);
+        return {
+          path: template.path,
+          title: command.title,
+          resolved: false,
+          content: template.content,
+          revision: template.revision,
+          size: template.size,
+        };
+      }
+      const rendered = await renderNoteTemplate(kernel, templatePath, {
+        title,
+        now: cliNow(options),
+        dateFormat: createDefaultVaultNoteWorkflowSettings().templateDateFormat,
+        timeFormat: createDefaultVaultNoteWorkflowSettings().templateTimeFormat,
+      });
+      return {
+        path: rendered.sourcePath,
+        title,
+        resolved: true,
+        content: rendered.content,
+        revision: rendered.sourceRevision,
+        size: rendered.size,
+      };
+    }
+    if (command.id === "random.read") {
+      const folder = await requireVisibleFolder(kernel, command.folder, "Random-note folder");
+      const paths = await kernel.listMarkdownPaths(folder);
+      if (paths.length === 0) {
+        throw new Error(`No Markdown notes are available in ${folder || "the vault"}.`);
+      }
+      const selectedPath = selectRandomNote(paths, options.randomSelector);
+      const note = await kernel.readText(selectedPath);
+      return {
+        path: selectedPath,
+        folder,
+        content: note.content,
+        revision: note.revision,
+        size: note.size,
+      };
     }
     if (command.id === "trash.list") {
       return listTrashedMarkdownNotes(kernel);
@@ -3098,6 +3562,23 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "read") {
     return (data as { content: string }).content;
   }
+  if (command.id === "daily.read" || command.id === "template.read") {
+    return (data as { content: string }).content;
+  }
+  if (command.id === "daily.path") {
+    return `${(data as { path: string }).path}\n`;
+  }
+  if (command.id === "random.read") {
+    const result = data as { path: string; content: string };
+    return `Path: ${result.path}\n\n${result.content}`;
+  }
+  if (command.id === "templates") {
+    const result = data as { total: number; templates: string[] };
+    if (command.totalOnly) {
+      return `${result.total}\n`;
+    }
+    return result.templates.length > 0 ? `${result.templates.join("\n")}\n` : "No templates.\n";
+  }
   if (command.id === "plugins") {
     const result = data as CliPluginCatalog & { filter: "community" };
     if (command.format === "json") {
@@ -3360,10 +3841,10 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     };
     return `${result.outcome.status === "committed" ? "Created" : "Opened"} ${result.path}\n`;
   }
-  if (command.id === "append") {
+  if (command.id === "append" || command.id === "daily.append") {
     return `Appended ${(data as { path: string }).path}\n`;
   }
-  if (command.id === "prepend") {
+  if (command.id === "prepend" || command.id === "daily.prepend") {
     return `Prepended ${(data as { path: string }).path}\n`;
   }
   if (command.id === "move") {

@@ -69,6 +69,15 @@ settings values, raw hotkeys, vault identity, absolute paths, source code, CSS, 
 errors cannot enter CLI output. Core-plugin, action, hotkey, and workspace inventory remain outside
 this fixture until a safe headless authority and executable behavior contract exist.
 
+The headless daily, template, and random-note fixture covers `daily:path`, `daily:read`,
+`daily:append`, `daily:prepend`, `templates`, `template:read`, and `random:read` against disposable
+vaults. It exercises LF and CRLF notes, frontmatter-aware prepend, existing and absent daily notes,
+bounded UTF-8 and oversized templates, contained-path rejection, resolution on and off, stable
+template ordering, folder filtering, duplicate-name ambiguity, empty random corpora, deterministic
+injected selection, interrupted-write recovery, and zero vault writes for reads. These commands
+require an explicit vault, remain offline, and report argument or behavior compatibility rather than
+byte-identical output or active GUI control.
+
 ## Native note transclusion fixture
 
 Reading view recognizes wiki and Markdown note embeds without changing source bytes. The verified

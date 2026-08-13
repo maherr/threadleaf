@@ -27,6 +27,10 @@ threadleaf --vault /path/to/vault deadends [total]
 threadleaf --vault /path/to/vault outline "Folder/Note.md" [format=tree|md|json] [total]
 threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n" | template="Templates/Note.md"] [date-format="YYYY-MM-DD"] [time-format="HH:mm"]
 threadleaf --vault /path/to/vault daily [folder=Journal] [format="YYYY-MM-DD"] [template="Templates/Daily.md"] [date-format="YYYY-MM-DD"] [time-format="HH:mm"]
+threadleaf --vault /path/to/vault daily:path [folder=Journal] [format="YYYY-MM-DD"]
+threadleaf --vault /path/to/vault daily:read [folder=Journal] [format="YYYY-MM-DD"]
+threadleaf --vault /path/to/vault daily:append [folder=Journal] [format="YYYY-MM-DD"] --content "Added text" [--inline]
+threadleaf --vault /path/to/vault daily:prepend [folder=Journal] [format="YYYY-MM-DD"] --content "Lead text" [--inline]
 threadleaf --vault /path/to/vault append "Folder/Note.md" --content "Added text" [--inline]
 threadleaf --vault /path/to/vault prepend "Folder/Note.md" --content "Lead text" [--inline]
 threadleaf --vault /path/to/vault move "Folder/Note.md" --to "Archive/Note.md" [--update-links]
@@ -43,6 +47,9 @@ threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" [toggle|done|todo
 threadleaf --vault /path/to/vault aliases [path="Folder/Note.md"] [total|verbose]
 threadleaf --vault /path/to/vault tags [path="Folder/Note.md"] [sort=count] [total|counts]
 threadleaf --vault /path/to/vault tag name=project [total|verbose]
+threadleaf --vault /path/to/vault templates [folder=Templates] [total]
+threadleaf --vault /path/to/vault template:read name="Daily" [folder=Templates] [title="A day"] [resolve]
+threadleaf --vault /path/to/vault random:read [folder=Journal]
 threadleaf --vault /path/to/vault plugins [filter=community] [versions] [format=json|tsv|csv]
 threadleaf --vault /path/to/vault plugin id=<plugin-id>
 threadleaf --vault /path/to/vault themes [versions]
@@ -71,6 +78,10 @@ During development, prefix the same arguments with `pnpm cli`.
 | `outline` | Ordered headings in tree, Markdown, JSON, total, or rich source-line form | Derived metadata index |
 | `create` | Created Markdown path and revision, optionally rendered from a template | Recoverable no-clobber writer plus bounded template reader |
 | `daily` | Opened or created daily-note path, outcome, and selected template | Read-before-create plus recoverable no-clobber writer |
+| `daily:path` | Expected daily-note path, whether or not it exists | Explicit folder and Moment-compatible date format |
+| `daily:read` | Saved daily-note content and path in JSON | Explicit daily-note path plus read-only kernel |
+| `daily:append` | Updated daily-note path and revision | Shared revision-checked text mutation service |
+| `daily:prepend` | Updated daily-note path and revision | Shared revision-checked text mutation service |
 | `append` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `prepend` | Updated Markdown path and revision | Revision-checked recoverable writer |
 | `move` | Preview or committed source, destination, rewrites, and written revisions | Whole-vault proof plus compound recovery journal |
@@ -87,6 +98,9 @@ During development, prefix the same arguments with `pnpm cli`.
 | `aliases` | Frontmatter aliases across the vault or one targeted note, optionally with source paths | Derived metadata index |
 | `tags` | Unique tag catalog with occurrence counts across the vault or one targeted note | Derived metadata index |
 | `tag` | Occurrence total and carrying files for one tag | Derived metadata index |
+| `templates` | Sorted contained Markdown template paths and total | Shared bounded template catalog reader |
+| `template:read` | UTF-8 template content, optionally resolved with a title | Shared bounded template reader and production renderer |
+| `random:read` | One selected Markdown note, always including its path | Sorted Markdown corpus and injected or process-random selector |
 | `plugins` | Sorted community-plugin package catalog, with optional versions and TSV, CSV, or compact JSON output | Contained static package inspection; never evaluates plugin code |
 | `plugin` | One safe community-plugin package projection by ID | Contained static package inspection; never reads enablement or settings |
 | `themes` | Sorted community-theme catalog, with optional versions | Shared bounded appearance catalog; never reads active selection |
@@ -191,6 +205,29 @@ expansion as `create`; `{{title}}` is the resulting daily-note basename. The hum
 with `Opened` or `Created`, and versioned JSON retains the exact outcome. Desktop defaults are saved
 per vault outside both the vault and `.obsidian/`; the headless CLI remains explicit and does not
 read remembered desktop settings.
+
+`daily:path` exposes the same path calculation without reading or writing a note. `daily:read`
+reads that exact path and fails with `VAULT` when it has not been created. `daily:append` and
+`daily:prepend` target the same calculated path, require an existing note and non-empty content,
+and use the shared revision-checked text mutation service. All four commands accept explicit
+`folder=` and `format=` values; their deterministic defaults are the empty folder and
+`YYYY-MM-DD`. They do not consult saved desktop daily-note settings, a running Electron process,
+or an active file.
+
+`templates` lists contained Markdown files in `folder=` (default `Templates`) in stable path order.
+The folder must exist, and `total` changes only human output. `template:read` accepts either an
+exact `path=` or a name resolved within that folder. A name with more than one matching basename
+is an explicit `VAULT` ambiguity. Reads are bounded to 1 MiB, require UTF-8, and never write the
+source. Without `resolve`, output is the source content, including its line endings. With
+`resolve`, the production template renderer expands `{{title}}`, `{{date}}`, `{{time}}`, and their
+Moment-format forms; `title=` supplies the title, otherwise the template basename is used. The
+default date and time formats are `YYYY-MM-DD` and `HH:mm`.
+
+`random:read` selects from the sorted Markdown corpus, optionally limited to a contained `folder=`.
+The folder and corpus must exist and contain at least one Markdown note. Human output starts with
+the selected `Path:` and then the saved content; JSON includes the same path and content. The
+production selector uses process randomness. Fixtures inject a selector so compatibility checks do
+not depend on chance.
 
 `append` and `prepend` require an existing Markdown note and non-empty content. Without `inline`,
 Threadleaf adds one separator using the note's existing LF or CRLF convention. With `inline`, it
@@ -329,6 +366,10 @@ threadleaf --vault /path/to/vault deadends total
 threadleaf --vault /path/to/vault outline path="Folder/Note.md" format=md
 threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n"
 threadleaf --vault /path/to/vault create name="Root note"
+threadleaf --vault /path/to/vault daily:path folder=Journal format=YYYY/MMMM/YYYY-MM-DD
+threadleaf --vault /path/to/vault daily:read folder=Journal format=YYYY/MMMM/YYYY-MM-DD
+threadleaf --vault /path/to/vault daily:append folder=Journal format=YYYY/MMMM/YYYY-MM-DD content="Next line"
+threadleaf --vault /path/to/vault daily:prepend folder=Journal format=YYYY/MMMM/YYYY-MM-DD content="Lead"
 threadleaf --vault /path/to/vault append path="Folder/Note.md" content="Next line"
 threadleaf --vault /path/to/vault prepend file="Note" content="Lead" inline
 threadleaf --vault /path/to/vault move path="Folder/Note.md" to="Archive/Note.md"
@@ -346,6 +387,9 @@ threadleaf --vault /path/to/vault task path="Folder/Note.md" line=12 status="?"
 threadleaf --vault /path/to/vault aliases file="Note" verbose
 threadleaf --vault /path/to/vault tags path="Folder/Note.md" counts
 threadleaf --vault /path/to/vault tag name=project verbose
+threadleaf --vault /path/to/vault templates folder=Templates total
+threadleaf --vault /path/to/vault template:read name=Daily title="A day" resolve
+threadleaf --vault /path/to/vault random:read folder=Journal
 threadleaf --vault /path/to/vault plugins filter=community versions format=csv
 threadleaf --vault /path/to/vault plugin id=<plugin-id>
 threadleaf --vault /path/to/vault themes versions
@@ -391,12 +435,15 @@ Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberat
 native `--update-links` confirmation flag. Threadleaf accepts the public property command names and
 parameter spellings, but its lossless frontmatter subset and native JSON contract are narrower than
 a complete compatibility claim. Threadleaf does not yet accept Obsidian's `open`, `overwrite`,
-template parameter maps, or active-file defaults. Its `create template=` and `daily` behavior cover
-the documented title, date, time, folder, date-format, and template workflows through Threadleaf's
-native contract. Search and graph flags are executable compatibility
+template parameter maps, or active-file defaults. Its `create template=`, `daily`, `daily:path`,
+`daily:read`, `daily:append`, `daily:prepend`, `templates`, `template:read`, and `random:read`
+behavior cover the documented title, date, time, folder, date-format, template, and random-note
+workflows through Threadleaf's native contract. Search and graph flags are executable compatibility
 targets, but ranked query grammar and exact byte-for-byte formatting still require a live reference
-corpus. The task subset does not yet support `active`, `daily`, or alternate `format` output. Alias
-and tag commands do not yet support `active` or alternate `format` output.
+corpus. The task subset does not yet support `active` or alternate `format` output. Alias and tag
+commands do not yet support `active` or alternate `format` output. `random:read` deliberately
+returns a path with content and uses a deterministic selector only in fixtures; it does not claim
+byte-identical output or control a running GUI.
 Catalog inspection intentionally omits core plugins, enabled-state and active-theme queries,
 catalog mutations, action inventory, hotkey inventory, and workspace or tab inventory because the
 current headless authority either does not exist or is private application state.

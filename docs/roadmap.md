@@ -322,6 +322,9 @@ Exit gate: selected high-value plugins complete named workflows against public f
       drag-and-drop, paste, and missing-file recovery.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
       search, and outline.
+- [x] Headless daily path/read/append/prepend, contained template listing and reads, and random-note
+  reads with explicit vaults, bounded offline fixtures, recoverable mutations, and honest argument or
+  behavior compatibility claims rather than active-GUI or byte-identical output claims.
 - [x] Bounded global and local graph views with indexed filtering, local depth, optional orphans and
       direction, pointer and keyboard navigation, accessible note controls, and private preferences.
 - [x] Desktop file recovery with exact-revision restore, no-overwrite conflicts, filtering,
