@@ -22,6 +22,7 @@ import { WorkspaceController } from "../application/workspace-controller";
 import { atomicWriteFile, readStableFile } from "../kernel/durability";
 import { VaultPathPolicy } from "../kernel/path-policy";
 import { FixedStateRoot } from "../kernel/ports";
+import { acquireStateLock } from "../private-state-lock";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
 import {
@@ -158,8 +159,55 @@ if (process.argv.includes("--update-trust")) {
   process.stdout.write(`${readPackageUpdateTrust(app.getAppPath()) ?? "none"}\n`);
   app.exit(0);
 }
+const nativeLockProbeIndex = process.argv.indexOf("--native-lock-probe");
+if (nativeLockProbeIndex >= 0) {
+  const lockPath = process.argv[nativeLockProbeIndex + 1];
+  if (!lockPath) {
+    process.stderr.write("--native-lock-probe requires an absolute lock path.\n");
+    app.exit(2);
+    throw new Error("--native-lock-probe requires an absolute lock path.");
+  }
+  try {
+    const lock = acquireStateLock(lockPath);
+    lock.assertPathIdentity();
+    lock.close();
+    process.stdout.write(
+      `${JSON.stringify({
+        imported: true,
+        acquired: true,
+        asserted: true,
+        released: true,
+      })}\n`,
+    );
+    app.exit(0);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    app.exit(1);
+  }
+}
+
+// Early-exit CLI probes intentionally bypass the GUI profile gate. Every GUI launch
+// must claim its profile before Electron readiness or any private-state object
+// is constructed. This is GUI hardening only; the native state lock remains the
+// authority for CLI writers, alternate profiles, and crash recovery.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 let mainWindow: BrowserWindow | null = null;
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+    if (window.isMinimized()) {
+      window.restore();
+    }
+    window.show();
+    window.focus();
+  });
+}
 let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
 let accessibilityPreferencesController: AccessibilityPreferencesController;
@@ -171,7 +219,7 @@ let appearancePackageSource: OpenAppearancePackageSource;
 let themePackageManager: ThemePackageManager;
 let workspaceLayoutController!: WorkspaceLayoutController;
 let workspaceStateStore: FileWorkspaceStateStore;
-let pluginOperationTail: Promise<void> = Promise.resolve();
+let privateMutationTail: Promise<void> = Promise.resolve();
 let initialWorkspaceActivation: Promise<void> | null = null;
 let initialWorkspaceRecoveryPending = false;
 let attachedPluginView: WebContentsView | null = null;
@@ -1143,13 +1191,17 @@ function developmentMigrationFaultPhase(): MigrationTransactionPhase | null {
     : null;
 }
 
-function serializePluginOperation<T>(operation: () => Promise<T>): Promise<T> {
-  const result = pluginOperationTail.then(operation, operation);
-  pluginOperationTail = result.then(
+function serializePrivateMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = privateMutationTail.then(operation, operation);
+  privateMutationTail = result.then(
     () => undefined,
     () => undefined,
   );
   return result;
+}
+
+function serializePluginOperation<T>(operation: () => Promise<T>): Promise<T> {
+  return serializePrivateMutation(operation);
 }
 
 function serializePluginCatalogOperation<T>(
@@ -1495,39 +1547,41 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 }
 
 async function activateInitialWorkspace(): Promise<void> {
-  initialWorkspaceRecoveryPending = true;
-  try {
-    const outcome = await workspaceController.activateDeferredInitialVault();
-    if (outcome.status === "superseded") {
-      return;
-    }
-    const expectedVaultId = outcome.snapshot.vault.id;
-    if (!expectedVaultId || workspaceController.vaultId !== expectedVaultId) {
-      return;
-    }
-    if (outcome.snapshot.vault.mode === "kernel-backed") {
-      await themePackageManager.recoverVault(workspaceController.vaultPath, expectedVaultId);
-    }
-    const recoveryNotices = migrationTransactionManager
-      ? await migrationTransactionManager.recover(expectedVaultId, () =>
-          currentMigrationState(expectedVaultId),
+  return serializePrivateMutation(async () => {
+    initialWorkspaceRecoveryPending = true;
+    try {
+      const outcome = await workspaceController.activateDeferredInitialVault();
+      if (outcome.status === "superseded") {
+        return;
+      }
+      const expectedVaultId = outcome.snapshot.vault.id;
+      if (!expectedVaultId || workspaceController.vaultId !== expectedVaultId) {
+        return;
+      }
+      if (outcome.snapshot.vault.mode === "kernel-backed") {
+        await themePackageManager.recoverVault(workspaceController.vaultPath, expectedVaultId);
+      }
+      const recoveryNotices = migrationTransactionManager
+        ? await migrationTransactionManager.recover(expectedVaultId, () =>
+            currentMigrationState(expectedVaultId),
+          )
+        : [];
+      if (recoveryNotices.length > 0) {
+        migrationStartupNotices.set(expectedVaultId, recoveryNotices);
+      }
+      const startupRecoveryNotices = migrationStartupNotices.get(expectedVaultId) ?? [];
+      if (
+        ![...startupRecoveryNotices, ...recoveryNotices].some(
+          (notice) => notice.status === "conflict",
         )
-      : [];
-    if (recoveryNotices.length > 0) {
-      migrationStartupNotices.set(expectedVaultId, recoveryNotices);
+      ) {
+        await reconcileCompatibilityPlugins(expectedVaultId);
+      }
+    } finally {
+      initialWorkspaceRecoveryPending = false;
+      broadcastWorkspaceSnapshot(await workspaceController.getSnapshot());
     }
-    const startupRecoveryNotices = migrationStartupNotices.get(expectedVaultId) ?? [];
-    if (
-      ![...startupRecoveryNotices, ...recoveryNotices].some(
-        (notice) => notice.status === "conflict",
-      )
-    ) {
-      await serializePluginOperation(() => reconcileCompatibilityPlugins(expectedVaultId));
-    }
-  } finally {
-    initialWorkspaceRecoveryPending = false;
-    broadcastWorkspaceSnapshot(await workspaceController.getSnapshot());
-  }
+  });
 }
 
 function startInitialWorkspaceActivation(): void {
@@ -1755,10 +1809,12 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(ipcChannels.setAccessibilityPreferences, async (_event, value: unknown) => {
     const preferences = parseAccessibilityPreferences(value);
-    return accessibilityPreferencesController.setPreferences(preferences);
+    return serializePrivateMutation(() =>
+      accessibilityPreferencesController.setPreferences(preferences),
+    );
   });
   ipcMain.handle(ipcChannels.resetAccessibilityPreferences, async () => {
-    return accessibilityPreferencesController.reset();
+    return serializePrivateMutation(() => accessibilityPreferencesController.reset());
   });
   ipcMain.handle(ipcChannels.appearance, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
@@ -1772,15 +1828,17 @@ function registerIpcHandlers(): void {
       if (typeof expectedVaultId !== "string") {
         throw new Error("Appearance updates require a string vault identity.");
       }
-      if (workspaceController.vaultId !== expectedVaultId) {
-        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-      }
       const appearance = parseVaultAppearanceSettings(appearanceValue);
-      const settings = await settingsController.setVaultAppearance(expectedVaultId, appearance);
-      const response = await currentAppearance(expectedVaultId);
-      return response.status === "ready"
-        ? { status: "updated", settings, appearance: response.appearance }
-        : response;
+      return serializePrivateMutation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const settings = await settingsController.setVaultAppearance(expectedVaultId, appearance);
+        const response = await currentAppearance(expectedVaultId);
+        return response.status === "ready"
+          ? { status: "updated", settings, appearance: response.appearance }
+          : response;
+      });
     },
   );
   ipcMain.handle(ipcChannels.appearancePackages, (_event, expectedVaultId: unknown) => {
@@ -2421,9 +2479,11 @@ function registerIpcHandlers(): void {
     ) {
       throw new Error("Set key binding requires a known target and a string or null binding.");
     }
-    return settingsController.setKeyBinding(targetId, binding);
+    return serializePrivateMutation(() => settingsController.setKeyBinding(targetId, binding));
   });
-  ipcMain.handle(ipcChannels.resetKeyBindings, () => settingsController.resetKeyBindings());
+  ipcMain.handle(ipcChannels.resetKeyBindings, () =>
+    serializePrivateMutation(() => settingsController.resetKeyBindings()),
+  );
   ipcMain.handle(ipcChannels.noteWorkflows, async (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Note workflow loading requires a string vault identity.");
@@ -2446,24 +2506,29 @@ function registerIpcHandlers(): void {
       if (typeof expectedVaultId !== "string") {
         throw new Error("Note workflow updates require a string vault identity.");
       }
-      if (workspaceController.vaultId !== expectedVaultId) {
-        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-      }
       const settings = parseVaultNoteWorkflowSettings(settingsValue);
-      const appSettings = await settingsController.setVaultNoteWorkflows(expectedVaultId, settings);
-      const templates = await workspaceController.listNoteTemplates(
-        settings.templateFolder,
-        expectedVaultId,
-      );
-      return workspaceController.vaultId === expectedVaultId
-        ? ({
-            status: "updated",
-            vaultId: expectedVaultId,
-            appSettings,
-            settings,
-            templates,
-          } as const)
-        : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
+      return serializePrivateMutation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const appSettings = await settingsController.setVaultNoteWorkflows(
+          expectedVaultId,
+          settings,
+        );
+        const templates = await workspaceController.listNoteTemplates(
+          settings.templateFolder,
+          expectedVaultId,
+        );
+        return workspaceController.vaultId === expectedVaultId
+          ? ({
+              status: "updated",
+              vaultId: expectedVaultId,
+              appSettings,
+              settings,
+              templates,
+            } as const)
+          : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
+      });
     },
   );
   ipcMain.handle(ipcChannels.workspaceSettings, async (_event, expectedVaultId: unknown) => {
@@ -2492,24 +2557,26 @@ function registerIpcHandlers(): void {
       if (typeof expectedVaultId !== "string") {
         throw new Error("Workspace preference updates require a string vault identity.");
       }
-      if (workspaceController.vaultId !== expectedVaultId) {
-        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-      }
       const settings = parseVaultWorkspaceSettings(settingsValue);
-      const appSettings = await settingsController.setVaultWorkspaceSettings(
-        expectedVaultId,
-        settings,
-      );
-      if (workspaceController.vaultId !== expectedVaultId) {
-        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-      }
-      workspaceController.setWorkspaceSettings(settings, expectedVaultId);
-      return {
-        status: "updated" as const,
-        vaultId: expectedVaultId,
-        settings: workspaceController.getWorkspaceSettings(),
-        appSettings,
-      };
+      return serializePrivateMutation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const appSettings = await settingsController.setVaultWorkspaceSettings(
+          expectedVaultId,
+          settings,
+        );
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        workspaceController.setWorkspaceSettings(settings, expectedVaultId);
+        return {
+          status: "updated" as const,
+          vaultId: expectedVaultId,
+          settings: workspaceController.getWorkspaceSettings(),
+          appSettings,
+        };
+      });
     },
   );
   ipcMain.handle(
@@ -2518,40 +2585,44 @@ function registerIpcHandlers(): void {
       if (typeof expectedVaultId !== "string") {
         throw new Error("Workspace mode updates require a string vault identity.");
       }
-      if (workspaceController.vaultId !== expectedVaultId) {
-        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-      }
       const mode = parseVaultWorkspaceMode(modeValue);
-      const appSettings = await settingsController.setVaultWorkspaceMode(expectedVaultId, mode);
-      const settings = settingsController.getVaultWorkspaceSettings(expectedVaultId);
-      workspaceController.setWorkspaceSettings(settings, expectedVaultId);
-      return {
-        status: "updated" as const,
-        vaultId: expectedVaultId,
-        settings: workspaceController.getWorkspaceSettings(),
-        appSettings,
-      };
+      return serializePrivateMutation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const appSettings = await settingsController.setVaultWorkspaceMode(expectedVaultId, mode);
+        const settings = settingsController.getVaultWorkspaceSettings(expectedVaultId);
+        workspaceController.setWorkspaceSettings(settings, expectedVaultId);
+        return {
+          status: "updated" as const,
+          vaultId: expectedVaultId,
+          settings: workspaceController.getWorkspaceSettings(),
+          appSettings,
+        };
+      });
     },
   );
   ipcMain.handle(ipcChannels.resetWorkspaceSettings, async (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Workspace preference reset requires a string vault identity.");
     }
-    if (workspaceController.vaultId !== expectedVaultId) {
-      return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-    }
-    const appSettings = await settingsController.resetVaultWorkspaceSettings(expectedVaultId);
-    if (workspaceController.vaultId !== expectedVaultId) {
-      return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-    }
-    const settings = createDefaultVaultWorkspaceSettings();
-    workspaceController.setWorkspaceSettings(settings, expectedVaultId);
-    return {
-      status: "updated" as const,
-      vaultId: expectedVaultId,
-      settings: workspaceController.getWorkspaceSettings(),
-      appSettings,
-    };
+    return serializePrivateMutation(async () => {
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      const appSettings = await settingsController.resetVaultWorkspaceSettings(expectedVaultId);
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      const settings = createDefaultVaultWorkspaceSettings();
+      workspaceController.setWorkspaceSettings(settings, expectedVaultId);
+      return {
+        status: "updated" as const,
+        vaultId: expectedVaultId,
+        settings,
+        appSettings,
+      };
+    });
   });
   ipcMain.handle(ipcChannels.openDailyNote, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
@@ -3355,7 +3426,7 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
   reportError: (error) => console.error("Threadleaf shutdown cleanup failed:", error),
 });
 
-app.whenReady().then(async () => {
+async function startApplicationWhenReady(): Promise<void> {
   appUpdateController = await createAppUpdateController();
   pluginPackageManager = new PluginPackageManager(
     join(app.getPath("userData"), "plugin-packages"),
@@ -3448,7 +3519,11 @@ app.whenReady().then(async () => {
       await createWindow();
     }
   });
-});
+}
+
+if (hasSingleInstanceLock) {
+  app.whenReady().then(startApplicationWhenReady);
+}
 
 app.on("before-quit", gracefulShutdownHandler);
 

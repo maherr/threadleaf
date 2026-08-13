@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, promises as fs } from "node:fs";
+import { createReadStream, promises as fs, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const appRoot = process.cwd();
@@ -16,10 +17,35 @@ function assert(condition, message) {
   }
 }
 
+async function verifyExtractedNative(extractedPath, executable, label) {
+  await run(process.execPath, [
+    "scripts/check-extracted-native-lock.mjs",
+    extractedPath,
+    "linux",
+    "x64",
+  ]);
+  const probeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-linux-native-probe-"));
+  try {
+    const lockPath = path.join(probeRoot, "state.lock");
+    assert(statSync(executable).isFile(), `${label} extracted executable is missing.`);
+    const result = await output(executable, ["--native-lock-probe", lockPath], {
+      env: { ELECTRON_OZONE_PLATFORM_HINT: "x11" },
+    });
+    assert(result.stderr === "", `${label} native lock probe wrote stderr: ${result.stderr}`);
+    const receipt = JSON.parse(result.stdout.trim());
+    assert(
+      receipt.imported && receipt.acquired && receipt.asserted && receipt.released,
+      `${label} packaged Electron did not complete import/acquire/assert/release.`,
+    );
+  } finally {
+    await fs.rm(probeRoot, { recursive: true, force: true });
+  }
+}
+
 async function output(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: appRoot,
+      cwd: options.cwd ?? appRoot,
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -45,7 +71,7 @@ async function output(command, args, options = {}) {
 async function run(command, args, options = {}) {
   await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: appRoot,
+      cwd: options.cwd ?? appRoot,
       env: { ...process.env, ...options.env },
       stdio: "inherit",
     });
@@ -133,11 +159,30 @@ const requirements = (await output("rpm", ["-qp", "--requires", rpmPath])).stdou
 assert(requirements.includes("gtk3"), "RPM dependency metadata is missing gtk3.");
 assert(requirements.includes("nss"), "RPM dependency metadata is missing nss.");
 
+const appImageExtraction = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-appimage-native-"));
+try {
+  await run(appImagePath, ["--appimage-extract"], { cwd: appImageExtraction });
+  const extractedRoot = path.join(appImageExtraction, "squashfs-root");
+  const extractedNative = path.join(
+    extractedRoot,
+    "resources",
+    "app.asar.unpacked",
+    "dist",
+    "native",
+    "threadleaf-state-lock.node",
+  );
+  await verifyExtractedNative(extractedNative, path.join(extractedRoot, "threadleaf"), "AppImage");
+} finally {
+  await fs.rm(appImageExtraction, { recursive: true, force: true });
+}
+
+const unpackedExecutable = path.join(releasePath, "linux-unpacked", "threadleaf");
+assert(statSync(unpackedExecutable).isFile(), "The Linux unpacked package executable is missing.");
 await run("xvfb-run", ["-a", process.execPath, "scripts/check-packaged-app.mjs"], {
-  env: { THREADLEAF_PACKAGED_EXECUTABLE: appImagePath },
+  env: { THREADLEAF_PACKAGED_EXECUTABLE: unpackedExecutable },
 });
 await run("xvfb-run", ["-a", process.execPath, "scripts/check-packaged-properties.mjs"], {
-  env: { THREADLEAF_PACKAGED_EXECUTABLE: appImagePath },
+  env: { THREADLEAF_PACKAGED_EXECUTABLE: unpackedExecutable },
 });
 
 const artifacts = [];

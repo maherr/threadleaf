@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parse } from "yaml";
 
@@ -22,6 +23,7 @@ function assert(condition, message) {
 function command(commandName, args, options = {}) {
   const result = spawnSync(commandName, args, {
     cwd: appRoot,
+    env: { ...process.env, ...options.env },
     encoding: "utf8",
     timeout: options.timeout ?? 120_000,
   });
@@ -34,6 +36,48 @@ function command(commandName, args, options = {}) {
     );
   }
   return result;
+}
+
+async function verifyNativeArtifact(appPath, executablePath) {
+  const nativePath = path.join(
+    appPath,
+    "Contents",
+    "Resources",
+    "app.asar.unpacked",
+    "dist",
+    "native",
+    "threadleaf-state-lock.node",
+  );
+  const nativeSignature = command("codesign", ["--verify", "--strict", "--verbose=2", nativePath], {
+    allowFailure: true,
+  });
+  if (requireSigned) {
+    assert(nativeSignature.status === 0, "The packaged native state-lock addon is not signed.");
+  }
+  command(process.execPath, [
+    "scripts/check-extracted-native-lock.mjs",
+    nativePath,
+    "darwin",
+    architecture,
+  ]);
+  const probeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-macos-native-probe-"));
+  try {
+    const lockPath = path.join(probeRoot, "state.lock");
+    const probe = command(executablePath, ["--native-lock-probe", lockPath]);
+    const receipt = JSON.parse(probe.stdout.trim());
+    assert(
+      receipt.imported && receipt.acquired && receipt.asserted && receipt.released,
+      "macOS packaged Electron did not complete native import/acquire/assert/release.",
+    );
+  } finally {
+    await fs.rm(probeRoot, { recursive: true, force: true });
+  }
+  return {
+    path: nativePath,
+    bytes: (await fs.stat(nativePath)).size,
+    sha256: await hash(nativePath, "sha256", "hex"),
+    signatureStatus: nativeSignature.status,
+  };
 }
 
 async function exists(filePath) {
@@ -87,6 +131,7 @@ for (const requiredPath of [
   executablePath,
   path.join(resourcesPath, "app.asar"),
   path.join(resourcesPath, "app-update.yml"),
+  path.join(resourcesPath, "app.asar.unpacked", "dist", "native", "threadleaf-state-lock.node"),
   path.join(resourcesPath, "LICENSE.threadleaf.txt"),
   path.join(resourcesPath, "bundled-vault", "Welcome.md"),
   path.join(
@@ -145,6 +190,8 @@ assert(
     [...expectedArchitectures].every((entry) => executableArchitectures.has(entry)),
   `Unexpected executable architectures: ${[...executableArchitectures].join(", ")}`,
 );
+
+const nativeArtifact = await verifyNativeArtifact(appPath, executablePath);
 
 command("unzip", ["-tqq", zipPath], { timeout: 180_000 });
 command("hdiutil", ["verify", dmgPath], { timeout: 180_000 });
@@ -206,6 +253,7 @@ console.log(
     architecture,
     executableArchitectures: [...executableArchitectures].sort(),
     signed: requireSigned,
+    nativeArtifact,
     codeSignatureStatus: codeSignature.status,
     gatekeeperStatus,
     artifacts,

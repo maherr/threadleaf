@@ -154,6 +154,42 @@ async function waitForReady(deadline) {
   throw new Error("The packaged application did not reach a ready bundled workspace.");
 }
 
+async function verifySecondInstanceRejected() {
+  const second = spawn(
+    executablePath,
+    ["--ozone-platform=x11", `--user-data-dir=${userDataPath}`, "--disable-gpu"],
+    {
+      cwd: appRoot,
+      env: { ...process.env, ELECTRON_OZONE_PLATFORM_HINT: "x11" },
+      stdio: "ignore",
+    },
+  );
+  const result = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (second.exitCode === null && second.signalCode === null) {
+        second.kill("SIGKILL");
+      }
+      reject(new Error("A second packaged instance did not exit after the profile lock failed."));
+    }, 5_000);
+    second.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    second.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+  });
+  assert(
+    result.code === 0,
+    `Second packaged instance exited unexpectedly: ${JSON.stringify(result)}.`,
+  );
+  assert(
+    child && child.exitCode === null && child.signalCode === null,
+    "The first packaged instance did not remain alive after the second-instance rejection.",
+  );
+}
+
 async function waitForTheme(theme, deadline) {
   while (Date.now() < deadline) {
     if ((await evaluate("document.documentElement.dataset.theme")) === theme) {
@@ -384,6 +420,16 @@ async function captureVisualPositiveControl() {
 try {
   assert(process.platform === "linux", "The packaged smoke test currently requires Linux.");
   await fs.access(executablePath);
+  await fs.access(
+    path.join(
+      path.dirname(executablePath),
+      "resources",
+      "app.asar.unpacked",
+      "dist",
+      "native",
+      "threadleaf-state-lock.node",
+    ),
+  );
   await fs.mkdir(ignoredVaultPath, { recursive: true });
   await fs.writeFile(path.join(ignoredVaultPath, "Must Not Open.md"), "# Wrong vault\n", "utf8");
   await fs.mkdir(userDataPath, { recursive: true });
@@ -435,6 +481,7 @@ try {
   cdp = connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Page.enable");
   const state = await waitForReady(deadline);
+  await verifySecondInstanceRejected();
   const paths = state.snapshot.workspace.files.map((file) => file.path);
   assert(state.title === "Threadleaf", "Packaged window title is not Threadleaf.");
   assert(state.brand === "Threadleaf", "Packaged renderer did not load the Threadleaf brand.");

@@ -12,8 +12,10 @@ Apple Developer ID plus notarization credentials are present. Nothing publishes 
 - `Threadleaf-<version>-linux-x86_64.AppImage`
 - `Threadleaf-<version>-linux-x86_64.rpm`
 
-`pnpm run test:linux-packages` launches the exact AppImage, verifies the RPM identity and payload,
-then writes `Threadleaf-<version>-linux-x86_64.sha256` for both native artifacts.
+`pnpm run test:linux-packages` extracts the exact AppImage, verifies and loads the ELF x64 addon,
+runs independent-process `CLI-LOCK-01`, launches the packaged Electron native probe, verifies the
+RPM identity and payload, then writes `Threadleaf-<version>-linux-x86_64.sha256` for both native
+artifacts.
 
 `pnpm run test:package-reproducible` builds the unpacked Linux application twice in independent
 temporary directories. It compares every file, symlink, mode, size, and SHA-256 hash, then creates
@@ -44,14 +46,17 @@ pnpm run pack:mac:x64
 THREADLEAF_PACKAGE_ARCH=x64 pnpm run test:macos-package
 ```
 
-The verifier runs the packaged executable, checks its Mach-O architecture, bundle identifier,
-version, external demo vault, license, application archive, and GitHub update provider. It fully
-tests the ZIP, verifies the DMG checksum, recomputes every update-metadata size and SHA-512 digest,
-and writes SHA-256 checksums. The ARM64 lane has passed on an M4 Mac. Intel packaging is configured
-for its native hosted runner. The Intel lifecycle gate additionally mounts the DMG into a temporary
-root, launches a disposable vault through CDP, exercises create/edit/restart, replaces the app with
-distinct candidate and baseline builds, removes the app, and proves private state and vault bytes
-survive. Its evidence is retained as a CI artifact; the first hosted run remains pending.
+The verifier runs the packaged executable, checks its Mach-O architecture and exact unpacked native
+addon, runs independent-process `CLI-LOCK-01` and the packaged Electron native probe, checks the
+bundle identifier, version, external demo vault, license, application archive, and GitHub update
+provider. It fully tests the ZIP, verifies the DMG checksum, recomputes every update-metadata size
+and SHA-512 digest, and writes SHA-256 checksums. The source and package contracts are configured
+for native ARM64, Intel, and universal macOS hosts, but this candidate has no hosted macOS runtime
+result yet. The Intel lifecycle gate additionally mounts
+the DMG into a temporary root, launches a disposable vault through CDP, exercises create/edit/
+restart, replaces the app with distinct candidate and baseline builds, removes the app, and proves
+private state and vault bytes survive. Its evidence is retained as a CI artifact; the first hosted
+run remains pending.
 
 Contributor macOS packages explicitly disable identity discovery and hardened runtime because they
 are unsigned. This makes the boundary visible: Gatekeeper should reject them. A release candidate
@@ -70,13 +75,14 @@ pnpm run test:windows-package
 
 The verifier runs the unpacked application, expands and runs the ZIP, silently installs the NSIS
 package into an isolated temporary directory, runs that installed executable, uninstalls it, and
-requires the installation directory to disappear. It also checks the external demo and license,
-recomputes update-metadata sizes and SHA-512 digests, inspects Authenticode state, and writes
-SHA-256 checksums. The hosted lifecycle gate uses the real NSIS installer, a disposable user-data
-root and vault, a forced process interruption, a distinct candidate and baseline build, rollback,
-uninstall, and residue checks. Linux can cross-build the Windows ZIP, but NSIS requires Wine there,
-so the real installer gate intentionally runs on native Windows. Its first hosted run remains
-pending because this repository has no public remote.
+requires the installation directory to disappear. It also inventories the extracted PE x64 native
+addon, runs the independent-process `CLI-LOCK-01` proof, exercises the packaged Electron
+`--native-lock-probe`, checks the external demo and license, recomputes update-metadata sizes and
+SHA-512 digests, inspects Authenticode state, and writes SHA-256 checksums. Windows packages are
+built only on native Windows x64 hosts; Linux cross-build claims are rejected. The hosted lifecycle
+gate uses the real NSIS installer, a disposable user-data root and vault, a forced process
+interruption, a distinct candidate and baseline build, rollback, uninstall, and residue checks. Its
+first hosted run remains pending because this repository has no public remote.
 
 ## Hosted native CI
 
@@ -143,6 +149,12 @@ The Linux lane requires Node.js 22 or newer, pnpm, Electron's Linux runtime depe
 `xvfb-run`, `rpm`, and the RPM build tools. Fedora 44 also needs `libxcrypt-compat` for the current
 RPM toolchain. Hosted CI installs the FUSE 2 compatibility library and runs the exact AppImage.
 
+Native state locking is built as a direct Node-API addon before the TypeScript main bundle. The
+focused `test:native-lock-source`, `test:native-lock-electron`, `test:native-lock`, and
+`test:native-lock-package` gates cover ABI surface, target-Electron loading, Linux child-process
+behavior, atomic no-clobber rename, and the unpacked Electron module path. A local Linux pass does
+not claim macOS or Windows runtime or installer proof; those remain pending native hosted lanes.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm check
@@ -164,6 +176,7 @@ The smoke check proves all of the following against the packaged executable:
 - First launch opens `resources/bundled-vault`, never a path inside `app.asar`.
 - The bundled `.obsidian` fixture and Threadleaf license are present.
 - The window reaches the real ready state with the expected notes and network-denying CSP.
+- A second process using the same GUI profile exits while the first instance stays alive.
 - The demo is visibly read-only and CodeMirror is not content-editable.
 - Note, move, trash, save, and plugin-package controls are disabled.
 - A direct preload `createNote` request is rejected by the workspace backend and writes no file.

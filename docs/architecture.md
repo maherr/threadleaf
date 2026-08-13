@@ -645,6 +645,10 @@ mutating invocations with a process-owned lock, so one headless process never re
 process's transaction. The portable no-clobber install remains the arbiter against desktop,
 external-editor, and sync-provider races.
 
+The reusable kernel-held private-state lock candidate is documented in [Private state lock](private-state-lock.md).
+Existing CLI and application consumers migrate to it in separate quiesced changes; this primitive does not
+silently reinterpret their current lock directories or takeover rules.
+
 Append and prepend use a shared text-mutation service that reads a stable note snapshot, computes
 the complete proposed file, and writes against the exact revision read. Prepend inserts after a
 complete YAML frontmatter block. Default separators follow the note's LF or CRLF convention, while

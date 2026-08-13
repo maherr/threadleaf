@@ -29,6 +29,10 @@
     "./native-extension/sdk": {
       "types": "./src/native-extension/sdk.ts",
       "default": "./dist/main/native-extension-sdk.cjs"
+    },
+    "./private-state-lock": {
+      "types": "./src/private-state-lock/index.ts",
+      "default": "./dist/main/private-state-lock.cjs"
     }
   },
   "bin": {
@@ -36,7 +40,9 @@
   },
   "scripts": {
     "build": "pnpm run build:main && pnpm run build:renderer && pnpm run build:verify",
-    "build:main": "tsup",
+    "build:native": "node scripts/build-native-state-lock.mjs",
+    "build:native:electron": "node scripts/build-electron-native-target.mjs",
+    "build:main": "pnpm run build:native:electron && tsup",
     "build:renderer": "vite build",
     "build:verify": "node scripts/check-built-app.mjs",
     "benchmark:search": "vitest bench --run src/kernel/full-text-search.bench.ts",
@@ -44,7 +50,7 @@
     "benchmark:corpus": "pnpm run build:benchmarks >/dev/null && node .bench-dist/runner.cjs --integrity --profile smoke",
     "benchmark:scale": "pnpm run build:benchmarks >/dev/null && node .bench-dist/runner.cjs",
     "benchmark:scale:check": "pnpm run build:benchmarks >/dev/null && node .bench-dist/runner.cjs --enforce-budgets",
-    "check": "pnpm run compatibility:check && pnpm run corpus:check && pnpm run public-spec:check && pnpm run test:installer-lifecycle-config && pnpm run test:performance-seams && pnpm run format:check && pnpm run typecheck && pnpm run test:plugin-package-authority && pnpm run test && pnpm run build",
+    "check": "pnpm run compatibility:check && pnpm run corpus:check && pnpm run public-spec:check && pnpm run test:installer-lifecycle-config && pnpm run test:native-lock-source && pnpm run test:native-lock-electron && pnpm run test:native-lock && pnpm run test:native-lock-package && pnpm run test:performance-seams && pnpm run format:check && pnpm run typecheck && pnpm run test:plugin-package-authority && pnpm run test && pnpm run build",
     "cli": "pnpm run build:main && node dist/main/cli.cjs",
     "corpus:check": "pnpm run build:main && node dist/main/corpus.cjs",
     "compatibility:check": "node scripts/generate-plugin-compatibility-registry.mjs --check",
@@ -53,13 +59,14 @@
     "public-spec:check": "node scripts/check-public-spec.mjs",
     "format": "biome check --write .",
     "format:check": "biome check .",
-    "pack:dir": "pnpm run build && electron-builder --linux dir --x64 --publish never",
-    "pack:linux": "pnpm run build && electron-builder --linux AppImage rpm --x64 --publish never",
-    "pack:mac:arm64": "pnpm run build && electron-builder --mac dmg zip --arm64 --publish never --config.mac.identity=null --config.mac.hardenedRuntime=false",
-    "pack:mac:universal": "pnpm run build && electron-builder --mac dmg zip --universal --publish never --config.mac.forceCodeSigning=true --config.extraMetadata.threadleafUpdateTrust=signed-release-v1",
-    "pack:mac:x64": "pnpm run build && electron-builder --mac dmg zip --x64 --publish never --config.mac.identity=null --config.mac.hardenedRuntime=false",
-    "pack:windows": "pnpm run build && electron-builder --win nsis zip --x64 --publish never",
-    "pack:windows:signed": "pnpm run build && electron-builder --win nsis zip --x64 --publish never --config.win.forceCodeSigning=true --config.extraMetadata.threadleafUpdateTrust=signed-release-v1",
+    "build:universal": "node scripts/build-target.mjs darwin universal",
+    "pack:dir": "node scripts/build-target.mjs linux x64 && electron-builder --linux dir --x64 --publish never",
+    "pack:linux": "node scripts/build-target.mjs linux x64 && electron-builder --linux AppImage rpm --x64 --publish never",
+    "pack:mac:arm64": "node scripts/build-target.mjs darwin arm64 && electron-builder --mac dmg zip --arm64 --publish never --config.mac.identity=null --config.mac.hardenedRuntime=false",
+    "pack:mac:universal": "pnpm run build:universal && electron-builder --mac dmg zip --universal --publish never --config.mac.forceCodeSigning=true --config.extraMetadata.threadleafUpdateTrust=signed-release-v1",
+    "pack:mac:x64": "node scripts/build-target.mjs darwin x64 && electron-builder --mac dmg zip --x64 --publish never --config.mac.identity=null --config.mac.hardenedRuntime=false",
+    "pack:windows": "node scripts/build-target.mjs win32 x64 && electron-builder --win nsis zip --x64 --publish never",
+    "pack:windows:signed": "node scripts/build-target.mjs win32 x64 && electron-builder --win nsis zip --x64 --publish never --config.win.forceCodeSigning=true --config.extraMetadata.threadleafUpdateTrust=signed-release-v1",
     "release:linux": "pnpm run check && pnpm run pack:linux && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write",
     "start": "electron .",
     "test": "vitest run",
@@ -75,6 +82,10 @@
     "test:publish-export": "pnpm run build && node scripts/check-publish-export.mjs",
     "test:note-workflows": "pnpm run build && node scripts/check-note-workflows.mjs",
     "test:macos-package": "node scripts/check-macos-package.mjs",
+    "test:native-lock": "pnpm run build:main && node scripts/check-state-lock.mjs",
+    "test:native-lock-source": "node scripts/check-native-lock-source.mjs",
+    "test:native-lock-electron": "pnpm run build:native:electron",
+    "test:native-lock-package": "pnpm run build:main && node scripts/check-native-lock-package.mjs",
     "test:installer-lifecycle": "node scripts/check-installer-lifecycle.mjs",
     "test:installer-lifecycle-config": "node scripts/check-installer-lifecycle-config.mjs",
     "test:package-reproducible": "pnpm run build && node scripts/package-reproducible-linux.mjs",

@@ -24,6 +24,7 @@ function assert(condition, message) {
 function command(commandName, args, options = {}) {
   const result = spawnSync(commandName, args, {
     cwd: appRoot,
+    env: { ...process.env, ...options.env },
     encoding: "utf8",
     timeout: options.timeout ?? 120_000,
     windowsHide: true,
@@ -37,6 +38,45 @@ function command(commandName, args, options = {}) {
     );
   }
   return result;
+}
+
+async function verifyNativeArtifact(rootPath, executablePath, label) {
+  const nativePath = path.join(
+    rootPath,
+    "resources",
+    "app.asar.unpacked",
+    "dist",
+    "native",
+    "threadleaf-state-lock.node",
+  );
+  const nativeSignature = signatureFor(nativePath);
+  if (requireSigned) {
+    assert(nativeSignature.Status === "Valid", `${label} native state-lock addon is not signed.`);
+  }
+  command(process.execPath, [
+    "scripts/check-extracted-native-lock.mjs",
+    nativePath,
+    "win32",
+    "x64",
+  ]);
+  const probeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-windows-native-probe-"));
+  try {
+    const lockPath = path.join(probeRoot, "state.lock");
+    const probe = command(executablePath, ["--native-lock-probe", lockPath]);
+    const receipt = JSON.parse(probe.stdout.trim());
+    assert(
+      receipt.imported && receipt.acquired && receipt.asserted && receipt.released,
+      `${label} packaged Electron did not complete native import/acquire/assert/release.`,
+    );
+  } finally {
+    await fs.rm(probeRoot, { recursive: true, force: true });
+  }
+  return {
+    path: nativePath,
+    bytes: (await fs.stat(nativePath)).size,
+    sha256: await hash(nativePath, "sha256", "hex"),
+    signature: nativeSignature,
+  };
 }
 
 async function exists(filePath) {
@@ -77,6 +117,14 @@ function verifyApplication(rootPath, label) {
     executablePath,
     path.join(rootPath, "resources", "app.asar"),
     path.join(rootPath, "resources", "app-update.yml"),
+    path.join(
+      rootPath,
+      "resources",
+      "app.asar.unpacked",
+      "dist",
+      "native",
+      "threadleaf-state-lock.node",
+    ),
     path.join(rootPath, "resources", "LICENSE.threadleaf.txt"),
     path.join(rootPath, "resources", "bundled-vault", "Welcome.md"),
     path.join(
@@ -122,6 +170,11 @@ try {
   }
 
   const unpackedExecutable = verifyApplication(unpackedPath, "Unpacked application");
+  const unpackedNativeArtifact = await verifyNativeArtifact(
+    unpackedPath,
+    unpackedExecutable,
+    "Unpacked application",
+  );
 
   const expandedPath = path.join(scratchPath, "expanded");
   command(
@@ -135,11 +188,21 @@ try {
     ],
     { timeout: 180_000 },
   );
-  verifyApplication(expandedPath, "ZIP application");
+  const zipExecutable = verifyApplication(expandedPath, "ZIP application");
+  const zipNativeArtifact = await verifyNativeArtifact(
+    expandedPath,
+    zipExecutable,
+    "ZIP application",
+  );
 
   const installedPath = path.join(scratchPath, "installed");
   command(installerPath, ["/S", `/D=${installedPath}`], { timeout: 180_000 });
-  verifyApplication(installedPath, "Installed application");
+  const installedExecutable = verifyApplication(installedPath, "Installed application");
+  const installedNativeArtifact = await verifyNativeArtifact(
+    installedPath,
+    installedExecutable,
+    "Installed application",
+  );
   const uninstallerPath = path.join(installedPath, "Uninstall Threadleaf.exe");
   assert(await exists(uninstallerPath), "Windows installer did not create an uninstaller.");
   command(uninstallerPath, ["/S"], { timeout: 180_000 });
@@ -204,6 +267,7 @@ try {
       signed: requireSigned,
       installerSignature,
       executableSignature,
+      nativeArtifacts: [unpackedNativeArtifact, zipNativeArtifact, installedNativeArtifact],
       artifacts,
       checksums: checksumName,
     }),

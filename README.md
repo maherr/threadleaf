@@ -276,14 +276,21 @@ than a development server. A fresh package opens an external, read-only demo vau
 license beside the application resources, rejects forged demo-vault mutations in the backend, and
 ignores development-only vault overrides. The package checks launch the AppImage end to end,
 inspect the RPM metadata and payload, and write SHA-256 checksums. A separate proof compares two
-independent unpacked application trees and normalized archives byte for byte. Native macOS ARM64
-ZIP and DMG packages have also passed executable, architecture, bundle, resource, archive, disk
-image, and update-metadata verification on an M4 Mac. Pinned native CI and a manual fail-closed
-signing workflow now cover Linux, macOS ARM64 and Intel, and Windows x64. The Intel Mac and Windows
-jobs also carry an installer lifecycle gate that reuses one disposable vault and private state root
-across install, interruption recovery, restart, upgrade, rollback, and removal. Those hosted
-lifecycle jobs still need their first run. These are contributor artifacts, not a signed public
-release.
+independent unpacked application trees and normalized archives byte for byte. Native macOS ARM64,
+Intel, universal macOS, and Windows x64 package verification are hosted lanes and were not rerun
+for this candidate. Pinned native CI and a manual fail-closed
+signing workflow define matching Linux, macOS ARM64 and Intel, universal macOS, and Windows x64
+lanes. This candidate's local proof is Linux-only; macOS and Windows runtime, signing, and
+installer results remain pending until their native hosted jobs execute. Those jobs carry an
+installer lifecycle gate that reuses one disposable vault and private state root across install,
+interruption recovery, restart, upgrade, rollback, and removal. These are contributor artifacts,
+not a signed public release.
+
+The packaged smoke also starts a second process against the same GUI profile and requires the
+first process to remain alive while the second exits. This Electron single-instance check is GUI
+profile hardening only; the native OS-held state lock remains authoritative for CLI writers,
+alternate profiles, stale helpers, and crash recovery. Source-retaining user-vault publication is
+kept separate from that GUI queue.
 
 Settings now has an About and updates page that performs no startup or background network check.
 Only signed macOS and Windows release packages can initialize the updater, and checking,

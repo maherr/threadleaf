@@ -21,6 +21,8 @@ extraResources:
     to: LICENSE.threadleaf.txt
 
 asar: true
+asarUnpack:
+  - dist/native/**/*.node
 compression: normal
 npmRebuild: false
 removePackageScripts: true

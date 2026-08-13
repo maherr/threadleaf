@@ -7,6 +7,7 @@ export default defineConfig({
     main: "src/main/main.ts",
     "native-extension": "src/native-extension/index.ts",
     "native-extension-sdk": "src/native-extension/sdk.ts",
+    "private-state-lock": "src/private-state-lock/index.ts",
     "plugin-inspection": "src/main/plugin-package-inspection.ts",
     "plugin-renderer": "src/plugin-renderer/renderer.ts",
     preload: "src/main/preload.ts",
