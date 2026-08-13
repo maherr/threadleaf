@@ -47,7 +47,12 @@ import {
   normalizeVaultDirectoryPath,
   normalizeVaultPath,
 } from "../kernel/path-policy";
-import { FixedStateRoot, type StateRootPort, type VaultReadPort } from "../kernel/ports";
+import {
+  FixedStateRoot,
+  type StateRootPort,
+  type VaultReadPort,
+  type VaultWriteResult,
+} from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import {
   createDefaultVaultNoteWorkflowSettings,
@@ -131,6 +136,7 @@ interface CliBaseCommand {
 
 interface CliHelpCommand extends CliBaseCommand {
   id: "help";
+  topic: string | null;
 }
 
 interface CliVaultCommand extends CliBaseCommand {
@@ -139,6 +145,7 @@ interface CliVaultCommand extends CliBaseCommand {
 
 interface CliVaultInfoCommand extends CliVaultCommand {
   id: "vault.info";
+  info: "name" | "path" | "files" | "folders" | "size" | null;
 }
 
 interface CliFilesCommand extends CliVaultCommand {
@@ -238,6 +245,7 @@ interface CliCreateCommand extends CliVaultCommand {
   templatePath: string | null;
   dateFormat: string;
   timeFormat: string;
+  overwrite: boolean;
 }
 
 interface CliDailyCommand extends CliVaultCommand {
@@ -351,14 +359,17 @@ interface CliTasksCommand extends CliVaultCommand {
   filter: CliTaskFilter;
   totalOnly: boolean;
   verbose: boolean;
+  format: "text" | CliTabularFormat;
+  daily: boolean;
 }
 
 interface CliTaskCommand extends CliVaultCommand {
   id: "task";
-  filePath: string;
-  targetKind: CliTargetKind;
+  filePath: string | null;
+  targetKind: CliTargetKind | null;
   line: number;
   mutation: MarkdownTaskMutation | null;
+  daily: boolean;
 }
 
 interface CliAliasesCommand extends CliVaultCommand {
@@ -376,6 +387,7 @@ interface CliTagsCommand extends CliVaultCommand {
   sortBy: "name" | "count";
   totalOnly: boolean;
   counts: boolean;
+  format: "text" | CliTabularFormat;
 }
 
 interface CliTagCommand extends CliVaultCommand {
@@ -647,6 +659,63 @@ function parseTabularFormat(value: string, commandName: string): CliTabularForma
   return value;
 }
 
+function parseCompatibilityFormat(value: string, commandName: string): "text" | CliTabularFormat {
+  if (value === "text") {
+    return value;
+  }
+  return parseTabularFormat(value, commandName);
+}
+
+const cliHelpTopics = new Set([
+  "vault",
+  "vault:info",
+  "file",
+  "files",
+  "folder",
+  "folders",
+  "wordcount",
+  "read",
+  "search",
+  "search:context",
+  "links",
+  "backlinks",
+  "unresolved",
+  "orphans",
+  "deadends",
+  "outline",
+  "create",
+  "daily",
+  "daily:path",
+  "daily:read",
+  "daily:append",
+  "daily:prepend",
+  "append",
+  "prepend",
+  "move",
+  "rename",
+  "delete",
+  "trash",
+  "trash:list",
+  "restore",
+  "properties",
+  "property:read",
+  "property:set",
+  "property:remove",
+  "tasks",
+  "task",
+  "aliases",
+  "tags",
+  "tag",
+  "templates",
+  "template:read",
+  "random:read",
+  "plugins",
+  "plugin",
+  "themes",
+  "theme",
+  "snippets",
+]);
+
 export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let json = false;
   let vaultPath: string | null = null;
@@ -765,8 +834,15 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     positional.push(token);
   }
 
-  if (help || positional.length === 0) {
-    return { id: "help", json };
+  if (help || positional.length === 0 || positional[0] === "help") {
+    const topic = positional[0] === "help" ? (positional[1] ?? null) : (positional[0] ?? null);
+    if ((positional[0] === "help" && positional.length > 2) || (help && positional.length > 1)) {
+      usageFailure("help accepts at most one command topic.");
+    }
+    if (topic !== null && !cliHelpTopics.has(topic)) {
+      usageFailure(`Unknown help topic: ${topic}`);
+    }
+    return { id: "help", json, topic };
   }
   if (!vaultPath) {
     usageFailure("Every vault command requires --vault <path>.");
@@ -774,8 +850,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
 
   const [name, ...values] = positional;
   if (
-    (name === "vault" && values[0] === "info" && values.length === 1) ||
-    (name === "vault:info" && values.length === 0)
+    (name === "vault" &&
+      (values.length === 0 || values[0] === "info" || values[0]?.startsWith("info="))) ||
+    (name === "vault:info" && (values.length === 0 || values[0]?.startsWith("info=")))
   ) {
     if (
       directory !== null ||
@@ -788,7 +865,21 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     ) {
       usageFailure("vault info received an option that it does not accept.");
     }
-    return { id: "vault.info", json, vaultPath };
+    const infoValue = values[0]?.startsWith("info=") ? values[0].slice("info=".length) : null;
+    if (
+      infoValue !== null &&
+      infoValue !== "name" &&
+      infoValue !== "path" &&
+      infoValue !== "files" &&
+      infoValue !== "folders" &&
+      infoValue !== "size"
+    ) {
+      usageFailure("vault info must be name, path, files, folders, or size.");
+    }
+    if (values.length > 1 || (values.length === 1 && values[0] !== "info" && infoValue === null)) {
+      usageFailure("vault info accepts info=<name|path|files|folders|size> only.");
+    }
+    return { id: "vault.info", json, vaultPath, info: infoValue };
   }
   if (name === "file") {
     if (
@@ -1062,6 +1153,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     let filter: CliTaskFilter = { kind: "all" };
     let totalOnly = false;
     let verbose = false;
+    let format: CliTasksCommand["format"] = "text";
+    let formatSet = false;
+    let daily = false;
     const setFilter = (next: CliTaskFilter): void => {
       if (filter.kind !== "all") {
         usageFailure("tasks accepts only one of done, todo, or status=<char>.");
@@ -1095,13 +1189,38 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
           usageFailure("tasks verbose may be supplied only once.");
         }
         verbose = true;
-      } else if (value === "active" || value === "daily") {
-        usageFailure(`tasks ${value} is not available in the headless native subset yet.`);
+      } else if (value.startsWith("format=")) {
+        if (formatSet) {
+          usageFailure("tasks format may be supplied only once.");
+        }
+        format = parseCompatibilityFormat(value.slice("format=".length), "tasks");
+        formatSet = true;
+      } else if (value === "daily") {
+        if (daily) {
+          usageFailure("tasks daily may be supplied only once.");
+        }
+        daily = true;
+      } else if (value === "active") {
+        usageFailure("tasks active is not available in the headless native subset yet.");
       } else {
         usageFailure(`Unsupported tasks argument: ${value}`);
       }
     }
-    return { id: "tasks", json, vaultPath, filePath, targetKind, filter, totalOnly, verbose };
+    if (daily && filePath !== null) {
+      usageFailure("tasks accepts daily or an explicit note path, not both.");
+    }
+    return {
+      id: "tasks",
+      json,
+      vaultPath,
+      filePath,
+      targetKind,
+      filter,
+      totalOnly,
+      verbose,
+      format,
+      daily,
+    };
   }
   if (name === "task") {
     if (
@@ -1120,6 +1239,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     let line: number | null = null;
     let reference: { filePath: string; line: number } | null = null;
     let mutation: MarkdownTaskMutation | null = null;
+    let daily = false;
     const setMutation = (next: MarkdownTaskMutation): void => {
       if (mutation !== null) {
         usageFailure("task accepts only one of toggle, done, todo, or status=<char>.");
@@ -1159,23 +1279,29 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       } else if (value === "todo") {
         setMutation({ kind: "set", status: " " });
       } else if (value === "daily") {
-        usageFailure("task daily is not available in the headless native subset yet.");
+        if (daily) {
+          usageFailure("task daily may be supplied only once.");
+        }
+        daily = true;
       } else {
         usageFailure(`Unsupported task argument: ${value}`);
       }
     }
     if (reference !== null) {
-      if (filePath !== null || line !== null) {
+      if (filePath !== null || line !== null || daily) {
         usageFailure("task accepts ref or path plus line, not both.");
       }
       filePath = reference.filePath;
       targetKind = "path";
       line = reference.line;
     }
-    if (!filePath || targetKind === null || line === null) {
-      usageFailure("task requires ref=<path:line> or path=<note.md> line=<n>.");
+    if (daily && filePath !== null) {
+      usageFailure("task accepts daily or an explicit note path, not both.");
     }
-    return { id: "task", json, vaultPath, filePath, targetKind, line, mutation };
+    if ((!daily && (!filePath || targetKind === null)) || line === null) {
+      usageFailure("task requires ref=<path:line>, path=<note.md> line=<n>, or daily line=<n>.");
+    }
+    return { id: "task", json, vaultPath, filePath, targetKind, line, mutation, daily };
   }
   if (name === "aliases") {
     if (
@@ -1239,6 +1365,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     let sortBy: "name" | "count" = "name";
     let totalOnly = false;
     let counts = false;
+    let format: CliTagsCommand["format"] = "text";
+    let formatSet = false;
     for (const value of values) {
       if (value.startsWith("path=") || value.startsWith("file=")) {
         if (filePath !== null) {
@@ -1267,11 +1395,17 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         counts = true;
       } else if (value === "active") {
         usageFailure("tags active is not available in the headless native subset yet.");
+      } else if (value.startsWith("format=")) {
+        if (formatSet) {
+          usageFailure("tags format may be supplied only once.");
+        }
+        format = parseCompatibilityFormat(value.slice("format=".length), "tags");
+        formatSet = true;
       } else {
         usageFailure(`Unsupported tags argument: ${value}`);
       }
     }
-    return { id: "tags", json, vaultPath, filePath, targetKind, sortBy, totalOnly, counts };
+    return { id: "tags", json, vaultPath, filePath, targetKind, sortBy, totalOnly, counts, format };
   }
   if (name === "tag") {
     if (
@@ -1904,6 +2038,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
     let templatePath: string | null = null;
     let dateFormat = createDefaultVaultNoteWorkflowSettings().templateDateFormat;
     let timeFormat = createDefaultVaultNoteWorkflowSettings().templateTimeFormat;
+    let overwrite = false;
     let dateFormatSet = false;
     let timeFormatSet = false;
     for (const value of values) {
@@ -1936,6 +2071,11 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         }
         timeFormat = parseMomentFormat(value.slice("time-format=".length), "create time-format");
         timeFormatSet = true;
+      } else if (value === "overwrite") {
+        if (overwrite) {
+          usageFailure("create overwrite may be supplied only once.");
+        }
+        overwrite = true;
       } else if (filePath === null && !value.includes("=")) {
         filePath = value;
       } else {
@@ -1960,6 +2100,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       templatePath,
       dateFormat,
       timeFormat,
+      overwrite,
     };
   }
   if (name === "daily") {
@@ -2263,7 +2404,9 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
 export const cliHelp = `Threadleaf command line
 
 Usage:
+  threadleaf help [command]
   threadleaf --vault <path> [--json] vault info
+  threadleaf --vault <path> [--json] vault info=<name|path|files|folders|size>
   threadleaf --vault <path> [--json] file <vault-file>
   threadleaf --vault <path> [--json] files [folder=<path>] [ext=<extension>] [total]
   threadleaf --vault <path> [--json] folder path=<path> [info=files|folders|size]
@@ -2278,7 +2421,7 @@ Usage:
   threadleaf --vault <path> [--json] orphans [total]
   threadleaf --vault <path> [--json] deadends [total]
   threadleaf --vault <path> [--json] outline <note.md> [format=tree|md|json] [total]
-  threadleaf --vault <path> [--json] create <note> [--content <text> | template=<note.md>] [date-format=<format>] [time-format=<format>]
+  threadleaf --vault <path> [--json] create <note> [--content <text> | template=<note.md>] [date-format=<format>] [time-format=<format>] [overwrite]
   threadleaf --vault <path> [--json] daily [folder=<path>] [format=<format>] [template=<note.md>] [date-format=<format>] [time-format=<format>]
   threadleaf --vault <path> [--json] daily:path [folder=<path>] [format=<format>]
   threadleaf --vault <path> [--json] daily:read [folder=<path>] [format=<format>]
@@ -2295,10 +2438,10 @@ Usage:
   threadleaf --vault <path> [--json] property:read path=<note.md> name=<name>
   threadleaf --vault <path> [--json] property:set path=<note.md> name=<name> value=<value> [type=<type>]
   threadleaf --vault <path> [--json] property:remove path=<note.md> name=<name>
-  threadleaf --vault <path> [--json] tasks [path=<note.md>] [done|todo|status=<char>] [total|verbose]
-  threadleaf --vault <path> [--json] task ref=<note.md:line> [toggle|done|todo|status=<char>]
+  threadleaf --vault <path> [--json] tasks [path=<note.md>] [done|todo|status=<char>] [daily] [total|verbose] [format=text|json|tsv|csv]
+  threadleaf --vault <path> [--json] task ref=<note.md:line> [toggle|done|todo|status=<char>] or task daily line=<n>
   threadleaf --vault <path> [--json] aliases [path=<note.md>] [total|verbose]
-  threadleaf --vault <path> [--json] tags [path=<note.md>] [sort=count] [total|counts]
+  threadleaf --vault <path> [--json] tags [path=<note.md>] [sort=count] [total|counts] [format=text|json|tsv|csv]
   threadleaf --vault <path> [--json] tag name=<tag> [total|verbose]
   threadleaf --vault <path> [--json] templates [folder=<path>] [total]
   threadleaf --vault <path> [--json] template:read name=<template> [folder=<path>] [title=<title>] [resolve]
@@ -2322,7 +2465,7 @@ Compatibility spellings:
   threadleaf --vault <path> backlinks file=<note-name> counts format=csv
   threadleaf --vault <path> unresolved counts verbose format=json
   threadleaf --vault <path> outline path=<note.md> format=md
-  threadleaf --vault <path> create path=<note> [content=<text> | template=<note.md>]
+  threadleaf --vault <path> create path=<note> [content=<text> | template=<note.md>] [overwrite]
   threadleaf --vault <path> daily folder=Journal format=YYYY/MMMM/YYYY-MM-DD template=Templates/Daily.md
   threadleaf --vault <path> daily:path folder=Journal format=YYYY/MMMM/YYYY-MM-DD
   threadleaf --vault <path> daily:read folder=Journal format=YYYY/MMMM/YYYY-MM-DD
@@ -2338,10 +2481,10 @@ Compatibility spellings:
   threadleaf --vault <path> property:read path=<note.md> name=<name>
   threadleaf --vault <path> property:set path=<note.md> name=<name> value=<value> [type=<type>]
   threadleaf --vault <path> property:remove path=<note.md> name=<name>
-  threadleaf --vault <path> tasks [file=<note-name>] [done|todo|status=<char>] [total|verbose]
+  threadleaf --vault <path> tasks [file=<note-name>] [done|todo|status=<char>] [daily] [total|verbose] format=<text|json|tsv|csv>
   threadleaf --vault <path> task path=<note.md> line=<n> [toggle|done|todo|status=<char>]
   threadleaf --vault <path> aliases [file=<note-name>] [total|verbose]
-  threadleaf --vault <path> tags [path=<note.md>] [sort=count] [total|counts]
+  threadleaf --vault <path> tags [path=<note.md>] [sort=count] [total|counts] format=<text|json|tsv|csv>
   threadleaf --vault <path> tag name=<tag> [total|verbose]
   threadleaf --vault <path> templates folder=<path> total
   threadleaf --vault <path> template:read name=<template> title=<title> resolve
@@ -2361,6 +2504,29 @@ Target rules:
 Commands are headless and never require a running Electron process.
 Plugin, theme, and snippet catalogs never execute code or expose private application selections.
 `;
+
+function cliHelpFor(topic: string | null): string {
+  if (topic === null) {
+    return cliHelp;
+  }
+  const command =
+    topic === "vault" || topic === "vault:info"
+      ? "vault info"
+      : topic === "trash" || topic === "trash:list"
+        ? "trash list"
+        : topic;
+  const usageLine = cliHelp
+    .split("\n")
+    .find(
+      (line) =>
+        line.startsWith("  threadleaf") &&
+        (line.includes(` ${command} `) || line.endsWith(` ${command}`)),
+    );
+  if (!usageLine) {
+    return `Threadleaf help for ${topic}\n\nNo detailed usage is available.\n`;
+  }
+  return `Threadleaf help for ${topic}\n\n${usageLine.trim()}\n`;
+}
 
 function decodeContentEscapes(value: string): string {
   return value.replaceAll(/\\([\\nt])/g, (_match, escaped: string) => {
@@ -2921,6 +3087,28 @@ async function executeCommand(
     ? await openWritableKernel(command, options)
     : await openReadOnlyKernel(command, options);
   try {
+    if (command.id === "vault.info" && command.info !== null) {
+      if (command.info === "name") {
+        return { info: command.info, value: kernel.getName() };
+      }
+      if (command.info === "path") {
+        return { info: command.info, value: kernel.paths.rootPath };
+      }
+      const inventory = await kernel.listVisiblePaths();
+      if (command.info === "files") {
+        return { info: command.info, value: inventory.files.length };
+      }
+      if (command.info === "folders") {
+        return { info: command.info, value: inventory.folders.length };
+      }
+      const sizes = await Promise.all(
+        inventory.files.map(async (filePath) => {
+          const absolutePath = await kernel.paths.resolveForRead(filePath);
+          return (await fs.stat(absolutePath)).size;
+        }),
+      );
+      return { info: command.info, value: sizes.reduce((total, size) => total + size, 0) };
+    }
     if (command.id === "create") {
       const content = command.templatePath
         ? (
@@ -2932,7 +3120,23 @@ async function executeCommand(
             })
           ).content
         : command.content;
-      const outcome = await createMarkdownNote(kernel, command.filePath, content);
+      let outcome: Awaited<ReturnType<typeof createMarkdownNote>> | VaultWriteResult;
+      let overwritten = false;
+      if (command.overwrite) {
+        const normalizedPath = normalizeMarkdownNotePath(command.filePath);
+        try {
+          const existing = await kernel.readText(normalizedPath);
+          outcome = await kernel.writeText(normalizedPath, content, existing.revision);
+          overwritten = true;
+        } catch (error) {
+          if (!isFileSystemCode(error, "ENOENT")) {
+            throw error;
+          }
+          outcome = await createMarkdownNote(kernel, normalizedPath, content);
+        }
+      } else {
+        outcome = await createMarkdownNote(kernel, command.filePath, content);
+      }
       if (outcome.status === "exists") {
         throw new CliFailure(
           "CONFLICT",
@@ -2942,14 +3146,15 @@ async function executeCommand(
         );
       }
       if (outcome.status === "conflict") {
+        const operation = overwritten ? "overwrite" : "creation";
         throw new CliFailure(
           "CONFLICT",
           cliExitCodes.conflict,
-          `The requested path appeared during creation. The proposed note was preserved as ${outcome.conflictPath}.`,
-          { details: outcome },
+          `The note changed during ${operation}. The proposed note was preserved as ${outcome.conflictPath}.`,
+          { details: { ...outcome, overwritten } },
         );
       }
-      return outcome;
+      return { ...outcome, overwritten };
     }
     if (command.id === "daily") {
       const result = await openOrCreateDailyNote(
@@ -3115,8 +3320,13 @@ async function executeCommand(
       return outcome;
     }
     if (command.id === "tasks") {
-      const filePath =
-        command.filePath === null || command.targetKind === null
+      const filePath = command.daily
+        ? dailyNotePath(
+            createDefaultVaultNoteWorkflowSettings().dailyNoteFolder,
+            createDefaultVaultNoteWorkflowSettings().dailyNoteDateFormat,
+            cliNow(options),
+          )
+        : command.filePath === null || command.targetKind === null
           ? null
           : await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
       const tasks = await listMarkdownTasks(kernel, filePath ?? undefined);
@@ -3140,7 +3350,17 @@ async function executeCommand(
       };
     }
     if (command.id === "task") {
-      const filePath = await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind);
+      const filePath = command.daily
+        ? dailyNotePath(
+            createDefaultVaultNoteWorkflowSettings().dailyNoteFolder,
+            createDefaultVaultNoteWorkflowSettings().dailyNoteDateFormat,
+            cliNow(options),
+          )
+        : command.filePath !== null && command.targetKind !== null
+          ? await resolveCliMarkdownTarget(kernel, command.filePath, command.targetKind)
+          : (() => {
+              throw new Error("task requires a resolved note target.");
+            })();
       if (command.mutation === null) {
         return readMarkdownTask(kernel, filePath, command.line);
       }
@@ -3528,9 +3748,11 @@ function compatibilityJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function csvField(value: string | number): string {
+function delimitedField(value: string | number, separator: "," | "\t"): string {
   const text = String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  return text.includes('"') || text.includes(separator) || /[\r\n]/.test(text)
+    ? `"${text.replaceAll('"', '""')}"`
+    : text;
 }
 
 function tabularRows(rows: Array<Array<string | number>>, format: "tsv" | "csv"): string {
@@ -3539,9 +3761,7 @@ function tabularRows(rows: Array<Array<string | number>>, format: "tsv" | "csv")
   }
   const separator = format === "csv" ? "," : "\t";
   return `${rows
-    .map((row) =>
-      row.map((value) => (format === "csv" ? csvField(value) : String(value))).join(separator),
-    )
+    .map((row) => row.map((value) => delimitedField(value, separator)).join(separator))
     .join("\n")}\n`;
 }
 
@@ -3563,7 +3783,7 @@ function catalogDiagnosticSuffix(diagnostics: number): string {
 
 function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "help") {
-    return cliHelp;
+    return cliHelpFor(command.topic);
   }
   if (command.id === "read") {
     return (data as { content: string }).content;
@@ -3838,7 +4058,8 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     return headings.length > 0 ? `${headings.join("\n")}\n` : "";
   }
   if (command.id === "create") {
-    return `Created ${(data as { path: string }).path}\n`;
+    const result = data as { path: string; overwritten: boolean };
+    return `${result.overwritten ? "Overwrote" : "Created"} ${result.path}\n`;
   }
   if (command.id === "daily") {
     const result = data as {
@@ -3880,6 +4101,15 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     if (command.totalOnly) {
       return `${result.total}\n`;
     }
+    if (command.format === "json") {
+      return compatibilityJson(result.tasks);
+    }
+    if (command.format === "tsv" || command.format === "csv") {
+      return tabularRows(
+        result.tasks.map((task) => [task.path, task.line, task.status, task.text]),
+        command.format,
+      );
+    }
     if (result.tasks.length === 0) {
       return "No tasks.\n";
     }
@@ -3918,6 +4148,19 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     const result = data as { total: number; tags: TagCatalogEntry[] };
     if (command.totalOnly) {
       return `${result.total}\n`;
+    }
+    if (command.format === "json") {
+      return compatibilityJson(
+        command.counts
+          ? result.tags.map((entry) => ({ name: entry.name, count: entry.count }))
+          : result.tags.map((entry) => `#${entry.name}`),
+      );
+    }
+    if (command.format === "tsv" || command.format === "csv") {
+      return tabularRows(
+        result.tags.map((entry) => [`#${entry.name}`, ...(command.counts ? [entry.count] : [])]),
+        command.format,
+      );
     }
     if (result.tags.length === 0) {
       return "No tags.\n";
@@ -3965,6 +4208,9 @@ function humanOutput(command: ParsedCliCommand, data: unknown): string {
     return result.status === "missing"
       ? `Property ${result.name} is already absent from ${result.path}\n`
       : `Removed ${result.name} from ${result.path}\n`;
+  }
+  if (command.id === "vault.info" && command.info !== null) {
+    return `${String((data as { value: string | number }).value)}\n`;
   }
   const info = data as {
     name: string;
@@ -4046,7 +4292,9 @@ export async function runCli(
   try {
     command = parseCliArguments(args);
     const data =
-      command.id === "help" ? { usage: cliHelp } : await executeWithCommandState(command, options);
+      command.id === "help"
+        ? { usage: cliHelpFor(command.topic) }
+        : await executeWithCommandState(command, options);
     io.stdout(command.json ? jsonOutput(command.id, data) : humanOutput(command, data));
     return cliExitCodes.success;
   } catch (error) {

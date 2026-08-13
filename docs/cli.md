@@ -6,11 +6,14 @@ test. It does not depend on a running Electron window.
 
 ## Current commands
 
-Every command requires an explicit vault path. The CLI never silently uses the desktop app's
-remembered vault.
+Every vault command requires an explicit vault path. The CLI never silently uses the desktop
+app's remembered vault. `help` and `help <command>` are global read-only commands and do not need a
+vault.
 
 ```sh
+threadleaf help [command]
 threadleaf --vault /path/to/vault vault info
+threadleaf --vault /path/to/vault vault info=<name|path|files|folders|size>
 threadleaf --vault /path/to/vault file file="Note"
 threadleaf --vault /path/to/vault files [folder=Folder] [ext=png] [total]
 threadleaf --vault /path/to/vault folder path=Folder [info=files|folders|size]
@@ -25,7 +28,7 @@ threadleaf --vault /path/to/vault unresolved [counts] [total] [verbose] [format=
 threadleaf --vault /path/to/vault orphans [total]
 threadleaf --vault /path/to/vault deadends [total]
 threadleaf --vault /path/to/vault outline "Folder/Note.md" [format=tree|md|json] [total]
-threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n" | template="Templates/Note.md"] [date-format="YYYY-MM-DD"] [time-format="HH:mm"]
+threadleaf --vault /path/to/vault create "Folder/New note" [--content "# Title\n" | template="Templates/Note.md"] [date-format="YYYY-MM-DD"] [time-format="HH:mm"] [overwrite]
 threadleaf --vault /path/to/vault daily [folder=Journal] [format="YYYY-MM-DD"] [template="Templates/Daily.md"] [date-format="YYYY-MM-DD"] [time-format="HH:mm"]
 threadleaf --vault /path/to/vault daily:path [folder=Journal] [format="YYYY-MM-DD"]
 threadleaf --vault /path/to/vault daily:read [folder=Journal] [format="YYYY-MM-DD"]
@@ -42,10 +45,11 @@ threadleaf --vault /path/to/vault properties path="Folder/Note.md"
 threadleaf --vault /path/to/vault property:read path="Folder/Note.md" name=status
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status value=review
 threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
-threadleaf --vault /path/to/vault tasks [path="Folder/Note.md"] [done|todo|status="?"] [total|verbose]
+threadleaf --vault /path/to/vault tasks [path="Folder/Note.md"] [done|todo|status="?"] [daily] [total|verbose] [format=text|json|tsv|csv]
 threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" [toggle|done|todo|status="?"]
+threadleaf --vault /path/to/vault task daily line=12 [toggle|done|todo|status="?"]
 threadleaf --vault /path/to/vault aliases [path="Folder/Note.md"] [total|verbose]
-threadleaf --vault /path/to/vault tags [path="Folder/Note.md"] [sort=count] [total|counts]
+threadleaf --vault /path/to/vault tags [path="Folder/Note.md"] [sort=count] [total|counts] [format=text|json|tsv|csv]
 threadleaf --vault /path/to/vault tag name=project [total|verbose]
 threadleaf --vault /path/to/vault templates [folder=Templates] [total]
 threadleaf --vault /path/to/vault template:read name="Daily" [folder=Templates] [title="A day"] [resolve]
@@ -61,7 +65,9 @@ During development, prefix the same arguments with `pnpm cli`.
 
 | Command | Output | Authority |
 | --- | --- | --- |
+| `help` | Full or command-specific usage without opening a vault | Static CLI contract |
 | `vault info` or `vault:info` | Canonical path and note, heading, tag, and link counts | Read-only kernel plus derived index |
+| `vault info=<name|path|files|folders|size>` | One selected vault fact | Read-only contained vault inventory |
 | `file` | Path, name, extension, byte size, and filesystem timestamps | Safe visible-file inventory |
 | `files` | Sorted visible file paths with folder, extension, and count filters | Safe visible-file inventory |
 | `folder` | Recursive file count, folder count, and byte size | Safe visible-file inventory |
@@ -76,7 +82,7 @@ During development, prefix the same arguments with `pnpm cli`.
 | `orphans` | Notes with no resolved incoming source | Derived metadata index |
 | `deadends` | Notes with no parsed outgoing internal-link occurrence | Derived metadata index |
 | `outline` | Ordered headings in tree, Markdown, JSON, total, or rich source-line form | Derived metadata index |
-| `create` | Created Markdown path and revision, optionally rendered from a template | Recoverable no-clobber writer plus bounded template reader |
+| `create` | Created or explicitly overwritten Markdown path and revision, optionally rendered from a template | Recoverable writer plus bounded template reader |
 | `daily` | Opened or created daily-note path, outcome, and selected template | Read-before-create plus recoverable no-clobber writer |
 | `daily:path` | Expected daily-note path, whether or not it exists | Explicit folder and Moment-compatible date format |
 | `daily:read` | Saved daily-note content and path in JSON | Explicit daily-note path plus read-only kernel |
@@ -93,10 +99,10 @@ During development, prefix the same arguments with `pnpm cli`.
 | `property:read` | One indexed property value or an explicit absent result | Derived metadata index |
 | `property:set` | Typed property value, note revision, and transaction | Revision-checked recoverable writer |
 | `property:remove` | Committed removal or explicit no-write missing result | Revision-checked recoverable writer |
-| `tasks` | Vault-wide or targeted-note Markdown tasks with status filters and optional count/location output | Read-only kernel plus Markdown task scanner |
-| `task` | One targeted task line, optionally with a new checkbox status | Read-only scanner or revision-checked recoverable writer |
+| `tasks` | Vault-wide, targeted-note, or exact daily-note Markdown tasks with status filters and text/JSON/TSV/CSV output | Read-only kernel plus Markdown task scanner |
+| `task` | One targeted or exact daily-note task line, optionally with a new checkbox status | Read-only scanner or revision-checked recoverable writer |
 | `aliases` | Frontmatter aliases across the vault or one targeted note, optionally with source paths | Derived metadata index |
-| `tags` | Unique tag catalog with occurrence counts across the vault or one targeted note | Derived metadata index |
+| `tags` | Unique tag catalog with occurrence counts across the vault or one targeted note, in text/JSON/TSV/CSV projections | Derived metadata index |
 | `tag` | Occurrence total and carrying files for one tag | Derived metadata index |
 | `templates` | Sorted contained Markdown template paths and total | Shared bounded template catalog reader |
 | `template:read` | UTF-8 template content, optionally resolved with a title | Shared bounded template reader and production renderer |
@@ -113,6 +119,11 @@ workspace behavior. Both exclude `.obsidian/`, `.git/`, `.trash/`, and Threadlea
 artifacts. Read-only kernel opening performs path validation but creates no state directory, vault
 identity, recovery journal, or watcher. `trash list` deliberately inspects `.trash/` through a
 dedicated path without admitting its contents to either ordinary corpus.
+
+`vault info` retains the rich vault summary used by the native contract. The familiar
+`vault info=<name|path|files|folders|size>` selectors instead return one scalar: the canonical vault
+name or path, visible-file count, visible-folder count, or total visible-file bytes. They inspect
+only the contained read-only inventory and never read a remembered desktop selection.
 
 ## Note targets
 
@@ -190,7 +201,10 @@ Unknown variables and a formatted `title` remain literal. Content and template i
 combined. The same application service backs the desktop New action and CLI command.
 
 Creation first checks for an ordinary existing note and returns conflict exit 5 without touching
-it. The kernel then stages the proposed bytes and commits only if the target still does not exist.
+it. Supplying the explicit `overwrite` flag instead reads the existing revision and replaces it
+through the same recovery-backed, revision-checked writer; a concurrent edit leaves the external
+version in place and preserves the proposal as a conflict copy. Without `overwrite`, the kernel
+stages the proposed bytes and commits only if the target still does not exist.
 If another process creates the path during that race window, Threadleaf preserves the proposal as
 a labeled conflict note and reports its path. Recovery completes a staged new-file write at the
 requested path after interruption when that name remains free. All CLI mutation journals live in
@@ -283,12 +297,15 @@ keys, JSON frontmatter, nested mappings, and block scalars are refused before an
 first patcher cannot yet preserve them losslessly. A revision race keeps the external winner at the
 requested path, stores the complete proposed file as a conflict copy, and returns exit 5.
 
-`tasks` scans every indexed Markdown note, one exact `path=` target, or one unique-name `file=`
-target. With no filter it
+`tasks` scans every indexed Markdown note, one exact `path=` target, one unique-name `file=`
+target, or the exact default daily-note path when `daily` is supplied. With no filter it
 returns all recognized tasks. `done` means status `x` or `X`; `todo` means every other status, so
 custom statuses remain visible. `status=<char>` matches one exact Unicode character. Human output
 is checkbox text by default, `verbose` prefixes `path:line`, and `total` prints only the matching
-count. Versioned JSON always includes the full matching records and their count.
+count. `format=json` emits the compact task-record array; `format=tsv|csv` emits deterministic
+rows containing path, source line, status, and task text. Versioned global `--json` always includes
+the full matching records and their count. `task daily line=<n>` addresses the same calculated
+daily-note path, without consulting an active GUI file.
 
 `task` reads or mutates one task addressed by exact `ref=<path:line>`, or by `path=` or `file=` plus
 `line=`.
@@ -308,10 +325,12 @@ includes both fields.
 `tags` reports distinct tag names from frontmatter and inline Markdown. `total` prints the distinct
 tag count, `counts` adds each tag's occurrence total to human output, and `sort=count` orders by
 descending occurrence count with a name tie-breaker. Repeating one tag in a note increases its
-occurrence count; the file list still contains that note once. `tag name=<tag>` accepts a name with
-or without a leading `#`; `total` prints its occurrence count and `verbose` includes every carrying
-file. Fenced code, inline code, and HTML comments are excluded, and a frontmatter tag is not
-counted again as inline syntax.
+occurrence count; the file list still contains that note once. `format=json` emits either a compact
+tag-name array or `{name,count}` objects when `counts` is present; `format=tsv|csv` emits rows with
+the `#`-prefixed name and optional count. `tag name=<tag>` accepts a name with or without a leading
+`#`; `total` prints its occurrence count and `verbose` includes every carrying file. Fenced code,
+inline code, and HTML comments are excluded, and a frontmatter tag is not counted again as inline
+syntax.
 
 ## JSON contract
 
@@ -349,7 +368,9 @@ The public Obsidian CLI guide is behavioral input because its concise verbs alre
 scripts. Threadleaf currently accepts these aliases in addition to its native forms:
 
 ```sh
+threadleaf help search
 threadleaf --vault /path/to/vault file file="Diagram.canvas"
+threadleaf --vault /path/to/vault vault info=files
 threadleaf --vault /path/to/vault files folder="Attachments" ext=png total
 threadleaf --vault /path/to/vault folder path="Projects" info=size
 threadleaf --vault /path/to/vault folders folder="Projects" total
@@ -364,7 +385,7 @@ threadleaf --vault /path/to/vault unresolved counts verbose format=json
 threadleaf --vault /path/to/vault orphans total
 threadleaf --vault /path/to/vault deadends total
 threadleaf --vault /path/to/vault outline path="Folder/Note.md" format=md
-threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n"
+threadleaf --vault /path/to/vault create path="Folder/Note" content="# Title\n" overwrite
 threadleaf --vault /path/to/vault create name="Root note"
 threadleaf --vault /path/to/vault daily:path folder=Journal format=YYYY/MMMM/YYYY-MM-DD
 threadleaf --vault /path/to/vault daily:read folder=Journal format=YYYY/MMMM/YYYY-MM-DD
@@ -381,11 +402,13 @@ threadleaf --vault /path/to/vault property:read path="Folder/Note.md" name=statu
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=status value=review
 threadleaf --vault /path/to/vault property:set path="Folder/Note.md" name=aliases 'value=["First","Second"]' type=list
 threadleaf --vault /path/to/vault property:remove path="Folder/Note.md" name=status
-threadleaf --vault /path/to/vault tasks file="Note" todo verbose
+threadleaf --vault /path/to/vault tasks file="Note" todo verbose format=tsv
+threadleaf --vault /path/to/vault tasks daily format=json
 threadleaf --vault /path/to/vault task ref="Folder/Note.md:12" toggle
+threadleaf --vault /path/to/vault task daily line=12 done
 threadleaf --vault /path/to/vault task path="Folder/Note.md" line=12 status="?"
 threadleaf --vault /path/to/vault aliases file="Note" verbose
-threadleaf --vault /path/to/vault tags path="Folder/Note.md" counts
+threadleaf --vault /path/to/vault tags path="Folder/Note.md" counts format=csv
 threadleaf --vault /path/to/vault tag name=project verbose
 threadleaf --vault /path/to/vault templates folder=Templates total
 threadleaf --vault /path/to/vault template:read name=Daily title="A day" resolve
@@ -434,16 +457,19 @@ Threadleaf accepts Obsidian's public `delete path=<path>` spelling but deliberat
 `permanent` flag. Move and rename support explicit compound link rewriting through Threadleaf's
 native `--update-links` confirmation flag. Threadleaf accepts the public property command names and
 parameter spellings, but its lossless frontmatter subset and native JSON contract are narrower than
-a complete compatibility claim. Threadleaf does not yet accept Obsidian's `open`, `overwrite`,
-template parameter maps, or active-file defaults. Its `create template=`, `daily`, `daily:path`,
+a complete compatibility claim. Threadleaf does not yet accept Obsidian's `open`, template
+parameter maps, or active-file defaults. Its explicit `create ... overwrite` flag uses the
+recoverable revision-bound writer and never opens a GUI file. Its `create template=`, `daily`, `daily:path`,
 `daily:read`, `daily:append`, `daily:prepend`, `templates`, `template:read`, and `random:read`
 behavior cover the documented title, date, time, folder, date-format, template, and random-note
 workflows through Threadleaf's native contract. Search and graph flags are executable compatibility
 targets, but ranked query grammar and exact byte-for-byte formatting still require a live reference
-corpus. The task subset does not yet support `active` or alternate `format` output. Alias and tag
-commands do not yet support `active` or alternate `format` output. `random:read` deliberately
-returns a path with content and uses a deterministic selector only in fixtures; it does not claim
-byte-identical output or control a running GUI.
+corpus. Task and tag catalog commands now accept the documented `format=text|json|tsv|csv`
+projections, with the compact shapes defined above; they do not claim byte-identical output. The
+`tasks daily` and `task daily` forms target only the calculated default daily-note path, never a GUI
+active file. Alias commands do not yet support `active` or alternate format output. `random:read`
+deliberately returns a path with content and uses a deterministic selector only in fixtures; it does
+not claim byte-identical output or control a running GUI.
 Catalog inspection intentionally omits core plugins, enabled-state and active-theme queries,
 catalog mutations, action inventory, hotkey inventory, and workspace or tab inventory because the
 current headless authority either does not exist or is private application state.

@@ -6,9 +6,9 @@
   "commands": [
     {
       "id": "help",
-      "syntax": [],
-      "output": "See the CLI contract for the native projection.",
-      "authority": "Native CLI contract",
+      "syntax": ["help"],
+      "output": "Full or command-specific usage without opening a vault",
+      "authority": "Static CLI contract",
       "status": "implemented",
       "source": "src/cli/command-line.ts#CliCommandId",
       "documentation": "docs/cli.md#current-commands"
@@ -151,8 +151,8 @@
     {
       "id": "create",
       "syntax": ["create"],
-      "output": "Created Markdown path and revision, optionally rendered from a template",
-      "authority": "Recoverable no-clobber writer plus bounded template reader",
+      "output": "Created or explicitly overwritten Markdown path and revision, optionally rendered from a template",
+      "authority": "Recoverable writer plus bounded template reader",
       "status": "implemented",
       "source": "src/cli/command-line.ts#CliCommandId",
       "documentation": "docs/cli.md#current-commands"
@@ -304,7 +304,7 @@
     {
       "id": "tasks",
       "syntax": ["tasks"],
-      "output": "Vault-wide or targeted-note Markdown tasks with status filters and optional count/location output",
+      "output": "Vault-wide, targeted-note, or exact daily-note Markdown tasks with status filters and text/JSON/TSV/CSV output",
       "authority": "Read-only kernel plus Markdown task scanner",
       "status": "implemented",
       "source": "src/cli/command-line.ts#CliCommandId",
@@ -313,7 +313,7 @@
     {
       "id": "task",
       "syntax": ["task"],
-      "output": "One targeted task line, optionally with a new checkbox status",
+      "output": "One targeted or exact daily-note task line, optionally with a new checkbox status",
       "authority": "Read-only scanner or revision-checked recoverable writer",
       "status": "implemented",
       "source": "src/cli/command-line.ts#CliCommandId",
@@ -331,7 +331,7 @@
     {
       "id": "tags",
       "syntax": ["tags"],
-      "output": "Unique tag catalog with occurrence counts across the vault or one targeted note",
+      "output": "Unique tag catalog with occurrence counts across the vault or one targeted note, in text/JSON/TSV/CSV projections",
       "authority": "Derived metadata index",
       "status": "implemented",
       "source": "src/cli/command-line.ts#CliCommandId",

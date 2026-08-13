@@ -152,8 +152,8 @@
 
       <section id="cli" class="content-section" aria-labelledby="cli-title">
         <div class="section-heading split-heading"><div><p class="eyebrow">04 · AUTOMATION</p><h2 id="cli-title">Headless CLI surface</h2></div><a class="dataset-link" href="data/cli.v1.json">JSON dataset ↗</a></div>
-        <p class="section-intro">The CLI uses the same vault kernel and rebuildable metadata index. Every command requires an explicit vault path.</p>
-        <div class="table-wrap"><table data-filter-table><caption>Versioned native command identifiers and their documented forms</caption><thead><tr><th scope="col">Command ID</th><th scope="col">Native form</th><th scope="col">Authority</th></tr></thead><tbody><tr><th scope="row"><code>help</code></th><td><span class="muted">native form</span></td><td>Native CLI contract</td></tr>
+        <p class="section-intro">Vault commands use the same vault kernel and rebuildable metadata index, and require an explicit vault path. Global help remains available without opening a vault.</p>
+        <div class="table-wrap"><table data-filter-table><caption>Versioned native command identifiers and their documented forms</caption><thead><tr><th scope="col">Command ID</th><th scope="col">Native form</th><th scope="col">Authority</th></tr></thead><tbody><tr><th scope="row"><code>help</code></th><td><code>help</code></td><td>Static CLI contract</td></tr>
 <tr><th scope="row"><code>vault.info</code></th><td><code>vault info</code><br /><code>vault:info</code></td><td>Read-only kernel plus derived index</td></tr>
 <tr><th scope="row"><code>file</code></th><td><code>file</code></td><td>Safe visible-file inventory</td></tr>
 <tr><th scope="row"><code>files</code></th><td><code>files</code></td><td>Safe visible-file inventory</td></tr>
@@ -169,7 +169,7 @@
 <tr><th scope="row"><code>orphans</code></th><td><code>orphans</code></td><td>Derived metadata index</td></tr>
 <tr><th scope="row"><code>deadends</code></th><td><code>deadends</code></td><td>Derived metadata index</td></tr>
 <tr><th scope="row"><code>outline</code></th><td><code>outline</code></td><td>Derived metadata index</td></tr>
-<tr><th scope="row"><code>create</code></th><td><code>create</code></td><td>Recoverable no-clobber writer plus bounded template reader</td></tr>
+<tr><th scope="row"><code>create</code></th><td><code>create</code></td><td>Recoverable writer plus bounded template reader</td></tr>
 <tr><th scope="row"><code>daily</code></th><td><code>daily</code></td><td>Read-before-create plus recoverable no-clobber writer</td></tr>
 <tr><th scope="row"><code>daily.path</code></th><td><code>daily:path</code></td><td>Explicit folder and Moment-compatible date format</td></tr>
 <tr><th scope="row"><code>daily.read</code></th><td><code>daily:read</code></td><td>Explicit daily-note path plus read-only kernel</td></tr>

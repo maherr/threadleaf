@@ -135,6 +135,12 @@ equivalence through the real writer-to-watcher seam.
       code execution or private-state disclosure.
 - [ ] Remaining CLI commands and a broader executable behavior corpus for familiar
       Obsidian-style command names and errors.
+  - [x] Add global `help [command]`, safe `vault info=` selectors, recoverable explicit `create
+        overwrite`, exact daily-task targeting, and tasks/tags text, JSON, TSV, and CSV projections
+        with executable fixtures.
+  - [ ] Keep GUI-active commands (`open`, active-file defaults, workspace/tabs, plugin/theme
+        mutations, and similar stateful commands) out until a headless authority and behavior corpus
+        exist.
 - [x] Two independently editable panes, horizontal and vertical splits, tab transfer, pane
       collapse, focused-pane commands, private layout restoration, and native application menus.
 - [ ] Broader workspace settings.
