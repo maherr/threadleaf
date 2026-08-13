@@ -27,6 +27,8 @@ const publishedContentTags = [
   "span",
   "strong",
   "summary",
+  "sup",
+  "sub",
   "table",
   "tbody",
   "td",
@@ -45,12 +47,14 @@ const publishedContentSanitizeConfig = {
     "colspan",
     "decoding",
     "href",
+    "id",
     "loading",
     "rel",
     "role",
     "rowspan",
     "src",
     "start",
+    "scope",
     "title",
   ],
   ALLOW_ARIA_ATTR: false,
@@ -163,6 +167,34 @@ body {
 }
 .published-content .align-center { text-align: center; }
 .published-content .align-right { text-align: right; }
+.published-content .preview-math-block {
+  width: fit-content;
+  max-width: 100%;
+  margin: 1em auto;
+  padding: 0.55em 0.85em;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.published-content .math-fraction {
+  display: inline-grid;
+  grid-template-rows: auto auto;
+  vertical-align: middle;
+  text-align: center;
+}
+.published-content .math-numerator {
+  padding: 0 0.18em 0.08em;
+  border-bottom: 1px solid currentColor;
+}
+.published-content .math-denominator { padding: 0.08em 0.18em 0; }
+.published-content .preview-footnotes {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 2px solid var(--line);
+  font-size: 0.9em;
+}
+.published-content .preview-footnote-backrefs { margin-left: 0.6em; }
+.published-content .preview-footnote-backref { text-decoration: none; }
 .vault-link {
   color: var(--muted);
   text-decoration: underline dotted;
@@ -289,6 +321,12 @@ function preparePublishedContent(source: HTMLElement): string {
     embed.ariaLabel = "Embedded note";
   }
   for (const anchor of [...root.querySelectorAll<HTMLAnchorElement>("a")]) {
+    if (
+      anchor.dataset.threadleafFootnoteRef ||
+      anchor.classList.contains("preview-footnote-backref")
+    ) {
+      continue;
+    }
     if (anchor.dataset.threadleafLink === "external") {
       const safeUrl = safeExternalUrl(anchor.dataset.threadleafExternalUrl ?? "");
       if (safeUrl) {
@@ -317,7 +355,7 @@ function preparePublishedContent(source: HTMLElement): string {
       if (
         attribute.name.startsWith("data-") ||
         attribute.name.startsWith("on") ||
-        attribute.name === "id" ||
+        (attribute.name === "id" && !attribute.value.startsWith("threadleaf-footnote-")) ||
         attribute.name === "style" ||
         attribute.name === "contenteditable" ||
         attribute.name === "aria-busy"

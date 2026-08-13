@@ -1,5 +1,5 @@
 import DOMPurify, { type Config } from "dompurify";
-import MarkdownIt, { type RendererRule, type StateInline } from "markdown-it";
+import MarkdownIt, { type RendererRule, type StateBlock, type StateInline } from "markdown-it";
 import type {
   CanvasLoadResponse,
   VaultAttachmentResponse,
@@ -7,6 +7,51 @@ import type {
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
 } from "../shared/contracts";
+import {
+  collectFootnotes,
+  type FootnoteCollection,
+  type InlineMathCandidate,
+  joinSourceLines,
+  renderSafeMath,
+  safeMathLimits,
+  scanFrontmatter,
+  scanInlineMath,
+  sourceLineStarts,
+  splitSourceLines,
+} from "./markdown-extensions";
+
+const sourceOnlySentinelCandidates = [
+  "\u2060",
+  "\u2061",
+  "\u2062",
+  "\u2063",
+  "\uFFF9",
+  "\uFFFA",
+] as const;
+
+function sourceOnlySentinelFor(source: string): string {
+  const used = new Set(source);
+  const preferred = sourceOnlySentinelCandidates.find((candidate) => !used.has(candidate));
+  if (preferred) return preferred;
+
+  // A note can contain every preferred marker. Pick an unused private-use
+  // code point without repeatedly rescanning the full source.
+  for (let code = 0xe000; code <= 0xf8ff; code += 1) {
+    const candidate = String.fromCharCode(code);
+    if (!used.has(candidate)) return candidate;
+  }
+
+  // This is only reachable for an unusually adversarial source containing
+  // the entire BMP private-use range. A two-unit marker is still selected by
+  // bounded probes, and is checked against the source before use.
+  for (const first of sourceOnlySentinelCandidates) {
+    for (const second of sourceOnlySentinelCandidates) {
+      const candidate = `${first}${second}`;
+      if (!source.includes(candidate)) return candidate;
+    }
+  }
+  return "\u2060\u2061";
+}
 
 export interface PreviewWikiLink extends Record<string, unknown> {
   target: string;
@@ -38,6 +83,9 @@ const allowedTags = [
   "span",
   "strong",
   "summary",
+  "sup",
+  "sub",
+  "section",
   "table",
   "tbody",
   "td",
@@ -62,14 +110,20 @@ const sanitizeConfig = {
     "data-threadleaf-canvas-embed",
     "data-threadleaf-embed",
     "data-threadleaf-external-url",
+    "data-threadleaf-footnote",
+    "data-threadleaf-footnote-ref",
+    "data-threadleaf-math",
     "data-threadleaf-link",
     "data-threadleaf-note-embed",
     "data-threadleaf-subpath",
+    "data-threadleaf-table",
     "data-threadleaf-target",
     "href",
+    "id",
     "role",
     "rowspan",
     "start",
+    "scope",
     "title",
   ],
   ALLOW_ARIA_ATTR: false,
@@ -118,6 +172,10 @@ function parseWikiLink(raw: string, embed: boolean): PreviewWikiLink {
 
 function wikiLinkRule(state: StateInline, silent: boolean): boolean {
   const start = state.pos;
+  const environment = previewEnvironment(state.env);
+  if (environment && isSourceOnlyPosition(state.src, start, environment)) {
+    return false;
+  }
   const embed = state.src[start] === "!";
   const markerStart = embed ? start + 1 : start;
   if (state.src.slice(markerStart, markerStart + 2) !== "[[") {
@@ -139,20 +197,228 @@ function wikiLinkRule(state: StateInline, silent: boolean): boolean {
   return true;
 }
 
+interface MarkdownPreviewEnvironment {
+  [key: string | symbol]: unknown;
+  threadleafFootnotes: FootnoteCollection;
+  threadleafFootnoteReferences: Map<string, number>;
+  threadleafSourceText: string;
+  threadleafLineStarts: readonly number[];
+  threadleafSourceOnlyLineStarts: ReadonlySet<number>;
+  threadleafSourceOnlySentinel: string;
+  threadleafInlineMathSource: string | null;
+  threadleafInlineMathCandidates: ReadonlyMap<number, InlineMathCandidate | null> | null;
+  threadleafInlineMathRejectedRanges: ReadonlyMap<number, { from: number; to: number }>;
+  threadleafInlineMathUnmatchedOpeners: ReadonlySet<number>;
+  threadleafInlineMathCandidatesSeen: number;
+}
+
+function previewEnvironment(value: unknown): MarkdownPreviewEnvironment | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Partial<MarkdownPreviewEnvironment>;
+  return candidate.threadleafFootnotes && candidate.threadleafFootnoteReferences
+    ? (candidate as MarkdownPreviewEnvironment)
+    : null;
+}
+
+function isEscaped(source: string, position: number): boolean {
+  let slashes = 0;
+  for (let index = position - 1; index >= 0 && source[index] === "\\"; index -= 1) {
+    slashes += 1;
+  }
+  return slashes % 2 === 1;
+}
+
+function sourceLineStart(position: number, lineStarts: readonly number[]): number {
+  if (lineStarts.length === 0) {
+    return 0;
+  }
+  let low = 0;
+  let high = lineStarts.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if ((lineStarts[middle] ?? 0) <= position) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return lineStarts[low] ?? 0;
+}
+
+function isSourceOnlyPosition(
+  source: string,
+  position: number,
+  environment: MarkdownPreviewEnvironment,
+): boolean {
+  const before = Math.max(0, position - 1);
+  const localStart =
+    Math.max(source.lastIndexOf("\n", before), source.lastIndexOf("\r", before)) + 1;
+  if (
+    environment.threadleafSourceOnlySentinel !== "" &&
+    source.slice(localStart, localStart + environment.threadleafSourceOnlySentinel.length) ===
+      environment.threadleafSourceOnlySentinel
+  ) {
+    return true;
+  }
+  if (
+    source === environment.threadleafSourceText &&
+    environment.threadleafSourceOnlyLineStarts.size > 0 &&
+    environment.threadleafSourceOnlyLineStarts.has(
+      sourceLineStart(position, environment.threadleafLineStarts),
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function footnoteReferenceRule(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  const environment = previewEnvironment(state.env);
+  if (environment && isSourceOnlyPosition(state.src, start, environment)) {
+    return false;
+  }
+  if (state.src[start] !== "[" || state.src[start + 1] !== "^") {
+    return false;
+  }
+  const close = state.src.indexOf("]", start + 2);
+  if (close < 0 || close === start + 2 || state.src.slice(start + 2, close).includes("\n")) {
+    return false;
+  }
+  const id = state.src.slice(start + 2, close);
+  if (!environment?.threadleafFootnotes.ids.has(id) || isEscaped(state.src, start)) {
+    return false;
+  }
+  if (!silent) {
+    const token = state.push("threadleaf_footnote_ref", "sup", 0);
+    token.meta = { id };
+  }
+  state.pos = close + 1;
+  return true;
+}
+
+function mathInlineRule(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  const environment = previewEnvironment(state.env);
+  if (environment && isSourceOnlyPosition(state.src, start, environment)) {
+    return false;
+  }
+  if (!environment) {
+    return false;
+  }
+  if (environment.threadleafInlineMathSource !== state.src) {
+    const remaining = Math.max(
+      0,
+      safeMathLimits.maxInlineMathCandidates - environment.threadleafInlineMathCandidatesSeen,
+    );
+    const scan = scanInlineMath(state.src, remaining);
+    environment.threadleafInlineMathSource = state.src;
+    environment.threadleafInlineMathCandidates = scan.candidates;
+    environment.threadleafInlineMathRejectedRanges = scan.rejectedRanges;
+    environment.threadleafInlineMathUnmatchedOpeners = scan.unmatchedOpeners;
+    environment.threadleafInlineMathCandidatesSeen += scan.candidateCount;
+  }
+  const candidate = environment.threadleafInlineMathCandidates?.get(start);
+  if (candidate === undefined) {
+    return false;
+  }
+  if (candidate === null) {
+    if (!environment.threadleafInlineMathUnmatchedOpeners.has(start)) {
+      return false;
+    }
+    if (!silent) {
+      const token = state.push("text", "", 0);
+      token.content = state.src.slice(start);
+    }
+    state.pos = state.src.length;
+    return true;
+  }
+  const rejected = environment.threadleafInlineMathRejectedRanges.get(start);
+  if (rejected) {
+    if (!silent) {
+      const token = state.push("text", "", 0);
+      token.content = state.src.slice(rejected.from, rejected.to);
+    }
+    state.pos = rejected.to;
+    return true;
+  }
+  if (!silent) {
+    const token = state.push("threadleaf_math_inline", "span", 0);
+    token.meta = { expression: candidate.expression };
+  }
+  state.pos = candidate.to;
+  return true;
+}
+
+function mathBlockRule(
+  state: StateBlock,
+  startLine: number,
+  endLine: number,
+  silent: boolean,
+): boolean {
+  const beginning = state.bMarks[startLine] ?? 0;
+  const end = state.eMarks[startLine] ?? beginning;
+  const environment = previewEnvironment(state.env);
+  if (environment && isSourceOnlyPosition(state.src, beginning, environment)) {
+    return false;
+  }
+  const marker = state.src.slice(beginning, end).trim();
+  const closing = marker === "$$" ? "$$" : marker === "\\[" ? "\\]" : null;
+  if (!closing) return false;
+  let nextLine = startLine + 1;
+  let closingLine = -1;
+  while (nextLine < endLine && nextLine - startLine <= 256) {
+    const nextStart = state.bMarks[nextLine] ?? 0;
+    const nextEnd = state.eMarks[nextLine] ?? nextStart;
+    if (state.src.slice(nextStart, nextEnd).trim() === closing) {
+      closingLine = nextLine;
+      break;
+    }
+    nextLine += 1;
+  }
+  if (closingLine < 0) return false;
+  const content = state.getLines(startLine + 1, closingLine, state.blkIndent, true).trim();
+  if (!renderSafeMath(content)) return false;
+  if (silent) return true;
+  const token = state.push("threadleaf_math_block", "div", 0);
+  token.block = true;
+  token.map = [startLine, closingLine + 1];
+  token.meta = { expression: content };
+  token.content = content;
+  state.line = closingLine + 1;
+  return true;
+}
+
 function maskFrontmatter(source: string): string {
-  const lines = source.split("\n");
-  if (lines[0]?.replace(/^\uFEFF/, "").trim() !== "---") {
+  const lines = splitSourceLines(source);
+  const scan = scanFrontmatter(source);
+  if (scan.status === "none") {
     return source;
   }
-  const close = lines.slice(1).findIndex((line) => {
-    const trimmed = line.trim();
-    return trimmed === "---" || trimmed === "...";
-  });
-  if (close === -1) {
-    return source;
-  }
-  const end = close + 1;
-  return lines.map((line, index) => (index <= end ? "" : line)).join("\n");
+  const end = scan.closingLine ?? lines.length;
+  return joinSourceLines(
+    source,
+    // Do not use the Unicode flag here: masking is a UTF-16 offset-preserving
+    // operation, so an astral code point must become two spaces.
+    lines.map((line, index) => (index < end ? line.replace(/[^\r]/g, " ") : line)),
+  );
+}
+
+function protectSourceOnlyLines(
+  source: string,
+  sourceOnlyLines: ReadonlySet<number>,
+  sentinel: string,
+): string {
+  if (sourceOnlyLines.size === 0) return source;
+  const lines = splitSourceLines(source);
+  return joinSourceLines(
+    source,
+    lines.map((line, index) =>
+      sourceOnlyLines.has(index + 1) && /\S/u.test(line) ? `${sentinel}${line}` : line,
+    ),
+  );
 }
 
 function isExternalLink(value: string): boolean {
@@ -187,6 +453,47 @@ function attachmentPlaceholder(target: string, label: string): string {
   return `<span class="preview-attachment-placeholder" role="status" aria-label="Loading local attachment ${escapeAttribute(label)}" data-threadleaf-attachment-target="${escapeAttribute(target)}" data-threadleaf-attachment-alt="${escapeAttribute(label)}">Attachment: ${escapeText(label)}</span>`;
 }
 
+function footnoteAnchor(id: string, number: number): string {
+  const safeId = id
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+  return `threadleaf-footnote-${number}-${safeId || "note"}`;
+}
+
+function renderFootnoteSection(
+  collection: FootnoteCollection,
+  environment: MarkdownPreviewEnvironment,
+): string {
+  if (collection.definitions.length === 0) return "";
+  const footnoteEnvironment: MarkdownPreviewEnvironment = {
+    ...environment,
+    threadleafSourceText: "",
+    threadleafSourceOnlyLineStarts: new Set(),
+    threadleafSourceOnlySentinel: "",
+    threadleafInlineMathSource: null,
+    threadleafInlineMathCandidates: null,
+    threadleafInlineMathRejectedRanges: new Map(),
+    threadleafInlineMathUnmatchedOpeners: new Set(),
+    threadleafInlineMathCandidatesSeen: 0,
+  };
+  const firstLine = collection.definitions[0]?.sourceLine ?? 1;
+  const items = collection.definitions
+    .map((definition, index) => {
+      const number = index + 1;
+      const anchor = footnoteAnchor(definition.id, number);
+      const rendered = markdown.renderInline(definition.content, footnoteEnvironment);
+      const references = environment.threadleafFootnoteReferences.get(definition.id) ?? 0;
+      const backrefs = Array.from({ length: references }, (_, referenceIndex) => {
+        const reference = `${anchor}-ref-${referenceIndex + 1}`;
+        return `<a class="preview-footnote-backref" href="#${reference}" aria-label="Back to footnote ${number}">↩</a>`;
+      }).join(" ");
+      return `<li id="${anchor}" data-source-line="${definition.sourceLine}" data-threadleaf-footnote="${escapeAttribute(definition.id)}"><span class="preview-footnote-number">${number}.</span><span class="preview-footnote-content">${rendered}</span>${backrefs ? `<span class="preview-footnote-backrefs">${backrefs}</span>` : ""}</li>`;
+    })
+    .join("");
+  return `<section class="preview-footnotes" data-source-line="${firstLine}" data-threadleaf-footnote="section"><h2>Footnotes</h2><ol>${items}</ol></section>`;
+}
+
 function canvasEmbedPlaceholder(target: string, label: string): string {
   return `<span class="preview-canvas-embed-placeholder" role="status" aria-label="Loading embedded canvas ${escapeAttribute(label)}" data-threadleaf-canvas-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-alt="${escapeAttribute(label)}">Embedded canvas: ${escapeText(label)}</span>`;
 }
@@ -199,6 +506,9 @@ const markdown = new MarkdownIt({
 });
 
 markdown.inline.ruler.before("image", "threadleaf_wikilink", wikiLinkRule);
+markdown.inline.ruler.before("text", "threadleaf_footnote_ref", footnoteReferenceRule);
+markdown.inline.ruler.before("text", "threadleaf_math_inline", mathInlineRule);
+markdown.block.ruler.before("fence", "threadleaf_math_block", mathBlockRule);
 
 markdown.core.ruler.after("block", "threadleaf_source_lines", (state) => {
   for (const token of state.tokens) {
@@ -231,6 +541,32 @@ markdown.renderer.rules.threadleaf_wikilink = (tokens, index) => {
   return `<a href="#" class="${classes}" data-threadleaf-link="wiki" data-threadleaf-target="${escapeAttribute(link.target)}" data-threadleaf-subpath="${escapeAttribute(link.subpath ?? "")}" data-threadleaf-embed="${String(link.embed)}">${escapeText(label)}</a>`;
 };
 
+markdown.renderer.rules.threadleaf_math_inline = (tokens, index) => {
+  const expression = String(tokens[index]?.meta?.expression ?? "");
+  const rendered = renderSafeMath(expression);
+  if (!rendered) return escapeText(`$${expression}$`);
+  return `<span class="preview-math" role="math" data-threadleaf-math="inline" aria-label="${escapeAttribute(rendered.text)}">${rendered.html}</span>`;
+};
+
+markdown.renderer.rules.threadleaf_math_block = (tokens, index) => {
+  const expression = String(tokens[index]?.meta?.expression ?? "");
+  const rendered = renderSafeMath(expression);
+  if (!rendered) return escapeText(`$$\n${expression}\n$$`);
+  return `<div class="preview-math-block" role="math" data-threadleaf-math="block" aria-label="${escapeAttribute(rendered.text)}">${rendered.html}</div>`;
+};
+
+markdown.renderer.rules.threadleaf_footnote_ref = (tokens, index, _options, env) => {
+  const id = String(tokens[index]?.meta?.id ?? "");
+  const environment = previewEnvironment(env);
+  const number = environment ? [...environment.threadleafFootnotes.ids].indexOf(id) + 1 : 0;
+  if (!environment || number < 1) return escapeText(`[^${id}]`);
+  const occurrence = (environment.threadleafFootnoteReferences.get(id) ?? 0) + 1;
+  environment.threadleafFootnoteReferences.set(id, occurrence);
+  const anchor = footnoteAnchor(id, number);
+  const reference = `${anchor}-ref-${occurrence}`;
+  return `<sup class="preview-footnote-ref"><a href="#${anchor}" id="${reference}" data-threadleaf-footnote-ref="true" data-threadleaf-footnote="${escapeAttribute(id)}" aria-label="Footnote ${number}">${number}</a></sup>`;
+};
+
 const renderAlignedTableCell: RendererRule = (tokens, index, options, _env, renderer) => {
   const token = tokens[index];
   if (!token) {
@@ -242,11 +578,25 @@ const renderAlignedTableCell: RendererRule = (tokens, index, options, _env, rend
   if (alignment) {
     token.attrJoin("class", `align-${alignment.toLocaleLowerCase("en-US")}`);
   }
+  if (token.tag === "th") {
+    token.attrSet("scope", "col");
+  }
   return renderer.renderToken(tokens, index, options);
 };
 
 markdown.renderer.rules.th_open = renderAlignedTableCell;
 markdown.renderer.rules.td_open = renderAlignedTableCell;
+
+const defaultTableOpen = markdown.renderer.rules.table_open;
+markdown.renderer.rules.table_open = (tokens, index, options, env, renderer) => {
+  const token = tokens[index];
+  if (!token) return "";
+  token.attrJoin("class", "preview-gfm-table");
+  token.attrSet("data-threadleaf-table", "gfm");
+  return defaultTableOpen
+    ? defaultTableOpen(tokens, index, options, env, renderer)
+    : renderer.renderToken(tokens, index, options);
+};
 
 const defaultLinkOpen = markdown.renderer.rules.link_open;
 markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
@@ -955,10 +1305,61 @@ export async function hydrateMarkdownPreview(
 }
 
 export function renderMarkdownPreview(source: string): DocumentFragment {
-  const html = markdown.render(maskFrontmatter(source));
+  const frontmatter = scanFrontmatter(source);
+  if (frontmatter.status === "unresolved") {
+    const fallback = DOMPurify.sanitize(
+      `<pre class="preview-source-fallback" data-threadleaf-source-fallback="frontmatter">${escapeText(source)}</pre>`,
+      sanitizeConfig,
+    );
+    return fallback;
+  }
+  const footnotes = collectFootnotes(source);
+  const sourceOnlyLineStarts = new Set<number>();
+  const sourceLines = splitSourceLines(source);
+  const lineStarts: number[] = [];
+  const sourceOnlyLines = new Set(footnotes.definitionLines);
+  if (frontmatter.status === "resolved" && frontmatter.closingLine !== null) {
+    for (let lineNumber = 1; lineNumber <= frontmatter.closingLine; lineNumber += 1) {
+      sourceOnlyLines.add(lineNumber);
+    }
+  }
+  const sourceOffsets = sourceLineStarts(source);
+  const sourceOnlySentinel = sourceOnlySentinelFor(source);
+  for (const [index] of sourceLines.entries()) {
+    const sourceOffset = sourceOffsets[index] ?? 0;
+    lineStarts.push(sourceOffset);
+    if (sourceOnlyLines.has(index + 1)) {
+      sourceOnlyLineStarts.add(sourceOffset);
+    }
+  }
+  const environment: MarkdownPreviewEnvironment = {
+    threadleafFootnotes: footnotes,
+    threadleafFootnoteReferences: new Map(),
+    threadleafSourceText: protectSourceOnlyLines(
+      maskFrontmatter(footnotes.body),
+      footnotes.definitionLines,
+      sourceOnlySentinel,
+    ),
+    threadleafLineStarts: lineStarts,
+    threadleafSourceOnlyLineStarts: sourceOnlyLineStarts,
+    threadleafSourceOnlySentinel: sourceOnlySentinel,
+    threadleafInlineMathSource: null,
+    threadleafInlineMathCandidates: null,
+    threadleafInlineMathRejectedRanges: new Map(),
+    threadleafInlineMathUnmatchedOpeners: new Set(),
+    threadleafInlineMathCandidatesSeen: 0,
+  };
+  const bodyHtml = markdown
+    .render(environment.threadleafSourceText, environment)
+    .replaceAll(sourceOnlySentinel, "");
+  const html = bodyHtml + renderFootnoteSection(footnotes, environment);
   const fragment = DOMPurify.sanitize(html, sanitizeConfig);
   for (const anchor of fragment.querySelectorAll<HTMLAnchorElement>("a")) {
-    if (anchor.dataset.threadleafLink) {
+    if (
+      anchor.dataset.threadleafLink ||
+      anchor.dataset.threadleafFootnoteRef ||
+      anchor.classList.contains("preview-footnote-backref")
+    ) {
       continue;
     }
     const destination = anchor.getAttribute("href") ?? "";

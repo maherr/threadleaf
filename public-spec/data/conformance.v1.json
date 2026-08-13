@@ -179,11 +179,15 @@
     {
       "id": "live-preview-source-mapping",
       "title": "Live Preview and source mapping",
-      "status": "verified",
+      "status": "not-verified",
       "label": "normative",
       "scope": "Live, Source, and Read modes share canonical Markdown bytes, bounded UTF-16 source mappings, reveal rules, and explicit source fallbacks.",
       "threadleafVersion": "0.1.0-beta.3",
-      "evidence": ["docs/compatibility/live-preview.md", "src/renderer/live-preview.ts"],
+      "evidence": [
+        "docs/compatibility/live-preview.md",
+        "src/renderer/live-preview.ts",
+        "src/renderer/markdown-extensions.ts"
+      ],
       "gates": [
         {
           "path": "src/renderer/live-preview.test.ts",
@@ -196,7 +200,8 @@
       ],
       "fixtures": [],
       "limitations": [
-        "Frontmatter, tables, raw HTML, and math have no complete first-class Live Preview editing contract. Their bytes remain in the canonical document, but supported decorations may appear within constructs that do not have explicit protection; rejected malformed mappings use source fallbacks."
+        "Duplicate or malformed footnotes, malformed or ambiguous tables, unknown or malformed math, HTML, diagrams, and inline Live Preview processors remain source-visible.",
+        "Canonical Electron Live Preview workflow proof is pending; local unit and static checks do not establish this public conformance claim."
       ]
     },
     {

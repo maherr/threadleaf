@@ -87,4 +87,52 @@ describe("standalone published note", () => {
       "Image was not embedded.",
     );
   });
+
+  it("keeps table, footnote, and safe math semantics in the offline fixture", () => {
+    const root = document.createElement("div");
+    root.append(
+      renderMarkdownPreview(
+        [
+          "| Name | Count |",
+          "| :--- | ---: |",
+          "| Atlas | 42 |",
+          "",
+          "A result $\\alpha + \\frac{1}{2}$ has a note.[^source]",
+          "",
+          "[^source]: The source-backed explanation remains available.",
+        ].join("\n"),
+      ),
+    );
+
+    const parsed = new DOMParser().parseFromString(
+      createStandalonePublishedNoteHtml("Semantic fixture", root),
+      "text/html",
+    );
+    expect(parsed.querySelector("table.preview-gfm-table")).not.toBeNull();
+    expect(parsed.querySelector("th[scope='col'].align-left")?.textContent).toBe("Name");
+    expect(parsed.querySelector("th[scope='col'].align-right")?.textContent).toBe("Count");
+    expect(parsed.querySelector(".preview-math .math-fraction")).not.toBeNull();
+    expect(parsed.querySelector(".preview-footnotes")).not.toBeNull();
+    expect(parsed.querySelector(".preview-footnote-ref")).not.toBeNull();
+    expect(parsed.querySelector("#threadleaf-footnote-1-source")).not.toBeNull();
+  });
+
+  it("publishes unresolved frontmatter as inert source text", () => {
+    const source = [
+      "---",
+      ...Array.from({ length: 256 }, (_, index) => `key${index}: value`),
+      "Body $x$ [[Hidden]]",
+    ].join("\n");
+    const root = document.createElement("div");
+    root.append(renderMarkdownPreview(source));
+
+    const parsed = new DOMParser().parseFromString(
+      createStandalonePublishedNoteHtml("Unresolved frontmatter", root),
+      "text/html",
+    );
+    expect(parsed.body.textContent).toContain("Body $x$ [[Hidden]]");
+    expect(parsed.querySelector(".preview-math")).toBeNull();
+    expect(parsed.querySelector(".vault-link")).toBeNull();
+    expect(parsed.querySelector(".preview-note-embed")).toBeNull();
+  });
 });

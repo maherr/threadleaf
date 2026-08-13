@@ -32,6 +32,7 @@ const contractPath = path.join(rootPath, "docs", "compatibility", "contract.md")
 const migrationPath = path.join(rootPath, "docs", "compatibility", "migration.md");
 const themeContractPath = path.join(rootPath, "docs", "compatibility", "themes.md");
 const livePreviewPath = path.join(rootPath, "docs", "compatibility", "live-preview.md");
+const markdownExtensionsPath = path.join(rootPath, "src", "renderer", "markdown-extensions.ts");
 const jsonCanvasSourcePath = path.join(rootPath, "src", "application", "json-canvas.ts");
 const jsonCanvasDocPath = path.join(rootPath, "docs", "compatibility", "contract.md");
 const workspaceDocPath = path.join(rootPath, "docs", "architecture.md");
@@ -555,7 +556,7 @@ function buildConformanceData(version, registry) {
     {
       id: "live-preview-source-mapping",
       title: "Live Preview and source mapping",
-      status: "verified",
+      status: "not-verified",
       label: "normative",
       scope:
         "Live, Source, and Read modes share canonical Markdown bytes, bounded UTF-16 source mappings, reveal rules, and explicit source fallbacks.",
@@ -563,6 +564,7 @@ function buildConformanceData(version, registry) {
       evidence: [
         sourceRef(livePreviewPath),
         sourceRef(path.join(rootPath, "src", "renderer", "live-preview.ts")),
+        sourceRef(markdownExtensionsPath),
       ],
       gates: [
         gate("src/renderer/live-preview.test.ts", "pnpm test", "Live Preview mapping"),
@@ -574,7 +576,8 @@ function buildConformanceData(version, registry) {
       ],
       fixtures: [],
       limitations: [
-        "Frontmatter, tables, raw HTML, and math have no complete first-class Live Preview editing contract. Their bytes remain in the canonical document, but supported decorations may appear within constructs that do not have explicit protection; rejected malformed mappings use source fallbacks.",
+        "Duplicate or malformed footnotes, malformed or ambiguous tables, unknown or malformed math, HTML, diagrams, and inline Live Preview processors remain source-visible.",
+        "Canonical Electron Live Preview workflow proof is pending; local unit and static checks do not establish this public conformance claim.",
       ],
     },
     {

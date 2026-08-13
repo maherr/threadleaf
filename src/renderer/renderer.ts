@@ -1,6 +1,7 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, Transaction } from "@codemirror/state";
+import type { ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 import {
@@ -105,6 +106,14 @@ import {
   movePaletteSelection,
   type PaletteCommandDescriptor,
 } from "./command-palette-model";
+import {
+  applyEditorTextChanges,
+  type EditorTextChange,
+  type ExternalTextRepresentation,
+  editorTextFromExternal,
+  externalTextFromEditor,
+  externalTextRepresentation,
+} from "./editor-text";
 import { GraphViewController } from "./graph-view";
 import {
   createLivePreviewExtension,
@@ -812,6 +821,13 @@ let suppressPointerActivationPath: string | null = null;
 let workspaceKeyboardShortcutsBound = false;
 let loadedNote: WorkspaceNoteSnapshot | null = null;
 let loadedVaultId: string | null = null;
+let loadedTextRepresentation: ExternalTextRepresentation = externalTextRepresentation("");
+interface EditorTextHistoryEntry {
+  editorText: string;
+  representation: ExternalTextRepresentation;
+}
+let editorTextUndoHistory: EditorTextHistoryEntry[] = [];
+let editorTextRedoHistory: EditorTextHistoryEntry[] = [];
 let pendingDiskNote: WorkspaceNoteSnapshot | null = null;
 let diskChanged = false;
 let editNoticeState: EditNoticeState | null = null;
@@ -999,6 +1015,9 @@ interface WorkspacePaneSession {
   editor: EditorView | null;
   loadedNote: WorkspaceNoteSnapshot | null;
   loadedVaultId: string | null;
+  loadedTextRepresentation: ExternalTextRepresentation;
+  editorTextUndoHistory: EditorTextHistoryEntry[];
+  editorTextRedoHistory: EditorTextHistoryEntry[];
   pendingDiskNote: WorkspaceNoteSnapshot | null;
   diskChanged: boolean;
   editNoticeState: EditNoticeState | null;
@@ -1031,6 +1050,9 @@ function createWorkspacePaneSession(): WorkspacePaneSession {
     editor: null,
     loadedNote: null,
     loadedVaultId: null,
+    loadedTextRepresentation: externalTextRepresentation(""),
+    editorTextUndoHistory: [],
+    editorTextRedoHistory: [],
     pendingDiskNote: null,
     diskChanged: false,
     editNoticeState: null,
@@ -1083,6 +1105,9 @@ function captureActivePaneSession(): void {
   session.editor = editor;
   session.loadedNote = loadedNote;
   session.loadedVaultId = loadedVaultId;
+  session.loadedTextRepresentation = loadedTextRepresentation;
+  session.editorTextUndoHistory = editorTextUndoHistory;
+  session.editorTextRedoHistory = editorTextRedoHistory;
   session.pendingDiskNote = pendingDiskNote;
   session.diskChanged = diskChanged;
   session.editNoticeState = editNoticeState;
@@ -1130,6 +1155,9 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
   }
   loadedNote = session.loadedNote;
   loadedVaultId = session.loadedVaultId;
+  loadedTextRepresentation = session.loadedTextRepresentation;
+  editorTextUndoHistory = session.editorTextUndoHistory;
+  editorTextRedoHistory = session.editorTextRedoHistory;
   pendingDiskNote = session.pendingDiskNote;
   diskChanged = session.diskChanged;
   editNoticeState = session.editNoticeState;
@@ -1227,13 +1255,17 @@ const editorPresentation = new Compartment();
 let editorReadOnly = false;
 
 function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
-  const session = paneSession(paneId);
-  const sourceNotePath =
-    (paneId === activePaneContextId ? loadedNote : session.loadedNote)?.path ?? null;
-  const expectedVaultId = paneId === activePaneContextId ? loadedVaultId : session.loadedVaultId;
+  const sourceNotePath = (): string | null => {
+    const session = paneSession(paneId);
+    return (paneId === activePaneContextId ? loadedNote : session.loadedNote)?.path ?? null;
+  };
+  const expectedVaultId = (): string | null => {
+    const session = paneSession(paneId);
+    return paneId === activePaneContextId ? loadedVaultId : session.loadedVaultId;
+  };
   return {
-    sourceNotePath: () => sourceNotePath,
-    expectedVaultId: () => expectedVaultId,
+    sourceNotePath,
+    expectedVaultId,
     activateLink: (link) => {
       runInPaneContext(paneId, () => void activateLivePreviewLink(link));
     },
@@ -1246,6 +1278,58 @@ function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
 
 function editorPresentationExtension(paneId: WorkspacePaneId) {
   return editingViewMode === "live" ? createLivePreviewExtension(livePreviewOptions(paneId)) : [];
+}
+
+function editorHistoryTarget(
+  history: readonly EditorTextHistoryEntry[],
+  editorText: string,
+): number {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index]?.editorText === editorText) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function updateEditorTextRepresentation(update: ViewUpdate): void {
+  const changes: EditorTextChange[] = [];
+  update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+    changes.push({ from: fromA, to: toA, insert: inserted.toString() });
+  });
+  const nextEditorText = update.state.doc.toString();
+  const userEvents = update.transactions.map((transaction) =>
+    transaction.annotation(Transaction.userEvent),
+  );
+  const isUndo = userEvents.some((event) => event === "undo" || event?.startsWith("undo."));
+  const isRedo = userEvents.some((event) => event === "redo" || event?.startsWith("redo."));
+  if (isUndo || isRedo) {
+    const sourceHistory = isUndo ? editorTextUndoHistory : editorTextRedoHistory;
+    const targetIndex = editorHistoryTarget(sourceHistory, nextEditorText);
+    if (targetIndex >= 0) {
+      // CodeMirror may coalesce several edits into one undo event. Discard
+      // every snapshot from the matched state onward, rather than leaving
+      // intermediate grouped states for a later undo/redo to target.
+      const [target] = sourceHistory.splice(targetIndex);
+      const oppositeHistory = isUndo ? editorTextRedoHistory : editorTextUndoHistory;
+      oppositeHistory.push({
+        editorText: update.startState.doc.toString(),
+        representation: loadedTextRepresentation,
+      });
+      loadedTextRepresentation = target?.representation ?? loadedTextRepresentation;
+      return;
+    }
+  }
+  editorTextUndoHistory.push({
+    editorText: update.startState.doc.toString(),
+    representation: loadedTextRepresentation,
+  });
+  loadedTextRepresentation = applyEditorTextChanges(
+    loadedTextRepresentation,
+    update.startState.doc.toString(),
+    changes,
+  );
+  editorTextRedoHistory = [];
 }
 
 function editorExtensions(paneId: WorkspacePaneId) {
@@ -1271,8 +1355,12 @@ function editorExtensions(paneId: WorkspacePaneId) {
           return;
         }
         if (update.docChanged) {
+          updateEditorTextRepresentation(update);
           const wasDirty = dirty;
-          dirty = loadedNote !== null && update.state.doc.toString() !== loadedNote.content;
+          dirty =
+            loadedNote !== null &&
+            externalTextFromEditor(update.state.doc.toString(), loadedTextRepresentation) !==
+              loadedNote.content;
           if (dirty) {
             scheduleEditorDraftPersistence();
           } else if (wasDirty) {
@@ -1295,10 +1383,11 @@ function createEditorState(
   selection: { anchor: number; head?: number } = { anchor: 0 },
   paneId: WorkspacePaneId = activePaneContextId,
 ): EditorState {
-  const anchor = Math.max(0, Math.min(selection.anchor, content.length));
-  const head = Math.max(0, Math.min(selection.head ?? anchor, content.length));
+  const editorContent = editorTextFromExternal(content);
+  const anchor = Math.max(0, Math.min(selection.anchor, editorContent.length));
+  const head = Math.max(0, Math.min(selection.head ?? anchor, editorContent.length));
   return EditorState.create({
-    doc: content,
+    doc: editorContent,
     selection: { anchor, head },
     extensions: editorExtensions(paneId),
   });
@@ -9289,6 +9378,11 @@ function reconcileEditor(
     loadedNote.revision === incomingNote.revision
   ) {
     loadedNote = incomingNote;
+    if (!dirty) {
+      loadedTextRepresentation = externalTextRepresentation(incomingNote.content);
+      editorTextUndoHistory = [];
+      editorTextRedoHistory = [];
+    }
     return incomingNote;
   }
 
@@ -9296,9 +9390,10 @@ function reconcileEditor(
   if (saving && savingContent === incomingNote.content) {
     loadedNote = incomingNote;
     loadedVaultId = incomingVaultId;
+    loadedTextRepresentation = externalTextRepresentation(incomingNote.content);
     pendingDiskNote = null;
     diskChanged = false;
-    dirty = currentText !== incomingNote.content;
+    dirty = externalTextFromEditor(currentText, loadedTextRepresentation) !== incomingNote.content;
     if (dirty) {
       scheduleEditorDraftPersistence();
     }
@@ -9351,6 +9446,9 @@ function replaceEditorDocument(
   }
   loadedNote = note;
   loadedVaultId = note ? vaultId : null;
+  loadedTextRepresentation = externalTextRepresentation(content);
+  editorTextUndoHistory = [];
+  editorTextRedoHistory = [];
   syncEditorPresentation();
   previewHydrationRequest += 1;
   renderedPreviewPath = null;
@@ -9580,7 +9678,14 @@ async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): 
     }
   }
 
-  if (diskNote?.content === draft.content) {
+  // The editor draft is stored in CodeMirror's LF-only logical form, while
+  // the disk snapshot may retain CR, CRLF, or a BOM. Compare the logical
+  // documents here so an untouched CRLF note is not resurrected as a false
+  // dirty draft merely because its external spelling differs.
+  if (
+    diskNote &&
+    editorTextFromExternal(diskNote.content) === editorTextFromExternal(draft.content)
+  ) {
     clearPersistedEditorDraft(draft.vaultId, draft.draftId, paneId);
     return;
   }
@@ -9595,6 +9700,9 @@ async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): 
     }
     loadedNote = restoredNote;
     loadedVaultId = draft.vaultId;
+    loadedTextRepresentation = externalTextRepresentation(diskNote?.content ?? draft.content);
+    editorTextUndoHistory = [];
+    editorTextRedoHistory = [];
     syncEditorPresentation();
     editorDraftId = draft.draftId;
     editorDraftPersistenceState = "saved";
@@ -10040,7 +10148,7 @@ async function saveActiveNote(): Promise<void> {
   const path = loadedNote.path;
   const expectedRevision = loadedNote.revision;
   const expectedVaultId = loadedVaultId;
-  const content = editor.state.doc.toString();
+  const content = externalTextFromEditor(editor.state.doc.toString(), loadedTextRepresentation);
   saving = true;
   savingContent = content;
   renderEditControls();

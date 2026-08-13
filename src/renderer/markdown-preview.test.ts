@@ -57,6 +57,249 @@ const unavailableImage = async (): Promise<VaultImageResponse> => ({
 });
 
 describe("Markdown reading view", () => {
+  it("renders unambiguous footnotes with local backreferences and source provenance", () => {
+    const source = [
+      "A claim with a note.[^source] A second reference.[^source]",
+      "",
+      "[^source]: The footnote **stays offline** and keeps its source line.",
+    ].join("\n");
+    const rendered = preview(source);
+    const section = rendered.querySelector<HTMLElement>(".preview-footnotes");
+    expect(section?.textContent).toContain("The footnote stays offline");
+    expect(section?.closest<HTMLElement>(".preview-block")?.dataset.sourceLine).toBe("3");
+    expect(rendered.querySelectorAll(".preview-footnote-ref")).toHaveLength(2);
+    expect(rendered.querySelectorAll(".preview-footnote-backref")).toHaveLength(2);
+    expect(rendered.querySelector(".preview-footnote-content strong")?.textContent).toBe(
+      "stays offline",
+    );
+    expect(rendered.textContent).not.toContain("[^source]:");
+    expect(rendered.querySelector(".preview-footnote-ref a")?.getAttribute("href")).toMatch(
+      /^#threadleaf-footnote-/u,
+    );
+  });
+
+  it("keeps duplicate or unknown footnotes as exact visible source", () => {
+    const source = [
+      "Unknown [^missing] and duplicate [^dup].",
+      "",
+      "[^dup]: first definition",
+      "[^dup]: second definition",
+    ].join("\n");
+    const rendered = preview(source);
+    expect(rendered.querySelector(".preview-footnotes")).toBeNull();
+    expect(rendered.textContent).toContain("[^missing]");
+    expect(rendered.textContent).toContain("[^dup]: first definition");
+    expect(rendered.textContent).toContain("[^dup]: second definition");
+  });
+
+  it("renders supported offline math and leaves unknown commands source-visible", () => {
+    const rendered = preview(
+      [
+        "Inline \\(x^2 + \\frac{1}{2}\\) and $\\alpha + \\sqrt{x}$.",
+        "",
+        "$$",
+        "\\sum_{i=1}^{n} i",
+        "$$",
+        "",
+        "Unsupported $\\notARealCommand{x}$ stays source.",
+      ].join("\n"),
+    );
+    expect(rendered.querySelectorAll(".preview-math")).toHaveLength(2);
+    expect(rendered.querySelector(".preview-math .math-fraction")).not.toBeNull();
+    expect(rendered.querySelector(".preview-math .math-sqrt")).not.toBeNull();
+    expect(rendered.querySelector(".preview-math-block .math-script")).not.toBeNull();
+    expect(rendered.querySelector(".preview-math-block")?.textContent).toContain("∑");
+    expect(rendered.textContent).toContain("$\\notARealCommand{x}$");
+    expect(rendered.innerHTML).not.toContain("<script");
+  });
+
+  it("keeps malformed display math source-visible", () => {
+    const source = ["$$", "\\notARealCommand{x}", "$$"].join("\n");
+    const rendered = preview(source);
+    expect(rendered.querySelector(".preview-math-block")).toBeNull();
+    expect(rendered.textContent).toContain("$$");
+    expect(rendered.textContent).toContain("\\notARealCommand{x}");
+  });
+
+  it("keeps an over-budget unclosed display block fully source-visible", () => {
+    const source = [
+      "$$",
+      ...Array.from({ length: 257 }, (_, index) => `line ${index}`),
+      "AFTER",
+    ].join("\n");
+    const rendered = preview(source);
+
+    expect(rendered.querySelector(".preview-math-block")).toBeNull();
+    expect(rendered.textContent).toContain("line 0");
+    expect(rendered.textContent).toContain("line 256");
+    expect(rendered.textContent).toContain("AFTER");
+  });
+
+  it("fails closed for deeply nested and unmatched inline math", () => {
+    let nested = "x";
+    for (let index = 0; index < 2_048; index += 1) {
+      nested = String.raw`\frac{${nested}}{1}`;
+    }
+    const nestedRendered = preview(String.raw`\(${nested}\)`);
+    expect(nestedRendered.querySelector(".preview-math")).toBeNull();
+    expect(nestedRendered.textContent).toContain("frac");
+
+    const unmatched = String.raw`\(`.repeat(50_000);
+    const unmatchedRendered = preview(unmatched);
+    expect(unmatchedRendered.querySelector(".preview-math")).toBeNull();
+    expect(unmatchedRendered.textContent?.length).toBeGreaterThan(0);
+
+    const overlapping = String.raw`\(`.repeat(30_000) + String.raw`x\)`;
+    const overlappingRendered = preview(overlapping);
+    expect(overlappingRendered.querySelector(".preview-math")).toBeNull();
+    expect(overlappingRendered.textContent).toContain("x");
+  });
+
+  it("does not carry an unmatched delimiter cache into another paragraph", () => {
+    const rendered = preview(String.raw`Unmatched \(x
+
+Working $y$`);
+    expect(rendered.querySelectorAll(".preview-math")).toHaveLength(1);
+    expect(rendered.querySelector(".preview-math")?.textContent).toBe("y");
+  });
+
+  it("fails closed when frontmatter has no terminator within the scan budget", () => {
+    const source = [
+      "---",
+      ...Array.from({ length: 255 }, (_, index) => `key${index}: value`),
+      "Body $x$ and [[Embed]]",
+    ].join("\n");
+    const rendered = preview(source);
+
+    expect(rendered.querySelector(".preview-math")).toBeNull();
+    expect(rendered.querySelector("[data-threadleaf-link='wiki']")).toBeNull();
+    expect(rendered.querySelector(".preview-source-fallback")).not.toBeNull();
+    expect(rendered.textContent).toContain("Body $x$ and [[Embed]]");
+  });
+
+  it("preserves CR-only and mixed source boundaries while masking resolved frontmatter", () => {
+    for (const source of [
+      "\uFEFF---\rkind: fixture\r---\rBody $x$ and [[Embed]]",
+      "---\r\nkind: fixture\n---\rBody $x$ and [[Embed]]",
+      "---\nkind: fixture\r---\r\nBody $x$ and [[Embed]]",
+    ]) {
+      const rendered = preview(source);
+      expect(rendered.querySelectorAll(".preview-math")).toHaveLength(1);
+      expect(rendered.querySelectorAll("[data-threadleaf-link='wiki']")).toHaveLength(1);
+      expect(rendered.textContent).not.toContain("kind: fixture");
+      expect(rendered.textContent).toContain("Body x and Embed");
+    }
+  });
+
+  it("preserves UTF-16 offsets while masking astral frontmatter", () => {
+    const rendered = preview("---\r\ntitle: 😀\r\n---\r\nBody $x$ [[Good]]");
+    expect(rendered.querySelectorAll(".preview-math")).toHaveLength(1);
+    expect(rendered.querySelectorAll("[data-threadleaf-link='wiki']")).toHaveLength(1);
+    expect(rendered.textContent).not.toContain("title: 😀");
+    expect(rendered.textContent).toContain("Body x Good");
+  });
+
+  it("fails closed before splitting an enormous unresolved frontmatter body", () => {
+    const source = [
+      "---",
+      ...Array.from({ length: 100_000 }, (_, index) => `key${index}: value`),
+      "Body $x$ and [[Embed]]",
+    ].join("\n");
+    const rendered = preview(source);
+    expect(rendered.querySelector(".preview-source-fallback")).not.toBeNull();
+    expect(rendered.querySelectorAll(".preview-math")).toHaveLength(0);
+    expect(rendered.querySelectorAll("[data-threadleaf-link='wiki']")).toHaveLength(0);
+    expect(rendered.textContent).toContain("key99999: value");
+    expect(rendered.textContent).toContain("Body $x$ and [[Embed]]");
+  });
+
+  it("keeps malformed footnote definitions and continuations source-only", () => {
+    const rendered = preview(
+      [
+        "[^bad id]: malformed definition",
+        "    Continuation $x$ and [[Embed]] stay source.",
+        "Normal $y$ remains renderable.",
+      ].join("\n"),
+    );
+
+    expect(rendered.querySelectorAll(".preview-math")).toHaveLength(1);
+    expect(rendered.textContent).toContain("Continuation $x$ and [[Embed]] stay source.");
+    expect(rendered.querySelector("[data-threadleaf-link='wiki']")).toBeNull();
+  });
+
+  it("keeps malformed footnote regions source-only when they follow another paragraph", () => {
+    const rendered = preview(
+      [
+        "Introductory prose.",
+        "",
+        "[^bad id]: malformed definition",
+        "    Continuation $x$ and [[Embed]] stay source.",
+        "",
+        "Normal $y$ remains renderable.",
+      ].join("\n"),
+    );
+
+    expect(rendered.querySelectorAll(".preview-math")).toHaveLength(1);
+    expect(rendered.querySelector(".preview-math")?.textContent).toBe("y");
+    expect(rendered.textContent).toContain("Continuation $x$ and [[Embed]] stay source.");
+    expect(rendered.querySelector("[data-threadleaf-link='wiki']")).toBeNull();
+  });
+
+  it("masks malformed footnote definitions after Markdown-it deindents them", () => {
+    for (const ending of ["\n", "\r\n", "\r"]) {
+      for (const indentation of ["", " ", "  ", "   "]) {
+        const source = [
+          `${indentation}[^bad id]: malformed $x$ [[Bad]]`,
+          "    continuation $y$ [[Cont]]",
+          "Normal $z$ [[Good]]",
+        ].join(ending);
+        const rendered = preview(source);
+        expect(
+          [...rendered.querySelectorAll(".preview-math")].map((node) => node.textContent),
+        ).toEqual(["z"]);
+        expect(
+          [...rendered.querySelectorAll("[data-threadleaf-link='wiki']")].map(
+            (node) => node.textContent,
+          ),
+        ).toEqual(["Good"]);
+      }
+    }
+  });
+
+  it("does not mask ordinary indented prose", () => {
+    const rendered = preview("   Normal $x$ and [[Good]]");
+    expect(rendered.querySelectorAll(".preview-math")).toHaveLength(1);
+    expect(rendered.querySelectorAll("[data-threadleaf-link='wiki']")).toHaveLength(1);
+  });
+
+  it("does not let source marker characters create a masking collision", () => {
+    const source = [
+      "\u2060\u2061\u2062\u2063\uFFF9\uFFFA",
+      "[^bad id]: source-only $x$ [[Bad]]",
+      "Normal $y$ [[Good]]",
+    ].join("\n");
+    const rendered = preview(source);
+
+    expect([...rendered.querySelectorAll(".preview-math")].map((node) => node.textContent)).toEqual(
+      ["y"],
+    );
+    expect(
+      [...rendered.querySelectorAll("[data-threadleaf-link='wiki']")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["Good"]);
+  });
+
+  it("marks GFM tables with semantic headers and alignment classes", () => {
+    const rendered = preview(["| Name | Count |", "| :--- | ---: |", "| Atlas | 42 |"].join("\n"));
+    const table = rendered.querySelector<HTMLTableElement>("table.preview-gfm-table");
+    expect(table?.dataset.threadleafTable).toBe("gfm");
+    expect(table?.querySelector("th[scope='col'].align-left")?.textContent).toBe("Name");
+    expect(table?.querySelector("th[scope='col'].align-right")?.textContent).toBe("Count");
+    expect(table?.querySelector("td.align-right")?.textContent).toBe("42");
+    expect(table?.querySelector("[style]")).toBeNull();
+  });
+
   it("renders the supported structural subset with source-line controls", () => {
     const rendered = preview(
       [

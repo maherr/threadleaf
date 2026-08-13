@@ -13,6 +13,15 @@ import type {
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
 } from "../shared/contracts";
+import {
+  collectFootnotes,
+  createSafeMathElement,
+  findInlineMathClose,
+  renderSafeMath,
+  scanFrontmatter,
+  sourceLineStarts,
+  splitSourceLines,
+} from "./markdown-extensions";
 
 export type LivePreviewLinkSyntax = "wiki" | "markdown";
 
@@ -119,9 +128,21 @@ export interface InlineTransclusionLimits {
 }
 
 interface ParsedInlineToken extends SourceRange {
-  kind: "link" | "image" | "embed" | "callout" | "tag" | "task" | "source-block";
+  kind:
+    | "link"
+    | "image"
+    | "embed"
+    | "callout"
+    | "tag"
+    | "task"
+    | "footnote-ref"
+    | "math"
+    | "source-block";
   link?: LivePreviewLink;
   label: string;
+  footnoteId?: string;
+  mathExpression?: string;
+  mathDisplay?: boolean;
 }
 
 const rasterImagePattern = /\.(?:gif|jpe?g|png|webp)$/iu;
@@ -204,6 +225,7 @@ export function parseLivePreviewLine(
   text: string,
   lineFrom: number,
   protectedRanges: readonly SourceRange[] = [],
+  options: { footnoteIds?: ReadonlySet<string> } = {},
 ): ParsedInlineToken[] {
   const tokens: ParsedInlineToken[] = [];
   const occupied: SourceRange[] = [];
@@ -338,7 +360,86 @@ export function parseLivePreviewLine(
     add({ from, to: from + match[0].length - prefixLength, kind: "tag", label: match[2] });
   }
 
+  const definition = /^ {0,3}\[\^([^\]\r\n]+)\]:/u.exec(text);
+  if (!definition) {
+    for (const match of text.matchAll(/\[\^([^\]\n]+)\]/gu)) {
+      if (match.index === undefined || !match[1] || isEscaped(text, match.index)) continue;
+      if (options.footnoteIds && !options.footnoteIds.has(match[1])) continue;
+      add({
+        from: lineFrom + match.index,
+        to: lineFrom + match.index + match[0].length,
+        kind: "footnote-ref",
+        label: match[1],
+        footnoteId: match[1],
+      });
+    }
+  }
+
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === "\\" && text[index + 1] === "(" && !isEscaped(text, index)) {
+      const close = findInlineMathClose(text, index, "paren");
+      if (close < 0) break;
+      const expression = text.slice(index + 2, close);
+      add({
+        from: lineFrom + index,
+        to: lineFrom + close + 2,
+        kind: "math",
+        label: expression,
+        mathExpression: expression,
+      });
+      index = close + 1;
+      continue;
+    }
+    if (text[index] !== "$" || text[index + 1] === "$" || isEscaped(text, index)) continue;
+    const close = findInlineMathClose(text, index, "dollar");
+    if (close < 0) {
+      break;
+    }
+    const expression = text.slice(index + 1, close);
+    if (expression.length > 0 && !expression.startsWith(" ") && !expression.endsWith(" ")) {
+      add({
+        from: lineFrom + index,
+        to: lineFrom + close + 1,
+        kind: "math",
+        label: expression,
+        mathExpression: expression,
+      });
+    }
+    index = close;
+  }
+
   return tokens.sort((left, right) => left.from - right.from || left.to - right.to);
+}
+
+function unresolvedFrontmatterMapping(source: string): LivePreviewMapping {
+  const segment: LivePreviewProjectionSegment = {
+    source: sourceRange(0, source.length),
+    rendered: sourceRange(0, source.length),
+    kind: "fallback",
+    editable: true,
+  };
+  const token: LivePreviewMappedToken = {
+    from: 0,
+    to: source.length,
+    kind: "source-block",
+    sourceText: source,
+    renderedText: source,
+    status: "fallback",
+    rendered: sourceRange(0, source.length),
+    segments: source.length > 0 ? [segment] : [],
+  };
+  return {
+    source,
+    rendered: source,
+    tokens: source.length > 0 ? [token] : [],
+    segments: source.length > 0 ? [segment] : [],
+    sourceToRendered: (position) => clampPosition(position, source.length),
+    renderedToSource: (position) => clampPosition(position, source.length),
+    mapRenderedSelection: (selection) => ({
+      from: clampPosition(selection.from, source.length),
+      to: clampPosition(selection.to, source.length),
+    }),
+  };
 }
 
 interface ProjectionOperation {
@@ -377,6 +478,12 @@ function safeToken(token: ParsedInlineToken, source: string): boolean {
   }
   if (token.kind === "tag" || token.kind === "callout" || token.kind === "task") {
     return true;
+  }
+  if (token.kind === "footnote-ref") {
+    return Boolean(token.footnoteId && !/\s/u.test(token.footnoteId));
+  }
+  if (token.kind === "math") {
+    return Boolean(token.mathExpression && renderSafeMath(token.mathExpression));
   }
   if (!token.link || raw.includes("[\n") || raw.includes("]\n")) {
     return false;
@@ -440,6 +547,29 @@ function tokenOperations(
         rendered:
           source.slice(token.from, token.to).toLocaleLowerCase("en-US") === "[x]" ? "☑" : "☐",
         kind: "generated",
+        editable: false,
+        token,
+      },
+    ];
+  }
+  if (token.kind === "footnote-ref") {
+    return [
+      {
+        source: sourceRange(token.from, token.to),
+        rendered: token.footnoteId ?? token.label,
+        kind: "generated",
+        editable: false,
+        token,
+      },
+    ];
+  }
+  if (token.kind === "math" && token.mathExpression) {
+    const rendered = renderSafeMath(token.mathExpression);
+    return [
+      {
+        source: sourceRange(token.from, token.to),
+        rendered: rendered?.text ?? raw,
+        kind: rendered ? "generated" : "fallback",
         editable: false,
         token,
       },
@@ -837,33 +967,56 @@ export function buildLivePreviewMapping(
   source: string,
   options: { protectedRanges?: readonly SourceRange[] } = {},
 ): LivePreviewMapping {
+  const frontmatter = scanFrontmatter(source);
+  if (frontmatter.status === "unresolved") {
+    return unresolvedFrontmatterMapping(source);
+  }
+  const footnotes = collectFootnotes(source);
   const parsed: ParsedInlineToken[] = [];
-  const lines = source.split("\n");
+  const lines = splitSourceLines(source);
+  const lineStarts = sourceLineStarts(source);
+  const frontmatterLines = new Set<number>();
+  if (frontmatter.status === "resolved" && frontmatter.closingLine !== null) {
+    for (let lineNumber = 1; lineNumber <= frontmatter.closingLine; lineNumber += 1) {
+      frontmatterLines.add(lineNumber);
+    }
+  }
   let lineFrom = 0;
-  let inFrontmatter = false;
   for (const [lineIndex, line] of lines.entries()) {
-    parsed.push(...parseLivePreviewLine(line, lineFrom, options.protectedRanges ?? []));
+    const lineNumber = lineIndex + 1;
+    const isFrontmatter = frontmatterLines.has(lineNumber);
     const isFrontmatterFence = /^\s*---\s*\r?$/u.test(line);
     const isTableLine = /^\s*\|.*\|\s*$/u.test(line);
-    const sourceOnlyLine = inFrontmatter || isFrontmatterFence || isTableLine;
-    if ((lineIndex === 0 && isFrontmatterFence) || inFrontmatter) {
+    const isFootnoteSourceLine = footnotes.definitionLines.has(lineNumber);
+    const sourceOnlyLine =
+      isFrontmatter || isFrontmatterFence || isTableLine || isFootnoteSourceLine;
+    if (!sourceOnlyLine) {
+      parsed.push(
+        ...parseLivePreviewLine(line, lineFrom, options.protectedRanges ?? [], {
+          footnoteIds: footnotes.ids,
+        }),
+      );
+    }
+    if (isFrontmatter) {
       parsed.push({
         from: lineFrom,
         to: lineFrom + line.length,
         kind: "source-block",
         label: "frontmatter",
       });
-      if (lineIndex > 0 && isFrontmatterFence) {
-        inFrontmatter = false;
-      } else {
-        inFrontmatter = true;
-      }
     } else if (isTableLine) {
       parsed.push({
         from: lineFrom,
         to: lineFrom + line.length,
         kind: "source-block",
         label: "table",
+      });
+    } else if (isFootnoteSourceLine) {
+      parsed.push({
+        from: lineFrom,
+        to: lineFrom + line.length,
+        kind: "source-block",
+        label: "footnote-definition",
       });
     }
     for (const match of sourceOnlyLine ? [] : line.matchAll(/(?:^|\s)(\[[ xX]\])(?=\s|$)/gu)) {
@@ -877,7 +1030,7 @@ export function buildLivePreviewMapping(
         parsed.push({ from, to, kind: "task", label: marker });
       }
     }
-    lineFrom += line.length + 1;
+    lineFrom = lineStarts[lineIndex + 1] ?? source.length;
   }
   const operations: ProjectionOperation[] = [];
   const mappedTokens: {
@@ -893,7 +1046,7 @@ export function buildLivePreviewMapping(
   }
   lineFrom = 0;
   let parsedIndex = 0;
-  for (const line of lines) {
+  for (const [lineIndex, line] of lines.entries()) {
     const lineTo = lineFrom + line.length;
     while ((parsed[parsedIndex]?.to ?? Number.POSITIVE_INFINITY) <= lineFrom) {
       parsedIndex += 1;
@@ -911,7 +1064,7 @@ export function buildLivePreviewMapping(
     operations.push(
       ...delimiterOperations(line, lineFrom, occupied, options.protectedRanges ?? []),
     );
-    lineFrom += line.length + 1;
+    lineFrom = lineStarts[lineIndex + 1] ?? source.length;
   }
   const uniqueOperations = operations
     .filter((operation) => operation.source.from < operation.source.to)
@@ -1297,6 +1450,10 @@ class EmbedWidget extends WidgetType {
     });
     const expectedVaultId = this.options.expectedVaultId();
     const loadNoteEmbed = this.options.loadNoteEmbed;
+    const isCurrentOwner = (): boolean =>
+      card.isConnected &&
+      this.options.sourceNotePath() === ownerPath &&
+      this.options.expectedVaultId() === expectedVaultId;
     const setStatus = (status: string, title?: string): void => {
       card.dataset.tlTransclusionStatus = status;
       mark.textContent = status === "ready" ? "◇" : `◇ ${status.replaceAll("-", " ")}`;
@@ -1353,7 +1510,7 @@ class EmbedWidget extends WidgetType {
         depth: number,
       ): Promise<void> => {
         for (const link of links) {
-          if (!link.embed || !card.isConnected) {
+          if (!link.embed || !isCurrentOwner()) {
             continue;
           }
           const target = link.target ?? link.path ?? link.label;
@@ -1407,16 +1564,19 @@ class EmbedWidget extends WidgetType {
           try {
             response = await loadNoteEmbed(sourcePath, target, subpath, expectedVaultId);
           } catch {
-            appendNested(
-              sourcePath,
-              target,
-              subpath,
-              "unavailable",
-              null,
-              "The nested embedded note request failed.",
-            );
+            if (isCurrentOwner()) {
+              appendNested(
+                sourcePath,
+                target,
+                subpath,
+                "unavailable",
+                null,
+                "The nested embedded note request failed.",
+              );
+            }
             continue;
           }
+          if (!isCurrentOwner()) return;
           if (response.status === "stale-vault" || response.vaultId !== expectedVaultId) {
             appendNested(
               sourcePath,
@@ -1475,7 +1635,7 @@ class EmbedWidget extends WidgetType {
       };
       void loadNoteEmbed(ownerPath, this.link.target, this.link.subpath, expectedVaultId)
         .then((response) => {
-          if (!card.isConnected) {
+          if (!isCurrentOwner()) {
             return;
           }
           if (response.status === "stale-vault" || response.vaultId !== expectedVaultId) {
@@ -1521,7 +1681,7 @@ class EmbedWidget extends WidgetType {
           );
         })
         .catch(() => {
-          if (card.isConnected) {
+          if (isCurrentOwner()) {
             setStatus("unavailable", "The embedded note request failed.");
           }
         });
@@ -1669,6 +1829,100 @@ class CalloutWidget extends WidgetType {
   }
 }
 
+class FootnoteWidget extends WidgetType {
+  constructor(
+    readonly from: number,
+    readonly to: number,
+    readonly id: string,
+    readonly number: number,
+  ) {
+    super();
+  }
+
+  eq(other: FootnoteWidget): boolean {
+    return (
+      this.from === other.from &&
+      this.to === other.to &&
+      this.id === other.id &&
+      this.number === other.number
+    );
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const reference = document.createElement("sup");
+    reference.className = "tl-live-footnote-ref";
+    reference.textContent = String(this.number);
+    reference.tabIndex = 0;
+    reference.setAttribute("role", "doc-noteref");
+    reference.ariaLabel = `Footnote ${this.number}`;
+    sourceMetadata(reference, this.from, this.to, "footnote-ref");
+    const reveal = (event: MouseEvent | KeyboardEvent): void => {
+      revealSource(view, this.from, event);
+    };
+    reference.addEventListener("mousedown", (event) => {
+      if (event.button === 0) reveal(event);
+    });
+    reference.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") reveal(event);
+    });
+    return reference;
+  }
+}
+
+class MathWidget extends WidgetType {
+  constructor(
+    readonly from: number,
+    readonly to: number,
+    readonly expression: string,
+    readonly display: boolean,
+    readonly revealAt = from,
+  ) {
+    super();
+  }
+
+  eq(other: MathWidget): boolean {
+    return (
+      this.from === other.from &&
+      this.to === other.to &&
+      this.expression === other.expression &&
+      this.display === other.display &&
+      this.revealAt === other.revealAt
+    );
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const math = createSafeMathElement(document, this.expression, this.display);
+    if (!math) {
+      const fallback = document.createElement("span");
+      fallback.textContent = this.expression;
+      return fallback;
+    }
+    math.tabIndex = 0;
+    sourceMetadata(math, this.from, this.to, "math");
+    math.title = "Click to edit the exact math source";
+    math.addEventListener("mousedown", (event) => {
+      if (event.button === 0) revealSource(view, this.revealAt, event);
+    });
+    math.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") revealSource(view, this.revealAt, event);
+    });
+    return math;
+  }
+}
+
+class MathBlockSpacerWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    const spacer = document.createElement("span");
+    spacer.className = "tl-live-math-block-spacer";
+    spacer.ariaHidden = "true";
+    return spacer;
+  }
+
+  eq(): boolean {
+    return true;
+  }
+}
+
 class BulletWidget extends WidgetType {
   toDOM(): HTMLElement {
     const bullet = document.createElement("span");
@@ -1772,12 +2026,237 @@ function visibleLines(view: EditorView): { from: number; to: number; text: strin
   return lines;
 }
 
+interface LiveTableCell {
+  value: string;
+  align: "left" | "center" | "right";
+}
+
+interface LiveTableData {
+  header: LiveTableCell[];
+  rows: LiveTableCell[][];
+}
+
+interface LiveMathBlock {
+  from: number;
+  to: number;
+  expression: string;
+  renderLine: number;
+  lines: SourceRange[];
+}
+
+function tableCells(line: string): string[] {
+  let value = line.trim().replace(/\r$/u, "");
+  if (value.startsWith("|")) value = value.slice(1);
+  if (value.endsWith("|")) value = value.slice(0, -1);
+  const cells: string[] = [];
+  let current = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index] ?? "";
+    if (character === "\\" && value[index + 1] === "|") {
+      current += "|";
+      index += 1;
+    } else if (character === "|") {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += character;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function tableAlignment(value: string): "left" | "center" | "right" | null {
+  if (!/^:?-{1,}:?$/u.test(value)) return null;
+  if (value.startsWith(":") && value.endsWith(":")) return "center";
+  if (value.endsWith(":")) return "right";
+  return "left";
+}
+
+function parseLiveTable(source: string): LiveTableData | null {
+  const lines = source.split(/\r?\n/u);
+  if (lines.length < 2 || lines.some((line) => line.trim().length === 0)) return null;
+  const headerValues = tableCells(lines[0] ?? "");
+  const separators = tableCells(lines[1] ?? "");
+  if (headerValues.length === 0 || separators.length !== headerValues.length) return null;
+  const alignments = separators.map(tableAlignment);
+  if (alignments.some((alignment): alignment is null => alignment === null)) return null;
+  const header = headerValues.map((value, index) => ({
+    value,
+    align: alignments[index] as "left" | "center" | "right",
+  }));
+  const rows: LiveTableCell[][] = [];
+  for (const line of lines.slice(2)) {
+    const values = tableCells(line);
+    if (values.length !== header.length) return null;
+    rows.push(
+      values.map((value, index) => ({
+        value,
+        align: header[index]?.align ?? "left",
+      })),
+    );
+  }
+  return { header, rows };
+}
+
+function collectVisibleMathBlocks(
+  view: EditorView,
+  protectedRanges: readonly SourceRange[],
+): LiveMathBlock[] {
+  const blocks: LiveMathBlock[] = [];
+  const scannedStarts = new Set<number>();
+  for (const visible of view.visibleRanges) {
+    // Include a bounded look-behind so scrolling into the middle or closing
+    // delimiter of a block still discovers its opening marker.
+    const firstLine = Math.max(1, view.state.doc.lineAt(visible.from).number - 64);
+    const lastLine = view.state.doc.lineAt(Math.min(visible.to, view.state.doc.length)).number;
+    for (let lineNumber = firstLine; lineNumber <= lastLine; lineNumber += 1) {
+      if (scannedStarts.has(lineNumber)) continue;
+      scannedStarts.add(lineNumber);
+      const opening = view.state.doc.line(lineNumber);
+      const marker = opening.text.trim();
+      const closingMarker = marker === "$$" ? "$$" : marker === "\\[" ? "\\]" : null;
+      if (!closingMarker) continue;
+      const expressionLines: string[] = [];
+      let closingLine: { from: number; to: number; number: number } | null = null;
+      for (
+        let candidateNumber = lineNumber + 1;
+        candidateNumber <= view.state.doc.lines && candidateNumber <= lineNumber + 64;
+        candidateNumber += 1
+      ) {
+        const candidate = view.state.doc.line(candidateNumber);
+        if (candidate.text.trim() === closingMarker) {
+          closingLine = candidate;
+          break;
+        }
+        expressionLines.push(candidate.text);
+      }
+      if (!closingLine || expressionLines.join("\n").trim().length === 0) continue;
+      const lineRanges: SourceRange[] = [];
+      for (let number = lineNumber; number <= closingLine.number; number += 1) {
+        const current = view.state.doc.line(number);
+        lineRanges.push({ from: current.from, to: current.to });
+      }
+      const blockRange = { from: opening.from, to: closingLine.to };
+      if (lineRanges.some((range) => intersectsAny(range, protectedRanges))) continue;
+      const expression = expressionLines.join("\n");
+      if (!renderSafeMath(expression)) continue;
+      blocks.push({
+        from: blockRange.from,
+        to: blockRange.to,
+        expression,
+        renderLine: lineNumber + 1,
+        lines: lineRanges,
+      });
+      // The close marker is part of this block and must not start another
+      // scan when a visible range begins near the end of the block.
+      for (let number = lineNumber; number <= closingLine.number; number += 1) {
+        scannedStarts.add(number);
+      }
+    }
+  }
+  return blocks;
+}
+
+function collectSourceOnlyLineNumbers(
+  view: EditorView,
+  footnoteDefinitionLines: ReadonlySet<number>,
+): Set<number> {
+  const sourceOnly = new Set(footnoteDefinitionLines);
+  const frontmatter = scanFrontmatter(view.state.doc.toString());
+  if (frontmatter.status === "unresolved") {
+    for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
+      sourceOnly.add(lineNumber);
+    }
+  } else if (frontmatter.status === "resolved" && frontmatter.closingLine !== null) {
+    for (let lineNumber = 1; lineNumber <= frontmatter.closingLine; lineNumber += 1) {
+      sourceOnly.add(lineNumber);
+    }
+  }
+  return sourceOnly;
+}
+
+type LiveTableRowKind = "header" | "separator" | "body";
+
+class TableRowWidget extends WidgetType {
+  constructor(
+    readonly sourceFrom: number,
+    readonly sourceTo: number,
+    readonly kind: LiveTableRowKind,
+    readonly cells: readonly LiveTableCell[],
+    readonly columns: number,
+    readonly lineSource: string,
+  ) {
+    super();
+  }
+
+  eq(other: TableRowWidget): boolean {
+    return (
+      this.sourceFrom === other.sourceFrom &&
+      this.sourceTo === other.sourceTo &&
+      this.kind === other.kind &&
+      this.columns === other.columns &&
+      this.lineSource === other.lineSource &&
+      this.cells.length === other.cells.length &&
+      this.cells.every(
+        (cell, index) =>
+          cell.value === other.cells[index]?.value && cell.align === other.cells[index]?.align,
+      )
+    );
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const frame = document.createElement("span");
+    frame.className = `tl-live-table-widget tl-live-table-row-${this.kind}`;
+    frame.tabIndex = 0;
+    frame.setAttribute("role", "row");
+    sourceMetadata(frame, this.sourceFrom, this.sourceTo, "table");
+    frame.title = "Click to edit the exact table source";
+    const reveal = (event: MouseEvent | KeyboardEvent): void => {
+      revealSource(view, this.sourceFrom, event);
+    };
+    frame.addEventListener("mousedown", (event) => {
+      if (event.button === 0) reveal(event);
+    });
+    frame.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") reveal(event);
+    });
+    if (this.kind === "separator") {
+      frame.ariaHidden = "true";
+      return frame;
+    }
+    frame.style.setProperty("--tl-live-table-columns", String(this.columns));
+    for (const cell of this.cells) {
+      const element = document.createElement("span");
+      element.className = `tl-live-table-cell align-${cell.align}`;
+      element.setAttribute("role", this.kind === "header" ? "columnheader" : "cell");
+      element.textContent = cell.value;
+      frame.append(element);
+    }
+    return frame;
+  }
+}
+
 function buildDecorations(view: EditorView, options: LivePreviewOptions): DecorationSet {
   const ranges: Range<Decoration>[] = [];
   const active = activeLineRanges(view);
+  const source = view.state.doc.toString();
+  const frontmatter = scanFrontmatter(source);
+  if (frontmatter.status === "unresolved") {
+    return Decoration.none;
+  }
+  const footnotes = collectFootnotes(source);
+  const footnoteNumbers = new Map([...footnotes.ids].map((id, index) => [id, index + 1] as const));
   const protectedRanges: SourceRange[] = [];
+  const sourceOnlyLineNumbers = collectSourceOnlyLineNumbers(view, footnotes.definitionLines);
+  const sourceOnlyRanges = [...sourceOnlyLineNumbers].map((lineNumber) => {
+    const line = view.state.doc.line(lineNumber);
+    return { from: line.from, to: line.to };
+  });
+  protectedRanges.push(...sourceOnlyRanges);
   const replacedRanges: SourceRange[] = [];
   const fallbackRanges: SourceRange[] = [];
+  const tableRanges: SourceRange[] = [];
   const lineClasses = new Map<number, Set<string>>();
   const addLineClass = (position: number, className: string): void => {
     const line = view.state.doc.lineAt(Math.min(position, view.state.doc.length));
@@ -1805,16 +2284,99 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
         if (["InlineCode", "FencedCode", "CodeText", "HTMLBlock", "HTMLTag"].includes(node.name)) {
           protectedRanges.push({ from: node.from, to: node.to });
         }
+        if (node.name === "Table") {
+          const range = { from: node.from, to: node.to };
+          if (
+            !intersectsAny(range, sourceOnlyRanges) &&
+            !intersectsAny(range, active) &&
+            !tableRanges.some(
+              (candidate) => candidate.from === range.from && candidate.to === range.to,
+            )
+          ) {
+            tableRanges.push(range);
+          }
+        }
       },
     });
   }
 
+  const validTableRanges = tableRanges.filter((range) =>
+    Boolean(parseLiveTable(view.state.doc.sliceString(range.from, range.to))),
+  );
+  tableRanges.length = 0;
+  tableRanges.push(...validTableRanges);
+  const mathBlocks = collectVisibleMathBlocks(view, protectedRanges);
+  for (const range of tableRanges) {
+    const source = view.state.doc.sliceString(range.from, range.to);
+    const data = parseLiveTable(source);
+    if (!data) continue;
+    const rows: { kind: LiveTableRowKind; cells: readonly LiveTableCell[] }[] = [
+      { kind: "header", cells: data.header },
+      { kind: "separator", cells: [] },
+      ...data.rows.map((cells) => ({ kind: "body" as const, cells })),
+    ];
+    const startLine = view.state.doc.lineAt(range.from);
+    const endLine = view.state.doc.lineAt(Math.max(range.from, range.to - 1));
+    if (endLine.number - startLine.number + 1 !== rows.length) continue;
+    let line = startLine;
+    for (const row of rows) {
+      const lineSource = view.state.doc.sliceString(line.from, line.to);
+      ranges.push(
+        Decoration.replace({
+          widget: new TableRowWidget(
+            line.from,
+            line.to,
+            row.kind,
+            row.cells,
+            data.header.length,
+            lineSource,
+          ),
+          inclusive: true,
+        }).range(line.from, line.to),
+      );
+      replacedRanges.push({ from: line.from, to: line.to });
+      if (line.number === endLine.number) break;
+      line = view.state.doc.line(line.number + 1);
+    }
+  }
+
   for (const line of visibleLines(view)) {
+    if (tableRanges.some((range) => rangesIntersect(range, { from: line.from, to: line.to }))) {
+      continue;
+    }
+    const lineRange = { from: line.from, to: line.to };
+    const lineNumber = view.state.doc.lineAt(line.from).number;
+    if (sourceOnlyLineNumbers.has(lineNumber)) {
+      if (footnotes.definitionLines.has(lineNumber)) {
+        addLineClass(line.from, "tl-live-footnote-definition-line");
+      }
+      continue;
+    }
+    const mathBlock = mathBlocks.find((block) =>
+      block.lines.some((range) => range.from === line.from && range.to === line.to),
+    );
+    if (mathBlock && !intersectsAny({ from: mathBlock.from, to: mathBlock.to }, active)) {
+      const widget =
+        view.state.doc.lineAt(line.from).number === mathBlock.renderLine
+          ? new MathWidget(
+              mathBlock.from,
+              mathBlock.to,
+              mathBlock.expression,
+              true,
+              view.state.doc.line(mathBlock.renderLine).from,
+            )
+          : new MathBlockSpacerWidget();
+      ranges.push(Decoration.replace({ widget, inclusive: true }).range(line.from, line.to));
+      replacedRanges.push(lineRange);
+      continue;
+    }
     const lineActive = intersectsAny(
       { from: line.from, to: Math.max(line.from + 1, line.to) },
       active,
     );
-    const tokens = parseLivePreviewLine(line.text, line.from, protectedRanges);
+    const tokens = parseLivePreviewLine(line.text, line.from, protectedRanges, {
+      footnoteIds: footnotes.ids,
+    });
     const localProtectedRanges = protectedRanges
       .filter((range) => rangesIntersect(range, { from: line.from, to: line.to }))
       .map((range) => ({
@@ -1867,6 +2429,12 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
         widget = new ImageWidget(token.from, token.to, token.link, options);
       } else if (token.kind === "embed" && token.link) {
         widget = new EmbedWidget(token.from, token.to, token.link, options);
+      } else if (token.kind === "footnote-ref" && token.footnoteId) {
+        const number = footnoteNumbers.get(token.footnoteId);
+        if (!number) continue;
+        widget = new FootnoteWidget(token.from, token.to, token.footnoteId, number);
+      } else if (token.kind === "math" && token.mathExpression) {
+        widget = new MathWidget(token.from, token.to, token.mathExpression, false);
       } else if (token.link) {
         widget = new LinkWidget(token.from, token.to, token.link, options);
       } else {
@@ -1883,6 +2451,9 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
       to: visible.to,
       enter(node) {
         const nodeRange = { from: node.from, to: node.to };
+        if (intersectsAny(nodeRange, sourceOnlyRanges)) {
+          return;
+        }
         const replaced = intersectsAny(nodeRange, replacedRanges);
         const inactive = sameInactiveLine(view, nodeRange, active);
         const mark = (className: string): void => {
@@ -1973,7 +2544,9 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
             addNodeLines(node.from, node.to, "tl-live-code-line");
             break;
           case "Table":
-            addNodeLines(node.from, node.to, "tl-live-table-line");
+            if (!replaced) {
+              addNodeLines(node.from, node.to, "tl-live-table-line");
+            }
             break;
           case "HorizontalRule":
             addLineClass(node.from, "tl-live-rule-line");
