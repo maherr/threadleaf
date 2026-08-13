@@ -6,11 +6,21 @@
     "nodeMajor": 22,
     "display": "xvfb-x11"
   },
+  "fixture": {
+    "root": "fixtures/vaults/visual-regression",
+    "treeSha256": "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff"
+  },
   "cache": {
     "defaultDirectory": "$XDG_CACHE_HOME/threadleaf/community-themes-v1",
     "networkPolicy": "acquisition-only",
     "runtimeNetwork": "forbidden",
     "shippedThirdPartyAssets": false
+  },
+  "sourceUpdate": {
+    "kind": "manual-receipt-refresh",
+    "watcherPath": ".obsidian/themes/<folder>/theme.css",
+    "watcherEvent": "filesystem-event",
+    "reload": "complete-appearance-rescan"
   },
   "themes": [
     {
@@ -23,6 +33,7 @@
       "commitUrl": "https://github.com/kepano/obsidian-minimal/commit/dc4ebf23b3183ff7aa661ea452d26f5bbe909b17",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/kepano/obsidian-minimal/dc4ebf23b3183ff7aa661ea452d26f5bbe909b17/LICENSE",
+      "shippedThirdPartyAssets": false,
       "pattern": "variable-rich workspace and embedded data assets",
       "files": [
         {
@@ -52,6 +63,7 @@
       "commitUrl": "https://github.com/Bluemoondragon07/Wikipedia-Theme/commit/b3187a105ebc4c28693777d228fd1707d3c01c06",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/Bluemoondragon07/Wikipedia-Theme/b3187a105ebc4c28693777d228fd1707d3c01c06/LICENSE",
+      "shippedThirdPartyAssets": false,
       "pattern": "font-face declarations and document-oriented layout selectors",
       "files": [
         {
@@ -81,6 +93,7 @@
       "commitUrl": "https://github.com/jdanielmourao/obsidian-sanctum/commit/ac69e5992a66d2aeabb30d8c2d90c636d155fc25",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/jdanielmourao/obsidian-sanctum/ac69e5992a66d2aeabb30d8c2d90c636d155fc25/LICENSE",
+      "shippedThirdPartyAssets": false,
       "pattern": "media-driven workspace and data-backed icon assets",
       "files": [
         {
@@ -116,6 +129,13 @@
       "viewport": "laptop",
       "highContrast": true
     },
+    {
+      "id": "light-high-contrast",
+      "theme": "minimal",
+      "scheme": "light",
+      "viewport": "laptop",
+      "highContrast": true
+    },
     { "id": "dark-laptop", "theme": "wikipedia", "scheme": "dark", "viewport": "laptop" },
     { "id": "light-laptop", "theme": "wikipedia", "scheme": "light", "viewport": "laptop" },
     { "id": "light-minimum", "theme": "wikipedia", "scheme": "light", "viewport": "minimum" },
@@ -126,6 +146,13 @@
       "viewport": "laptop",
       "highContrast": true
     },
+    {
+      "id": "light-high-contrast",
+      "theme": "wikipedia",
+      "scheme": "light",
+      "viewport": "laptop",
+      "highContrast": true
+    },
     { "id": "dark-laptop", "theme": "sanctum", "scheme": "dark", "viewport": "laptop" },
     { "id": "light-laptop", "theme": "sanctum", "scheme": "light", "viewport": "laptop" },
     { "id": "light-minimum", "theme": "sanctum", "scheme": "light", "viewport": "minimum" },
@@ -133,6 +160,13 @@
       "id": "dark-high-contrast",
       "theme": "sanctum",
       "scheme": "dark",
+      "viewport": "laptop",
+      "highContrast": true
+    },
+    {
+      "id": "light-high-contrast",
+      "theme": "sanctum",
+      "scheme": "light",
       "viewport": "laptop",
       "highContrast": true
     }

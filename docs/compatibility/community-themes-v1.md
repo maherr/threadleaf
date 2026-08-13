@@ -1,6 +1,6 @@
 # Community theme visual matrix v1
 
-**Last updated:** 2026-08-13T04:07:33-04:00
+**Last updated:** 2026-08-13T14:07:02-04:00
 
 This is a contained-loader compatibility fixture, not a theme store. The matrix uses three
 permissively licensed, open community themes that exercise different CSS shapes. The raw CSS,
@@ -55,12 +55,27 @@ therefore exercised through the same bridge and CSS style element used by the ap
 runner launches Electron under Xvfb with explicit X11, records the renderer command line, and
 captures only the bounded viewport surface.
 
-For each theme it proves four cases: dark laptop, light laptop, light minimum viewport, and dark
-high contrast. It also proves the file-navigation `aria-current` and glyph cues, a non-color focus
-outline, direct CSS validation, zero HTTP(S) renderer requests, and two Machado deuteranomaly
-transforms (moderate and stress) against the app-owned focus cue. Baselines live under
-`visual/community-baselines/` and are checked with dimensions, hashes, and bounded pixel drift.
-Use `pnpm run community-theme:update` only when intentionally regenerating those derived PNGs.
+For each theme it declares five cases: dark laptop, light laptop, light minimum viewport, dark high
+contrast, and light high contrast. The committed matrix currently marks the three high-contrast
+cases as `dynamic-renderer-proof` pending because this writer lane has no Electron/Xvfb runtime;
+the normal checker refuses to call them passed until a real capture is committed. The live probe
+also audits accessible names, `aria-current` and glyph cues, painted-ancestor alpha compositing,
+non-color focus cues, pairwise CIEDE2000 separation (at least 7 for categorical colours and 11 for
+thin states under Machado deuteranomaly severities 0.6 and 0.8), explicit scrollbar geometry, zero
+HTTP(S) renderer requests, and the exact hash of the served freshly built renderer bundle.
+Baselines live under `visual/community-baselines/` and are checked against the fixture tree,
+pinned renderer/environment, exact source receipts, dimensions, hashes, and bounded pixel drift.
+
+The offline integrity route does not inspect the developer cache or require Xvfb:
+
+```sh
+node scripts/check-community-theme-matrix.mjs --integrity-only
+```
+
+It validates the manifest, receipt hashes, PNGs, static positive/red controls, and cache
+containment primitives. Baseline updates are refused whenever CI is detected. Use
+`pnpm run community-theme:update` only when intentionally regenerating derived PNGs on a local
+renderer with the complete cache.
 
 ## Deliberate limits
 

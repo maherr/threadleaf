@@ -1,6 +1,33 @@
 {
   "schemaVersion": 1,
   "matrix": "threadleaf-community-open-themes-v1",
+  "fixtureTreeSha256": "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff",
+  "renderer": {
+    "electron": "43.3.0",
+    "nodeMajor": 22,
+    "display": "xvfb-x11"
+  },
+  "environment": {
+    "path": "visual/environment.v1.json",
+    "sha256": "5972ef3150fcb95ea47d13cf1ca9b5a67a068885399db40413e5a1dae48365b4"
+  },
+  "sourceReceipts": {
+    "minimal": {
+      "theme.css": "4b7e6f55d017465f69ec2a145c11a171cd308e6b7c3a0fba65314f6e2f83fe7b",
+      "manifest.json": "22ca939102aa2eae4ad57b4d77933572bc055d4fee096b9bc00fd8e890680536",
+      "LICENSE": "5439c5837626f72e932960a7500064d0c27a290955c47ba73073f37dd09fd73d"
+    },
+    "wikipedia": {
+      "theme.css": "91258f1f23bc7d6fa9173d76d131a061e1c6ff05cd9cfd9c1b09110715ae4f2a",
+      "manifest.json": "1e147c2099cc30e3bc294cd2063e85827593aecd257d53323e4262ed60485fd6",
+      "LICENSE": "7ee45903067effb13f1b1d6ca4dbd4cf69e9ad84722e3654622238bf1335da11"
+    },
+    "sanctum": {
+      "theme.css": "368643f25c6700d4aaee2b5fbac1a5e1f88ed6dcf55ebe0104d3165bfad20cbc",
+      "manifest.json": "a89eb62ea17aedc4453d537a5b9f856d6bec77246030b2d8fc0d9e11c4dcfb09",
+      "LICENSE": "e47f41c970543cabb188965952eecb4050719352912c77131a0f9fd9d96f47e3"
+    }
+  },
   "cases": {
     "minimal:dark-laptop": {
       "path": "minimal-dark-laptop.png",
@@ -20,6 +47,10 @@
     "minimal:dark-high-contrast": {
       "path": "minimal-dark-high-contrast.png",
       "sha256": "5810093f9455d9a74ca13387adc70e7d9ed758f1d1a4e3eb72f971a74fc2f126",
+      "dimensions": [1180, 820]
+    },
+    "minimal:light-high-contrast": {
+      "pending": "dynamic-renderer-proof",
       "dimensions": [1180, 820]
     },
     "wikipedia:dark-laptop": {
@@ -42,6 +73,10 @@
       "sha256": "fa460ad495a50be268c157f7bdc1b7f94da451acd58861185538c06aedb3a4ea",
       "dimensions": [1180, 820]
     },
+    "wikipedia:light-high-contrast": {
+      "pending": "dynamic-renderer-proof",
+      "dimensions": [1180, 820]
+    },
     "sanctum:dark-laptop": {
       "path": "sanctum-dark-laptop.png",
       "sha256": "f43b177ceb69c125c320958d149104d5af496b0cc178b6b406fd145d3731c898",
@@ -60,6 +95,10 @@
     "sanctum:dark-high-contrast": {
       "path": "sanctum-dark-high-contrast.png",
       "sha256": "32a2d3cfa6473fa9bd8061c6fd8b5ae54c081e97d464d626be84d545d007d3bc",
+      "dimensions": [1180, 820]
+    },
+    "sanctum:light-high-contrast": {
+      "pending": "dynamic-renderer-proof",
       "dimensions": [1180, 820]
     }
   },

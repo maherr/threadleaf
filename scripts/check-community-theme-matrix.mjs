@@ -6,7 +6,10 @@ import path from "node:path";
 import { inflateSync } from "node:zlib";
 import {
   appRoot,
-  cachePath,
+  assertSafeCacheRoot,
+  assertValidManifest,
+  CACHE_FILE_LIMITS,
+  readCommunityCacheFile,
   readCommunityManifest,
   sha256,
   verifyCommunityCache,
@@ -16,8 +19,15 @@ const fixtureRoot = path.join(appRoot, "fixtures", "vaults", "visual-regression"
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const baselineRoot = path.join(appRoot, "visual", "community-baselines");
 const requiredVisual = process.env.THREADLEAF_VISUAL_REQUIRED === "1";
-const updateRequested =
-  process.argv.includes("--update") || process.env.THREADLEAF_VISUAL_UPDATE === "1";
+const args = new Set(process.argv.slice(2));
+const integrityOnly = args.has("--integrity-only");
+const positiveControl = args.has("--positive-control");
+const redControl =
+  args.has("--red-control") || process.env.THREADLEAF_COMMUNITY_THEME_RED_CONTROL === "1";
+const updateRequested = args.has("--update") || process.env.THREADLEAF_VISUAL_UPDATE === "1";
+const isCi = ["CI", "GITHUB_ACTIONS", "BUILDKITE", "GITLAB_CI", "JENKINS_URL"].some(
+  (name) => process.env[name] === "true" || process.env[name] === "1",
+);
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 const output = [];
@@ -137,6 +147,40 @@ async function evaluate(expression) {
   return response.result?.value;
 }
 
+async function assertServedBundleHash(targetUrl) {
+  const rendererRoot = path.join(appRoot, "dist", "renderer");
+  const html = await fs.readFile(path.join(rendererRoot, "index.html"), "utf8");
+  const scripts = [...html.matchAll(/<script[^>]+src="(\.\/assets\/[^" ]+\.js)"/gu)].map(
+    ([, source]) => source,
+  );
+  assert(scripts.length > 0, "Fresh renderer build has no JavaScript bundle receipt.");
+  const source = scripts[0];
+  const relativeAsset = source.slice("./".length).split("/").join(path.sep);
+  const localAsset = path.resolve(rendererRoot, relativeAsset);
+  assert(
+    path.relative(rendererRoot, localAsset) === relativeAsset,
+    `Renderer bundle path escapes the fresh build: ${source}`,
+  );
+  const localBytes = await fs.readFile(localAsset);
+  const expectedHash = sha256(localBytes);
+  const expectedUrl = new URL(source, targetUrl).href;
+  const resource = await waitFor(async () => {
+    const tree = await cdp.send("Page.getResourceTree");
+    const resources = tree.frameTree?.resources ?? [];
+    return resources.find((candidate) => candidate.url === expectedUrl) ?? null;
+  }, `Fresh renderer bundle was not served: ${source}`);
+  const frameId = (await cdp.send("Page.getResourceTree")).frameTree?.frame?.id;
+  assert(frameId, "Renderer resource tree has no main frame.");
+  const content = await cdp.send("Page.getResourceContent", { frameId, url: resource.url });
+  const servedBytes = Buffer.from(content.content, content.base64Encoded ? "base64" : "utf8");
+  const servedHash = sha256(servedBytes);
+  assert(
+    servedHash === expectedHash,
+    `Served renderer bundle hash drifted from the fresh build: ${servedHash} versus ${expectedHash}.`,
+  );
+  return { source, sha256: expectedHash };
+}
+
 async function waitFor(probe, message, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   let last;
@@ -248,15 +292,6 @@ function compareImages(candidate, baseline) {
   };
 }
 
-function parseCssColor(value) {
-  const numbers = value.match(/-?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?/giu)?.map(Number) ?? [];
-  if (value.startsWith("color(srgb") && numbers.length >= 3) return numbers.slice(0, 3);
-  if ((value.startsWith("rgb") || value.startsWith("rgba")) && numbers.length >= 3) {
-    return numbers.slice(0, 3).map((channel) => channel / 255);
-  }
-  return null;
-}
-
 function contrastRatio(left, right) {
   const luminance = (colour) => {
     const linear = colour.map((channel) =>
@@ -269,35 +304,151 @@ function contrastRatio(left, right) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-function deuteranomaly(colour, matrix) {
+const deutanMatrices = new Map([
+  [
+    0.6,
+    [
+      [0.498864, 0.674741, -0.173604],
+      [0.205199, 0.754872, 0.039929],
+      [-0.011131, 0.030969, 0.980162],
+    ],
+  ],
+  [
+    0.8,
+    [
+      [0.422823, 0.781057, -0.203881],
+      [0.245752, 0.709602, 0.044646],
+      [-0.011843, 0.037423, 0.974421],
+    ],
+  ],
+]);
+
+function toLinear(channel) {
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function toSrgb(channel) {
+  const bounded = Math.max(0, Math.min(1, channel));
+  return bounded <= 0.0031308 ? bounded * 12.92 : 1.055 * bounded ** (1 / 2.4) - 0.055;
+}
+
+function deuteranomaly(colour, severity) {
+  const matrix = deutanMatrices.get(severity);
+  assert(matrix, `Unsupported Machado deuteranomaly severity ${severity}.`);
+  const linear = colour.map(toLinear);
   return matrix.map((row) =>
-    Math.max(
-      0,
-      Math.min(
-        1,
-        row.reduce((sum, coefficient, index) => sum + coefficient * colour[index], 0),
-      ),
-    ),
+    toSrgb(row.reduce((sum, coefficient, index) => sum + coefficient * linear[index], 0)),
   );
 }
 
-// Machado 2009 deutan simulation matrices at moderate (0.6) and stress (0.8) severity.
-const deutanMatrices = [
-  [
-    [0.367322, 0.860646, -0.227968],
-    [0.280085, 0.672501, 0.047413],
-    [-0.01182, 0.04294, 0.968881],
-  ],
-  [
-    [0.152286, 1.052583, -0.204868],
-    [0.114503, 0.786281, 0.099216],
-    [-0.003882, -0.048116, 1.051998],
-  ],
-];
+function lab(colour) {
+  const linear = colour.map(toLinear);
+  const x = linear[0] * 0.4124564 + linear[1] * 0.3575761 + linear[2] * 0.1804375;
+  const y = linear[0] * 0.2126729 + linear[1] * 0.7151522 + linear[2] * 0.072175;
+  const z = linear[0] * 0.0193339 + linear[1] * 0.119192 + linear[2] * 0.9503041;
+  const f = (value) => (value > 216 / 24389 ? value ** (1 / 3) : (841 / 108) * value + 4 / 29);
+  const fx = f(x / 0.95047);
+  const fy = f(y);
+  const fz = f(z / 1.08883);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+function ciede2000(left, right) {
+  const [l1, a1, b1] = lab(left);
+  const [l2, a2, b2] = lab(right);
+  const c1 = Math.hypot(a1, b1);
+  const c2 = Math.hypot(a2, b2);
+  const cBar = (c1 + c2) / 2;
+  const g = 0.5 * (1 - Math.sqrt(cBar ** 7 / (cBar ** 7 + 25 ** 7)));
+  const a1p = (1 + g) * a1;
+  const a2p = (1 + g) * a2;
+  const c1p = Math.hypot(a1p, b1);
+  const c2p = Math.hypot(a2p, b2);
+  const hue = (a, b) => ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360;
+  const h1p = hue(a1p, b1);
+  const h2p = hue(a2p, b2);
+  const deltaLp = l2 - l1;
+  const deltaCp = c2p - c1p;
+  let deltaHp;
+  if (c1p * c2p === 0) deltaHp = 0;
+  else {
+    let dh = h2p - h1p;
+    if (dh > 180) dh -= 360;
+    if (dh < -180) dh += 360;
+    deltaHp = 2 * Math.sqrt(c1p * c2p) * Math.sin((dh * Math.PI) / 180 / 2);
+  }
+  const lBar = (l1 + l2) / 2;
+  const cBarP = (c1p + c2p) / 2;
+  let hBarP;
+  if (c1p * c2p === 0) hBarP = h1p + h2p;
+  else {
+    const difference = Math.abs(h1p - h2p);
+    if (difference <= 180) hBarP = (h1p + h2p) / 2;
+    else hBarP = (h1p + h2p + (h1p + h2p < 360 ? 360 : -360)) / 2;
+  }
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const t =
+    1 -
+    0.17 * Math.cos(toRadians(hBarP - 30)) +
+    0.24 * Math.cos(toRadians(2 * hBarP)) +
+    0.32 * Math.cos(toRadians(3 * hBarP + 6)) -
+    0.2 * Math.cos(toRadians(4 * hBarP - 63));
+  const deltaTheta = 30 * Math.exp(-(((hBarP - 275) / 25) ** 2));
+  const rc = 2 * Math.sqrt(cBarP ** 7 / (cBarP ** 7 + 25 ** 7));
+  const sl = 1 + (0.015 * (lBar - 50) ** 2) / Math.sqrt(20 + (lBar - 50) ** 2);
+  const sc = 1 + 0.045 * cBarP;
+  const sh = 1 + 0.015 * cBarP * t;
+  const rt = -Math.sin(toRadians(2 * deltaTheta)) * rc;
+  const dl = deltaLp / sl;
+  const dc = deltaCp / sc;
+  const dh = deltaHp / sh;
+  return Math.sqrt(dl ** 2 + dc ** 2 + dh ** 2 + rt * dc * dh);
+}
+
+function pairwiseDeutanDistance(left, right) {
+  return Object.fromEntries(
+    [...deutanMatrices.keys()].map((severity) => [
+      severity,
+      ciede2000(deuteranomaly(left, severity), deuteranomaly(right, severity)),
+    ]),
+  );
+}
+
+function assertColourPairwise(probe) {
+  const check = (pairs, minimum, category) => {
+    assert(
+      Array.isArray(pairs) && pairs.length >= 2,
+      `Fewer than two ${category} colours were measured.`,
+    );
+    const results = [];
+    for (let leftIndex = 0; leftIndex < pairs.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < pairs.length; rightIndex += 1) {
+        const left = pairs[leftIndex];
+        const right = pairs[rightIndex];
+        assert(left.label && right.label, `${category} pair labels are required.`);
+        assert(left.colour && right.colour, `${category} pair colours are required.`);
+        const distances = pairwiseDeutanDistance(left.colour, right.colour);
+        const minimumDistance = Math.min(...Object.values(distances));
+        assert(
+          minimumDistance >= minimum,
+          `${category} pair ${left.label}/${right.label} has CIEDE2000 ${minimumDistance.toFixed(2)} ` +
+            `under Machado deuteranomaly (minimum ${minimum}).`,
+        );
+        results.push({ labels: [left.label, right.label], distances });
+      }
+    }
+    assert(results.length > 0, `No ${category} colour pairs were measured.`);
+    return results;
+  };
+  return {
+    categorical: check(probe.categorical, 7, "categorical"),
+    thinState: check(probe.thinState, 11, "thin-state"),
+  };
+}
 
 function assertDeuteranomalyCue(probe) {
-  const focus = parseCssColor(probe.focus.color);
-  const background = parseCssColor(probe.focus.backgroundColor);
+  const focus = probe.focus.color;
+  const background = probe.focus.backgroundColor;
   assert(
     focus && background,
     `Focus cue colors were not parseable: ${JSON.stringify(probe.focus)}`,
@@ -306,13 +457,14 @@ function assertDeuteranomalyCue(probe) {
     probe.focus.outlineStyle !== "none" && probe.focus.outlineWidth >= 2,
     "Focus cue lost its non-color outline.",
   );
-  const ratios = deutanMatrices.map((matrix) =>
-    contrastRatio(deuteranomaly(focus, matrix), deuteranomaly(background, matrix)),
+  const ratios = [...deutanMatrices.keys()].map((severity) =>
+    contrastRatio(deuteranomaly(focus, severity), deuteranomaly(background, severity)),
   );
   assert(
     Math.min(...ratios) >= 1.5,
     `Focus cue is too weak under deuteranomaly: ${ratios.join(", ")}`,
   );
+  const colourPairs = assertColourPairwise(probe);
   assert(probe.active.ariaCurrent === "page", "Active file state lost aria-current semantics.");
   assert(
     probe.active.glyph && probe.active.glyph.trim().length > 0,
@@ -324,7 +476,7 @@ function assertDeuteranomalyCue(probe) {
       probe.active.ariaCurrent !== probe.inactive.ariaCurrent,
     "Active file state has no non-color distinction from an inactive row.",
   );
-  return { stressRatios: ratios, focusColor: focus, backgroundColor: background };
+  return { stressRatios: ratios, focusColor: focus, backgroundColor: background, colourPairs };
 }
 
 async function launch(theme, cacheRoot) {
@@ -336,7 +488,8 @@ async function launch(theme, cacheRoot) {
   const themePath = path.join(vaultPath, ".obsidian", "themes", theme.folder);
   await fs.mkdir(themePath, { recursive: true });
   for (const filename of ["theme.css", "manifest.json"]) {
-    await fs.copyFile(cachePath(cacheRoot, theme.id, filename), path.join(themePath, filename));
+    const bytes = await readCommunityCacheFile(cacheRoot, theme.id, filename);
+    await fs.writeFile(path.join(themePath, filename), bytes, { mode: 0o600 });
   }
   await fs.mkdir(userDataPath, { recursive: true });
   const port = await availablePort();
@@ -378,6 +531,7 @@ async function launch(theme, cacheRoot) {
   await cdp.send("Runtime.enable");
   await cdp.send("Page.enable");
   await cdp.send("Network.enable");
+  await assertServedBundleHash(target.url);
   const expectedPath = await fs.realpath(vaultPath);
   await waitFor(
     async () => {
@@ -543,7 +697,9 @@ async function applyTheme(theme) {
     `Theme ${theme.name} did not load through the contained appearance loader: ${JSON.stringify(lastAppearance)}`,
     15_000,
   );
-  const source = await fs.readFile(cachePath(currentCacheRoot, theme.id, "theme.css"), "utf8");
+  const source = (await readCommunityCacheFile(currentCacheRoot, theme.id, "theme.css")).toString(
+    "utf8",
+  );
   assert(!/@import\b/iu.test(source), `${theme.name} contains a forbidden @import.`);
   assert(!/url\(\s*["']?https?:/iu.test(source), `${theme.name} contains a direct remote URL.`);
   await closeSettings();
@@ -603,41 +759,158 @@ async function setViewport(viewport) {
 
 async function probeCues() {
   const probe = await evaluate(`(() => {
+    const parse = (value) => {
+      const numbers = value.match(/-?(?:\\d*\\.\\d+|\\d+)(?:e[+-]?\\d+)?/giu)?.map(Number) ?? [];
+      if (value.startsWith('color(srgb') && numbers.length >= 3) {
+        return [...numbers.slice(0, 3), numbers.length >= 4 ? numbers[3] : 1];
+      }
+      if ((value.startsWith('rgb') || value.startsWith('rgba')) && numbers.length >= 3) {
+        return [numbers[0] / 255, numbers[1] / 255, numbers[2] / 255, numbers.length >= 4 ? numbers[3] : 1];
+      }
+      return null;
+    };
+    const over = (foreground, background) => {
+      if (!foreground) return background;
+      if (!background || foreground[3] >= 0.999) return foreground.slice(0, 3);
+      const alpha = Math.max(0, Math.min(1, foreground[3]));
+      return foreground.slice(0, 3).map((channel, index) => channel * alpha + background[index] * (1 - alpha));
+    };
+    const paintedBackground = (element) => {
+      const layers = [];
+      for (let current = element; current instanceof HTMLElement; current = current.parentElement) {
+        const background = parse(getComputedStyle(current).backgroundColor);
+        if (background) layers.push(background);
+      }
+      let result = [1, 1, 1];
+      for (const layer of layers.reverse()) result = over(layer, result);
+      return result;
+    };
+    const style = (element) => {
+      const computed = getComputedStyle(element);
+      const backgroundColor = paintedBackground(element);
+      return {
+        backgroundColor,
+        color: over(parse(computed.color), backgroundColor),
+        borderColor: over(parse(computed.borderLeftColor), backgroundColor),
+        borderStyle: computed.borderLeftStyle,
+        borderWidth: computed.borderLeftWidth,
+      };
+    };
     const active = document.querySelector('#file-list [aria-current="page"]');
     const inactive = [...document.querySelectorAll('#file-list .file-item')].find((candidate) => candidate !== active);
     const input = document.querySelector('#file-search');
     if (!(active instanceof HTMLElement) || !(inactive instanceof HTMLElement) || !(input instanceof HTMLElement)) return null;
     input.focus({ focusVisible: true });
-    const style = (element) => {
-      const computed = getComputedStyle(element);
-      return {
-        backgroundColor: computed.backgroundColor,
-        borderStyle: computed.borderLeftStyle,
-        borderWidth: computed.borderLeftWidth,
-        color: computed.color,
-      };
-    };
     const focusStyle = getComputedStyle(input);
-    let focusBackground = focusStyle.backgroundColor;
-    if (focusBackground === "rgba(0, 0, 0, 0)" || focusBackground === "transparent") {
-      for (const selector of [".app-frame", "#main-content", "body", "html"]) {
-        const candidate = document.querySelector(selector);
-        if (!(candidate instanceof HTMLElement)) continue;
-        const background = getComputedStyle(candidate).backgroundColor;
-        if (background !== "rgba(0, 0, 0, 0)" && background !== "transparent") {
-          focusBackground = background;
-          break;
-        }
+    const focusBackground = paintedBackground(input);
+    const roleSelectors = [
+      ['active-file', '#file-list [aria-current="page"]', 'color'],
+      ['section-heading', '#files-heading', 'color'],
+      ['muted-summary', '#filter-summary', 'color'],
+      ['signal-accent', '.toast', 'borderColor'],
+    ];
+    const roleStyles = roleSelectors.map(([label, selector, property]) => {
+      const element = document.querySelector(selector);
+      if (!(element instanceof HTMLElement)) return null;
+      const computed = style(element);
+      return { label, colour: computed[property] };
+    }).filter((entry) => entry?.colour);
+    const activeStyle = style(active);
+    const inactiveStyle = style(inactive);
+    const controls = [...document.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="tab"], [role="option"]')];
+    const accessibleName = (element) => {
+      const labelledBy = element.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        const text = labelledBy.split(/\\s+/u).map((id) => document.getElementById(id)?.textContent ?? '').join(' ').trim();
+        if (text) return text;
       }
-    }
+      const aria = element.getAttribute('aria-label')?.trim();
+      if (aria) return aria;
+      const labels = element.labels?.[0]?.textContent?.trim();
+      if (labels) return labels;
+      const content = element.textContent?.trim();
+      if (content) return content;
+      return element.getAttribute('title')?.trim() ?? '';
+    };
     return {
-      active: { ...style(active), ariaCurrent: active.getAttribute('aria-current'), glyph: active.querySelector('.file-glyph')?.textContent ?? '' },
-      inactive: { ...style(inactive), ariaCurrent: inactive.getAttribute('aria-current') },
-      focus: { color: focusStyle.outlineColor, backgroundColor: focusBackground, outlineStyle: focusStyle.outlineStyle, outlineWidth: Number.parseFloat(focusStyle.outlineWidth) || 0 },
+      active: { ...activeStyle, ariaCurrent: active.getAttribute('aria-current'), glyph: active.querySelector('.file-glyph')?.textContent ?? '' },
+      inactive: { ...inactiveStyle, ariaCurrent: inactive.getAttribute('aria-current') },
+      focus: {
+        color: over(parse(focusStyle.outlineColor), focusBackground),
+        backgroundColor: focusBackground,
+        outlineStyle: focusStyle.outlineStyle,
+        outlineWidth: Number.parseFloat(focusStyle.outlineWidth) || 0,
+      },
+      categorical: roleStyles,
+      thinState: [
+        { label: 'active-file-background', colour: activeStyle.backgroundColor },
+        { label: 'inactive-file-background', colour: inactiveStyle.backgroundColor },
+      ],
+      accessibleNames: controls.filter((element) => !accessibleName(element)).map((element) => ({
+        tag: element.tagName.toLowerCase(), id: element.id, role: element.getAttribute('role'),
+      })),
     };
   })()`);
   assert(probe, "Could not locate the file navigation and focus probe controls.");
+  assert(
+    probe.accessibleNames.length === 0,
+    `Community theme fixture has unnamed interactive controls: ${JSON.stringify(probe.accessibleNames)}`,
+  );
   return { probe, audit: assertDeuteranomalyCue(probe) };
+}
+
+async function probeViewportGeometry(viewport) {
+  const geometry = await evaluate(`(() => {
+    const selectors = ['#file-list', '#main-content', '.note-editor .cm-scroller', '.reading-view'];
+    return {
+      viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+      body: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth },
+      scrollers: selectors.map((selector) => {
+        const element = document.querySelector(selector);
+        if (!(element instanceof HTMLElement)) return { selector, missing: true };
+        const computed = getComputedStyle(element);
+        const thumb = getComputedStyle(element, '::-webkit-scrollbar');
+        return {
+          selector,
+          missing: false,
+          clientWidth: element.clientWidth,
+          offsetWidth: element.offsetWidth,
+          clientHeight: element.clientHeight,
+          offsetHeight: element.offsetHeight,
+          scrollWidth: element.scrollWidth,
+          scrollHeight: element.scrollHeight,
+          overflowX: computed.overflowX,
+          overflowY: computed.overflowY,
+          scrollbarGutter: computed.scrollbarGutter,
+          scrollbarWidth: computed.scrollbarWidth,
+          thumbWidth: thumb.width,
+        };
+      }),
+    };
+  })()`);
+  assert(
+    geometry.viewport.width === viewport.width && geometry.viewport.height === viewport.height,
+    `Viewport geometry drifted from the real capture size: ${JSON.stringify(geometry.viewport)}.`,
+  );
+  assert(
+    geometry.body.scrollWidth <= geometry.body.clientWidth,
+    `Viewport has horizontal page overflow: ${JSON.stringify(geometry.body)}.`,
+  );
+  for (const scroller of geometry.scrollers.filter((candidate) => !candidate.missing)) {
+    if (scroller.scrollHeight > scroller.clientHeight) {
+      assert(
+        ["auto", "scroll"].includes(scroller.overflowY),
+        `${scroller.selector} clips content without vertical overflow affordance.`,
+      );
+      assert(
+        scroller.offsetWidth >= scroller.clientWidth &&
+          (scroller.offsetWidth > scroller.clientWidth ||
+            scroller.scrollbarGutter.includes("stable")),
+        `${scroller.selector} has no measurable scrollbar gutter: ${JSON.stringify(scroller)}.`,
+      );
+    }
+  }
+  return geometry;
 }
 
 async function capture(theme, caseId, outputName) {
@@ -664,8 +937,8 @@ async function runTheme(theme, cacheRoot, baselineManifest) {
     await applyTheme(theme);
     const themeCases = currentManifest.cases.filter((testCase) => testCase.theme === theme.id);
     assert(
-      themeCases.length === 4,
-      `Theme ${theme.id} does not have the four committed matrix cases.`,
+      themeCases.length === 5,
+      `Theme ${theme.id} does not have the five committed matrix cases.`,
     );
     for (const testCase of themeCases) {
       await setScheme(testCase.scheme);
@@ -676,7 +949,8 @@ async function runTheme(theme, cacheRoot, baselineManifest) {
       assert(viewport, `Missing viewport ${testCase.viewport}.`);
       await setViewport(viewport);
       const audit = await probeCues();
-      audits.push({ case: testCase.id, ...audit.audit });
+      const geometry = await probeViewportGeometry(viewport);
+      audits.push({ case: testCase.id, ...audit.audit, geometry });
       const outputName = `${theme.id}-${testCase.id}.png`;
       captures.push(await capture(theme, testCase.id, outputName));
     }
@@ -687,11 +961,11 @@ async function runTheme(theme, cacheRoot, baselineManifest) {
     );
     for (const captureResult of captures) {
       const baseline = baselineManifest.cases?.[captureResult.key];
-      const baselinePath = path.join(
-        baselineRoot,
-        baseline?.path ?? `${captureResult.key.replace(":", "-")}.png`,
-      );
       if (updateRequested) {
+        const baselinePath = path.join(
+          baselineRoot,
+          baseline?.path ?? `${captureResult.key.replace(":", "-")}.png`,
+        );
         await fs.mkdir(path.dirname(baselinePath), { recursive: true });
         await fs.copyFile(captureResult.path, baselinePath);
         baselineManifest.cases[captureResult.key] = {
@@ -702,9 +976,10 @@ async function runTheme(theme, cacheRoot, baselineManifest) {
         continue;
       }
       assert(
-        baselinePath,
-        `No committed baseline for ${captureResult.key}. Run with THREADLEAF_VISUAL_UPDATE=1.`,
+        baseline && !baseline.pending,
+        `No committed baseline for ${captureResult.key}. Dynamic renderer proof is pending; run with THREADLEAF_VISUAL_UPDATE=1.`,
       );
+      const baselinePath = path.join(baselineRoot, baseline.path);
       const baselineBytes = await fs.readFile(baselinePath);
       assert(
         sha256(baselineBytes) === baseline.sha256,
@@ -746,6 +1021,23 @@ async function assertStaticManifest(manifest) {
     "Community theme runtime network policy drifted.",
   );
   assert(
+    manifest.cache.shippedThirdPartyAssets === false,
+    "Community theme assets must not be shipped.",
+  );
+  assert(
+    manifest.sourceUpdate?.watcherPath === ".obsidian/themes/<folder>/theme.css" &&
+      manifest.sourceUpdate.watcherEvent === "filesystem-event" &&
+      manifest.sourceUpdate.reload === "complete-appearance-rescan",
+    "Community theme source-update/watcher seam drifted.",
+  );
+  const checkerSource = await fs.readFile(import.meta.filename, "utf8");
+  const forbiddenCaptureFlag = ["--hide", "scrollbars"].join("-");
+  assert(
+    checkerSource.includes("captureBeyondViewport: false") &&
+      !checkerSource.includes(forbiddenCaptureFlag),
+    "Community theme captures must stay viewport-bounded with native scrollbar geometry.",
+  );
+  assert(
     manifest.themes.length >= 3 && manifest.themes.length <= 5,
     "Community theme matrix is not a small representative set.",
   );
@@ -764,8 +1056,8 @@ async function assertStaticManifest(manifest) {
   }
   for (const themeId of themeIds) {
     assert(
-      manifest.cases.filter((testCase) => testCase.theme === themeId).length === 4,
-      `Theme ${themeId} must have four explicit visual cases.`,
+      manifest.cases.filter((testCase) => testCase.theme === themeId).length === 5,
+      `Theme ${themeId} must have five explicit visual cases including light high contrast.`,
     );
   }
   for (const theme of manifest.themes) {
@@ -796,15 +1088,335 @@ async function assertStaticManifest(manifest) {
   }
 }
 
+function expectedCaseKey(testCase) {
+  return `${testCase.theme}:${testCase.id}`;
+}
+
+async function assertBaselineIntegrity(manifest, baselineManifest) {
+  assert(baselineManifest?.schemaVersion === 1, "Community theme baseline schema is unsupported.");
+  assert(baselineManifest.matrix === manifest.id, "Community theme baseline matrix drifted.");
+  assert(
+    baselineManifest.fixtureTreeSha256 === manifest.fixture.treeSha256,
+    "Community theme baselines are not bound to the fixture tree.",
+  );
+  assert(
+    JSON.stringify(baselineManifest.renderer) === JSON.stringify(manifest.renderer),
+    "Community theme baselines are not bound to the pinned renderer environment.",
+  );
+  const environmentPath = path.resolve(appRoot, baselineManifest.environment?.path ?? "");
+  assert(
+    environmentPath === path.resolve(appRoot, "visual", "environment.v1.json"),
+    "Community theme baseline environment path drifted.",
+  );
+  const environmentBytes = await fs.readFile(environmentPath);
+  assert(
+    sha256(environmentBytes) === baselineManifest.environment.sha256,
+    "Community theme baseline environment receipt drifted.",
+  );
+  const sourceReceipts = Object.fromEntries(
+    manifest.themes.map((theme) => [
+      theme.id,
+      Object.fromEntries(theme.files.map((file) => [file.path, file.sha256])),
+    ]),
+  );
+  assert(
+    JSON.stringify(baselineManifest.sourceReceipts) === JSON.stringify(sourceReceipts),
+    "Community theme baselines are not bound to exact source receipts.",
+  );
+  const expectedCases = new Map(
+    manifest.cases.map((testCase) => [expectedCaseKey(testCase), testCase]),
+  );
+  const actualKeys = Object.keys(baselineManifest.cases ?? {});
+  assert(
+    actualKeys.length === expectedCases.size && actualKeys.every((key) => expectedCases.has(key)),
+    "Community theme baseline cases do not exactly match the declared matrix.",
+  );
+  for (const [key, testCase] of expectedCases) {
+    const baseline = baselineManifest.cases[key];
+    const viewport = manifest.viewports.find((candidate) => candidate.id === testCase.viewport);
+    assert(viewport, `Missing viewport ${testCase.viewport} for ${key}.`);
+    assert(
+      Array.isArray(baseline.dimensions) &&
+        baseline.dimensions.length === 2 &&
+        baseline.dimensions[0] === viewport.width &&
+        baseline.dimensions[1] === viewport.height,
+      `Baseline ${key} dimensions do not match declared viewport ${testCase.viewport}.`,
+    );
+    if (baseline.pending) {
+      assert(
+        baseline.pending === "dynamic-renderer-proof" && !baseline.path && !baseline.sha256,
+        `Baseline ${key} has an invalid pending declaration.`,
+      );
+      continue;
+    }
+    assert(
+      typeof baseline.path === "string" &&
+        !path.isAbsolute(baseline.path) &&
+        !baseline.path.split("/").includes("..") &&
+        /^[^/]+\.png$/u.test(baseline.path),
+      `Baseline ${key} path is not a contained PNG.`,
+    );
+    assert(
+      /^[a-f0-9]{64}$/u.test(baseline.sha256),
+      `Baseline ${key} has no exact SHA-256 receipt.`,
+    );
+    const baselinePath = path.resolve(baselineRoot, baseline.path);
+    assert(
+      path.relative(baselineRoot, baselinePath) === baseline.path,
+      `Baseline ${key} path escapes the baseline root.`,
+    );
+    const bytes = await fs.readFile(baselinePath);
+    assert(sha256(bytes) === baseline.sha256, `Baseline hash mismatch for ${key}.`);
+    const image = decodePng(bytes, `baseline ${key}`);
+    assert(
+      image.width === baseline.dimensions[0] && image.height === baseline.dimensions[1],
+      `Baseline ${key} decoded dimensions differ from its declaration.`,
+    );
+  }
+}
+
+function assertStaticColourControls(manifest) {
+  const validColours = {
+    categorical: [
+      { label: "community:blue", colour: [0.0588, 0.3137, 0.7451] },
+      { label: "community:orange", colour: [0.902, 0.4706, 0.0392] },
+      { label: "community:teal", colour: [0, 0.6078, 0.4706] },
+    ],
+    thinState: [
+      { label: "community:ink", colour: [0.04, 0.05, 0.06] },
+      { label: "community:paper", colour: [0.98, 0.98, 0.96] },
+    ],
+  };
+  assertColourPairwise(validColours);
+  const rejected = {
+    categorical: [
+      { label: "community:red-control", colour: [220 / 255, 140 / 255, 80 / 255] },
+      { label: "community:green-control", colour: [120 / 255, 180 / 255, 80 / 255] },
+    ],
+    thinState: validColours.thinState,
+  };
+  let rejectedAsExpected = false;
+  try {
+    assertColourPairwise(rejected);
+  } catch (error) {
+    rejectedAsExpected = true;
+    process.stdout.write(
+      `COMMUNITY_THEME_STATIC_RED_CONTROL PASS ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  }
+  assert(rejectedAsExpected, "Community theme colour red control did not fail the pairwise gate.");
+  process.stdout.write(
+    `COMMUNITY_THEME_STATIC_CONTROLS PASS themes=${manifest.themes.map((theme) => theme.id).join(",")}\n`,
+  );
+}
+
+function assertManifestNegativeControls(manifest) {
+  const mutations = {
+    repository: (candidate) => {
+      candidate.themes[0].repository += "/";
+    },
+    commitUrl: (candidate) => {
+      candidate.themes[0].commitUrl = candidate.themes[0].repository;
+    },
+    licenseUrl: (candidate) => {
+      candidate.themes[0].licenseUrl = "https://example.invalid/LICENSE";
+    },
+    name: (candidate) => {
+      candidate.themes[0].name = "";
+    },
+    version: (candidate) => {
+      candidate.themes[0].release = "latest";
+    },
+    folder: (candidate) => {
+      candidate.themes[0].folder = "../escape";
+    },
+    shippedThirdPartyAssets: (candidate) => {
+      candidate.themes[0].shippedThirdPartyAssets = true;
+    },
+    path: (candidate) => {
+      candidate.themes[0].files[0].path = "../theme.css";
+    },
+  };
+  for (const [label, mutate] of Object.entries(mutations)) {
+    const candidate = structuredClone(manifest);
+    mutate(candidate);
+    let rejected = false;
+    try {
+      assertValidManifest(candidate);
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `Community theme manifest negative control was accepted: ${label}.`);
+  }
+  process.stdout.write(
+    `COMMUNITY_THEME_MANIFEST_CONTROLS PASS ${Object.keys(mutations).join(",")}\n`,
+  );
+}
+
+async function assertStaticCacheControls(manifest) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-community-cache-controls-"));
+  const safeRoot = path.join(root, "safe-root");
+  const outside = path.join(root, "outside");
+  const theme = manifest.themes[0];
+  const themeRoot = path.join(safeRoot, theme.id);
+  const outsideFile = path.join(outside, "theme.css");
+  await fs.mkdir(themeRoot, { recursive: true, mode: 0o700 });
+  await fs.mkdir(outside, { recursive: true, mode: 0o700 });
+  await fs.writeFile(outsideFile, "outside", { mode: 0o600 });
+  const expectRejected = async (operation, label) => {
+    let rejected = false;
+    try {
+      await operation();
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `Community cache safety control did not reject ${label}.`);
+  };
+  try {
+    await assertSafeCacheRoot(safeRoot);
+    await expectRejected(() => assertSafeCacheRoot(appRoot), "a checkout cache root");
+
+    const rootLink = path.join(root, "root-link");
+    await fs.symlink(safeRoot, rootLink, "dir");
+    await expectRejected(
+      () => readCommunityCacheFile(rootLink, theme.id, "theme.css"),
+      "a symlinked cache root",
+    );
+    await fs.rm(rootLink, { force: true });
+
+    const themeLink = path.join(safeRoot, `${theme.id}-link`);
+    await fs.symlink(outside, themeLink, "dir");
+    await expectRejected(
+      () => readCommunityCacheFile(safeRoot, `${theme.id}-link`, "theme.css"),
+      "a symlinked theme parent",
+    );
+    await fs.rm(themeLink, { force: true });
+
+    const target = path.join(themeRoot, "theme.css");
+    await fs.symlink(outsideFile, target);
+    await expectRejected(
+      () => readCommunityCacheFile(safeRoot, theme.id, "theme.css"),
+      "a symlinked receipt",
+    );
+    await fs.rm(target, { force: true });
+
+    await fs.writeFile(target, Buffer.alloc(CACHE_FILE_LIMITS["theme.css"] + 1, 0x61));
+    await expectRejected(
+      () => readCommunityCacheFile(safeRoot, theme.id, "theme.css"),
+      "an oversized receipt before whole-body read",
+    );
+    await fs.rm(target, { force: true });
+
+    const acquisitionSource = await fs.readFile(
+      path.join(appRoot, "scripts", "acquire-community-theme-fixtures.mjs"),
+      "utf8",
+    );
+    for (const required of ["response.body.getReader()", "O_NOFOLLOW", "O_EXCL", "fs.rename("]) {
+      assert(
+        acquisitionSource.includes(required),
+        `Acquisition safety primitive is missing: ${required}`,
+      );
+    }
+    process.stdout.write(
+      "COMMUNITY_THEME_CACHE_CONTROLS PASS symlink-containment=nofollow atomic-write=bounded-stream\n",
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
+async function runCommunityPositiveControl(baselineManifest) {
+  const candidate = Object.entries(baselineManifest.cases).find(([, value]) => !value.pending);
+  assert(candidate, "Community theme positive control has no committed PNG baseline.");
+  const [key, baseline] = candidate;
+  const bytes = await fs.readFile(path.join(baselineRoot, baseline.path));
+  const image = decodePng(bytes, `baseline ${key}`);
+  const tampered = { ...image, pixels: Buffer.from(image.pixels) };
+  for (let y = 0; y < tampered.height; y += 1) {
+    for (let x = 0; x < tampered.width; x += 1) {
+      const index = (y * tampered.width + x) * 4;
+      tampered.pixels[index] = 255;
+      tampered.pixels[index + 1] = 0;
+      tampered.pixels[index + 2] = 255;
+    }
+  }
+  const comparison = compareImages(tampered, image);
+  assert(
+    comparison.meanAbsoluteRgb > 0.5 && comparison.changedPixelRatio > 0.9,
+    `Community theme positive control was not rejected: ${JSON.stringify(comparison)}`,
+  );
+  process.stdout.write(
+    `COMMUNITY_THEME_POSITIVE_CONTROL PASS ${key} rejected tampered baseline ${JSON.stringify(comparison)}\n`,
+  );
+}
+
 async function main() {
+  if (updateRequested && isCi) {
+    throw new Error("Refusing to update community theme baselines in CI.");
+  }
   currentManifest = await readCommunityManifest();
   await assertStaticManifest(currentManifest);
+  assertManifestNegativeControls(currentManifest);
+  assertStaticColourControls(currentManifest);
+  await assertStaticCacheControls(currentManifest);
+  const baselineManifestPath = path.join(baselineRoot, "manifest.v1.json");
+  let baselineManifest;
+  try {
+    baselineManifest = await readJson(baselineManifestPath);
+  } catch (error) {
+    if (!updateRequested) throw error;
+    baselineManifest = {
+      schemaVersion: 1,
+      matrix: currentManifest.id,
+      fixtureTreeSha256: currentManifest.fixture.treeSha256,
+      renderer: currentManifest.renderer,
+      environment: {
+        path: "visual/environment.v1.json",
+        sha256: sha256(await fs.readFile(path.join(appRoot, "visual", "environment.v1.json"))),
+      },
+      sourceReceipts: Object.fromEntries(
+        currentManifest.themes.map((theme) => [
+          theme.id,
+          Object.fromEntries(theme.files.map((file) => [file.path, file.sha256])),
+        ]),
+      ),
+      cases: {},
+    };
+  }
+  if (Object.keys(baselineManifest.cases ?? {}).length > 0) {
+    await assertBaselineIntegrity(currentManifest, baselineManifest);
+  } else if (integrityOnly || !updateRequested) {
+    throw new Error("Community theme baseline manifest is missing its declared cases.");
+  }
+  if (integrityOnly) {
+    process.stdout.write(
+      `COMMUNITY_THEME_INTEGRITY PASS cases=${currentManifest.cases.length} ` +
+        `pending=${Object.values(baselineManifest.cases ?? {}).filter((entry) => entry.pending).length}\n`,
+    );
+    if (positiveControl || redControl) await runCommunityPositiveControl(baselineManifest);
+    if (redControl) {
+      throw new Error(
+        "COMMUNITY_THEME_RED_CONTROL_EXPECTED_FAILURE: tampered community baseline was rejected.",
+      );
+    }
+    return;
+  }
+  if (positiveControl) {
+    await runCommunityPositiveControl(baselineManifest);
+    return;
+  }
+  if (redControl) {
+    await runCommunityPositiveControl(baselineManifest);
+    throw new Error(
+      "COMMUNITY_THEME_RED_CONTROL_EXPECTED_FAILURE: tampered community baseline was rejected.",
+    );
+  }
   currentCacheRoot = (await verifyCommunityCache(currentManifest)).cacheRoot;
   const verification = await verifyCommunityCache(currentManifest, currentCacheRoot);
   if (!verification.complete) {
     const message =
       `COMMUNITY_THEME_VISUAL_SKIP cache incomplete: ${verification.missing.join(", ")}. ` +
-      "Run `pnpm community-theme:acquire` to opt in to network acquisition.";
+      "Run `pnpm run community-theme:acquire` to opt in to network acquisition.";
     process.stderr.write(`${message}\n`);
     if (requiredVisual) process.exitCode = 1;
     return;
@@ -816,19 +1428,6 @@ async function main() {
     return;
   }
   assert(await fs.stat(electronPath), "Electron executable is missing; run pnpm install.");
-  const baselineManifestPath = path.join(baselineRoot, "manifest.v1.json");
-  let baselineManifest;
-  try {
-    baselineManifest = await readJson(baselineManifestPath);
-  } catch (error) {
-    if (!updateRequested) throw error;
-    baselineManifest = { schemaVersion: 1, matrix: currentManifest.id, cases: {} };
-  }
-  assert(baselineManifest.schemaVersion === 1, "Community theme baseline schema is unsupported.");
-  assert(
-    baselineManifest.matrix === currentManifest.id,
-    "Community theme baseline matrix drifted.",
-  );
   for (const theme of currentManifest.themes) {
     const result = await runTheme(theme, currentCacheRoot, baselineManifest);
     process.stdout.write(

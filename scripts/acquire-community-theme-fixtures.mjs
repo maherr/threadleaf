@@ -1,10 +1,13 @@
-import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
+import { promises as fs, constants as fsConstants } from "node:fs";
 import path from "node:path";
 import {
+  assertNoSymlinkAncestors,
+  assertSafeCacheRoot,
+  CACHE_FILE_LIMITS,
   cachePath,
   defaultCacheRoot,
   readCommunityManifest,
-  sha256,
   verifyCommunityCache,
 } from "./community-theme-fixture.mjs";
 
@@ -17,30 +20,65 @@ function print(message) {
 
 async function acquireFile(cacheRoot, theme, file) {
   const target = cachePath(cacheRoot, theme.id, file.path);
-  const maximumBytes =
-    file.path === "theme.css"
-      ? 2 * 1024 * 1024
-      : file.path === "manifest.json"
-        ? 64 * 1024
-        : 512 * 1024;
+  const maximumBytes = CACHE_FILE_LIMITS[file.path];
   const response = await fetch(file.url, { redirect: "error" });
   if (!response.ok) {
     throw new Error(`${file.url} returned HTTP ${response.status}`);
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > maximumBytes) {
-    throw new Error(`${theme.id}/${file.path} exceeds its ${maximumBytes} byte acquisition bound`);
+  if (!response.body) {
+    throw new Error(`${file.url} returned no streaming body.`);
   }
-  const actual = sha256(bytes);
-  if (actual !== file.sha256) {
-    throw new Error(
-      `${theme.id}/${file.path} hash mismatch: received ${actual}, expected ${file.sha256}`,
-    );
-  }
+  await assertSafeCacheRoot(cacheRoot);
+  await assertNoSymlinkAncestors(path.dirname(target));
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-  const temporary = `${target}.part-${process.pid}`;
-  await fs.writeFile(temporary, bytes, { mode: 0o600 });
-  await fs.rename(temporary, target);
+  await assertNoSymlinkAncestors(target);
+  const canonicalParent = await fs.realpath(path.dirname(target));
+  const canonicalRoot = await fs.realpath(cacheRoot);
+  const relative = path.relative(canonicalRoot, canonicalParent);
+  if (relative.startsWith(`..${path.sep}`) || relative === "..") {
+    throw new Error(`${theme.id}/${file.path} parent escapes the cache root.`);
+  }
+  const temporary = `${target}.part-${process.pid}-${Math.random().toString(16).slice(2)}`;
+  let handle;
+  let complete = false;
+  let bytesRead = 0;
+  const digest = createHash("sha256");
+  let actual;
+  try {
+    handle = await fs.open(
+      temporary,
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+      0o600,
+    );
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      bytesRead += chunk.length;
+      if (bytesRead > maximumBytes) {
+        throw new Error(
+          `${theme.id}/${file.path} exceeds its ${maximumBytes} byte acquisition bound`,
+        );
+      }
+      digest.update(chunk);
+      await handle.write(chunk);
+    }
+    actual = digest.digest("hex");
+    if (actual !== file.sha256) {
+      throw new Error(
+        `${theme.id}/${file.path} hash mismatch: received ${actual}, expected ${file.sha256}`,
+      );
+    }
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await fs.rename(temporary, target);
+    complete = true;
+  } finally {
+    await handle?.close().catch(() => undefined);
+    if (!complete) await fs.rm(temporary, { force: true }).catch(() => undefined);
+  }
   print(`COMMUNITY_THEME_CACHE_WRITE ${theme.id}/${file.path} ${actual}`);
 }
 

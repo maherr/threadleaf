@@ -105,6 +105,7 @@
     "visual:update": "THREADLEAF_VISUAL_UPDATE=1 node scripts/check-visual-regression.mjs",
     "community-theme:acquire": "node scripts/acquire-community-theme-fixtures.mjs --acquire",
     "community-theme:check": "pnpm run build && node scripts/check-community-theme-matrix.mjs",
+    "community-theme:integrity": "node scripts/check-community-theme-matrix.mjs --integrity-only",
     "community-theme:update": "pnpm run build && THREADLEAF_VISUAL_UPDATE=1 node scripts/check-community-theme-matrix.mjs",
     "test:file-recovery": "pnpm run build && node scripts/check-file-recovery.mjs",
     "test:graph-view": "pnpm run build && node scripts/check-graph-view.mjs",
