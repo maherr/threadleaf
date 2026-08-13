@@ -3,6 +3,18 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
+import {
+  type AccessibilityAccent,
+  type AccessibilityOverride,
+  type AccessibilityPreferences,
+  type AccessibilityPreferencesSnapshot,
+  accessibilityAccentChoices,
+  accessibilityPreferenceRanges,
+  createDefaultAccessibilityPreferences,
+  type EffectiveAccessibilityPreferences,
+  parseAccessibilityNumber,
+  resolveAccessibilityPreferences,
+} from "../shared/accessibility-preferences";
 import type { AppUpdateSnapshot } from "../shared/app-updates";
 import {
   type AppearanceSnapshot,
@@ -182,6 +194,7 @@ const elements = {
   settingsPageEyebrow: getElement("settings-page-eyebrow"),
   settingsPageTitle: getElement("settings-page-title"),
   settingsNavAppearance: getButton("settings-nav-appearance"),
+  settingsNavAccessibility: getButton("settings-nav-accessibility"),
   settingsNavNotes: getButton("settings-nav-notes"),
   settingsNavPlugins: getButton("settings-nav-plugins"),
   settingsNavMigration: getButton("settings-nav-migration"),
@@ -196,6 +209,17 @@ const elements = {
   appearanceReset: getButton("appearance-reset"),
   appearanceStatus: getElement("appearance-status"),
   appearanceWarnings: getElement("appearance-warnings"),
+  accessibilityHighContrast: getSelect("accessibility-high-contrast"),
+  accessibilityAccent: getSelect("accessibility-accent"),
+  accessibilityUiFontScale: getInput("accessibility-ui-font-scale"),
+  accessibilityTextFontScale: getInput("accessibility-text-font-scale"),
+  accessibilityEditorFontSize: getInput("accessibility-editor-font-size"),
+  accessibilityEditorLineHeight: getInput("accessibility-editor-line-height"),
+  accessibilityReducedMotion: getSelect("accessibility-reduced-motion"),
+  accessibilityReducedTransparency: getSelect("accessibility-reduced-transparency"),
+  accessibilityReset: getButton("accessibility-reset"),
+  accessibilityStatus: getElement("accessibility-status"),
+  accessibilityDiagnostics: getElement("accessibility-diagnostics"),
   pluginModeState: getElement("plugin-mode-state"),
   pluginModeToggle: getButton("plugin-mode-toggle"),
   pluginInstalledCount: getElement("plugin-installed-count"),
@@ -479,7 +503,14 @@ interface ShortcutTargetDefinition {
 
 type EditingViewMode = "live" | "source";
 type DocumentViewMode = EditingViewMode | "reading" | "plugin";
-type SettingsPage = "appearance" | "notes" | "plugins" | "migration" | "updates" | "hotkeys";
+type SettingsPage =
+  | "appearance"
+  | "accessibility"
+  | "notes"
+  | "plugins"
+  | "migration"
+  | "updates"
+  | "hotkeys";
 
 const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   {
@@ -672,6 +703,15 @@ let settingsMessage = "Select a command, then press its new shortcut.";
 let settingsMessageKind: "info" | "saved" | "error" = "info";
 let lastSettingsWarning: string | null = null;
 let settingsLoaded = false;
+let accessibilityPreferencesSnapshot: AccessibilityPreferencesSnapshot = {
+  preferences: createDefaultAccessibilityPreferences(),
+  warning: null,
+};
+let accessibilityPreferencesLoaded = false;
+let accessibilityBusy = false;
+let accessibilityMessage = "System accessibility preferences are active until you override them.";
+let accessibilityMessageKind: "info" | "saved" | "error" = "info";
+let lastAccessibilityWarning: string | null = null;
 type ReadyNoteWorkflowCatalog = Extract<NoteWorkflowCatalogResponse, { status: "ready" }>;
 let noteWorkflowCatalog: ReadyNoteWorkflowCatalog | null = null;
 let noteWorkflowBusy = false;
@@ -960,7 +1000,14 @@ const pluginStyle = document.createElement("style");
 pluginStyle.id = "threadleaf-compatibility-plugin-styles";
 pluginStyle.nonce = editorStyleNonce;
 document.head.append(pluginStyle);
+const accessibilityStyle = document.createElement("style");
+accessibilityStyle.id = "threadleaf-accessibility-protection";
+accessibilityStyle.nonce = editorStyleNonce;
+document.head.append(accessibilityStyle);
 const systemColorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+const systemHighContrast = window.matchMedia("(prefers-contrast: more)");
+const systemReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const systemReducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
 const sourceHighlight = HighlightStyle.define([
   { tag: tags.heading, color: "var(--accent-strong)", fontWeight: "700" },
   {
@@ -3458,6 +3505,7 @@ function settingsOperationBusy(): boolean {
     settingsBusy ||
     noteWorkflowBusy ||
     appearanceBusy ||
+    accessibilityBusy ||
     pluginBusy ||
     migrationBusy ||
     supportBundleBusy
@@ -3688,6 +3736,388 @@ function pluginPreferencesEqual(left: VaultPluginSettings, right: VaultPluginSet
   );
 }
 
+const accessibilityAccentColors: Record<
+  AccessibilityAccent,
+  { light: string; dark: string; lightHover: string; darkHover: string }
+> = {
+  // Each ink is independently chosen for both schemes. The light values are
+  // dark enough for text and controls on the light ground; the dark values are
+  // bright enough for text and controls on the dark ground.
+  blue: { light: "#005a8c", dark: "#76c7f0", lightHover: "#003f66", darkHover: "#a8e0fa" },
+  teal: { light: "#006b5d", dark: "#62d4c3", lightHover: "#004f46", darkHover: "#a0f1e3" },
+  orange: { light: "#9a4b00", dark: "#ffb45f", lightHover: "#713400", darkHover: "#ffd29a" },
+};
+
+function currentAccessibilityPreferences(): AccessibilityPreferences {
+  return accessibilityPreferencesSnapshot.preferences;
+}
+
+function effectiveCurrentAccessibilityPreferences(): EffectiveAccessibilityPreferences {
+  return resolveAccessibilityPreferences(currentAccessibilityPreferences(), {
+    highContrast: systemHighContrast.matches,
+    reducedMotion: systemReducedMotion.matches,
+    reducedTransparency: systemReducedTransparency.matches,
+  });
+}
+
+function accessibilityCss(state: EffectiveAccessibilityPreferences): string {
+  const colors = accessibilityAccentColors[state.accent];
+  return `
+    :root {
+      --threadleaf-ui-font-scale: ${state.uiFontScale};
+      --threadleaf-text-font-scale: ${state.textFontScale};
+      --threadleaf-editor-font-size: ${state.editorFontSize}px;
+      --threadleaf-editor-line-height: ${state.editorLineHeight};
+    }
+    :root[data-threadleaf-accessibility="true"] {
+      --color-accent: ${colors.light} !important;
+      --interactive-accent: ${colors.light} !important;
+      --interactive-accent-hover: ${colors.lightHover} !important;
+      --text-accent: ${colors.light} !important;
+      --text-accent-hover: ${colors.lightHover} !important;
+      --accent: ${colors.light} !important;
+      --accent-strong: ${colors.light} !important;
+      font-size: calc(100% * var(--threadleaf-ui-font-scale)) !important;
+    }
+    :root[data-theme="dark"][data-threadleaf-accessibility="true"] {
+      --color-accent: ${colors.dark} !important;
+      --interactive-accent: ${colors.dark} !important;
+      --interactive-accent-hover: ${colors.darkHover} !important;
+      --text-accent: ${colors.dark} !important;
+      --text-accent-hover: ${colors.darkHover} !important;
+      --accent: ${colors.dark} !important;
+      --accent-strong: ${colors.dark} !important;
+    }
+    :root[data-threadleaf-accessibility="true"] body {
+      font-size: calc(14px * var(--threadleaf-ui-font-scale)) !important;
+    }
+    :root[data-threadleaf-accessibility="true"] .note-preview,
+    :root[data-threadleaf-accessibility="true"] .note-header,
+    :root[data-threadleaf-accessibility="true"] .settings-content {
+      font-size: calc(14px * var(--threadleaf-text-font-scale)) !important;
+    }
+    :root[data-threadleaf-accessibility="true"] .cm-editor,
+    :root[data-threadleaf-accessibility="true"] .cm-content,
+    :root[data-threadleaf-accessibility="true"] .cm-line {
+      font-size: var(--threadleaf-editor-font-size) !important;
+      line-height: var(--threadleaf-editor-line-height) !important;
+    }
+    :root[data-threadleaf-high-contrast="true"] {
+      --surface: #ffffff !important;
+      --surface-raised: #ffffff !important;
+      --surface-sunken: #ffffff !important;
+      --canvas: #ffffff !important;
+      --ink: #111111 !important;
+      --ink-soft: #333333 !important;
+      --ink-muted: #444444 !important;
+      --line: #111111 !important;
+      --line-strong: #000000 !important;
+      --background-primary: #ffffff !important;
+      --background-primary-alt: #ffffff !important;
+      --background-secondary: #ffffff !important;
+      --background-secondary-alt: #ffffff !important;
+      --background-modifier-border: #111111 !important;
+      --background-modifier-border-hover: #000000 !important;
+      --text-normal: #111111 !important;
+      --text-muted: #333333 !important;
+      --text-faint: #444444 !important;
+      --signal: #7a3100 !important;
+      --signal-soft: #fff3e6 !important;
+      background: #ffffff !important;
+      color: #111111 !important;
+    }
+    :root[data-theme="dark"][data-threadleaf-high-contrast="true"] {
+      --surface: #000000 !important;
+      --surface-raised: #000000 !important;
+      --surface-sunken: #000000 !important;
+      --canvas: #000000 !important;
+      --ink: #ffffff !important;
+      --ink-soft: #eeeeee !important;
+      --ink-muted: #dddddd !important;
+      --line: #ffffff !important;
+      --line-strong: #ffffff !important;
+      --background-primary: #000000 !important;
+      --background-primary-alt: #000000 !important;
+      --background-secondary: #000000 !important;
+      --background-secondary-alt: #000000 !important;
+      --background-modifier-border: #ffffff !important;
+      --background-modifier-border-hover: #ffffff !important;
+      --text-normal: #ffffff !important;
+      --text-muted: #eeeeee !important;
+      --text-faint: #dddddd !important;
+      --signal: #ffb45f !important;
+      --signal-soft: #2a1708 !important;
+      background: #000000 !important;
+      color: #ffffff !important;
+    }
+    :root[data-threadleaf-reduced-motion="true"] *,
+    :root[data-threadleaf-reduced-motion="true"] *::before,
+    :root[data-threadleaf-reduced-motion="true"] *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+    :root[data-threadleaf-reduced-transparency="true"] *,
+    :root[data-threadleaf-reduced-transparency="true"] *::before,
+    :root[data-threadleaf-reduced-transparency="true"] *::after {
+      backdrop-filter: none !important;
+    }
+    :root[data-threadleaf-reduced-transparency="true"] dialog::backdrop {
+      backdrop-filter: none !important;
+      background: var(--canvas) !important;
+    }
+    :root[data-threadleaf-reduced-transparency="true"] .topbar,
+    :root[data-threadleaf-reduced-transparency="true"] .modal,
+    :root[data-threadleaf-reduced-transparency="true"] .settings-shell,
+    :root[data-threadleaf-reduced-transparency="true"] .note-tabs-shell {
+      background: var(--surface-raised) !important;
+      box-shadow: none !important;
+    }
+    :root[data-threadleaf-accessibility="true"] button:focus-visible,
+    :root[data-threadleaf-accessibility="true"] a:focus-visible,
+    :root[data-threadleaf-accessibility="true"] input:focus-visible,
+    :root[data-threadleaf-accessibility="true"] select:focus-visible,
+    :root[data-threadleaf-accessibility="true"] summary:focus-visible,
+    :root[data-threadleaf-accessibility="true"] [tabindex]:focus-visible {
+      outline: 3px solid var(--accent-strong) !important;
+      outline-offset: 2px !important;
+    }
+  `;
+}
+
+function setAccessibilityRootAttributes(state: EffectiveAccessibilityPreferences): void {
+  const root = document.documentElement;
+  root.dataset.threadleafAccessibility = "true";
+  root.dataset.threadleafHighContrast = String(state.highContrast);
+  root.dataset.threadleafReducedMotion = String(state.reducedMotion);
+  root.dataset.threadleafReducedTransparency = String(state.reducedTransparency);
+  root.dataset.threadleafAccent = state.accent;
+  for (const target of [root, document.body]) {
+    target.style.setProperty("--threadleaf-ui-font-scale", String(state.uiFontScale), "important");
+    target.style.setProperty(
+      "--threadleaf-text-font-scale",
+      String(state.textFontScale),
+      "important",
+    );
+    target.style.setProperty(
+      "--threadleaf-editor-font-size",
+      `${state.editorFontSize}px`,
+      "important",
+    );
+    target.style.setProperty(
+      "--threadleaf-editor-line-height",
+      String(state.editorLineHeight),
+      "important",
+    );
+  }
+  accessibilityStyle.textContent = accessibilityCss(state);
+  void window.threadleaf.setPluginSurfaceAccessibility(state).catch(() => undefined);
+}
+
+function refreshAccessibilityDiagnostics(): void {
+  const state = effectiveCurrentAccessibilityPreferences();
+  const diagnostics: string[] = [];
+  const computed = getComputedStyle(document.documentElement);
+  const expectedAccent =
+    document.documentElement.dataset.theme === "dark"
+      ? accessibilityAccentColors[state.accent].dark
+      : accessibilityAccentColors[state.accent].light;
+  const actualAccent = computed.getPropertyValue("--interactive-accent").trim().toLowerCase();
+  if (actualAccent && actualAccent !== expectedAccent) {
+    diagnostics.push(
+      `The selected theme or plugin overrides the protected ${state.accent} accent; Threadleaf could not verify the requested accent in live computed styles.`,
+    );
+  }
+  if (
+    appearanceSnapshot?.css &&
+    /(?:--threadleaf-|font-size|line-height|prefers-reduced|backdrop-filter)/u.test(
+      appearanceSnapshot.css,
+    )
+  ) {
+    diagnostics.push(
+      "The selected theme declares rules touching accessibility-sensitive properties. Threadleaf reapplies explicit preferences after that CSS, but plugin-owned inline styles may still require review.",
+    );
+  }
+  if (
+    pluginCatalog?.css &&
+    /(?:--threadleaf-|font-size|line-height|prefers-reduced|backdrop-filter)/u.test(
+      pluginCatalog.css,
+    )
+  ) {
+    diagnostics.push(
+      "An enabled compatibility plugin declares accessibility-sensitive styles. Its view is isolated and receives the explicit preference layer; inspect the diagnostics if its live view differs.",
+    );
+  }
+  elements.accessibilityDiagnostics.replaceChildren();
+  for (const message of diagnostics) {
+    const item = document.createElement("li");
+    item.textContent = message;
+    elements.accessibilityDiagnostics.append(item);
+  }
+  if (diagnostics.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "No accessibility preference conflicts detected in the native workspace.";
+    elements.accessibilityDiagnostics.append(item);
+  }
+}
+
+function applyAccessibilityPreferences(snapshot: AccessibilityPreferencesSnapshot): void {
+  accessibilityPreferencesSnapshot = snapshot;
+  accessibilityPreferencesLoaded = true;
+  if (snapshot.warning && snapshot.warning !== lastAccessibilityWarning) {
+    showToast(snapshot.warning);
+  }
+  lastAccessibilityWarning = snapshot.warning;
+  setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
+  renderSettings();
+}
+
+function accessibilityOverrideFromControl(value: string): AccessibilityOverride {
+  return value === "system" ? null : value === "on";
+}
+
+function accessibilityOverrideLabel(value: AccessibilityOverride): string {
+  return value === null ? "system" : value ? "on" : "off";
+}
+
+function accessibilityPreferencesAreCustomized(preferences: AccessibilityPreferences): boolean {
+  return (
+    preferences.highContrast !== null ||
+    preferences.reducedMotion !== null ||
+    preferences.reducedTransparency !== null ||
+    preferences.accent !== "blue" ||
+    preferences.uiFontScale !== 1 ||
+    preferences.textFontScale !== 1 ||
+    preferences.editorFontSize !== 15 ||
+    preferences.editorLineHeight !== 1.6
+  );
+}
+
+function renderAccessibilitySettings(): void {
+  const preferences = currentAccessibilityPreferences();
+  const disabled = accessibilityBusy || !accessibilityPreferencesLoaded;
+  for (const [control, value] of [
+    [elements.accessibilityHighContrast, accessibilityOverrideLabel(preferences.highContrast)],
+    [elements.accessibilityReducedMotion, accessibilityOverrideLabel(preferences.reducedMotion)],
+    [
+      elements.accessibilityReducedTransparency,
+      accessibilityOverrideLabel(preferences.reducedTransparency),
+    ],
+  ] as const) {
+    control.value = value;
+    control.disabled = disabled;
+  }
+  elements.accessibilityAccent.value = preferences.accent;
+  elements.accessibilityAccent.disabled = disabled;
+  const ranges = [
+    [
+      elements.accessibilityUiFontScale,
+      preferences.uiFontScale,
+      accessibilityPreferenceRanges.uiFontScale,
+    ],
+    [
+      elements.accessibilityTextFontScale,
+      preferences.textFontScale,
+      accessibilityPreferenceRanges.textFontScale,
+    ],
+    [
+      elements.accessibilityEditorFontSize,
+      preferences.editorFontSize,
+      accessibilityPreferenceRanges.editorFontSize,
+    ],
+    [
+      elements.accessibilityEditorLineHeight,
+      preferences.editorLineHeight,
+      accessibilityPreferenceRanges.editorLineHeight,
+    ],
+  ] as const;
+  for (const [control, value, range] of ranges) {
+    control.value = String(value);
+    control.setAttribute("aria-valuetext", String(value));
+    control.min = String(range.min);
+    control.max = String(range.max);
+    control.step = String(range.step);
+    control.disabled = disabled;
+  }
+  elements.accessibilityReset.disabled = disabled;
+  elements.accessibilityStatus.textContent =
+    accessibilityMessageKind === "info"
+      ? accessibilityPreferencesAreCustomized(preferences)
+        ? "Explicit accessibility preferences are active outside the vault."
+        : "System accessibility preferences are active until you override them."
+      : accessibilityMessage;
+  elements.accessibilityStatus.dataset.kind = accessibilityMessageKind;
+  refreshAccessibilityDiagnostics();
+}
+
+async function persistAccessibilityPreferences(next: AccessibilityPreferences): Promise<void> {
+  if (accessibilityBusy) return;
+  accessibilityBusy = true;
+  accessibilityMessage = "Saving accessibility preferences outside the vault…";
+  accessibilityMessageKind = "info";
+  renderSettings();
+  try {
+    applyAccessibilityPreferences(await window.threadleaf.setAccessibilityPreferences(next));
+    accessibilityMessage = "Accessibility preferences saved.";
+    accessibilityMessageKind = "saved";
+  } catch (error) {
+    accessibilityMessage = error instanceof Error ? error.message : String(error);
+    accessibilityMessageKind = "error";
+  } finally {
+    accessibilityBusy = false;
+    renderSettings();
+  }
+}
+
+async function resetAccessibilityPreferences(): Promise<void> {
+  if (accessibilityBusy) return;
+  accessibilityBusy = true;
+  accessibilityMessage = "Restoring system defaults…";
+  accessibilityMessageKind = "info";
+  renderSettings();
+  try {
+    applyAccessibilityPreferences(await window.threadleaf.resetAccessibilityPreferences());
+    accessibilityMessage = "Accessibility preferences reset to system defaults.";
+    accessibilityMessageKind = "saved";
+  } catch (error) {
+    accessibilityMessage = error instanceof Error ? error.message : String(error);
+    accessibilityMessageKind = "error";
+  } finally {
+    accessibilityBusy = false;
+    renderSettings();
+  }
+}
+
+function accessibilityDraftFromControls(): AccessibilityPreferences {
+  const preferences = currentAccessibilityPreferences();
+  return {
+    ...preferences,
+    highContrast: accessibilityOverrideFromControl(elements.accessibilityHighContrast.value),
+    accent: accessibilityAccentChoices.includes(
+      elements.accessibilityAccent.value as AccessibilityAccent,
+    )
+      ? (elements.accessibilityAccent.value as AccessibilityAccent)
+      : preferences.accent,
+    uiFontScale: parseAccessibilityNumber(elements.accessibilityUiFontScale.value, "uiFontScale"),
+    textFontScale: parseAccessibilityNumber(
+      elements.accessibilityTextFontScale.value,
+      "textFontScale",
+    ),
+    editorFontSize: parseAccessibilityNumber(
+      elements.accessibilityEditorFontSize.value,
+      "editorFontSize",
+    ),
+    editorLineHeight: parseAccessibilityNumber(
+      elements.accessibilityEditorLineHeight.value,
+      "editorLineHeight",
+    ),
+    reducedMotion: accessibilityOverrideFromControl(elements.accessibilityReducedMotion.value),
+    reducedTransparency: accessibilityOverrideFromControl(
+      elements.accessibilityReducedTransparency.value,
+    ),
+  };
+}
+
 function applyColorScheme(preference: ColorSchemePreference): void {
   const scheme = effectiveColorScheme(preference, systemColorScheme.matches);
   document.documentElement.dataset.theme = scheme;
@@ -3699,6 +4129,8 @@ function applyColorScheme(preference: ColorSchemePreference): void {
   elements.themeLabel.textContent = next === "dark" ? "Dark" : "Light";
   elements.themeToggle.ariaLabel = `Switch to ${next} theme`;
   void window.threadleaf.setPluginSurfaceTheme(scheme).catch(() => undefined);
+  setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
+  refreshAccessibilityDiagnostics();
   renderPaletteResults();
 }
 
@@ -3717,6 +4149,7 @@ function applyAppearanceSnapshot(snapshot: AppearanceSnapshot): void {
     showToast(snapshot.warnings[0] ?? "A custom appearance file could not be applied.");
   }
   lastAppearanceWarning = warningKey;
+  refreshAccessibilityDiagnostics();
   renderSettings();
   renderPaletteResults();
 }
@@ -3861,11 +4294,13 @@ function applyPluginCatalog(catalog: PluginCatalogSnapshot): void {
   }
   pluginCatalog = catalog;
   pluginStyle.textContent = catalog.css;
+  setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
   const warningKey = catalog.warnings.join("\n");
   if (warningKey && warningKey !== lastPluginWarning) {
     showToast(catalog.warnings[0] ?? "A compatibility plugin needs attention.");
   }
   lastPluginWarning = warningKey;
+  refreshAccessibilityDiagnostics();
   renderSettings();
   renderPaletteResults();
 }
@@ -5658,15 +6093,17 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
     const target =
       page === "appearance"
         ? elements.settingsNavAppearance
-        : page === "notes"
-          ? elements.settingsNavNotes
-          : page === "plugins"
-            ? elements.settingsNavPlugins
-            : page === "migration"
-              ? elements.settingsNavMigration
-              : page === "updates"
-                ? elements.settingsNavUpdates
-                : elements.settingsNavHotkeys;
+        : page === "accessibility"
+          ? elements.settingsNavAccessibility
+          : page === "notes"
+            ? elements.settingsNavNotes
+            : page === "plugins"
+              ? elements.settingsNavPlugins
+              : page === "migration"
+                ? elements.settingsNavMigration
+                : page === "updates"
+                  ? elements.settingsNavUpdates
+                  : elements.settingsNavHotkeys;
     target.focus();
   }
 }
@@ -5674,6 +6111,7 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
 function renderSettingsNavigation(): void {
   const pageDetails: Record<SettingsPage, { eyebrow: string; title: string }> = {
     appearance: { eyebrow: "Options", title: "Appearance" },
+    accessibility: { eyebrow: "Inclusive workspace", title: "Accessibility" },
     notes: { eyebrow: "Core workflows", title: "Daily notes and templates" },
     plugins: { eyebrow: "Trusted runtime", title: "Community plugins" },
     migration: { eyebrow: "Migration bridge", title: "Migration preview" },
@@ -5684,6 +6122,7 @@ function renderSettingsNavigation(): void {
   elements.settingsPageTitle.textContent = pageDetails[settingsPage].title;
   for (const [page, button] of [
     ["appearance", elements.settingsNavAppearance],
+    ["accessibility", elements.settingsNavAccessibility],
     ["notes", elements.settingsNavNotes],
     ["plugins", elements.settingsNavPlugins],
     ["migration", elements.settingsNavMigration],
@@ -5712,23 +6151,25 @@ function renderSettings(): void {
   const [statusMessage, statusKind] =
     settingsPage === "appearance"
       ? [appearanceMessage, appearanceMessageKind]
-      : settingsPage === "notes"
-        ? [noteWorkflowMessage, noteWorkflowMessageKind]
-        : settingsPage === "plugins"
-          ? [pluginMessage, pluginMessageKind]
-          : settingsPage === "migration"
-            ? [migrationMessage, migrationMessageKind]
-            : settingsPage === "updates"
-              ? [
-                  appUpdateSnapshot?.message ?? "Reading the local package update policy.",
-                  appUpdateSnapshot?.phase === "error"
-                    ? "error"
-                    : appUpdateSnapshot?.phase === "downloaded" ||
-                        appUpdateSnapshot?.phase === "up-to-date"
-                      ? "saved"
-                      : "info",
-                ]
-              : [settingsMessage, settingsMessageKind];
+      : settingsPage === "accessibility"
+        ? [accessibilityMessage, accessibilityMessageKind]
+        : settingsPage === "notes"
+          ? [noteWorkflowMessage, noteWorkflowMessageKind]
+          : settingsPage === "plugins"
+            ? [pluginMessage, pluginMessageKind]
+            : settingsPage === "migration"
+              ? [migrationMessage, migrationMessageKind]
+              : settingsPage === "updates"
+                ? [
+                    appUpdateSnapshot?.message ?? "Reading the local package update policy.",
+                    appUpdateSnapshot?.phase === "error"
+                      ? "error"
+                      : appUpdateSnapshot?.phase === "downloaded" ||
+                          appUpdateSnapshot?.phase === "up-to-date"
+                        ? "saved"
+                        : "info",
+                  ]
+                : [settingsMessage, settingsMessageKind];
   elements.settingsStatus.textContent =
     statusKind === "error" ? `Error: ${statusMessage}` : statusMessage;
   elements.settingsStatus.dataset.kind = statusKind;
@@ -5738,6 +6179,7 @@ function renderSettings(): void {
   elements.settingsReset.disabled = operationBusy;
   renderSettingsNavigation();
   renderAppearanceSettings();
+  renderAccessibilitySettings();
   renderNoteWorkflowSettings();
   renderPluginSettings();
   renderMigrationSettings();
@@ -8096,6 +8538,7 @@ elements.settingsClose.addEventListener("click", () => closeSettings());
 elements.settingsDone.addEventListener("click", () => closeSettings());
 elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
 elements.settingsNavAppearance.addEventListener("click", () => setSettingsPage("appearance"));
+elements.settingsNavAccessibility.addEventListener("click", () => setSettingsPage("accessibility"));
 elements.settingsNavNotes.addEventListener("click", () => setSettingsPage("notes"));
 elements.settingsNavPlugins.addEventListener("click", () => setSettingsPage("plugins"));
 elements.settingsNavMigration.addEventListener("click", () => setSettingsPage("migration"));
@@ -8195,6 +8638,38 @@ elements.appearanceReload.addEventListener("click", () => {
   void refreshAppearance("Appearance files reloaded.");
 });
 elements.appearanceReset.addEventListener("click", () => void disableCustomAppearance());
+for (const [control, preferenceKey] of [
+  [elements.accessibilityHighContrast, "highContrast"],
+  [elements.accessibilityReducedMotion, "reducedMotion"],
+  [elements.accessibilityReducedTransparency, "reducedTransparency"],
+] as const) {
+  control.addEventListener("change", () => {
+    void persistAccessibilityPreferences({
+      ...accessibilityDraftFromControls(),
+      [preferenceKey]: accessibilityOverrideFromControl(control.value),
+    });
+  });
+}
+elements.accessibilityAccent.addEventListener("change", () => {
+  void persistAccessibilityPreferences(accessibilityDraftFromControls());
+});
+for (const control of [
+  elements.accessibilityUiFontScale,
+  elements.accessibilityTextFontScale,
+  elements.accessibilityEditorFontSize,
+  elements.accessibilityEditorLineHeight,
+]) {
+  control.addEventListener("change", () => {
+    try {
+      void persistAccessibilityPreferences(accessibilityDraftFromControls());
+    } catch (error) {
+      accessibilityMessage = error instanceof Error ? error.message : String(error);
+      accessibilityMessageKind = "error";
+      renderSettings();
+    }
+  });
+}
+elements.accessibilityReset.addEventListener("click", () => void resetAccessibilityPreferences());
 elements.settingsDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   if (recordingShortcut) {
@@ -8401,9 +8876,26 @@ const handleSystemColorSchemeChange = (): void => {
   }
 };
 systemColorScheme.addEventListener("change", handleSystemColorSchemeChange);
+const handleSystemAccessibilityChange = (): void => {
+  const preferences = currentAccessibilityPreferences();
+  if (
+    preferences.highContrast === null ||
+    preferences.reducedMotion === null ||
+    preferences.reducedTransparency === null
+  ) {
+    setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
+    renderSettings();
+  }
+};
+systemHighContrast.addEventListener("change", handleSystemAccessibilityChange);
+systemReducedMotion.addEventListener("change", handleSystemAccessibilityChange);
+systemReducedTransparency.addEventListener("change", handleSystemAccessibilityChange);
 
 const unsubscribe = window.threadleaf.onSnapshot(render);
 const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
+const unsubscribeAccessibility = window.threadleaf.onAccessibilityPreferences(
+  applyAccessibilityPreferences,
+);
 const unsubscribeAppUpdate = window.threadleaf.onAppUpdate(applyAppUpdateSnapshot);
 const unsubscribeAppearance = window.threadleaf.onAppearance((snapshot) => {
   if (snapshot.vaultId !== currentSnapshot?.vault.id) {
@@ -8490,10 +8982,14 @@ window.addEventListener(
     }
     unsubscribe();
     unsubscribeSettings();
+    unsubscribeAccessibility();
     unsubscribeAppUpdate();
     unsubscribeAppearance();
     unsubscribeMenuCommand();
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
+    systemHighContrast.removeEventListener("change", handleSystemAccessibilityChange);
+    systemReducedMotion.removeEventListener("change", handleSystemAccessibilityChange);
+    systemReducedTransparency.removeEventListener("change", handleSystemAccessibilityChange);
     pluginSurfaceResizeObserver.disconnect();
     graphView.destroy();
     recoveryView.destroy();
@@ -8513,6 +9009,10 @@ void window.threadleaf
 void window.threadleaf
   .getSettings()
   .then(applySettingsSnapshot)
+  .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
+void window.threadleaf
+  .getAccessibilityPreferences()
+  .then(applyAccessibilityPreferences)
   .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
 void window.threadleaf
   .getAppUpdate()

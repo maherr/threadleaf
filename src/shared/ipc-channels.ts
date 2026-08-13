@@ -12,6 +12,10 @@ export const ipcChannels = {
   menuCommand: "threadleaf:menu-command",
   settings: "threadleaf:settings",
   settingsChanged: "threadleaf:settings-changed",
+  accessibilityPreferences: "threadleaf:accessibility-preferences",
+  accessibilityPreferencesChanged: "threadleaf:accessibility-preferences-changed",
+  setAccessibilityPreferences: "threadleaf:set-accessibility-preferences",
+  resetAccessibilityPreferences: "threadleaf:reset-accessibility-preferences",
   appearance: "threadleaf:appearance",
   appearanceChanged: "threadleaf:appearance-changed",
   setVaultAppearance: "threadleaf:set-vault-appearance",
@@ -67,4 +71,5 @@ export const ipcChannels = {
   setPluginSurfaceBounds: "threadleaf:set-plugin-surface-bounds",
   setPluginSurfaceVisible: "threadleaf:set-plugin-surface-visible",
   setPluginSurfaceTheme: "threadleaf:set-plugin-surface-theme",
+  setPluginSurfaceAccessibility: "threadleaf:set-plugin-surface-accessibility",
 } as const;

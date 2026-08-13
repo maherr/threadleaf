@@ -11,6 +11,7 @@ import {
   type WebContents,
   type WebContentsView,
 } from "electron";
+import { AccessibilityPreferencesController } from "../application/accessibility-preferences-controller";
 import { AppSettingsController } from "../application/app-settings-controller";
 import { AppUpdateController } from "../application/app-update-controller";
 import { parseEditorDraft } from "../application/editor-draft";
@@ -22,6 +23,11 @@ import { VaultPathPolicy } from "../kernel/path-policy";
 import { FixedStateRoot } from "../kernel/ports";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
+import {
+  accessibilityAccentChoices,
+  type EffectiveAccessibilityPreferences,
+  parseAccessibilityPreferences,
+} from "../shared/accessibility-preferences";
 import {
   type AppearanceResponse,
   type AppearanceSnapshot,
@@ -75,6 +81,7 @@ import {
   readDevelopmentVaultPath,
 } from "./development-picker-override";
 import { ElectronPluginRuntime } from "./electron-plugin-runtime";
+import { FileAccessibilityPreferencesStore } from "./file-accessibility-preferences-store";
 import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileEditorDraftStore } from "./file-editor-draft-store";
 import { FileNoteBookmarkStore } from "./file-note-bookmark-store";
@@ -120,6 +127,7 @@ if (process.argv.includes("--update-trust")) {
 let mainWindow: BrowserWindow | null = null;
 let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
+let accessibilityPreferencesController: AccessibilityPreferencesController;
 let appUpdateController: AppUpdateController;
 let editorDraftStore: FileEditorDraftStore;
 let noteBookmarkController: NoteBookmarkController;
@@ -136,6 +144,16 @@ const pluginSurfaceCssKeys = new Map<WebContents, string>();
 let pluginSurfaceTheme: "dark" | "light" = "dark";
 let pluginSurfacePresentationVisible = true;
 let appearanceWatcherLifecycle: AppearanceWatcherLifecycle | null = null;
+let pluginSurfaceAccessibility: EffectiveAccessibilityPreferences = {
+  highContrast: false,
+  accent: "blue",
+  uiFontScale: 1,
+  textFontScale: 1,
+  editorFontSize: 15,
+  editorLineHeight: 1.6,
+  reducedMotion: false,
+  reducedTransparency: false,
+};
 
 async function applyPluginSurfaceTheme(
   theme: "dark" | "light",
@@ -163,6 +181,140 @@ async function applyPluginSurfaceTheme(
   for (const result of results) {
     if (result.status === "rejected") {
       console.error("Could not apply the theme to an isolated plugin renderer:", result.reason);
+    }
+  }
+}
+
+function pluginAccessibilityCss(): string {
+  return `
+    :root[data-threadleaf-high-contrast="true"] {
+      --background-primary: #ffffff !important;
+      --background-primary-alt: #ffffff !important;
+      --background-secondary: #ffffff !important;
+      --background-secondary-alt: #ffffff !important;
+      --background-modifier-border: #111111 !important;
+      --background-modifier-border-hover: #000000 !important;
+      --background-modifier-hover: #eeeeee !important;
+      --text-normal: #111111 !important;
+      --text-muted: #333333 !important;
+      --text-faint: #444444 !important;
+      --text-on-accent: #ffffff !important;
+    }
+    :root[data-theme="dark"][data-threadleaf-high-contrast="true"] {
+      --background-primary: #000000 !important;
+      --background-primary-alt: #000000 !important;
+      --background-secondary: #000000 !important;
+      --background-secondary-alt: #000000 !important;
+      --background-modifier-border: #ffffff !important;
+      --background-modifier-border-hover: #ffffff !important;
+      --background-modifier-hover: #222222 !important;
+      --text-normal: #ffffff !important;
+      --text-muted: #eeeeee !important;
+      --text-faint: #dddddd !important;
+      --text-on-accent: #000000 !important;
+    }
+    :root[data-threadleaf-reduced-motion="true"] *,
+    :root[data-threadleaf-reduced-motion="true"] *::before,
+    :root[data-threadleaf-reduced-motion="true"] *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+    :root[data-threadleaf-reduced-transparency="true"] *,
+    :root[data-threadleaf-reduced-transparency="true"] *::before,
+    :root[data-threadleaf-reduced-transparency="true"] *::after {
+      backdrop-filter: none !important;
+    }
+    :root[data-threadleaf-reduced-transparency="true"] dialog::backdrop {
+      backdrop-filter: none !important;
+      background: var(--background-primary) !important;
+    }
+    html[data-threadleaf-accessibility="true"] body {
+      font-size: calc(1em * var(--threadleaf-ui-font-scale)) !important;
+    }
+    html[data-threadleaf-accessibility="true"][data-threadleaf-accent="blue"] {
+      --interactive-accent: #005a8c !important;
+      --interactive-accent-hover: #003f66 !important;
+      --text-accent: #005a8c !important;
+    }
+    html[data-theme="dark"][data-threadleaf-accessibility="true"][data-threadleaf-accent="blue"] {
+      --interactive-accent: #76c7f0 !important;
+      --interactive-accent-hover: #a8e0fa !important;
+      --text-accent: #a8e0fa !important;
+    }
+    html[data-threadleaf-accessibility="true"][data-threadleaf-accent="teal"] {
+      --interactive-accent: #006b5d !important;
+      --interactive-accent-hover: #004f46 !important;
+      --text-accent: #006b5d !important;
+    }
+    html[data-theme="dark"][data-threadleaf-accessibility="true"][data-threadleaf-accent="teal"] {
+      --interactive-accent: #62d4c3 !important;
+      --interactive-accent-hover: #a0f1e3 !important;
+      --text-accent: #a0f1e3 !important;
+    }
+    html[data-threadleaf-accessibility="true"][data-threadleaf-accent="orange"] {
+      --interactive-accent: #9a4b00 !important;
+      --interactive-accent-hover: #713400 !important;
+      --text-accent: #9a4b00 !important;
+    }
+    html[data-theme="dark"][data-threadleaf-accessibility="true"][data-threadleaf-accent="orange"] {
+      --interactive-accent: #ffb45f !important;
+      --interactive-accent-hover: #ffd29a !important;
+      --text-accent: #ffd29a !important;
+    }
+    html[data-threadleaf-accessibility="true"] .threadleaf-plugin-settings-surface {
+      font-size: calc(1em * var(--threadleaf-text-font-scale)) !important;
+    }
+    html[data-threadleaf-accessibility="true"] .threadleaf-plugin-surface,
+    html[data-threadleaf-accessibility="true"] .threadleaf-plugin-surface * {
+      line-height: var(--threadleaf-editor-line-height) !important;
+    }
+  `;
+}
+
+async function applyPluginSurfaceAccessibility(
+  preferences: EffectiveAccessibilityPreferences,
+  webContents?: WebContents,
+): Promise<void> {
+  pluginSurfaceAccessibility = preferences;
+  const targets = webContents ? [webContents] : [...compatibilityPluginWebContents];
+  const css = pluginAccessibilityCss();
+  const results = await Promise.allSettled(
+    targets.map(async (target) => {
+      if (target.isDestroyed()) return;
+      await target.executeJavaScript(`
+        (() => {
+          const root = document.documentElement;
+          const body = document.body;
+          const state = ${JSON.stringify(preferences)};
+          root.dataset.threadleafAccessibility = "true";
+          root.dataset.threadleafHighContrast = String(state.highContrast);
+          root.dataset.threadleafReducedMotion = String(state.reducedMotion);
+          root.dataset.threadleafReducedTransparency = String(state.reducedTransparency);
+          root.dataset.threadleafAccent = state.accent;
+          for (const target of [root, body]) {
+            target.style.setProperty("--threadleaf-ui-font-scale", String(state.uiFontScale), "important");
+            target.style.setProperty("--threadleaf-text-font-scale", String(state.textFontScale), "important");
+            target.style.setProperty("--threadleaf-editor-font-size", String(state.editorFontSize) + "px", "important");
+            target.style.setProperty("--threadleaf-editor-line-height", String(state.editorLineHeight), "important");
+          }
+          let style = document.getElementById("threadleaf-accessibility-protection");
+          if (!style) {
+            style = document.createElement("style");
+            style.id = "threadleaf-accessibility-protection";
+            document.head.append(style);
+          }
+          style.textContent = ${JSON.stringify(css)};
+        })()
+      `);
+    }),
+  );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error(
+        "Could not apply accessibility preferences to an isolated plugin renderer:",
+        result.reason,
+      );
     }
   }
 }
@@ -268,6 +420,7 @@ async function registerCompatibilityPluginView(view: WebContentsView): Promise<v
   await Promise.all([
     applyPluginSurfaceTheme(pluginSurfaceTheme, webContents),
     applyPluginSurfaceCss(pluginSurfaceCss, view),
+    applyPluginSurfaceAccessibility(pluginSurfaceAccessibility, webContents),
   ]);
 }
 
@@ -927,6 +1080,16 @@ function registerIpcHandlers(): void {
     startInitialWorkspaceActivation();
   });
   ipcMain.handle(ipcChannels.settings, () => settingsController.getSnapshot());
+  ipcMain.handle(ipcChannels.accessibilityPreferences, () =>
+    accessibilityPreferencesController.getSnapshot(),
+  );
+  ipcMain.handle(ipcChannels.setAccessibilityPreferences, async (_event, value: unknown) => {
+    const preferences = parseAccessibilityPreferences(value);
+    return accessibilityPreferencesController.setPreferences(preferences);
+  });
+  ipcMain.handle(ipcChannels.resetAccessibilityPreferences, async () => {
+    return accessibilityPreferencesController.reset();
+  });
   ipcMain.handle(ipcChannels.appearance, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Appearance loading requires a string vault identity.");
@@ -1838,6 +2001,48 @@ function registerIpcHandlers(): void {
     }
     await applyPluginSurfaceTheme(theme);
   });
+  ipcMain.handle(ipcChannels.setPluginSurfaceAccessibility, async (_event, value: unknown) => {
+    if (!value || typeof value !== "object") {
+      throw new Error("Plugin surface accessibility state must be an object.");
+    }
+    const state = value as Record<string, unknown>;
+    if (
+      typeof state.highContrast !== "boolean" ||
+      typeof state.reducedMotion !== "boolean" ||
+      typeof state.reducedTransparency !== "boolean" ||
+      typeof state.accent !== "string" ||
+      typeof state.uiFontScale !== "number" ||
+      typeof state.textFontScale !== "number" ||
+      typeof state.editorFontSize !== "number" ||
+      typeof state.editorLineHeight !== "number"
+    ) {
+      throw new Error("Plugin surface accessibility state is malformed.");
+    }
+    if (
+      !accessibilityAccentChoices.includes(
+        state.accent as (typeof accessibilityAccentChoices)[number],
+      )
+    ) {
+      throw new Error("Plugin surface accessibility accent is unsupported.");
+    }
+    if (
+      state.uiFontScale < 0.8 ||
+      state.uiFontScale > 1.6 ||
+      state.textFontScale < 0.8 ||
+      state.textFontScale > 1.8 ||
+      state.editorFontSize < 11 ||
+      state.editorFontSize > 32 ||
+      state.editorLineHeight < 1.2 ||
+      state.editorLineHeight > 2.4 ||
+      !Number.isFinite(state.uiFontScale) ||
+      !Number.isFinite(state.textFontScale) ||
+      !Number.isFinite(state.editorFontSize) ||
+      !Number.isFinite(state.editorLineHeight)
+    ) {
+      throw new Error("Plugin surface accessibility numeric values are out of range.");
+    }
+    await applyPluginSurfaceAccessibility(value as EffectiveAccessibilityPreferences);
+  });
   workspaceController.onSnapshot((snapshot) => {
     reconcileAppearanceWatcher(snapshot);
     for (const window of BrowserWindow.getAllWindows()) {
@@ -1853,6 +2058,11 @@ function registerIpcHandlers(): void {
   appUpdateController.onSnapshot((snapshot) => {
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(ipcChannels.appUpdateChanged, snapshot);
+    }
+  });
+  accessibilityPreferencesController.onSnapshot((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(ipcChannels.accessibilityPreferencesChanged, snapshot);
     }
   });
 }
@@ -1939,6 +2149,11 @@ app.whenReady().then(async () => {
   await pluginPackageManager.initialize();
   settingsController = await AppSettingsController.open(
     new FileAppSettingsStore(join(app.getPath("userData"), "settings.json")),
+  );
+  accessibilityPreferencesController = await AccessibilityPreferencesController.open(
+    new FileAccessibilityPreferencesStore(
+      join(app.getPath("userData"), "accessibility-preferences.json"),
+    ),
   );
   installApplicationMenu(settingsController.getSnapshot().settings);
   editorDraftStore = new FileEditorDraftStore(join(app.getPath("userData"), "editor-drafts"));

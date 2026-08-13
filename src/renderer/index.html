@@ -587,6 +587,10 @@
               <span aria-hidden="true">◐</span>
               <span>Appearance</span>
             </button>
+            <button id="settings-nav-accessibility" type="button" data-settings-target="accessibility">
+              <span aria-hidden="true">◎</span>
+              <span>Accessibility</span>
+            </button>
             <button id="settings-nav-notes" type="button" data-settings-target="notes">
               <span aria-hidden="true">▤</span>
               <span>Daily notes and templates</span>
@@ -695,6 +699,161 @@
             </div>
             <button class="appearance-reset" id="appearance-reset" type="button">
               Disable custom theme and snippets
+            </button>
+          </section>
+
+          <section
+            class="settings-page accessibility-settings"
+            data-settings-page="accessibility"
+            aria-labelledby="accessibility-heading"
+            hidden
+          >
+            <header class="settings-section-heading accessibility-heading">
+              <span>
+                <small>Private workspace preferences</small>
+                <strong id="accessibility-heading">Accessibility</strong>
+              </span>
+              <span class="appearance-state" id="accessibility-state">System defaults</span>
+            </header>
+
+            <p class="accessibility-intro">
+              These preferences are stored in Threadleaf's private application data. System media
+              queries remain the default until you explicitly choose On or Off.
+            </p>
+
+            <div class="accessibility-settings-grid">
+              <label class="accessibility-setting" for="accessibility-high-contrast">
+                <span>
+                  <strong>High contrast</strong>
+                  <small>Increase separation and keep text and controls legible.</small>
+                </span>
+                <select id="accessibility-high-contrast" aria-describedby="accessibility-status">
+                  <option value="system">System default</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+
+              <label class="accessibility-setting" for="accessibility-accent">
+                <span>
+                  <strong>Accent</strong>
+                  <small>Constrained choices retain text and control contrast in both schemes.</small>
+                </span>
+                <select id="accessibility-accent" aria-describedby="accessibility-status">
+                  <option value="blue">Blue</option>
+                  <option value="teal">Teal</option>
+                  <option value="orange">Orange</option>
+                </select>
+              </label>
+
+              <label class="accessibility-setting" for="accessibility-ui-font-scale">
+                <span>
+                  <strong>Interface text size</strong>
+                  <small>Scale navigation, controls, settings, and dialogs.</small>
+                </span>
+                <input
+                  id="accessibility-ui-font-scale"
+                  type="range"
+                  min="0.8"
+                  max="1.6"
+                  step="0.05"
+                  value="1"
+                  aria-label="Interface text size"
+                  aria-describedby="accessibility-status"
+                />
+              </label>
+
+              <label class="accessibility-setting" for="accessibility-text-font-scale">
+                <span>
+                  <strong>Reading text size</strong>
+                  <small>Scale note headings, reading view, and long text.</small>
+                </span>
+                <input
+                  id="accessibility-text-font-scale"
+                  type="range"
+                  min="0.8"
+                  max="1.8"
+                  step="0.05"
+                  value="1"
+                  aria-label="Reading text size"
+                  aria-describedby="accessibility-status"
+                />
+              </label>
+
+              <label class="accessibility-setting" for="accessibility-editor-font-size">
+                <span>
+                  <strong>Editor text size</strong>
+                  <small>Set CodeMirror's source text size in pixels.</small>
+                </span>
+                <input
+                  id="accessibility-editor-font-size"
+                  type="range"
+                  min="11"
+                  max="32"
+                  step="1"
+                  value="15"
+                  aria-label="Editor text size"
+                  aria-describedby="accessibility-status"
+                />
+              </label>
+
+              <label class="accessibility-setting" for="accessibility-editor-line-height">
+                <span>
+                  <strong>Editor line height</strong>
+                  <small>Give source lines more room without changing note bytes.</small>
+                </span>
+                <input
+                  id="accessibility-editor-line-height"
+                  type="range"
+                  min="1.2"
+                  max="2.4"
+                  step="0.05"
+                  value="1.6"
+                  aria-label="Editor line height"
+                  aria-describedby="accessibility-status"
+                />
+              </label>
+
+              <label class="accessibility-setting" for="accessibility-reduced-motion">
+                <span>
+                  <strong>Reduced motion</strong>
+                  <small>Suppress animation and transition effects.</small>
+                </span>
+                <select id="accessibility-reduced-motion" aria-describedby="accessibility-status">
+                  <option value="system">System default</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+
+              <label class="accessibility-setting" for="accessibility-reduced-transparency">
+                <span>
+                  <strong>Reduced transparency</strong>
+                  <small>Use solid surfaces and remove backdrop effects.</small>
+                </span>
+                <select
+                  id="accessibility-reduced-transparency"
+                  aria-describedby="accessibility-status"
+                >
+                  <option value="system">System default</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+            </div>
+
+            <section
+              class="accessibility-diagnostics"
+              aria-labelledby="accessibility-diagnostics-heading"
+            >
+              <h3 id="accessibility-diagnostics-heading">Diagnostics</h3>
+              <p id="accessibility-status" data-kind="info" role="status" aria-live="polite">
+                System accessibility preferences are active until you override them.
+              </p>
+              <ul id="accessibility-diagnostics"></ul>
+            </section>
+            <button class="accessibility-reset" id="accessibility-reset" type="button">
+              Reset accessibility preferences
             </button>
           </section>
 

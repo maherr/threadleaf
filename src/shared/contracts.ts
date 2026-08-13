@@ -1,3 +1,8 @@
+import type {
+  AccessibilityPreferences,
+  AccessibilityPreferencesSnapshot,
+  EffectiveAccessibilityPreferences,
+} from "./accessibility-preferences";
 import type { AppUpdateSnapshot } from "./app-updates";
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
@@ -719,6 +724,11 @@ export interface ThreadleafBridge {
   getSnapshot(): Promise<RuntimeSnapshot>;
   markStartupShellReady(): void;
   getSettings(): Promise<AppSettingsSnapshot>;
+  getAccessibilityPreferences(): Promise<AccessibilityPreferencesSnapshot>;
+  setAccessibilityPreferences(
+    preferences: AccessibilityPreferences,
+  ): Promise<AccessibilityPreferencesSnapshot>;
+  resetAccessibilityPreferences(): Promise<AccessibilityPreferencesSnapshot>;
   getAppearance(expectedVaultId: string): Promise<AppearanceResponse>;
   onAppearance(listener: (snapshot: AppearanceSnapshot) => void): () => void;
   setVaultAppearance(
@@ -794,6 +804,7 @@ export interface ThreadleafBridge {
   setPluginSurfaceBounds(bounds: PluginSurfaceBounds): Promise<void>;
   setPluginSurfaceVisible(visible: boolean): Promise<void>;
   setPluginSurfaceTheme(theme: "dark" | "light"): Promise<void>;
+  setPluginSurfaceAccessibility(preferences: EffectiveAccessibilityPreferences): Promise<void>;
   openNote(path: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
   closeNote(
     path: string,
@@ -875,5 +886,8 @@ export interface ThreadleafBridge {
   onMenuCommand(listener: (commandId: NativeMenuCommandId) => void): () => void;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   onSettings(listener: (snapshot: AppSettingsSnapshot) => void): () => void;
+  onAccessibilityPreferences(
+    listener: (snapshot: AccessibilityPreferencesSnapshot) => void,
+  ): () => void;
   onAppUpdate(listener: (snapshot: AppUpdateSnapshot) => void): () => void;
 }

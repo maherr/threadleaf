@@ -1,4 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type {
+  AccessibilityPreferences,
+  AccessibilityPreferencesSnapshot,
+  EffectiveAccessibilityPreferences,
+} from "../shared/accessibility-preferences";
 import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { AppearanceResponse, AppearanceSnapshot } from "../shared/appearance";
 import type {
@@ -345,6 +350,21 @@ const bridge: ThreadleafBridge = {
     ipcRenderer.invoke(ipcChannels.setPluginSurfaceVisible, visible) as Promise<void>,
   setPluginSurfaceTheme: (theme: "dark" | "light") =>
     ipcRenderer.invoke(ipcChannels.setPluginSurfaceTheme, theme) as Promise<void>,
+  setPluginSurfaceAccessibility: (preferences: EffectiveAccessibilityPreferences) =>
+    ipcRenderer.invoke(ipcChannels.setPluginSurfaceAccessibility, preferences) as Promise<void>,
+  getAccessibilityPreferences: () =>
+    ipcRenderer.invoke(
+      ipcChannels.accessibilityPreferences,
+    ) as Promise<AccessibilityPreferencesSnapshot>,
+  setAccessibilityPreferences: (preferences: AccessibilityPreferences) =>
+    ipcRenderer.invoke(
+      ipcChannels.setAccessibilityPreferences,
+      preferences,
+    ) as Promise<AccessibilityPreferencesSnapshot>,
+  resetAccessibilityPreferences: () =>
+    ipcRenderer.invoke(
+      ipcChannels.resetAccessibilityPreferences,
+    ) as Promise<AccessibilityPreferencesSnapshot>,
   onSnapshot: (listener) => {
     const subscription = (_event: Electron.IpcRendererEvent, snapshot: RuntimeSnapshot) => {
       listener(snapshot);
@@ -358,6 +378,17 @@ const bridge: ThreadleafBridge = {
     };
     ipcRenderer.on(ipcChannels.settingsChanged, subscription);
     return () => ipcRenderer.removeListener(ipcChannels.settingsChanged, subscription);
+  },
+  onAccessibilityPreferences: (listener) => {
+    const subscription = (
+      _event: Electron.IpcRendererEvent,
+      snapshot: AccessibilityPreferencesSnapshot,
+    ) => {
+      listener(snapshot);
+    };
+    ipcRenderer.on(ipcChannels.accessibilityPreferencesChanged, subscription);
+    return () =>
+      ipcRenderer.removeListener(ipcChannels.accessibilityPreferencesChanged, subscription);
   },
   onAppUpdate: (listener) => {
     const subscription = (_event: Electron.IpcRendererEvent, snapshot: AppUpdateSnapshot) => {
