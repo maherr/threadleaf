@@ -155,6 +155,7 @@ let editorDraftStore: FileEditorDraftStore;
 let noteBookmarkController: NoteBookmarkController;
 let pluginPackageManager: PluginPackageManager;
 let workspaceLayoutController!: WorkspaceLayoutController;
+let workspaceStateStore: FileWorkspaceStateStore;
 let pluginOperationTail: Promise<void> = Promise.resolve();
 let initialWorkspaceActivation: Promise<void> | null = null;
 let initialWorkspaceRecoveryPending = false;
@@ -1211,12 +1212,15 @@ async function waitForMigrationWorkspace(expectedVaultId: string): Promise<boole
 }
 
 async function currentMigrationState(expectedVaultId: string): Promise<MigrationPrivateState> {
-  if (workspaceController.vaultId !== expectedVaultId) {
-    throw new Error("The active vault changed while reading migration state.");
+  if (workspaceController?.vaultId === expectedVaultId) {
+    return {
+      settings: settingsController.getSnapshot().settings,
+      workspace: await workspaceController.getWorkspaceState(expectedVaultId),
+    };
   }
   return {
     settings: settingsController.getSnapshot().settings,
-    workspace: await workspaceController.getWorkspaceState(expectedVaultId),
+    workspace: await workspaceStateStore.load(expectedVaultId),
   };
 }
 
@@ -1350,7 +1354,15 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     fixtureVaultPath,
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
-    workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
+    workspaceStateStore,
+    beforeWorkspaceStateRestore: async (vaultId) => {
+      const recoveryNotices = migrationTransactionManager
+        ? await migrationTransactionManager.recover(vaultId, () => currentMigrationState(vaultId))
+        : [];
+      if (recoveryNotices.length > 0) {
+        migrationStartupNotices.set(vaultId, recoveryNotices);
+      }
+    },
     workspaceSettingsForVault: (vaultId) => settingsController.getVaultWorkspaceSettings(vaultId),
     pluginRuntimeFactory: async (vaultPath) => {
       const pluginOperationTimeout = developmentPluginOperationTimeout();
@@ -1407,7 +1419,12 @@ async function activateInitialWorkspace(): Promise<void> {
     if (recoveryNotices.length > 0) {
       migrationStartupNotices.set(expectedVaultId, recoveryNotices);
     }
-    if (!recoveryNotices.some((notice) => notice.status === "conflict")) {
+    const startupRecoveryNotices = migrationStartupNotices.get(expectedVaultId) ?? [];
+    if (
+      ![...startupRecoveryNotices, ...recoveryNotices].some(
+        (notice) => notice.status === "conflict",
+      )
+    ) {
       await serializePluginOperation(() => reconcileCompatibilityPlugins(expectedVaultId));
     }
   } finally {
@@ -3019,6 +3036,39 @@ app.whenReady().then(async () => {
   noteBookmarkController = new NoteBookmarkController(
     new FileNoteBookmarkStore(join(app.getPath("userData"), "bookmarks")),
   );
+  workspaceStateStore = new FileWorkspaceStateStore(join(app.getPath("userData"), "workspaces"));
+  const migrationInterruptPhase = developmentMigrationInterruptPhase();
+  let migrationInterrupted = false;
+  migrationTransactionManager = new ObsidianMigrationTransactionManager(
+    join(app.getPath("userData"), "migration"),
+    {
+      writeSettings: async (settings, expectedCurrent) => {
+        await settingsController.replaceSettings(settings, expectedCurrent);
+      },
+      writeWorkspace: async (state, expectedCurrent) => {
+        if (!state) {
+          throw new Error("The active workspace cannot be cleared by a migration transaction.");
+        }
+        if (workspaceController?.vaultId === state.vaultId) {
+          await workspaceController.setWorkspaceState(state, state.vaultId, expectedCurrent);
+          return;
+        }
+        await workspaceStateStore.save(state, expectedCurrent);
+      },
+    },
+    () => new Date(),
+    migrationInterruptPhase
+      ? {
+          afterPhase: (phase) => {
+            if (phase === migrationInterruptPhase && !migrationInterrupted) {
+              migrationInterrupted = true;
+              process.kill(process.pid, "SIGKILL");
+            }
+          },
+        }
+      : {},
+  );
+  await migrationTransactionManager.initialize();
   workspaceController = await createWorkspaceController();
   workspaceLayoutController = new WorkspaceLayoutController({
     store: new FileWorkspaceLayoutStore(join(app.getPath("userData"), "workspace-layouts")),
@@ -3037,38 +3087,6 @@ app.whenReady().then(async () => {
       }
     }
   });
-  const migrationInterruptPhase = developmentMigrationInterruptPhase();
-  let migrationInterrupted = false;
-  migrationTransactionManager = new ObsidianMigrationTransactionManager(
-    join(app.getPath("userData"), "migration"),
-    {
-      writeSettings: async (settings, expectedCurrent) => {
-        await settingsController.replaceSettings(settings, expectedCurrent);
-      },
-      writeWorkspace: async (state, expectedCurrent) => {
-        if (!state) {
-          throw new Error("The active workspace cannot be cleared by a migration transaction.");
-        }
-        await workspaceController.setWorkspaceState(
-          state,
-          workspaceController.vaultId,
-          expectedCurrent,
-        );
-      },
-    },
-    () => new Date(),
-    migrationInterruptPhase
-      ? {
-          afterPhase: (phase) => {
-            if (phase === migrationInterruptPhase && !migrationInterrupted) {
-              migrationInterrupted = true;
-              process.kill(process.pid, "SIGKILL");
-            }
-          },
-        }
-      : {},
-  );
-  await migrationTransactionManager.initialize();
   appearanceWatcherLifecycle = createAppearanceWatcherLifecycle();
   registerIpcHandlers();
   reconcileAppearanceWatcher(await workspaceController.getSnapshot());

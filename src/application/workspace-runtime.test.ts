@@ -202,12 +202,14 @@ afterEach(async () => {
 async function openRuntime(
   workspaceStateStore?: WorkspaceStateStore,
   workspaceSettings?: Partial<VaultWorkspaceSettings>,
+  beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>,
 ): Promise<WorkspaceRuntime> {
   runtime = await WorkspaceRuntime.open({
     vaultRoot: vaultPath,
     stateRoot: new FixedStateRoot(statePath),
     pluginDirectory: path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"),
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
+    ...(beforeWorkspaceStateRestore ? { beforeWorkspaceStateRestore } : {}),
     ...(workspaceSettings
       ? {
           workspaceSettings: {
@@ -970,6 +972,31 @@ describe("WorkspaceRuntime", () => {
       ],
     });
     expect(snapshot.vault.warning).toBeNull();
+  });
+
+  it("runs startup recovery before restoring and pruning workspace state", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Missing.md", "Linked Note.md"],
+      activePath: "Missing.md",
+    });
+    const events: string[] = [];
+    const load = store.load.bind(store);
+    store.load = async (vaultId) => {
+      events.push("restore");
+      return load(vaultId);
+    };
+
+    const workspace = await openRuntime(store, undefined, async () => {
+      events.push("recover");
+    });
+
+    expect(events).toEqual(["recover", "restore"]);
+    expect((await workspace.getSnapshot()).workspace).toMatchObject({
+      activeNote: { path: "Linked Note.md" },
+    });
+    expect(store.saved.at(-1)).toMatchObject({
+      panes: [{ openPaths: ["Linked Note.md"], activePath: "Linked Note.md" }],
+    });
   });
 
   it("persists tab order, active note, and an explicitly empty workspace across restarts", async () => {

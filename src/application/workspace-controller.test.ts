@@ -617,6 +617,7 @@ describe("WorkspaceController", () => {
     const pluginRuntimeFactory: PluginRuntimeFactory = async () => {
       throw new Error("The controller harness should only preserve this factory.");
     };
+    const beforeWorkspaceStateRestore = async (): Promise<void> => undefined;
     const controller = await WorkspaceController.open({
       stateRoot,
       selectionStore: store,
@@ -626,6 +627,7 @@ describe("WorkspaceController", () => {
       configuredPluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
       deferInitialVault: true,
       pluginRuntimeFactory,
+      beforeWorkspaceStateRestore,
       runtimeFactory: harness.runtimeFactory,
     });
 
@@ -638,6 +640,7 @@ describe("WorkspaceController", () => {
     });
     expect(harness.optionsSeen[0]?.pluginDirectory).toBeUndefined();
     expect(harness.optionsSeen[0]?.pluginRuntimeFactory).toBeUndefined();
+    expect(harness.optionsSeen[0]?.beforeWorkspaceStateRestore).toBeUndefined();
     expect(await controller.getSnapshot()).toMatchObject({
       vault: { path: path.resolve(fixtureVaultPath), source: "bundled" },
       startup: {
@@ -667,6 +670,7 @@ describe("WorkspaceController", () => {
       pluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
     });
     expect(harness.optionsSeen[1]?.pluginRuntimeFactory).toBe(pluginRuntimeFactory);
+    expect(harness.optionsSeen[1]?.beforeWorkspaceStateRestore).toBe(beforeWorkspaceStateRestore);
     expect(store.saved).toEqual([]);
     expect(harness.runtimes[0]?.closed).toBe(true);
     await expect(controller.searchVault("configured")).resolves.toMatchObject({

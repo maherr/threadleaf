@@ -115,6 +115,7 @@ export interface WorkspaceRuntimeOptions {
   selectionSource?: VaultSelectionSource;
   warning?: string | null;
   workspaceStateStore?: WorkspaceStateStore;
+  beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>;
   workspaceSettings?: VaultWorkspaceSettings;
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings;
 }
@@ -713,6 +714,7 @@ export class WorkspaceRuntime {
       vaultRoot: options.vaultRoot,
       stateRoot: options.stateRoot,
     });
+    await options.beforeWorkspaceStateRestore?.(kernel.vaultId);
     let runtime: WorkspaceRuntime | undefined;
     const bootstrap = await captureVaultBootstrap(kernel.paths);
     const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, bootstrap.snapshot, {

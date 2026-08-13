@@ -243,6 +243,7 @@ export interface WorkspaceControllerOptions {
   pluginRuntimeFactory?: PluginRuntimeFactory;
   runtimeFactory?: WorkspaceRuntimeFactory;
   workspaceStateStore?: WorkspaceStateStore;
+  beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>;
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings;
 }
 
@@ -272,6 +273,7 @@ function runtimeOptions(
   pluginModuleResolver?: PluginModuleResolver,
   pluginRuntimeFactory?: PluginRuntimeFactory,
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings,
+  beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>,
 ): WorkspaceRuntimeOptions {
   return {
     vaultRoot,
@@ -283,6 +285,7 @@ function runtimeOptions(
     ...(pluginModuleResolver ? { pluginModuleResolver } : {}),
     ...(pluginRuntimeFactory ? { pluginRuntimeFactory } : {}),
     ...(workspaceSettingsForVault ? { workspaceSettingsForVault } : {}),
+    ...(beforeWorkspaceStateRestore ? { beforeWorkspaceStateRestore } : {}),
   };
 }
 
@@ -293,6 +296,7 @@ export class WorkspaceController {
   readonly #runtimeFactory: WorkspaceRuntimeFactory;
   readonly #pluginModuleResolver: PluginModuleResolver | undefined;
   readonly #pluginRuntimeFactory: PluginRuntimeFactory | undefined;
+  readonly #beforeWorkspaceStateRestore: ((vaultId: string) => Promise<void>) | undefined;
   readonly #workspaceSettingsForVault: ((vaultId: string) => VaultWorkspaceSettings) | undefined;
   readonly #listeners = new Set<SnapshotListener>();
   #runtime: WorkspaceRuntimePort;
@@ -314,6 +318,7 @@ export class WorkspaceController {
     this.#runtimeFactory = runtimeFactory;
     this.#pluginModuleResolver = options.pluginModuleResolver;
     this.#pluginRuntimeFactory = options.pluginRuntimeFactory;
+    this.#beforeWorkspaceStateRestore = options.beforeWorkspaceStateRestore;
     this.#workspaceSettingsForVault = options.workspaceSettingsForVault;
     this.#deferredInitialVault = deferredInitialVault;
     this.#releaseRuntimeListener = this.bindRuntime(runtime);
@@ -457,6 +462,7 @@ export class WorkspaceController {
           this.#pluginModuleResolver,
           this.#pluginRuntimeFactory,
           this.#workspaceSettingsForVault,
+          this.#beforeWorkspaceStateRestore,
         ),
       );
     } catch (error) {

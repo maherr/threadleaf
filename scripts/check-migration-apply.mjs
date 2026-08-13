@@ -465,7 +465,7 @@ try {
   phase = "injected process interruption";
   await launchApplication({
     profilePath: crashUserDataPath,
-    interruptPhase: "settings-committed",
+    interruptPhase: "workspace-committed",
   });
   const crashRuntime = await waitFor(async () => {
     const snapshot = await evaluate("window.threadleaf.getSnapshot()");
@@ -511,6 +511,7 @@ try {
     await treeManifest(obsidianRoot),
     "Injected migration interruption",
   );
+  await fs.rm(path.join(vaultPath, "Recovery Target.md"));
 
   phase = "startup recovery gate";
   await launchApplication({ profilePath: crashUserDataPath });
@@ -521,8 +522,8 @@ try {
       : null;
   }, "Startup did not recover the interrupted migration before exposing the vault");
   assert(
-    recoveredRuntime.workspace.activeNote?.path === "Recovery Target.md",
-    "Startup exposed the workspace before the pending workspace phase was recovered.",
+    recoveredRuntime.workspace.activeNote === null && recoveredRuntime.workspace.tabs.length === 0,
+    "Startup did not prune the deleted target only after the pending workspace phase was recovered.",
   );
   const recoveredSettings = await readSettings();
   assert(
