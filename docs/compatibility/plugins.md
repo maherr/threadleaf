@@ -115,7 +115,7 @@ Settings shows a read-only preflight before a package can be selected. Each row 
 - the exact installed plugin version;
 - the exact installed `main.js` SHA-256 digest and whether that bundle has a current per-vault
   authority grant;
-- `minAppVersion` as the plugin's declared Obsidian API baseline, without pretending that the
+- `minAppVersion` as the plugin's declared minimum Obsidian version, without pretending that the
   number is a Threadleaf version;
 - the `isDesktopOnly` flag, or an explicit statement that no desktop-only flag was declared;
 - the standard bundled-dependency model; and

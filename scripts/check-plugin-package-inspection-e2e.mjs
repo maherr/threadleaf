@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -39,6 +40,39 @@ try {
     safe.stages.length === inspector.pluginPackageInspectionStageIds.length &&
       safe.stages.every((stage) => stage.status === "pass"),
     "The safe package did not produce one passing result for every required stage.",
+  );
+
+  const cite = await fixtureInput("inspection-safe");
+  const citeManifest = Buffer.from(
+    `${JSON.stringify(
+      {
+        id: "cite",
+        name: "CITE",
+        version: "0.1.2",
+        minAppVersion: "1.12.7",
+        description: "Exact CITE release fixture.",
+        author: "Fixture author",
+        isDesktopOnly: false,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  cite.assets.manifest = citeManifest;
+  cite.hashes.manifestSha256 = createHash("sha256").update(citeManifest).digest("hex");
+  cite.provenance = {
+    ...cite.provenance,
+    pluginId: "cite",
+    version: "0.1.2",
+    releaseTag: "0.1.2",
+  };
+  const citeReport = await inspector.inspectPluginPackage(cite, { appVersion: "0.1.0-beta.3" });
+  assert(
+    citeReport.overall === "pass" &&
+      citeReport.manifest?.minAppVersion === "1.12.7" &&
+      citeReport.stages.find(({ id }) => id === "minimum-app-platform")?.status === "pass",
+    "CITE's declared minimum Obsidian version was treated as a Threadleaf version requirement.",
   );
 
   const tampered = await fixtureInput("inspection-safe");

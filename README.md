@@ -172,10 +172,10 @@ keeps its enabled set and restricted-mode choice in private per-vault applicatio
 in `.obsidian/`. Multiple selected plugins reconcile independently at startup and after enable,
 disable, or reload operations. A full Settings catalog reports invalid packages and runtime load
 failures without hiding the rest of the inventory. Before enablement, each package reports its
-declared Obsidian API baseline, desktop-only flag, standard bundled-dependency model, and measured
-compatibility evidence. Evidence is exact to the tested plugin version: Excalidraw 2.25.3 reports
-its named level 4 workflows, a different release remains unverified, and an unknown plugin starts
-at discovered level 0. Each valid package also gets a conservative static authority report over
+declared minimum Obsidian version, desktop-only flag, standard bundled-dependency model, and
+measured compatibility evidence. Evidence is exact to the tested plugin version: Excalidraw 2.25.3
+reports its named level 4 workflows, a different release remains unverified, and an unknown plugin
+starts at discovered level 0. Each valid package also gets a conservative static authority report over
 the exact raw `main.js` bytes. Threadleaf blocks both JavaScript and CSS until the user grants that
 exact bundle for the current vault. Any byte change makes the grant stale; revocation disables and
 unloads the plugin. The execution renderer re-hashes the raw bytes immediately before compilation,

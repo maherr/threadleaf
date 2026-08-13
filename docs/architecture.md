@@ -369,8 +369,8 @@ imply enablement. The enabled IDs, restricted-mode choice, and exact-bundle auth
 version 4 private application settings under the vault identity. Version 3 settings migrate without
 grants, so previously selected bundles remain blocked until reviewed.
 
-Discovery also creates a pre-enablement report. It presents the manifest's minimum Obsidian API
-version and desktop-only flag, explains that the standard package model bundles external
+Discovery also creates a pre-enablement report. It presents the manifest's declared minimum
+Obsidian version and desktop-only flag, explains that the standard package model bundles external
 dependencies into `main.js` rather than declaring a cross-plugin dependency graph, and attaches
 only exact-version workflow evidence. The same bounded read computes an exact raw-byte bundle
 digest and a conservative static report over observed authority classes. A grant binds that digest

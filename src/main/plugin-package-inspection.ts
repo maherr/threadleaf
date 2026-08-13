@@ -24,7 +24,6 @@ import { parsePluginPackageInspectionReceipt } from "./plugin-inspection-receipt
 export const pluginPackageInspectionSchemaVersion = 1 as const;
 export const pluginPackageInspectionToolVersion = "1.0.0" as const;
 export const defaultInspectionTimeoutMs = 5_000;
-export const defaultInspectionAppVersion = "0.1.0-beta.3";
 export const defaultInspectionPlatform = "linux-x64-electron";
 
 const maxManifestBytes = 64 * 1024;
@@ -103,6 +102,10 @@ export interface ExactPluginPackageInput {
 }
 
 export interface PluginPackageInspectionOptions {
+  /**
+   * Retained for caller compatibility but intentionally ignored. A manifest's `minAppVersion`
+   * declares a minimum Obsidian version and must never be compared with a Threadleaf version.
+   */
   appVersion?: string;
   platform?: string;
   timeoutMs?: number;
@@ -379,7 +382,7 @@ function allPass(stages: readonly PluginPackageInspectionStage[], ids: readonly 
   return ids.every((id) => stages.find((stage) => stage.id === id)?.status === "pass");
 }
 
-function parseVersion(value: string): number[] | null {
+function parseDeclaredMinimumObsidianVersion(value: string): number[] | null {
   if (!versionPattern.test(value)) {
     return null;
   }
@@ -389,22 +392,6 @@ function parseVersion(value: string): number[] | null {
     return null;
   }
   return numbers;
-}
-
-function compareVersions(left: string, right: string): number | null {
-  const leftParts = parseVersion(left);
-  const rightParts = parseVersion(right);
-  if (!leftParts || !rightParts) {
-    return null;
-  }
-  const length = Math.max(leftParts.length, rightParts.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (difference !== 0) {
-      return Math.sign(difference);
-    }
-  }
-  return 0;
 }
 
 function cloneBytes(bytes: Uint8Array): Uint8Array {
@@ -851,7 +838,7 @@ function dependencyStage(input: ExactPluginPackageInput): {
 
 function minimumPlatformStage(
   manifest: PluginManifestData | null,
-  options: Required<Pick<PluginPackageInspectionOptions, "appVersion" | "platform">>,
+  options: Required<Pick<PluginPackageInspectionOptions, "platform">>,
 ): PluginPackageInspectionStage {
   const stage = new StageBuilder("minimum-app-platform");
   stage.addEvidence("input/manifest.json", "analysis/platform.json");
@@ -867,27 +854,15 @@ function minimumPlatformStage(
     return stage.finish("blocked");
   }
   const diagnostics: InspectionDiagnostic[] = [];
-  if (manifest.minAppVersion) {
-    const comparison = compareVersions(options.appVersion, manifest.minAppVersion);
-    if (comparison === null) {
-      diagnostics.push(
-        diagnostic(
-          "unsupported-min-app-version",
-          "error",
-          "Minimum app version could not be compared with the current Threadleaf version.",
-          "analysis/platform.json",
-        ),
-      );
-    } else if (comparison < 0) {
-      diagnostics.push(
-        diagnostic(
-          "minimum-app-version-unmet",
-          "error",
-          "Package requires a newer Threadleaf app version.",
-          "analysis/platform.json",
-        ),
-      );
-    }
+  if (manifest.minAppVersion && !parseDeclaredMinimumObsidianVersion(manifest.minAppVersion)) {
+    diagnostics.push(
+      diagnostic(
+        "unsupported-min-app-version",
+        "error",
+        "Declared minimum Obsidian version has unsupported syntax.",
+        "analysis/platform.json",
+      ),
+    );
   }
   if (manifest.isDesktopOnly && !options.platform.includes("electron")) {
     diagnostics.push(
@@ -1328,7 +1303,6 @@ export async function inspectPluginPackage(
   configuredOptions: PluginPackageInspectionOptions = {},
 ): Promise<PluginPackageInspectionReport> {
   const options = {
-    appVersion: configuredOptions.appVersion ?? defaultInspectionAppVersion,
     platform: configuredOptions.platform ?? defaultInspectionPlatform,
     timeoutMs:
       configuredOptions.timeoutMs &&

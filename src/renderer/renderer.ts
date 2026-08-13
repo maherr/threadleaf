@@ -6842,8 +6842,8 @@ function renderPluginSettings(): void {
     const apiBaseline = document.createElement("span");
     apiBaseline.className = "plugin-preflight-badge";
     apiBaseline.textContent = plugin.minAppVersion
-      ? `Obsidian API ≥ ${plugin.minAppVersion}`
-      : "API baseline unknown";
+      ? `Declared minimum Obsidian ${plugin.minAppVersion}`
+      : "Declared minimum Obsidian unknown";
     const platform = document.createElement("span");
     platform.className = "plugin-preflight-badge";
     platform.textContent = plugin.isDesktopOnly ? "Desktop only" : "No desktop-only flag";

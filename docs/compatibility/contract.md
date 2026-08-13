@@ -29,10 +29,12 @@ do not raise a compatibility level without a production-path fixture.
 
 ## Pre-enablement evidence
 
-The installed-package catalog reports evidence before execution. Manifest metadata states an
-Obsidian API baseline and desktop-only flag; it is not proof of compatibility. Standard plugin
-packages bundle external dependencies into `main.js` and do not declare a cross-plugin dependency
-graph in `manifest.json`, so Threadleaf states that model instead of fabricating dependencies.
+The installed-package catalog reports evidence before execution. Manifest metadata states a
+declared minimum Obsidian version and desktop-only flag; it is not proof of compatibility. The
+version is syntax-checked provenance, not a Threadleaf version or compatibility verdict. Standard
+plugin packages bundle external dependencies into `main.js` and do not declare a cross-plugin
+dependency graph in `manifest.json`, so Threadleaf states that model instead of fabricating
+dependencies.
 
 Workflow evidence is keyed by plugin ID and exact version. An exact tested release may display its
 measured level and named scope. A different release remains level 0 and names the prior tested

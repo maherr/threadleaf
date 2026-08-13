@@ -200,7 +200,107 @@ function withMain(input: ExactPluginPackageInput, source: string): ExactPluginPa
   };
 }
 
+function withManifest(
+  input: ExactPluginPackageInput,
+  manifest: Record<string, unknown>,
+): ExactPluginPackageInput {
+  const bytes = new TextEncoder().encode(`${JSON.stringify(manifest, null, 2)}\n`);
+  const id = String(manifest.id);
+  const version = String(manifest.version);
+  return {
+    ...input,
+    assets: { ...input.assets, manifest: bytes },
+    hashes: {
+      ...input.hashes,
+      manifestSha256: createHash("sha256").update(bytes).digest("hex"),
+    },
+    provenance: {
+      ...input.provenance,
+      pluginId: id,
+      version,
+      releaseTag: version,
+    },
+  };
+}
+
 describe("exact plugin package inspection", () => {
+  it("records CITE's declared minimum Obsidian version without treating it as Threadleaf semver", async () => {
+    const input = withManifest(await fixtureInput("inspection-safe"), {
+      id: "cite",
+      name: "CITE",
+      version: "0.1.2",
+      minAppVersion: "1.12.7",
+      description: "Exact CITE release fixture.",
+      author: "Fixture author",
+      isDesktopOnly: false,
+    });
+
+    const report = await inspectPluginPackage(input, { appVersion: "0.1.0-beta.3" });
+
+    expect(report.overall).toBe("pass");
+    expect(report.manifest).toEqual({
+      id: "cite",
+      version: "0.1.2",
+      minAppVersion: "1.12.7",
+      isDesktopOnly: false,
+    });
+    expect(report.input.provenance).toMatchObject({
+      pluginId: "cite",
+      version: "0.1.2",
+      releaseTag: "0.1.2",
+    });
+    expect(report.input.assets.find((asset) => asset.filename === "manifest.json")).toEqual({
+      filename: "manifest.json",
+      size: input.assets.manifest.byteLength,
+      sha256: input.hashes.manifestSha256,
+    });
+    expect(report.stages.find((stage) => stage.id === "minimum-app-platform")).toMatchObject({
+      status: "pass",
+      diagnostics: [],
+    });
+  });
+
+  it("keeps invalid declared minimum Obsidian syntax and desktop-only packages blocked", async () => {
+    const invalidMinimum = withManifest(await fixtureInput("inspection-safe"), {
+      id: "cite",
+      name: "CITE",
+      version: "0.1.2",
+      minAppVersion: "1.12.x",
+      isDesktopOnly: false,
+    });
+    const invalidReport = await inspectPluginPackage(invalidMinimum, {
+      appVersion: "0.1.0-beta.3",
+    });
+    expect(invalidReport.stages.find((stage) => stage.id === "minimum-app-platform")).toMatchObject(
+      {
+        status: "blocked",
+        diagnostics: [
+          expect.objectContaining({
+            code: "unsupported-min-app-version",
+            message: "Declared minimum Obsidian version has unsupported syntax.",
+          }),
+        ],
+      },
+    );
+
+    const desktopOnly = withManifest(await fixtureInput("inspection-safe"), {
+      id: "cite",
+      name: "CITE",
+      version: "0.1.2",
+      minAppVersion: "1.12.7",
+      isDesktopOnly: true,
+    });
+    const desktopReport = await inspectPluginPackage(desktopOnly, {
+      platform: "headless-cli",
+    });
+    expect(desktopReport.stages.find((stage) => stage.id === "minimum-app-platform")).toMatchObject(
+      {
+        status: "blocked",
+        diagnostics: [expect.objectContaining({ code: "desktop-only-package" })],
+      },
+    );
+  });
+
   it("produces all-gates-passed evidence and an exact registry candidate for a fixture", async () => {
     const input = await fixtureInput("inspection-safe");
     const report = await inspectPluginPackage(input, { timeoutMs: 1_000 });

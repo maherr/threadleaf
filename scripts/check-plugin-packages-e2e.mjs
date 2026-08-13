@@ -430,6 +430,9 @@ try {
       authorityAction: [...(row?.querySelectorAll("button") ?? [])].find((button) =>
         button.textContent?.trim() === "Review authority"
       )?.textContent?.trim() ?? "",
+      preflightBadges: [...(row?.querySelectorAll(".plugin-preflight-badge") ?? [])].map(
+        (badge) => badge.textContent?.trim() ?? "",
+      ),
       toggleDisabled: row?.querySelector('input[type="checkbox"]')?.disabled ?? null,
       loaded: (snapshot.plugins ?? []).some((plugin) => plugin.id === ${JSON.stringify(pluginId)} && plugin.state === "loaded"),
     };
@@ -444,6 +447,12 @@ try {
       installedState.authorityAction === "Review authority" &&
       installedState.toggleDisabled === true,
     "The exact-bundle review gate relied on color or left the enable toggle reachable.",
+  );
+  assert(
+    installedState.preflightBadges.some((badge) =>
+      badge.startsWith("Declared minimum Obsidian "),
+    ) && !installedState.preflightBadges.some((badge) => badge.includes("Obsidian API")),
+    "The installed package did not render its declared minimum Obsidian provenance.",
   );
   assert(installedState.loaded === false, "A newly installed bundle executed without enablement.");
   const receipt = JSON.parse(
