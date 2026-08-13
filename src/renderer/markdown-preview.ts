@@ -81,6 +81,7 @@ const sanitizeConfig = {
     "data-threadleaf-math",
     "data-threadleaf-link",
     "data-threadleaf-note-embed",
+    "data-threadleaf-render-token",
     "data-threadleaf-source-fallback",
     "data-threadleaf-subpath",
     "data-threadleaf-table",
@@ -164,6 +165,7 @@ interface MarkdownPreviewEnvironment {
   [key: string | symbol]: unknown;
   threadleafFootnotes: FootnoteCollection;
   threadleafFootnoteReferences: Map<string, number>;
+  threadleafRenderToken: string;
   threadleafSourceText: string;
   threadleafInlineMathSource: string | null;
   threadleafInlineMathCandidates: ReadonlyMap<number, InlineMathCandidate | null> | null;
@@ -180,6 +182,26 @@ function previewEnvironment(value: unknown): MarkdownPreviewEnvironment | null {
   return candidate.threadleafFootnotes && candidate.threadleafFootnoteReferences
     ? (candidate as MarkdownPreviewEnvironment)
     : null;
+}
+
+let renderTokenSequence = 0;
+
+/**
+ * Markup produced by our renderer needs an identity that raw HTML cannot
+ * predict.  The token is removed before the fragment is returned; it exists
+ * only while we separate generated controls from author-owned HTML.
+ */
+function createRenderToken(): string {
+  renderTokenSequence += 1;
+  const random =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `threadleaf-render-${random}-${renderTokenSequence.toString(36)}`;
+}
+
+function renderTokenAttribute(token: string | undefined): string {
+  return token ? ` data-threadleaf-render-token="${escapeAttribute(token)}"` : "";
 }
 
 function isEscaped(source: string, position: number): boolean {
@@ -365,12 +387,17 @@ function isLocalAttachmentTarget(target: string): boolean {
   );
 }
 
-function noteEmbedPlaceholder(target: string, subpath: string | null, label: string): string {
-  return `<span class="preview-note-embed-placeholder" role="status" aria-label="Loading embedded note ${escapeAttribute(label)}" data-threadleaf-note-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-subpath="${escapeAttribute(subpath ?? "")}" data-threadleaf-alt="${escapeAttribute(label)}">Embedded note: ${escapeText(label)}</span>`;
+function noteEmbedPlaceholder(
+  target: string,
+  subpath: string | null,
+  label: string,
+  renderToken?: string,
+): string {
+  return `<span class="preview-note-embed-placeholder" role="status" aria-label="Loading embedded note ${escapeAttribute(label)}" data-threadleaf-note-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-subpath="${escapeAttribute(subpath ?? "")}" data-threadleaf-alt="${escapeAttribute(label)}"${renderTokenAttribute(renderToken)}>Embedded note: ${escapeText(label)}</span>`;
 }
 
-function attachmentPlaceholder(target: string, label: string): string {
-  return `<span class="preview-attachment-placeholder" role="status" aria-label="Loading local attachment ${escapeAttribute(label)}" data-threadleaf-attachment-target="${escapeAttribute(target)}" data-threadleaf-attachment-alt="${escapeAttribute(label)}">Attachment: ${escapeText(label)}</span>`;
+function attachmentPlaceholder(target: string, label: string, renderToken?: string): string {
+  return `<span class="preview-attachment-placeholder" role="status" aria-label="Loading local attachment ${escapeAttribute(label)}" data-threadleaf-attachment-target="${escapeAttribute(target)}" data-threadleaf-attachment-alt="${escapeAttribute(label)}"${renderTokenAttribute(renderToken)}>Attachment: ${escapeText(label)}</span>`;
 }
 
 function footnoteAnchor(id: string, number: number): string {
@@ -404,16 +431,16 @@ function renderFootnoteSection(
       const references = environment.threadleafFootnoteReferences.get(definition.id) ?? 0;
       const backrefs = Array.from({ length: references }, (_, referenceIndex) => {
         const reference = `${anchor}-ref-${referenceIndex + 1}`;
-        return `<a class="preview-footnote-backref" href="#${reference}" aria-label="Back to footnote ${number}">↩</a>`;
+        return `<a class="preview-footnote-backref" href="#${reference}" aria-label="Back to footnote ${number}"${renderTokenAttribute(environment.threadleafRenderToken)}>↩</a>`;
       }).join(" ");
-      return `<li id="${anchor}" data-source-line="${definition.sourceLine}" data-threadleaf-footnote="${escapeAttribute(definition.id)}"><span class="preview-footnote-number">${number}.</span><span class="preview-footnote-content">${rendered}</span>${backrefs ? `<span class="preview-footnote-backrefs">${backrefs}</span>` : ""}</li>`;
+      return `<li id="${anchor}" data-source-line="${definition.sourceLine}" data-threadleaf-footnote="${escapeAttribute(definition.id)}"${renderTokenAttribute(environment.threadleafRenderToken)}><span class="preview-footnote-number">${number}.</span><span class="preview-footnote-content">${rendered}</span>${backrefs ? `<span class="preview-footnote-backrefs">${backrefs}</span>` : ""}</li>`;
     })
     .join("");
-  return `<section class="preview-footnotes" data-source-line="${firstLine}" data-threadleaf-footnote="section"><h2>Footnotes</h2><ol>${items}</ol></section>`;
+  return `<section class="preview-footnotes" data-source-line="${firstLine}" data-threadleaf-footnote="section"${renderTokenAttribute(environment.threadleafRenderToken)}><h2>Footnotes</h2><ol>${items}</ol></section>`;
 }
 
-function canvasEmbedPlaceholder(target: string, label: string): string {
-  return `<span class="preview-canvas-embed-placeholder" role="status" aria-label="Loading embedded canvas ${escapeAttribute(label)}" data-threadleaf-canvas-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-alt="${escapeAttribute(label)}">Embedded canvas: ${escapeText(label)}</span>`;
+function canvasEmbedPlaceholder(target: string, label: string, renderToken?: string): string {
+  return `<span class="preview-canvas-embed-placeholder" role="status" aria-label="Loading embedded canvas ${escapeAttribute(label)}" data-threadleaf-canvas-embed="true" data-threadleaf-target="${escapeAttribute(target)}" data-threadleaf-alt="${escapeAttribute(label)}"${renderTokenAttribute(renderToken)}>Embedded canvas: ${escapeText(label)}</span>`;
 }
 
 const markdown = new MarkdownIt({
@@ -429,55 +456,60 @@ markdown.inline.ruler.before("text", "threadleaf_math_inline", mathInlineRule);
 markdown.block.ruler.before("fence", "threadleaf_math_block", mathBlockRule);
 
 markdown.core.ruler.after("block", "threadleaf_source_lines", (state) => {
+  const renderToken = previewEnvironment(state.env)?.threadleafRenderToken;
   for (const token of state.tokens) {
     if (token.level === 0 && token.map && token.nesting >= 0 && token.type !== "inline") {
       token.attrSet("data-source-line", String(token.map[0] + 1));
+      if (renderToken) {
+        token.attrSet("data-threadleaf-render-token", renderToken);
+      }
     }
   }
 });
 
-markdown.renderer.rules.threadleaf_wikilink = (tokens, index) => {
+markdown.renderer.rules.threadleaf_wikilink = (tokens, index, _options, env) => {
   const link = tokens[index]?.meta as PreviewWikiLink | undefined;
   if (!link) {
     return "";
   }
+  const renderToken = previewEnvironment(env)?.threadleafRenderToken;
   const fallback = `${link.target}${link.subpath ?? ""}`;
   const label = link.alias ?? fallback;
   if (link.embed && /\.(?:gif|jpe?g|png|webp)$/iu.test(link.target)) {
-    return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(link.target)}" data-threadleaf-alt="${escapeAttribute(link.alias ?? "")}">Image: ${escapeText(label)}</span>`;
+    return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(link.target)}" data-threadleaf-alt="${escapeAttribute(link.alias ?? "")}"${renderTokenAttribute(renderToken)}>Image: ${escapeText(label)}</span>`;
   }
   if (link.embed && link.target.toLocaleLowerCase("en-US").endsWith(".canvas")) {
-    return canvasEmbedPlaceholder(link.target, label);
+    return canvasEmbedPlaceholder(link.target, label, renderToken);
   }
   if (link.embed && isMarkdownNoteTarget(link.target, link.subpath, true)) {
-    return noteEmbedPlaceholder(link.target, link.subpath, label);
+    return noteEmbedPlaceholder(link.target, link.subpath, label, renderToken);
   }
   if (link.embed && isLocalAttachmentTarget(link.target)) {
-    return attachmentPlaceholder(link.target, label);
+    return attachmentPlaceholder(link.target, label, renderToken);
   }
   const classes = link.embed ? "internal-link preview-embed-link" : "internal-link";
-  return `<a href="#" class="${classes}" data-threadleaf-link="wiki" data-threadleaf-target="${escapeAttribute(link.target)}" data-threadleaf-subpath="${escapeAttribute(link.subpath ?? "")}" data-threadleaf-embed="${String(link.embed)}">${escapeText(label)}</a>`;
+  return `<a href="#" class="${classes}" data-threadleaf-link="wiki" data-threadleaf-target="${escapeAttribute(link.target)}" data-threadleaf-subpath="${escapeAttribute(link.subpath ?? "")}" data-threadleaf-embed="${String(link.embed)}"${renderTokenAttribute(renderToken)}>${escapeText(label)}</a>`;
 };
 
-markdown.renderer.rules.threadleaf_math_inline = (tokens, index) => {
+markdown.renderer.rules.threadleaf_math_inline = (tokens, index, _options, env) => {
   const expression = String(tokens[index]?.meta?.expression ?? "");
   const rendered = renderSafeMath(expression);
   if (!rendered) return escapeText(`$${expression}$`);
-  return `<span class="preview-math" role="math" data-threadleaf-math="inline" aria-label="${escapeAttribute(rendered.text)}">${rendered.html}</span>`;
+  return `<span class="preview-math" role="math" data-threadleaf-math="inline" aria-label="${escapeAttribute(rendered.text)}"${renderTokenAttribute(previewEnvironment(env)?.threadleafRenderToken)}>${rendered.html}</span>`;
 };
 
-markdown.renderer.rules.threadleaf_math_block = (tokens, index) => {
+markdown.renderer.rules.threadleaf_math_block = (tokens, index, _options, env) => {
   const expression = String(tokens[index]?.meta?.expression ?? "");
   const rendered = renderSafeMath(expression);
   if (!rendered) return escapeText(`$$\n${expression}\n$$`);
-  return `<div class="preview-math-block" role="math" data-threadleaf-math="block" aria-label="${escapeAttribute(rendered.text)}">${rendered.html}</div>`;
+  return `<div class="preview-math-block" role="math" data-threadleaf-math="block" aria-label="${escapeAttribute(rendered.text)}"${renderTokenAttribute(previewEnvironment(env)?.threadleafRenderToken)}>${rendered.html}</div>`;
 };
 
-markdown.renderer.rules.threadleaf_source_fallback = (tokens, index) => {
+markdown.renderer.rules.threadleaf_source_fallback = (tokens, index, _options, env) => {
   const token = tokens[index];
   const line = token?.attrGet("data-source-line");
   const sourceLine = line ? ` data-source-line="${escapeAttribute(String(line))}"` : "";
-  return `<pre class="preview-source-fallback" data-threadleaf-source-fallback="math"${sourceLine}>${escapeText(token?.content ?? "")}</pre>`;
+  return `<pre class="preview-source-fallback" data-threadleaf-source-fallback="math"${sourceLine}${renderTokenAttribute(previewEnvironment(env)?.threadleafRenderToken)}>${escapeText(token?.content ?? "")}</pre>`;
 };
 
 markdown.renderer.rules.threadleaf_footnote_ref = (tokens, index, _options, env) => {
@@ -489,7 +521,7 @@ markdown.renderer.rules.threadleaf_footnote_ref = (tokens, index, _options, env)
   environment.threadleafFootnoteReferences.set(id, occurrence);
   const anchor = footnoteAnchor(id, number);
   const reference = `${anchor}-ref-${occurrence}`;
-  return `<sup class="preview-footnote-ref"><a href="#${anchor}" id="${reference}" data-threadleaf-footnote-ref="true" data-threadleaf-footnote="${escapeAttribute(id)}" aria-label="Footnote ${number}">${number}</a></sup>`;
+  return `<sup class="preview-footnote-ref"${renderTokenAttribute(environment.threadleafRenderToken)}><a href="#${anchor}" id="${reference}" data-threadleaf-footnote-ref="true" data-threadleaf-footnote="${escapeAttribute(id)}" aria-label="Footnote ${number}"${renderTokenAttribute(environment.threadleafRenderToken)}>${number}</a></sup>`;
 };
 
 const renderAlignedTableCell: RendererRule = (tokens, index, options, _env, renderer) => {
@@ -518,6 +550,8 @@ markdown.renderer.rules.table_open = (tokens, index, options, env, renderer) => 
   if (!token) return "";
   token.attrJoin("class", "preview-gfm-table");
   token.attrSet("data-threadleaf-table", "gfm");
+  const renderToken = previewEnvironment(env)?.threadleafRenderToken;
+  if (renderToken) token.attrSet("data-threadleaf-render-token", renderToken);
   return defaultTableOpen
     ? defaultTableOpen(tokens, index, options, env, renderer)
     : renderer.renderToken(tokens, index, options);
@@ -536,6 +570,8 @@ markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
     destination,
   );
   token.attrSet("data-threadleaf-link", isExternalLink(destination) ? "external" : "markdown");
+  const renderToken = previewEnvironment(env)?.threadleafRenderToken;
+  if (renderToken) token.attrSet("data-threadleaf-render-token", renderToken);
   token.attrSet("href", "#");
   return defaultLinkOpen
     ? defaultLinkOpen(tokens, index, options, env, renderer)
@@ -550,17 +586,18 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
   const source = String(token.attrGet("src") ?? "");
   const alt = renderer.renderInlineAsText(token.children ?? [], options, env).trim();
   const label = alt || source || "attachment";
+  const renderToken = previewEnvironment(env)?.threadleafRenderToken;
   const { target, subpath } = splitTarget(source);
   if (isMarkdownNoteTarget(target, subpath, false)) {
-    return noteEmbedPlaceholder(target, subpath, label);
+    return noteEmbedPlaceholder(target, subpath, label, renderToken);
   }
   if (target.toLocaleLowerCase("en-US").endsWith(".canvas")) {
-    return canvasEmbedPlaceholder(target, label);
+    return canvasEmbedPlaceholder(target, label, renderToken);
   }
   if (!/^.*\.(?:gif|jpe?g|png|webp)$/iu.test(target)) {
-    return attachmentPlaceholder(target, label);
+    return attachmentPlaceholder(target, label, renderToken);
   }
-  return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(source)}" data-threadleaf-alt="${escapeAttribute(alt)}">Image: ${escapeText(label)}</span>`;
+  return `<span class="preview-asset-placeholder" role="note" data-threadleaf-asset="${escapeAttribute(source)}" data-threadleaf-alt="${escapeAttribute(alt)}"${renderTokenAttribute(renderToken)}>Image: ${escapeText(label)}</span>`;
 };
 
 const maxImagesPerPreview = 128;
@@ -1245,9 +1282,11 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
       sourceOnlyLines.add(lineNumber);
     }
   }
+  const renderToken = createRenderToken();
   const environment: MarkdownPreviewEnvironment = {
     threadleafFootnotes: footnotes,
     threadleafFootnoteReferences: new Map(),
+    threadleafRenderToken: renderToken,
     threadleafSourceText: literalizeSourceOnlyLines(
       maskFrontmatter(footnotes.body),
       sourceOnlyLines,
@@ -1261,18 +1300,41 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
   const bodyHtml = markdown.render(environment.threadleafSourceText, environment);
   const html = bodyHtml + renderFootnoteSection(footnotes, environment);
   const fragment = DOMPurify.sanitize(html, sanitizeConfig);
+  const privilegedClasses = new Set([
+    "external-link",
+    "internal-link",
+    "preview-embed-link",
+    "preview-footnote-backref",
+    "preview-footnote-ref",
+  ]);
+  const trustedElements = new WeakSet<Element>();
+  for (const element of fragment.querySelectorAll<HTMLElement>("*")) {
+    if (element.getAttribute("data-threadleaf-render-token") === renderToken) {
+      trustedElements.add(element);
+      element.removeAttribute("data-threadleaf-render-token");
+      continue;
+    }
+    // Raw HTML is source-owned.  Its marker attributes and navigation-shaped
+    // classes are never an authority for generated controls, source buttons,
+    // hydration, or export.  Remove them before looking at any href.
+    for (const attribute of [...element.attributes]) {
+      if (attribute.name.startsWith("data-threadleaf-") || attribute.name === "data-source-line") {
+        element.removeAttribute(attribute.name);
+      }
+    }
+    for (const className of privilegedClasses) {
+      element.classList.remove(className);
+    }
+  }
   for (const anchor of fragment.querySelectorAll<HTMLAnchorElement>("a")) {
-    if (
-      anchor.dataset.threadleafLink ||
-      anchor.dataset.threadleafFootnoteRef ||
-      anchor.classList.contains("preview-footnote-backref")
-    ) {
+    if (trustedElements.has(anchor)) {
       continue;
     }
     const destination = anchor.getAttribute("href") ?? "";
     const external = isExternalLink(destination);
     anchor.classList.add(external ? "external-link" : "internal-link");
     anchor.dataset.threadleafLink = external ? "external" : "markdown";
+    anchor.dataset.threadleafRawLink = "true";
     if (external) {
       anchor.dataset.threadleafExternalUrl = destination;
     } else {

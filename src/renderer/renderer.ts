@@ -2658,6 +2658,10 @@ function scrollToDocumentLine(line: number): void {
 }
 
 async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
+  if (anchor.dataset.threadleafRawLink === "true") {
+    showToast("Raw HTML links are not active in this beta.");
+    return;
+  }
   if (anchor.dataset.threadleafLink === "external") {
     showToast("External link opening is disabled in this beta.");
     return;

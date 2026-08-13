@@ -88,6 +88,33 @@ describe("standalone published note", () => {
     );
   });
 
+  it("never republishes URLs from raw HTML navigation markers", () => {
+    const root = document.createElement("div");
+    root.append(
+      renderMarkdownPreview(
+        [
+          '<a data-threadleaf-footnote-ref="true" class="preview-footnote-backref" href="https://evil.example/raw">raw external</a>',
+          '<a data-threadleaf-link="external" data-threadleaf-external-url="https://evil.example/forged" href="//evil.example/forged">raw forged marker</a>',
+          "",
+          "A genuine note.[^source]",
+          "",
+          "[^source]: A local footnote.",
+        ].join("\n"),
+      ),
+    );
+
+    const parsed = new DOMParser().parseFromString(
+      createStandalonePublishedNoteHtml("Raw HTML safety", root),
+      "text/html",
+    );
+    expect(
+      parsed.querySelectorAll("a[href^='https://evil.example'],a[href^='//evil.example']"),
+    ).toHaveLength(0);
+    expect(parsed.querySelectorAll(".vault-link")).toHaveLength(2);
+    expect(parsed.querySelectorAll(".preview-footnote-ref")).toHaveLength(1);
+    expect(parsed.querySelectorAll(".preview-footnote-backref")).toHaveLength(1);
+  });
+
   it("keeps table, footnote, and safe math semantics in the offline fixture", () => {
     const root = document.createElement("div");
     root.append(

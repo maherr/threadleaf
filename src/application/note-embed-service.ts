@@ -44,6 +44,37 @@ interface RejectedEmbedTarget {
   reason: VaultNoteEmbedUnavailableReason;
 }
 
+interface NoteSourceLine {
+  text: string;
+  ending: "" | "lf" | "crlf" | "cr";
+}
+
+function sourceLines(content: string): NoteSourceLine[] {
+  const lines: NoteSourceLine[] = [];
+  let start = 0;
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index] ?? "";
+    if (character !== "\r" && character !== "\n") continue;
+    const ending =
+      character === "\r" && content[index + 1] === "\n" ? "crlf" : character === "\r" ? "cr" : "lf";
+    lines.push({ text: content.slice(start, index), ending });
+    index += ending === "crlf" ? 1 : 0;
+    start = index + 1;
+  }
+  lines.push({ text: content.slice(start), ending: "" });
+  return lines;
+}
+
+function endingBytes(ending: NoteSourceLine["ending"]): string {
+  return ending === "crlf" ? "\r\n" : ending === "cr" ? "\r" : ending === "lf" ? "\n" : "";
+}
+
+function joinSourceLines(lines: readonly NoteSourceLine[]): string {
+  return lines
+    .map((line, index) => `${line.text}${index + 1 < lines.length ? endingBytes(line.ending) : ""}`)
+    .join("");
+}
+
 function unavailable(
   vaultId: string,
   reason: VaultNoteEmbedUnavailableReason,
@@ -145,10 +176,6 @@ function decodeSubpath(subpath: string): string | null {
   }
 }
 
-function lineEnding(content: string): "\n" | "\r\n" {
-  return content.includes("\r\n") ? "\r\n" : "\n";
-}
-
 function normalizedHeading(value: string): string {
   return value
     .replace(/\s+#+\s*$/, "")
@@ -162,11 +189,12 @@ function extractHeading(content: string, decodedSubpath: string): ExtractedEmbed
   if (!target) {
     return null;
   }
-  const lines = content.split(/\r?\n/);
-  const maskedLines = maskMarkdownCodeAndComments(content).split(/\r?\n/);
+  const lines = sourceLines(content);
+  const maskedLines = sourceLines(maskMarkdownCodeAndComments(content));
   const headings: Array<{ index: number; level: number; text: string }> = [];
   for (let index = 0; index < maskedLines.length; index += 1) {
-    const match = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(maskedLines[index] ?? "");
+    const searchableLine = (maskedLines[index]?.text ?? "").replace(/^\uFEFF/u, "");
+    const match = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(searchableLine);
     if (match?.[1] && match[2]) {
       headings.push({ index, level: match[1].length, text: match[2] });
     }
@@ -178,11 +206,11 @@ function extractHeading(content: string, decodedSubpath: string): ExtractedEmbed
   }
   const next = headings.slice(headingIndex + 1).find(({ level }) => level <= heading.level);
   let endIndex = next?.index ?? lines.length;
-  while (endIndex > heading.index + 1 && (lines[endIndex - 1] ?? "").trim() === "") {
+  while (endIndex > heading.index + 1 && (lines[endIndex - 1]?.text ?? "").trim() === "") {
     endIndex -= 1;
   }
   return {
-    content: lines.slice(heading.index, endIndex).join(lineEnding(content)),
+    content: joinSourceLines(lines.slice(heading.index, endIndex)),
     startLine: heading.index + 1,
     endLine: Math.max(heading.index + 1, endIndex),
     kind: "heading",
@@ -199,19 +227,24 @@ function extractBlock(content: string, decodedSubpath: string): ExtractedEmbed |
   if (!blockIdPattern.test(blockId)) {
     return null;
   }
-  const lines = content.split(/\r?\n/);
+  const lines = sourceLines(content);
   const masked = maskMarkdownCodeAndComments(content);
-  const maskedLines = masked.split(/\r?\n/);
+  const maskedLines = sourceLines(masked);
   const marker = new RegExp(`(?:^|\\s)\\^${escapeRegExp(blockId)}\\s*$`, "u");
   const matchingLines = maskedLines
-    .map((line, index) => (marker.test(line) ? index : -1))
+    .map((line, index) => (marker.test(line.text) ? index : -1))
     .filter((index) => index >= 0);
   if (matchingLines.length !== 1) {
     return null;
   }
   const lineIndex = matchingLines[0] ?? 0;
+  // Markdown-it accepts LF as the portable line separator, while source
+  // lines may be CR-only or mixed.  Parse a line-equivalent projection so
+  // token maps still identify the original line numbers; return the original
+  // bytes below.
+  const parserSource = maskedLines.map((line) => line.text).join("\n");
   const candidates = markdown
-    .parse(masked, {})
+    .parse(parserSource, {})
     .filter(
       (token) =>
         token.map &&
@@ -224,12 +257,15 @@ function extractBlock(content: string, decodedSubpath: string): ExtractedEmbed |
   const [startIndex, endIndex] = candidates[0] ?? [lineIndex, lineIndex + 1];
   const fragmentLines = lines.slice(startIndex, endIndex);
   const relativeLine = lineIndex - startIndex;
-  fragmentLines[relativeLine] = (fragmentLines[relativeLine] ?? "").replace(marker, "").trimEnd();
-  while (fragmentLines.at(-1)?.trim() === "") {
+  const matchingLine = fragmentLines[relativeLine];
+  if (matchingLine) {
+    matchingLine.text = matchingLine.text.replace(marker, "").trimEnd();
+  }
+  while (fragmentLines.at(-1)?.text.trim() === "") {
     fragmentLines.pop();
   }
   return {
-    content: fragmentLines.join(lineEnding(content)),
+    content: joinSourceLines(fragmentLines),
     startLine: startIndex + 1,
     endLine: Math.max(startIndex + 1, endIndex),
     kind: "block",
@@ -242,7 +278,7 @@ export function extractVaultNoteEmbed(content: string, subpath: string | null): 
     return {
       content,
       startLine: 1,
-      endLine: Math.max(1, content.split(/\r?\n/).length),
+      endLine: Math.max(1, sourceLines(content).length),
       kind: "note",
       subpath: null,
     };

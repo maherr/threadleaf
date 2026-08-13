@@ -161,7 +161,7 @@ function applyMaskRanges(content: string, ranges: readonly MaskRange[]): string 
 
 function fencedCodeRanges(content: string): MaskRange[] {
   const ranges: MaskRange[] = [];
-  const lines = content.matchAll(/[^\r\n]*(?:\r\n|\n|$)/g);
+  const lines = content.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g);
   let offset = 0;
   let fence: { character: "`" | "~"; length: number } | null = null;
   for (const match of lines) {
@@ -169,7 +169,7 @@ function fencedCodeRanges(content: string): MaskRange[] {
     if (full.length === 0) {
       break;
     }
-    const line = full.replace(/\r?\n$/, "");
+    const line = full.replace(/\r\n$|[\r\n]$/u, "");
     const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
     if (fence || marker) {
       ranges.push({ start: offset, end: offset + full.length });
@@ -249,16 +249,16 @@ export function parseMarkdownLinks(
     throw new Error("Masked Markdown must preserve source offsets.");
   }
   const links: ParsedMarkdownLink[] = [];
-  const lines = content.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
-  const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
+  const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
+  const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   let offset = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const full = lines[index] ?? "";
     if (full.length === 0 && index === lines.length - 1) {
       break;
     }
-    const sourceLine = full.replace(/\r?\n$/, "");
-    const searchableLine = (searchableLines[index] ?? "").replace(/\r?\n$/, "");
+    const sourceLine = full.replace(/\r\n$|[\r\n]$/u, "");
+    const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
     links.push(...parseLine(sourceLine, searchableLine, offset, index + 1));
     offset += full.length;
   }

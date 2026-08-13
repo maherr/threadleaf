@@ -106,6 +106,7 @@ export interface LivePreviewMappingScanStats {
   lines: number;
   protectedRangeChecks: number;
   rawTextSteps: number;
+  rangeSubtractionComparisons?: number;
 }
 
 export type InlineTransclusionStatus =
@@ -239,25 +240,53 @@ function rangesForLine(
   return local;
 }
 
-function subtractSourceRanges(
+export interface SourceRangeSubtractionStats {
+  comparisons: number;
+}
+
+/**
+ * Subtract the sorted union of masks from the sorted union of ranges.
+ *
+ * Both unions are formed once.  The second pass advances `maskIndex` only
+ * forward; a mask that spans the current range is deliberately retained for
+ * the next range.  This keeps the subtraction pass linear in the normalized
+ * input sizes instead of restarting at mask zero for every range.
+ */
+export function subtractSourceRanges(
   ranges: readonly SourceRange[],
   masks: readonly SourceRange[],
+  stats?: SourceRangeSubtractionStats,
 ): SourceRange[] {
+  const orderedRanges = mergeSourceRanges(ranges);
+  const orderedMasks = mergeSourceRanges(masks);
   const remainder: SourceRange[] = [];
-  for (const range of ranges) {
+  let maskIndex = 0;
+  for (const range of orderedRanges) {
+    while (maskIndex < orderedMasks.length) {
+      if (stats) stats.comparisons += 1;
+      const mask = orderedMasks[maskIndex];
+      if (!mask || mask.to > range.from) break;
+      maskIndex += 1;
+    }
     let cursor = range.from;
-    for (const mask of masks) {
-      if (mask.to <= cursor) continue;
-      if (mask.from >= range.to) break;
+    let scan = maskIndex;
+    while (scan < orderedMasks.length) {
+      if (stats) stats.comparisons += 1;
+      const mask = orderedMasks[scan];
+      if (!mask || mask.from >= range.to) break;
       if (cursor < mask.from) {
-        remainder.push({ from: cursor, to: Math.min(mask.from, range.to) });
+        remainder.push({ from: cursor, to: mask.from });
       }
       cursor = Math.max(cursor, mask.to);
       if (cursor >= range.to) break;
+      scan += 1;
     }
     if (cursor < range.to) remainder.push({ from: cursor, to: range.to });
+    // A mask consumed completely by this range cannot affect a later range.
+    // Keep an overhanging mask at maskIndex for the next range.
+    if (scan > maskIndex) maskIndex = scan;
   }
-  return mergeSourceRanges(remainder);
+  return remainder;
 }
 
 function parseWikiLink(raw: string, embed: boolean): LivePreviewLink | null {
@@ -1055,6 +1084,7 @@ export function buildLivePreviewMapping(
     options.stats.lines = 0;
     options.stats.protectedRangeChecks = 0;
     options.stats.rawTextSteps = 0;
+    options.stats.rangeSubtractionComparisons = 0;
   }
   const frontmatter = scanFrontmatter(source);
   if (frontmatter.status === "unresolved") {
@@ -1069,7 +1099,15 @@ export function buildLivePreviewMapping(
     ...codeRanges,
     ...(options.protectedRanges ?? []),
   ]);
-  const nonHtmlProtectedRanges = subtractSourceRanges(requestedProtectedRanges, htmlRanges);
+  const subtractionStats = options.stats ? { comparisons: 0 } : undefined;
+  const nonHtmlProtectedRanges = subtractSourceRanges(
+    requestedProtectedRanges,
+    htmlRanges,
+    subtractionStats,
+  );
+  if (options.stats) {
+    options.stats.rangeSubtractionComparisons = subtractionStats?.comparisons ?? 0;
+  }
   const protectedRanges = mergeSourceRanges([...nonHtmlProtectedRanges, ...htmlRanges]);
   // A code range nested inside raw HTML must not make the whole line look
   // like Markdown code. Both lists are ordered once, then each line advances
@@ -1300,6 +1338,30 @@ function transclusionIdentity(path: string, subpath: string | null): string {
   return `${path}\u0000${subpath ?? ""}`;
 }
 
+interface PreviewSourceLine {
+  text: string;
+  from: number;
+  to: number;
+  ending: string;
+}
+
+function sourceLineSlices(source: string): PreviewSourceLine[] {
+  const lines = splitSourceLines(source);
+  const starts = sourceLineStarts(source);
+  return lines.map((text, index) => {
+    const from = starts[index] ?? source.length;
+    const to = from + text.length;
+    const next = starts[index + 1] ?? source.length;
+    return { text, from, to, ending: source.slice(to, next) };
+  });
+}
+
+function joinPreviewSourceLines(lines: readonly PreviewSourceLine[]): string {
+  return lines
+    .map((line, index) => `${line.text}${index + 1 < lines.length ? line.ending : ""}`)
+    .join("");
+}
+
 function extractTransclusionContent(
   source: string,
   subpath: string | null,
@@ -1309,36 +1371,39 @@ function extractTransclusionContent(
   }
   if (subpath.startsWith("^")) {
     const block = subpath.slice(1).trim();
-    const lines = source.split("\n");
-    const line = lines.find((candidate) =>
+    const lines = sourceLineSlices(source);
+    const line = lines.find(({ text }) =>
       new RegExp(`(?:^|\\s)\\^${block.replace(/[.*+?^${}()|[\]\\]/gu, "\\\\$&")}\\s*$`, "u").test(
-        candidate,
+        text.replace(/^\uFEFF/u, ""),
       ),
     );
-    return line ? { status: "ready", content: line } : { status: "subpath-missing", content: null };
+    return line
+      ? { status: "ready", content: line.text }
+      : { status: "subpath-missing", content: null };
   }
   const heading = subpath.startsWith("#") ? subpath.slice(1).trim() : "";
   if (!heading) {
     return { status: "subpath-missing", content: null };
   }
-  const lines = source.split("\n");
-  const headingIndex = lines.findIndex((line) => {
-    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/u.exec(line);
+  const lines = sourceLineSlices(source);
+  const headingIndex = lines.findIndex(({ text }) => {
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/u.exec(text.replace(/^\uFEFF/u, ""));
     return match?.[2]?.trim().toLocaleLowerCase("en-US") === heading.toLocaleLowerCase("en-US");
   });
   if (headingIndex < 0) {
     return { status: "subpath-missing", content: null };
   }
-  const current = /^(#{1,6})\s+/u.exec(lines[headingIndex] ?? "")?.[1]?.length ?? 6;
+  const current =
+    /^(#{1,6})\s+/u.exec(lines[headingIndex]?.text.replace(/^\uFEFF/u, "") ?? "")?.[1]?.length ?? 6;
   let end = headingIndex + 1;
   while (end < lines.length) {
-    const level = /^(#{1,6})\s+/u.exec(lines[end] ?? "")?.[1]?.length;
+    const level = /^(#{1,6})\s+/u.exec(lines[end]?.text.replace(/^\uFEFF/u, "") ?? "")?.[1]?.length;
     if (level !== undefined && level <= current) {
       break;
     }
     end += 1;
   }
-  return { status: "ready", content: lines.slice(headingIndex, end).join("\n") };
+  return { status: "ready", content: joinPreviewSourceLines(lines.slice(headingIndex, end)) };
 }
 
 /**
@@ -1371,9 +1436,8 @@ export function resolveInlineTransclusions(
     ancestry: ReadonlySet<string>,
   ): readonly InlineTransclusionNode[] => {
     const nodes: InlineTransclusionNode[] = [];
-    let lineFrom = 0;
-    for (const line of content.split("\n")) {
-      for (const token of parseLivePreviewLine(line, lineFrom)) {
+    for (const line of sourceLineSlices(content)) {
+      for (const token of parseLivePreviewLine(line.text, line.from)) {
         if (token.kind !== "embed" || !token.link) {
           continue;
         }
@@ -1428,7 +1492,6 @@ export function resolveInlineTransclusions(
         }
         nodes.push({ ...base, status, content: childContent, children });
       }
-      lineFrom += line.length + 1;
     }
     return nodes;
   };

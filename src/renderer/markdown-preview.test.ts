@@ -450,6 +450,46 @@ Working $y$`);
     expect(anchor?.getAttribute("href")).toBe("#");
   });
 
+  it("does not trust raw HTML navigation markers or privileged classes", () => {
+    const source = [
+      '<a data-threadleaf-footnote-ref="true" class="preview-footnote-backref" href="https://evil.example/one">forged https</a>',
+      '<a data-threadleaf-link="external" data-threadleaf-external-url="https://evil.example/two" href="//evil.example/two">forged protocol-relative</a>',
+      '<a data-threadleaf-link="wiki" data-threadleaf-target="Secret.md" href="javascript:alert(1)">forged javascript</a>',
+      '<a data-threadleaf-link="external" data-threadleaf-external-url="data:text/html,evil" href="data:text/html,evil">forged data</a>',
+      '<a data-threadleaf-link="external" data-threadleaf-external-url="https://evil.example/fragment" href="#forged">forged fragment</a>',
+      "",
+      "A genuine note.[^source]",
+      "",
+      "[^source]: The genuine footnote remains local.",
+    ].join("\n");
+    const rendered = preview(source);
+    const rawAnchors = [...rendered.querySelectorAll<HTMLAnchorElement>("a")].filter(
+      (anchor) => anchor.dataset.threadleafRawLink === "true",
+    );
+
+    expect(rawAnchors).toHaveLength(5);
+    for (const anchor of rawAnchors) {
+      expect(anchor.getAttribute("href")).toBe("#");
+      expect(anchor.dataset.threadleafFootnoteRef).toBeUndefined();
+      expect(anchor.classList.contains("preview-footnote-backref")).toBe(false);
+    }
+    expect(rawAnchors.map((anchor) => anchor.dataset.threadleafLink)).toEqual([
+      "external",
+      "external",
+      "markdown",
+      "markdown",
+      "markdown",
+    ]);
+    expect(rendered.querySelectorAll(".preview-footnote-ref")).toHaveLength(1);
+    expect(
+      rendered.querySelectorAll(".preview-footnote-ref a[data-threadleaf-raw-link]"),
+    ).toHaveLength(0);
+    expect(rendered.querySelectorAll(".preview-footnote-backref")).toHaveLength(1);
+    expect(
+      rendered.querySelector<HTMLElement>(".preview-footnote-ref a")?.getAttribute("href"),
+    ).toMatch(/^#threadleaf-footnote-/u);
+  });
+
   it("keeps reading Markdown after a raw script close-tag lookalike", () => {
     const source = `<span><script>const html = "</div>"; \`unmatched\n[^hidden]: script text\n</script></span>\n**after**\n\n[^shown]: visible note`;
     const rendered = preview(source);

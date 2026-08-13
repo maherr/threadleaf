@@ -5,6 +5,7 @@ import {
   measureLivePreviewMapping,
   parseLivePreviewLine,
   resolveInlineTransclusions,
+  subtractSourceRanges,
 } from "./live-preview";
 import { markdownHtmlRanges } from "./markdown-extensions";
 
@@ -201,6 +202,18 @@ describe("live preview inline model", () => {
         ),
       ).toBe(true);
     }
+  });
+
+  it("does not decorate raw HTML navigation markers as live links", () => {
+    const source =
+      '<a data-threadleaf-link="external" class="preview-footnote-backref" href="https://evil.example">raw</a> and [[real]]';
+    const mapping = buildLivePreviewMapping(source);
+    expect(mapping.tokens.filter((token) => token.kind === "link")).toEqual([
+      expect.objectContaining({ sourceText: "[[real]]" }),
+    ]);
+    expect(mapping.tokens.some((token) => token.from < source.indexOf(" and "))).toBe(false);
+    expect(mapping.rendered).toContain(source.slice(0, source.indexOf(" and ")));
+    expect(mapping.rendered).toContain("real");
   });
 
   it("keeps raw script text opaque while mapping Markdown after its real close", () => {
@@ -490,9 +503,108 @@ describe("bounded source-backed transclusion", () => {
     expect(nodes[0]?.status).toBe("byte-limit");
     expect(nodes[0]?.ownerPath).toBe("A.md");
   });
+
+  it("preserves CR-only and mixed line endings and source offsets in child embeds", () => {
+    const child =
+      "\uFEFF# Root\r## Part\rbody\r\n![[Grand.md#Section]]\n### Child\rChild body\r## Later\rLater body";
+    const grand = "# Section\r\nGrand body";
+    const source = "before\r![[Child.md#Part]]\r\nafter";
+    const documents = new Map([
+      ["Root.md", source],
+      ["Child.md", child],
+      ["Grand.md", grand],
+    ]);
+    const [node] = resolveInlineTransclusions("Root.md", source, documents);
+
+    expect(node).toMatchObject({
+      status: "ready",
+      source: { from: "before\r".length, to: source.length - "\r\nafter".length },
+      content: "## Part\rbody\r\n![[Grand.md#Section]]\n### Child\rChild body",
+    });
+    expect(node?.children[0]).toMatchObject({
+      status: "ready",
+      source: {
+        from: "## Part\rbody\r\n".length,
+        to: "## Part\rbody\r\n![[Grand.md#Section]]".length,
+      },
+      content: "# Section\r\nGrand body",
+    });
+  });
 });
 
 describe("mapping measurement", () => {
+  it("subtracts unsorted, nested, adjacent, empty, and malformed ranges exactly", () => {
+    const stats = { comparisons: 0 };
+    expect(
+      subtractSourceRanges(
+        [
+          { from: 30, to: 40 },
+          { from: 0, to: 10 },
+          { from: 9, to: 20 },
+          { from: 50, to: 50 },
+          { from: 70, to: 60 },
+        ],
+        [
+          { from: 4, to: 6 },
+          { from: 8, to: 15 },
+          { from: 34, to: 36 },
+          { from: 36, to: 38 },
+          { from: 100, to: 90 },
+        ],
+        stats,
+      ),
+    ).toEqual([
+      { from: 0, to: 4 },
+      { from: 6, to: 8 },
+      { from: 15, to: 20 },
+      { from: 30, to: 34 },
+      { from: 38, to: 40 },
+    ]);
+    expect(stats.comparisons).toBeLessThan(32);
+  });
+
+  it("keeps range subtraction comparison counts linear for large pure and mounted inputs", () => {
+    const sizes = [32_000, 64_000];
+    const pureComparisons: number[] = [];
+    const mountedComparisons: number[] = [];
+    for (const size of sizes) {
+      const lines = Array.from({ length: size }, (_, index) => `<span>[[Note-${index}]]</span>`);
+      const source = lines.join("\n");
+      const ranges: { from: number; to: number }[] = [];
+      const masks: { from: number; to: number }[] = [];
+      let lineFrom = 0;
+      for (const line of lines) {
+        ranges.push({ from: lineFrom, to: lineFrom + line.length });
+        masks.push({
+          from: lineFrom + "<span>".length,
+          to: lineFrom + line.length - "</span>".length,
+        });
+        lineFrom += line.length + 1;
+      }
+      const pureStats = { comparisons: 0 };
+      subtractSourceRanges(ranges, masks, pureStats);
+      pureComparisons.push(pureStats.comparisons);
+
+      const mappingStats = {
+        lines: 0,
+        protectedRangeChecks: 0,
+        rawTextSteps: 0,
+        rangeSubtractionComparisons: 0,
+      };
+      const mapping = buildLivePreviewMapping(source, {
+        protectedRanges: masks,
+        stats: mappingStats,
+      });
+      expect(mapping.source).toBe(source);
+      mountedComparisons.push(mappingStats.rangeSubtractionComparisons ?? 0);
+    }
+    expect(pureComparisons[0] ?? 0).toBeLessThan((sizes[0] ?? 0) * 12);
+    expect(pureComparisons[1] ?? 0).toBeLessThan((sizes[1] ?? 0) * 12);
+    expect(pureComparisons[1]).toBeLessThan((pureComparisons[0] ?? 0) * 3);
+    expect(mountedComparisons[0]).toBeGreaterThan(0);
+    expect(mountedComparisons[1]).toBeLessThan((mountedComparisons[0] ?? 0) * 3);
+  });
+
   it("reports linear-shape metrics for a long note without a timing claim", () => {
     const source = Array.from(
       { length: 10_000 },

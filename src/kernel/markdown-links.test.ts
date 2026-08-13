@@ -128,4 +128,22 @@ describe("Markdown link source parser", () => {
 
     expect(parseMarkdownLinks(content).map((link) => link.target)).toEqual(["Visible"]);
   });
+
+  it("preserves aliases, embeds, line numbers, and offsets across CR-only and mixed endings", () => {
+    const content = "[[Before|alias]]\r![[Nested|embed]]\r\n[After](Target.md)\n";
+    const links = parseMarkdownLinks(content);
+
+    expect(
+      links.map((link) => ({ target: link.target, label: link.alias, line: link.line })),
+    ).toEqual([
+      { target: "Before", label: "alias", line: 1 },
+      { target: "Nested", label: "embed", line: 2 },
+      { target: "Target.md", label: null, line: 3 },
+    ]);
+    expect(links.map((link) => content.slice(link.position, link.end))).toEqual([
+      "[[Before|alias]]",
+      "![[Nested|embed]]",
+      "[After](Target.md)",
+    ]);
+  });
 });

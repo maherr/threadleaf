@@ -321,6 +321,14 @@ function preparePublishedContent(source: HTMLElement): string {
     embed.ariaLabel = "Embedded note";
   }
   for (const anchor of [...root.querySelectorAll<HTMLAnchorElement>("a")]) {
+    if (anchor.dataset.threadleafRawLink === "true") {
+      replaceWithTextSpan(
+        anchor,
+        "vault-link",
+        "Raw HTML links are not active in this single-note export.",
+      );
+      continue;
+    }
     if (
       anchor.dataset.threadleafFootnoteRef ||
       anchor.classList.contains("preview-footnote-backref")

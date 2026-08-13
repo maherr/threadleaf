@@ -113,6 +113,7 @@ import { FileWorkspaceLayoutStore } from "./file-workspace-layout-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { createGracefulShutdownHandler } from "./graceful-shutdown";
 import { createMainRendererRecoveryHandler } from "./main-renderer-recovery";
+import { installMainWindowNavigationGuards } from "./navigation-policy";
 import { loadObsidianMigrationPreview } from "./obsidian-migration-loader";
 import {
   applyMigrationSelections,
@@ -3274,6 +3275,7 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = window;
+  installMainWindowNavigationGuards(window.webContents);
 
   let boundsTimer: NodeJS.Timeout | undefined;
   const persistBounds = (): void => {

@@ -139,6 +139,43 @@ describe("note embed subpath extraction", () => {
     });
   });
 
+  it("preserves BOM, mixed LF/CRLF/CR endings, aliases, embeds, and line provenance", () => {
+    const source =
+      "\uFEFF# Child\r\nBody with ![[Nested|alias]]\r## Later\nLater body\r\rBlock ^mixed-block";
+    expect(extractVaultNoteEmbed(source, "#child")).toEqual({
+      content: source,
+      startLine: 1,
+      endLine: 6,
+      kind: "heading",
+      subpath: "#child",
+    });
+    expect(extractVaultNoteEmbed(source, "^mixed-block")).toEqual({
+      content: "Block",
+      startLine: 6,
+      endLine: 6,
+      kind: "block",
+      subpath: "^mixed-block",
+    });
+  });
+
+  it("supports CR-only child headings and blocks without normalizing source bytes", () => {
+    const source = "# Part\rBody\r## Next\rBlock ^cr-block\r";
+    expect(extractVaultNoteEmbed(source, "#Part")).toEqual({
+      content: "# Part\rBody\r## Next\rBlock ^cr-block",
+      startLine: 1,
+      endLine: 4,
+      kind: "heading",
+      subpath: "#Part",
+    });
+    expect(extractVaultNoteEmbed(source, "^cr-block")).toEqual({
+      content: "Block",
+      startLine: 4,
+      endLine: 4,
+      kind: "block",
+      subpath: "^cr-block",
+    });
+  });
+
   it("does not treat code or comments as headings or block identifiers", () => {
     expect(() => extractVaultNoteEmbed("```\n# Hidden\nText ^hidden\n```", "#Hidden")).toThrow(
       "missing-subpath",
@@ -206,6 +243,39 @@ describe("vault note embed loading", () => {
       startLine: 3,
       endLine: 3,
     });
+  });
+
+  it("loads mixed-ending BOM notes with alias-bearing nested embeds", async () => {
+    await write("Notes/Current.md", "\uFEFF# Current\r![[Target#Section|Section alias]]\r");
+    await write("Notes/Target.md", "\uFEFF# Target\n## Section\rBody ![[Nested|alias]]\r");
+    const response = await loadVaultNoteEmbed(
+      kernel,
+      await documents(),
+      "Notes/Current.md",
+      "Target",
+      "#Section",
+      kernel.vaultId,
+    );
+
+    expect(response).toMatchObject({
+      status: "ready",
+      path: "Notes/Target.md",
+      content: "## Section\rBody ![[Nested|alias]]",
+      startLine: 2,
+      endLine: 3,
+      kind: "heading",
+    });
+    if (response.status === "ready") {
+      expect(response.links).toEqual([
+        expect.objectContaining({
+          embed: true,
+          label: "alias",
+          target: "Nested",
+          status: "resolved",
+          path: "Notes/Nested.md",
+        }),
+      ]);
+    }
   });
 
   it("fails closed for stale identities, absent subpaths, oversize files, and invalid UTF-8", async () => {
