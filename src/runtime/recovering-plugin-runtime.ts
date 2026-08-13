@@ -7,6 +7,7 @@ import type {
   RuntimeEvent,
   RuntimeSnapshot,
 } from "../shared/contracts";
+import { createPluginDiagnostic, type PluginDiagnosticCode } from "../shared/plugin-diagnostics";
 import { isFatalPluginRuntimeError, type PluginRuntimePort } from "./plugin-runtime-port";
 
 export type PluginFailureDescriptor = Pick<
@@ -45,8 +46,23 @@ function fallbackDescriptor(pluginDirectory: string): PluginFailureDescriptor {
   };
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function diagnosticCodeForOperation(operation: string): PluginDiagnosticCode {
+  if (operation === "run-command") {
+    return "runtime-command-failed";
+  }
+  if (operation === "open-view") {
+    return "runtime-view-failed";
+  }
+  if (operation === "open-settings") {
+    return "runtime-settings-failed";
+  }
+  if (operation === "unload-plugin" || operation === "unload-all" || operation === "close-view") {
+    return "runtime-unload-failed";
+  }
+  if (operation === "recovery") {
+    return "runtime-recovery-failed";
+  }
+  return "runtime-load-failed";
 }
 
 export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntimePort>
@@ -278,20 +294,26 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
 
     for (const tracked of activeBeforeRecovery) {
       const isCulprit = tracked.summary.id === context.pluginId;
+      const code = isCulprit
+        ? diagnosticCodeForOperation(context.operation)
+        : "runtime-recovery-failed";
       this.failedPlugins.set(tracked.summary.id, {
         ...tracked.summary,
         state: "failed",
         error: isCulprit
-          ? `${messageOf(failure)} The compatibility renderer was terminated and restarted.`
-          : `The compatibility renderer restarted after ${context.operation} failed. Reload to reactivate this plugin.`,
+          ? `${createPluginDiagnostic(code, { pluginId: tracked.summary.id }).message} The compatibility renderer recovered; reload the plugin to reactivate it.`
+          : `${createPluginDiagnostic(code, { pluginId: tracked.summary.id }).message} Reload the plugin to reactivate it.`,
+        errorCode: code,
       });
     }
     if (culpritDescriptor && !this.failedPlugins.has(culpritDescriptor.id)) {
+      const code = diagnosticCodeForOperation(context.operation);
       this.failedPlugins.set(culpritDescriptor.id, {
         ...culpritDescriptor,
         state: "failed",
         compatibilityLevel: 0,
-        error: `${messageOf(failure)} The compatibility renderer was terminated and restarted.`,
+        error: `${createPluginDiagnostic(code, { pluginId: culpritDescriptor.id }).message} The compatibility renderer recovered; reload the plugin to reactivate it.`,
+        errorCode: code,
       });
     }
     this.lastFailureId = context.pluginId ?? activeBeforeRecovery.at(-1)?.summary.id ?? null;

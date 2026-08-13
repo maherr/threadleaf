@@ -308,11 +308,22 @@ function safeUrl(value: string | null): string | null {
 }
 
 function safeProvenance(value: PluginPackageProvenance): PluginPackageProvenance {
+  let pluginId = "<redacted>";
+  try {
+    pluginId = parsePluginId(value.pluginId);
+  } catch {
+    // The report keeps the validation category, never an arbitrary provenance token.
+  }
+  const kind: PluginPackageProvenanceKind = ["fixture", "local", "release"].includes(value.kind)
+    ? value.kind
+    : "local";
+  const safeVersion = versionPattern.test(value.version) ? value.version : "<redacted>";
+  const safeReleaseTag = versionPattern.test(value.releaseTag) ? value.releaseTag : "<redacted>";
   return {
-    kind: value.kind,
-    pluginId: value.pluginId,
-    version: value.version,
-    releaseTag: value.releaseTag,
+    kind,
+    pluginId,
+    version: safeVersion,
+    releaseTag: safeReleaseTag,
     sourceUrl: safeUrl(value.sourceUrl),
     releaseUrl: safeUrl(value.releaseUrl),
     indexUrl: safeUrl(value.indexUrl),
@@ -345,7 +356,8 @@ function safeRegistrationText(value: string): string {
     containsControlCharacters(value) ||
     /^(?:[A-Za-z]:[\\/]|[\\/])/u.test(value) ||
     /(?:^|[\\/])(?:home|Users|private|tmp|var)[\\/]/u.test(value) ||
-    /\b(?:password|passphrase|secret|token|api[_ -]?key|cookie)\b/iu.test(value)
+    /\b(?:password|passphrase|secret|token|api[_ -]?key|cookie)\b/iu.test(value) ||
+    /(?:=>|[{};]|\b(?:const|function|import|module|require|return|eval)\b)/u.test(value)
   ) {
     return "<redacted>";
   }
@@ -729,7 +741,10 @@ function extractDependencies(source: string): {
         moduleName.startsWith("/") ||
         /^[A-Za-z]:[\\/]/u.test(moduleName) ||
         moduleName.startsWith("file:") ||
-        containsControlCharacters(moduleName)
+        containsControlCharacters(moduleName) ||
+        moduleName.length > 200 ||
+        /(?:=>|[{};]|\s|\b(?:const|function|module|require|return|eval)\b)/u.test(moduleName) ||
+        /\b(?:password|passphrase|secret|token|api[_ -]?key|cookie)\b/iu.test(moduleName)
       ) {
         // Keep absolute and control-bearing specifiers out of machine-readable evidence. They
         // may contain a host path or a secret-bearing URI, neither of which is useful to a
@@ -1284,8 +1299,8 @@ function buildCandidate(
     schemaVersion: 1,
     candidateKind: "automated-plugin-package-inspection",
     exactPackage: {
-      id: input.provenance.pluginId,
-      version: input.provenance.version,
+      id: safeProvenance(input.provenance).pluginId,
+      version: safeProvenance(input.provenance).version,
       bundleSha256: report.staticAuthority.bundleSha256,
       manifestSha256: sha256(input.assets.manifest),
       stylesSha256: input.assets.styles ? sha256(input.assets.styles) : null,
@@ -1325,12 +1340,13 @@ export async function inspectPluginPackage(
     runtimeFactory: configuredOptions.runtimeFactory,
   } as const;
   const stages: PluginPackageInspectionStage[] = [];
+  const safeInputProvenance = safeProvenance(input.provenance);
   const shape = packageShapeStage(input);
   stages.push(shape);
   const inputEvidence: PluginPackageInspectionInputEvidence = {
-    pluginId: input.provenance.pluginId,
-    version: input.provenance.version,
-    provenance: safeProvenance(input.provenance),
+    pluginId: safeInputProvenance.pluginId,
+    version: safeInputProvenance.version,
+    provenance: safeInputProvenance,
     assets: assetEvidence(input),
   };
   let manifest: PluginManifestData | null = null;

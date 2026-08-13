@@ -1,4 +1,5 @@
 import { pluginCompatibilityRegistry } from "../generated/plugin-compatibility-registry";
+import type { PluginDiagnosticCode } from "./plugin-diagnostics";
 
 export const compatibilityModes = ["restricted", "enabled"] as const;
 export const maxPluginBundleBytes = 16 * 1024 * 1024;
@@ -131,6 +132,8 @@ export interface PluginPackageSummary extends PluginManifestData {
   capabilityReport: PluginCapabilityReport | null;
   capabilityGrantState: PluginCapabilityGrantState;
   error: string | null;
+  /** Stable renderer-safe category for `error`; raw loader failures are never serialized. */
+  errorCode?: PluginDiagnosticCode | null;
 }
 
 export interface PluginCatalogSnapshot {

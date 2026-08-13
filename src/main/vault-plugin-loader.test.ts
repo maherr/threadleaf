@@ -119,7 +119,7 @@ describe("vault plugin loader", () => {
     await expect(discoverVaultPlugins(vaultPath)).resolves.toMatchObject({
       sourceState: "unreadable",
       plugins: [],
-      warnings: [expect.stringContaining("Could not inspect .obsidian/plugins")],
+      warnings: [expect.stringContaining("[catalog-source-unreadable].")],
     });
   });
 
@@ -214,7 +214,7 @@ describe("vault plugin loader", () => {
     expect(catalog.plugins[0]).toMatchObject({
       id: "drawing",
       packageState: "invalid",
-      error: expect.stringContaining("SHA-256"),
+      error: expect.stringContaining("[managed-package-changed]."),
     });
     expect(catalog.css).toBe("");
     expect(catalog.warnings.join("\n")).toContain("changed after installation");
@@ -243,9 +243,67 @@ describe("vault plugin loader", () => {
         .filter((plugin) => plugin.packageState === "invalid")
         .every((plugin) => plugin.compatibility.level === 0),
     ).toBe(true);
-    expect(catalog.warnings.join("\n")).toContain("does not match folder");
-    expect(catalog.warnings.join("\n")).toContain("main.js is missing");
+    expect(catalog.warnings.join("\n")).toContain("[manifest-id-mismatch].");
+    expect(catalog.warnings.join("\n")).toContain("[bundle-missing].");
     expect(catalog.warnings.join("\n")).toContain("not installed");
+  });
+
+  it("bounds malformed manifest, symlink, and permission diagnostics", async () => {
+    await writePlugin("malformed-utf8");
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "plugins", "malformed-utf8", "manifest.json"),
+      Buffer.from([0xff, 0xfe, 0xfd]),
+    );
+    await writePlugin("malformed-json");
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "plugins", "malformed-json", "manifest.json"),
+      '{"id":"malformed-json","name":"/home/maher/private-token",',
+      "utf8",
+    );
+    await writePlugin("escaped-package");
+    const outsideMain = path.join(sandboxPath, "outside-main.js");
+    await fs.writeFile(outsideMain, "module.exports = {};", "utf8");
+    await fs.rm(path.join(vaultPath, ".obsidian", "plugins", "escaped-package", "main.js"));
+    await fs.symlink(
+      outsideMain,
+      path.join(vaultPath, ".obsidian", "plugins", "escaped-package", "main.js"),
+    );
+    await writePlugin("permission-denied");
+    const deniedManifest = path.join(
+      vaultPath,
+      ".obsidian",
+      "plugins",
+      "permission-denied",
+      "manifest.json",
+    );
+    await fs.chmod(deniedManifest, 0o000);
+
+    try {
+      const discovery = await discoverVaultPlugins(vaultPath);
+      const byId = new Map(discovery.plugins.map((plugin) => [plugin.summary.id, plugin.summary]));
+      expect(byId.get("malformed-utf8")).toMatchObject({
+        packageState: "invalid",
+        errorCode: "manifest-invalid",
+      });
+      expect(byId.get("malformed-json")).toMatchObject({
+        packageState: "invalid",
+        errorCode: "manifest-invalid",
+      });
+      expect(byId.get("escaped-package")).toMatchObject({
+        packageState: "invalid",
+        errorCode: "package-path-escape",
+      });
+      expect(byId.get("permission-denied")).toMatchObject({
+        packageState: "invalid",
+        errorCode: "package-unreadable",
+      });
+      const serialized = JSON.stringify(discovery);
+      expect(serialized).not.toContain("/home/maher/private-token");
+      expect(serialized).not.toContain("Unexpected token");
+      expect(serialized).not.toContain("outside-main.js");
+    } finally {
+      await fs.chmod(deniedManifest, 0o600);
+    }
   });
 
   it("applies plugin styles while neutralizing network-capable asset URLs", async () => {
@@ -287,6 +345,6 @@ describe("vault plugin loader", () => {
 
     expect(catalog.css).toBe("");
     expect(catalog.warnings[0]).toContain("stylesheet was not applied");
-    expect(catalog.warnings[0]).toContain("@import");
+    expect(catalog.warnings[0]).toContain("[stylesheet-invalid].");
   });
 });

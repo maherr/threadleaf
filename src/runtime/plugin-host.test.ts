@@ -93,14 +93,14 @@ describe("PluginHost", () => {
     const blockedHost = new PluginHost(fixtureVault);
 
     await expect(blockedHost.loadPlugin(fixturePlugin, "0".repeat(64))).rejects.toThrow(
-      "Plugin main.js changed after authority review and was blocked before execution.",
+      "[managed-package-changed].",
     );
     const blocked = await blockedHost.getSnapshot();
     expect(blocked.plugin).toMatchObject({
       id: "threadleaf-fixture",
       state: "failed",
       compatibilityLevel: 0,
-      error: "Plugin main.js changed after authority review and was blocked before execution.",
+      error: expect.stringContaining("[managed-package-changed]."),
     });
     expect(blocked.commands).toEqual([]);
     expect(blocked.notices).toEqual([]);
@@ -342,10 +342,12 @@ module.exports = class FailingUnloadPlugin extends Plugin {
 
       expect(unloaded.commands).toEqual([]);
       expect(unloaded.plugins?.every(({ state }) => state === "unloaded")).toBe(true);
-      expect(unloaded.plugins?.find(({ id }) => id === "failing-unload")?.error).toBe(
-        "fixture onunload failure",
+      expect(unloaded.plugins?.find(({ id }) => id === "failing-unload")?.error).toContain(
+        "[runtime-unload-failed].",
       );
-      expect(unloaded.events.some(({ message }) => message.includes("onunload failed"))).toBe(true);
+      expect(
+        unloaded.events.some(({ message }) => message.includes("[runtime-unload-failed].")),
+      ).toBe(true);
     } finally {
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
@@ -638,7 +640,7 @@ module.exports = class EditorFixture extends Plugin {
 
       const host = new PluginHost(vaultPath);
       await host.loadPlugin(pluginPath);
-      await expect(host.runCommand("insert-embed")).rejects.toThrow("not available");
+      await expect(host.runCommand("insert-embed")).rejects.toThrow("[runtime-command-failed].");
 
       const revision = "d".repeat(64);
       const snapshot = await host.runCommand("insert-embed", {
@@ -693,7 +695,7 @@ module.exports = class EditorFixture extends Plugin {
   it("rejects plugin directories outside the active vault", async () => {
     const host = new PluginHost(fixtureVault);
     await expect(host.loadPlugin(path.resolve("fixtures"))).rejects.toThrow(
-      "Plugin directory must be an immediate child of .obsidian/plugins in the active vault.",
+      "[package-path-escape].",
     );
   });
 });

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import { atomicWriteFile, readStableFile, syncDirectory } from "../kernel/durability";
+import { withPluginDiagnosticCode } from "../shared/plugin-diagnostics";
 import type {
   ManagedPluginPackageHistory,
   ManagedPluginPackageSummary,
@@ -679,8 +680,9 @@ export class PluginPackageManager {
       const pluginPath = this.#pluginPath(vaultPath, pluginId);
       const currentRevision = await directoryRevision(pluginPath);
       if (currentRevision !== pending.expectedTreeRevision) {
-        throw new Error(
-          "Installed plugin files changed after review. No package change was applied.",
+        throw withPluginDiagnosticCode(
+          new Error("Installed plugin files changed after review. No package change was applied."),
+          "package-review-stale",
         );
       }
 

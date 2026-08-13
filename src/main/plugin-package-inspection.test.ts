@@ -89,6 +89,7 @@ function fakeRuntime(
     | "vault-write"
     | "outside-write"
     | "crash"
+    | "secret-crash"
     | "sensitive-registration",
   context: PluginInspectionRuntimeContext,
 ): PluginRuntimePort {
@@ -107,8 +108,12 @@ function fakeRuntime(
       if (behavior === "timeout") {
         return new Promise<RuntimeSnapshot>(() => undefined);
       }
-      if (behavior === "crash") {
-        throw new Error("fixture activation crash");
+      if (behavior === "crash" || behavior === "secret-crash") {
+        throw new Error(
+          behavior === "secret-crash"
+            ? "Error: /home/maher/private-token password=super-secret; at plugin.js:1:1"
+            : "fixture activation crash",
+        );
       }
       if (behavior === "global") {
         Object.assign(globalThis, { __threadleafInspectionGlobalCanary: true });
@@ -361,6 +366,20 @@ describe("exact plugin package inspection", () => {
     expect(fixture.stages.find((stage) => stage.id === "activation")?.limitations).toEqual(
       expect.arrayContaining([expect.stringContaining("deterministic fixture runtime")]),
     );
+  });
+
+  it("keeps plugin-thrown secrets and host paths out of inspection receipts", async () => {
+    const report = await inspectPluginPackage(await fixtureInput("inspection-safe"), {
+      runtimeFactory: await runtimeFor("secret-crash"),
+    });
+    const serialized = JSON.stringify(report);
+    expect(report.overall).toBe("fail");
+    expect(report.stages.find((stage) => stage.id === "activation")?.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "activation-crash" })]),
+    );
+    expect(serialized).not.toContain("/home/maher/private-token");
+    expect(serialized).not.toContain("super-secret");
+    expect(serialized).not.toContain("plugin.js:1:1");
   });
 
   it("redacts absolute module specifiers from evidence and still blocks them", async () => {

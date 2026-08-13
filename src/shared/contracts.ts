@@ -29,6 +29,7 @@ import type { PluginMutationWaitOptions, PluginRendererOperation } from "./plugi
 
 export type { PluginMutationWaitOptions } from "./plugin-runtime-protocol";
 
+import type { PluginDiagnosticCode } from "./plugin-diagnostics";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
@@ -142,6 +143,8 @@ export interface PluginSummary {
   compatibilityLevel: 0 | 1 | 2 | 3 | 4;
   stylesheetDiscovered: boolean;
   error: string | null;
+  /** Stable renderer-safe category for `error`; raw plugin failures are never serialized. */
+  errorCode?: PluginDiagnosticCode | null;
 }
 
 export interface PluginResourceDiagnostic {

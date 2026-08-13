@@ -15,6 +15,12 @@ import type {
   RuntimeEventKind,
   RuntimeSnapshot,
 } from "../shared/contracts";
+import {
+  attachedPluginDiagnosticCode,
+  createPluginDiagnostic,
+  pluginDiagnosticError,
+  withPluginDiagnosticCode,
+} from "../shared/plugin-diagnostics";
 import { maxPluginBundleBytes, parsePluginManifest } from "../shared/plugins";
 import {
   App,
@@ -101,14 +107,26 @@ export class PluginHost implements PluginRuntimePort {
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
     this.app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(this.app, containerEl));
-    this.app.workspace.setLayoutReadyErrorHandler((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      this.record("error", `Plugin workspace startup callback failed: ${message}`);
+    this.app.workspace.setLayoutReadyErrorHandler((_error) => {
+      this.record("error", createPluginDiagnostic("runtime-load-failed").message);
     });
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
   }
 
   async loadPlugin(
+    pluginDirectory: string,
+    expectedBundleSha256?: string,
+  ): Promise<RuntimeSnapshot> {
+    try {
+      return await this.loadPluginUnsafe(pluginDirectory, expectedBundleSha256);
+    } catch (error) {
+      const pluginId = path.basename(pluginDirectory);
+      const code = attachedPluginDiagnosticCode(error) ?? "runtime-load-failed";
+      throw pluginDiagnosticError(code, { pluginId }, error);
+    }
+  }
+
+  private async loadPluginUnsafe(
     pluginDirectory: string,
     expectedBundleSha256?: string,
   ): Promise<RuntimeSnapshot> {
@@ -144,6 +162,7 @@ export class PluginHost implements PluginRuntimePort {
         compatibilityLevel: 0,
         stylesheetDiscovered,
         error: null,
+        errorCode: null,
       },
     };
     this.plugins.set(manifest.id, record);
@@ -180,17 +199,21 @@ export class PluginHost implements PluginRuntimePort {
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       await instance?.__unload().catch(() => undefined);
       this.app.plugins.unregister(manifest.id);
       record.instance = null;
+      const diagnosticCode = attachedPluginDiagnosticCode(error) ?? "runtime-load-failed";
       record.summary = {
         ...record.summary,
         state: "failed",
-        error: message,
+        error: createPluginDiagnostic(diagnosticCode, { pluginId: manifest.id }).message,
+        errorCode: diagnosticCode,
       };
-      this.record("error", `${manifest.name} load failed: ${message}`);
-      throw error;
+      this.record(
+        "error",
+        createPluginDiagnostic(diagnosticCode, { pluginId: manifest.id }).message,
+      );
+      throw pluginDiagnosticError(diagnosticCode, { pluginId: manifest.id }, error);
     }
 
     return this.getSnapshot();
@@ -201,30 +224,38 @@ export class PluginHost implements PluginRuntimePort {
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
     const command = this.app.commands.list().find(({ id }) => id === commandId);
-    const canRunInCurrentView = await this.app.commands.canRun(commandId);
-    const shouldUseEditorContext =
-      editorContext &&
-      (!canRunInCurrentView || this.app.workspace.activeLeaf === this.nativeMarkdownLeaf);
-    if (shouldUseEditorContext) {
-      await this.openNativeEditorContext(editorContext);
-    } else {
-      this.editorUpdate = null;
-    }
-    const ran = await this.app.commands.run(commandId);
-    if (!ran || !command) {
-      throw new Error(`Command is not available: ${commandId}`);
-    }
-    await this.vault.waitForSettledMutations();
-    this.captureEditorUpdate();
-
-    this.record("command", `Ran command: ${command.name}.`);
     const ownerId = this.app.commands.ownerIdFor(commandId);
-    const record = ownerId ? this.plugins.get(ownerId) : undefined;
-    if (record) {
-      record.summary = { ...record.summary, compatibilityLevel: 4 };
-      this.lastPluginId = ownerId ?? this.lastPluginId;
+    try {
+      const canRunInCurrentView = await this.app.commands.canRun(commandId);
+      const shouldUseEditorContext =
+        editorContext &&
+        (!canRunInCurrentView || this.app.workspace.activeLeaf === this.nativeMarkdownLeaf);
+      if (shouldUseEditorContext) {
+        await this.openNativeEditorContext(editorContext);
+      } else {
+        this.editorUpdate = null;
+      }
+      const ran = await this.app.commands.run(commandId);
+      if (!ran || !command) {
+        throw new Error("command is not available");
+      }
+      await this.vault.waitForSettledMutations();
+      this.captureEditorUpdate();
+
+      this.record("command", `Ran command: ${command.name}.`);
+      const record = ownerId ? this.plugins.get(ownerId) : undefined;
+      if (record) {
+        record.summary = { ...record.summary, compatibilityLevel: 4 };
+        this.lastPluginId = ownerId ?? this.lastPluginId;
+      }
+      return this.getSnapshot();
+    } catch (error) {
+      throw pluginDiagnosticError(
+        "runtime-command-failed",
+        ownerId ? { pluginId: ownerId } : {},
+        error,
+      );
     }
-    return this.getSnapshot();
   }
 
   async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
@@ -283,9 +314,9 @@ export class PluginHost implements PluginRuntimePort {
       this.record("runtime", "Plugin workspace layout became ready.");
       return this.getSnapshot();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.record("error", `Plugin workspace startup callback failed: ${message}`);
-      throw error;
+      const diagnostic = createPluginDiagnostic("runtime-load-failed");
+      this.record("error", diagnostic.message);
+      throw pluginDiagnosticError("runtime-load-failed", {}, error);
     }
   }
 
@@ -313,7 +344,7 @@ export class PluginHost implements PluginRuntimePort {
     } catch (error) {
       this.activePluginLeaf = null;
       await leaf.detach().catch(() => undefined);
-      throw error;
+      throw pluginDiagnosticError("runtime-view-failed", {}, error);
     }
   }
 
@@ -348,7 +379,7 @@ export class PluginHost implements PluginRuntimePort {
       this.activeSettingTabPluginId = null;
       await Promise.resolve(settingTab.hide()).catch(() => undefined);
       container.remove();
-      throw error;
+      throw pluginDiagnosticError("runtime-settings-failed", { pluginId }, error);
     }
   }
 
@@ -362,9 +393,14 @@ export class PluginHost implements PluginRuntimePort {
     if (settingTab) {
       try {
         await Promise.resolve(settingTab.hide());
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.record("error", `Plugin settings cleanup failed: ${message}`);
+      } catch (_error) {
+        this.record(
+          "error",
+          createPluginDiagnostic(
+            "runtime-unload-failed",
+            settingTabPluginId ? { pluginId: settingTabPluginId } : {},
+          ).message,
+        );
       }
       settingTabContainer?.remove();
       const pluginName = settingTabPluginId
@@ -407,8 +443,10 @@ export class PluginHost implements PluginRuntimePort {
     let unloadError: string | null = null;
     try {
       await record.instance?.__unload();
-    } catch (error) {
-      unloadError = error instanceof Error ? error.message : String(error);
+    } catch (_error) {
+      unloadError = createPluginDiagnostic("runtime-unload-failed", {
+        pluginId: record.summary.id,
+      }).message;
     }
     record.instance = null;
     this.app.plugins.unregister(record.summary.id);
@@ -419,21 +457,23 @@ export class PluginHost implements PluginRuntimePort {
       error:
         unloadError ??
         (modalCloseFailure
-          ? modalCloseFailure instanceof Error
-            ? modalCloseFailure.message
-            : String(modalCloseFailure)
+          ? createPluginDiagnostic("runtime-unload-failed", {
+              pluginId: record.summary.id,
+            }).message
           : null),
+      errorCode: unloadError || modalCloseFailure ? "runtime-unload-failed" : null,
     };
     this.lastPluginId = targetId ?? this.lastPluginId;
     this.record("plugin", `Unloaded ${record.summary.name} and released its registrations.`);
     if (unloadError) {
-      this.record("error", `${record.summary.name} onunload failed: ${unloadError}`);
+      this.record(
+        "error",
+        createPluginDiagnostic("runtime-unload-failed", { pluginId: record.summary.id }).message,
+      );
     } else if (modalCloseFailure) {
       this.record(
         "error",
-        `${record.summary.name} modal cleanup failed: ${
-          modalCloseFailure instanceof Error ? modalCloseFailure.message : String(modalCloseFailure)
-        }`,
+        createPluginDiagnostic("runtime-unload-failed", { pluginId: record.summary.id }).message,
       );
     }
     return this.getSnapshot();
@@ -517,8 +557,11 @@ export class PluginHost implements PluginRuntimePort {
     if (expectedBundleSha256) {
       const actualBundleSha256 = createHash("sha256").update(bundleBytes).digest("hex");
       if (actualBundleSha256 !== expectedBundleSha256) {
-        throw new Error(
-          "Plugin main.js changed after authority review and was blocked before execution.",
+        throw withPluginDiagnosticCode(
+          new Error(
+            "Plugin main.js changed after authority review and was blocked before execution.",
+          ),
+          "managed-package-changed",
         );
       }
     }
@@ -615,8 +658,11 @@ export class PluginHost implements PluginRuntimePort {
       !isPathInside(canonicalVault, canonicalPluginRoot) ||
       path.dirname(canonicalCandidate) !== canonicalPluginRoot
     ) {
-      throw new Error(
-        "Plugin directory must be an immediate child of .obsidian/plugins in the active vault.",
+      throw withPluginDiagnosticCode(
+        new Error(
+          "Plugin directory must be an immediate child of .obsidian/plugins in the active vault.",
+        ),
+        "package-path-escape",
       );
     }
     return canonicalCandidate;

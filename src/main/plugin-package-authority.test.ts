@@ -167,7 +167,8 @@ describe("managed plugin package inspection authority", () => {
     expect(drifted.plugins[0]).toMatchObject({
       summary: {
         packageState: "invalid",
-        error: expect.stringContaining("inspection receipt"),
+        error: expect.stringContaining("[managed-package-changed]."),
+        errorCode: "managed-package-changed",
       },
     });
     const blocked = await loadVaultPluginCatalog({

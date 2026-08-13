@@ -1,6 +1,13 @@
 import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import { readStableFileWithinLimit } from "../kernel/durability";
+import {
+  attachedPluginDiagnosticCode,
+  createPluginDiagnostic,
+  type PluginDiagnosticCode,
+  pluginDiagnosticMessage,
+  withPluginDiagnosticCode,
+} from "../shared/plugin-diagnostics";
 import type { PluginPackageInspectionReceipt } from "../shared/plugin-packages";
 import {
   createPluginCompatibilityReport,
@@ -53,14 +60,9 @@ function errorCode(error: unknown): string | null {
   return typeof error === "object" && error !== null && "code" in error ? String(error.code) : null;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
 function isContained(rootPath: string, targetPath: string): boolean {
   const relative = path.relative(rootPath, targetPath);
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
@@ -72,7 +74,10 @@ async function canonicalContainedPath(rootPath: string, candidatePath: string): 
     fs.realpath(candidatePath),
   ]);
   if (!isContained(canonicalRoot, canonicalCandidate)) {
-    throw new Error("path resolves outside the vault plugin directory");
+    throw withPluginDiagnosticCode(
+      new Error("path resolves outside the vault plugin directory"),
+      "package-path-escape",
+    );
   }
   return canonicalCandidate;
 }
@@ -214,7 +219,10 @@ function neutralizeExternalCssUrls(css: string): { css: string; blockedCount: nu
   return { css: rewritten, blockedCount: replacements.length };
 }
 
-function invalidSummary(folderId: string, message: string): PluginPackageSummary {
+function invalidSummary(
+  folderId: string,
+  diagnostic: ReturnType<typeof createPluginDiagnostic>,
+): PluginPackageSummary {
   return {
     id: folderId,
     name: folderId,
@@ -237,8 +245,38 @@ function invalidSummary(folderId: string, message: string): PluginPackageSummary
     },
     capabilityReport: null,
     capabilityGrantState: "unavailable",
-    error: message,
+    error: diagnostic.message,
+    errorCode: diagnostic.code,
   };
+}
+
+type InspectionStage = "path" | "manifest" | "bundle" | "stylesheet";
+
+function diagnosticCodeFor(
+  error: unknown,
+  stage: InspectionStage,
+  fallback: PluginDiagnosticCode,
+): PluginDiagnosticCode {
+  const attached = attachedPluginDiagnosticCode(error);
+  if (attached) {
+    return attached;
+  }
+  if (errorCode(error) === "EACCES" || errorCode(error) === "EPERM") {
+    return "package-unreadable";
+  }
+  if (errorCode(error) === "ELOOP") {
+    return "package-path-escape";
+  }
+  if (stage === "manifest") {
+    return "manifest-invalid";
+  }
+  if (stage === "bundle") {
+    return fallback === "bundle-missing" ? fallback : "bundle-invalid";
+  }
+  if (stage === "stylesheet") {
+    return "stylesheet-invalid";
+  }
+  return fallback;
 }
 
 async function optionalContainedFile(
@@ -268,11 +306,20 @@ async function optionalContainedFile(
 async function inspectPlugin(
   pluginRoot: string,
   entry: Dirent<string>,
-): Promise<DiscoveredVaultPlugin> {
-  const folderId = parsePluginId(entry.name);
+): Promise<DiscoveredVaultPlugin | null> {
+  let folderId: string;
+  try {
+    folderId = parsePluginId(entry.name);
+  } catch {
+    // Invalid folder names are not safe subjects for renderer text. The caller emits a
+    // category-only warning while valid plugin IDs remain visible for user action.
+    return null;
+  }
   let directoryPath = path.join(pluginRoot, entry.name);
+  let stage: InspectionStage = "path";
   try {
     directoryPath = await canonicalContainedPath(pluginRoot, directoryPath);
+    stage = "manifest";
     const manifestPath = await canonicalContainedPath(
       directoryPath,
       path.join(directoryPath, "manifest.json"),
@@ -281,13 +328,18 @@ async function inspectPlugin(
       JSON.parse(await readBoundedText(manifestPath, maxManifestBytes)),
     );
     if (manifest.id !== folderId) {
-      throw new Error(`manifest id ${manifest.id} does not match folder ${folderId}`);
+      throw withPluginDiagnosticCode(
+        new Error("manifest id does not match package folder"),
+        "manifest-id-mismatch",
+      );
     }
+    stage = "bundle";
     const mainPath = await optionalContainedFile(directoryPath, "main.js", maxPluginBundleBytes);
     if (!mainPath) {
-      throw new Error("main.js is missing");
+      throw withPluginDiagnosticCode(new Error("main.js is missing"), "bundle-missing");
     }
     const mainBytes = await readBoundedBytes(mainPath, maxPluginBundleBytes);
+    stage = "stylesheet";
     const stylesheetPath = await optionalContainedFile(
       directoryPath,
       "styles.css",
@@ -301,28 +353,37 @@ async function inspectPlugin(
     let inspection: PluginPackageInspectionReceipt | null = null;
     let capabilityReport: PluginCapabilityReport;
     if (inspectionPath) {
-      const inspectionBytes = await readBoundedBytes(inspectionPath, maxPluginReceiptBytes);
-      let parsed: unknown;
       try {
-        parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(inspectionBytes));
-      } catch {
-        throw new Error("managed package receipt is not valid UTF-8 JSON");
+        const inspectionBytes = await readBoundedBytes(inspectionPath, maxPluginReceiptBytes);
+        const parsed = JSON.parse(
+          new TextDecoder("utf-8", { fatal: true }).decode(inspectionBytes),
+        );
+        if (!isRecord(parsed) || !("inspection" in parsed)) {
+          throw new Error("managed package receipt is missing its inspection evidence");
+        }
+        const verified = verifyPluginPackageInspectionReceipt(
+          parsed.inspection,
+          folderId,
+          manifest,
+          {
+            manifest: await readBoundedBytes(manifestPath, maxManifestBytes),
+            main: mainBytes,
+            styles: stylesheetPath
+              ? await readBoundedBytes(stylesheetPath, maxPluginStylesheetBytes)
+              : null,
+          },
+        );
+        if (!verified.receipt) {
+          throw new Error(`managed package inspection receipt is invalid: ${verified.error}`);
+        }
+        inspection = verified.receipt;
+        capabilityReport = inspection.staticAuthority;
+      } catch (error) {
+        throw withPluginDiagnosticCode(
+          error instanceof Error ? error : new Error(String(error)),
+          "managed-package-changed",
+        );
       }
-      if (!isRecord(parsed) || !("inspection" in parsed)) {
-        throw new Error("managed package receipt is missing its inspection evidence");
-      }
-      const verified = verifyPluginPackageInspectionReceipt(parsed.inspection, folderId, manifest, {
-        manifest: await readBoundedBytes(manifestPath, maxManifestBytes),
-        main: mainBytes,
-        styles: stylesheetPath
-          ? await readBoundedBytes(stylesheetPath, maxPluginStylesheetBytes)
-          : null,
-      });
-      if (!verified.receipt) {
-        throw new Error(`managed package inspection receipt is invalid: ${verified.error}`);
-      }
-      inspection = verified.receipt;
-      capabilityReport = inspection.staticAuthority;
     } else {
       capabilityReport = scanPluginCapabilities(mainBytes);
     }
@@ -336,6 +397,7 @@ async function inspectPlugin(
         capabilityReport,
         capabilityGrantState: "required",
         error: null,
+        errorCode: null,
       },
       directoryPath,
       mainPath,
@@ -343,9 +405,19 @@ async function inspectPlugin(
       inspection,
     };
   } catch (error) {
-    const message = errorMessage(error);
+    const code = diagnosticCodeFor(
+      error,
+      stage,
+      stage === "path"
+        ? "package-unreadable"
+        : stage === "manifest"
+          ? "manifest-invalid"
+          : stage === "bundle"
+            ? "bundle-invalid"
+            : "stylesheet-invalid",
+    );
     return {
-      summary: invalidSummary(folderId, message),
+      summary: invalidSummary(folderId, createPluginDiagnostic(code, { pluginId: folderId })),
       directoryPath,
       mainPath: null,
       stylesheetPath: null,
@@ -368,7 +440,11 @@ export async function discoverVaultPlugins(vaultPath: string): Promise<VaultPlug
     return {
       sourceState: "unreadable",
       plugins: [],
-      warnings: [`Could not inspect .obsidian/plugins: ${errorMessage(error)}`],
+      warnings: [
+        pluginDiagnosticMessage("catalog-source-unreadable", {
+          packagePath: ".obsidian/plugins",
+        }),
+      ],
     };
   }
 
@@ -387,12 +463,16 @@ export async function discoverVaultPlugins(vaultPath: string): Promise<VaultPlug
     }
     try {
       const plugin = await inspectPlugin(canonicalPluginsPath, entry);
+      if (!plugin) {
+        warnings.push(pluginDiagnosticMessage("invalid-plugin-folder"));
+        continue;
+      }
       plugins.push(plugin);
       if (plugin.summary.error) {
         warnings.push(`Plugin ${plugin.summary.id} is invalid: ${plugin.summary.error}`);
       }
-    } catch (error) {
-      warnings.push(`An invalid plugin folder was skipped: ${errorMessage(error)}`);
+    } catch (_error) {
+      warnings.push(pluginDiagnosticMessage("invalid-plugin-folder"));
     }
   }
   return { sourceState: "present", plugins, warnings };
@@ -420,7 +500,8 @@ export async function loadVaultPluginCatalog(
     plugin.summary = {
       ...plugin.summary,
       packageState: "invalid",
-      error: "Threadleaf-managed package bytes changed after their recorded SHA-256 review.",
+      error: pluginDiagnosticMessage("managed-package-changed", { pluginId }),
+      errorCode: "managed-package-changed",
     };
     warnings.push(
       `Managed plugin ${pluginId} changed after installation and was blocked until reviewed again.`,
@@ -479,8 +560,13 @@ export async function loadVaultPluginCatalog(
           `Plugin ${pluginId} stylesheet was applied with ${sanitized.blockedCount} external asset URL${sanitized.blockedCount === 1 ? "" : "s"} blocked.`,
         );
       }
-    } catch (error) {
-      warnings.push(`Plugin ${pluginId} stylesheet was not applied: ${errorMessage(error)}`);
+    } catch (_error) {
+      warnings.push(
+        pluginDiagnosticMessage("stylesheet-invalid", {
+          pluginId,
+          packagePath: "styles.css",
+        }),
+      );
     }
   }
 

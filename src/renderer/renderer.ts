@@ -69,6 +69,11 @@ import {
   createDefaultVaultNoteWorkflowSettings,
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
+import {
+  type PluginDiagnosticCode,
+  parsePluginDiagnosticMessage,
+  pluginDiagnosticMessage,
+} from "../shared/plugin-diagnostics";
 import type {
   ManagedPluginPackageSummary,
   PluginPackageIndexSnapshot,
@@ -2241,7 +2246,7 @@ async function activatePluginView(): Promise<void> {
   } catch (error) {
     documentViewMode = editingViewMode;
     renderDocumentView();
-    showToast(error instanceof Error ? error.message : String(error));
+    showToast(pluginIpcErrorMessage(error, "runtime-view-failed"));
   } finally {
     setActionState(false);
   }
@@ -2257,7 +2262,7 @@ async function ensurePluginLayoutReady(): Promise<void> {
     render(await window.threadleaf.markPluginLayoutReady());
   } catch (error) {
     showToast(
-      `Plugin startup reported a compatibility gap: ${error instanceof Error ? error.message : String(error)}`,
+      `Plugin startup reported a compatibility gap: ${pluginIpcErrorMessage(error, "runtime-load-failed")}`,
     );
   }
 }
@@ -2297,7 +2302,7 @@ async function activatePluginSettings(pluginId: string): Promise<void> {
     pluginSettingsTargetId = null;
     documentViewMode = editingViewMode;
     renderDocumentView();
-    showToast(error instanceof Error ? error.message : String(error));
+    showToast(pluginIpcErrorMessage(error, "runtime-settings-failed"));
   } finally {
     setActionState(false);
   }
@@ -4876,7 +4881,7 @@ async function refreshPlugins(successMessage?: string): Promise<void> {
     if (request !== pluginRequest) {
       return;
     }
-    pluginMessage = error instanceof Error ? error.message : String(error);
+    pluginMessage = pluginIpcErrorMessage(error, "package-inventory-invalid");
     pluginMessageKind = "error";
   } finally {
     if (request === pluginRequest) {
@@ -4926,7 +4931,7 @@ async function updatePlugins(
     return true;
   } catch (error) {
     if (request === pluginRequest) {
-      pluginMessage = error instanceof Error ? error.message : String(error);
+      pluginMessage = pluginIpcErrorMessage(error, "package-operation-failed");
       pluginMessageKind = "error";
     }
     return false;
@@ -5028,6 +5033,17 @@ function ipcErrorMessage(error: unknown): string {
   return message.replace(/^Error invoking remote method '[^']+': Error: /u, "");
 }
 
+function pluginIpcErrorMessage(
+  error: unknown,
+  code: PluginDiagnosticCode = "package-operation-failed",
+): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.replace(/^Error invoking remote method '[^']+': Error: /u, "");
+  // IPC errors are not trusted renderer content. Main-process catalog handlers attach the
+  // stable diagnostic already; an unexpected/raw value gets the same bounded fallback.
+  return parsePluginDiagnosticMessage(normalized)?.message ?? pluginDiagnosticMessage(code);
+}
+
 async function searchOpenPluginIndex(): Promise<void> {
   const vaultId = currentSnapshot?.vault.id;
   if (!vaultId || pluginBusy) {
@@ -5055,7 +5071,7 @@ async function searchOpenPluginIndex(): Promise<void> {
     pluginMessageKind = "saved";
   } catch (error) {
     if (request === pluginPackageRequest) {
-      pluginMessage = ipcErrorMessage(error);
+      pluginMessage = pluginIpcErrorMessage(error, "registry-index-invalid");
       pluginMessageKind = "error";
     }
   } finally {
@@ -5264,7 +5280,7 @@ async function previewPluginPackage(requestValue: PluginPackagePreviewRequest): 
     openPluginPackageReview(response.review);
   } catch (error) {
     if (request === pluginPackageRequest) {
-      pluginMessage = ipcErrorMessage(error);
+      pluginMessage = pluginIpcErrorMessage(error, "package-operation-failed");
       pluginMessageKind = "error";
     }
   } finally {
@@ -5336,7 +5352,7 @@ async function applyPluginPackageReview(): Promise<void> {
     void refreshMigrationPreview("Migration preview refreshed after the package change.");
   } catch (error) {
     if (request === pluginPackageRequest) {
-      const message = `${ipcErrorMessage(error)} Review the exact package again before another apply.`;
+      const message = `${pluginIpcErrorMessage(error, "package-operation-failed")} Review the exact package again before another apply.`;
       pluginPackageReview = null;
       pluginMessage = message;
       pluginMessageKind = "error";

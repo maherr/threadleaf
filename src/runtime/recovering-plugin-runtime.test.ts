@@ -196,10 +196,10 @@ describe("RecoveringPluginRuntime", () => {
     expect(recovered.plugin).toMatchObject({
       id: "second",
       state: "failed",
-      error: expect.stringContaining("Timed out while running second-command"),
+      error: expect.stringContaining("[runtime-command-failed]."),
     });
     expect(recovered.plugins?.find(({ id }) => id === "first")?.error).toContain(
-      "Reload to reactivate this plugin",
+      "Reload the plugin to reactivate it",
     );
     await runtime.close();
   });
