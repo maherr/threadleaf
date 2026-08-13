@@ -69,6 +69,17 @@ import {
   readAppearanceCatalog,
   readCommunityPluginCatalog,
 } from "./compatibility-catalog";
+import {
+  type CliCommandId,
+  type CliShell,
+  generateCliCompletion,
+  parseCliOptionToken,
+  parseCliShell,
+  renderCliHelp,
+  cliHelpTopics as schemaCliHelpTopics,
+} from "./schema";
+
+export type { CliCommandId } from "./schema";
 
 export const cliSchemaVersion = 1;
 
@@ -81,54 +92,6 @@ export const cliExitCodes = {
   conflict: 5,
 } as const;
 
-type CliCommandId =
-  | "help"
-  | "vault.info"
-  | "file"
-  | "files"
-  | "folder"
-  | "folders"
-  | "wordcount"
-  | "read"
-  | "search"
-  | "search.context"
-  | "links"
-  | "backlinks"
-  | "unresolved"
-  | "orphans"
-  | "deadends"
-  | "outline"
-  | "create"
-  | "daily"
-  | "daily.path"
-  | "daily.read"
-  | "daily.append"
-  | "daily.prepend"
-  | "append"
-  | "prepend"
-  | "move"
-  | "rename"
-  | "delete"
-  | "trash.list"
-  | "restore"
-  | "properties"
-  | "property.read"
-  | "property.set"
-  | "property.remove"
-  | "tasks"
-  | "task"
-  | "aliases"
-  | "tags"
-  | "tag"
-  | "templates"
-  | "template.read"
-  | "random.read"
-  | "plugins"
-  | "plugin"
-  | "themes"
-  | "theme"
-  | "snippets";
-
 interface CliBaseCommand {
   id: CliCommandId;
   json: boolean;
@@ -137,6 +100,11 @@ interface CliBaseCommand {
 interface CliHelpCommand extends CliBaseCommand {
   id: "help";
   topic: string | null;
+}
+
+interface CliCompletionCommand extends CliBaseCommand {
+  id: "completion";
+  shell: CliShell;
 }
 
 interface CliVaultCommand extends CliBaseCommand {
@@ -462,7 +430,10 @@ export type ParsedCliCommand =
   | CliPluginCommand
   | CliThemesCommand
   | CliThemeCommand
-  | CliSnippetsCommand;
+  | CliSnippetsCommand
+  | CliCompletionCommand;
+
+type ExecutableCliCommand = Exclude<ParsedCliCommand, CliHelpCommand | CliCompletionCommand>;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -666,55 +637,7 @@ function parseCompatibilityFormat(value: string, commandName: string): "text" | 
   return parseTabularFormat(value, commandName);
 }
 
-const cliHelpTopics = new Set([
-  "vault",
-  "vault:info",
-  "file",
-  "files",
-  "folder",
-  "folders",
-  "wordcount",
-  "read",
-  "search",
-  "search:context",
-  "links",
-  "backlinks",
-  "unresolved",
-  "orphans",
-  "deadends",
-  "outline",
-  "create",
-  "daily",
-  "daily:path",
-  "daily:read",
-  "daily:append",
-  "daily:prepend",
-  "append",
-  "prepend",
-  "move",
-  "rename",
-  "delete",
-  "trash",
-  "trash:list",
-  "restore",
-  "properties",
-  "property:read",
-  "property:set",
-  "property:remove",
-  "tasks",
-  "task",
-  "aliases",
-  "tags",
-  "tag",
-  "templates",
-  "template:read",
-  "random:read",
-  "plugins",
-  "plugin",
-  "themes",
-  "theme",
-  "snippets",
-]);
+const cliHelpTopics = new Set(schemaCliHelpTopics);
 
 export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let json = false;
@@ -735,50 +658,58 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       positional.push(...args.slice(index + 1));
       break;
     }
-    if (token === "--json") {
+    const option = parseCliOptionToken(token);
+    if (option?.id === "json") {
       json = true;
       continue;
     }
-    if (token === "--help" || token === "-h") {
+    if (option?.id === "help") {
       help = true;
       continue;
     }
-    if (token === "--vault" || token.startsWith("--vault=")) {
+    if (option?.id === "vault") {
       if (vaultPath !== null) {
         usageFailure("--vault may be supplied only once.");
       }
-      vaultPath = takeOptionValue(args, index, "--vault");
-      if (token === "--vault") {
+      vaultPath = option.inlineValue ?? takeOptionValue(args, index, "--vault");
+      if (!vaultPath) {
+        usageFailure("--vault requires a value.");
+      }
+      if (option.inlineValue === null) {
         index += 1;
       }
       continue;
     }
-    if (token === "--directory" || token.startsWith("--directory=")) {
+    if (option?.id === "directory") {
       if (directory !== null) {
         usageFailure("--directory may be supplied only once.");
       }
-      directory = takeOptionValue(args, index, "--directory");
-      if (token === "--directory") {
+      directory = option.inlineValue ?? takeOptionValue(args, index, "--directory");
+      if (!directory) {
+        usageFailure("--directory requires a value.");
+      }
+      if (option.inlineValue === null) {
         index += 1;
       }
       continue;
     }
-    if (token === "--limit" || token.startsWith("--limit=")) {
+    if (option?.id === "limit") {
       if (limit !== null) {
         usageFailure("--limit may be supplied only once.");
       }
-      limit = parsePositiveInteger(takeOptionValue(args, index, "--limit"), "--limit");
-      if (token === "--limit") {
+      const value = option.inlineValue ?? takeOptionValue(args, index, "--limit");
+      limit = parsePositiveInteger(value, "--limit");
+      if (option.inlineValue === null) {
         index += 1;
       }
       continue;
     }
-    if (token === "--content" || token.startsWith("--content=")) {
+    if (option?.id === "content") {
       if (content !== null) {
         usageFailure("--content may be supplied only once.");
       }
-      if (token.startsWith("--content=")) {
-        content = token.slice("--content=".length);
+      if (option.inlineValue !== null) {
+        content = option.inlineValue;
       } else {
         const value = args[index + 1];
         if (value === undefined || value.startsWith("--")) {
@@ -789,14 +720,14 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       }
       continue;
     }
-    if (token === "--inline") {
+    if (option?.id === "inline") {
       if (inline) {
         usageFailure("--inline may be supplied only once.");
       }
       inline = true;
       continue;
     }
-    if (token === "--update-links") {
+    if (option?.id === "update-links") {
       if (updateLinks) {
         usageFailure("--update-links may be supplied only once.");
       }
@@ -808,27 +739,33 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
         "Threadleaf does not expose permanent deletion; recoverable trash is mandatory.",
       );
     }
-    if (token === "--to" || token.startsWith("--to=")) {
+    if (option?.id === "to") {
       if (destination !== null) {
         usageFailure("--to may be supplied only once.");
       }
-      destination = takeOptionValue(args, index, "--to");
-      if (token === "--to") {
+      destination = option.inlineValue ?? takeOptionValue(args, index, "--to");
+      if (!destination) {
+        usageFailure("--to requires a value.");
+      }
+      if (option.inlineValue === null) {
         index += 1;
       }
       continue;
     }
-    if (token === "--name" || token.startsWith("--name=")) {
+    if (option?.id === "name") {
       if (renamedName !== null) {
         usageFailure("--name may be supplied only once.");
       }
-      renamedName = takeOptionValue(args, index, "--name");
-      if (token === "--name") {
+      renamedName = option.inlineValue ?? takeOptionValue(args, index, "--name");
+      if (!renamedName) {
+        usageFailure("--name requires a value.");
+      }
+      if (option.inlineValue === null) {
         index += 1;
       }
       continue;
     }
-    if (token.startsWith("--")) {
+    if (token.startsWith("-") && token !== "-") {
       usageFailure(`Unknown option: ${token}`);
     }
     positional.push(token);
@@ -843,6 +780,28 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure(`Unknown help topic: ${topic}`);
     }
     return { id: "help", json, topic };
+  }
+  if (positional[0] === "completion") {
+    if (
+      vaultPath !== null ||
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("completion accepts only --json, --help, and -h.");
+    }
+    if (positional.length !== 2) {
+      usageFailure("completion requires one shell: bash, zsh, fish, or powershell.");
+    }
+    const shell = parseCliShell(positional[1] ?? "");
+    if (shell === null) {
+      usageFailure("completion shell must be bash, zsh, fish, or powershell.");
+    }
+    return { id: "completion", json, shell };
   }
   if (!vaultPath) {
     usageFailure("Every vault command requires --vault <path>.");
@@ -2401,109 +2360,7 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   usageFailure(`Unknown command: ${positional.join(" ")}`);
 }
 
-export const cliHelp = `Threadleaf command line
-
-Usage:
-  threadleaf help [command]
-  threadleaf --vault <path> [--json] vault info
-  threadleaf --vault <path> [--json] vault info=<name|path|files|folders|size>
-  threadleaf --vault <path> [--json] file <vault-file>
-  threadleaf --vault <path> [--json] files [folder=<path>] [ext=<extension>] [total]
-  threadleaf --vault <path> [--json] folder path=<path> [info=files|folders|size]
-  threadleaf --vault <path> [--json] folders [folder=<path>] [total]
-  threadleaf --vault <path> [--json] wordcount <note.md> [words|characters]
-  threadleaf --vault <path> [--json] read <note.md>
-  threadleaf --vault <path> [--json] search query=<text> [path=<folder>] [limit=<n>] [format=text|json] [total] [case]
-  threadleaf --vault <path> [--json] search:context query=<text> [path=<folder>] [limit=<n>] [format=text|json] [case]
-  threadleaf --vault <path> [--json] links <note.md> [total]
-  threadleaf --vault <path> [--json] backlinks <note.md> [counts] [total] [format=json|tsv|csv]
-  threadleaf --vault <path> [--json] unresolved [counts] [total] [verbose] [format=json|tsv|csv]
-  threadleaf --vault <path> [--json] orphans [total]
-  threadleaf --vault <path> [--json] deadends [total]
-  threadleaf --vault <path> [--json] outline <note.md> [format=tree|md|json] [total]
-  threadleaf --vault <path> [--json] create <note> [--content <text> | template=<note.md>] [date-format=<format>] [time-format=<format>] [overwrite]
-  threadleaf --vault <path> [--json] daily [folder=<path>] [format=<format>] [template=<note.md>] [date-format=<format>] [time-format=<format>]
-  threadleaf --vault <path> [--json] daily:path [folder=<path>] [format=<format>]
-  threadleaf --vault <path> [--json] daily:read [folder=<path>] [format=<format>]
-  threadleaf --vault <path> [--json] daily:append [folder=<path>] [format=<format>] content=<text> [inline]
-  threadleaf --vault <path> [--json] daily:prepend [folder=<path>] [format=<format>] content=<text> [inline]
-  threadleaf --vault <path> [--json] append <note> --content <text> [--inline]
-  threadleaf --vault <path> [--json] prepend <note> --content <text> [--inline]
-  threadleaf --vault <path> [--json] move <note> --to <path> [--update-links]
-  threadleaf --vault <path> [--json] rename <note> --name <filename> [--update-links]
-  threadleaf --vault <path> [--json] delete <note>
-  threadleaf --vault <path> [--json] trash list
-  threadleaf --vault <path> [--json] restore <note>
-  threadleaf --vault <path> [--json] properties path=<note.md>
-  threadleaf --vault <path> [--json] property:read path=<note.md> name=<name>
-  threadleaf --vault <path> [--json] property:set path=<note.md> name=<name> value=<value> [type=<type>]
-  threadleaf --vault <path> [--json] property:remove path=<note.md> name=<name>
-  threadleaf --vault <path> [--json] tasks [path=<note.md>] [done|todo|status=<char>] [daily] [total|verbose] [format=text|json|tsv|csv]
-  threadleaf --vault <path> [--json] task ref=<note.md:line> [toggle|done|todo|status=<char>] or task daily line=<n>
-  threadleaf --vault <path> [--json] aliases [path=<note.md>] [total|verbose]
-  threadleaf --vault <path> [--json] tags [path=<note.md>] [sort=count] [total|counts] [format=text|json|tsv|csv]
-  threadleaf --vault <path> [--json] tag name=<tag> [total|verbose]
-  threadleaf --vault <path> [--json] templates [folder=<path>] [total]
-  threadleaf --vault <path> [--json] template:read name=<template> [folder=<path>] [title=<title>] [resolve]
-  threadleaf --vault <path> [--json] random:read [folder=<path>]
-  threadleaf --vault <path> [--json] plugins [filter=community] [versions] [format=json|tsv|csv]
-  threadleaf --vault <path> [--json] plugin id=<plugin-id>
-  threadleaf --vault <path> [--json] themes [versions]
-  threadleaf --vault <path> [--json] theme name=<theme-name>
-  threadleaf --vault <path> [--json] snippets
-
-Compatibility spellings:
-  threadleaf --vault <path> file file=<name>
-  threadleaf --vault <path> files folder=<path> ext=<extension> total
-  threadleaf --vault <path> folder path=<path> info=size
-  threadleaf --vault <path> folders folder=<path> total
-  threadleaf --vault <path> wordcount file=<note-name> words
-  threadleaf --vault <path> read file=<note-name>
-  threadleaf --vault <path> search query=<text> path=<folder> limit=<n> total case
-  threadleaf --vault <path> search:context query=<text> format=json
-  threadleaf --vault <path> links path=<note.md> total
-  threadleaf --vault <path> backlinks file=<note-name> counts format=csv
-  threadleaf --vault <path> unresolved counts verbose format=json
-  threadleaf --vault <path> outline path=<note.md> format=md
-  threadleaf --vault <path> create path=<note> [content=<text> | template=<note.md>] [overwrite]
-  threadleaf --vault <path> daily folder=Journal format=YYYY/MMMM/YYYY-MM-DD template=Templates/Daily.md
-  threadleaf --vault <path> daily:path folder=Journal format=YYYY/MMMM/YYYY-MM-DD
-  threadleaf --vault <path> daily:read folder=Journal format=YYYY/MMMM/YYYY-MM-DD
-  threadleaf --vault <path> daily:append folder=Journal format=YYYY/MMMM/YYYY-MM-DD content=<text>
-  threadleaf --vault <path> daily:prepend folder=Journal format=YYYY/MMMM/YYYY-MM-DD content=<text>
-  threadleaf --vault <path> append path=<note> content=<text> [inline]
-  threadleaf --vault <path> prepend path=<note> content=<text> [inline]
-  threadleaf --vault <path> move path=<note> to=<path>
-  threadleaf --vault <path> rename path=<note> name=<filename>
-  threadleaf --vault <path> delete path=<note>
-  threadleaf --vault <path> restore path=<note>
-  threadleaf --vault <path> properties path=<note.md>
-  threadleaf --vault <path> property:read path=<note.md> name=<name>
-  threadleaf --vault <path> property:set path=<note.md> name=<name> value=<value> [type=<type>]
-  threadleaf --vault <path> property:remove path=<note.md> name=<name>
-  threadleaf --vault <path> tasks [file=<note-name>] [done|todo|status=<char>] [daily] [total|verbose] format=<text|json|tsv|csv>
-  threadleaf --vault <path> task path=<note.md> line=<n> [toggle|done|todo|status=<char>]
-  threadleaf --vault <path> aliases [file=<note-name>] [total|verbose]
-  threadleaf --vault <path> tags [path=<note.md>] [sort=count] [total|counts] format=<text|json|tsv|csv>
-  threadleaf --vault <path> tag name=<tag> [total|verbose]
-  threadleaf --vault <path> templates folder=<path> total
-  threadleaf --vault <path> template:read name=<template> title=<title> resolve
-  threadleaf --vault <path> random:read folder=<path>
-  threadleaf --vault <path> plugins filter=community versions format=csv
-  threadleaf --vault <path> plugin id=<plugin-id>
-  threadleaf --vault <path> themes versions
-  threadleaf --vault <path> theme name=<theme-name>
-  threadleaf --vault <path> snippets
-
-Target rules:
-  Positional note targets and path= are exact vault-relative paths.
-  file= resolves one case-insensitive NFC-normalized Markdown basename; .md is optional.
-  Missing and duplicate file= matches fail explicitly instead of choosing a note.
-  The file info command uses the same rule across every visible vault file type.
-
-Commands are headless and never require a running Electron process.
-Plugin, theme, and snippet catalogs never execute code or expose private application selections.
-`;
+export const cliHelp = renderCliHelp();
 
 function cliHelpFor(topic: string | null): string {
   if (topic === null) {
@@ -3061,7 +2918,7 @@ function selectRandomNote(
   throw new Error("The random-note selector returned a path outside the candidate set.");
 }
 
-function isCliMutationCommand(command: Exclude<ParsedCliCommand, CliHelpCommand>): boolean {
+function isCliMutationCommand(command: ExecutableCliCommand): boolean {
   return (
     command.id === "create" ||
     command.id === "daily" ||
@@ -3080,7 +2937,7 @@ function isCliMutationCommand(command: Exclude<ParsedCliCommand, CliHelpCommand>
 }
 
 async function executeCommand(
-  command: Exclude<ParsedCliCommand, CliHelpCommand>,
+  command: ExecutableCliCommand,
   options: CliRunOptions,
 ): Promise<unknown> {
   const kernel = isCliMutationCommand(command)
@@ -3708,7 +3565,7 @@ async function executeCommand(
 }
 
 async function executeWithCommandState(
-  command: Exclude<ParsedCliCommand, CliHelpCommand>,
+  command: ExecutableCliCommand,
   options: CliRunOptions,
 ): Promise<unknown> {
   if (!isCliMutationCommand(command)) {
@@ -3784,6 +3641,9 @@ function catalogDiagnosticSuffix(diagnostics: number): string {
 function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "help") {
     return cliHelpFor(command.topic);
+  }
+  if (command.id === "completion") {
+    return generateCliCompletion(command.shell);
   }
   if (command.id === "read") {
     return (data as { content: string }).content;
@@ -4280,6 +4140,15 @@ function asCliFailure(error: unknown): CliFailure {
   );
 }
 
+function isEpipeError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "EPIPE"
+  );
+}
+
 export async function runCli(
   args: readonly string[],
   io: CliIo,
@@ -4294,8 +4163,17 @@ export async function runCli(
     const data =
       command.id === "help"
         ? { usage: cliHelpFor(command.topic) }
-        : await executeWithCommandState(command, options);
-    io.stdout(command.json ? jsonOutput(command.id, data) : humanOutput(command, data));
+        : command.id === "completion"
+          ? { shell: command.shell, script: generateCliCompletion(command.shell) }
+          : await executeWithCommandState(command, options);
+    try {
+      io.stdout(command.json ? jsonOutput(command.id, data) : humanOutput(command, data));
+    } catch (error) {
+      if (isEpipeError(error)) {
+        return cliExitCodes.success;
+      }
+      throw error;
+    }
     return cliExitCodes.success;
   } catch (error) {
     const failure = asCliFailure(error);

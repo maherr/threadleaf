@@ -12,6 +12,7 @@ vault.
 
 ```sh
 threadleaf help [command]
+threadleaf completion <bash|zsh|fish|powershell>
 threadleaf --vault /path/to/vault vault info
 threadleaf --vault /path/to/vault vault info=<name|path|files|folders|size>
 threadleaf --vault /path/to/vault file file="Note"
@@ -63,9 +64,23 @@ threadleaf --vault /path/to/vault snippets
 
 During development, prefix the same arguments with `pnpm cli`.
 
+Shell completion is generated without a vault and never queries the filesystem:
+
+```sh
+threadleaf completion bash > threadleaf.bash
+threadleaf completion zsh > _threadleaf
+threadleaf completion fish > threadleaf.fish
+threadleaf completion powershell > threadleaf.ps1
+```
+
+Source the generated script using the conventions of the selected shell. The candidates are
+limited to command names, compatibility aliases, global options, and static option values. Vault
+paths, plugin packages, themes, snippets, and other user data are never enumerated by completion.
+
 | Command | Output | Authority |
 | --- | --- | --- |
 | `help` | Full or command-specific usage without opening a vault | Static CLI contract |
+| `completion` | Deterministic bash, zsh, fish, or PowerShell completion script without opening a vault | Static CLI command schema |
 | `vault info` or `vault:info` | Canonical path and note, heading, tag, and link counts | Read-only kernel plus derived index |
 | `vault info=<name|path|files|folders|size>` | One selected vault fact | Read-only contained vault inventory |
 | `file` | Path, name, extension, byte size, and filesystem timestamps | Safe visible-file inventory |

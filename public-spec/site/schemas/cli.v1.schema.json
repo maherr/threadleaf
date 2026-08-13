@@ -9,6 +9,7 @@
     "threadleafVersion",
     "cliSchemaVersion",
     "commands",
+    "shellRuntime",
     "exitCodes",
     "outputFormats",
     "gates",
@@ -61,6 +62,47 @@
         },
         "additionalProperties": false
       }
+    },
+    "shellRuntime": {
+      "type": "object",
+      "required": ["shells", "authority", "source", "fallback", "gates"],
+      "properties": {
+        "shells": {
+          "const": ["bash", "zsh", "fish", "powershell"]
+        },
+        "authority": {
+          "type": "string"
+        },
+        "source": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "fallback": {
+          "type": "string"
+        },
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "command"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^[^/][^\\n]*$"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "exitCodes": {
       "type": "array",

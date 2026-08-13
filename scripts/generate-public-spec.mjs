@@ -25,6 +25,8 @@ const appearanceSourcePath = path.join(rootPath, "src", "shared", "appearance.ts
 const appearanceLoaderPath = path.join(rootPath, "src", "main", "vault-appearance-loader.ts");
 const themePackageManagerPath = path.join(rootPath, "src", "main", "theme-package-manager.ts");
 const cliSourcePath = path.join(rootPath, "src", "cli", "command-line.ts");
+const cliSchemaSourcePath = path.join(rootPath, "src", "cli", "schema.ts");
+const cliSchemaTestPath = path.join(rootPath, "src", "cli", "schema.test.ts");
 const cliGuidePath = path.join(rootPath, "docs", "cli.md");
 const contractPath = path.join(rootPath, "docs", "compatibility", "contract.md");
 const migrationPath = path.join(rootPath, "docs", "compatibility", "migration.md");
@@ -253,7 +255,7 @@ function parseCliCommands(source, guide) {
       output: guideRow?.output ?? "See the CLI contract for the native projection.",
       authority: guideRow?.authority ?? "Native CLI contract",
       status: "implemented",
-      source: sourceRef(cliSourcePath, "#CliCommandId"),
+      source: sourceRef(cliSchemaSourcePath, "#CliCommandId"),
       documentation: sourceRef(cliGuidePath, "#current-commands"),
     };
   });
@@ -505,8 +507,16 @@ function buildConformanceData(version, registry) {
       scope:
         "The current versioned native CLI command IDs, syntax aliases, exit codes, and output contracts are executable without Electron or network access.",
       threadleafVersion: version,
-      evidence: [sourceRef(cliSourcePath), sourceRef(cliGuidePath)],
-      gates: [gate("src/cli/command-line.test.ts", "pnpm test", "CLI contract")],
+      evidence: [
+        sourceRef(cliSourcePath),
+        sourceRef(cliSchemaSourcePath),
+        sourceRef(cliSchemaTestPath),
+        sourceRef(cliGuidePath),
+      ],
+      gates: [
+        gate("src/cli/command-line.test.ts", "pnpm test", "CLI contract"),
+        gate("src/cli/schema.test.ts", "pnpm test -- src/cli/schema.test.ts", "CLI shell runtime"),
+      ],
       fixtures: ["threadleaf.same-vault.v1"],
       limitations: [
         "Familiar external CLI spellings are separate compatibility targets and may remain unsupported.",
@@ -883,6 +893,7 @@ async function buildModel() {
   const appearanceSource = await readText(appearanceSourcePath);
   const appearanceLoader = await readText(appearanceLoaderPath);
   const cliSource = await readText(cliSourcePath);
+  const cliSchemaSource = await readText(cliSchemaSourcePath);
   const cliGuide = await readText(cliGuidePath);
   const registry = await readJson(registrySourcePath);
   const pluginEvidence = await readJson(pluginEvidencePath);
@@ -1055,7 +1066,18 @@ async function buildModel() {
     uri: "urn:threadleaf:spec:v1:cli",
     threadleafVersion: version,
     cliSchemaVersion: Number(cliSource.match(/export const cliSchemaVersion = (\d+);/u)?.[1] ?? 0),
-    commands: parseCliCommands(cliSource, cliGuide),
+    commands: parseCliCommands(cliSchemaSource, cliGuide),
+    shellRuntime: {
+      shells: ["bash", "zsh", "fish", "powershell"],
+      authority: "Static shell generators and parser metadata share src/cli/schema.ts.",
+      source: [sourceRef(cliSchemaSourcePath), sourceRef(cliSchemaTestPath)],
+      fallback:
+        "Bash and Fish execute installed-shell fixtures; Zsh and PowerShell use deterministic static checks when unavailable, while PowerShell runs TabExpansion2 when installed.",
+      gates: [
+        gate("src/cli/schema.test.ts", "pnpm test -- src/cli/schema.test.ts", "CLI shell runtime"),
+        gate("src/cli/schema.ts", "pnpm typecheck", "CLI shell generator"),
+      ],
+    },
     exitCodes: [
       { name: "success", code: 0 },
       { name: "internal", code: 1 },
@@ -1065,8 +1087,11 @@ async function buildModel() {
       { name: "conflict", code: 5 },
     ],
     outputFormats: ["human-readable", "json", "tsv", "csv"],
-    gates: [gate("src/cli/command-line.test.ts", "pnpm test", "CLI contract")],
-    source: [sourceRef(cliSourcePath), sourceRef(cliGuidePath)],
+    gates: [
+      gate("src/cli/command-line.test.ts", "pnpm test", "CLI contract"),
+      gate("src/cli/schema.test.ts", "pnpm test -- src/cli/schema.test.ts", "CLI shell runtime"),
+    ],
+    source: [sourceRef(cliSourcePath), sourceRef(cliSchemaSourcePath), sourceRef(cliGuidePath)],
   };
 
   const fixtures = await buildFixtureData(corpusDefinitions);
@@ -1269,6 +1294,7 @@ function schemaFor(name) {
         "threadleafVersion",
         "cliSchemaVersion",
         "commands",
+        "shellRuntime",
         "exitCodes",
         "outputFormats",
         "gates",
@@ -1295,6 +1321,18 @@ function schemaFor(name) {
             },
             additionalProperties: false,
           },
+        },
+        shellRuntime: {
+          type: "object",
+          required: ["shells", "authority", "source", "fallback", "gates"],
+          properties: {
+            shells: { const: ["bash", "zsh", "fish", "powershell"] },
+            authority: { type: "string" },
+            source: stringArray,
+            fallback: { type: "string" },
+            gates: { type: "array", items: gateSchema },
+          },
+          additionalProperties: false,
         },
         exitCodes: {
           type: "array",

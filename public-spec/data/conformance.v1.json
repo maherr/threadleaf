@@ -128,11 +128,20 @@
       "label": "normative",
       "scope": "The current versioned native CLI command IDs, syntax aliases, exit codes, and output contracts are executable without Electron or network access.",
       "threadleafVersion": "0.1.0-beta.3",
-      "evidence": ["src/cli/command-line.ts", "docs/cli.md"],
+      "evidence": [
+        "src/cli/command-line.ts",
+        "src/cli/schema.ts",
+        "src/cli/schema.test.ts",
+        "docs/cli.md"
+      ],
       "gates": [
         {
           "path": "src/cli/command-line.test.ts",
           "command": "pnpm test"
+        },
+        {
+          "path": "src/cli/schema.test.ts",
+          "command": "pnpm test -- src/cli/schema.test.ts"
         }
       ],
       "fixtures": ["threadleaf.same-vault.v1"],
