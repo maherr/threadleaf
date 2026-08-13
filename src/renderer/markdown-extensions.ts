@@ -118,45 +118,89 @@ function closesFence(line: string, opening: MarkdownFence): boolean {
   );
 }
 
-function escapedAt(source: string, position: number): boolean {
-  let slashes = 0;
-  for (let index = position - 1; index >= 0 && source[index] === "\\"; index -= 1) {
-    slashes += 1;
-  }
-  return slashes % 2 === 1;
+export interface MarkdownCodeRangeScanStats {
+  steps: number;
 }
 
-function inlineCodeRanges(line: string, lineFrom: number): MarkdownSourceRange[] {
-  const ranges: MarkdownSourceRange[] = [];
-  for (let index = 0; index < line.length; ) {
-    if (line[index] !== "`" || escapedAt(line, index)) {
+interface BacktickRun {
+  from: number;
+  to: number;
+  length: number;
+  escaped: boolean;
+}
+
+function scanBacktickRuns(line: string, stats?: MarkdownCodeRangeScanStats): BacktickRun[] {
+  const runs: BacktickRun[] = [];
+  let index = 0;
+  let backslashRun = 0;
+  while (index < line.length) {
+    if (stats) stats.steps += 1;
+    const character = line[index] ?? "";
+    if (character === "\\") {
+      backslashRun += 1;
       index += 1;
       continue;
     }
-    let openerEnd = index;
-    while (line[openerEnd] === "`") openerEnd += 1;
-    const length = openerEnd - index;
-    let cursor = openerEnd;
-    let closeEnd = -1;
-    while (cursor < line.length) {
-      if (line[cursor] !== "`") {
-        cursor += 1;
-        continue;
-      }
-      let candidateEnd = cursor;
-      while (line[candidateEnd] === "`") candidateEnd += 1;
-      if (candidateEnd - cursor === length) {
-        closeEnd = candidateEnd;
-        break;
-      }
-      cursor = candidateEnd;
-    }
-    if (closeEnd < 0) {
-      index = openerEnd;
+    if (character !== "`") {
+      backslashRun = 0;
+      index += 1;
       continue;
     }
-    ranges.push({ from: lineFrom + index, to: lineFrom + closeEnd });
-    index = closeEnd;
+    const from = index;
+    const escaped = backslashRun % 2 === 1;
+    backslashRun = 0;
+    while (line[index] === "`") {
+      if (stats) stats.steps += 1;
+      index += 1;
+    }
+    runs.push({ from, to: index, length: index - from, escaped });
+  }
+  return runs;
+}
+
+function inlineCodeRanges(
+  line: string,
+  lineFrom: number,
+  stats?: MarkdownCodeRangeScanStats,
+): MarkdownSourceRange[] {
+  const ranges: MarkdownSourceRange[] = [];
+  const runs = scanBacktickRuns(line, stats);
+  const nextSame = new Array<number>(runs.length).fill(-1);
+  const nextAfterEscaped = new Array<number>(runs.length).fill(-1);
+  const nextByLength = new Map<number, number>();
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    if (stats) stats.steps += 1;
+    const run = runs[index];
+    if (!run) continue;
+    nextSame[index] = nextByLength.get(run.length) ?? -1;
+    if (run.length > 1) {
+      nextAfterEscaped[index] = nextByLength.get(run.length - 1) ?? -1;
+    }
+    nextByLength.set(run.length, index);
+  }
+
+  for (let index = 0; index < runs.length; ) {
+    if (stats) stats.steps += 1;
+    const opener = runs[index];
+    if (!opener) break;
+    // Match the old scanner's delimiter rule: an escaped run is skipped one
+    // code unit at a time, so any remaining backticks may begin a shorter
+    // opener.  A run considered as a closer remains a full raw run, even if
+    // its first backtick was escaped.
+    const closeIndex = (opener.escaped ? nextAfterEscaped[index] : nextSame[index]) ?? -1;
+    const openerFrom = opener.from + (opener.escaped ? 1 : 0);
+    if (opener.escaped && opener.length < 2) {
+      index += 1;
+      continue;
+    }
+    if (closeIndex < 0) {
+      index += 1;
+      continue;
+    }
+    const closer = runs[closeIndex];
+    if (!closer) break;
+    ranges.push({ from: lineFrom + openerFrom, to: lineFrom + closer.to });
+    index = closeIndex + 1;
   }
   return ranges;
 }
@@ -166,8 +210,12 @@ function inlineCodeRanges(line: string, lineFrom: number): MarkdownSourceRange[]
  * editor uses its syntax tree too, but this bounded scanner keeps the public
  * pure mapping honest when no CodeMirror view is available.
  */
-export function markdownCodeRanges(source: string): MarkdownSourceRange[] {
+export function markdownCodeRanges(
+  source: string,
+  stats?: MarkdownCodeRangeScanStats,
+): MarkdownSourceRange[] {
   const ranges: MarkdownSourceRange[] = [];
+  if (stats) stats.steps = 0;
   const lines = splitSourceLines(source);
   const starts = sourceLineStarts(source);
   let opening: MarkdownFence | null = null;
@@ -189,7 +237,7 @@ export function markdownCodeRanges(source: string): MarkdownSourceRange[] {
       fenceFrom = lineFrom;
       continue;
     }
-    ranges.push(...inlineCodeRanges(line, lineFrom));
+    ranges.push(...inlineCodeRanges(line, lineFrom, stats));
   }
   if (opening) {
     ranges.push({ from: fenceFrom, to: source.length });
@@ -554,6 +602,32 @@ export function collectFootnotes(source: string): FootnoteCollection {
   }
   const lines = splitSourceLines(source);
   const lineOffsets = sourceLineStarts(source);
+  // HTML protection is a separate lexical pass in the renderers.  Reuse its
+  // source ranges here so a definition inside a multiline element cannot
+  // become a semantic footnote before that pass masks the element.  Resolved
+  // frontmatter is blanked for this auxiliary scan: an HTML-looking value in
+  // frontmatter must not make an unclosed tag swallow later Markdown.
+  const htmlScanSource =
+    frontmatter.status === "resolved" && frontmatter.closingLine
+      ? `${source
+          .slice(0, lineOffsets[frontmatter.closingLine - 1] ?? 0)
+          .replace(/[^\r\n]/g, " ")}${source.slice(
+          (lineOffsets[frontmatter.closingLine - 1] ?? 0) +
+            (lines[frontmatter.closingLine - 1]?.length ?? 0),
+        )}`
+      : source;
+  const htmlRanges = markdownHtmlRanges(htmlScanSource);
+  let htmlRangeIndex = 0;
+  const isInsideHtml = (position: number): boolean => {
+    while (
+      htmlRangeIndex < htmlRanges.length &&
+      position >= (htmlRanges[htmlRangeIndex]?.to ?? 0)
+    ) {
+      htmlRangeIndex += 1;
+    }
+    const range = htmlRanges[htmlRangeIndex];
+    return Boolean(range && range.from <= position && position < range.to);
+  };
   const candidates: CandidateFootnote[] = [];
   const definitionLines = new Set<number>();
   const markerIndexes = new Set<number>();
@@ -590,6 +664,9 @@ export function collectFootnotes(source: string): FootnoteCollection {
     }
     const match = footnoteDefinitionPattern.exec(originalLine);
     if (!match?.[1] || /\s/u.test(match[1])) {
+      continue;
+    }
+    if (isInsideHtml(lineOffsets[index] ?? 0)) {
       continue;
     }
     const id = match[1];

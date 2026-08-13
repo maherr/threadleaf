@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectFootnotes,
   findInlineMathClose,
+  markdownCodeRanges,
   markdownHtmlRanges,
   renderSafeMath,
   safeMathLimits,
@@ -94,6 +95,74 @@ describe("bounded offline math", () => {
     const source = ["~~~~", "[^inside]: code", "~~~~", "", "[^outside]: footnote"].join("\n");
     expect(collectFootnotes(source).definitions.map((definition) => definition.id)).toEqual([
       "outside",
+    ]);
+  });
+
+  it("does not collect definitions hidden inside multiline raw HTML", () => {
+    const source = [
+      "Visible[^shown]",
+      "<span>",
+      "[^hidden]: HTML text must remain source.",
+      "</span>",
+      "",
+      "[^shown]: The semantic definition remains outside HTML.",
+    ].join("\n");
+    const collection = collectFootnotes(source);
+
+    expect(collection.definitions.map(({ id }) => id)).toEqual(["shown"]);
+    expect(collection.ids).toEqual(new Set(["shown"]));
+    expect(collection.body.split("\n")[2]).toBe("[^hidden]: HTML text must remain source.");
+    expect(collection.body).not.toContain(
+      "[^shown]: The semantic definition remains outside HTML.",
+    );
+  });
+
+  it("keeps protected HTML forms source-only while collecting post-close definitions", () => {
+    const cases: Array<[string, string[]]> = [
+      ["<!--\n[^hidden]: comment text\n-->\n[^shown]: after comment", ["shown"]],
+      ["<![CDATA[\n[^hidden]: CDATA text\n]]>\n[^shown]: after CDATA", ["shown"]],
+      ["<!DOCTYPE html>\n[^shown]: after declaration", ["shown"]],
+      ["<https://example.com>\n[^shown]: after autolink", ["shown"]],
+      ["<br>\n[^shown]: after void tag", ["shown"]],
+      ["<span>\n<b>\n[^hidden]: nested text\n</span>\n[^shown]: after HTML", ["shown"]],
+      ["<span>\n[^hidden]: unclosed text\n[^also-hidden]: still HTML", []],
+      [
+        "---\r\ntitle: 😀\r\n---\r\n<span>\r\n[^hidden]: after astral frontmatter\r\n</span>\r\n[^shown]: after HTML",
+        ["shown"],
+      ],
+    ];
+    for (const [source, expectedIds] of cases) {
+      const collection = collectFootnotes(source);
+      const ids = collection.definitions.map(({ id }) => id);
+      expect(ids, source).toEqual(expectedIds);
+      if (source.includes("[^hidden]")) {
+        expect(collection.body, source).toContain("[^hidden]");
+      }
+    }
+  });
+
+  it("bounds unmatched inline-code runs with distinct lengths by operation count", () => {
+    const operationCounts: number[] = [];
+    for (const runCount of [32, 64, 128]) {
+      const source = Array.from({ length: runCount }, (_, index) => "`".repeat(index + 1)).join(
+        "x",
+      );
+      const stats = { steps: 0 };
+      expect(markdownCodeRanges(source, stats)).toEqual([]);
+      operationCounts.push(stats.steps);
+      expect(stats.steps).toBeLessThan(source.length * 4);
+    }
+    expect(operationCounts[1]).toBeLessThan((operationCounts[0] ?? 0) * 5);
+    expect(operationCounts[2]).toBeLessThan((operationCounts[1] ?? 0) * 5);
+  });
+
+  it("preserves escaped delimiters and UTF-16 source offsets", () => {
+    const source = "😀 `one` \\`literal ``two``";
+    const first = source.indexOf("`one`");
+    const second = source.indexOf("``two``");
+    expect(markdownCodeRanges(source)).toEqual([
+      { from: first, to: first + "`one`".length },
+      { from: second, to: second + "``two``".length },
     ]);
   });
 });
