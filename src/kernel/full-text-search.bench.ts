@@ -22,6 +22,16 @@ const documents: FullTextSearchDocument[] = Array.from({ length: documentCount }
 const index = new FullTextSearchIndex();
 index.replace(documents);
 
+const longSnippetSource = `${"prefix 😀 Cafe\u0301 ".repeat(4_096)}needle exact suffix`;
+const longSnippetIndex = new FullTextSearchIndex();
+longSnippetIndex.upsert({
+  path: "Projects/Long snippet.md",
+  content: longSnippetSource,
+  headings: [],
+  tags: [],
+  properties: {},
+});
+
 describe(`FullTextSearchIndex (${documentCount.toLocaleString("en-US")} notes)`, () => {
   bench("rebuild derived search state", () => {
     const rebuilt = new FullTextSearchIndex();
@@ -34,5 +44,13 @@ describe(`FullTextSearchIndex (${documentCount.toLocaleString("en-US")} notes)`,
 
   bench("rank and truncate a common two-term query", () => {
     index.search("ordinary workspace", 50);
+  });
+
+  bench("project a long matching line for its source-faithful snippet", () => {
+    const context = longSnippetIndex.search("needle", 1, { maxContexts: 1 }).results[0]
+      ?.contexts[0];
+    if (!context?.text.includes("needle exact")) {
+      throw new Error("Long-line snippet benchmark did not exercise snippet projection.");
+    }
   });
 });

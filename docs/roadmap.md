@@ -70,8 +70,9 @@ equivalence through the real writer-to-watcher seam.
 - [x] Versioned application settings and remappable hotkeys with collision validation, atomic
       private persistence, reset-to-default behavior, and no vault-owned state.
 - [x] Bounded vault-wide full-text search over saved paths, headings, tags, properties, fenced code,
-      and body text, with ranked context, line navigation, stale-response identity, watcher
-      convergence, and a reproducible 10,000-note microbenchmark.
+      and body text, with Latin-script-base diacritic-insensitive discovery, ranked exact-source
+      context, line navigation, stale-response identity, watcher convergence, and a reproducible
+      10,000-note microbenchmark.
 - [x] Explicit sanitized reading view over the current saved or unsaved editor draft, with
       deterministic source-line navigation, index-resolved internal links, inert external links,
       dirty-navigation protection, and no new filesystem or shell authority in the renderer.

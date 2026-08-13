@@ -169,9 +169,12 @@ human mode; JSON always includes the canonical note path and both counts.
 
 `search` returns ranked file paths. `search:context` returns matching saved source lines as
 `path:line: text`; JSON format returns objects with those three fields. Both accept `path=<folder>`,
-`limit=<n>`, `format=text|json`, and `case`. Folder filtering happens before limiting. The default
-search is case-insensitive after NFC normalization, while `case` compares NFC-normalized original
-text. `search total` returns the complete matching-file count before the result limit. Native
+`limit=<n>`, `format=text|json`, and `case`. Folder filtering happens before limiting. Both default
+and `case` modes ignore ordinary Latin accents only for graphemes with a Latin-script base; `case`
+still preserves case. Script-specific Arabic, Hebrew, and Indic marks remain significant even when
+attached to a Latin base. Context lines are sliced from the exact saved source rather than a folded
+key. `search total` returns the complete matching-file
+count before the result limit. Native
 `--limit` and `--directory` remain aliases for `limit=` and `path=`. Global `--json` always returns
 Threadleaf's rich versioned envelope; command-level `format=json` emits the compact compatibility
 array when the global flag is absent.

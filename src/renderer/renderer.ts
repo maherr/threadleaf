@@ -37,7 +37,6 @@ import type {
   PluginResourceDiagnostic,
   RuntimeSnapshot,
   VaultSearchResponse,
-  VaultSearchResult,
   WorkspaceCanvasSummary,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
@@ -130,6 +129,7 @@ import {
   quickSwitcherNotesFromFiles,
 } from "./quick-switcher-model";
 import { RecoveryViewController } from "./recovery-view";
+import { vaultSearchDisplayContext } from "./vault-search-model";
 import "./styles.css";
 import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
@@ -9070,20 +9070,6 @@ function createFileButton(
   return button;
 }
 
-function searchContextLabel(result: VaultSearchResult): string {
-  const context = result.contexts[0];
-  if (!context) {
-    return "Match";
-  }
-  if (context.kind === "content") {
-    return context.line ? `Line ${context.line}` : "Text";
-  }
-  if (context.kind === "heading") {
-    return context.line ? `Heading ${context.line}` : "Heading";
-  }
-  return `${context.kind[0]?.toLocaleUpperCase("en-US") ?? ""}${context.kind.slice(1)}`;
-}
-
 function renderVaultSearchResults(activePath: string | null, indexedCount: number): void {
   if (vaultSearchState.status === "loading" || vaultSearchState.status === "idle") {
     elements.filterSummary.textContent = `Searching ${indexedCount} saved ${indexedCount === 1 ? "note" : "notes"}`;
@@ -9105,6 +9091,7 @@ function renderVaultSearchResults(activePath: string | null, indexedCount: numbe
     const button = createFileButton(result.path, result.title, activePath, "⌕");
     button.classList.add("search-result");
     const context = result.contexts[0];
+    const displayContext = vaultSearchDisplayContext(result);
     button.ariaLabel = `Open ${result.path}${context?.line ? ` at line ${context.line}` : ""}`;
     const copy = button.querySelector<HTMLElement>(".file-copy");
     if (!copy) {
@@ -9117,9 +9104,9 @@ function renderVaultSearchResults(activePath: string | null, indexedCount: numbe
       const contextRow = document.createElement("span");
       contextRow.className = "search-context";
       const contextKind = document.createElement("small");
-      contextKind.textContent = searchContextLabel(result);
+      contextKind.textContent = displayContext?.label ?? "Match";
       const contextText = document.createElement("span");
-      contextText.textContent = context.text;
+      contextText.textContent = displayContext?.text ?? context.text;
       contextRow.append(contextKind, contextText);
       copy.append(contextRow);
     }

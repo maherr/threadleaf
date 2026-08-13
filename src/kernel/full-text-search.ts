@@ -1,3 +1,14 @@
+import {
+  foldSearchText,
+  isSimpleSearchText,
+  projectSearchText,
+  searchTextContains,
+  searchTextFindMappedMatch,
+  searchTextMatchCount,
+  searchTextStartsWith,
+  sourceBoundaryAtOrAfter,
+  sourceBoundaryAtOrBefore,
+} from "../shared/search-text";
 import { displayTitleFromVaultPath } from "./note-path";
 
 export const maxSearchQueryLength = 256;
@@ -51,6 +62,9 @@ export interface FullTextSearchOptions {
 interface IndexedLine {
   line: number;
   text: string;
+  canonical: string;
+  normalized: string;
+  simple: boolean;
 }
 
 interface IndexedHeading extends IndexedLine {
@@ -62,15 +76,28 @@ interface IndexedSearchDocument {
   path: string;
   canonicalPath: string;
   normalizedPath: string;
+  pathSimple: boolean;
   title: string;
   canonicalTitle: string;
   normalizedTitle: string;
+  titleSimple: boolean;
   lines: IndexedLine[];
   canonicalContent: string;
   normalizedContent: string;
+  contentSimple: boolean;
   headings: IndexedHeading[];
-  tags: Array<{ text: string; canonical: string; normalized: string }>;
-  properties: Array<{ text: string; canonical: string; normalized: string }>;
+  tags: Array<{
+    text: string;
+    canonical: string;
+    normalized: string;
+    simple: boolean;
+  }>;
+  properties: Array<{
+    text: string;
+    canonical: string;
+    normalized: string;
+    simple: boolean;
+  }>;
 }
 
 interface ContextCandidate extends FullTextSearchContext {
@@ -78,20 +105,37 @@ interface ContextCandidate extends FullTextSearchContext {
   occurrences: number;
 }
 
-function canonicalSearchText(value: string): string {
-  return value.normalize("NFC");
-}
-
-function normalizeSearchText(value: string): string {
-  return canonicalSearchText(value).toLowerCase();
-}
-
 function comparableText(canonical: string, normalized: string, caseSensitive: boolean): string {
   return caseSensitive ? canonical : normalized;
 }
 
 function comparableLine(line: IndexedLine, caseSensitive: boolean): string {
-  return caseSensitive ? canonicalSearchText(line.text) : normalizeSearchText(line.text);
+  return caseSensitive ? line.canonical : line.normalized;
+}
+
+function containsComparable(value: string, term: string, simple: boolean): boolean {
+  return simple ? value.includes(term) : searchTextContains(value, term);
+}
+
+function startsWithComparable(value: string, term: string, simple: boolean): boolean {
+  return simple ? value.startsWith(term) : searchTextStartsWith(value, term);
+}
+
+function countComparable(value: string, term: string, simple: boolean): number {
+  if (!simple) {
+    return searchTextMatchCount(value, term);
+  }
+  let count = 0;
+  let offset = 0;
+  while (offset <= value.length - term.length) {
+    const found = value.indexOf(term, offset);
+    if (found === -1) {
+      break;
+    }
+    count += 1;
+    offset = found + Math.max(1, term.length);
+  }
+  return count;
 }
 
 function propertyText(key: string, value: string | string[]): string {
@@ -99,49 +143,70 @@ function propertyText(key: string, value: string | string[]): string {
 }
 
 function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument {
-  const canonicalContent = canonicalSearchText(document.content.replaceAll("\r\n", "\n"));
-  const normalizedContent = canonicalContent.toLowerCase();
+  const canonicalContent = foldSearchText(document.content.replaceAll("\r\n", "\n"), true);
+  const normalizedContent = foldSearchText(document.content.replaceAll("\r\n", "\n"));
   const lines = document.content.split(/\r?\n/).map((text, index) => ({
     line: index + 1,
     text,
+    canonical: foldSearchText(text, true),
+    normalized: foldSearchText(text),
+    simple: false,
   }));
+  for (const line of lines) {
+    line.simple = isSimpleSearchText(line.canonical) && isSimpleSearchText(line.normalized);
+  }
   const title = displayTitleFromVaultPath(document.path);
-  const canonicalPath = canonicalSearchText(document.path);
-  const canonicalTitle = canonicalSearchText(title);
+  const canonicalPath = foldSearchText(document.path, true);
+  const normalizedPath = foldSearchText(document.path);
+  const canonicalTitle = foldSearchText(title, true);
+  const normalizedTitle = foldSearchText(title);
+  const pathSimple = isSimpleSearchText(canonicalPath) && isSimpleSearchText(normalizedPath);
+  const titleSimple = isSimpleSearchText(canonicalTitle) && isSimpleSearchText(normalizedTitle);
+  const contentSimple =
+    isSimpleSearchText(canonicalContent) && isSimpleSearchText(normalizedContent);
   return {
     path: document.path,
     canonicalPath,
-    normalizedPath: canonicalPath.toLowerCase(),
+    normalizedPath,
+    pathSimple,
     title,
     canonicalTitle,
-    normalizedTitle: canonicalTitle.toLowerCase(),
+    normalizedTitle,
+    titleSimple,
     lines,
     canonicalContent,
     normalizedContent,
+    contentSimple,
     headings: document.headings.map((heading) => {
-      const canonical = canonicalSearchText(heading.text);
+      const canonical = foldSearchText(heading.text, true);
+      const normalized = foldSearchText(heading.text);
       return {
         line: heading.line,
         text: heading.text,
         canonical,
-        normalized: canonical.toLowerCase(),
+        normalized,
+        simple: isSimpleSearchText(canonical) && isSimpleSearchText(normalized),
       };
     }),
     tags: document.tags.map((tag) => {
-      const canonical = canonicalSearchText(tag);
+      const canonical = foldSearchText(tag, true);
+      const normalized = foldSearchText(tag);
       return {
         text: `#${tag}`,
         canonical,
-        normalized: canonical.toLowerCase(),
+        normalized,
+        simple: isSimpleSearchText(canonical) && isSimpleSearchText(normalized),
       };
     }),
     properties: Object.entries(document.properties).map(([key, value]) => {
       const text = propertyText(key, value);
-      const canonical = canonicalSearchText(text);
+      const canonical = foldSearchText(text, true);
+      const normalized = foldSearchText(text);
       return {
         text,
         canonical,
-        normalized: canonical.toLowerCase(),
+        normalized,
+        simple: isSimpleSearchText(canonical) && isSimpleSearchText(normalized),
       };
     }),
   };
@@ -157,9 +222,7 @@ function parseTerms(query: string, caseSensitive: boolean): string[] {
   let buffer = "";
   let quoted = false;
   const flush = (): void => {
-    const normalized = caseSensitive
-      ? canonicalSearchText(buffer.trim())
-      : normalizeSearchText(buffer.trim());
+    const normalized = foldSearchText(buffer.trim(), caseSensitive);
     if (normalized && !terms.includes(normalized)) {
       terms.push(normalized);
     }
@@ -189,22 +252,12 @@ function parseTerms(query: string, caseSensitive: boolean): string[] {
   return terms;
 }
 
-function countOccurrences(haystack: string, needle: string): number {
-  let count = 0;
-  let offset = 0;
-  while (offset <= haystack.length - needle.length) {
-    const found = haystack.indexOf(needle, offset);
-    if (found === -1) {
-      break;
-    }
-    count += 1;
-    offset = found + Math.max(1, needle.length);
-  }
-  return count;
+function countOccurrences(haystack: string, needle: string, simple: boolean): number {
+  return countComparable(haystack, needle, simple);
 }
 
-function termCoverage(value: string, terms: string[]): number {
-  return terms.reduce((count, term) => count + Number(value.includes(term)), 0);
+function termCoverage(value: string, terms: string[], simple: boolean): number {
+  return terms.reduce((count, term) => count + Number(containsComparable(value, term, simple)), 0);
 }
 
 function snippetAround(
@@ -217,24 +270,32 @@ function snippetAround(
   if (trimmed.length <= maximumLength) {
     return trimmed;
   }
-  const normalized = caseSensitive ? canonicalSearchText(trimmed) : normalizeSearchText(trimmed);
-  const positions = terms.map((term) => normalized.indexOf(term)).filter((index) => index >= 0);
-  const first = positions.length > 0 ? Math.min(...positions) : 0;
-  let start = Math.max(0, first - Math.floor(maximumLength / 3));
+  const projection = projectSearchText(trimmed, caseSensitive);
+  const positions = terms
+    .map((term) => searchTextFindMappedMatch(projection, term)?.range ?? null)
+    .filter((range): range is { start: number; end: number } => range !== null);
+  const first = positions.reduce(
+    (earliest, range) => Math.min(earliest, range.start),
+    Number.MAX_SAFE_INTEGER,
+  );
+  const firstMatch = first === Number.MAX_SAFE_INTEGER ? 0 : first;
+  let start = Math.max(0, firstMatch - Math.floor(maximumLength / 3));
   let end = Math.min(trimmed.length, start + maximumLength);
+  start = sourceBoundaryAtOrBefore(projection, start);
+  end = sourceBoundaryAtOrAfter(projection, end);
   if (end - start < maximumLength) {
-    start = Math.max(0, end - maximumLength);
+    start = sourceBoundaryAtOrBefore(projection, Math.max(0, end - maximumLength));
   }
   if (start > 0) {
     const nextSpace = trimmed.indexOf(" ", start);
-    if (nextSpace !== -1 && nextSpace < first) {
-      start = nextSpace + 1;
+    if (nextSpace !== -1 && nextSpace < firstMatch) {
+      start = sourceBoundaryAtOrAfter(projection, nextSpace + 1);
     }
   }
   if (end < trimmed.length) {
     const previousSpace = trimmed.lastIndexOf(" ", end);
     if (previousSpace > start) {
-      end = previousSpace;
+      end = sourceBoundaryAtOrBefore(projection, previousSpace);
     }
   }
   return `${start > 0 ? "…" : ""}${trimmed.slice(start, end)}${end < trimmed.length ? "…" : ""}`;
@@ -246,21 +307,41 @@ function containsTerm(
   caseSensitive: boolean,
 ): boolean {
   return (
-    comparableText(document.canonicalTitle, document.normalizedTitle, caseSensitive).includes(
+    containsComparable(
+      comparableText(document.canonicalTitle, document.normalizedTitle, caseSensitive),
       term,
+      document.titleSimple,
     ) ||
-    comparableText(document.canonicalPath, document.normalizedPath, caseSensitive).includes(term) ||
-    comparableText(document.canonicalContent, document.normalizedContent, caseSensitive).includes(
+    containsComparable(
+      comparableText(document.canonicalPath, document.normalizedPath, caseSensitive),
       term,
+      document.pathSimple,
+    ) ||
+    containsComparable(
+      comparableText(document.canonicalContent, document.normalizedContent, caseSensitive),
+      term,
+      document.contentSimple,
     ) ||
     document.headings.some((heading) =>
-      comparableText(heading.canonical, heading.normalized, caseSensitive).includes(term),
+      containsComparable(
+        comparableText(heading.canonical, heading.normalized, caseSensitive),
+        term,
+        heading.simple,
+      ),
     ) ||
     document.tags.some((tag) =>
-      comparableText(tag.canonical, tag.normalized, caseSensitive).includes(term),
+      containsComparable(
+        comparableText(tag.canonical, tag.normalized, caseSensitive),
+        term,
+        tag.simple,
+      ),
     ) ||
     document.properties.some((property) =>
-      comparableText(property.canonical, property.normalized, caseSensitive).includes(term),
+      containsComparable(
+        comparableText(property.canonical, property.normalized, caseSensitive),
+        term,
+        property.simple,
+      ),
     )
   );
 }
@@ -282,9 +363,9 @@ function scoreDocument(
     let strongestField = 0;
     if (title === term) {
       strongestField = 240;
-    } else if (title.startsWith(term)) {
+    } else if (startsWithComparable(title, term, document.titleSimple)) {
       strongestField = 180;
-    } else if (title.includes(term)) {
+    } else if (containsComparable(title, term, document.titleSimple)) {
       strongestField = 140;
     }
     if (
@@ -295,7 +376,11 @@ function scoreDocument(
       strongestField = Math.max(strongestField, 130);
     } else if (
       document.tags.some((tag) =>
-        comparableText(tag.canonical, tag.normalized, caseSensitive).includes(term),
+        containsComparable(
+          comparableText(tag.canonical, tag.normalized, caseSensitive),
+          term,
+          tag.simple,
+        ),
       )
     ) {
       strongestField = Math.max(strongestField, 90);
@@ -308,22 +393,30 @@ function scoreDocument(
       strongestField = Math.max(strongestField, 115);
     } else if (
       document.headings.some((heading) =>
-        comparableText(heading.canonical, heading.normalized, caseSensitive).includes(term),
+        containsComparable(
+          comparableText(heading.canonical, heading.normalized, caseSensitive),
+          term,
+          heading.simple,
+        ),
       )
     ) {
       strongestField = Math.max(strongestField, 80);
     }
-    if (filePath.includes(term)) {
+    if (containsComparable(filePath, term, document.pathSimple)) {
       strongestField = Math.max(strongestField, 70);
     }
     if (
       document.properties.some((property) =>
-        comparableText(property.canonical, property.normalized, caseSensitive).includes(term),
+        containsComparable(
+          comparableText(property.canonical, property.normalized, caseSensitive),
+          term,
+          property.simple,
+        ),
       )
     ) {
       strongestField = Math.max(strongestField, 55);
     }
-    const contentCount = countOccurrences(content, term);
+    const contentCount = countOccurrences(content, term, document.contentSimple);
     if (contentCount > 0) {
       strongestField = Math.max(strongestField, 25);
       score += Math.min(contentCount, 12) * 3;
@@ -333,7 +426,7 @@ function scoreDocument(
   if (
     document.lines.some((line) => {
       const text = comparableLine(line, caseSensitive);
-      return terms.every((term) => text.includes(term));
+      return terms.every((term) => containsComparable(text, term, line.simple));
     })
   ) {
     score += 35;
@@ -349,7 +442,7 @@ function contextCandidates(
   const candidates: ContextCandidate[] = [];
   for (const line of document.lines) {
     const comparison = comparableLine(line, caseSensitive);
-    const coverage = termCoverage(comparison, terms);
+    const coverage = termCoverage(comparison, terms, line.simple);
     if (coverage === 0 || !line.text.trim()) {
       continue;
     }
@@ -358,13 +451,17 @@ function contextCandidates(
       line: line.line,
       text: snippetAround(line.text, terms, caseSensitive),
       coverage,
-      occurrences: terms.reduce((count, term) => count + countOccurrences(comparison, term), 0),
+      occurrences: terms.reduce(
+        (count, term) => count + countOccurrences(comparison, term, line.simple),
+        0,
+      ),
     });
   }
   for (const heading of document.headings) {
     const coverage = termCoverage(
       comparableText(heading.canonical, heading.normalized, caseSensitive),
       terms,
+      heading.simple,
     );
     if (coverage > 0) {
       candidates.push({
@@ -380,6 +477,7 @@ function contextCandidates(
     const coverage = termCoverage(
       comparableText(tag.canonical, tag.normalized, caseSensitive),
       terms,
+      tag.simple,
     );
     if (coverage > 0) {
       candidates.push({
@@ -394,6 +492,7 @@ function contextCandidates(
     const coverage = termCoverage(
       comparableText(property.canonical, property.normalized, caseSensitive),
       terms,
+      property.simple,
     );
     if (coverage > 0) {
       candidates.push({
@@ -407,6 +506,7 @@ function contextCandidates(
   const pathCoverage = termCoverage(
     comparableText(document.canonicalPath, document.normalizedPath, caseSensitive),
     terms,
+    document.pathSimple,
   );
   if (pathCoverage > 0) {
     candidates.push({
@@ -463,6 +563,7 @@ function searchDocument(
           countOccurrences(
             comparableText(document.canonicalContent, document.normalizedContent, caseSensitive),
             term,
+            document.contentSimple,
           ),
         ),
       0,

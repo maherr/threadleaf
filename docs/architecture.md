@@ -503,12 +503,19 @@ internal saves, external edits, moves, deletes, subtree rescans, and full rebuil
 draft does not appear until it crosses the recoverable save boundary, which the UI states plainly.
 
 Queries are bounded to 256 characters, 12 distinct AND terms, and at most 100 returned documents.
-Quoted text is one phrase. Exact folder scopes are applied before result limiting, and an explicit
-case-sensitive mode selects NFC-normalized original text rather than the default case-folded index.
-Ranking favors exact titles, then title, tag, heading, path, property, and body evidence; results
-retain bounded contextual lines and source line numbers. Every response carries the active vault ID
-and monotonic index generation. The renderer rejects a response that no longer matches its current
-vault, query, or generation and immediately requests the current result.
+Quoted text is one phrase. Exact folder scopes are applied before result limiting. Both default and
+case-sensitive modes use a derived key that removes canonical diacritics only from graphemes with a
+Latin-script base; case-sensitive mode still preserves case. Script-specific marks such as Arabic,
+Hebrew, and Indic marks remain significant even when attached to a Latin base, while ordinary Latin
+accents fold. Ranking favors exact titles, then title, tag, heading, path, property, and body
+evidence; results retain bounded contextual lines and source line numbers from the exact saved text.
+Every response carries the active vault ID and monotonic index generation. The renderer rejects a
+response that no longer matches its current vault, query, or generation and immediately requests the
+current result.
+
+The Quick Switcher and command palette retain their established compatibility projections. Their
+NFKD-based ranking behavior is intentionally separate from vault full-text search so this policy
+does not change existing picker matches for compatibility characters.
 
 The initial index is an in-memory normalized scan. That is the simplest correct implementation and
 already clears the current interactive scale baseline. `pnpm benchmark:search` measures rebuild,

@@ -2411,6 +2411,88 @@ describe("Threadleaf CLI read-only workflows", () => {
     expect(caseSensitive.stdout).toBe("0\n");
   });
 
+  it("searches Latin diacritics through native search and context compatibility output", async () => {
+    const folder = path.join(vaultPath, "Français");
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(
+      path.join(folder, "Café.md"),
+      ["# Café heading", "", "const café = true;"].join("\n"),
+      "utf8",
+    );
+
+    const paths = await invoke(["--vault", vaultPath, "search", "query=cafe"]);
+    expect(paths).toEqual({ exitCode: 0, stdout: "Français/Café.md\n", stderr: "" });
+
+    const json = await invoke(["--vault", vaultPath, "search", "query=café", "format=json"]);
+    expect(JSON.parse(json.stdout)).toEqual(["Français/Café.md"]);
+
+    const caseSensitive = await invoke([
+      "--vault",
+      vaultPath,
+      "search",
+      "query=Cafe",
+      "case",
+      "total",
+    ]);
+    expect(caseSensitive.stdout).toBe("1\n");
+    const wrongCase = await invoke(["--vault", vaultPath, "search", "query=CAFE", "case", "total"]);
+    expect(wrongCase.stdout).toBe("0\n");
+
+    const context = await invoke([
+      "--vault",
+      vaultPath,
+      "search:context",
+      "query=cafe",
+      "format=json",
+    ]);
+    expect(JSON.parse(context.stdout)).toEqual([
+      { path: "Français/Café.md", line: 1, text: "# Café heading" },
+      { path: "Français/Café.md", line: 3, text: "const café = true;" },
+    ]);
+    await expect(fs.readFile(path.join(folder, "Café.md"), "utf8")).resolves.toBe(
+      "# Café heading\n\nconst café = true;",
+    );
+  });
+
+  it("keeps Prepend interiors out of CLI counts and context output", async () => {
+    const folder = path.join(vaultPath, "Prepend");
+    await fs.mkdir(folder, { recursive: true });
+    const prepends = ["\u0600", "\u0890", String.fromCodePoint(0x110bd)];
+    const source = [...prepends.map((prepend) => `${prepend}needle`), "needle"].join("\n");
+    await fs.writeFile(path.join(folder, "Controls.md"), source, "utf8");
+
+    const total = await invoke([
+      "--vault",
+      vaultPath,
+      "search",
+      "query=needle",
+      "path=Prepend",
+      "total",
+    ]);
+    expect(total.stdout).toBe("1\n");
+
+    const context = await invoke([
+      "--vault",
+      vaultPath,
+      "search:context",
+      "query=needle",
+      "path=Prepend",
+      "format=json",
+    ]);
+    expect(JSON.parse(context.stdout)).toEqual([
+      { path: "Prepend/Controls.md", line: 4, text: "needle" },
+    ]);
+
+    const prependOnly = await invoke([
+      "--vault",
+      vaultPath,
+      "search",
+      `query=${prepends[0]}`,
+      "path=Prepend",
+    ]);
+    expect(prependOnly.stdout).toBe("");
+  });
+
   it("uses the query exit code and stderr envelope for invalid search input", async () => {
     const result = await invoke(["--json", "--vault", vaultPath, "search", "x".repeat(257)]);
     expect(result.exitCode).toBe(cliExitCodes.query);
