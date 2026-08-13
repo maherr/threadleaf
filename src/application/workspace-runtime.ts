@@ -557,6 +557,10 @@ export class WorkspaceRuntime {
   ];
   #activePaneId: WorkspacePaneId = "primary";
   #splitDirection: WorkspaceSplitDirection | null = null;
+  // Automatic persistence may race a reviewed migration in the same vault. Keep the last
+  // observed private state as a compare-and-save receipt so a stale reactor cannot clobber it.
+  #workspacePersistedState: PersistedWorkspaceState | null | undefined;
+  #workspacePersistenceTail: Promise<void> = Promise.resolve();
   #workspaceLoadWarning: string | null;
   #workspaceSaveWarning: string | null = null;
   #watcherError: string | null = null;
@@ -590,6 +594,7 @@ export class WorkspaceRuntime {
     selectionSource: VaultSelectionSource,
     warning: string | null,
     workspaceStateStore: WorkspaceStateStore | undefined,
+    workspacePersistedState: PersistedWorkspaceState | null | undefined,
     workspaceLoadWarning: string | null,
     workspaceSettings: VaultWorkspaceSettings,
   ) {
@@ -602,6 +607,7 @@ export class WorkspaceRuntime {
     this.readOnly = selectionSource === "bundled";
     this.#baseWarning = warning;
     this.#workspaceStateStore = workspaceStateStore;
+    this.#workspacePersistedState = workspacePersistedState;
     this.#workspaceSettings = workspaceSettings;
     this.#workspaceLoadWarning = workspaceLoadWarning;
     this.#releaseActions.push(
@@ -723,6 +729,7 @@ export class WorkspaceRuntime {
           options.pluginModuleResolver,
           kernel,
         );
+    let persistedWorkspace: PersistedWorkspaceState | null = null;
     let restoredWorkspace: PersistedWorkspaceState | null = null;
     let workspaceLoadWarning: string | null = null;
     let workspaceStateReadable = true;
@@ -731,9 +738,12 @@ export class WorkspaceRuntime {
         options.workspaceSettings ??
         createDefaultVaultWorkspaceSettings(),
     );
-    if (options.workspaceStateStore && workspaceSettings.restorePolicy === "restore") {
+    if (options.workspaceStateStore) {
       try {
-        restoredWorkspace = await options.workspaceStateStore.load(kernel.vaultId);
+        persistedWorkspace = await options.workspaceStateStore.load(kernel.vaultId);
+        if (workspaceSettings.restorePolicy === "restore") {
+          restoredWorkspace = persistedWorkspace;
+        }
       } catch (error) {
         workspaceStateReadable = false;
         workspaceLoadWarning = `Could not read saved workspace state: ${errorMessage(error)} The file was not changed.`;
@@ -748,6 +758,7 @@ export class WorkspaceRuntime {
       options.selectionSource ?? "direct",
       options.warning ?? null,
       options.workspaceStateStore,
+      workspaceStateReadable ? persistedWorkspace : undefined,
       workspaceLoadWarning,
       workspaceSettings,
     );
@@ -1601,6 +1612,7 @@ export class WorkspaceRuntime {
     }
     try {
       const persisted = await this.#workspaceStateStore.save(state, expectedCurrent);
+      this.#workspacePersistedState = persisted;
       this.#workspaceLoadWarning = null;
       this.#workspaceSaveWarning = null;
       this.applyWorkspaceState(persisted);
@@ -1612,16 +1624,32 @@ export class WorkspaceRuntime {
   }
 
   private async persistWorkspaceStateBestEffort(): Promise<void> {
-    if (!this.#workspaceStateStore) {
+    const workspaceStateStore = this.#workspaceStateStore;
+    if (!workspaceStateStore || this.#workspacePersistedState === undefined) {
       return;
     }
-    try {
-      await this.#workspaceStateStore.save(this.currentWorkspaceState());
-      this.#workspaceLoadWarning = null;
-      this.#workspaceSaveWarning = null;
-    } catch (error) {
-      this.#workspaceSaveWarning = `Could not save workspace state: ${errorMessage(error)}`;
-    }
+    const operation = this.#workspacePersistenceTail
+      .catch(() => undefined)
+      .then(async () => {
+        const state = this.currentWorkspaceState();
+        const expectedCurrent = this.#workspacePersistedState;
+        if (expectedCurrent && workspaceStatesEqual(state, expectedCurrent)) {
+          return;
+        }
+        try {
+          const persisted = await workspaceStateStore.save(state, expectedCurrent);
+          this.#workspacePersistedState = persisted;
+          this.#workspaceLoadWarning = null;
+          this.#workspaceSaveWarning = null;
+        } catch (error) {
+          this.#workspaceSaveWarning = `Could not save workspace state: ${errorMessage(error)}`;
+        }
+      });
+    this.#workspacePersistenceTail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    await operation;
   }
 
   private async selectNote(request: OpenNoteRequest): Promise<void> {

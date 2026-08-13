@@ -127,6 +127,65 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
   }
 }
 
+class BlockingWorkspaceStateStore implements WorkspaceStateStore {
+  readonly inner = new MemoryWorkspaceStateStore();
+  #gate: Promise<void> | null = null;
+  #releaseGate: (() => void) | null = null;
+  #saveCount = 0;
+  #saveCountWaiters = new Map<number, Array<() => void>>();
+
+  async load(vaultId: string): Promise<PersistedWorkspaceState | null> {
+    return this.inner.load(vaultId);
+  }
+
+  blockSaves(): void {
+    this.#gate = new Promise<void>((resolve) => {
+      this.#releaseGate = resolve;
+    });
+  }
+
+  releaseSaves(): void {
+    this.#releaseGate?.();
+    this.#gate = null;
+    this.#releaseGate = null;
+  }
+
+  resetSaveCount(): void {
+    this.#saveCount = 0;
+  }
+
+  async waitForSaveCount(target: number): Promise<void> {
+    if (this.#saveCount >= target) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      const waiters = this.#saveCountWaiters.get(target) ?? [];
+      waiters.push(resolve);
+      this.#saveCountWaiters.set(target, waiters);
+    });
+  }
+
+  async save(
+    state: PersistedWorkspaceState,
+    expectedCurrent?: PersistedWorkspaceState | null,
+  ): Promise<PersistedWorkspaceState> {
+    this.#saveCount += 1;
+    for (const [target, waiters] of this.#saveCountWaiters) {
+      if (this.#saveCount >= target) {
+        for (const resolve of waiters) {
+          resolve();
+        }
+        this.#saveCountWaiters.delete(target);
+      }
+    }
+    const gate = this.#gate;
+    if (gate) {
+      await gate;
+    }
+    return this.inner.save(state, expectedCurrent);
+  }
+}
+
 beforeEach(async () => {
   sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-workspace-"));
   vaultPath = path.join(sandboxPath, "vault");
@@ -609,6 +668,41 @@ describe("WorkspaceRuntime", () => {
     expect((await pin).error).toBeInstanceOf(Error);
     expect(String((await pin).error)).toContain("workspace state changed before it could be saved");
     await expect(workspace.getWorkspaceState(workspace.vaultId)).resolves.toEqual(migrated);
+  });
+
+  it("does not let a stale note persistence overwrite migration state across restart", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    const current = await workspace.getWorkspaceState(workspace.vaultId);
+    const migrated = createWorkspaceLayout(
+      workspace.vaultId,
+      [{ id: "primary", openPaths: ["Welcome.md"], activePath: "Welcome.md" }],
+      "primary",
+      null,
+    );
+    store.resetSaveCount();
+    store.blockSaves();
+    const migration = workspace.setWorkspaceState(migrated, workspace.vaultId, current);
+    await store.waitForSaveCount(1);
+
+    const note = workspace.createNote("Race.md", "# Race\n", workspace.vaultId);
+    await store.waitForSaveCount(2);
+    store.releaseSaves();
+
+    await expect(migration).resolves.toMatchObject({
+      workspace: { activeNote: { path: "Welcome.md" } },
+    });
+    const created = await note;
+    expect(created.outcome).toMatchObject({ status: "committed", path: "Race.md" });
+    await expect(store.inner.load(workspace.vaultId)).resolves.toEqual(migrated);
+
+    await workspace.close();
+    runtime = undefined;
+    const restarted = await openRuntime(store);
+    expect((await restarted.getSnapshot()).workspace).toMatchObject({
+      tabs: [{ path: "Welcome.md", active: true }],
+      activeNote: { path: "Welcome.md" },
+    });
   });
 
   it("uses the same pinned-region reorder contract for keyboard and pointer callers", async () => {
