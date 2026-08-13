@@ -98,6 +98,9 @@ const elements = {
   fileSearch: getInput("file-search"),
   searchShortcut: getElement("search-shortcut"),
   filterSummary: getElement("filter-summary"),
+  bookmarkShelf: getElement("bookmark-shelf"),
+  bookmarkCount: getElement("bookmark-count"),
+  bookmarkList: getElement("bookmark-list"),
   fileList: getElement("file-list"),
   indexStatus: getElement("index-status"),
   recoveryCount: getElement("recovery-count"),
@@ -123,6 +126,7 @@ const elements = {
   noteEditor: getElement("note-editor"),
   notePreview: getElement("note-preview"),
   editState: getElement("edit-state"),
+  bookmarkNote: getButton("bookmark-note"),
   moveNote: getButton("move-note"),
   deleteNote: getButton("delete-note"),
   saveNote: getButton("save-note"),
@@ -346,6 +350,7 @@ const paneElementKeys = [
   "noteEditor",
   "notePreview",
   "editState",
+  "bookmarkNote",
   "moveNote",
   "deleteNote",
   "saveNote",
@@ -431,6 +436,7 @@ function paneElementsFor(
     noteEditor: element("note-editor"),
     notePreview: element("note-preview"),
     editState: element("edit-state"),
+    bookmarkNote: button("bookmark-note"),
     moveNote: button("move-note"),
     deleteNote: button("delete-note"),
     saveNote: button("save-note"),
@@ -499,6 +505,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.open-file-recovery",
     label: "Open file recovery",
     description: "Inspect recoverable vault trash and restore exact note paths without overwrite.",
+  },
+  {
+    id: "workspace.toggle-note-bookmark",
+    label: "Toggle bookmark for current note",
+    description: "Keep or remove the current note in this vault's private bookmark shelf.",
   },
   {
     id: "workspace.open-graph-view",
@@ -602,6 +613,11 @@ let editNoticeState: EditNoticeState | null = null;
 let lastVaultWarning: string | null = null;
 let toastTimer: number | undefined;
 let busy = false;
+let bookmarkVaultId: string | null = null;
+let bookmarkPaths: string[] = [];
+let bookmarkBusy = false;
+let bookmarkRequest = 0;
+let lastBookmarkWarning: string | null = null;
 let saving = false;
 let savingContent: string | null = null;
 let dirty = false;
@@ -1240,6 +1256,32 @@ function commandCatalog(): RendererCommand[] {
         }
         return graphView.show("local");
       },
+    },
+    {
+      id: "workspace.toggle-note-bookmark",
+      label:
+        loadedNote && bookmarkPaths.includes(loadedNote.path)
+          ? "Remove bookmark from current note"
+          : "Bookmark current note",
+      category: "Workspace",
+      keywords: ["bookmark", "star", "favorite", "favourite", "pin", "note"],
+      shortcut: shortcutFor("workspace.toggle-note-bookmark"),
+      enabled: Boolean(
+        loadedNote &&
+          loadedVaultId &&
+          bookmarkVaultId === loadedVaultId &&
+          !opening &&
+          !busy &&
+          !bookmarkBusy,
+      ),
+      disabledReason: opening
+        ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+        : !loadedNote
+          ? "No note is open."
+          : bookmarkVaultId !== loadedVaultId
+            ? "Bookmarks are not available for the active vault."
+            : "Threadleaf is finishing another action.",
+      run: toggleCurrentNoteBookmark,
     },
     {
       id: "workspace.move-note",
@@ -3137,6 +3179,7 @@ async function moveCurrentNote(): Promise<void> {
     if (response.outcome.status === "committed") {
       committedPath = response.outcome.to;
       committedRewriteCount = response.outcome.rewrites.length;
+      await refreshNoteBookmarks(expectedVaultId);
     } else if (response.outcome.status === "requires-confirmation") {
       moveNoteBlockers = [];
       moveNoteRewrites = response.outcome.rewrites;
@@ -3188,9 +3231,10 @@ async function moveCurrentNote(): Promise<void> {
     closeMoveNoteDialog(false);
     setDocumentView(editingViewMode, false);
     showToast(
-      committedRewriteCount > 0
-        ? `Moved note to ${committedPath} and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
-        : `Moved note to ${committedPath}`,
+      response?.bookmarkWarning ??
+        (committedRewriteCount > 0
+          ? `Moved note to ${committedPath} and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
+          : `Moved note to ${committedPath}`),
     );
     window.setTimeout(() => editor.focus(), 0);
   } else if (response?.outcome.status === "requires-confirmation") {
@@ -5912,6 +5956,11 @@ function render(snapshot: RuntimeSnapshot): void {
     });
   }
   if (previousVaultId !== snapshot.vault.id) {
+    bookmarkRequest += 1;
+    bookmarkVaultId = null;
+    bookmarkPaths = [];
+    bookmarkBusy = false;
+    lastBookmarkWarning = null;
     for (const paneId of ["primary", "secondary"] as const) {
       runInPaneContext(paneId, () => {
         editorDraftRestoreRequest += 1;
@@ -5964,6 +6013,9 @@ function render(snapshot: RuntimeSnapshot): void {
     void refreshPlugins();
     void refreshMigrationPreview();
     void maybeMigrateLegacyTheme();
+    if (snapshot.vault.id) {
+      void refreshNoteBookmarks(snapshot.vault.id);
+    }
   }
   const startup = snapshot.startup;
   const opening = startup?.phase === "opening";
@@ -6030,6 +6082,7 @@ function render(snapshot: RuntimeSnapshot): void {
   }
   reconcileVaultSearch(snapshot);
   renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
+  renderNoteBookmarks(workspace?.files ?? [], displayedNote?.path ?? null);
 
   elements.pluginState.textContent = plugin?.state ?? "empty";
   elements.pluginState.dataset.state = plugin?.state ?? "empty";
@@ -6191,6 +6244,168 @@ function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): 
   if (files.length === 0) {
     renderEmpty(elements.fileList, "No Markdown notes found.");
   }
+}
+
+function bookmarkTitle(filePath: string): string {
+  const slash = filePath.lastIndexOf("/");
+  const filename = slash === -1 ? filePath : filePath.slice(slash + 1);
+  return filename.toLocaleLowerCase("en-US").endsWith(".md") ? filename.slice(0, -3) : filename;
+}
+
+function renderNoteBookmarks(files: WorkspaceFileSummary[], activePath: string | null): void {
+  const activeVaultId = currentSnapshot?.vault.id ?? null;
+  const available = Boolean(activeVaultId && bookmarkVaultId === activeVaultId);
+  const visiblePaths = available ? bookmarkPaths : [];
+  const filesByPath = new Map(files.map((file) => [file.path, file]));
+  elements.bookmarkCount.textContent = String(visiblePaths.length);
+  elements.bookmarkShelf.hidden = visiblePaths.length === 0;
+  elements.bookmarkShelf.setAttribute("aria-busy", String(bookmarkBusy));
+  elements.bookmarkList.replaceChildren();
+
+  for (const filePath of visiblePaths) {
+    const file = filesByPath.get(filePath);
+    const missing = !file;
+    const row = document.createElement("div");
+    row.className = "bookmark-row";
+    row.dataset.current = String(filePath === activePath);
+    row.dataset.missing = String(missing);
+    row.dataset.notePath = filePath;
+
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "bookmark-open";
+    open.disabled = missing || busy;
+    open.ariaLabel = missing ? `${filePath} is missing from the vault` : `Open ${filePath}`;
+    if (filePath === activePath) {
+      open.setAttribute("aria-current", "page");
+    }
+
+    const mark = document.createElement("span");
+    mark.className = "bookmark-open-mark";
+    mark.ariaHidden = "true";
+    mark.textContent = missing ? "◇" : "★";
+    const copy = document.createElement("span");
+    copy.className = "bookmark-open-copy";
+    const title = document.createElement("strong");
+    title.textContent = file?.title ?? bookmarkTitle(filePath);
+    const location = document.createElement("small");
+    location.textContent = missing ? `Missing note · ${filePath}` : filePath;
+    copy.append(title, location);
+    open.append(mark, copy);
+    if (!missing) {
+      open.addEventListener("click", () => void openNote(filePath));
+    }
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "bookmark-remove";
+    remove.disabled = bookmarkBusy || busy;
+    remove.ariaLabel = `Remove bookmark for ${filePath}`;
+    remove.title = "Remove bookmark";
+    remove.textContent = "×";
+    remove.addEventListener("click", () => void setNoteBookmarked(filePath, false));
+
+    row.append(open, remove);
+    elements.bookmarkList.append(row);
+  }
+}
+
+function renderBookmarkToggle(): void {
+  const available = Boolean(
+    loadedNote && loadedVaultId && bookmarkVaultId === loadedVaultId && !vaultOpening(),
+  );
+  const bookmarked = Boolean(available && loadedNote && bookmarkPaths.includes(loadedNote.path));
+  elements.bookmarkNote.disabled = !available || busy || bookmarkBusy;
+  elements.bookmarkNote.setAttribute("aria-pressed", String(bookmarked));
+  elements.bookmarkNote.ariaLabel = bookmarked
+    ? "Remove bookmark from current note"
+    : "Bookmark current note";
+  elements.bookmarkNote.title = available
+    ? bookmarked
+      ? "Remove bookmark"
+      : "Bookmark note"
+    : "Open a note in a vault with available bookmark storage";
+  const mark = elements.bookmarkNote.querySelector<HTMLElement>(".bookmark-toolbar-mark");
+  const label = elements.bookmarkNote.querySelector<HTMLElement>(".toolbar-action-label");
+  if (mark) {
+    mark.textContent = bookmarked ? "★" : "☆";
+  }
+  if (label) {
+    label.textContent = bookmarked ? "Bookmarked" : "Bookmark";
+  }
+}
+
+function renderBookmarkSurfaces(): void {
+  renderAllPaneEditControls();
+  renderNoteBookmarks(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+}
+
+async function refreshNoteBookmarks(expectedVaultId: string): Promise<void> {
+  const request = ++bookmarkRequest;
+  try {
+    const response = await window.threadleaf.getNoteBookmarks(expectedVaultId);
+    if (request !== bookmarkRequest || currentSnapshot?.vault.id !== expectedVaultId) {
+      return;
+    }
+    if (response.status === "stale-vault" || response.vaultId !== expectedVaultId) {
+      bookmarkVaultId = null;
+      bookmarkPaths = [];
+      return;
+    }
+    bookmarkVaultId = response.vaultId;
+    bookmarkPaths = [...response.paths];
+    lastBookmarkWarning = null;
+  } catch (error) {
+    if (request !== bookmarkRequest || currentSnapshot?.vault.id !== expectedVaultId) {
+      return;
+    }
+    bookmarkVaultId = null;
+    bookmarkPaths = [];
+    const message = error instanceof Error ? error.message : String(error);
+    if (message !== lastBookmarkWarning) {
+      showToast(`Bookmarks unavailable: ${message}`);
+      lastBookmarkWarning = message;
+    }
+  } finally {
+    if (request === bookmarkRequest && currentSnapshot?.vault.id === expectedVaultId) {
+      renderBookmarkSurfaces();
+    }
+  }
+}
+
+async function setNoteBookmarked(filePath: string, bookmarked: boolean): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id ?? null;
+  if (!expectedVaultId || bookmarkVaultId !== expectedVaultId || bookmarkBusy || busy) {
+    return;
+  }
+  bookmarkBusy = true;
+  renderBookmarkSurfaces();
+  try {
+    const response = await window.threadleaf.setNoteBookmark(filePath, bookmarked, expectedVaultId);
+    if (
+      response.status !== "ready" ||
+      response.vaultId !== expectedVaultId ||
+      currentSnapshot?.vault.id !== expectedVaultId
+    ) {
+      showToast("The active vault changed before the bookmark was saved.");
+      return;
+    }
+    bookmarkVaultId = response.vaultId;
+    bookmarkPaths = [...response.paths];
+    showToast(bookmarked ? `Bookmarked ${filePath}.` : `Removed bookmark for ${filePath}.`);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    bookmarkBusy = false;
+    renderBookmarkSurfaces();
+  }
+}
+
+async function toggleCurrentNoteBookmark(): Promise<void> {
+  if (!loadedNote) {
+    return;
+  }
+  await setNoteBookmarked(loadedNote.path, !bookmarkPaths.includes(loadedNote.path));
 }
 
 function cancelVirtualFileRender(): void {
@@ -6985,6 +7200,7 @@ function renderEditControls(): void {
       : dirty && editorDraftPersistenceState === "pending"
         ? "Threadleaf is protecting this draft in private recovery storage."
         : "";
+  renderBookmarkToggle();
   const opening = vaultOpening();
   const readOnly = readOnlyVault();
   const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
@@ -7302,6 +7518,7 @@ function activateWorkspacePaneLocally(paneId: WorkspacePaneId): void {
     );
   }
   renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+  renderNoteBookmarks(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
   renderNote(loadedNote);
   setActionState(busy);
 }
@@ -7427,6 +7644,7 @@ function setActionState(nextBusy: boolean): void {
   elements.runCommand.disabled =
     opening || busy || paneSaving || (currentSnapshot?.commands.length ?? 0) === 0;
   renderAllPaneEditControls();
+  renderNoteBookmarks(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
 }
 
 elements.fileSearch.addEventListener("input", () => {
@@ -7516,6 +7734,10 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   pane.moveNote.addEventListener("click", () => {
     activate();
     void executeRendererCommand("workspace.move-note");
+  });
+  pane.bookmarkNote.addEventListener("click", () => {
+    activate();
+    void executeRendererCommand("workspace.toggle-note-bookmark");
   });
   pane.deleteNote.addEventListener("click", () => {
     activate();

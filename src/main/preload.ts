@@ -6,6 +6,7 @@ import type {
   EditorDraftClearResponse,
   EditorDraftReadResponse,
   EditorDraftSaveResponse,
+  NoteBookmarksResponse,
   NoteCreateResponse,
   NoteDeleteResponse,
   NoteMoveResponse,
@@ -135,6 +136,18 @@ const bridge: ThreadleafBridge = {
       expectedRevision,
       expectedVaultId,
     ) as Promise<NoteRestoreResponse>,
+  getNoteBookmarks: (expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.noteBookmarks,
+      expectedVaultId,
+    ) as Promise<NoteBookmarksResponse>,
+  setNoteBookmark: (path, bookmarked, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.setNoteBookmark,
+      path,
+      bookmarked,
+      expectedVaultId,
+    ) as Promise<NoteBookmarksResponse>,
   loadVaultImage: (sourceNotePath, target, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.loadVaultImage,

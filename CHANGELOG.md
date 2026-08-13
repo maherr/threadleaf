@@ -94,6 +94,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   exact-revision restores, no-overwrite collision preservation, immediate watcher and index
   convergence, native menu and command access, focused conflict diagnostics, and isolated
   dark, light, narrow, and deuteranomaly verification.
+- Ordered per-vault note bookmarks in private mode-0600 application state, with toolbar, command,
+  native-menu, and remappable-hotkey access; serialized persistence; internal-move remapping;
+  explicit missing-note rows; no vault metadata; restart coverage; and isolated real-input dark,
+  light, narrow, and moderate-deuteranomaly verification.
 - Headless `properties`, `property:read`, `property:set`, and `property:remove` commands, with typed
   scalar and list serialization, conservative byte-preserving frontmatter patches, idempotent
   removal, mutation locking, revision conflicts, stable JSON, and explicit complex-YAML refusal.

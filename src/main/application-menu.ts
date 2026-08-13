@@ -111,6 +111,7 @@ export function createApplicationMenuTemplate(
       submenu: [
         action("Command Palette…", "ui.command-palette"),
         action("Search Vault", "workspace.focus-note-filter"),
+        action("Toggle Note Bookmark", "workspace.toggle-note-bookmark"),
         { type: "separator" },
         action("Split Right", "workspace.split-right"),
         action("Split Down", "workspace.split-down"),

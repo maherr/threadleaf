@@ -293,7 +293,7 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [ ] Add committed visual regression coverage for ordinary laptop size, high DPI, zoom, long
       translations, reduced motion, high contrast, and representative open community themes.
 - [ ] Split groups, draggable tabs, pinned tabs, side docks, floating windows, pop-out views,
-      history, bookmarks, quick switcher, command discovery, and persistent workspace layouts.
+      history, quick switcher, command discovery, and persistent workspace layouts.
 - [ ] Complete the existing Source, Live Preview, and Reading modes with fine-grained mapping,
       inline block and heading transclusion, footnotes, rendered tables, math, diagrams, and
       large-document editing with reliable IME and undo.
@@ -305,7 +305,9 @@ Exit gate: selected high-value plugins complete named workflows against public f
       direction, pointer and keyboard navigation, accessible note controls, and private preferences.
 - [x] Desktop file recovery with exact-revision restore, no-overwrite conflicts, filtering,
       watcher and index convergence, native commands, and isolated virtual-input coverage.
-- [ ] Bookmarks and publish-ready export.
+- [x] Ordered private per-vault note bookmarks with toolbar, command, native-menu, and hotkey
+      access; restart persistence; internal-move remapping; and explicit missing-note rows.
+- [ ] Publish-ready export.
 - [ ] Keyboard navigation, screen-reader semantics, reduced motion, contrast, zoom, localization,
       bidirectional text, and touch-target audits across every reachable control.
 - [x] Unsigned Linux x64 AppImage and RPM artifacts with a stable application identity, complete

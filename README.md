@@ -81,6 +81,10 @@ File Recovery lists recoverable Markdown notes without returning them to the ord
 filters original and recovery paths, and restores the exact listed revision to its original path.
 If that path is occupied or the recovery entry changed, both copies remain untouched and the
 dialog explains the conflict; it intentionally offers no permanent-delete action.
+Each vault also has an ordered private bookmark shelf outside the vault. The note toolbar,
+command palette, native menu, and remappable hotkey target share one toggle action. Internal moves
+remap bookmarked paths, externally missing notes remain visible for removal or later recovery, and
+bookmarking never creates or changes `.obsidian/` or any other vault metadata.
 Headless property commands list and read the current indexed projection, then set or remove typed
 top-level YAML properties through a byte-preserving, revision-checked application service. The
 writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated

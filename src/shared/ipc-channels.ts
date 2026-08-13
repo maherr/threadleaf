@@ -45,6 +45,8 @@ export const ipcChannels = {
   deleteNote: "threadleaf:delete-note",
   vaultTrash: "threadleaf:vault-trash",
   restoreNote: "threadleaf:restore-note",
+  noteBookmarks: "threadleaf:note-bookmarks",
+  setNoteBookmark: "threadleaf:set-note-bookmark",
   createNote: "threadleaf:create-note",
   saveNote: "threadleaf:save-note",
   setNoteProperty: "threadleaf:set-note-property",

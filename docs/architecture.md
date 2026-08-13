@@ -220,6 +220,25 @@ duplicates before persistence, and resets all bindings through the same durable 
 events resolve to action IDs. Workspace and editor targets then use the same renderer command
 catalog as visible controls and the command palette.
 
+### Private per-vault note bookmarks
+
+Bookmarks are ordered visible Markdown paths stored outside the vault in one version 1 document
+per SHA-256 vault identity. The separate store keeps the version 5 application-settings rollback
+contract unchanged. It accepts at most 2,048 normalized paths, rejects hidden vault segments and
+duplicates, serializes mutations per vault, and installs each update atomically with mode-0600 file
+permissions. No bookmark operation writes `.obsidian/` or another vault-owned metadata file.
+
+The renderer loads and mutates bookmarks through vault-identity-bound IPC. The note toolbar,
+command palette, native menu, and remappable hotkey target all dispatch the same toggle. The left
+shelf preserves insertion order. A path missing from the current derived index remains visible as
+an explicitly labeled, non-openable row so external deletion does not silently erase user intent.
+It can be removed directly or become live again after file recovery.
+
+A committed internal note move serially remaps the old path before the IPC result returns and
+deduplicates it if the destination was already bookmarked. The note move itself is authoritative:
+if private bookmark persistence fails after that commit, the response reports the partial outcome
+instead of misrepresenting the completed vault transaction as a failed move.
+
 ### Appearance boundary
 
 Threadleaf treats a vault's Obsidian theme and snippet folders as read-only compatibility input.

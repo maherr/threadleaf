@@ -398,10 +398,14 @@ button:disabled {
 
 .navigator {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--surface-sunken);
+}
+
+.navigator-heading {
+  grid-row: 1;
 }
 
 .pane-heading {
@@ -490,6 +494,7 @@ h2 {
 
 .search-field {
   display: grid;
+  grid-row: 2;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
@@ -534,13 +539,161 @@ h2 {
 }
 
 .filter-summary {
+  grid-row: 3;
   margin: 0;
   padding: 9px 15px 7px;
   color: var(--ink-muted);
   font-size: 10px;
 }
 
+.bookmark-shelf {
+  display: grid;
+  grid-row: 4;
+  max-height: min(210px, 34vh);
+  min-height: 0;
+  margin: 0 7px 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px 3px 7px 3px;
+  background: var(--surface-raised);
+}
+
+.bookmark-shelf[hidden] {
+  display: none;
+}
+
+.bookmark-shelf-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line);
+  color: var(--accent-strong);
+  background: var(--surface);
+  font-family: var(--mono);
+}
+
+.bookmark-shelf-header > span {
+  font-size: 10px;
+}
+
+.bookmark-shelf-header strong {
+  overflow: hidden;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.bookmark-shelf-header output {
+  min-width: 18px;
+  color: var(--ink-muted);
+  font-size: 8px;
+  text-align: right;
+}
+
+.bookmark-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.bookmark-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.bookmark-row:last-child {
+  border-bottom: 0;
+}
+
+.bookmark-row[data-current="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.bookmark-row[data-missing="true"] {
+  border-left: 3px dashed var(--signal);
+}
+
+.bookmark-open,
+.bookmark-remove {
+  border: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+}
+
+.bookmark-open {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 7px 8px 9px;
+  text-align: left;
+}
+
+.bookmark-open:hover:not(:disabled),
+.bookmark-open:focus-visible,
+.bookmark-remove:hover,
+.bookmark-remove:focus-visible {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+}
+
+.bookmark-open:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.bookmark-open-mark {
+  color: var(--accent-strong);
+  font-size: 10px;
+}
+
+.bookmark-row[data-missing="true"] .bookmark-open-mark {
+  color: var(--signal);
+}
+
+.bookmark-open-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.bookmark-open-copy strong,
+.bookmark-open-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookmark-open-copy strong {
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.bookmark-open-copy small {
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+.bookmark-remove {
+  width: 29px;
+  border-left: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 .file-list {
+  grid-row: 5;
   min-height: 0;
   padding: 0 7px 12px;
   overflow-y: auto;
@@ -681,6 +834,7 @@ h2 {
 
 .navigator-foot {
   display: grid;
+  grid-row: 6;
   gap: 3px;
   padding: 10px 14px;
   border-top: 1px solid var(--line);
@@ -1115,6 +1269,18 @@ h2 {
   border-color: var(--line-strong);
   color: var(--ink);
   transform: translateY(-1px);
+}
+
+.bookmark-toolbar-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--line));
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.bookmark-toolbar-mark {
+  margin-right: 2px;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .trash-toolbar-button:not(:disabled) {

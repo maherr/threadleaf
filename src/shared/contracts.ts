@@ -547,6 +547,7 @@ export type NoteMoveOutcome =
 export interface NoteMoveResponse {
   outcome: NoteMoveOutcome;
   snapshot: RuntimeSnapshot;
+  bookmarkWarning?: string;
 }
 
 export type NoteDeleteOutcome =
@@ -583,6 +584,10 @@ export interface NoteRestoreResponse {
   outcome: NoteRestoreOutcome;
   snapshot: RuntimeSnapshot;
 }
+
+export type NoteBookmarksResponse =
+  | { status: "ready"; vaultId: string; paths: string[] }
+  | { status: "stale-vault"; vaultId: string };
 
 export type VaultImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
@@ -778,6 +783,12 @@ export interface ThreadleafBridge {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<NoteRestoreResponse>;
+  getNoteBookmarks(expectedVaultId: string): Promise<NoteBookmarksResponse>;
+  setNoteBookmark(
+    path: string,
+    bookmarked: boolean,
+    expectedVaultId: string,
+  ): Promise<NoteBookmarksResponse>;
   createNote(path: string, content: string, expectedVaultId: string): Promise<NoteCreateResponse>;
   saveNote(
     path: string,

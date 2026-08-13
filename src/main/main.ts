@@ -14,6 +14,7 @@ import {
 import { AppSettingsController } from "../application/app-settings-controller";
 import { AppUpdateController } from "../application/app-update-controller";
 import { parseEditorDraft } from "../application/editor-draft";
+import { NoteBookmarkController } from "../application/note-bookmarks";
 import { parseVaultGraphRequest } from "../application/vault-graph";
 import { WorkspaceController } from "../application/workspace-controller";
 import { atomicWriteFile } from "../kernel/durability";
@@ -61,6 +62,7 @@ import {
 import { ElectronPluginRuntime } from "./electron-plugin-runtime";
 import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileEditorDraftStore } from "./file-editor-draft-store";
+import { FileNoteBookmarkStore } from "./file-note-bookmark-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { createGracefulShutdownHandler } from "./graceful-shutdown";
@@ -97,6 +99,7 @@ let workspaceController: WorkspaceController;
 let settingsController: AppSettingsController;
 let appUpdateController: AppUpdateController;
 let editorDraftStore: FileEditorDraftStore;
+let noteBookmarkController: NoteBookmarkController;
 let pluginPackageManager: PluginPackageManager;
 let pluginOperationTail: Promise<void> = Promise.resolve();
 let initialWorkspaceActivation: Promise<void> | null = null;
@@ -1327,7 +1330,7 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     ipcChannels.moveNote,
-    (
+    async (
       _event,
       filePath: unknown,
       targetPath: unknown,
@@ -1346,13 +1349,29 @@ function registerIpcHandlers(): void {
           "Move note requires string path, target, revision, and vault values with an optional confirmation.",
         );
       }
-      return workspaceController.moveNote(
+      const response = await workspaceController.moveNote(
         filePath,
         targetPath,
         expectedRevision,
         expectedVaultId,
         confirmationId,
       );
+      if (response.outcome.status === "committed") {
+        try {
+          await noteBookmarkController.remap(
+            expectedVaultId,
+            response.outcome.from,
+            response.outcome.to,
+          );
+        } catch (error) {
+          console.error("Could not remap the moved note bookmark:", error);
+          return {
+            ...response,
+            bookmarkWarning: `Moved the note to ${response.outcome.to}, but its private bookmark could not be updated. Remove the missing bookmark and add it again.`,
+          };
+        }
+      }
+      return response;
     },
   );
   ipcMain.handle(
@@ -1379,6 +1398,39 @@ function registerIpcHandlers(): void {
         throw new Error("Restore note requires string path, revision, and vault values.");
       }
       return workspaceController.restoreNote(filePath, expectedRevision, expectedVaultId);
+    },
+  );
+  ipcMain.handle(ipcChannels.noteBookmarks, async (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Bookmark loading requires a string vault identity.");
+    }
+    if (workspaceController.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+    }
+    const bookmarks = await noteBookmarkController.get(expectedVaultId);
+    return workspaceController.vaultId === expectedVaultId
+      ? { status: "ready", vaultId: expectedVaultId, paths: bookmarks.paths }
+      : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
+  });
+  ipcMain.handle(
+    ipcChannels.setNoteBookmark,
+    async (_event, filePath: unknown, bookmarked: unknown, expectedVaultId: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof bookmarked !== "boolean" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error(
+          "Bookmark updates require a string path, boolean state, and vault identity.",
+        );
+      }
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      const bookmarks = await noteBookmarkController.set(expectedVaultId, filePath, bookmarked);
+      return workspaceController.vaultId === expectedVaultId
+        ? { status: "ready", vaultId: expectedVaultId, paths: bookmarks.paths }
+        : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
     },
   );
   ipcMain.handle(
@@ -1704,6 +1756,9 @@ app.whenReady().then(async () => {
   );
   installApplicationMenu(settingsController.getSnapshot().settings);
   editorDraftStore = new FileEditorDraftStore(join(app.getPath("userData"), "editor-drafts"));
+  noteBookmarkController = new NoteBookmarkController(
+    new FileNoteBookmarkStore(join(app.getPath("userData"), "bookmarks")),
+  );
   workspaceController = await createWorkspaceController();
   registerIpcHandlers();
   await createWindow();

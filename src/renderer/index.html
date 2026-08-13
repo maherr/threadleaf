@@ -95,6 +95,19 @@
           </label>
 
           <p class="filter-summary" id="filter-summary" aria-live="polite">Loading vault index</p>
+          <section
+            class="bookmark-shelf"
+            id="bookmark-shelf"
+            aria-labelledby="bookmark-heading"
+            hidden
+          >
+            <header class="bookmark-shelf-header">
+              <span aria-hidden="true">★</span>
+              <strong id="bookmark-heading">Bookmarks</strong>
+              <output id="bookmark-count" aria-label="Bookmark count">0</output>
+            </header>
+            <nav id="bookmark-list" class="bookmark-list" aria-label="Bookmarked notes"></nav>
+          </section>
           <nav
             class="file-list nav-files-container"
             id="file-list"
@@ -140,6 +153,17 @@
                 <button id="plugin-view" type="button" aria-pressed="false" hidden>Plugin</button>
               </fieldset>
               <span class="edit-state" id="edit-state" data-state="empty">No note</span>
+              <button
+                class="toolbar-button bookmark-toolbar-button"
+                id="bookmark-note"
+                type="button"
+                aria-label="Bookmark current note"
+                aria-pressed="false"
+                disabled
+              >
+                <span class="bookmark-toolbar-mark" aria-hidden="true">☆</span>
+                <span class="toolbar-action-label">Bookmark</span>
+              </button>
               <button class="toolbar-button" id="move-note" type="button" disabled>Move</button>
               <button
                 class="toolbar-button trash-toolbar-button"
