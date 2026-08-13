@@ -166,6 +166,70 @@ async function waitForReadyPlugins(vaultPath, timeoutMs) {
   throw new Error("The target vault and both recovery fixtures were not ready in time.");
 }
 
+async function runHangCommandThroughPalette(timeoutMs) {
+  const invoked = await evaluate(`(() => {
+    document.querySelector("#command-trigger")?.click();
+    const query = document.querySelector("#palette-query");
+    if (!(query instanceof HTMLInputElement)) return false;
+    query.value = "hang";
+    query.dispatchEvent(new Event("input", { bubbles: true }));
+    const option = document.querySelector('[data-command-id="plugin.command.hang"]');
+    if (!(option instanceof HTMLButtonElement) || option.disabled) return false;
+    option.click();
+    return true;
+  })()`);
+  if (!invoked) {
+    throw new Error("The hang command was not reachable through the command palette.");
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const snapshot = await withTimeout(
+      evaluate("window.threadleaf.getSnapshot()"),
+      2_000,
+      "A recovered workspace snapshot did not resolve within 2 seconds.",
+    );
+    if (
+      snapshot?.plugins?.find(({ id }) => id === "threadleaf-hang")?.state === "failed" &&
+      snapshot?.resourceDiagnostics?.some(
+        ({ reason, operation }) => reason === "operation-deadline" && operation === "run-command",
+      )
+    ) {
+      return snapshot;
+    }
+    await delay(50);
+  }
+  throw new Error("The palette command did not recover within its deadline.");
+}
+
+async function waitForResourceWarning(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = null;
+  while (Date.now() < deadline) {
+    lastState = await evaluate(`(() => {
+      const trigger = document.querySelector("#settings-trigger");
+      const dialog = document.querySelector("#shortcut-settings");
+      if (trigger instanceof HTMLButtonElement && !trigger.disabled && !dialog?.open) {
+        trigger.click();
+      }
+      if (dialog?.open) {
+        document.querySelector("#settings-nav-plugins")?.click();
+      }
+      return {
+        dialogOpen: Boolean(dialog?.open),
+        triggerDisabled: trigger instanceof HTMLButtonElement ? trigger.disabled : null,
+        warning: document.querySelector("#plugin-warnings")?.textContent?.trim() ?? "",
+      };
+    })()`);
+    if (lastState.warning.includes("run-command exceeded")) {
+      return lastState.warning;
+    }
+    await delay(50);
+  }
+  throw new Error(
+    `The structured resource diagnostic did not reach plugin settings: ${JSON.stringify(lastState)}`,
+  );
+}
+
 async function rendererProcessIds(rootPid) {
   const { stdout } = await execFileAsync("ps", ["-eo", "pid=,ppid=,args="], {
     maxBuffer: 4 * 1024 * 1024,
@@ -296,11 +360,8 @@ try {
   cdp = connectCdp(target.webSocketDebuggerUrl);
   const before = await waitForReadyPlugins(canonicalVaultPath, 15_000);
   const rendererPidsBefore = await waitForRendererProcesses(child.pid, 3, 5_000);
-  const recovered = await withTimeout(
-    evaluate('window.threadleaf.runCommand("hang")'),
-    10_000,
-    "The timed-out command did not recover within 10 seconds.",
-  );
+  const recovered = await runHangCommandThroughPalette(10_000);
+  const resourceWarning = await waitForResourceWarning(5_000);
   const rendererPidsAfter = await waitForRendererProcesses(child.pid, 3, 5_000);
   const survivor = await withTimeout(
     evaluate('window.threadleaf.runCommand("threadleaf-fixture-confirm")'),
@@ -323,6 +384,7 @@ try {
     survivor,
     after,
     reloaded,
+    resourceWarning,
     rendererPidsBefore,
     rendererPidsAfter,
   };
@@ -363,6 +425,19 @@ try {
     "The timed-out command did not return an explicit recovery notice.",
   );
   assert(
+    result.recovered.resourceDiagnostics?.some(
+      ({ reason, operation, configuredBudget }) =>
+        reason === "operation-deadline" && operation === "run-command" && configuredBudget === 350,
+    ),
+    "The non-default run-command deadline was not preserved as a structured diagnostic.",
+  );
+  assert(
+    result.resourceWarning.includes(
+      "threadleaf-hang: Compatibility run-command exceeded its 350 ms deadline",
+    ),
+    "The resource diagnostic did not render with culprit and policy evidence in settings.",
+  );
+  assert(
     result.survivor.notices.at(-1) === "Fixture command crossed the compatibility bridge.",
     "The healthy plugin did not execute after its sibling timed out.",
   );
@@ -394,7 +469,7 @@ try {
     `Electron did not exit cleanly: ${JSON.stringify(exit)}\n${output.join("")}`,
   );
   console.log(
-    "Verified one renderer process per plugin, culprit-only timeout recovery, healthy-plugin continuity, native-workspace responsiveness, and explicit reload recovery.",
+    "Verified command-palette reachability, one renderer process per plugin, culprit-only timeout recovery, healthy-plugin continuity, native-workspace responsiveness, settings diagnostics, and explicit reload recovery.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

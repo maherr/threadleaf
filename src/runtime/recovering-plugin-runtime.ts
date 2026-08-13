@@ -1,6 +1,7 @@
 import path from "node:path";
 import type {
   PluginEditorContext,
+  PluginResourceDiagnostic,
   PluginSummary,
   RuntimeEvent,
   RuntimeSnapshot,
@@ -56,6 +57,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   private current: T;
   private eventSequence = 0;
   private readonly eventLedger: RuntimeEvent[] = [];
+  private readonly resourceDiagnostics: PluginResourceDiagnostic[] = [];
   private readonly failedPlugins = new Map<string, PluginSummary>();
   private lastFailureId: string | null = null;
   private lastPluginId: string | null = null;
@@ -238,6 +240,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
         if (!isFatalPluginRuntimeError(error)) {
           throw error;
         }
+        this.rememberResourceDiagnostic(error.resourceDiagnostic);
         return this.recover(context, error);
       }
     });
@@ -392,12 +395,48 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     const plugin = selectedPluginId
       ? (plugins.find(({ id }) => id === selectedPluginId) ?? null)
       : null;
+    const resourceDiagnostics = this.mergeResourceDiagnostics(snapshot.resourceDiagnostics);
     return {
       ...snapshot,
       plugin,
       plugins,
       notices: transientNotice ? [...snapshot.notices, transientNotice] : [...snapshot.notices],
       events: this.eventLedger.map((event) => ({ ...event })),
+      ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),
     };
+  }
+
+  private rememberResourceDiagnostic(diagnostic: PluginResourceDiagnostic | null): void {
+    if (!diagnostic) {
+      return;
+    }
+    this.resourceDiagnostics.push({ ...diagnostic });
+    if (this.resourceDiagnostics.length > 50) {
+      this.resourceDiagnostics.splice(0, this.resourceDiagnostics.length - 50);
+    }
+  }
+
+  private mergeResourceDiagnostics(
+    current: readonly PluginResourceDiagnostic[] | undefined,
+  ): PluginResourceDiagnostic[] {
+    const merged = [...this.resourceDiagnostics, ...(current ?? [])];
+    const seen = new Set<string>();
+    return merged
+      .filter((diagnostic) => {
+        const key = [
+          diagnostic.pluginId ?? "",
+          diagnostic.reason,
+          diagnostic.metric ?? "",
+          diagnostic.operation ?? "",
+          diagnostic.startedAt,
+          diagnostic.observedAt,
+        ].join("\0");
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .slice(-50);
   }
 }

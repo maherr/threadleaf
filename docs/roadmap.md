@@ -202,7 +202,10 @@ normal external vault backup and the privacy-safe feedback workflow.
 - [x] Add per-plugin process isolation, operation deadlines, forced culprit termination, crash
       attribution, clean runtime replacement, stopped-plugin diagnostics, and explicit reload
       recovery while healthy sibling plugins continue running.
-- [ ] Add per-plugin CPU, memory, and operation-specific resource budgets.
+- [x] Add a versioned main-process plugin resource policy with operation-specific startup and close
+      deadlines, conservative renderer memory and sustained CPU guardrails, explicit unavailable
+      metrics, culprit-only enforcement, structured diagnostics, cleanup tests, and a built Xvfb
+      deadline/recovery fixture. This remains a trusted-host guardrail, not OS sandboxing.
 - [x] Implement reviewable install, update, rollback, uninstall, and restore through a replaceable
       package-source interface and community package index, with exact version pins, full
       SHA-256 evidence, retained licenses, five-version private history, durable interruption

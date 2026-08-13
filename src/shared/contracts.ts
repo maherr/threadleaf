@@ -10,6 +10,11 @@ import type {
   PluginPackagePreviewRequest,
   PluginPackagePreviewResponse,
 } from "./plugin-packages";
+import type {
+  PluginResourceDiagnosticReason,
+  PluginResourceMetric,
+} from "./plugin-resource-policy";
+import type { PluginRendererOperation } from "./plugin-runtime-protocol";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
@@ -71,6 +76,42 @@ export interface PluginSummary {
   compatibilityLevel: 0 | 1 | 2 | 3 | 4;
   stylesheetDiscovered: boolean;
   error: string | null;
+}
+
+export interface PluginResourceDiagnostic {
+  pluginId?: string;
+  reason: PluginResourceDiagnosticReason;
+  metric: PluginResourceMetric | null;
+  operation: PluginRendererOperation | null;
+  available: boolean;
+  measuredValue: number | null;
+  configuredBudget: number | null;
+  unit: "milliseconds" | "bytes" | "percent" | null;
+  sampleCount: number | null;
+  startedAt: string;
+  observedAt: string;
+}
+
+export interface PluginResourceMetricsSnapshot {
+  sampledAt: string | null;
+  memoryBytes: number | null;
+  memoryAvailable: boolean;
+  cpuPercent: number | null;
+  cpuAvailable: boolean;
+  cpuBreaches: number;
+  inStartupQuietWindow: boolean;
+}
+
+export interface PluginResourcePolicySnapshot {
+  version: 1;
+  operationDeadlinesMs: Record<PluginRendererOperation, number>;
+  memoryCeilingBytes: number;
+  cpuBudgetPercent: number;
+  cpuSampleIntervalMs: number;
+  cpuStartupQuietWindowMs: number;
+  cpuConsecutiveSamples: number;
+  state: "monitoring" | "stopped";
+  metrics: PluginResourceMetricsSnapshot;
 }
 
 export interface PluginExtensionRegistration {
@@ -153,6 +194,8 @@ export interface RuntimeSnapshot {
   integrations?: PluginIntegrationSnapshot;
   editorUpdate?: PluginEditorUpdate | null;
   pluginSurface?: PluginSurfaceSnapshot | null;
+  resourcePolicy?: PluginResourcePolicySnapshot;
+  resourceDiagnostics?: PluginResourceDiagnostic[];
   workspace?: WorkspaceSnapshot;
 }
 

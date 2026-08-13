@@ -22,6 +22,7 @@ import type {
   NoteWorkflowCatalogResponse,
   PluginEditorContext,
   PluginEditorUpdate,
+  PluginResourceDiagnostic,
   RuntimeSnapshot,
   VaultSearchResponse,
   VaultSearchResult,
@@ -3870,9 +3871,27 @@ function applyPluginCatalog(catalog: PluginCatalogSnapshot): void {
 }
 
 function runtimePluginWarnings(snapshot: RuntimeSnapshot | null = currentSnapshot): string[] {
-  return (snapshot?.plugins ?? [])
+  const pluginFailures = (snapshot?.plugins ?? [])
     .filter((plugin) => plugin.error)
     .map((plugin) => `${plugin.name}: ${plugin.error}`);
+  const resourceWarnings = (snapshot?.resourceDiagnostics ?? []).map((diagnostic) =>
+    resourceDiagnosticWarning(diagnostic),
+  );
+  return [...pluginFailures, ...resourceWarnings];
+}
+
+function resourceDiagnosticWarning(diagnostic: PluginResourceDiagnostic): string {
+  const owner = diagnostic.pluginId ? `${diagnostic.pluginId}: ` : "";
+  if (diagnostic.reason === "metrics-unavailable") {
+    const metric = diagnostic.metric ?? "resource";
+    return `${owner}Compatibility ${metric} metrics were unavailable for a sample; no ${metric} enforcement was applied to that sample.`;
+  }
+  if (diagnostic.reason === "operation-deadline") {
+    return `${owner}Compatibility ${diagnostic.operation ?? "operation"} exceeded its ${diagnostic.configuredBudget ?? "configured"} ms deadline (observed ${diagnostic.measuredValue ?? "unknown"} ms).`;
+  }
+  const metric = diagnostic.metric ?? "resource";
+  const unit = diagnostic.unit === "bytes" ? "bytes" : "%";
+  return `${owner}Compatibility ${metric} budget breached: ${diagnostic.measuredValue ?? "unknown"} ${unit} measured against ${diagnostic.configuredBudget ?? "configured"} ${unit}.`;
 }
 
 async function refreshPlugins(successMessage?: string): Promise<void> {

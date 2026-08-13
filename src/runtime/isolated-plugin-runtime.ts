@@ -2,6 +2,7 @@ import path from "node:path";
 import type {
   PluginEditorContext,
   PluginIntegrationSnapshot,
+  PluginResourceDiagnostic,
   PluginSummary,
   RuntimeEvent,
   RuntimeSnapshot,
@@ -433,6 +434,9 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       operationSnapshot?.pluginSurface ??
       orderedSnapshots.find((snapshot) => snapshot.pluginSurface)?.pluginSurface ??
       null;
+    const resourcePolicy =
+      operationSnapshot?.resourcePolicy ?? orderedSnapshots.at(-1)?.resourcePolicy;
+    const resourceDiagnostics = this.mergeResourceDiagnostics(orderedSnapshots);
     return {
       ...this.baseSnapshot,
       vault: operationSnapshot?.vault ?? orderedSnapshots.at(-1)?.vault ?? this.baseSnapshot.vault,
@@ -445,7 +449,33 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       ...(integrations ? { integrations } : {}),
       editorUpdate: operationSnapshot?.editorUpdate ?? null,
       pluginSurface: visibleSurface,
+      ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),
+      ...(resourcePolicy ? { resourcePolicy } : {}),
     };
+  }
+
+  private mergeResourceDiagnostics(
+    snapshots: readonly RuntimeSnapshot[],
+  ): PluginResourceDiagnostic[] {
+    const diagnostics = snapshots.flatMap((snapshot) => snapshot.resourceDiagnostics ?? []);
+    const seen = new Set<string>();
+    return diagnostics
+      .filter((diagnostic) => {
+        const key = [
+          diagnostic.pluginId ?? "",
+          diagnostic.reason,
+          diagnostic.metric ?? "",
+          diagnostic.operation ?? "",
+          diagnostic.startedAt,
+          diagnostic.observedAt,
+        ].join("\0");
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .slice(-100);
   }
 
   private mergeIntegrations(

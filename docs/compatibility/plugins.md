@@ -215,15 +215,26 @@ Custom views await `View.onOpen` before applying state and await `View.onClose` 
 unload. A failing close hook is reported without preventing component cleanup, workspace
 unregistration, or container removal.
 
-Every plugin receives its own renderer process and every renderer request has a bounded deadline.
-A timeout, invalid response, failed IPC send, or renderer crash is fatal only to that plugin's
-compatibility process. Threadleaf hides and terminates the culprit view, creates a clean renderer
-with the same vault boundary, keeps sibling plugins and the native workspace responsive, and
-reports the culprit as stopped. It does not automatically replay a plugin after an unknown failure
-point. Reload all or an individual plugin is an explicit new activation. A Linux production-path
-fixture starts two plugins in distinct renderer PIDs, blocks one in an infinite loop, proves only
-that PID is replaced, executes the healthy sibling immediately, and verifies clean reload. Run it
-with `pnpm test:plugin-recovery`.
+Every plugin receives its own renderer process and every renderer request has a bounded deadline
+keyed by the versioned `PluginRendererOperation` surface. The default policy gives the `initialize`
+request 10 seconds, `close` 1 second for shutdown, and keeps the other operation budgets
+explicit in the diagnostic snapshot. The main process also applies a 512 MiB renderer working-set
+ceiling and a sustained 60 percent CPU budget, sampled once per second. CPU enforcement waits for a
+five-second startup quiet window and three consecutive over-budget samples. These are conservative
+trusted-host guardrails, not OS sandboxing or hard isolation from Node-capable plugin I/O.
+
+A timeout, available memory breach, sustained CPU breach, invalid response, failed IPC send, or
+renderer crash is fatal only to that plugin's compatibility process. Threadleaf hides and
+terminates the culprit view, creates a clean renderer with the same vault boundary, keeps sibling
+plugins and the native workspace responsive, and reports the culprit as stopped. Missing metrics
+are reported as unavailable and never become fabricated measurements or a kill decision. Resource
+diagnostics retain the reason, operation where applicable, measured value, configured budget,
+sample count, and timestamps; the privacy-safe support bundle includes those fields without plugin
+identity. It does not automatically replay a plugin after an unknown failure point. Reload all or
+an individual plugin is an explicit new activation. A Linux production-path fixture starts two
+plugins in distinct renderer PIDs, blocks one in an infinite loop, proves only that PID is replaced,
+executes the healthy sibling immediately, and verifies the configured non-default deadline and
+clean reload. Run it with `pnpm test:plugin-recovery`.
 
 Plugin stylesheets are applied only while the corresponding package is selected, compatibility
 mode is enabled, and the exact bundle grant remains current. Imports and legacy executable CSS
@@ -267,7 +278,6 @@ place for manual review.
 
 ## Remaining work
 
-- Per-plugin process isolation plus CPU, memory, and operation-specific resource budgets.
 - Explicit apply, rollback, and conflict handling for reviewed migration candidates.
 - A Threadleaf-owned, open-licensed package directory backed by reviewed releases.
 - Broader workspace, editor, settings-control, conversion, adapter-mutation, file, and

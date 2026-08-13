@@ -119,3 +119,15 @@ canvas leaf, plugin-owned release modal, all 69 commands, and every registered v
 processor, suggester, ribbon, and settings tab are gone, then repeats reload and unload without a
 duplicate or captured runtime error. These results do not imply inline wiki-embed rendering or
 every export format.
+
+## Compatibility-host resource policy
+
+Every Electron compatibility request is measured against the versioned
+`PluginRendererOperation` surface. The policy has explicit startup (`initialize`) and close
+deadlines, plus per-plugin renderer memory and sustained CPU guardrails owned by the main process.
+CPU enforcement waits through its startup quiet window and requires consecutive over-budget
+samples. Electron metrics are injectable for deterministic tests; when production metrics are
+missing or invalid, the snapshot says unavailable and Threadleaf does not infer a value or kill a
+plugin. Breaches produce structured diagnostics and terminate only the owning compatibility
+renderer, after which explicit reload is required. This is a trusted-host availability control,
+not OS sandboxing or hard isolation from Node-capable plugin code.

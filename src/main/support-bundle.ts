@@ -89,6 +89,12 @@ function customBindingCount(settings: AppSettingsSnapshot): number {
   }).length;
 }
 
+function resourceDiagnosticsForSupport(runtime: RuntimeSnapshot) {
+  return (runtime.resourceDiagnostics ?? []).map(
+    ({ pluginId: _pluginId, ...diagnostic }) => diagnostic,
+  );
+}
+
 export function createSupportBundleData(input: SupportBundleInput) {
   const { runtime, settings } = input;
   const plugins = runtime.plugins ?? (runtime.plugin ? [runtime.plugin] : []);
@@ -170,6 +176,22 @@ export function createSupportBundleData(input: SupportBundleInput) {
         viewTypes: integrations?.viewTypes.length ?? 0,
       },
       surfaceOpen: runtime.pluginSurface !== null && runtime.pluginSurface !== undefined,
+      resourcePolicy: {
+        version: runtime.resourcePolicy?.version ?? null,
+        state: runtime.resourcePolicy?.state ?? "unavailable",
+        operationDeadlinesMs: runtime.resourcePolicy?.operationDeadlinesMs ?? null,
+        memoryCeilingBytes: runtime.resourcePolicy?.memoryCeilingBytes ?? null,
+        cpuBudgetPercent: runtime.resourcePolicy?.cpuBudgetPercent ?? null,
+        cpuSampleIntervalMs: runtime.resourcePolicy?.cpuSampleIntervalMs ?? null,
+        cpuStartupQuietWindowMs: runtime.resourcePolicy?.cpuStartupQuietWindowMs ?? null,
+        cpuConsecutiveSamples: runtime.resourcePolicy?.cpuConsecutiveSamples ?? null,
+        metrics: {
+          sampledAt: runtime.resourcePolicy?.metrics.sampledAt ?? null,
+          memoryAvailable: runtime.resourcePolicy?.metrics.memoryAvailable ?? false,
+          cpuAvailable: runtime.resourcePolicy?.metrics.cpuAvailable ?? false,
+        },
+        diagnostics: resourceDiagnosticsForSupport(runtime),
+      },
     },
     appearance: {
       safeMode: input.appearanceSafeMode,

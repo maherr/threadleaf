@@ -93,31 +93,7 @@ export interface PluginVaultTrashRequest {
 
 export type PluginVaultTrashResponse = PluginVaultRenameResponse;
 
-export type PluginRendererOperation =
-  | "close"
-  | "close-view"
-  | "get-snapshot"
-  | "initialize"
-  | "load-plugin"
-  | "mark-layout-ready"
-  | "open-settings"
-  | "open-view"
-  | "reload-plugin"
-  | "run-command"
-  | "unload-all"
-  | "unload-plugin";
-
-export interface PluginRendererRequest {
-  id: string;
-  operation: PluginRendererOperation;
-  payload?: Record<string, unknown>;
-}
-
-export type PluginRendererResponse =
-  | { id: string; ok: true; value: RuntimeSnapshot | null }
-  | { id: string; ok: false; error: string };
-
-const operations = new Set<PluginRendererOperation>([
+export const pluginRendererOperations = [
   "close",
   "close-view",
   "get-snapshot",
@@ -130,7 +106,21 @@ const operations = new Set<PluginRendererOperation>([
   "run-command",
   "unload-all",
   "unload-plugin",
-]);
+] as const;
+
+export type PluginRendererOperation = (typeof pluginRendererOperations)[number];
+
+export interface PluginRendererRequest {
+  id: string;
+  operation: PluginRendererOperation;
+  payload?: Record<string, unknown>;
+}
+
+export type PluginRendererResponse =
+  | { id: string; ok: true; value: RuntimeSnapshot | null }
+  | { id: string; ok: false; error: string };
+
+const operations = new Set<PluginRendererOperation>(pluginRendererOperations);
 
 export function parsePluginRendererRequest(value: unknown): PluginRendererRequest {
   if (!value || typeof value !== "object") {

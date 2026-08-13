@@ -368,11 +368,20 @@ retained as diagnostic state and does not prevent later packages from loading. R
 clean unload before activation. Workspace shutdown unloads every instance.
 
 Each compatibility plugin runs in its own isolated renderer and transient session partition. Every
-request has a bounded deadline. If a request wedges, violates the protocol, fails to send, or loses
-its renderer, Threadleaf terminates only that plugin process. A fresh renderer receives the same
+request has a bounded deadline from the versioned `PluginRendererOperation` surface, including a
+10-second `initialize` request budget and 1-second `close` shutdown budget. The main process owns
+the conservative resource policy: a 512 MiB renderer working-set ceiling, a 60 percent CPU budget,
+one-second samples, a five-second startup quiet window, and three consecutive over-budget samples
+before CPU enforcement. An injectable metrics provider reports renderer process measurements when
+the host can supply them. Missing or malformed CPU or memory measurements are explicitly marked
+unavailable and never become fabricated zeros or a kill decision. A deadline, memory, or sustained
+CPU breach records a structured diagnostic with its reason, operation where applicable, measured
+value, configured budget, sample count, and timestamps, then terminates only the owning renderer.
+The policy is a guardrail in the trusted compatibility host, not OS sandboxing or hard isolation
+from Node-capable plugin I/O. Resource timers, listeners, and pending request deadlines are cleared
+on close, renderer crash, replacement, and application shutdown. A fresh renderer receives the same
 vault boundary and surface policy when the user explicitly reloads the culprit. Healthy siblings
-and the sandboxed native workspace continue running. Per-plugin CPU and memory budgets remain
-future work.
+and the native workspace continue running.
 
 Lifecycle ownership includes commands, event registrations, view and extension factories,
 processors, editor suggestions, ribbons, status items, settings tabs, leaves, and transient modals

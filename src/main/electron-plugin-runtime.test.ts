@@ -7,6 +7,7 @@ interface FakeWebContents extends EventEmitter {
   close: ReturnType<typeof vi.fn>;
   forcefullyCrashRenderer: ReturnType<typeof vi.fn>;
   isDestroyed(): boolean;
+  getProcessId(): number;
 }
 
 const electronMock = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ vi.mock("electron", async () => {
       this.destroyed = true;
     });
     readonly forcefullyCrashRenderer = vi.fn();
+    readonly getProcessId = vi.fn(() => 42);
     readonly session = {
       setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
@@ -33,7 +35,11 @@ vi.mock("electron", async () => {
       queueMicrotask(() => this.emit("ipc-message", {}, readyChannel));
     });
     readonly send = vi.fn((_channel: string, request: { id: string; operation: string }) => {
-      if (request.operation !== "initialize" && request.operation !== "open-view") {
+      if (
+        request.operation !== "initialize" &&
+        request.operation !== "open-view" &&
+        request.operation !== "get-snapshot"
+      ) {
         return;
       }
       const value = emptySnapshot(
@@ -113,6 +119,8 @@ describe("ElectronPluginRuntime", () => {
     const webContents = electronMock.views[0]?.webContents;
     expect(webContents?.forcefullyCrashRenderer).toHaveBeenCalledOnce();
     expect(webContents?.close).toHaveBeenCalledOnce();
+    expect(webContents?.listenerCount("ipc-message")).toBe(0);
+    expect(webContents?.listenerCount("render-process-gone")).toBe(0);
     expect(visibility.mock.calls.map((call) => call[1])).toEqual([true, false]);
     await expect(runtime.getSnapshot()).rejects.toBeInstanceOf(FatalPluginRuntimeError);
   });
@@ -130,10 +138,85 @@ describe("ElectronPluginRuntime", () => {
 
     expect(webContents?.forcefullyCrashRenderer).not.toHaveBeenCalled();
     expect(webContents?.close).toHaveBeenCalledOnce();
+    expect(webContents?.listenerCount("ipc-message")).toBe(0);
+    expect(webContents?.listenerCount("render-process-gone")).toBe(0);
     await expect(runtime.getSnapshot()).rejects.toMatchObject({
       name: "FatalPluginRuntimeError",
       operation: "get-snapshot",
     });
+  });
+
+  it("carries a non-default operation deadline through the Electron request seam", async () => {
+    const runtime = await ElectronPluginRuntime.open({
+      hostHtmlPath: "/app/plugin-host.html",
+      packageJsonPath: "/app/package.json",
+      resourcePolicy: { operationDeadlinesMs: { "run-command": 10 } },
+      vaultPath: "/vault",
+    });
+
+    await expect(runtime.runCommand("hung-command")).rejects.toMatchObject({
+      name: "FatalPluginRuntimeError",
+      operation: "run-command",
+      resourceDiagnostic: {
+        reason: "operation-deadline",
+        operation: "run-command",
+        measuredValue: expect.any(Number),
+        configuredBudget: 10,
+        unit: "milliseconds",
+      },
+    });
+  });
+
+  it("reports unavailable metrics without inventing measurements or killing the renderer", async () => {
+    const runtime = await ElectronPluginRuntime.open({
+      hostHtmlPath: "/app/plugin-host.html",
+      metricsProvider: { sample: () => null },
+      operationTimeoutMs: 10,
+      packageJsonPath: "/app/package.json",
+      vaultPath: "/vault",
+    });
+
+    const snapshot = await runtime.getSnapshot();
+    expect(snapshot.resourcePolicy).toMatchObject({
+      state: "monitoring",
+      metrics: {
+        cpuAvailable: false,
+        cpuPercent: null,
+        memoryAvailable: false,
+        memoryBytes: null,
+      },
+    });
+    expect(snapshot.resourceDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "metrics-unavailable", metric: "cpu" }),
+        expect.objectContaining({ reason: "metrics-unavailable", metric: "memory" }),
+      ]),
+    );
+    expect(electronMock.views[0]?.webContents.forcefullyCrashRenderer).not.toHaveBeenCalled();
+    await runtime.close();
+  });
+
+  it("terminates startup when the renderer crosses an available memory ceiling", async () => {
+    await expect(
+      ElectronPluginRuntime.open({
+        hostHtmlPath: "/app/plugin-host.html",
+        metricsProvider: { sample: () => ({ cpuPercent: 1, memoryBytes: 101 }) },
+        packageJsonPath: "/app/package.json",
+        resourcePolicy: { memoryCeilingBytes: 100 },
+        vaultPath: "/vault",
+      }),
+    ).rejects.toMatchObject({
+      name: "FatalPluginRuntimeError",
+      operation: "resource-monitor",
+      resourceDiagnostic: {
+        reason: "memory-ceiling",
+        metric: "memory",
+        measuredValue: 101,
+        configuredBudget: 100,
+      },
+    });
+    expect(electronMock.views[0]?.webContents.forcefullyCrashRenderer).toHaveBeenCalledOnce();
+    expect(electronMock.views[0]?.webContents.close).toHaveBeenCalledOnce();
   });
 
   it("bounds graceful shutdown without crashing a busy renderer", async () => {
@@ -149,5 +232,7 @@ describe("ElectronPluginRuntime", () => {
 
     expect(webContents?.forcefullyCrashRenderer).not.toHaveBeenCalled();
     expect(webContents?.close).toHaveBeenCalledOnce();
+    expect(webContents?.listenerCount("ipc-message")).toBe(0);
+    expect(webContents?.listenerCount("render-process-gone")).toBe(0);
   });
 });

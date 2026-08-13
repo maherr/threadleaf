@@ -1,13 +1,23 @@
 import type { ActionRegistry } from "../application/action-registry";
-import type { PluginEditorContext, RuntimeSnapshot } from "../shared/contracts";
+import type {
+  PluginEditorContext,
+  PluginResourceDiagnostic,
+  RuntimeSnapshot,
+} from "../shared/contracts";
 
 export class FatalPluginRuntimeError extends Error {
   readonly operation: string;
+  readonly resourceDiagnostic: PluginResourceDiagnostic | null;
 
-  constructor(operation: string, message: string) {
+  constructor(
+    operation: string,
+    message: string,
+    resourceDiagnostic: PluginResourceDiagnostic | null = null,
+  ) {
     super(message);
     this.name = "FatalPluginRuntimeError";
     this.operation = operation;
+    this.resourceDiagnostic = resourceDiagnostic;
   }
 }
 

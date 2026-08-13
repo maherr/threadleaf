@@ -195,11 +195,16 @@ Startup plugin safe mode preserves the saved selection while loading no communit
 Each compatibility host remains an explicitly trusted desktop runtime in a separate transient
 Electron session with Node integration, a
 browser `connect-src 'none'` policy, denied browser permissions, blocked popups and
-navigation, typed lifecycle messages, operation timeouts, and renderer-exit attribution. Each
-plugin gets its own renderer process and transient partition. A timed-out operation, invalid
-response, send failure, or renderer crash terminates only the culprit process. Threadleaf starts a
-clean renderer, keeps healthy sibling plugins and the native workspace responsive, and marks the
-culprit for explicit reload instead of assuming its in-memory state survived. The host's
+navigation, typed lifecycle messages, operation deadlines, and renderer-exit attribution. Each
+plugin gets its own renderer process and transient partition. A timed-out operation, available
+memory breach, sustained CPU breach, invalid response, send failure, or renderer crash terminates
+only the culprit process. The default guardrail is a 512 MiB renderer working-set ceiling and
+sustained 60 percent CPU budget after a five-second startup quiet window and three consecutive
+samples. If Electron cannot provide valid metrics, Threadleaf reports them as unavailable and does
+not fabricate a measurement or kill the plugin. These are trusted-host guardrails, not OS
+sandboxing or hard isolation from Node-capable plugin I/O. Threadleaf starts a clean renderer,
+keeps healthy sibling plugins and the native workspace responsive, and marks the culprit for
+explicit reload instead of assuming its in-memory state survived. The host's
 independently implemented DOM and UI base APIs activate the unchanged Excalidraw 2.25.3 release
 bundle in both a disposable DOM probe and the production compatibility renderer. Excalidraw
 registers two views, its commands, a ribbon action, a settings tab, and a Markdown processor. An

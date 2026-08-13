@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { type AppSettingsSnapshot, defaultKeyBindings } from "../shared/key-bindings";
+import { defaultPluginResourcePolicy } from "../shared/plugin-resource-policy";
 import {
   createSupportBundleData,
   createSupportBundleMarkdown,
@@ -428,6 +429,22 @@ describe("support bundle", () => {
           viewTypes: 2,
         },
         surfaceOpen: true,
+        resourcePolicy: {
+          version: null,
+          state: "unavailable",
+          operationDeadlinesMs: null,
+          memoryCeilingBytes: null,
+          cpuBudgetPercent: null,
+          cpuSampleIntervalMs: null,
+          cpuStartupQuietWindowMs: null,
+          cpuConsecutiveSamples: null,
+          metrics: {
+            sampledAt: null,
+            memoryAvailable: false,
+            cpuAvailable: false,
+          },
+          diagnostics: [],
+        },
       },
       appearance: {
         safeMode: true,
@@ -471,5 +488,59 @@ describe("support bundle", () => {
     for (const canary of privateCanaries) {
       expect(report).not.toContain(canary);
     }
+  });
+
+  it("includes resource diagnostics without exporting plugin identity", () => {
+    const runtime = {
+      ...runtimeFixture(),
+      resourcePolicy: {
+        version: 1 as const,
+        operationDeadlinesMs: { ...defaultPluginResourcePolicy.operationDeadlinesMs },
+        memoryCeilingBytes: defaultPluginResourcePolicy.memoryCeilingBytes,
+        cpuBudgetPercent: defaultPluginResourcePolicy.cpuBudgetPercent,
+        cpuSampleIntervalMs: defaultPluginResourcePolicy.cpuSampleIntervalMs,
+        cpuStartupQuietWindowMs: defaultPluginResourcePolicy.cpuStartupQuietWindowMs,
+        cpuConsecutiveSamples: defaultPluginResourcePolicy.cpuConsecutiveSamples,
+        state: "monitoring" as const,
+        metrics: {
+          sampledAt: "2026-08-12T17:00:00.000Z",
+          memoryBytes: 1,
+          memoryAvailable: true,
+          cpuPercent: null,
+          cpuAvailable: false,
+          cpuBreaches: 0,
+          inStartupQuietWindow: false,
+        },
+      },
+      resourceDiagnostics: [
+        {
+          pluginId: "PRIVATE_PLUGIN_ID",
+          reason: "operation-deadline" as const,
+          metric: null,
+          operation: "run-command" as const,
+          available: true,
+          measuredValue: 350,
+          configuredBudget: 350,
+          unit: "milliseconds" as const,
+          sampleCount: null,
+          startedAt: "2026-08-12T16:59:59.000Z",
+          observedAt: "2026-08-12T17:00:00.000Z",
+        },
+      ],
+    };
+    const data = createSupportBundleData({ ...supportInput, runtime });
+    expect(data.plugins.resourcePolicy).toMatchObject({
+      version: 1,
+      state: "monitoring",
+      diagnostics: [
+        {
+          reason: "operation-deadline",
+          operation: "run-command",
+          measuredValue: 350,
+          configuredBudget: 350,
+        },
+      ],
+    });
+    expect(JSON.stringify(data)).not.toContain("PRIVATE_PLUGIN_ID");
   });
 });

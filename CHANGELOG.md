@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Versioned main-process resource policy for compatibility renderers, with operation-specific
+  startup and close deadlines, conservative 512 MiB memory and sustained 60 percent CPU
+  guardrails, injectable deterministic metrics and clocks, explicit unavailable metrics, structured
+  diagnostics, culprit-only recovery, lifecycle cleanup, support-bundle projection, and a built
+  Xvfb deadline/isolation fixture. These are trusted-host guardrails, not OS sandboxing.
 - Generated machine-readable and Markdown plugin compatibility registries with exact plugin and
   Threadleaf version binding, bundle digests, static authority classes, platform limits, named
   workflow gates, failures, limitations, deterministic drift checks, and a live exact-release
