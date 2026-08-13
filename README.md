@@ -247,20 +247,30 @@ light/dark chrome also render, and its stylesheet is preserved while four remote
 replaced with inert embedded assets. The runtime is still trusted:
 Node-capable plugin code can perform its own I/O.
 
-Settings now includes a read-only Migration preview for existing Obsidian behavior. It reports
-enabled and installed plugins, private settings-file shape without keys or values, reviewed hotkey
+Settings now includes a reviewed Migration flow for existing Obsidian behavior. It reports enabled
+and installed plugins, private settings-file shape without keys or values, reviewed hotkey
 candidates, appearance assets, and restorable note tabs through bounded contained reads. Refreshing
-the preview does not load plugins or change Threadleaf settings, `.obsidian/`, or vault files. There
-is no Apply action yet; behavior import remains an explicit future transaction rather than a side
-effect of opening a vault.
+the preview starts no new source-driven migration. It does not load plugin code or write `.obsidian/`
+or vault Markdown; before reading the source, it recovers any already-journaled explicit Apply, which
+may persist its private workspace state or surface a conflict. After selecting one or more `ready`
+candidates, Apply checked items commits only those reviewed candidates
+to Threadleaf's private application state outside the vault, with receipt validation, interruption
+recovery, and rollback of the latest committed apply. It never copies plugin setting values or
+writes `.obsidian/` or vault Markdown; unsupported, missing, conflicting, and other non-ready
+candidates, plus stale plans, remain blocked, and plugin runtime changes require an explicit reload
+or restart.
 
 The current Linux build has crossed the daily-drive beta handoff: real-scale copied-vault use,
 editor and crash recovery, isolated compatibility plugins, unchanged Excalidraw workflows,
 installable packages, privacy-safe feedback, and a distinct-package upgrade and rollback sequence
-all pass. Keep an ordinary external backup while field testing. Live Preview deliberately leaves
-complex or ambiguous constructs as visible source; fine-grained intra-token mapping and richer
-inline transclusion remain open. Broad community-plugin compatibility remains measured per plugin
-rather than assumed.
+all pass. Keep an ordinary external backup while field testing. Live Preview now provides
+fine-grained source/decorated cursor mapping and bounded source-backed inline note transclusion. It
+deliberately keeps frontmatter, tables, HTML, malformed links, nested destinations, and other
+unsupported or ambiguous constructs visible as source. Math is not rendered as math and has no
+complete editing contract, so complex constructs may remain source or receive only narrower existing
+decorations. Completing rendered and editable support for tables, math, diagrams, and large-document
+editing beyond the current source fallback remains open.
+Broad community-plugin compatibility remains measured per plugin rather than assumed.
 
 Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather
 than a development server. A fresh package opens an external, read-only demo vault, keeps the
@@ -394,11 +404,16 @@ locks its enable control until another reviewed install.
 When a loaded plugin registers its own settings tab, an Options control opens that unchanged tab in
 the compatibility surface. Closing it runs the plugin's normal settings cleanup and save lifecycle.
 
-The Migration preview section reads known `.obsidian` metadata without loading community code. It
-shows what could be carried into Threadleaf and what still needs review. Plugin settings values stay
-hidden, Obsidian-enabled plugins remain disabled until explicitly selected in Community plugins,
-and Refresh performs no import. See the [migration contract](docs/compatibility/migration.md) for
-source limits and candidate rules.
+The Migration section reads known `.obsidian` metadata without loading community code. It shows what
+could be carried into Threadleaf and what still needs review. Plugin settings values stay hidden,
+Obsidian-enabled plugins are never loaded or selected automatically. Refreshing the preview starts
+no new source-driven migration. It does not load plugin code or write `.obsidian/` or vault Markdown;
+before reading the source, it recovers any already-journaled explicit Apply, which may persist its
+private workspace state or surface a conflict. Select ready candidates and use Apply checked items to
+write only private Threadleaf state outside the vault. Apply never writes `.obsidian/` or vault Markdown, and
+changed plugin selection takes effect only after an explicit reload or restart. Roll back last apply
+remains available unless newer private state creates a rollback conflict. See the [migration
+contract](docs/compatibility/migration.md) for source limits and candidate rules.
 
 Development and verification runs can bypass the native picker with an isolated vault copy:
 
