@@ -426,6 +426,23 @@ Installed plugins outside that surface can fail during activation and are not cl
 merely because discovery succeeds. See the
 [community plugin compatibility contract](compatibility/plugins.md).
 
+### Native extension capability boundary
+
+Native extensions do not execute through the CommonJS compatibility host. Their version 1 manifest,
+capability IDs, public ports, grant store, and lifecycle host live in `src/native-extension/` and
+are documented in [Native extension capability contract](compatibility/native-extensions.md).
+Registration is review-only: the host hashes exact bundle bytes and the authority declaration before
+any entrypoint runs. Each grant is private to one vault and binds both hashes, the extension ID, and
+the selected capabilities. A byte change, revoked grant, safe mode, vault identity mismatch, or
+authority growth blocks the relevant execution or port call until explicit review.
+
+The portable API is a narrow port contract for bounded vault reads, revision-checked writes, and
+other explicitly supplied adapters. Missing adapters produce typed unavailable failures. Desktop
+navigation, subprocess, secret, and dynamic-code adapters are labeled trusted desktop escapes.
+Their inspection reports `sandboxed: false`: this first host enforces an in-process capability
+boundary and does not claim OS-level sandboxing or protection against an extension that imports a
+host module outside the SDK. The compatibility host remains a separate trusted runtime.
+
 ### Watcher and index model
 
 Filesystem notifications are hints, not truth. The watcher emits debounced batches with a stream

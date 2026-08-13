@@ -1,0 +1,20 @@
+{
+  "manifestVersion": 1,
+  "apiVersion": "1.0",
+  "id": "threadleaf.portable-summary",
+  "name": "Portable summary fixture",
+  "version": "1.0.0",
+  "entrypoint": "bundle.js",
+  "portable": true,
+  "desktopOnly": false,
+  "capabilities": [
+    {
+      "id": "vault.read",
+      "reason": "Read one selected note."
+    },
+    {
+      "id": "vault.write",
+      "reason": "Write the generated summary beside the selected note."
+    }
+  ]
+}

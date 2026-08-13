@@ -186,6 +186,14 @@ committed operation. The current source adapter reads the public `obsidian-relea
 runtime but does not redistribute it or represent that unlicensed repository as Threadleaf's future
 open directory. The source interface and review protocol are replaceable open code.
 
+Native Threadleaf extensions use a separate version 1 capability host and SDK. The checked-in
+portable fixture reads a note and writes a summary through public vault ports. Exact bundle bytes,
+authority declarations, and private per-vault grants are reviewed before execution; stale grants,
+revocation, safe mode, undeclared calls, unavailable ports, and cross-vault requests fail with typed
+diagnostics. The first host reports `sandboxed: false`: it is an in-process capability boundary,
+not an OS sandbox. Navigation, subprocesses, secrets, and dynamic code are explicitly labeled
+trusted desktop escapes. See [Native extension capability contract](docs/compatibility/native-extensions.md).
+
 Threadleaf's separate [generated compatibility registry](docs/compatibility/registry.md) publishes
 exact plugin and Threadleaf versions, bundle digests, static authority classes, platform limits,
 supported workflows, executable evidence gates, known failures, limitations, and last-tested
@@ -296,6 +304,7 @@ both directions before an artifact is handed off.
 - [Compatibility contract](docs/compatibility/contract.md)
 - [Theme and CSS compatibility](docs/compatibility/themes.md)
 - [Community plugin compatibility](docs/compatibility/plugins.md)
+- [Native extension capability contract](docs/compatibility/native-extensions.md)
 - [Obsidian behavior migration](docs/compatibility/migration.md)
 - [Release engineering](docs/releases.md)
 - [Roadmap](docs/roadmap.md)

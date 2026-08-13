@@ -20,6 +20,17 @@
     "node": ">=22.0.0"
   },
   "main": "dist/main/main.cjs",
+  "exports": {
+    ".": "./dist/main/main.cjs",
+    "./native-extension": {
+      "types": "./src/native-extension/index.ts",
+      "default": "./dist/main/native-extension.cjs"
+    },
+    "./native-extension/sdk": {
+      "types": "./src/native-extension/sdk.ts",
+      "default": "./dist/main/native-extension-sdk.cjs"
+    }
+  },
   "bin": {
     "threadleaf": "dist/main/cli.cjs"
   },

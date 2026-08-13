@@ -158,3 +158,18 @@ missing or invalid, the snapshot says unavailable and Threadleaf does not infer 
 plugin. Breaches produce structured diagnostics and terminate only the owning compatibility
 renderer, after which explicit reload is required. This is a trusted-host availability control,
 not OS sandboxing or hard isolation from Node-capable plugin code.
+
+## Native extension capability fixture
+
+Native Threadleaf extensions use the separate version 1 capability host described in
+[Native extension capability contract](native-extensions.md). A manifest review computes exact
+bundle and authority digests; a private per-vault grant must match both before an entrypoint or
+public port call can run. A changed bundle, authority growth, stale grant, revocation, safe mode,
+cross-vault request, undeclared request, missing adapter, timeout, and teardown each have a typed
+failure. The portable fixture reads a note and writes a summary only through public vault ports.
+
+This fixture measures a capability boundary, not universal native-code isolation. The host reports
+`sandboxed: false` because this first implementation is in-process. Desktop navigation,
+subprocess, secrets, and dynamic-code ports are explicit trusted desktop escapes; they are not
+portable and must not be described as sandboxed. Existing Obsidian compatibility plugins remain in
+the separately labeled trusted runtime.

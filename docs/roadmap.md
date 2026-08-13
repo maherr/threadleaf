@@ -275,12 +275,15 @@ Exit gate: selected high-value plugins complete named workflows against public f
 
 ## Phase 4: Native extension platform
 
-- [ ] Stable capability vocabulary for vault access, network access, subprocesses, secrets,
-      clipboard, notifications, workspace mutation, and editor extensions.
-- [ ] Permission declarations, install-time review, runtime inspection, revocation, and safe
+- [x] Ship the version 1 manifest, capability vocabulary, public ports, exact-bundle grants,
+      private per-vault review, typed denials, safe mode, revocation, and authority-growth checks.
+- [ ] Extend the capability vocabulary with notifications and later workspace/editor surfaces
+      while preserving the versioned portable and desktop-only classifications.
+- [x] Permission declarations, install-time review, runtime inspection, revocation, and safe
       degradation when a capability is unavailable.
-- [ ] Versioned SDK, type declarations, API reference, conformance suite, signed manifests,
-      marketplace metadata, automated review, compatibility CI, and a rapid delisting path.
+- [x] Versioned SDK, type declarations, API reference, and conformance suite.
+- [ ] Add signed manifests, marketplace metadata, automated review, compatibility CI, and a rapid
+      delisting path.
 - [ ] Sandboxed native extensions for portable workflows and a clearly labeled trusted desktop
       compatibility tier for plugins whose existing contracts require Node or Electron authority.
 - [ ] First-party features moved out of the kernel where practical so third-party extensions use

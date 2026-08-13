@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://threadleaf.org/schemas/native-extension-manifest.v1.json",
+  "title": "Threadleaf native extension manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestVersion",
+    "apiVersion",
+    "id",
+    "name",
+    "version",
+    "entrypoint",
+    "portable",
+    "desktopOnly",
+    "capabilities"
+  ],
+  "properties": {
+    "manifestVersion": { "const": 1 },
+    "apiVersion": { "const": "1.0" },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "version": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "entrypoint": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$"
+    },
+    "portable": { "type": "boolean" },
+    "desktopOnly": { "type": "boolean" },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 10,
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "vault.read",
+              "vault.write",
+              "network",
+              "clipboard",
+              "external-navigation",
+              "editor-ui",
+              "workspace-ui",
+              "subprocess",
+              "secrets",
+              "dynamic-code"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "vault.read",
+                  "vault.write",
+                  "network",
+                  "clipboard",
+                  "external-navigation",
+                  "editor-ui",
+                  "workspace-ui",
+                  "subprocess",
+                  "secrets",
+                  "dynamic-code"
+                ]
+              },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 1000 }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "portable": { "const": true },
+        "desktopOnly": { "const": false }
+      }
+    },
+    {
+      "properties": {
+        "portable": { "const": false },
+        "desktopOnly": { "const": true }
+      }
+    }
+  ]
+}
