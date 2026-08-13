@@ -9440,15 +9440,24 @@ function replaceEditorDocument(
   vaultId: string | null,
   selection?: { anchor: number; head?: number },
 ): void {
+  const previousLoadedNote = loadedNote;
+  const previousLoadedVaultId = loadedVaultId;
+  // Live Preview snapshots its async owner while the replacement state is
+  // created. Publish the new owner first so that creating the replacement
+  // editor cannot issue another request for the note that is being removed.
+  loadedNote = note;
+  loadedVaultId = note ? vaultId : null;
   const content = note?.content ?? "";
   syncingEditor = true;
   try {
     editor.setState(createEditorState(content, selection));
+  } catch (error) {
+    loadedNote = previousLoadedNote;
+    loadedVaultId = previousLoadedVaultId;
+    throw error;
   } finally {
     syncingEditor = false;
   }
-  loadedNote = note;
-  loadedVaultId = note ? vaultId : null;
   loadedTextRepresentation = externalTextRepresentation(content);
   editorTextUndoHistory = [];
   editorTextRedoHistory = [];

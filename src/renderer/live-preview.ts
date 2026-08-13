@@ -1400,6 +1400,9 @@ class LinkWidget extends WidgetType {
 }
 
 class EmbedWidget extends WidgetType {
+  readonly ownerPath: string | null;
+  readonly ownerVaultId: string | null;
+
   constructor(
     readonly from: number,
     readonly to: number,
@@ -1407,6 +1410,8 @@ class EmbedWidget extends WidgetType {
     readonly options: LivePreviewOptions,
   ) {
     super();
+    this.ownerPath = options.sourceNotePath();
+    this.ownerVaultId = options.expectedVaultId();
   }
 
   eq(other: EmbedWidget): boolean {
@@ -1417,8 +1422,8 @@ class EmbedWidget extends WidgetType {
       this.link.target === other.link.target &&
       this.link.subpath === other.link.subpath &&
       this.link.label === other.link.label &&
-      this.options.sourceNotePath() === other.options.sourceNotePath() &&
-      this.options.expectedVaultId() === other.options.expectedVaultId()
+      this.ownerPath === other.ownerPath &&
+      this.ownerVaultId === other.ownerVaultId
     );
   }
 
@@ -1428,7 +1433,7 @@ class EmbedWidget extends WidgetType {
     card.tabIndex = 0;
     card.setAttribute("role", "group");
     card.ariaLabel = `Embedded note ${this.link.label}`;
-    const ownerPath = this.options.sourceNotePath();
+    const ownerPath = this.ownerPath;
     sourceMetadata(card, this.from, this.to, "transclusion", ownerPath);
     const mark = document.createElement("span");
     mark.className = "tl-live-embed-mark";
@@ -1456,7 +1461,7 @@ class EmbedWidget extends WidgetType {
         activate(event);
       }
     });
-    const expectedVaultId = this.options.expectedVaultId();
+    const expectedVaultId = this.ownerVaultId;
     const loadNoteEmbed = this.options.loadNoteEmbed;
     const isCurrentOwner = (): boolean =>
       card.isConnected &&
@@ -1518,7 +1523,7 @@ class EmbedWidget extends WidgetType {
         depth: number,
       ): Promise<void> => {
         for (const link of links) {
-          if (!link.embed || !isCurrentOwner()) {
+          if (!link.embed || !card.isConnected) {
             continue;
           }
           const target = link.target ?? link.path ?? link.label;
@@ -1701,6 +1706,9 @@ class EmbedWidget extends WidgetType {
 }
 
 class ImageWidget extends WidgetType {
+  readonly ownerPath: string | null;
+  readonly ownerVaultId: string | null;
+
   constructor(
     readonly from: number,
     readonly to: number,
@@ -1708,6 +1716,8 @@ class ImageWidget extends WidgetType {
     readonly options: LivePreviewOptions,
   ) {
     super();
+    this.ownerPath = options.sourceNotePath();
+    this.ownerVaultId = options.expectedVaultId();
   }
 
   eq(other: ImageWidget): boolean {
@@ -1716,8 +1726,8 @@ class ImageWidget extends WidgetType {
       this.to === other.to &&
       this.link.target === other.link.target &&
       this.link.label === other.link.label &&
-      this.options.sourceNotePath() === other.options.sourceNotePath() &&
-      this.options.expectedVaultId() === other.options.expectedVaultId()
+      this.ownerPath === other.ownerPath &&
+      this.ownerVaultId === other.ownerVaultId
     );
   }
 
@@ -1744,8 +1754,8 @@ class ImageWidget extends WidgetType {
       }
     });
 
-    const sourceNotePath = this.options.sourceNotePath();
-    const expectedVaultId = this.options.expectedVaultId();
+    const sourceNotePath = this.ownerPath;
+    const expectedVaultId = this.ownerVaultId;
     if (!sourceNotePath || !expectedVaultId || this.link.external) {
       frame.ariaBusy = "false";
       frame.dataset.status = "unavailable";

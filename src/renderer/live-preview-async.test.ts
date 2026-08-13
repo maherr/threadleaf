@@ -26,10 +26,11 @@ function readyEmbed(
   path: string,
   content: string,
   links: WorkspaceLinkSummary[] = [],
+  vaultId = "vault-a",
 ): VaultNoteEmbedResponse {
   return {
     status: "ready",
-    vaultId: "vault-a",
+    vaultId,
     path,
     revision: "e".repeat(64),
     sourceSize: Buffer.byteLength(content),
@@ -43,12 +44,27 @@ function readyEmbed(
   };
 }
 
+function readyImage(vaultId: string, marker: string): VaultImageResponse {
+  return {
+    status: "ready",
+    vaultId,
+    path: "pixel.png",
+    mimeType: "image/png",
+    size: marker.length,
+    revision: "i".repeat(64),
+    base64: marker,
+  };
+}
+
 const unavailableImage = async (): Promise<VaultImageResponse> => ({
   status: "unavailable",
   vaultId: "vault-a",
   reason: "missing",
   message: "No image fixture was provided.",
 });
+
+type LoadImage = NonNullable<Parameters<typeof createLivePreviewExtension>[0]["loadImage"]>;
+type LoadNoteEmbed = NonNullable<Parameters<typeof createLivePreviewExtension>[0]["loadNoteEmbed"]>;
 
 async function flushAsyncWork(): Promise<void> {
   await Promise.resolve();
@@ -59,7 +75,8 @@ async function flushAsyncWork(): Promise<void> {
 function editorFor(
   source: string,
   current: { path: string; vaultId: string },
-  loadNoteEmbed: NonNullable<Parameters<typeof createLivePreviewExtension>[0]["loadNoteEmbed"]>,
+  loadNoteEmbed: LoadNoteEmbed,
+  loadImage: LoadImage = unavailableImage,
 ): { view: EditorView; host: HTMLElement } {
   const host = document.createElement("div");
   document.body.append(host);
@@ -73,7 +90,7 @@ function editorFor(
           sourceNotePath: () => current.path,
           expectedVaultId: () => current.vaultId,
           activateLink: () => undefined,
-          loadImage: unavailableImage,
+          loadImage,
           loadNoteEmbed,
         }),
       ],
@@ -83,7 +100,126 @@ function editorFor(
   return { view, host };
 }
 
+function replaceOwnerWithEqualLinkTarget(
+  view: EditorView,
+  current: { path: string; vaultId: string },
+  next: { path: string; vaultId: string },
+): void {
+  current.path = next.path;
+  current.vaultId = next.vaultId;
+  // A normal editor update rebuilds the visible decorations while retaining the
+  // same link target. This is the ordering in which a navigation can expose a
+  // dynamic owner callback to WidgetType.eq.
+  const end = view.state.doc.length;
+  view.dispatch({ changes: { from: end, to: end, insert: " " } });
+}
+
 describe("Live Preview async ownership", () => {
+  for (const change of [
+    { label: "pane note", path: "New.md", vaultId: "vault-a" },
+    { label: "vault", path: "Old.md", vaultId: "vault-b" },
+  ]) {
+    it(`replaces an image widget when the ${change.label} changes`, async () => {
+      const oldResponse = deferred<VaultImageResponse>();
+      const newResponse = deferred<VaultImageResponse>();
+      const current = { path: "Old.md", vaultId: "vault-a" };
+      const requests: { path: string; vaultId: string }[] = [];
+      const { view, host } = editorFor(
+        "![[pixel.png|same target]]",
+        current,
+        async () => {
+          throw new Error("The image fixture does not contain note embeds.");
+        },
+        async (sourceNotePath, _target, expectedVaultId) => {
+          requests.push({ path: sourceNotePath, vaultId: expectedVaultId });
+          return sourceNotePath === "Old.md" && expectedVaultId === "vault-a"
+            ? oldResponse.promise
+            : newResponse.promise;
+        },
+      );
+
+      await flushAsyncWork();
+      expect(requests).toEqual([{ path: "Old.md", vaultId: "vault-a" }]);
+      const oldFrame = host.querySelector<HTMLElement>(".tl-live-image");
+      expect(oldFrame).not.toBeNull();
+
+      replaceOwnerWithEqualLinkTarget(view, current, change);
+      await flushAsyncWork();
+      expect(requests).toEqual([
+        { path: "Old.md", vaultId: "vault-a" },
+        { path: change.path, vaultId: change.vaultId },
+      ]);
+
+      const newFrame = host.querySelector<HTMLElement>(".tl-live-image");
+      expect(newFrame).not.toBeNull();
+      expect(newFrame).not.toBe(oldFrame);
+      newResponse.resolve(readyImage(change.vaultId, "new-image"));
+      await flushAsyncWork();
+      expect(newFrame?.dataset.status).toBe("ready");
+      expect(newFrame?.querySelector("img")?.getAttribute("src")).toContain("new-image");
+      expect(host.querySelectorAll(".tl-live-image")).toHaveLength(1);
+      expect(host.querySelectorAll('.tl-live-image[aria-busy="true"]')).toHaveLength(0);
+
+      oldResponse.resolve(readyImage("vault-a", "old-image"));
+      await flushAsyncWork();
+      expect(newFrame?.querySelector("img")?.getAttribute("src")).toContain("new-image");
+      expect(host.querySelectorAll('.tl-live-image[aria-busy="true"]')).toHaveLength(0);
+      view.destroy();
+      host.remove();
+    });
+
+    it(`replaces a note embed widget when the ${change.label} changes`, async () => {
+      const oldResponse = deferred<VaultNoteEmbedResponse>();
+      const newResponse = deferred<VaultNoteEmbedResponse>();
+      const current = { path: "Old.md", vaultId: "vault-a" };
+      const requests: { path: string; vaultId: string }[] = [];
+      const { view, host } = editorFor(
+        "![[Linked Note.md|same target]]",
+        current,
+        async (sourceNotePath, _target, _subpath, expectedVaultId) => {
+          requests.push({ path: sourceNotePath, vaultId: expectedVaultId });
+          return sourceNotePath === "Old.md" && expectedVaultId === "vault-a"
+            ? oldResponse.promise
+            : newResponse.promise;
+        },
+      );
+
+      await flushAsyncWork();
+      expect(requests).toEqual([{ path: "Old.md", vaultId: "vault-a" }]);
+      const oldCard = host.querySelector<HTMLElement>(".tl-live-embed");
+      expect(oldCard).not.toBeNull();
+
+      replaceOwnerWithEqualLinkTarget(view, current, change);
+      await flushAsyncWork();
+      expect(requests).toEqual([
+        { path: "Old.md", vaultId: "vault-a" },
+        { path: change.path, vaultId: change.vaultId },
+      ]);
+
+      const newCard = host.querySelector<HTMLElement>(".tl-live-embed");
+      expect(newCard).not.toBeNull();
+      expect(newCard).not.toBe(oldCard);
+      newResponse.resolve(readyEmbed("Linked Note.md", "new embed", [], change.vaultId));
+      await flushAsyncWork();
+      expect(newCard?.dataset.tlTransclusionStatus).toBe("ready");
+      expect(newCard?.querySelector(".tl-live-embed-preview")?.textContent).toContain("new embed");
+      expect(host.querySelectorAll(".tl-live-embed")).toHaveLength(1);
+      expect(
+        host.querySelectorAll(".tl-live-embed:not([data-tl-transclusion-status='ready'])"),
+      ).toHaveLength(0);
+
+      oldResponse.resolve(readyEmbed("Linked Note.md", "old embed"));
+      await flushAsyncWork();
+      expect(newCard?.querySelector(".tl-live-embed-preview")?.textContent).toContain("new embed");
+      expect(host.querySelectorAll(".tl-live-embed")).toHaveLength(1);
+      expect(
+        host.querySelectorAll(".tl-live-embed:not([data-tl-transclusion-status='ready'])"),
+      ).toHaveLength(0);
+      view.destroy();
+      host.remove();
+    });
+  }
+
   it("does not apply a top-level embed after the owning note changes", async () => {
     const pending = deferred<VaultNoteEmbedResponse>();
     const current = { path: "Current.md", vaultId: "vault-a" };
