@@ -29,6 +29,8 @@ export const ipcChannels = {
   setPluginEnabled: "threadleaf:set-plugin-enabled",
   reloadPlugins: "threadleaf:reload-plugins",
   migrationPreview: "threadleaf:migration-preview",
+  migrationApply: "threadleaf:migration-apply",
+  migrationRollback: "threadleaf:migration-rollback",
   searchVault: "threadleaf:search-vault",
   vaultGraph: "threadleaf:vault-graph",
   loadVaultImage: "threadleaf:load-vault-image",

@@ -171,4 +171,17 @@ describe("AppSettingsController", () => {
     });
     expect(store.saved).toEqual([snapshot.settings]);
   });
+
+  it("refuses a reviewed replacement after a newer private settings write", async () => {
+    const store = new MemorySettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const reviewedBefore = controller.getSnapshot().settings;
+
+    await controller.setKeyBinding("editor.revert-note", "Alt+R");
+
+    await expect(
+      controller.replaceSettings(createDefaultAppSettings(), reviewedBefore),
+    ).rejects.toThrow("private settings changed");
+    expect(controller.getSnapshot().settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+  });
 });

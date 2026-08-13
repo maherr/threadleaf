@@ -31,6 +31,7 @@ export class AppSettingsController {
   readonly #store: AppSettingsStore;
   readonly #listeners = new Set<SettingsListener>();
   #snapshot: AppSettingsSnapshot;
+  #writeTail: Promise<void> = Promise.resolve();
 
   private constructor(store: AppSettingsStore, snapshot: AppSettingsSnapshot) {
     this.#store = store;
@@ -57,17 +58,14 @@ export class AppSettingsController {
     targetId: ShortcutTargetId,
     binding: string | null,
   ): Promise<AppSettingsSnapshot> {
-    const candidate = updateKeyBinding(this.#snapshot.settings, targetId, binding);
-    const settings = await this.#store.save(candidate);
-    return this.adopt(settings);
+    return this.enqueueSave((settings) => updateKeyBinding(settings, targetId, binding));
   }
 
   async resetKeyBindings(): Promise<AppSettingsSnapshot> {
-    const settings = await this.#store.save({
-      ...this.#snapshot.settings,
+    return this.enqueueSave((settings) => ({
+      ...settings,
       keyBindings: { ...defaultKeyBindings },
-    });
-    return this.adopt(settings);
+    }));
   }
 
   getVaultAppearance(vaultId: string): VaultAppearanceSettings {
@@ -78,9 +76,7 @@ export class AppSettingsController {
     vaultId: string,
     appearance: VaultAppearanceSettings,
   ): Promise<AppSettingsSnapshot> {
-    const candidate = updateVaultAppearance(this.#snapshot.settings, vaultId, appearance);
-    const settings = await this.#store.save(candidate);
-    return this.adopt(settings);
+    return this.enqueueSave((settings) => updateVaultAppearance(settings, vaultId, appearance));
   }
 
   getVaultPlugins(vaultId: string): VaultPluginSettings {
@@ -91,9 +87,15 @@ export class AppSettingsController {
     vaultId: string,
     plugins: VaultPluginSettings,
   ): Promise<AppSettingsSnapshot> {
-    const candidate = updateVaultPlugins(this.#snapshot.settings, vaultId, plugins);
-    const settings = await this.#store.save(candidate);
-    return this.adopt(settings);
+    return this.enqueueSave((settings) => updateVaultPlugins(settings, vaultId, plugins));
+  }
+
+  /** Replace the complete validated private settings snapshot for a recoverable transaction. */
+  async replaceSettings(
+    settings: AppSettings,
+    expectedCurrent?: AppSettings,
+  ): Promise<AppSettingsSnapshot> {
+    return this.enqueueSave(() => settings, expectedCurrent);
   }
 
   getVaultNoteWorkflows(vaultId: string): VaultNoteWorkflowSettings {
@@ -104,9 +106,9 @@ export class AppSettingsController {
     vaultId: string,
     noteWorkflows: VaultNoteWorkflowSettings,
   ): Promise<AppSettingsSnapshot> {
-    const candidate = updateVaultNoteWorkflows(this.#snapshot.settings, vaultId, noteWorkflows);
-    const settings = await this.#store.save(candidate);
-    return this.adopt(settings);
+    return this.enqueueSave((settings) =>
+      updateVaultNoteWorkflows(settings, vaultId, noteWorkflows),
+    );
   }
 
   onSnapshot(listener: SettingsListener): () => void {
@@ -120,5 +122,25 @@ export class AppSettingsController {
       listener(this.#snapshot);
     }
     return this.#snapshot;
+  }
+
+  private enqueueSave(
+    build: (settings: AppSettings) => AppSettings,
+    expectedCurrent?: AppSettings,
+  ): Promise<AppSettingsSnapshot> {
+    const operation = this.#writeTail
+      .catch(() => undefined)
+      .then(async () => {
+        if (expectedCurrent && this.#snapshot.settings !== expectedCurrent) {
+          throw new Error("Threadleaf private settings changed during migration review.");
+        }
+        const saved = await this.#store.save(build(this.#snapshot.settings));
+        return this.adopt(saved);
+      });
+    this.#writeTail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
 }

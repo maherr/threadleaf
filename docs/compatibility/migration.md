@@ -2,11 +2,28 @@
 
 Threadleaf opens the same Markdown vault without converting it. The remaining migration problem is
 behavior: plugin selection, plugin settings, hotkeys, appearance, CSS snippets, and workspace tabs.
-Settings includes a read-only Migration preview so those differences are visible before any future
-import action exists.
+Settings includes a read-only Migration preview and an explicitly reviewed apply path. Refreshing
+the preview never changes Threadleaf settings, `.obsidian/`, or vault files, and it never loads
+plugin code. Apply writes only Threadleaf's private application state outside the vault.
 
-There is currently no Apply or Import action. Refreshing the preview does not change Threadleaf
-settings, `.obsidian/`, or vault files, and it does not load plugin code.
+Apply is transaction-like, not an import shortcut. Each plan records the active vault identity, a
+SHA-256 source receipt for every inspected metadata file, installed plugin bundle file, and
+selected appearance asset. Bounded files that cannot be hashed carry a filesystem revision. The
+plan also records the private-state revision observed before review and a safe before/after
+projection. The user checks
+individual ready candidates. Missing packages, unsupported mappings, unresolved review items,
+stale source receipts, private-state drift, duplicate selections, and capability-grant conflicts
+are refused without a write. Plugin settings values are never copied or returned.
+
+The apply journal is atomically persisted in private application data before either settings or
+workspace state is written. It records the before and after snapshots, phase, exact selection, and
+recovery receipt. Initial vault activation gates the writable workspace on recovery and completes
+only an unambiguous interrupted phase; a later preview repeats recovery as a fallback. Newer private
+changes produce an explicit conflict before normal plugin activation. Rollback is offered for the
+latest committed apply and refuses to overwrite any newer private revision. Neither apply nor
+rollback writes `.obsidian/` or vault Markdown bytes. Plugin code is not loaded or reconciled inside
+either transaction. A changed plugin selection takes effect only after an explicit plugin reload or
+Threadleaf restart, and the committed response reports that requirement.
 
 ## Source boundary
 
@@ -34,12 +51,15 @@ generic so malformed source fragments cannot be reflected into the UI.
 
 Plugin rows combine Obsidian's enabled inventory with installed packages. They show whether a
 plugin is already selected in Threadleaf, package validity, and exact-version compatibility
-evidence. An enabled Obsidian plugin is never selected or executed automatically.
+evidence. An enabled Obsidian plugin is never selected or executed automatically. Enablement is
+locked until compatibility mode is already enabled, and plugins already selected are omitted as
+no-ops.
 
 Hotkeys become candidates only when a command mapping has a behavior-tested Threadleaf target and
 the source contains exactly one supported binding. The first reviewed mapping is
 `command-palette:open` to `ui.command-palette`. All plugin commands and unknown core commands remain
-review items.
+review items. A binding that collides with an existing Threadleaf shortcut is locked as a conflict,
+and a binding already at the reviewed target is omitted.
 
 Obsidian appearance modes map conservatively: `obsidian` to dark, `moonstone` to light, and
 `system` to system-following. A community theme or snippet becomes a candidate only when its
@@ -59,6 +79,7 @@ exact source-byte preservation. A production Electron fixture copied a real `.ob
 rendered the preview in light and dark schemes, verified the active Excalidraw tab and exact-version
 compatibility evidence, and confirmed all 28 metadata files remained byte-for-byte unchanged.
 
-The next migration step is an explicit, independently reviewable apply transaction stored in
-Threadleaf's private application data. It must support per-item selection, conflict reporting, and
-rollback without making `.obsidian/` Threadleaf's authority.
+The Electron rehearsal covers preview, keyboard selection, conflict-locked plugin candidates,
+apply, restart recovery, rollback, both schemes, a visual positive control, and byte equality for
+the complete `.obsidian/` tree. Unit fixtures cover stale source, partial choice, malformed input,
+interruption recovery, rollback conflict, and same-name vault identity separation.

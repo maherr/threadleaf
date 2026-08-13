@@ -32,7 +32,7 @@ import type {
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type { RenderedNoteTemplate } from "./note-template";
 import { WorkspaceRuntime, type WorkspaceRuntimeOptions } from "./workspace-runtime";
-import type { WorkspaceStateStore } from "./workspace-state";
+import type { PersistedWorkspaceState, WorkspaceStateStore } from "./workspace-state";
 
 export interface VaultSelectionStore {
   load(): Promise<string | null>;
@@ -78,6 +78,12 @@ export interface WorkspaceRuntimePort {
     fromPaneId: WorkspacePaneId,
     toPaneId: WorkspacePaneId,
     expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
+  getWorkspaceState?(expectedVaultId: string): Promise<PersistedWorkspaceState>;
+  setWorkspaceState?(
+    state: PersistedWorkspaceState,
+    expectedVaultId: string,
+    expectedCurrent?: PersistedWorkspaceState | null,
   ): Promise<RuntimeSnapshot>;
   moveNote(
     filePath: string,
@@ -545,6 +551,26 @@ export class WorkspaceController {
       toPaneId,
       expectedVaultId,
     );
+  }
+
+  getWorkspaceState(expectedVaultId: string): Promise<PersistedWorkspaceState> {
+    const runtime = this.activeRuntime("read workspace migration state");
+    if (!runtime.getWorkspaceState) {
+      throw new Error("The active workspace does not support migration state reads.");
+    }
+    return runtime.getWorkspaceState(expectedVaultId);
+  }
+
+  setWorkspaceState(
+    state: PersistedWorkspaceState,
+    expectedVaultId: string,
+    expectedCurrent?: PersistedWorkspaceState | null,
+  ): Promise<RuntimeSnapshot> {
+    const runtime = this.activeRuntime("apply workspace migration state");
+    if (!runtime.setWorkspaceState) {
+      throw new Error("The active workspace does not support migration state writes.");
+    }
+    return runtime.setWorkspaceState(state, expectedVaultId, expectedCurrent);
   }
 
   moveNote(

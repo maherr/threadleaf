@@ -76,9 +76,18 @@ The preview combines Obsidian-enabled plugin IDs with Threadleaf's independently
 catalog and exact-version workflow evidence. Hotkeys, appearance, and workspace paths become
 candidates only through reviewed mappings and contained file checks. Main-area Markdown and
 Excalidraw note tabs are previewable; every unsupported workspace view remains an explicit count.
-The loader has no write port, and the renderer exposes no Apply action. A future apply transaction
-will write only Threadleaf's private versioned settings after per-item review. The full source,
-candidate, and limit contract is documented in [Obsidian behavior migration](compatibility/migration.md).
+The loader has no write port. The renderer exposes a separate reviewed apply transaction that
+writes only Threadleaf's private versioned settings and workspace state outside the vault. Plans
+bind exact source receipts and private-state revisions; stale evidence, unsupported candidates,
+and missing exact plugin grants refuse the write. An atomic private journal retains before/after
+snapshots, recovers unambiguous interruptions, and refuses rollback over newer private changes.
+Initial vault activation withholds the writable workspace snapshot until transaction recovery has
+completed or surfaced a conflict; migration preview performs the same recovery check as a fallback.
+Migration IPC accepts only the active Threadleaf renderer. Apply and rollback do not reconcile or
+execute compatibility plugins; changed runtime selection is deferred to an explicit reload or app
+restart so the private transaction cannot cause plugin-authored vault writes.
+The full source, candidate, apply, rollback, and limit contract is documented in [Obsidian behavior
+migration](compatibility/migration.md).
 
 ### Compatibility module
 

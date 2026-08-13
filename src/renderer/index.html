@@ -1002,17 +1002,37 @@
             <article class="migration-safety-card">
               <span class="migration-safety-mark" aria-hidden="true">◎</span>
               <span>
-                <strong>Read-only preview, no import action yet</strong>
+                <strong>Review first, then apply private state</strong>
                 <small>
                   Threadleaf inspects known <code>.obsidian/</code> metadata without loading plugins,
-                  copying private values, or changing any vault file. This screen proposes no
-                  automatic writes.
+                  copying private values, applying CSS, or changing any vault file. Only checked,
+                  validated candidates can be written to Threadleaf state outside the vault.
                 </small>
               </span>
               <button class="secondary-button" id="migration-refresh" type="button">
                 Refresh preview
               </button>
             </article>
+
+            <section class="migration-review-panel" aria-labelledby="migration-review-heading">
+              <header class="migration-group-header">
+                <span>
+                  <strong id="migration-review-heading">Reviewed candidates</strong>
+                  <small id="migration-review-summary">No reviewed plan is ready.</small>
+                </span>
+                <span class="migration-review-receipt" id="migration-review-receipt">No transaction</span>
+              </header>
+              <div class="migration-candidate-list" id="migration-candidate-list"></div>
+              <div class="migration-review-actions">
+                <button class="primary-button" id="migration-apply" type="button" disabled>
+                  Apply checked items
+                </button>
+                <button class="secondary-button" id="migration-rollback" type="button" disabled>
+                  Roll back last apply
+                </button>
+              </div>
+              <p class="migration-review-status" id="migration-apply-status" role="status"></p>
+            </section>
 
             <div class="migration-overview" id="migration-overview"></div>
 

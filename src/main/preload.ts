@@ -11,6 +11,8 @@ import type {
   EditorDraftClearResponse,
   EditorDraftReadResponse,
   EditorDraftSaveResponse,
+  MigrationApplyResponse,
+  MigrationRollbackUpdateResponse,
   NoteBookmarksResponse,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -38,7 +40,7 @@ import type {
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
-import type { MigrationPreviewResponse } from "../shared/migration";
+import type { MigrationApplyRequest, MigrationPreviewResponse } from "../shared/migration";
 import type { NativeMenuCommandId } from "../shared/native-menu";
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type {
@@ -134,6 +136,18 @@ const bridge: ThreadleafBridge = {
       ipcChannels.migrationPreview,
       expectedVaultId,
     ) as Promise<MigrationPreviewResponse>,
+  applyMigration: (expectedVaultId, request: MigrationApplyRequest) =>
+    ipcRenderer.invoke(
+      ipcChannels.migrationApply,
+      expectedVaultId,
+      request,
+    ) as Promise<MigrationApplyResponse>,
+  rollbackMigration: (expectedVaultId, transactionId) =>
+    ipcRenderer.invoke(
+      ipcChannels.migrationRollback,
+      expectedVaultId,
+      transactionId,
+    ) as Promise<MigrationRollbackUpdateResponse>,
   searchVault: (query) =>
     ipcRenderer.invoke(ipcChannels.searchVault, query) as Promise<VaultSearchResponse>,
   getVaultGraph: (request: VaultGraphRequest, expectedVaultId) =>

@@ -81,6 +81,7 @@ import {
   type PersistedWorkspacePane,
   type PersistedWorkspaceState,
   type WorkspaceStateStore,
+  workspaceStatesEqual,
 } from "./workspace-state";
 
 export interface WorkspaceRuntimeOptions {
@@ -478,30 +479,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function workspaceStatesEqual(
-  left: PersistedWorkspaceState,
-  right: PersistedWorkspaceState,
-): boolean {
-  return (
-    left.vaultId === right.vaultId &&
-    left.activePaneId === right.activePaneId &&
-    left.splitDirection === right.splitDirection &&
-    left.panes.length === right.panes.length &&
-    left.panes.every((pane, paneIndex) => {
-      const other = right.panes[paneIndex];
-      return (
-        other !== undefined &&
-        pane.id === other.id &&
-        pane.activePath === other.activePath &&
-        pane.openPaths.length === other.openPaths.length &&
-        pane.openPaths.every((filePath, pathIndex) => filePath === other.openPaths[pathIndex]) &&
-        pane.pinnedPaths.length === other.pinnedPaths.length &&
-        pane.pinnedPaths.every((filePath, pathIndex) => filePath === other.pinnedPaths[pathIndex])
-      );
-    })
-  );
-}
-
 export class WorkspaceRuntime {
   readonly actions: ActionRegistry;
   readonly kernel: VaultKernel;
@@ -826,6 +803,38 @@ export class WorkspaceRuntime {
       toPaneId,
       expectedVaultId,
     });
+    return this.publishSnapshot();
+  }
+
+  async getWorkspaceState(expectedVaultId: string): Promise<PersistedWorkspaceState> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("Workspace migration state belongs to a different vault.");
+    }
+    return this.currentWorkspaceState();
+  }
+
+  async setWorkspaceState(
+    state: PersistedWorkspaceState,
+    expectedVaultId: string,
+    expectedCurrent?: PersistedWorkspaceState | null,
+  ): Promise<RuntimeSnapshot> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("Workspace migration state belongs to a different vault.");
+    }
+    if (
+      expectedCurrent !== undefined &&
+      (expectedCurrent === null ||
+        !workspaceStatesEqual(this.currentWorkspaceState(), expectedCurrent))
+    ) {
+      throw new Error("Threadleaf workspace state changed during migration review.");
+    }
+    const normalized = createWorkspaceLayout(
+      this.kernel.vaultId,
+      state.panes,
+      state.activePaneId,
+      state.splitDirection,
+    );
+    await this.adoptWorkspaceState(normalized, true);
     return this.publishSnapshot();
   }
 
@@ -1406,7 +1415,8 @@ export class WorkspaceRuntime {
     state: PersistedWorkspaceState,
     persistBeforeAdopting: boolean,
   ): Promise<void> {
-    if (workspaceStatesEqual(this.currentWorkspaceState(), state)) {
+    const expectedCurrent = this.currentWorkspaceState();
+    if (workspaceStatesEqual(expectedCurrent, state)) {
       return;
     }
     if (!this.#workspaceStateStore) {
@@ -1419,7 +1429,7 @@ export class WorkspaceRuntime {
       return;
     }
     try {
-      const persisted = await this.#workspaceStateStore.save(state);
+      const persisted = await this.#workspaceStateStore.save(state, expectedCurrent);
       this.#workspaceLoadWarning = null;
       this.#workspaceSaveWarning = null;
       this.applyWorkspaceState(persisted);

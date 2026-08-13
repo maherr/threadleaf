@@ -44,6 +44,7 @@ import {
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettings } from "../shared/key-bindings";
 import { isShortcutTargetId } from "../shared/key-bindings";
+import type { MigrationApplyRequest } from "../shared/migration";
 import type { NativeMenuCommandId } from "../shared/native-menu";
 import { parseVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import { parsePluginPackagePreviewRequest } from "../shared/plugin-packages";
@@ -90,6 +91,13 @@ import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { createGracefulShutdownHandler } from "./graceful-shutdown";
 import { createMainRendererRecoveryHandler } from "./main-renderer-recovery";
 import { loadObsidianMigrationPreview } from "./obsidian-migration-loader";
+import {
+  applyMigrationSelections,
+  buildMigrationPlan,
+  type MigrationPrivateState,
+  type MigrationTransactionPhase,
+  ObsidianMigrationTransactionManager,
+} from "./obsidian-migration-transaction";
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
 import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
 import { PluginPackageManager } from "./plugin-package-manager";
@@ -134,6 +142,7 @@ let noteBookmarkController: NoteBookmarkController;
 let pluginPackageManager: PluginPackageManager;
 let pluginOperationTail: Promise<void> = Promise.resolve();
 let initialWorkspaceActivation: Promise<void> | null = null;
+let initialWorkspaceRecoveryPending = false;
 let attachedPluginView: WebContentsView | null = null;
 const compatibilityPluginViews = new Set<WebContentsView>();
 const compatibilityPluginWebContents = new Set<WebContents>();
@@ -154,6 +163,11 @@ let pluginSurfaceAccessibility: EffectiveAccessibilityPreferences = {
   reducedMotion: false,
   reducedTransparency: false,
 };
+let migrationTransactionManager: ObsidianMigrationTransactionManager | null = null;
+const migrationStartupNotices = new Map<
+  string,
+  Awaited<ReturnType<ObsidianMigrationTransactionManager["recover"]>>
+>();
 
 async function applyPluginSurfaceTheme(
   theme: "dark" | "light",
@@ -654,6 +668,13 @@ function reconcileAppearanceWatcher(snapshot: RuntimeSnapshot): void {
   appearanceWatcherLifecycle?.reconcile(appearanceWatchTarget(snapshot));
 }
 
+function broadcastWorkspaceSnapshot(snapshot: RuntimeSnapshot): void {
+  reconcileAppearanceWatcher(snapshot);
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(ipcChannels.snapshotChanged, snapshot);
+  }
+}
+
 function createAppearanceWatcherLifecycle(): AppearanceWatcherLifecycle {
   return new AppearanceWatcherLifecycle({
     createWatcher: (target, onInvalidation) =>
@@ -681,6 +702,18 @@ function developmentPluginOperationTimeout(): number | undefined {
   }
   const timeout = Number(raw);
   return Number.isFinite(timeout) && timeout > 0 ? timeout : undefined;
+}
+
+function developmentMigrationInterruptPhase(): MigrationTransactionPhase | null {
+  if (app.isPackaged) {
+    return null;
+  }
+  const value = process.env.THREADLEAF_MIGRATION_INTERRUPT_PHASE;
+  return ["prepared", "settings-committed", "workspace-committed", "committed"].includes(
+    value ?? "",
+  )
+    ? (value as MigrationTransactionPhase)
+    : null;
 }
 
 function serializePluginOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -752,19 +785,92 @@ async function currentMigrationPreview(expectedVaultId: string) {
   if (workspaceController.vaultId !== expectedVaultId) {
     return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
   }
+  const workspaceReady = await waitForMigrationWorkspace(expectedVaultId);
+  if (!workspaceReady) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+  }
   const vaultPath = workspaceController.vaultPath;
+  const recoveryNotices = migrationTransactionManager
+    ? await migrationTransactionManager.recover(expectedVaultId, () =>
+        currentMigrationState(expectedVaultId),
+      )
+    : [];
+  const current = await currentMigrationState(expectedVaultId);
   const preview = await loadObsidianMigrationPreview({
     vaultPath,
     vaultId: expectedVaultId,
     selectedPluginIds: settingsController.getVaultPlugins(expectedVaultId).enabledPluginIds,
+    capabilityGrantsByPlugin:
+      settingsController.getVaultPlugins(expectedVaultId).capabilityGrantsByPlugin,
   });
+  preview.warnings.unshift(
+    ...(migrationStartupNotices.get(expectedVaultId) ?? []).map((notice) => notice.message),
+    ...recoveryNotices.map((notice) => notice.message),
+  );
+  const plan = buildMigrationPlan(preview, current);
   if (
     workspaceController.vaultId !== expectedVaultId ||
     workspaceController.vaultPath !== vaultPath
   ) {
     return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
   }
-  return { status: "ready", preview } as const;
+  return {
+    status: "ready",
+    preview,
+    plan,
+    rollbackTransactionId: migrationTransactionManager
+      ? await migrationTransactionManager.latestRollbackTransaction(expectedVaultId)
+      : null,
+  } as const;
+}
+
+async function waitForMigrationWorkspace(expectedVaultId: string): Promise<boolean> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (workspaceController.vaultId !== expectedVaultId) {
+      return false;
+    }
+    const snapshot = await workspaceController.getSnapshot();
+    if (!snapshot.startup) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Cannot read workspace migration state while vault is still opening.");
+}
+
+async function currentMigrationState(expectedVaultId: string): Promise<MigrationPrivateState> {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    throw new Error("The active vault changed while reading migration state.");
+  }
+  return {
+    settings: settingsController.getSnapshot().settings,
+    workspace: await workspaceController.getWorkspaceState(expectedVaultId),
+  };
+}
+
+function parseMigrationApplyRequest(value: unknown): MigrationApplyRequest {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("planId" in value) ||
+    !("sourceDigest" in value) ||
+    !("selectedItemIds" in value) ||
+    typeof value.planId !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(value.planId) ||
+    typeof value.sourceDigest !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(value.sourceDigest) ||
+    !Array.isArray(value.selectedItemIds) ||
+    value.selectedItemIds.length > 512 ||
+    value.selectedItemIds.some((item) => typeof item !== "string" || item.length > 300)
+  ) {
+    throw new Error("Migration apply requires a bounded reviewed plan and item selection.");
+  }
+  return {
+    planId: value.planId,
+    sourceDigest: value.sourceDigest,
+    selectedItemIds: [...value.selectedItemIds],
+  };
 }
 
 async function reconcileCompatibilityPlugins(
@@ -911,13 +1017,30 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
 }
 
 async function activateInitialWorkspace(): Promise<void> {
-  const outcome = await workspaceController.activateDeferredInitialVault();
-  if (outcome.status === "superseded") {
-    return;
-  }
-  const expectedVaultId = outcome.snapshot.vault.id;
-  if (expectedVaultId && workspaceController.vaultId === expectedVaultId) {
-    await serializePluginOperation(() => reconcileCompatibilityPlugins(expectedVaultId));
+  initialWorkspaceRecoveryPending = true;
+  try {
+    const outcome = await workspaceController.activateDeferredInitialVault();
+    if (outcome.status === "superseded") {
+      return;
+    }
+    const expectedVaultId = outcome.snapshot.vault.id;
+    if (!expectedVaultId || workspaceController.vaultId !== expectedVaultId) {
+      return;
+    }
+    const recoveryNotices = migrationTransactionManager
+      ? await migrationTransactionManager.recover(expectedVaultId, () =>
+          currentMigrationState(expectedVaultId),
+        )
+      : [];
+    if (recoveryNotices.length > 0) {
+      migrationStartupNotices.set(expectedVaultId, recoveryNotices);
+    }
+    if (!recoveryNotices.some((notice) => notice.status === "conflict")) {
+      await serializePluginOperation(() => reconcileCompatibilityPlugins(expectedVaultId));
+    }
+  } finally {
+    initialWorkspaceRecoveryPending = false;
+    broadcastWorkspaceSnapshot(await workspaceController.getSnapshot());
   }
 }
 
@@ -1067,7 +1190,12 @@ function registerIpcHandlers(): void {
       workspaceController.vaultId,
     );
   });
-  ipcMain.handle(ipcChannels.snapshot, () => workspaceController.getSnapshot());
+  ipcMain.handle(ipcChannels.snapshot, async () => {
+    if (initialWorkspaceRecoveryPending && initialWorkspaceActivation) {
+      await initialWorkspaceActivation;
+    }
+    return workspaceController.getSnapshot();
+  });
   ipcMain.on(ipcChannels.startupShellReady, (event) => {
     if (
       !mainWindow ||
@@ -1364,12 +1492,134 @@ function registerIpcHandlers(): void {
       pluginUpdateResponse(expectedVaultId, settingsController.getSnapshot(), true),
     );
   });
-  ipcMain.handle(ipcChannels.migrationPreview, (_event, expectedVaultId: unknown) => {
+  ipcMain.handle(ipcChannels.migrationPreview, (event, expectedVaultId: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Migration preview requires the active Threadleaf window.");
+    }
     if (typeof expectedVaultId !== "string") {
       throw new Error("Migration preview requires a string vault identity.");
     }
-    return currentMigrationPreview(expectedVaultId);
+    return serializePluginOperation(() => currentMigrationPreview(expectedVaultId));
   });
+  ipcMain.handle(
+    ipcChannels.migrationApply,
+    (event, expectedVaultId: unknown, requestValue: unknown) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Migration apply requires the active Threadleaf window.");
+      }
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Migration apply requires a string vault identity.");
+      }
+      const request = parseMigrationApplyRequest(requestValue);
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const snapshot = await workspaceController.getSnapshot();
+        if (snapshot.vault.mode === "synthetic-read-only") {
+          throw new Error("Open a local vault before applying reviewed migration state.");
+        }
+        if (!migrationTransactionManager) {
+          throw new Error("Migration transactions are not initialized.");
+        }
+        const firstReview = await currentMigrationPreview(expectedVaultId);
+        if (firstReview.status !== "ready") {
+          return firstReview;
+        }
+        if (request.planId !== firstReview.plan.planId) {
+          throw new Error("Migration review is stale. Refresh the preview and review it again.");
+        }
+        const current = await currentMigrationState(expectedVaultId);
+        const next = applyMigrationSelections(firstReview.plan, request, current);
+        const finalReview = await currentMigrationPreview(expectedVaultId);
+        if (finalReview.status !== "ready" || finalReview.plan.planId !== firstReview.plan.planId) {
+          throw new Error(
+            "Obsidian metadata or private state changed during review. Refresh the preview.",
+          );
+        }
+        const reviewedVaultPath = workspaceController.vaultPath;
+        const outcome = await migrationTransactionManager.apply({
+          plan: finalReview.plan,
+          request,
+          sourceDigest: finalReview.preview.sourceDigest,
+          current,
+          next,
+          validateReview: async () => {
+            if (
+              workspaceController.vaultId !== expectedVaultId ||
+              reviewedVaultPath !== workspaceController.vaultPath
+            ) {
+              throw new Error("The active vault changed before migration commit.");
+            }
+            const pluginPreference = settingsController.getVaultPlugins(expectedVaultId);
+            const refreshedPreview = await loadObsidianMigrationPreview({
+              vaultPath: reviewedVaultPath,
+              vaultId: expectedVaultId,
+              selectedPluginIds: pluginPreference.enabledPluginIds,
+              capabilityGrantsByPlugin: pluginPreference.capabilityGrantsByPlugin,
+            });
+            const refreshedCurrent = await currentMigrationState(expectedVaultId);
+            const refreshedPlan = buildMigrationPlan(refreshedPreview, refreshedCurrent);
+            return {
+              planId: refreshedPlan.planId,
+              sourceDigest: refreshedPlan.sourceDigest,
+              privateStateRevision: refreshedPlan.privateStateRevision,
+            };
+          },
+        });
+        const runtimeWarning =
+          outcome.before.enabledPluginIds.join("\n") === outcome.after.enabledPluginIds.join("\n")
+            ? null
+            : "Plugin runtime changes are intentionally deferred. Reload plugins explicitly or restart Threadleaf.";
+        return {
+          status: "updated",
+          settings: settingsController.getSnapshot(),
+          snapshot: await workspaceController.getSnapshot(),
+          outcome,
+          runtimeWarning,
+        } as const;
+      });
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.migrationRollback,
+    (event, expectedVaultId: unknown, transactionId: unknown) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Migration rollback requires the active Threadleaf window.");
+      }
+      if (typeof expectedVaultId !== "string" || typeof transactionId !== "string") {
+        throw new Error("Migration rollback requires vault and transaction identities.");
+      }
+      return serializePluginOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        if (!migrationTransactionManager) {
+          throw new Error("Migration transactions are not initialized.");
+        }
+        const current = await currentMigrationState(expectedVaultId);
+        const outcome = await migrationTransactionManager.rollback(
+          expectedVaultId,
+          transactionId,
+          current,
+        );
+        if (outcome.status === "conflict") {
+          return { status: "conflict", outcome } as const;
+        }
+        const runtimeWarning =
+          outcome.before.enabledPluginIds.join("\n") === outcome.after.enabledPluginIds.join("\n")
+            ? null
+            : "Plugin runtime changes are intentionally deferred. Reload plugins explicitly or restart Threadleaf.";
+        return {
+          status: "updated",
+          settings: settingsController.getSnapshot(),
+          snapshot: await workspaceController.getSnapshot(),
+          outcome,
+          runtimeWarning,
+        } as const;
+      });
+    },
+  );
   ipcMain.handle(ipcChannels.searchVault, (_event, query: unknown) => {
     if (typeof query !== "string") {
       throw new Error("Vault search requires a string query.");
@@ -2044,10 +2294,10 @@ function registerIpcHandlers(): void {
     await applyPluginSurfaceAccessibility(value as EffectiveAccessibilityPreferences);
   });
   workspaceController.onSnapshot((snapshot) => {
-    reconcileAppearanceWatcher(snapshot);
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(ipcChannels.snapshotChanged, snapshot);
+    if (initialWorkspaceRecoveryPending) {
+      return;
     }
+    broadcastWorkspaceSnapshot(snapshot);
   });
   settingsController.onSnapshot((snapshot) => {
     installApplicationMenu(snapshot.settings);
@@ -2161,6 +2411,38 @@ app.whenReady().then(async () => {
     new FileNoteBookmarkStore(join(app.getPath("userData"), "bookmarks")),
   );
   workspaceController = await createWorkspaceController();
+  const migrationInterruptPhase = developmentMigrationInterruptPhase();
+  let migrationInterrupted = false;
+  migrationTransactionManager = new ObsidianMigrationTransactionManager(
+    join(app.getPath("userData"), "migration"),
+    {
+      writeSettings: async (settings, expectedCurrent) => {
+        await settingsController.replaceSettings(settings, expectedCurrent);
+      },
+      writeWorkspace: async (state, expectedCurrent) => {
+        if (!state) {
+          throw new Error("The active workspace cannot be cleared by a migration transaction.");
+        }
+        await workspaceController.setWorkspaceState(
+          state,
+          workspaceController.vaultId,
+          expectedCurrent,
+        );
+      },
+    },
+    () => new Date(),
+    migrationInterruptPhase
+      ? {
+          afterPhase: (phase) => {
+            if (phase === migrationInterruptPhase && !migrationInterrupted) {
+              migrationInterrupted = true;
+              process.kill(process.pid, "SIGKILL");
+            }
+          },
+        }
+      : {},
+  );
+  await migrationTransactionManager.initialize();
   appearanceWatcherLifecycle = createAppearanceWatcherLifecycle();
   registerIpcHandlers();
   reconcileAppearanceWatcher(await workspaceController.getSnapshot());

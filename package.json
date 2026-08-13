@@ -60,6 +60,7 @@
     "test:package-reproducible": "pnpm run build && node scripts/package-reproducible-linux.mjs",
     "test:plugin-index-live": "THREADLEAF_LIVE_PLUGIN_INDEX=1 vitest run src/main/open-plugin-package-source.live.test.ts",
     "test:plugin-packages-e2e": "pnpm run build && node scripts/check-plugin-packages-e2e.mjs",
+    "test:migration-apply": "pnpm run build && node scripts/check-migration-apply.mjs",
     "test:plugin-recovery": "pnpm run build && node scripts/check-plugin-recovery.mjs",
     "test:editor-reliability": "pnpm run build && node scripts/check-editor-reliability.mjs",
     "test:appearance-watcher": "pnpm run build && node scripts/check-appearance-watcher.mjs",

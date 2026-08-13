@@ -194,6 +194,12 @@ describe("Obsidian migration preview", () => {
       snippetIdsCandidate: ["obsidian-snippet:headings.css"],
       missingSnippetNames: [],
     });
+    expect(
+      preview.sourceEvidence.find((source) => source.path.endsWith("theme.css")),
+    ).toMatchObject({ state: "ready", sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) });
+    expect(
+      preview.sourceEvidence.find((source) => source.path.endsWith("headings.css")),
+    ).toMatchObject({ state: "ready", sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) });
     expect(preview.workspace).toMatchObject({
       sourcePath: ".obsidian/workspace.json",
       leafCount: 3,
@@ -207,6 +213,18 @@ describe("Obsidian migration preview", () => {
     for (const [filePath, bytes] of before) {
       await expect(fs.readFile(filePath)).resolves.toEqual(bytes);
     }
+
+    await fs.writeFile(
+      path.join(vaultPath, ".obsidian", "themes", "Minimal", "theme.css"),
+      "body { color: red; }\n",
+      "utf8",
+    );
+    const changedAssetPreview = await loadObsidianMigrationPreview({
+      vaultPath,
+      vaultId: "b".repeat(64),
+      selectedPluginIds: ["threadleaf-fixture"],
+    });
+    expect(changedAssetPreview.sourceDigest).not.toBe(preview.sourceDigest);
   });
 
   it("reports malformed, oversized, and escaping inputs without following them", async () => {
@@ -243,6 +261,10 @@ describe("Obsidian migration preview", () => {
     expect(
       preview.sources.find((source) => source.path.endsWith("community-plugins.json")),
     ).toMatchObject({ state: "invalid" });
+    const malformedCommunityEvidence = preview.sourceEvidence.find((source) =>
+      source.path.endsWith("community-plugins.json"),
+    );
+    expect(malformedCommunityEvidence?.sha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(preview.sources.find((source) => source.path.endsWith("hotkeys.json"))).toMatchObject({
       state: "oversized",
     });
@@ -260,6 +282,48 @@ describe("Obsidian migration preview", () => {
       true,
     );
     expect(preview.warnings.some((warning) => warning.includes("outside the vault"))).toBe(true);
+
+    await fs.writeFile(
+      path.join(obsidianPath, "community-plugins.json"),
+      "[still-not-json]\n",
+      "utf8",
+    );
+    const changedInvalidPreview = await loadObsidianMigrationPreview({
+      vaultPath,
+      vaultId: "c".repeat(64),
+      selectedPluginIds: [],
+    });
+    expect(changedInvalidPreview.sourceDigest).not.toBe(preview.sourceDigest);
+  });
+
+  it("redacts invalid source identifiers and filesystem paths from diagnostics", async () => {
+    const pluginSecret = "plugin-secret-value";
+    const hotkeySecret = "hotkey-secret-value";
+    const appearanceSecret = "appearance-secret-value";
+    await writeJson(".obsidian/community-plugins.json", [`invalid/${pluginSecret}`]);
+    await writeJson(".obsidian/hotkeys.json", {
+      [hotkeySecret]: Array.from({ length: 17 }, () => ({ modifiers: ["Mod"], key: "P" })),
+    });
+    await writeJson(".obsidian/appearance.json", { theme: `invalid/${appearanceSecret}` });
+
+    const preview = await loadObsidianMigrationPreview({
+      vaultPath,
+      vaultId: "d".repeat(64),
+      selectedPluginIds: [],
+    });
+    const rendered = JSON.stringify(preview);
+
+    expect(rendered).not.toContain(pluginSecret);
+    expect(rendered).not.toContain(hotkeySecret);
+    expect(rendered).not.toContain(appearanceSecret);
+    expect(rendered).not.toContain(vaultPath);
+    expect(preview.warnings).toEqual(
+      expect.arrayContaining([
+        "One community plugin identifier is invalid and was ignored.",
+        expect.stringContaining("hotkeys.json"),
+        expect.stringContaining("appearance.json"),
+      ]),
+    );
   });
 
   it("falls back to a valid mobile workspace when desktop layout is unavailable", async () => {

@@ -1,18 +1,21 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { readStableFileWithinLimit } from "../kernel/durability";
 import { hasPrivateVaultSegment, isPathInside, normalizeVaultPath } from "../kernel/path-policy";
 import { normalizeKeyBinding, type ShortcutTargetId } from "../shared/key-bindings";
 import type {
   AppearanceMigrationSummary,
   HotkeyMigrationSummary,
+  MigrationSourceEvidence,
   MigrationSourceFileSummary,
   ObsidianMigrationPreview,
   PluginMigrationSummary,
   PluginSettingsMigrationSummary,
   WorkspaceMigrationSummary,
 } from "../shared/migration";
-import type { DiscoveredVaultPlugin } from "./vault-plugin-loader";
-import { discoverVaultPlugins } from "./vault-plugin-loader";
+import { type PluginCapabilityGrant, pluginCapabilityGrantState } from "../shared/plugins";
+import { type DiscoveredVaultPlugin, discoverVaultPlugins } from "./vault-plugin-loader";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const maximumCommunityPluginBytes = 128 * 1024;
@@ -25,6 +28,7 @@ const maximumHotkeyCommandCount = 512;
 const maximumBindingsPerCommand = 16;
 const maximumWorkspaceNodes = 8_192;
 const maximumWorkspacePaths = 1_024;
+const maximumConcurrentPluginInspections = 4;
 
 const sourceDefinitions = [
   { path: ".obsidian/community-plugins.json", maximumBytes: maximumCommunityPluginBytes },
@@ -43,10 +47,25 @@ interface JsonSource {
   value: unknown;
 }
 
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function evidenceFromSummary(summary: MigrationSourceFileSummary): MigrationSourceEvidence {
+  return {
+    path: summary.path,
+    state: summary.state,
+    byteLength: summary.byteLength,
+    sha256: summary.sha256,
+    revision: summary.revision ?? null,
+  };
+}
+
 export interface ObsidianMigrationLoaderOptions {
   vaultPath: string;
   vaultId: string;
   selectedPluginIds: readonly string[];
+  capabilityGrantsByPlugin?: Readonly<Record<string, PluginCapabilityGrant>>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,6 +92,25 @@ function formatByteLimit(bytes: number): string {
   return bytes < 1024 * 1024
     ? `${Math.floor(bytes / 1024)} KiB`
     : `${Math.floor(bytes / (1024 * 1024))} MiB`;
+}
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  project: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      while (cursor < values.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await project(values[index] as T);
+      }
+    }),
+  );
+  return results;
 }
 
 function parseJsonBytes(bytes: Uint8Array): unknown {
@@ -109,43 +147,39 @@ async function readJsonSource(
   relativePath: string,
   maximumBytes: number,
 ): Promise<JsonSource> {
+  let bytes: Buffer | undefined;
+  let revision: string | undefined;
   try {
     const filePath = await canonicalContainedPath(
       vaultPath,
       lexicalVaultPath(vaultPath, relativePath),
     );
-    const stat = await fs.stat(filePath);
-    if (!stat.isFile()) {
-      throw new Error("not a regular file");
+    const result = await readStableFileWithinLimit(filePath, maximumBytes);
+    if (!result) {
+      throw Object.assign(new Error("missing"), { code: "ENOENT" });
     }
-    if (stat.size > maximumBytes) {
+    if (result.status === "too-large") {
       return {
         summary: {
           path: relativePath,
           state: "oversized",
-          byteLength: stat.size,
+          byteLength: result.size,
+          sha256: null,
+          revision: null,
           message: `File exceeds the ${formatByteLimit(maximumBytes)} preview limit.`,
         },
         value: undefined,
       };
     }
-    const bytes = await fs.readFile(filePath);
-    if (bytes.byteLength > maximumBytes) {
-      return {
-        summary: {
-          path: relativePath,
-          state: "oversized",
-          byteLength: bytes.byteLength,
-          message: `File grew beyond the ${formatByteLimit(maximumBytes)} preview limit.`,
-        },
-        value: undefined,
-      };
-    }
+    bytes = result.snapshot.bytes;
+    revision = result.snapshot.revision;
     return {
       summary: {
         path: relativePath,
         state: "ready",
         byteLength: bytes.byteLength,
+        sha256: sha256(bytes),
+        revision,
         message: null,
       },
       value: parseJsonBytes(bytes),
@@ -153,7 +187,14 @@ async function readJsonSource(
   } catch (error) {
     if (new Set(["ENOENT", "ENOTDIR"]).has(errorCode(error) ?? "")) {
       return {
-        summary: { path: relativePath, state: "absent", byteLength: null, message: null },
+        summary: {
+          path: relativePath,
+          state: "absent",
+          byteLength: null,
+          sha256: null,
+          revision: null,
+          message: null,
+        },
         value: undefined,
       };
     }
@@ -161,8 +202,10 @@ async function readJsonSource(
       summary: {
         path: relativePath,
         state: "invalid",
-        byteLength: null,
-        message: oneLine(errorMessage(error)),
+        byteLength: bytes?.byteLength ?? null,
+        sha256: bytes ? sha256(bytes) : null,
+        revision: revision ?? null,
+        message: "File could not be read safely.",
       },
       value: undefined,
     };
@@ -189,7 +232,7 @@ function boundedString(value: unknown, label: string, maximumLength = 500): stri
 function safePluginId(value: unknown): string {
   const pluginId = boundedString(value, "Community plugin identifier", 128);
   if (!/^[a-z0-9][a-z0-9-]{0,127}$/u.test(pluginId)) {
-    throw new Error(`Invalid community plugin identifier: ${pluginId}`);
+    throw new Error("Invalid community plugin identifier.");
   }
   return pluginId;
 }
@@ -211,8 +254,8 @@ function parseCommunityPluginIds(source: JsonSource, warnings: string[]): string
         if (!ids.includes(pluginId)) {
           ids.push(pluginId);
         }
-      } catch (error) {
-        warnings.push(errorMessage(error));
+      } catch {
+        warnings.push("One community plugin identifier is invalid and was ignored.");
       }
     }
     return ids;
@@ -241,38 +284,36 @@ async function inspectPluginSettings(
   pluginId: string,
 ): Promise<PluginSettingsMigrationSummary> {
   const relativePath = `.obsidian/plugins/${pluginId}/data.json`;
+  let bytes: Buffer | undefined;
+  let revision: string | undefined;
   try {
     const filePath = await canonicalContainedPath(
       vaultPath,
       lexicalVaultPath(vaultPath, relativePath),
     );
-    const stat = await fs.stat(filePath);
-    if (!stat.isFile()) {
-      throw new Error("data.json is not a regular file");
+    const result = await readStableFileWithinLimit(filePath, maximumPluginDataBytes);
+    if (!result) {
+      throw Object.assign(new Error("missing"), { code: "ENOENT" });
     }
-    if (stat.size > maximumPluginDataBytes) {
+    if (result.status === "too-large") {
       return {
         state: "oversized",
-        byteLength: stat.size,
+        byteLength: result.size,
+        sha256: null,
+        revision: null,
         rootKind: null,
         topLevelEntryCount: null,
         message: `Settings exceed the ${formatByteLimit(maximumPluginDataBytes)} preview limit. Values were not read.`,
       };
     }
-    const bytes = await fs.readFile(filePath);
-    if (bytes.byteLength > maximumPluginDataBytes) {
-      return {
-        state: "oversized",
-        byteLength: bytes.byteLength,
-        rootKind: null,
-        topLevelEntryCount: null,
-        message: `Settings grew beyond the ${formatByteLimit(maximumPluginDataBytes)} preview limit. Values were not read.`,
-      };
-    }
+    bytes = result.snapshot.bytes;
+    revision = result.snapshot.revision;
     const shape = pluginDataRoot(parseJsonBytes(bytes));
     return {
       state: "shared",
       byteLength: bytes.byteLength,
+      sha256: sha256(bytes),
+      revision,
       ...shape,
       message:
         "Valid JSON is shared in place. Previewing does not change it; an enabled plugin may update it through saveData.",
@@ -282,6 +323,8 @@ async function inspectPluginSettings(
       return {
         state: "absent",
         byteLength: null,
+        sha256: null,
+        revision: null,
         rootKind: null,
         topLevelEntryCount: null,
         message: "No data.json settings file is present.",
@@ -289,12 +332,81 @@ async function inspectPluginSettings(
     }
     return {
       state: "invalid",
-      byteLength: null,
+      byteLength: bytes?.byteLength ?? null,
+      sha256: bytes ? sha256(bytes) : null,
+      revision: revision ?? null,
       rootKind: null,
       topLevelEntryCount: null,
-      message: `Settings could not be previewed: ${oneLine(errorMessage(error))}`,
+      message: "Settings could not be previewed safely.",
     };
   }
+}
+
+async function inspectContainedEvidence(
+  vaultPath: string,
+  relativePath: string,
+  maximumBytes: number,
+): Promise<MigrationSourceEvidence> {
+  let bytes: Buffer | undefined;
+  let revision: string | undefined;
+  try {
+    const filePath = await canonicalContainedPath(
+      vaultPath,
+      lexicalVaultPath(vaultPath, relativePath),
+    );
+    const result = await readStableFileWithinLimit(filePath, maximumBytes);
+    if (!result) {
+      throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    }
+    if (result.status === "too-large") {
+      return {
+        path: relativePath,
+        state: "oversized",
+        byteLength: result.size,
+        sha256: null,
+        revision: null,
+      };
+    }
+    bytes = result.snapshot.bytes;
+    revision = result.snapshot.revision;
+    return {
+      path: relativePath,
+      state: "ready",
+      byteLength: bytes.byteLength,
+      sha256: sha256(bytes),
+      revision,
+    };
+  } catch (error) {
+    if (new Set(["ENOENT", "ENOTDIR"]).has(errorCode(error) ?? "")) {
+      return {
+        path: relativePath,
+        state: "absent",
+        byteLength: null,
+        sha256: null,
+        revision: null,
+      };
+    }
+    return {
+      path: relativePath,
+      state: "invalid",
+      byteLength: bytes?.byteLength ?? null,
+      sha256: bytes ? sha256(bytes) : null,
+      revision: revision ?? null,
+    };
+  }
+}
+
+async function inspectPluginEvidence(
+  vaultPath: string,
+  pluginId: string,
+  filename: "manifest.json" | "main.js" | "styles.css" | "data.json",
+  maximumBytes: number,
+): Promise<MigrationSourceEvidence> {
+  return inspectContainedEvidence(
+    vaultPath,
+    `.obsidian/plugins/${pluginId}/${filename}`,
+    maximumBytes,
+  );
 }
 
 function pluginMessage(
@@ -306,7 +418,7 @@ function pluginMessage(
     return "Enabled in Obsidian, but no installed package was found. Nothing will be selected.";
   }
   if (plugin.summary.packageState === "invalid") {
-    return `Installed package is invalid: ${plugin.summary.error ?? "unknown validation failure"}`;
+    return "Installed package is invalid and is not eligible for migration.";
   }
   if (selectedInThreadleaf) {
     return "Already selected in Threadleaf. This preview did not load or change it.";
@@ -320,10 +432,13 @@ async function buildPluginPreview(
   vaultPath: string,
   enabledIds: readonly string[],
   selectedIds: readonly string[],
+  capabilityGrantsByPlugin: Readonly<Record<string, PluginCapabilityGrant>>,
   warnings: string[],
 ): Promise<PluginMigrationSummary[]> {
   const discovery = await discoverVaultPlugins(vaultPath);
-  warnings.push(...discovery.warnings);
+  warnings.push(
+    ...discovery.warnings.map(() => "One installed plugin package could not be inspected safely."),
+  );
   const discoveredById = new Map(
     discovery.plugins.map((plugin) => [plugin.summary.id, plugin] as const),
   );
@@ -334,36 +449,49 @@ async function buildPluginPreview(
       .filter((pluginId) => !enabledIds.includes(pluginId)),
   ];
   const selectedSet = new Set(selectedIds);
-  return Promise.all(
-    orderedIds.map(async (pluginId) => {
-      const plugin = discoveredById.get(pluginId);
-      const enabledInObsidian = enabledIds.includes(pluginId);
-      const selectedInThreadleaf = selectedSet.has(pluginId);
-      if (!plugin) {
-        warnings.push(`Obsidian enables ${pluginId}, but its installed package is missing.`);
-      }
-      const settings = plugin
-        ? await inspectPluginSettings(vaultPath, pluginId)
-        : {
-            state: "absent" as const,
-            byteLength: null,
-            rootKind: null,
-            topLevelEntryCount: null,
-            message: "No installed package or settings file is present.",
-          };
-      return {
-        id: pluginId,
-        name: plugin?.summary.name ?? pluginId,
-        version: plugin?.summary.version === "unknown" ? null : (plugin?.summary.version ?? null),
-        enabledInObsidian,
-        selectedInThreadleaf,
-        packageState: plugin?.summary.packageState ?? "missing",
-        compatibility: plugin?.summary.compatibility ?? null,
-        settings,
-        message: pluginMessage(plugin, enabledInObsidian, selectedInThreadleaf),
-      };
-    }),
-  );
+  return mapWithConcurrency(orderedIds, maximumConcurrentPluginInspections, async (pluginId) => {
+    const plugin = discoveredById.get(pluginId);
+    const enabledInObsidian = enabledIds.includes(pluginId);
+    const selectedInThreadleaf = selectedSet.has(pluginId);
+    if (!plugin) {
+      warnings.push("An enabled Obsidian plugin package is missing.");
+    }
+    const settings = plugin
+      ? await inspectPluginSettings(vaultPath, pluginId)
+      : {
+          state: "absent" as const,
+          byteLength: null,
+          sha256: null,
+          rootKind: null,
+          topLevelEntryCount: null,
+          message: "No installed package or settings file is present.",
+        };
+    const sourceEvidence = await Promise.all([
+      inspectPluginEvidence(vaultPath, pluginId, "manifest.json", maximumCommunityPluginBytes),
+      inspectPluginEvidence(vaultPath, pluginId, "main.js", 16 * 1024 * 1024),
+      inspectPluginEvidence(vaultPath, pluginId, "styles.css", 2 * 1024 * 1024),
+      inspectPluginEvidence(vaultPath, pluginId, "data.json", maximumPluginDataBytes),
+    ]);
+    const authorityState = plugin
+      ? pluginCapabilityGrantState(
+          plugin.summary.capabilityReport,
+          capabilityGrantsByPlugin[pluginId],
+        )
+      : "unavailable";
+    return {
+      id: pluginId,
+      name: plugin?.summary.name ?? pluginId,
+      version: plugin?.summary.version === "unknown" ? null : (plugin?.summary.version ?? null),
+      enabledInObsidian,
+      selectedInThreadleaf,
+      packageState: plugin?.summary.packageState ?? "missing",
+      authorityState,
+      compatibility: plugin?.summary.compatibility ?? null,
+      sourceEvidence,
+      settings,
+      message: pluginMessage(plugin, enabledInObsidian, selectedInThreadleaf),
+    };
+  });
 }
 
 function hotkeyOwner(
@@ -408,15 +536,15 @@ function parseHotkeys(
       const commandId = boundedString(rawCommandId, "Hotkey command identifier", 300);
       if (!Array.isArray(rawBindings) || rawBindings.length > maximumBindingsPerCommand) {
         throw new Error(
-          `Hotkey ${commandId} must contain at most ${maximumBindingsPerCommand} bindings.`,
+          `A hotkey override must contain at most ${maximumBindingsPerCommand} bindings.`,
         );
       }
       const bindings: string[] = [];
       for (const rawBinding of rawBindings) {
         try {
           bindings.push(formatHotkeyBinding(rawBinding));
-        } catch (error) {
-          warnings.push(`Hotkey ${commandId} contains an invalid binding: ${errorMessage(error)}`);
+        } catch {
+          warnings.push("A hotkey override contains an invalid binding.");
         }
       }
       const targetId = hotkeyTargets[commandId] ?? null;
@@ -424,8 +552,8 @@ function parseHotkeys(
       if (targetId && bindings.length === 1) {
         try {
           candidateBinding = normalizeKeyBinding(bindings[0] ?? "");
-        } catch (error) {
-          warnings.push(`Hotkey ${commandId} needs review: ${errorMessage(error)}`);
+        } catch {
+          warnings.push("A mapped hotkey override needs manual review.");
         }
       }
       const state = candidateBinding ? "ready" : "review";
@@ -459,6 +587,12 @@ function safeAssetName(value: unknown, label: string): string | null {
     throw new Error(`${label} must be a filename or folder name.`);
   }
   return name;
+}
+
+function appearanceSnippetFilename(snippetName: string): string {
+  return snippetName.toLocaleLowerCase("en-US").endsWith(".css")
+    ? snippetName
+    : `${snippetName}.css`;
 }
 
 async function containedFileExists(vaultPath: string, relativePath: string): Promise<boolean> {
@@ -505,7 +639,7 @@ async function parseAppearance(
             ? "system"
             : null;
     if (sourceColorScheme && colorSchemeCandidate === null) {
-      warnings.push(`Appearance mode ${sourceColorScheme} has no reviewed Threadleaf mapping.`);
+      warnings.push("One appearance mode has no reviewed Threadleaf mapping.");
     }
     const sourceThemeName = safeAssetName(source.value.cssTheme, "Community theme name");
     const themeAvailable = sourceThemeName
@@ -516,9 +650,7 @@ async function parseAppearance(
         ? `obsidian-theme:${encodeURIComponent(sourceThemeName)}`
         : null;
     if (sourceThemeName && !themeAvailable) {
-      warnings.push(
-        `Selected Obsidian theme ${sourceThemeName} is not installed as a readable package.`,
-      );
+      warnings.push("The selected Obsidian theme package is not readable.");
     }
     const rawSnippets = source.value.enabledCssSnippets ?? [];
     if (!Array.isArray(rawSnippets) || rawSnippets.length > 128) {
@@ -526,13 +658,12 @@ async function parseAppearance(
     }
     const sourceSnippetNames = rawSnippets
       .map((value) => safeAssetName(value, "CSS snippet name"))
-      .filter((value): value is string => value !== null);
+      .filter((value): value is string => value !== null)
+      .filter((value, index, values) => values.indexOf(value) === index);
     const snippetIdsCandidate: string[] = [];
     const missingSnippetNames: string[] = [];
     for (const snippetName of sourceSnippetNames) {
-      const filename = snippetName.toLocaleLowerCase("en-US").endsWith(".css")
-        ? snippetName
-        : `${snippetName}.css`;
+      const filename = appearanceSnippetFilename(snippetName);
       if (await containedFileExists(vaultPath, `.obsidian/snippets/${filename}`)) {
         snippetIdsCandidate.push(`obsidian-snippet:${encodeURIComponent(filename)}`);
       } else {
@@ -561,6 +692,35 @@ async function parseAppearance(
   }
 }
 
+async function appearanceSourceEvidence(
+  vaultPath: string,
+  appearance: AppearanceMigrationSummary,
+): Promise<MigrationSourceEvidence[]> {
+  const relativePaths: string[] = [];
+  if (appearance.sourceThemeName) {
+    relativePaths.push(
+      `.obsidian/themes/${appearance.sourceThemeName}/theme.css`,
+      `.obsidian/themes/${appearance.sourceThemeName}/manifest.json`,
+    );
+  }
+  for (const snippetName of appearance.sourceSnippetNames) {
+    relativePaths.push(`.obsidian/snippets/${appearanceSnippetFilename(snippetName)}`);
+  }
+  return Promise.all(
+    [...new Set(relativePaths)].map((relativePath) =>
+      inspectContainedEvidence(
+        vaultPath,
+        relativePath,
+        relativePath.endsWith("theme.css")
+          ? 2 * 1024 * 1024
+          : relativePath.endsWith("manifest.json")
+            ? 64 * 1024
+            : 512 * 1024,
+      ),
+    ),
+  );
+}
+
 function normalizeWorkspaceFile(value: unknown): string {
   const filePath = normalizeVaultPath(boundedString(value, "Workspace file path", 2_000));
   if (hasPrivateVaultSegment(filePath) || !filePath.toLocaleLowerCase("en-US").endsWith(".md")) {
@@ -574,6 +734,7 @@ interface WorkspaceLeafCandidate {
   area: "left" | "main" | "right";
   viewType: string;
   filePath: string | null;
+  invalidFilePath: boolean;
 }
 
 function collectWorkspaceLeaves(root: Record<string, unknown>): WorkspaceLeafCandidate[] {
@@ -599,6 +760,7 @@ function collectWorkspaceLeaves(root: Record<string, unknown>): WorkspaceLeafCan
         typeof state.type === "string" ? oneLine(state.type, 200) || "unknown" : "unknown";
       const nestedState = isRecord(state.state) ? state.state : {};
       let filePath: string | null = null;
+      let invalidFilePath = false;
       if (
         current.area === "main" &&
         (viewType === "markdown" || viewType === "excalidraw") &&
@@ -608,6 +770,7 @@ function collectWorkspaceLeaves(root: Record<string, unknown>): WorkspaceLeafCan
           filePath = normalizeWorkspaceFile(nestedState.file);
         } catch {
           filePath = null;
+          invalidFilePath = true;
         }
       }
       leaves.push({
@@ -615,6 +778,7 @@ function collectWorkspaceLeaves(root: Record<string, unknown>): WorkspaceLeafCan
         area: current.area,
         viewType,
         filePath,
+        invalidFilePath,
       });
       continue;
     }
@@ -653,6 +817,12 @@ async function parseWorkspace(
     );
     const restorablePaths = candidatePaths.filter((_path, index) => availability[index]);
     const missingPaths = candidatePaths.filter((_path, index) => !availability[index]);
+    const invalidPathCount = leaves.filter(
+      (leaf) =>
+        leaf.area === "main" &&
+        (leaf.viewType === "markdown" || leaf.viewType === "excalidraw") &&
+        leaf.invalidFilePath,
+    ).length;
     const activeLeafId = typeof source.value.active === "string" ? source.value.active : null;
     const activeCandidate = leaves.find((leaf) => leaf.id === activeLeafId)?.filePath ?? null;
     const activePath =
@@ -672,6 +842,11 @@ async function parseWorkspace(
     }
     if (missingPaths.length > 0) {
       warnings.push(`${missingPaths.length} workspace tab paths are not readable Markdown files.`);
+    }
+    if (invalidPathCount > 0) {
+      warnings.push(
+        `${invalidPathCount} workspace tab path${invalidPathCount === 1 ? " is" : "s are"} invalid or outside the vault.`,
+      );
     }
     if (activeCandidate && !activePath) {
       warnings.push("The active Obsidian workspace tab is not currently restorable.");
@@ -729,6 +904,7 @@ export async function loadObsidianMigrationPreview(
     options.vaultPath,
     enabledPluginIds,
     options.selectedPluginIds,
+    options.capabilityGrantsByPlugin ?? {},
     warnings,
   );
   const pluginIds = new Set(plugins.map((plugin) => plugin.id));
@@ -736,6 +912,7 @@ export async function loadObsidianMigrationPreview(
     parseAppearance(options.vaultPath, appearanceSource, warnings),
     parseWorkspace(options.vaultPath, desktopWorkspaceSource, warnings),
   ]);
+  const appearanceEvidence = await appearanceSourceEvidence(options.vaultPath, appearance);
   const mobileWorkspace = desktopWorkspace
     ? null
     : await parseWorkspace(options.vaultPath, mobileWorkspaceSource, warnings);
@@ -746,10 +923,33 @@ export async function loadObsidianMigrationPreview(
       warnings.push(`${source.summary.path}: ${source.summary.message ?? source.summary.state}`);
     }
   }
+  const sourceEvidence = [
+    ...sources.map((source) => evidenceFromSummary(source.summary)),
+    ...appearanceEvidence,
+    ...plugins.flatMap((plugin) => plugin.sourceEvidence),
+  ].sort((left, right) => left.path.localeCompare(right.path, "en-US"));
+  const sourceDigest = sha256(
+    Buffer.from(
+      sourceEvidence
+        .map((evidence) =>
+          [
+            evidence.path,
+            evidence.state,
+            evidence.byteLength ?? "",
+            evidence.sha256 ?? "",
+            evidence.revision ?? "",
+          ].join("\0"),
+        )
+        .join("\n"),
+      "utf8",
+    ),
+  );
   return {
     vaultId: options.vaultId,
     detected: sources.some((source) => source.summary.state !== "absent") || plugins.length > 0,
     readOnly: true,
+    sourceDigest,
+    sourceEvidence,
     sources: sources.map((source) => ({ ...source.summary })),
     plugins,
     hotkeys,

@@ -49,9 +49,11 @@ note tabs. Unsupported and missing behavior remains explicit.
 
 The preview is covered by malformed-input, oversized-input, containment, private-value
 non-disclosure, and exact-byte preservation fixtures. The production Electron surface is checked in
-light and dark schemes against a copied real-world Obsidian configuration. These checks establish a
-safe preview boundary, not completed import behavior. See the
-[migration contract](migration.md) for the source limits and candidate rules.
+light and dark schemes against a copied real-world Obsidian configuration. Reviewed apply is
+separately covered for per-item keyboard selection, exact grant conflicts, private-state restart
+recovery, rollback conflict safety, and complete `.obsidian/` byte preservation. These checks
+establish a private-state transaction boundary, not authority to rewrite Obsidian metadata. See the
+[migration contract](migration.md) for source limits, candidate rules, and transaction semantics.
 
 ## Headless catalog fixture
 

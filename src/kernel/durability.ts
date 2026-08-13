@@ -20,7 +20,7 @@ export async function readStableFile(filePath: string): Promise<FileSnapshot | n
   for (let attempt = 0; attempt < 3; attempt += 1) {
     let handle: Awaited<ReturnType<typeof fs.open>>;
     try {
-      handle = await fs.open(filePath, "r");
+      handle = await fs.open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         return null;
@@ -60,7 +60,7 @@ export async function readStableFileWithinLimit(
   for (let attempt = 0; attempt < 3; attempt += 1) {
     let handle: Awaited<ReturnType<typeof fs.open>>;
     try {
-      handle = await fs.open(filePath, "r");
+      handle = await fs.open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         return null;

@@ -1,5 +1,6 @@
 import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
+import { readStableFileWithinLimit } from "../kernel/durability";
 import {
   createPluginCompatibilityReport,
   maxPluginBundleBytes,
@@ -68,18 +69,14 @@ async function canonicalContainedPath(rootPath: string, candidatePath: string): 
 }
 
 async function readBoundedBytes(filePath: string, maxBytes: number): Promise<Buffer> {
-  const stat = await fs.stat(filePath);
-  if (!stat.isFile()) {
-    throw new Error("not a regular file");
+  const result = await readStableFileWithinLimit(filePath, maxBytes);
+  if (!result) {
+    throw Object.assign(new Error("file is missing"), { code: "ENOENT" });
   }
-  if (stat.size > maxBytes) {
+  if (result.status === "too-large") {
     throw new Error(`file exceeds the ${formatByteLimit(maxBytes)} limit`);
   }
-  const bytes = await fs.readFile(filePath);
-  if (bytes.byteLength > maxBytes) {
-    throw new Error("file grew beyond its size limit while reading");
-  }
-  return bytes;
+  return result.snapshot.bytes;
 }
 
 async function readBoundedText(filePath: string, maxBytes: number): Promise<string> {

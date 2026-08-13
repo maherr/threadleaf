@@ -6,7 +6,12 @@ import type {
 import type { AppUpdateSnapshot } from "./app-updates";
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
-import type { MigrationPreviewResponse } from "./migration";
+import type {
+  MigrationApplyOutcome,
+  MigrationApplyRequest,
+  MigrationPreviewResponse,
+  MigrationRollbackResponse,
+} from "./migration";
 import type { NativeMenuCommandId } from "./native-menu";
 import type { VaultNoteWorkflowSettings } from "./note-workflows";
 import type {
@@ -29,6 +34,30 @@ export type AppearanceUpdateResponse =
       status: "updated";
       settings: AppSettingsSnapshot;
       appearance: AppearanceSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type MigrationApplyResponse =
+  | {
+      status: "updated";
+      settings: AppSettingsSnapshot;
+      snapshot: RuntimeSnapshot;
+      outcome: MigrationApplyOutcome;
+      runtimeWarning: string | null;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type MigrationRollbackUpdateResponse =
+  | {
+      status: "updated";
+      settings: AppSettingsSnapshot;
+      snapshot: RuntimeSnapshot;
+      outcome: Extract<MigrationRollbackResponse, { status: "rolled-back" }>;
+      runtimeWarning: string | null;
+    }
+  | {
+      status: "conflict";
+      outcome: Extract<MigrationRollbackResponse, { status: "conflict" }>;
     }
   | { status: "stale-vault"; vaultId: string };
 
@@ -763,6 +792,14 @@ export interface ThreadleafBridge {
   ): Promise<PluginUpdateResponse>;
   reloadPlugins(expectedVaultId: string): Promise<PluginUpdateResponse>;
   getMigrationPreview(expectedVaultId: string): Promise<MigrationPreviewResponse>;
+  applyMigration(
+    expectedVaultId: string,
+    request: MigrationApplyRequest,
+  ): Promise<MigrationApplyResponse>;
+  rollbackMigration(
+    expectedVaultId: string,
+    transactionId: string,
+  ): Promise<MigrationRollbackUpdateResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse>;
   loadVaultImage(

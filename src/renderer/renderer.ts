@@ -58,7 +58,11 @@ import {
   type ShortcutTargetId,
   shortcutTargetForEvent,
 } from "../shared/key-bindings";
-import type { ObsidianMigrationPreview } from "../shared/migration";
+import type {
+  MigrationCandidate,
+  MigrationPlan,
+  ObsidianMigrationPreview,
+} from "../shared/migration";
 import {
   createDefaultVaultNoteWorkflowSettings,
   type VaultNoteWorkflowSettings,
@@ -243,6 +247,12 @@ const elements = {
   migrationAppearance: getElement("migration-appearance"),
   migrationWorkspace: getElement("migration-workspace"),
   migrationWarnings: getElement("migration-warnings"),
+  migrationReviewSummary: getElement("migration-review-summary"),
+  migrationReviewReceipt: getElement("migration-review-receipt"),
+  migrationCandidateList: getElement("migration-candidate-list"),
+  migrationApply: getButton("migration-apply"),
+  migrationRollback: getButton("migration-rollback"),
+  migrationApplyStatus: getElement("migration-apply-status"),
   appUpdateState: getElement("app-update-state"),
   appUpdateTitle: getElement("app-update-title"),
   appUpdateMessage: getElement("app-update-message"),
@@ -738,6 +748,10 @@ let pluginPackageRequest = 0;
 let pluginPackageRestoreFocus: HTMLElement | null = null;
 let pluginAuthorityRestoreFocus: HTMLElement | null = null;
 let migrationPreview: ObsidianMigrationPreview | null = null;
+let migrationPlan: MigrationPlan | null = null;
+let migrationSelection = new Set<string>();
+let migrationLastTransactionId: string | null = null;
+let migrationApplyBusy = false;
 let migrationBusy = false;
 let migrationRequest = 0;
 let migrationMessage = "Open the preview to inspect existing Obsidian behavior.";
@@ -3508,6 +3522,7 @@ function settingsOperationBusy(): boolean {
     accessibilityBusy ||
     pluginBusy ||
     migrationBusy ||
+    migrationApplyBusy ||
     supportBundleBusy
   );
 }
@@ -4847,10 +4862,16 @@ async function applyPluginPackageReview(): Promise<void> {
   }
 }
 
-async function refreshMigrationPreview(successMessage?: string): Promise<void> {
+async function refreshMigrationPreview(
+  successMessage?: string,
+  successKind?: "saved" | "warning",
+): Promise<void> {
   const vaultId = currentSnapshot?.vault.id;
   if (!vaultId) {
     migrationPreview = null;
+    migrationPlan = null;
+    migrationSelection = new Set();
+    migrationLastTransactionId = null;
     migrationMessage = "Open a writable vault to inspect existing Obsidian behavior.";
     migrationMessageKind = "info";
     renderSettings();
@@ -4858,6 +4879,9 @@ async function refreshMigrationPreview(successMessage?: string): Promise<void> {
   }
   const request = ++migrationRequest;
   migrationBusy = true;
+  migrationPreview = null;
+  migrationPlan = null;
+  migrationSelection = new Set();
   migrationMessage = "Reading bounded .obsidian metadata without changing it…";
   migrationMessageKind = "info";
   renderSettings();
@@ -4872,12 +4896,16 @@ async function refreshMigrationPreview(successMessage?: string): Promise<void> {
       return;
     }
     migrationPreview = response.preview;
+    migrationPlan = response.plan;
+    migrationLastTransactionId = response.rollbackTransactionId;
+    migrationSelection = new Set();
     migrationMessage =
       successMessage ??
       (response.preview.detected
-        ? "Read-only migration preview is current. Nothing was imported or changed."
+        ? "Review the checked candidates before applying private Threadleaf state."
         : "No Obsidian behavior metadata was found. Nothing was changed.");
-    migrationMessageKind = response.preview.warnings.length > 0 ? "warning" : "saved";
+    migrationMessageKind =
+      successKind ?? (response.preview.warnings.length > 0 ? "warning" : "saved");
   } catch (error) {
     if (request !== migrationRequest) {
       return;
@@ -4889,6 +4917,80 @@ async function refreshMigrationPreview(successMessage?: string): Promise<void> {
       migrationBusy = false;
       renderSettings();
     }
+  }
+}
+
+async function applyMigrationReview(): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  const plan = migrationPlan?.vaultId === vaultId ? migrationPlan : null;
+  if (migrationBusy || migrationApplyBusy || !vaultId || !plan || migrationSelection.size === 0) {
+    return;
+  }
+  migrationApplyBusy = true;
+  migrationMessage = "Applying the reviewed private-state transaction…";
+  migrationMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.applyMigration(vaultId, {
+      planId: plan.planId,
+      sourceDigest: plan.sourceDigest,
+      selectedItemIds: [...migrationSelection],
+    });
+    if (response.status === "stale-vault") {
+      migrationMessage = "The active vault changed before migration apply completed.";
+      migrationMessageKind = "info";
+      return;
+    }
+    migrationLastTransactionId = response.outcome.transactionId;
+    migrationMessage = `Private state committed for ${response.outcome.selectedItemIds.length} reviewed item${response.outcome.selectedItemIds.length === 1 ? "" : "s"}. Before and after state were retained for rollback.${response.runtimeWarning ? ` ${response.runtimeWarning}` : ""}`;
+    migrationMessageKind = response.runtimeWarning ? "warning" : "saved";
+    migrationSelection = new Set();
+    await refreshMigrationPreview(migrationMessage, migrationMessageKind);
+  } catch (error) {
+    migrationPlan = null;
+    migrationSelection = new Set();
+    migrationMessage = error instanceof Error ? error.message : String(error);
+    migrationMessageKind = "error";
+  } finally {
+    migrationApplyBusy = false;
+    renderSettings();
+  }
+}
+
+async function rollbackMigrationReview(): Promise<void> {
+  const vaultId = currentSnapshot?.vault.id;
+  if (migrationBusy || migrationApplyBusy || !vaultId || !migrationLastTransactionId) {
+    return;
+  }
+  migrationApplyBusy = true;
+  migrationMessage = "Checking the private-state receipt before rollback…";
+  migrationMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.rollbackMigration(vaultId, migrationLastTransactionId);
+    if (response.status === "stale-vault") {
+      migrationMessage = "The active vault changed before rollback completed.";
+      migrationMessageKind = "info";
+      return;
+    }
+    if (response.status === "conflict") {
+      migrationMessage = response.outcome.message;
+      migrationMessageKind = "warning";
+      return;
+    }
+    migrationLastTransactionId = null;
+    migrationSelection = new Set();
+    migrationMessage = `Rollback committed. Newer private changes were not overwritten.${response.runtimeWarning ? ` ${response.runtimeWarning}` : ""}`;
+    migrationMessageKind = response.runtimeWarning ? "warning" : "saved";
+    await refreshMigrationPreview(migrationMessage, migrationMessageKind);
+  } catch (error) {
+    migrationPlan = null;
+    migrationSelection = new Set();
+    migrationMessage = error instanceof Error ? error.message : String(error);
+    migrationMessageKind = "error";
+  } finally {
+    migrationApplyBusy = false;
+    renderSettings();
   }
 }
 
@@ -4931,10 +5033,115 @@ function appendMigrationFact(target: HTMLElement, label: string, value: string):
   target.append(row);
 }
 
+function migrationCandidateStatus(candidate: MigrationCandidate): string {
+  switch (candidate.status) {
+    case "ready":
+      return "Ready";
+    case "review":
+      return "Review required";
+    case "unsupported":
+      return "Unsupported";
+    case "missing":
+      return "Missing package";
+    case "conflict":
+      return "Conflict";
+  }
+}
+
+function migrationSafeValue(value: string | null): string {
+  return value === null ? "Not set" : value;
+}
+
+function renderMigrationReview(): void {
+  elements.migrationCandidateList.replaceChildren();
+  const plan = migrationPlan?.vaultId === currentSnapshot?.vault.id ? migrationPlan : null;
+  const selectedCount = plan
+    ? [...migrationSelection].filter((id) =>
+        plan.candidates.some((candidate) => candidate.id === id),
+      ).length
+    : 0;
+  elements.migrationReviewSummary.textContent = plan
+    ? `${plan.candidates.filter((candidate) => candidate.status === "ready").length} ready · ${selectedCount} selected · source receipt ${plan.sourceDigest.slice(0, 12)}`
+    : "No reviewed plan is ready.";
+  elements.migrationReviewReceipt.textContent = migrationLastTransactionId
+    ? `Transaction ${migrationLastTransactionId.slice(0, 12)}`
+    : "No transaction";
+  elements.migrationReviewReceipt.dataset.planId = plan?.planId ?? "";
+  elements.migrationApply.disabled =
+    migrationBusy ||
+    migrationApplyBusy ||
+    readOnlyVault() ||
+    !plan ||
+    selectedCount === 0 ||
+    !currentSnapshot?.vault.id;
+  elements.migrationRollback.disabled =
+    migrationBusy || migrationApplyBusy || !migrationLastTransactionId || !plan;
+  elements.migrationApplyStatus.textContent = migrationApplyBusy
+    ? "Writing only private Threadleaf state. The vault and .obsidian files remain untouched."
+    : migrationMessageKind === "error" || migrationMessageKind === "warning"
+      ? migrationMessage
+      : "";
+  elements.migrationApplyStatus.dataset.kind = migrationMessageKind;
+  if (!plan) {
+    appendMigrationEmpty(
+      elements.migrationCandidateList,
+      "Refresh to create an exact reviewed plan.",
+    );
+    return;
+  }
+  if (plan.candidates.length === 0) {
+    appendMigrationEmpty(
+      elements.migrationCandidateList,
+      "No behavior candidates are available for review.",
+    );
+    return;
+  }
+  for (const candidate of plan.candidates) {
+    const row = document.createElement("label");
+    row.className = "migration-candidate";
+    row.dataset.candidateId = candidate.id;
+    row.dataset.state = candidate.status;
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.candidateId = candidate.id;
+    checkbox.checked = migrationSelection.has(candidate.id);
+    checkbox.disabled = migrationBusy || migrationApplyBusy || candidate.status !== "ready";
+    checkbox.ariaLabel = `Select ${candidate.label}`;
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        migrationSelection.add(candidate.id);
+      } else {
+        migrationSelection.delete(candidate.id);
+      }
+      renderMigrationReview();
+      const replacement = [...elements.migrationCandidateList.querySelectorAll("input")].find(
+        (input) => input.dataset.candidateId === candidate.id,
+      );
+      replacement?.focus();
+    });
+    const copy = document.createElement("span");
+    copy.className = "migration-candidate-copy";
+    const label = document.createElement("strong");
+    label.textContent = candidate.label;
+    const message = document.createElement("small");
+    message.textContent = candidate.message;
+    const diff = document.createElement("small");
+    diff.className = "migration-candidate-diff";
+    diff.textContent = `Before: ${migrationSafeValue(candidate.before)} · After: ${migrationSafeValue(candidate.after)}`;
+    copy.append(label, message, diff);
+    row.append(
+      checkbox,
+      copy,
+      migrationBadge(migrationCandidateStatus(candidate), candidate.status),
+    );
+    elements.migrationCandidateList.append(row);
+  }
+}
+
 function renderMigrationSettings(): void {
   const vaultId = currentSnapshot?.vault.id ?? null;
   const preview = migrationPreview?.vaultId === vaultId ? migrationPreview : null;
-  elements.migrationRefresh.disabled = migrationBusy || !vaultId;
+  elements.migrationRefresh.disabled = migrationBusy || migrationApplyBusy || !vaultId;
   elements.migrationState.textContent = migrationBusy
     ? "Scanning"
     : preview?.detected
@@ -4959,6 +5166,7 @@ function renderMigrationSettings(): void {
   ]) {
     target.replaceChildren();
   }
+  renderMigrationReview();
 
   if (!preview) {
     appendMigrationEmpty(
@@ -5160,6 +5368,7 @@ function renderMigrationSettings(): void {
     item.textContent = warning;
     elements.migrationWarnings.append(item);
   }
+  renderMigrationReview();
 }
 
 function packageActionButton(
@@ -6594,6 +6803,10 @@ function render(snapshot: RuntimeSnapshot): void {
     migrationRequest += 1;
     migrationBusy = false;
     migrationPreview = null;
+    migrationPlan = null;
+    migrationSelection = new Set();
+    migrationLastTransactionId = null;
+    migrationApplyBusy = false;
     migrationMessage = "Inspecting existing Obsidian behavior for this vault.";
     migrationMessageKind = "info";
     lastPluginEditorUpdateId = null;
@@ -8556,7 +8769,15 @@ elements.noteWorkflowForm.addEventListener("submit", (event) => {
   void saveNoteWorkflows();
 });
 elements.migrationRefresh.addEventListener("click", () => {
-  void refreshMigrationPreview("Read-only migration preview refreshed. Nothing was changed.");
+  void refreshMigrationPreview(
+    "Migration preview refreshed. Review the exact candidates before applying.",
+  );
+});
+elements.migrationApply.addEventListener("click", () => {
+  void applyMigrationReview();
+});
+elements.migrationRollback.addEventListener("click", () => {
+  void rollbackMigrationReview();
 });
 elements.pluginModeToggle.addEventListener("click", () => {
   void setCompatibilityMode(

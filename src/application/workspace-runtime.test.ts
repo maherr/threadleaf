@@ -13,6 +13,7 @@ import {
   type PersistedWorkspaceState,
   parseWorkspaceState,
   type WorkspaceStateStore,
+  workspaceStatesEqual,
 } from "./workspace-state";
 
 const fixtureVault = path.resolve("fixtures/vaults/basic");
@@ -26,6 +27,8 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
   readonly saved: PersistedWorkspaceState[] = [];
   loadError: Error | null = null;
   saveError: Error | null = null;
+  beforeSave: (() => Promise<void>) | null = null;
+  #writeTail: Promise<void> = Promise.resolve();
   readonly #initial: {
     openPaths: string[];
     pinnedPaths?: string[];
@@ -66,18 +69,59 @@ class MemoryWorkspaceStateStore implements WorkspaceStateStore {
       : null;
   }
 
-  async save(state: PersistedWorkspaceState): Promise<PersistedWorkspaceState> {
-    if (this.saveError) {
-      throw this.saveError;
-    }
+  async save(
+    state: PersistedWorkspaceState,
+    expectedCurrent?: PersistedWorkspaceState | null,
+  ): Promise<PersistedWorkspaceState> {
     const normalized = createWorkspaceLayout(
       state.vaultId,
       state.panes,
       state.activePaneId,
       state.splitDirection,
     );
-    this.value = normalized;
-    this.saved.push(normalized);
+    const write = this.#writeTail
+      .catch(() => undefined)
+      .then(async () => {
+        if (this.saveError) {
+          throw this.saveError;
+        }
+        await this.beforeSave?.();
+        const stored =
+          this.value ??
+          (this.#initial
+            ? createWorkspaceLayout(
+                state.vaultId,
+                [
+                  {
+                    id: "primary",
+                    openPaths: this.#initial.openPaths,
+                    ...(this.#initial.pinnedPaths
+                      ? { pinnedPaths: this.#initial.pinnedPaths }
+                      : {}),
+                    activePath: this.#initial.activePath,
+                  },
+                ],
+                "primary",
+                null,
+              )
+            : null);
+        if (
+          expectedCurrent !== undefined &&
+          ((stored === null) !== (expectedCurrent === null) ||
+            (stored !== null &&
+              expectedCurrent !== null &&
+              !workspaceStatesEqual(stored, expectedCurrent)))
+        ) {
+          throw new Error("Threadleaf workspace state changed before it could be saved.");
+        }
+        this.value = normalized;
+        this.saved.push(normalized);
+      });
+    this.#writeTail = write.then(
+      () => undefined,
+      () => undefined,
+    );
+    await write;
     return normalized;
   }
 }
@@ -435,6 +479,51 @@ describe("WorkspaceRuntime", () => {
     expect((await workspace.getSnapshot()).workspace?.tabs).toEqual([
       { path: "Linked Note.md", title: "Linked Note", active: true, pinned: false },
     ]);
+  });
+
+  it("rejects a concurrent tab update instead of overwriting a migration workspace write", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    const current = await workspace.getWorkspaceState(workspace.vaultId);
+    const migrated = createWorkspaceLayout(
+      workspace.vaultId,
+      [{ id: "primary", openPaths: ["Welcome.md"], activePath: "Welcome.md" }],
+      "primary",
+      null,
+    );
+    let markSaveStarted: () => void = () => undefined;
+    const saveStarted = new Promise<void>((resolve) => {
+      markSaveStarted = resolve;
+    });
+    let releaseSave: () => void = () => undefined;
+    const saveGate = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    let firstSave = true;
+    store.beforeSave = async () => {
+      if (!firstSave) {
+        return;
+      }
+      firstSave = false;
+      markSaveStarted();
+      await saveGate;
+    };
+
+    const migration = workspace.setWorkspaceState(migrated, workspace.vaultId, current);
+    await saveStarted;
+    const pin = workspace.toggleTabPin("Linked Note.md", "primary", workspace.vaultId).then(
+      () => ({ status: "resolved" as const, error: null }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    releaseSave();
+
+    await expect(migration).resolves.toMatchObject({
+      workspace: { activeNote: { path: "Welcome.md" } },
+    });
+    await expect(pin).resolves.toMatchObject({ status: "rejected" });
+    expect((await pin).error).toBeInstanceOf(Error);
+    expect(String((await pin).error)).toContain("workspace state changed before it could be saved");
+    await expect(workspace.getWorkspaceState(workspace.vaultId)).resolves.toEqual(migrated);
   });
 
   it("keeps pinned ordering through pane split, transfer, collapse, and restart", async () => {

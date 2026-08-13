@@ -5860,6 +5860,132 @@ button.inspector-item:hover {
   font-size: 8px;
 }
 
+.migration-review-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.migration-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.migration-group-header > span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.migration-group-header strong {
+  font-size: 10px;
+}
+
+.migration-group-header small {
+  color: var(--ink-muted);
+  font-size: 7px;
+}
+
+.migration-review-receipt {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  font: 750 7px var(--mono);
+}
+
+.migration-candidate-list {
+  display: grid;
+}
+
+.migration-candidate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.migration-candidate:last-child {
+  border-bottom: 0;
+}
+
+.migration-candidate input {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--accent-strong);
+}
+
+.migration-candidate input:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.migration-candidate-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.migration-candidate-copy strong {
+  overflow-wrap: anywhere;
+  font-size: 9px;
+}
+
+.migration-candidate-copy small {
+  color: var(--ink-soft);
+  font-size: 7px;
+  line-height: 1.4;
+}
+
+.migration-candidate-diff {
+  color: var(--ink-muted);
+  font-family: var(--mono);
+}
+
+.migration-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 11px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.migration-review-actions button {
+  min-height: 31px;
+  padding: 0 10px;
+  font-size: 8px;
+}
+
+.migration-review-status {
+  margin: 0;
+  padding: 0 11px 10px;
+  color: var(--ink-soft);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.migration-review-status[data-kind="warning"],
+.migration-review-status[data-kind="error"] {
+  color: var(--signal);
+}
+
+.migration-review-status:empty {
+  display: none;
+}
+
 .migration-overview {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

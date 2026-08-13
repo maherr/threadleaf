@@ -218,8 +218,9 @@ normal external vault backup and the privacy-safe feedback workflow.
 - [x] Preview enabled-plugin inventory, settings-file shape without private values, reviewed hotkey
       mappings, themes, CSS snippets, and restorable workspace note tabs through bounded contained
       reads. Never require or mutate `.obsidian/`.
-- [ ] Apply only explicitly reviewed behavior candidates to Threadleaf's private settings, with
-      per-item selection, conflict reporting, rollback, and no `.obsidian/` writes.
+- [x] Apply only explicitly reviewed behavior candidates to Threadleaf's private settings, with
+      exact source receipts, per-item selection, conflict reporting, atomic interruption recovery,
+      rollback refusal over newer private changes, and no `.obsidian/` writes.
 - [x] Publish a generated plugin compatibility registry with exact plugin and Threadleaf version
       binding, supported workflows and executable gates, known failures, required static authority
       classes, platform limits, and deterministic machine-readable and Markdown output.

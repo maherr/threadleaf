@@ -138,6 +138,53 @@ describe("FileWorkspaceStateStore", () => {
     });
   });
 
+  it("rejects a queued stale workspace replacement instead of losing the committed layout", async () => {
+    const store = new FileWorkspaceStateStore(workspaceDirectory);
+    const initial = {
+      version: 2 as const,
+      vaultId,
+      panes: [
+        {
+          id: "primary" as const,
+          openPaths: ["First.md"],
+          pinnedPaths: [],
+          activePath: "First.md",
+        },
+      ],
+      activePaneId: "primary" as const,
+      splitDirection: null,
+    };
+    const migrated = {
+      ...initial,
+      panes: [
+        {
+          id: "primary" as const,
+          openPaths: ["Second.md"],
+          pinnedPaths: [],
+          activePath: "Second.md",
+        },
+      ],
+    };
+    const stale = {
+      ...initial,
+      panes: [
+        {
+          id: "primary" as const,
+          openPaths: ["First.md"],
+          pinnedPaths: ["First.md"],
+          activePath: "First.md",
+        },
+      ],
+    };
+    await store.save(initial);
+
+    await store.save(migrated, initial);
+    await expect(store.save(stale, initial)).rejects.toThrow(
+      "workspace state changed before it could be saved",
+    );
+    await expect(store.load(vaultId)).resolves.toEqual(migrated);
+  });
+
   it("rejects malformed state without rewriting it", async () => {
     const store = new FileWorkspaceStateStore(workspaceDirectory);
     const filePath = path.join(workspaceDirectory, `${vaultId}.json`);

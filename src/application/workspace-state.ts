@@ -49,7 +49,34 @@ export interface WorkspaceStateDocument extends LegacyWorkspaceState {
 
 export interface WorkspaceStateStore {
   load(vaultId: string): Promise<PersistedWorkspaceState | null>;
-  save(state: PersistedWorkspaceState): Promise<PersistedWorkspaceState>;
+  save(
+    state: PersistedWorkspaceState,
+    expectedCurrent?: PersistedWorkspaceState | null,
+  ): Promise<PersistedWorkspaceState>;
+}
+
+export function workspaceStatesEqual(
+  left: PersistedWorkspaceState,
+  right: PersistedWorkspaceState,
+): boolean {
+  return (
+    left.vaultId === right.vaultId &&
+    left.activePaneId === right.activePaneId &&
+    left.splitDirection === right.splitDirection &&
+    left.panes.length === right.panes.length &&
+    left.panes.every((pane, paneIndex) => {
+      const other = right.panes[paneIndex];
+      return (
+        other !== undefined &&
+        pane.id === other.id &&
+        pane.activePath === other.activePath &&
+        pane.openPaths.length === other.openPaths.length &&
+        pane.openPaths.every((filePath, pathIndex) => filePath === other.openPaths[pathIndex]) &&
+        pane.pinnedPaths.length === other.pinnedPaths.length &&
+        pane.pinnedPaths.every((filePath, pathIndex) => filePath === other.pinnedPaths[pathIndex])
+      );
+    })
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
