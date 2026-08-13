@@ -1,0 +1,1 @@
+These attachment bytes are synthetic and must survive a round trip exactly.

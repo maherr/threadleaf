@@ -443,4 +443,34 @@ describe("Obsidian compatibility vault writes", () => {
     );
     expect(writer.writeText).toHaveBeenCalledTimes(1);
   });
+
+  it("reports the active mutation kind when a plugin write does not settle", async () => {
+    const { file, rootPath } = await createVaultFile();
+    const committed = {
+      status: "committed" as const,
+      path: file.path,
+      revision: revisionOf(Buffer.from("pending drawing", "utf8")),
+      transactionId: "pending-write",
+    };
+    let resolveWrite!: (value: typeof committed) => void;
+    const pendingWrite = new Promise<typeof committed>((resolve) => {
+      resolveWrite = resolve;
+    });
+    const writeText = vi.fn(() => pendingWrite);
+    const vault = new Vault(rootPath, undefined, { writeText });
+    const writableFile = vault.getFileByPath(file.path);
+    if (!writableFile) {
+      throw new Error("Writable fixture drawing was not discovered.");
+    }
+
+    const mutation = vault.modify(writableFile, "pending drawing");
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    await expect(vault.waitForSettledMutations(1, 25)).rejects.toThrow(
+      "Active operations: modify-text.",
+    );
+
+    resolveWrite(committed);
+    await mutation;
+    await expect(vault.waitForSettledMutations(1, 100)).resolves.toBeUndefined();
+  });
 });

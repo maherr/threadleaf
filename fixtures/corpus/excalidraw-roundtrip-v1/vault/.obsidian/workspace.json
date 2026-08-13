@@ -1,0 +1,8 @@
+{
+  "main": {
+    "type": "split",
+    "children": [
+      {"type": "leaf", "state": {"type": "excalidraw", "state": {"file": "Drawings/Unicode Scene.excalidraw.md"}}}
+    ]
+  }
+}

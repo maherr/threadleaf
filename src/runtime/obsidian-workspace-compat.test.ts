@@ -5,40 +5,86 @@ import { ItemView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import { CompatibilityIntegrationRegistry, Workspace } from "./obsidian-workspace-compat";
 
 describe("Obsidian compatibility workspace lifecycle", () => {
-  it("awaits startup callbacks and callbacks registered after layout readiness", async () => {
+  it("dispatches startup callbacks and immediately runs callbacks registered after readiness", async () => {
     const workspace = new Workspace();
     const events: string[] = [];
-    workspace.onLayoutReady(async () => {
-      await Promise.resolve();
+    workspace.onLayoutReady(() => {
       events.push("initial");
     });
 
     await workspace.markLayoutReady();
     expect(events).toEqual(["initial"]);
 
-    workspace.onLayoutReady(async () => {
-      await Promise.resolve();
+    workspace.onLayoutReady(() => {
       events.push("late");
     });
-    await workspace.waitForLayoutReadyCallbacks();
 
     expect(events).toEqual(["initial", "late"]);
   });
 
-  it("reports a callback failure once without poisoning later callbacks", async () => {
+  it("does not let a never-settling callback block layout readiness or healthy callbacks", async () => {
     const workspace = new Workspace();
+    const events: string[] = [];
+    workspace.onLayoutReady(async () => {
+      events.push("first-started");
+      await new Promise(() => undefined);
+    });
     workspace.onLayoutReady(() => {
-      throw new Error("fixture startup failure");
+      events.push("second-started");
     });
 
-    await expect(workspace.markLayoutReady()).rejects.toThrow("fixture startup failure");
+    await Promise.race([
+      workspace.markLayoutReady(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("layout readiness remained pending")), 50),
+      ),
+    ]);
+
+    expect(events).toEqual(["first-started", "second-started"]);
+  });
+
+  it("reports synchronous and asynchronous callback failures without poisoning readiness", async () => {
+    const workspace = new Workspace();
+    const failures: string[] = [];
+    workspace.setLayoutReadyErrorHandler((error) => {
+      failures.push(error instanceof Error ? error.message : String(error));
+    });
+    workspace.onLayoutReady(() => {
+      throw new Error("synchronous fixture failure");
+    });
+    workspace.onLayoutReady(async () => {
+      throw new Error("asynchronous fixture failure");
+    });
+
+    await expect(workspace.markLayoutReady()).resolves.toBeUndefined();
+    await Promise.resolve();
 
     let lateCallbackRan = false;
     workspace.onLayoutReady(() => {
       lateCallbackRan = true;
     });
-    await expect(workspace.waitForLayoutReadyCallbacks()).resolves.toBeUndefined();
     expect(lateCallbackRan).toBe(true);
+    expect(failures).toEqual(["synchronous fixture failure", "asynchronous fixture failure"]);
+  });
+
+  it("defers callbacks registered during dispatch without extending readiness", async () => {
+    const workspace = new Workspace();
+    const events: string[] = [];
+    workspace.onLayoutReady(() => {
+      events.push("outer");
+      workspace.onLayoutReady(async () => {
+        events.push("nested");
+        await new Promise(() => undefined);
+      });
+    });
+
+    await Promise.race([
+      workspace.markLayoutReady(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("nested callback extended readiness")), 50),
+      ),
+    ]);
+    expect(events).toEqual(["outer", "nested"]);
   });
 
   it("detaches every leaf of one view type without touching other views", () => {
@@ -108,10 +154,13 @@ describe("Obsidian compatibility workspace lifecycle", () => {
 
         protected override async onClose(): Promise<void> {
           await Promise.resolve();
+          expect(this.containerEl.dataset.pluginAlive).toBe("true");
           events.push("view-close");
+          delete this.containerEl.dataset.pluginAlive;
         }
 
         override onunload(): void {
+          this.containerEl.dataset.pluginAlive = "true";
           events.push("component-unload");
         }
       }
@@ -136,8 +185,8 @@ describe("Obsidian compatibility workspace lifecycle", () => {
         "component-load",
         "view-open",
         "state",
-        "view-close",
         "component-unload",
+        "view-close",
       ]);
       expect(container.isConnected).toBe(false);
     } finally {
@@ -201,7 +250,7 @@ describe("Obsidian compatibility workspace lifecycle", () => {
       await leaf.setViewState({ type: "failing-close-fixture" });
 
       await expect(leaf.detach()).rejects.toThrow("fixture close failure");
-      expect(events).toEqual(["view-close", "component-unload"]);
+      expect(events).toEqual(["component-unload", "view-close"]);
       expect(container.isConnected).toBe(false);
     } finally {
       if (previousDocument === undefined) {

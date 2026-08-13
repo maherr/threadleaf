@@ -134,6 +134,13 @@ renderer argv, exact attachment bytes, and both light and dark screenshots plus 
 control. Shell actions remain intentionally inert until a separately reviewed native capability is
 implemented.
 
+The Excalidraw-specific public-format extension lives in
+[Excalidraw round-trip boundary](excalidraw-roundtrip.md). It adds native `.excalidraw` JSON,
+frontmatter, compressed and uncompressed Markdown scenes, Unicode and nested attachment manifests,
+rename reference rewrites, exact-byte versus semantic comparisons, and a revision-conflict case.
+Its packaged Electron gate is separate because it requires an explicit X11 Xvfb display, temporary
+profile, CDP, and the unchanged public plugin release at runtime.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

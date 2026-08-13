@@ -28,7 +28,10 @@
         "compatibility/registry.v1.json",
         "src/generated/plugin-compatibility-registry.ts",
         "fixtures/corpus/same-vault-v1/cases.json",
-        "fixtures/corpus/same-vault-v1/manifest.json"
+        "fixtures/corpus/same-vault-v1/manifest.json",
+        "fixtures/corpus/excalidraw-roundtrip-v1/cases.json",
+        "fixtures/corpus/excalidraw-roundtrip-v1/manifest.json",
+        "fixtures/corpus/excalidraw-roundtrip-v1/vault/.obsidian/workspace.json"
       ],
       "formatter": {
         "enabled": false

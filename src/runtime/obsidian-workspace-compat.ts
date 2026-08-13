@@ -89,17 +89,25 @@ export class Workspace {
   private readonly leaves = new Set<unknown>();
   private readonly listeners = new Map<string, Set<EventCallback>>();
   private leafFactory: WorkspaceLeafFactory | null = null;
+  private layoutReadyCallbackActive = false;
+  private layoutReadyErrorHandler: ((error: unknown) => void) | null = null;
   private layoutReady = false;
-  private layoutReadyFailure: unknown = null;
-  private layoutReadyTail: Promise<void> = Promise.resolve();
 
   setLeafFactory(factory: WorkspaceLeafFactory): void {
     this.leafFactory = factory;
   }
 
+  setLayoutReadyErrorHandler(handler: (error: unknown) => void): void {
+    this.layoutReadyErrorHandler = handler;
+  }
+
   onLayoutReady(callback: () => unknown): void {
     if (this.layoutReady) {
-      this.enqueueLayoutReadyCallback(callback);
+      if (this.layoutReadyCallbackActive) {
+        queueMicrotask(() => this.invokeLayoutReadyCallback(callback));
+      } else {
+        this.invokeLayoutReadyCallback(callback);
+      }
       return;
     }
     this.layoutReadyCallbacks.add(callback);
@@ -111,20 +119,8 @@ export class Workspace {
       const callbacks = [...this.layoutReadyCallbacks];
       this.layoutReadyCallbacks.clear();
       for (const callback of callbacks) {
-        this.enqueueLayoutReadyCallback(callback);
+        this.invokeLayoutReadyCallback(callback);
       }
-    }
-
-    let observedTail: Promise<void>;
-    do {
-      observedTail = this.layoutReadyTail;
-      await observedTail;
-    } while (observedTail !== this.layoutReadyTail);
-
-    if (this.layoutReadyFailure) {
-      const failure = this.layoutReadyFailure;
-      this.layoutReadyFailure = null;
-      throw failure;
     }
   }
 
@@ -132,20 +128,27 @@ export class Workspace {
     return this.layoutReady;
   }
 
-  private enqueueLayoutReadyCallback(callback: () => unknown): void {
-    this.layoutReadyTail = this.layoutReadyTail.then(async () => {
-      try {
-        await callback();
-      } catch (error) {
-        this.layoutReadyFailure ??= error;
-      }
-    });
+  private invokeLayoutReadyCallback(callback: () => unknown): void {
+    this.layoutReadyCallbackActive = true;
+    try {
+      void Promise.resolve(callback()).catch((error) => this.reportLayoutReadyError(error));
+    } catch (error) {
+      this.reportLayoutReadyError(error);
+    } finally {
+      this.layoutReadyCallbackActive = false;
+    }
+  }
+
+  private reportLayoutReadyError(error: unknown): void {
+    try {
+      this.layoutReadyErrorHandler?.(error);
+    } catch {
+      // Diagnostic reporting cannot become a workspace-readiness barrier.
+    }
   }
 
   async waitForLayoutReadyCallbacks(): Promise<void> {
-    if (this.layoutReady) {
-      await this.markLayoutReady();
-    }
+    await Promise.resolve();
   }
 
   registerLeaf(leaf: unknown): () => void {

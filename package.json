@@ -65,6 +65,7 @@
     "test:packaged-attachments": "pnpm run pack:dir && xvfb-run -a -s '-screen 0 1440x900x24 -nolisten tcp' node scripts/check-packaged-attachments.mjs",
     "test:linux-packages": "node scripts/check-linux-packages.mjs",
     "test:live-preview": "pnpm run build && node scripts/check-live-preview.mjs",
+    "test:excalidraw-roundtrip": "pnpm run build && node scripts/check-excalidraw-roundtrip.mjs",
     "test:note-bookmarks": "pnpm run build && node scripts/check-note-bookmarks.mjs",
     "test:publish-export": "pnpm run build && node scripts/check-publish-export.mjs",
     "test:note-workflows": "pnpm run build && node scripts/check-note-workflows.mjs",

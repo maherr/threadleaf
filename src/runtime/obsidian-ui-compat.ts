@@ -1202,12 +1202,12 @@ export class WorkspaceLeaf {
       }
     }
     try {
-      await view.closeCompatibilityView();
+      view.unload();
     } catch (error) {
       failure ??= error;
     }
     try {
-      view.unload();
+      await view.closeCompatibilityView();
     } catch (error) {
       failure ??= error;
     }

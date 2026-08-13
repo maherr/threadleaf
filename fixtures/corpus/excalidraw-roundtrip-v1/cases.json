@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "threadleaf.excalidraw-roundtrip.v1",
+  "license": "CC0-1.0",
+  "canonicalRoot": "vault",
+  "manifest": "manifest.json",
+  "cases": [
+    {
+      "id": "markdown.uncompressed-semantic-edit",
+      "category": "markdown-scene",
+      "support": "supported",
+      "surface": "format-parser-and-vault-kernel",
+      "source": {"files": ["Drawings/Unicode Scene.excalidraw.md"]},
+      "operation": {"kind": "edit-text-and-allow-plugin-json-reserialization", "encoding": "json", "editedElement": "text-title"},
+      "expected": {"status": "semantic-equivalence", "nonSceneBytesEqual": true, "text": "Ébauche modifiée"},
+      "allowedVariance": ["JSON object-key order", "JSON whitespace", "revision", "transactionId"]
+    },
+    {
+      "id": "markdown.compressed-byte-preservation",
+      "category": "markdown-scene",
+      "support": "supported",
+      "surface": "format-parser-and-vault-kernel",
+      "source": {"files": ["Drawings/Compressed Scene.excalidraw.md"]},
+      "operation": {"kind": "open-save-without-scene-edit", "encoding": "compressed-json"},
+      "expected": {"status": "byte-exact", "compressedPayloadOpaque": true},
+      "allowedVariance": ["revision", "transactionId"]
+    },
+    {
+      "id": "native.excalidraw-byte-preservation",
+      "category": "native-scene",
+      "support": "supported",
+      "surface": "format-parser-and-vault-kernel",
+      "source": {"files": ["Drawings/Native Scene.excalidraw"]},
+      "operation": {"kind": "open-save-without-scene-edit", "encoding": "json"},
+      "expected": {"status": "byte-exact", "type": "excalidraw", "utf8": true},
+      "allowedVariance": ["revision", "transactionId"]
+    },
+    {
+      "id": "attachments.manifest-and-reference",
+      "category": "attachments",
+      "support": "supported",
+      "surface": "format-parser-and-vault-kernel",
+      "source": {"files": ["Assets/Ébauche/diagram.svg", "Assets/Ébauche/notes.txt"]},
+      "operation": {"kind": "hash-and-reopen-referenced-attachments"},
+      "expected": {"status": "byte-exact", "manifestStable": true, "referenceCount": 1},
+      "allowedVariance": []
+    },
+    {
+      "id": "attachments.rename-reference-rewrite",
+      "category": "attachments",
+      "support": "supported",
+      "surface": "format-parser-and-vault-kernel",
+      "source": {"files": ["Drawings/Unicode Scene.excalidraw.md", "Assets/Ébauche/diagram.svg"]},
+      "operation": {"kind": "rename-and-rewrite-exact-markdown-image-target", "from": "Assets/Ébauche/diagram.svg", "to": "Assets/Ébauche/diagram-renamed.svg"},
+      "expected": {"status": "committed", "replacements": 1, "unrelatedLinksUnchanged": true},
+      "allowedVariance": ["revision", "transactionId"]
+    },
+    {
+      "id": "external-edit.revision-conflict",
+      "category": "external-edits",
+      "support": "supported",
+      "surface": "vault-kernel",
+      "source": {"files": ["Notes/External.md"]},
+      "operation": {"kind": "external-atomic-save-before-stale-plugin-save"},
+      "expected": {"status": "conflict", "externalBytesWin": true, "proposalRetained": true, "noSilentOverwrite": true},
+      "allowedVariance": ["conflict filename suffix", "revision", "transactionId"]
+    },
+    {
+      "id": "workflow.packaged-electron",
+      "category": "electron-workflow",
+      "support": "supported",
+      "surface": "scripts/check-excalidraw-roundtrip.mjs",
+      "source": {"files": "manifest"},
+      "operation": {"kind": "isolated-x11-cdp-workflow", "themes": ["dark", "light"]},
+      "expected": {"status": "pass", "screenshots": true, "sourceManifestChecked": true},
+      "allowedVariance": ["temporary paths", "runtime revisions", "download hashes"]
+    },
+    {
+      "id": "obsidian.manual-roundtrip",
+      "category": "external-application",
+      "support": "unsupported",
+      "surface": "manual-observation-record",
+      "source": {"files": ["observations/obsidian-roundtrip.v1.json"]},
+      "operation": {"kind": "manual-only-official-obsidian-open-edit-save-reopen"},
+      "expected": {"status": "unverified", "reason": "No official Obsidian run was performed for this corpus."},
+      "allowedVariance": ["operator", "recordedAt", "result"]
+    }
+  ]
+}

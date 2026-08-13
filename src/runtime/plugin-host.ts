@@ -100,6 +100,10 @@ export class PluginHost implements PluginRuntimePort {
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
     this.app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(this.app, containerEl));
+    this.app.workspace.setLayoutReadyErrorHandler((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.record("error", `Plugin workspace startup callback failed: ${message}`);
+    });
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
   }
 

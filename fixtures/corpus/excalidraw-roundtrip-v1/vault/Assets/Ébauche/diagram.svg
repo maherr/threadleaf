@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="72" viewBox="0 0 120 72">
+  <title>Ébauche diagram</title>
+  <rect width="120" height="72" fill="#dbeafe"/>
+  <path d="M12 56 42 18l18 22 14-14 34 30" fill="none" stroke="#2563eb" stroke-width="4"/>
+  <text x="12" y="14" fill="#1f2937" font-family="sans-serif" font-size="9">synthetic</text>
+</svg>

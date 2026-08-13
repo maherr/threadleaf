@@ -1345,7 +1345,6 @@ export class WorkspaceRuntime {
       }
       await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
     }
-    await this.publishSnapshot();
     return outcome;
   }
 
@@ -1392,7 +1391,6 @@ export class WorkspaceRuntime {
       }
       await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
     }
-    await this.publishSnapshot();
     return outcome;
   }
 
@@ -1434,7 +1432,6 @@ export class WorkspaceRuntime {
     } else {
       await this.indexReactor.index.rebuild(this.kernel);
     }
-    await this.publishSnapshot();
     return outcome;
   }
 
@@ -1472,7 +1469,6 @@ export class WorkspaceRuntime {
     } else {
       await this.indexReactor.index.rebuild(this.kernel);
     }
-    await this.publishSnapshot();
     return outcome;
   }
 

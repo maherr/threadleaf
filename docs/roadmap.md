@@ -271,6 +271,9 @@ normal external vault backup and the privacy-safe feedback workflow.
   - [x] Preserve exact Markdown, PNG, and SVG bytes through Threadleaf plugin writes, attachment
         rename and recoverable trash, external-edit conflicts, simulated interrupted writes and
         renames, and recovery.
+  - [x] Add a deterministic public-format corpus for native `.excalidraw` JSON, compressed and
+        uncompressed Markdown, Unicode and nested attachments, semantic versus byte comparisons,
+        and an isolated packaged Electron/CDP workflow gate.
   - [ ] Complete the same disposable-vault open and save roundtrip in official Obsidian, then reopen
         it in Threadleaf and compare every fixture byte.
 

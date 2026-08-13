@@ -45,7 +45,10 @@ inputs, 22 dropdowns, and 32 buttons in the production compatibility renderer. I
 without an open note, follows Threadleaf's light and dark scheme, persists a changed option through
 the plugin's normal `saveData` path on close, restores it on reopen, and removes the settings DOM on
 close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
-not implied by those results.
+not implied by those results. The public-format byte and semantic boundary is exercised separately
+by the [Excalidraw round-trip corpus and packaged gate](excalidraw-roundtrip.md), including native
+`.excalidraw` JSON and attachment manifests. Its official Obsidian observation remains explicitly
+unverified until a person runs the copied-vault manual protocol.
 
 The measured Markdown processor family has a separate public contract in
 [`open-plugin-api.md`](open-plugin-api.md). It covers fenced-block replacement, ordered Markdown

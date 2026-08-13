@@ -1571,6 +1571,37 @@ describe("WorkspaceRuntime", () => {
     ).rejects.toThrow("private application paths");
   });
 
+  it("acknowledges plugin mutation conflicts without re-entering the plugin runtime", async () => {
+    const workspace = await openRuntime();
+    await workspace.watcher.close();
+    const pluginSnapshot = vi.spyOn(workspace.pluginHost, "getSnapshot");
+    pluginSnapshot.mockClear();
+
+    const created = await workspace.createPluginFile(
+      "Drawings/Scene.excalidraw.md",
+      Buffer.from("plugin original", "utf8"),
+      workspace.vaultId,
+    );
+    if (created.status !== "committed") {
+      throw new Error("Expected the plugin drawing fixture to commit.");
+    }
+    await fs.writeFile(
+      path.join(vaultPath, "Drawings", "Scene.excalidraw.md"),
+      "external winner",
+      "utf8",
+    );
+
+    await expect(
+      workspace.writePluginFile(
+        "Drawings/Scene.excalidraw.md",
+        Buffer.from("plugin proposal", "utf8"),
+        created.revision,
+        workspace.vaultId,
+      ),
+    ).resolves.toMatchObject({ status: "conflict" });
+    expect(pluginSnapshot).not.toHaveBeenCalled();
+  });
+
   it("returns a plugin rename conflict after an external edit and rebuilds the Markdown index", async () => {
     const workspace = await openRuntime();
     const created = await workspace.createPluginNote(

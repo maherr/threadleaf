@@ -362,7 +362,9 @@ export class Vault {
   readonly #reader: VaultReadPort | undefined;
   readonly #writer: CompatibilityVaultWritePort | undefined;
   private readonly listeners = new Map<string, Set<VaultEventCallback>>();
+  private readonly activeMutationKinds = new Map<number, string>();
   private inFlightMutations = 0;
+  private mutationSequence = 0;
   private mutationVersion = 0;
   private readonly revisions = new Map<string, string>();
 
@@ -511,7 +513,7 @@ export class Vault {
     if (!expectedRevision) {
       throw new Error(`Could not establish the current revision for ${normalized}.`);
     }
-    const outcome = await this.trackMutation(() =>
+    const outcome = await this.trackMutation("modify-binary", () =>
       this.#writer?.writeBinary?.(normalized, new Uint8Array(content), expectedRevision),
     );
     if (!outcome) {
@@ -548,7 +550,7 @@ export class Vault {
     if (!expectedRevision) {
       throw new Error(`Could not establish the current revision for ${normalized}.`);
     }
-    const outcome = await this.trackMutation(() =>
+    const outcome = await this.trackMutation("modify-text", () =>
       this.#writer?.writeText(normalized, content, expectedRevision),
     );
     if (!outcome) {
@@ -574,7 +576,9 @@ export class Vault {
       );
     }
     const normalized = normalizePath(filePath);
-    const outcome = await this.trackMutation(() => this.#writer?.createText?.(normalized, content));
+    const outcome = await this.trackMutation("create-text", () =>
+      this.#writer?.createText?.(normalized, content),
+    );
     if (!outcome) {
       throw new Error(
         "Plugin file creation is not available in the read-only compatibility runtime.",
@@ -608,7 +612,7 @@ export class Vault {
       );
     }
     const normalized = normalizePath(filePath);
-    const outcome = await this.trackMutation(() =>
+    const outcome = await this.trackMutation("create-binary", () =>
       this.#writer?.createBinary?.(normalized, new Uint8Array(content)),
     );
     if (!outcome) {
@@ -643,7 +647,7 @@ export class Vault {
         "Plugin folder creation is not available in the read-only compatibility runtime.",
       );
     }
-    const outcome = await this.trackMutation(() =>
+    const outcome = await this.trackMutation("create-folder", () =>
       this.#writer?.createFolder?.(normalizePath(folderPath)),
     );
     if (!outcome) {
@@ -680,7 +684,7 @@ export class Vault {
     if (!expectedRevision) {
       throw new Error(`Could not establish the current revision for ${sourcePath}.`);
     }
-    const outcome = await this.trackMutation(() =>
+    const outcome = await this.trackMutation("rename", () =>
       this.#writer?.renameFile?.(sourcePath, targetPath, expectedRevision),
     );
     if (!outcome) {
@@ -730,7 +734,7 @@ export class Vault {
     if (!expectedRevision) {
       throw new Error(`Could not establish the current revision for ${sourcePath}.`);
     }
-    const outcome = await this.trackMutation(() =>
+    const outcome = await this.trackMutation("trash", () =>
       this.#writer?.trashFile?.(sourcePath, expectedRevision),
     );
     if (!outcome) {
@@ -758,15 +762,25 @@ export class Vault {
         return;
       }
     }
-    throw new Error("Plugin vault mutations did not settle before the compatibility timeout.");
+    const activeKinds = [...new Set(this.activeMutationKinds.values())].sort();
+    const detail = activeKinds.length > 0 ? ` Active operations: ${activeKinds.join(", ")}.` : "";
+    throw new Error(
+      `Plugin vault mutations did not settle before the compatibility timeout.${detail}`,
+    );
   }
 
-  private async trackMutation<T>(operation: () => Promise<T> | undefined): Promise<T | undefined> {
+  private async trackMutation<T>(
+    kind: string,
+    operation: () => Promise<T> | undefined,
+  ): Promise<T | undefined> {
+    const sequence = ++this.mutationSequence;
+    this.activeMutationKinds.set(sequence, kind);
     this.inFlightMutations += 1;
     this.mutationVersion += 1;
     try {
       return await operation();
     } finally {
+      this.activeMutationKinds.delete(sequence);
       this.inFlightMutations -= 1;
       this.mutationVersion += 1;
     }
