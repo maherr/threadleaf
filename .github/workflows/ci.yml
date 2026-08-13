@@ -15,6 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  integrity:
+    name: Installer lifecycle integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.21.0
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.1
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Validate lifecycle workflow and package contract
+        run: pnpm run test:installer-lifecycle-config
+
   linux:
     name: Linux x64
     runs-on: ubuntu-24.04
@@ -24,6 +45,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.21.0
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -61,6 +84,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.21.0
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -79,6 +104,7 @@ jobs:
           THREADLEAF_PACKAGE_ARCH: ${{ matrix.arch }}
         run: pnpm run test:macos-package
       - name: Upload macOS package
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: threadleaf-macos-${{ matrix.arch }}
@@ -86,6 +112,21 @@ jobs:
             release/Threadleaf-*-mac-${{ matrix.arch }}.*
             release/latest-mac.yml
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Verify Intel macOS installer lifecycle
+        if: matrix.arch == 'x64'
+        env:
+          THREADLEAF_PACKAGE_ARCH: x64
+          THREADLEAF_LIFECYCLE_ARTIFACT_DIR: lifecycle-artifacts/macos-x64
+        run: pnpm run test:installer-lifecycle
+      - name: Upload Intel macOS lifecycle evidence
+        if: always() && matrix.arch == 'x64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: threadleaf-macos-x64-lifecycle-evidence
+          path: lifecycle-artifacts/macos-x64/**
+          if-no-files-found: warn
           compression-level: 0
           retention-days: 14
 
@@ -98,6 +139,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.21.0
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -113,7 +156,13 @@ jobs:
         run: pnpm run pack:windows
       - name: Verify ZIP, installer, uninstall, and update metadata
         run: pnpm run test:windows-package
+      - name: Verify Windows installer lifecycle
+        env:
+          THREADLEAF_PACKAGE_ARCH: x64
+          THREADLEAF_LIFECYCLE_ARTIFACT_DIR: lifecycle-artifacts/windows-x64
+        run: pnpm run test:installer-lifecycle
       - name: Upload Windows package
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: threadleaf-windows-x64
@@ -121,5 +170,14 @@ jobs:
             release/Threadleaf-*-win-x64.*
             release/latest.yml
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload Windows lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: threadleaf-windows-x64-lifecycle-evidence
+          path: lifecycle-artifacts/windows-x64/**
+          if-no-files-found: warn
           compression-level: 0
           retention-days: 14

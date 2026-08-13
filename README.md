@@ -252,7 +252,9 @@ independent unpacked application trees and normalized archives byte for byte. Na
 ZIP and DMG packages have also passed executable, architecture, bundle, resource, archive, disk
 image, and update-metadata verification on an M4 Mac. Pinned native CI and a manual fail-closed
 signing workflow now cover Linux, macOS ARM64 and Intel, and Windows x64. The Intel Mac and Windows
-lanes still need their first hosted run. These are contributor artifacts, not a signed public
+jobs also carry an installer lifecycle gate that reuses one disposable vault and private state root
+across install, interruption recovery, restart, upgrade, rollback, and removal. Those hosted
+lifecycle jobs still need their first run. These are contributor artifacts, not a signed public
 release.
 
 Settings now has an About and updates page that performs no startup or background network check.
@@ -448,6 +450,19 @@ then drives baseline, candidate, and rollback against one isolated vault and pri
 
 ```sh
 pnpm run test:upgrade-rollback
+```
+
+The native installer lifecycle contract is checked locally before hosted lanes are allowed to run:
+
+```sh
+pnpm run test:installer-lifecycle-config
+```
+
+On native x64 Windows or Intel macOS, the hosted-only package gate drives the real installer or DMG
+copy path and retains failure evidence:
+
+```sh
+THREADLEAF_PACKAGE_ARCH=x64 pnpm run test:installer-lifecycle
 ```
 
 The development CLI requires an explicit vault and never consults the desktop application's saved

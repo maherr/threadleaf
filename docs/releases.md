@@ -48,7 +48,10 @@ The verifier runs the packaged executable, checks its Mach-O architecture, bundl
 version, external demo vault, license, application archive, and GitHub update provider. It fully
 tests the ZIP, verifies the DMG checksum, recomputes every update-metadata size and SHA-512 digest,
 and writes SHA-256 checksums. The ARM64 lane has passed on an M4 Mac. Intel packaging is configured
-for its native hosted runner and still needs its first hosted run.
+for its native hosted runner. The Intel lifecycle gate additionally mounts the DMG into a temporary
+root, launches a disposable vault through CDP, exercises create/edit/restart, replaces the app with
+distinct candidate and baseline builds, removes the app, and proves private state and vault bytes
+survive. Its evidence is retained as a CI artifact; the first hosted run remains pending.
 
 Contributor macOS packages explicitly disable identity discovery and hardened runtime because they
 are unsigned. This makes the boundary visible: Gatekeeper should reject them. A release candidate
@@ -69,17 +72,23 @@ The verifier runs the unpacked application, expands and runs the ZIP, silently i
 package into an isolated temporary directory, runs that installed executable, uninstalls it, and
 requires the installation directory to disappear. It also checks the external demo and license,
 recomputes update-metadata sizes and SHA-512 digests, inspects Authenticode state, and writes
-SHA-256 checksums. Linux can cross-build the Windows ZIP, but NSIS requires Wine there, so the real
-installer gate intentionally runs on native Windows. That hosted gate is configured but has not yet
-run because this repository has no public remote.
+SHA-256 checksums. The hosted lifecycle gate uses the real NSIS installer, a disposable user-data
+root and vault, a forced process interruption, a distinct candidate and baseline build, rollback,
+uninstall, and residue checks. Linux can cross-build the Windows ZIP, but NSIS requires Wine there,
+so the real installer gate intentionally runs on native Windows. Its first hosted run remains
+pending because this repository has no public remote.
 
 ## Hosted native CI
 
-`.github/workflows/ci.yml` runs the complete source gate and native package verifier on Ubuntu
-24.04, Windows Server 2025, macOS 15 ARM64, and macOS 15 Intel. Every third-party action is pinned to
-an immutable commit, repository authority is read-only, jobs have explicit timeouts, and artifacts
-expire after 14 days. A repository test parses both workflow files and rejects mutable or unreviewed
-action references. The same workflows also pass `actionlint` 1.7.12 locally.
+`.github/workflows/ci.yml` runs a local lifecycle-integrity fixture plus the complete source gate and
+native package verifier on Ubuntu 24.04, Windows Server 2025, macOS 15 ARM64, and macOS 15 Intel.
+The Windows x64 and Intel macOS jobs run the installed lifecycle gate and upload its privacy-safe
+logs, screenshots, manifests, and failure evidence even when that gate fails. Every third-party
+action is pinned to an immutable commit, repository authority is read-only, jobs have explicit
+timeouts, and artifacts expire after 14 days. The integrity fixture parses both workflow files and
+the package contract, rejects mutable or unreviewed action references, and fails if a native
+lifecycle step is removed or made skippable. The same workflows also pass `actionlint` 1.7.12
+locally.
 
 The CI workflow can run on pull requests, pushes to `main`, or manual dispatch. It never signs,
 publishes, or receives release credentials.
@@ -200,6 +209,31 @@ forward and backward. It also requires private settings and workspace documents 
 0600, proves candidate-only UI appears after upgrade and disappears after rollback, and rejects any
 Threadleaf-private entry in the vault. This proves portable AppImage upgrade and rollback. It does
 not substitute for the remaining signed-update-feed or native package-manager transaction gates.
+
+## Native installer lifecycle evidence
+
+The hosted Windows and Intel macOS lifecycle verifier is intentionally separate from the Linux
+reproducibility proof. It builds a version-distinct unsigned baseline from the already-built
+application, records artifact SHA-256 digests and a deterministic unpacked-tree digest, then runs
+the actual target-platform install path. One synthetic vault and one private application-data root
+are reused across baseline, restart-after-interruption, candidate, rollback, and removal. The
+verifier calls only the packaged preload contract through a real renderer CDP target, so create and
+save remain the same main-process write boundary used by the desktop. No user vault or installed
+application path is used.
+
+Run it only on a native x64 Windows or Intel macOS runner after the matching package command:
+
+```sh
+THREADLEAF_PACKAGE_ARCH=x64 \
+THREADLEAF_LIFECYCLE_ARTIFACT_DIR=lifecycle-artifacts/native \
+pnpm run test:installer-lifecycle
+```
+
+The contributor lane explicitly disables certificate identity discovery and requires the packaged
+update policy to report `unsigned-package`. A successful lifecycle run therefore proves installation,
+state continuity, vault preservation, rollback, and cleanup only. It does not prove Authenticode,
+Developer ID, notarization, Gatekeeper, a public update feed, or store publication. The manual
+signed workflow keeps those gates separate and fails closed when credentials are absent.
 
 ## Remaining release gates
 

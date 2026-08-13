@@ -1,0 +1,298 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { parse } from "yaml";
+
+const rootPath = process.cwd();
+const fixturePath = path.join(rootPath, "fixtures", "installer-lifecycle", "contract.json");
+const packagePath = path.join(rootPath, "package.json");
+const builderPath = path.join(rootPath, "electron-builder.yml");
+const ciPath = path.join(rootPath, ".github", "workflows", "ci.yml");
+const releasePath = path.join(rootPath, ".github", "workflows", "release.yml");
+const lifecycleScriptPath = path.join(rootPath, "scripts", "check-installer-lifecycle.mjs");
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function record(value, label) {
+  assert(
+    value && typeof value === "object" && !Array.isArray(value),
+    `${label} must be an object.`,
+  );
+  return value;
+}
+
+function stepsFor(job, label) {
+  assert(Array.isArray(job.steps), `${label} must define steps.`);
+  return job.steps.map((step) => record(step, `${label} step`));
+}
+
+function stepContaining(steps, text, label) {
+  const step = steps.find(
+    (candidate) => typeof candidate.run === "string" && candidate.run.includes(text),
+  );
+  assert(step, `${label} is missing a step containing ${JSON.stringify(text)}.`);
+  return step;
+}
+
+function verifyToolchainSteps(document, label) {
+  const jobs = record(document.jobs, `${label} jobs`);
+  const packageManager = String(packageData.packageManager ?? "");
+  const pnpmVersion = packageManager.startsWith("pnpm@") ? packageManager.slice(5) : null;
+  assert(pnpmVersion, "package.json must pin pnpm for hosted toolchains.");
+  for (const [jobName, rawJob] of Object.entries(jobs)) {
+    const job = record(rawJob, `${label} ${jobName} job`);
+    assert(
+      typeof job["runs-on"] === "string",
+      `${label} ${jobName} job must declare an explicit runner or matrix expression.`,
+    );
+    assert(
+      Number.isInteger(job["timeout-minutes"]) && job["timeout-minutes"] > 0,
+      `${label} ${jobName} job must declare a positive timeout.`,
+    );
+    for (const step of stepsFor(job, `${label} ${jobName} job`)) {
+      if (step.uses?.startsWith("pnpm/action-setup@")) {
+        assert(
+          step.with?.version === pnpmVersion,
+          `${label} ${jobName} uses an unpinned pnpm toolchain.`,
+        );
+      }
+      if (step.uses?.startsWith("actions/setup-node@")) {
+        assert(
+          step.with?.["node-version"] === "22.22.1",
+          `${label} ${jobName} uses an unpinned Node.js toolchain.`,
+        );
+      }
+    }
+  }
+}
+
+function envValue(step, name, label) {
+  const environment = record(step.env ?? {}, `${label} environment`);
+  return environment[name];
+}
+
+function collectUses(value, result = []) {
+  if (Array.isArray(value)) {
+    for (const child of value) collectUses(child, result);
+    return result;
+  }
+  if (!value || typeof value !== "object") return result;
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "uses" && typeof child === "string") result.push(child);
+    else collectUses(child, result);
+  }
+  return result;
+}
+
+function workflowOn(document) {
+  return document.on ?? document[true];
+}
+
+const [fixtureText, packageText, builderText, ciText, releaseText] = await Promise.all([
+  fs.readFile(fixturePath, "utf8"),
+  fs.readFile(packagePath, "utf8"),
+  fs.readFile(builderPath, "utf8"),
+  fs.readFile(ciPath, "utf8"),
+  fs.readFile(releasePath, "utf8"),
+  fs.access(lifecycleScriptPath),
+]);
+const fixture = record(JSON.parse(fixtureText), "installer lifecycle fixture");
+const packageData = record(JSON.parse(packageText), "package.json");
+const builder = record(parse(builderText), "electron-builder.yml");
+const ci = record(parse(ciText), "ci.yml");
+const release = record(parse(releaseText), "release.yml");
+const ciJobs = record(ci.jobs, "CI jobs");
+verifyToolchainSteps(ci, "CI");
+verifyToolchainSteps(release, "release");
+
+assert(fixture.schemaVersion === 1, "Installer lifecycle fixture schema is unsupported.");
+assert(
+  fixture.applicationId === builder.appId,
+  "Fixture application identity differs from electron-builder.",
+);
+assert(
+  fixture.lifecycleScript === "scripts/check-installer-lifecycle.mjs",
+  "Fixture lifecycle script is stale.",
+);
+assert(
+  packageData.scripts?.["test:installer-lifecycle"] ===
+    "node scripts/check-installer-lifecycle.mjs",
+  "package.json does not expose the lifecycle verifier.",
+);
+assert(
+  packageData.scripts?.["test:installer-lifecycle-config"] ===
+    "node scripts/check-installer-lifecycle-config.mjs",
+  "package.json does not expose the lifecycle config gate.",
+);
+assert(builder.appId === "org.threadleaf.Threadleaf", "Electron application identity changed.");
+assert(builder.productName === "Threadleaf", "Electron product name changed.");
+assert(
+  builder.nsis?.deleteAppDataOnUninstall === false,
+  "Windows uninstall contract must preserve app data.",
+);
+
+const ciOn = record(workflowOn(ci), "CI triggers");
+assert(
+  Object.keys(ciOn).sort().join(",") === "pull_request,push,workflow_dispatch",
+  "CI triggers changed unexpectedly.",
+);
+assert(
+  JSON.stringify(ci.permissions) === JSON.stringify({ contents: "read" }),
+  "CI must have read-only repository authority.",
+);
+assert(ciJobs.integrity, "CI needs a non-skippable local lifecycle integrity job.");
+assert(
+  record(ciJobs.integrity, "CI integrity job").if === undefined,
+  "CI lifecycle integrity job cannot be conditionally skipped.",
+);
+const integritySteps = stepsFor(record(ciJobs.integrity, "CI integrity job"), "CI integrity job");
+assert(
+  record(ciJobs.integrity, "CI integrity job")["runs-on"] === "ubuntu-24.04",
+  "Integrity job runner is not pinned.",
+);
+assert(
+  integritySteps.some((step) => step.run === "pnpm run test:installer-lifecycle-config"),
+  "Integrity job does not run the local lifecycle fixture.",
+);
+
+const windowsJob = record(ciJobs.windows, "Windows CI job");
+assert(windowsJob.if === undefined, "Windows lifecycle job cannot be conditionally skipped.");
+assert(
+  windowsJob["runs-on"] === fixture.platforms["windows-x64"].runner,
+  "Windows runner differs from the lifecycle fixture.",
+);
+const windowsSteps = stepsFor(windowsJob, "Windows CI job");
+const windowsBuild = stepContaining(windowsSteps, "pack:windows", "Windows package build");
+assert(
+  envValue(windowsBuild, "CSC_IDENTITY_AUTO_DISCOVERY", "Windows package build") === "false",
+  "Windows CI must make unsigned status explicit.",
+);
+const windowsLifecycle = stepContaining(
+  windowsSteps,
+  "test:installer-lifecycle",
+  "Windows lifecycle gate",
+);
+assert(
+  envValue(windowsLifecycle, "THREADLEAF_PACKAGE_ARCH", "Windows lifecycle gate") === "x64",
+  "Windows lifecycle gate must pin x64.",
+);
+assert(
+  envValue(windowsLifecycle, "THREADLEAF_LIFECYCLE_ARTIFACT_DIR", "Windows lifecycle gate") ===
+    "lifecycle-artifacts/windows-x64",
+  "Windows lifecycle evidence path is not fixed.",
+);
+assert(
+  !JSON.stringify(windowsLifecycle).includes("THREADLEAF_REQUIRE_SIGNED"),
+  "Unsigned Windows CI cannot require signing.",
+);
+const windowsEvidence = windowsSteps.find(
+  (step) =>
+    step.uses?.startsWith("actions/upload-artifact@") &&
+    String(step.with?.path).includes("lifecycle-artifacts/windows-x64"),
+);
+assert(
+  windowsEvidence?.if?.includes("always()") &&
+    String(windowsEvidence.with?.path).includes("lifecycle-artifacts/windows-x64"),
+  "Windows lifecycle evidence is not retained on failure.",
+);
+
+const macJob = record(ciJobs.macos, "macOS CI job");
+assert(macJob.if === undefined, "macOS lifecycle job cannot be conditionally skipped.");
+const macMatrix = record(record(macJob.strategy, "macOS strategy").matrix, "macOS matrix");
+assert(Array.isArray(macMatrix.include), "macOS matrix must enumerate native runner images.");
+const intel = macMatrix.include.find((entry) => entry.arch === "x64");
+assert(
+  intel && intel.runner === fixture.platforms["macos-x64"].runner,
+  "Intel macOS runner differs from the lifecycle fixture.",
+);
+const macSteps = stepsFor(macJob, "macOS CI job");
+const macBuild = stepContaining(macSteps, "pack:mac:", "macOS package build");
+assert(
+  envValue(macBuild, "CSC_IDENTITY_AUTO_DISCOVERY", "macOS package build") === "false",
+  "macOS CI must make unsigned status explicit.",
+);
+const macLifecycle = stepContaining(macSteps, "test:installer-lifecycle", "macOS lifecycle gate");
+assert(
+  String(macLifecycle.if).includes("matrix.arch") && String(macLifecycle.if).includes("x64"),
+  "macOS lifecycle gate must be limited to Intel x64.",
+);
+assert(
+  envValue(macLifecycle, "THREADLEAF_PACKAGE_ARCH", "macOS lifecycle gate") === "x64",
+  "macOS lifecycle gate must pin x64.",
+);
+assert(
+  envValue(macLifecycle, "THREADLEAF_LIFECYCLE_ARTIFACT_DIR", "macOS lifecycle gate") ===
+    "lifecycle-artifacts/macos-x64",
+  "macOS lifecycle evidence path is not fixed.",
+);
+assert(
+  !JSON.stringify(macLifecycle).includes("THREADLEAF_REQUIRE_SIGNED"),
+  "Unsigned macOS CI cannot require signing.",
+);
+const macEvidence = macSteps.find(
+  (step) =>
+    step.uses?.startsWith("actions/upload-artifact@") &&
+    String(step.with?.path).includes("lifecycle-artifacts/macos-x64"),
+);
+assert(
+  macEvidence?.if?.includes("always()") &&
+    String(macEvidence.with?.path).includes("lifecycle-artifacts/macos-x64"),
+  "macOS lifecycle evidence is not retained on failure.",
+);
+
+const releaseTextEncoded = JSON.stringify(release);
+assert(
+  releaseTextEncoded.includes("pack:mac:universal"),
+  "Signed release lost the macOS package command.",
+);
+assert(
+  releaseTextEncoded.includes("pack:windows:signed"),
+  "Signed release lost the Windows package command.",
+);
+assert(
+  releaseTextEncoded.includes("THREADLEAF_REQUIRE_SIGNED"),
+  "Signed release does not require signed package verification.",
+);
+for (const secret of [...fixture.signedRelease.windows, ...fixture.signedRelease.macos]) {
+  assert(releaseText.includes(`secrets.${secret}`), `Signed release is missing ${secret}.`);
+}
+assert(
+  packageText.includes(fixture.signedRelease.trustMarker),
+  "Signed release trust marker is not configured.",
+);
+
+const uses = [...collectUses(ci), ...collectUses(release)];
+assert(uses.length > 0, "No workflow actions were found.");
+for (const action of uses) {
+  assert(
+    /^[a-z0-9_.-]+\/[a-z0-9_.-]+@[a-f0-9]{40}$/u.test(action),
+    `Workflow action is not pinned: ${action}`,
+  );
+}
+assert(
+  !ciText.includes("continue-on-error"),
+  "Native CI cannot turn lifecycle failures into success.",
+);
+assert(
+  ciText.includes("windows-2025") && ciText.includes("macos-15-intel"),
+  "Native lifecycle runners are not explicit.",
+);
+assert(
+  fixture.unsignedCi.updateTrust === "none" && fixture.unsignedCi.requiresSigning === false,
+  "Unsigned fixture policy changed.",
+);
+
+process.stdout.write(
+  `${JSON.stringify({
+    verified: true,
+    fixture: "fixtures/installer-lifecycle/contract.json",
+    runners: { windows: windowsJob["runs-on"], macosIntel: intel.runner },
+    lifecycleScript: fixture.lifecycleScript,
+    unsigned: true,
+    signedReleaseFailClosed: true,
+    pinnedActions: uses.length,
+  })}\n`,
+);

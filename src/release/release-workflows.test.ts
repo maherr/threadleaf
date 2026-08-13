@@ -76,7 +76,7 @@ describe("release workflows", () => {
     ]);
     expect(document.permissions).toEqual({ contents: "read" });
     const jobs = object(document.jobs, "CI jobs");
-    expect(Object.keys(jobs).sort()).toEqual(["linux", "macos", "windows"]);
+    expect(Object.keys(jobs).sort()).toEqual(["integrity", "linux", "macos", "windows"]);
     for (const job of allJobs(document)) {
       expect(job["timeout-minutes"]).toEqual(expect.any(Number));
     }
@@ -86,6 +86,10 @@ describe("release workflows", () => {
     expect(encoded).toContain(`pack:mac:\${{ matrix.arch }}`);
     expect(encoded).toContain("pnpm run test:macos-package");
     expect(encoded).toContain("pnpm run test:windows-package");
+    expect(encoded).toContain("pnpm run test:installer-lifecycle");
+    expect(encoded).toContain("lifecycle-artifacts/windows-x64");
+    expect(encoded).toContain("lifecycle-artifacts/macos-x64");
+    expect(encoded).toContain("pnpm run test:installer-lifecycle-config");
     expect(encoded).toContain("macos-15-intel");
     expect(encoded).toContain("windows-2025");
   });
