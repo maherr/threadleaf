@@ -47,6 +47,7 @@
     "test:linux-packages": "node scripts/check-linux-packages.mjs",
     "test:live-preview": "pnpm run build && node scripts/check-live-preview.mjs",
     "test:note-bookmarks": "pnpm run build && node scripts/check-note-bookmarks.mjs",
+    "test:publish-export": "pnpm run build && node scripts/check-publish-export.mjs",
     "test:note-workflows": "pnpm run build && node scripts/check-note-workflows.mjs",
     "test:macos-package": "node scripts/check-macos-package.mjs",
     "test:package-reproducible": "pnpm run build && node scripts/package-reproducible-linux.mjs",

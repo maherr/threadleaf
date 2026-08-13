@@ -98,6 +98,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   native-menu, and remappable-hotkey access; serialized persistence; internal-move remapping;
   explicit missing-note rows; no vault metadata; restart coverage; and isolated real-input dark,
   light, narrow, and moderate-deuteranomaly verification.
+- Standalone active-note HTML export through the toolbar, command palette, native File menu, and
+  remappable hotkey target, with sanitized raw markup, embedded local raster images and note
+  transclusions, inert vault-only links, safe external links, restrictive CSP, responsive light,
+  dark, and print styling, exact revision and stable-disk checks, outside-vault mode-0600 atomic
+  writes, dirty-draft refusal, and isolated real-input and rendered-document coverage.
 - Headless `properties`, `property:read`, `property:set`, and `property:remove` commands, with typed
   scalar and list serialization, conservative byte-preserving frontmatter patches, idempotent
   removal, mutation locking, revision conflicts, stable JSON, and explicit complex-YAML refusal.

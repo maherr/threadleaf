@@ -307,7 +307,10 @@ Exit gate: selected high-value plugins complete named workflows against public f
       watcher and index convergence, native commands, and isolated virtual-input coverage.
 - [x] Ordered private per-vault note bookmarks with toolbar, command, native-menu, and hotkey
       access; restart persistence; internal-move remapping; and explicit missing-note rows.
-- [ ] Publish-ready export.
+- [x] Publish-ready single-note HTML export with sanitized raw markup, embedded bounded local raster
+      images and note transclusions, honest inert vault links, safe external links, restrictive CSP,
+      responsive light, dark, and print styling, revision and stable-disk binding, outside-vault
+      targeting, atomic mode-0600 writes, dirty-draft refusal, and isolated real-input coverage.
 - [ ] Keyboard navigation, screen-reader semantics, reduced motion, contrast, zoom, localization,
       bidirectional text, and touch-target audits across every reachable control.
 - [x] Unsigned Linux x64 AppImage and RPM artifacts with a stable application identity, complete

@@ -59,6 +59,7 @@ export function createApplicationMenuTemplate(
     action("File Recovery…", "workspace.open-file-recovery"),
     { type: "separator" },
     action("Save Note", "editor.save-note"),
+    action("Export Note as HTML…", "workspace.export-note-html"),
     action("Close Tab", "workspace.close-tab"),
   ];
   if (options.platform !== "darwin") {

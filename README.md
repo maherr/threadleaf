@@ -85,6 +85,13 @@ Each vault also has an ordered private bookmark shelf outside the vault. The not
 command palette, native menu, and remappable hotkey target share one toggle action. Internal moves
 remap bookmarked paths, externally missing notes remain visible for removal or later recovery, and
 bookmarking never creates or changes `.obsidian/` or any other vault metadata.
+The Export action, command palette, native File menu, and remappable hotkey target save the active
+saved note as one standalone HTML document. Threadleaf sanitizes raw HTML, embeds bounded local
+raster images and note transclusions, keeps safe web and email links active, and renders vault-only
+links as visibly inert references. The result has no scripts, plugin code, vault path or identity,
+private app state, or dependency on Threadleaf, Obsidian, an account, or a network connection. The
+main process rechecks the active vault, note revision, and stable disk bytes after the Save dialog,
+refuses a target inside the vault, and installs the export atomically with mode-0600 permissions.
 Headless property commands list and read the current indexed projection, then set or remove typed
 top-level YAML properties through a byte-preserving, revision-checked application service. The
 writer handles text, list, number, checkbox, date, and datetime values, preserves unrelated
@@ -402,6 +409,15 @@ process, and generated Markdown:
 
 ```sh
 pnpm run test:support-bundle
+```
+
+The publish-export gate uses a separate X11 virtual display and real CDP pointer and keyboard
+input. It drives the toolbar and command palette, proves dirty drafts fail closed, verifies embedded
+images and note transclusions, rejects executable markup and private-path canaries, checks exact
+source-vault bytes, and renders the resulting offline page in light and dark modes:
+
+```sh
+pnpm run test:publish-export
 ```
 
 The Linux upgrade gate builds a previous baseline and the current beta as byte-distinct AppImages,

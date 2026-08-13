@@ -1283,6 +1283,13 @@ h2 {
   line-height: 1;
 }
 
+.export-toolbar-mark {
+  margin-right: 2px;
+  color: var(--accent-strong);
+  font-size: 12px;
+  line-height: 1;
+}
+
 .trash-toolbar-button:not(:disabled) {
   border-color: color-mix(in srgb, var(--signal) 48%, var(--line));
   color: var(--signal);

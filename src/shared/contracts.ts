@@ -11,6 +11,7 @@ import type {
   PluginPackagePreviewResponse,
 } from "./plugin-packages";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
+import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
 
 export type AppearanceUpdateResponse =
@@ -666,6 +667,7 @@ export type VaultOpenResponse =
 
 export interface ThreadleafBridge {
   exportSupportBundle(): Promise<SupportBundleExportResponse>;
+  publishNote(request: PublishNoteExportRequest): Promise<PublishNoteExportResponse>;
   getAppUpdate(): Promise<AppUpdateSnapshot>;
   checkForAppUpdate(): Promise<AppUpdateSnapshot>;
   downloadAppUpdate(): Promise<AppUpdateSnapshot>;

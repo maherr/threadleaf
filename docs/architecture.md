@@ -239,6 +239,32 @@ deduplicates it if the destination was already bookmarked. The note move itself 
 if private bookmark persistence fails after that commit, the response reports the partial outcome
 instead of misrepresenting the completed vault transaction as a failed move.
 
+### Standalone published-note boundary
+
+Publish export is deliberately a one-note snapshot, not a hidden hosted service or an implicit
+whole-vault conversion. The renderer starts from the active note's exact saved content, runs the
+same sanitized Markdown renderer and bounded image and note-embed hydration as Reading view, then
+clones the detached result into a stricter export projection. Source controls and runtime data
+attributes are removed. Safe HTTP, HTTPS, and email links become ordinary links; vault links become
+visibly inert text with an explanatory title. Only embedded GIF, JPEG, PNG, and WebP data URLs can
+remain as images. A second DOMPurify allowlist rejects scripts, event handlers, forms, remote images,
+styles from note content, plugin surfaces, and unknown protocols.
+
+The generated document contains fixed responsive and print CSS, a restrictive Content Security
+Policy, automatic light and dark schemes, and no JavaScript. It carries the note title and rendered
+content but no source path, vault name or identity, revision, plugin code, theme CSS, or private app
+state. It is useful from `file://`, a static host, or an attachment without Threadleaf, Obsidian, an
+account, or a network connection.
+
+Only the sandboxed main renderer can request the save. The request is bound to the exact SHA-256
+vault identity, normalized visible Markdown path, and source revision. The main process checks the
+active runtime before showing the native Save dialog, canonicalizes and rejects direct or symlinked
+destinations inside the vault, then checks the active note and stable disk revision again after the
+dialog. A stale note produces no file. Valid output is capped at 96 MiB and atomically installed with
+mode-0600 permissions. The isolated Electron gate drives both visible entry points with real virtual
+input, proves dirty-note refusal and unchanged vault bytes, inspects the generated security and
+privacy boundary, and renders both color schemes.
+
 ### Appearance boundary
 
 Threadleaf treats a vault's Obsidian theme and snippet folders as read-only compatibility input.

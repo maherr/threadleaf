@@ -42,11 +42,14 @@ import type {
   PluginPackagePreviewResponse,
 } from "../shared/plugin-packages";
 import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
+import type { PublishNoteExportRequest, PublishNoteExportResponse } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
 
 const bridge: ThreadleafBridge = {
   exportSupportBundle: () =>
     ipcRenderer.invoke(ipcChannels.exportSupportBundle) as Promise<SupportBundleExportResponse>,
+  publishNote: (request: PublishNoteExportRequest) =>
+    ipcRenderer.invoke(ipcChannels.publishNote, request) as Promise<PublishNoteExportResponse>,
   getAppUpdate: () => ipcRenderer.invoke(ipcChannels.appUpdate) as Promise<AppUpdateSnapshot>,
   checkForAppUpdate: () =>
     ipcRenderer.invoke(ipcChannels.checkForAppUpdate) as Promise<AppUpdateSnapshot>,

@@ -63,6 +63,7 @@ import {
   pluginCapabilityDefinitions,
   type VaultPluginSettings,
 } from "../shared/plugins";
+import { maximumPublishNoteHtmlBytes, publishNoteExportVersion } from "../shared/publish-export";
 import {
   filterPaletteCommands,
   firstEnabledPaletteIndex,
@@ -81,6 +82,7 @@ import {
   renderMarkdownPreview,
 } from "./markdown-preview";
 import { pluginViewTypeForPath } from "./plugin-view-model";
+import { createStandalonePublishedNoteHtml } from "./publish-export";
 import { RecoveryViewController } from "./recovery-view";
 import "./styles.css";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
@@ -126,6 +128,7 @@ const elements = {
   noteEditor: getElement("note-editor"),
   notePreview: getElement("note-preview"),
   editState: getElement("edit-state"),
+  exportNote: getButton("export-note"),
   bookmarkNote: getButton("bookmark-note"),
   moveNote: getButton("move-note"),
   deleteNote: getButton("delete-note"),
@@ -350,6 +353,7 @@ const paneElementKeys = [
   "noteEditor",
   "notePreview",
   "editState",
+  "exportNote",
   "bookmarkNote",
   "moveNote",
   "deleteNote",
@@ -436,6 +440,7 @@ function paneElementsFor(
     noteEditor: element("note-editor"),
     notePreview: element("note-preview"),
     editState: element("edit-state"),
+    exportNote: button("export-note"),
     bookmarkNote: button("bookmark-note"),
     moveNote: button("move-note"),
     deleteNote: button("delete-note"),
@@ -505,6 +510,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.open-file-recovery",
     label: "Open file recovery",
     description: "Inspect recoverable vault trash and restore exact note paths without overwrite.",
+  },
+  {
+    id: "workspace.export-note-html",
+    label: "Export current note as HTML",
+    description: "Save the current note as sanitized standalone HTML with embedded local images.",
   },
   {
     id: "workspace.toggle-note-bookmark",
@@ -618,6 +628,7 @@ let bookmarkPaths: string[] = [];
 let bookmarkBusy = false;
 let bookmarkRequest = 0;
 let lastBookmarkWarning: string | null = null;
+let publishExportBusy = false;
 let saving = false;
 let savingContent: string | null = null;
 let dirty = false;
@@ -1222,6 +1233,24 @@ function commandCatalog(): RendererCommand[] {
         }
         return recoveryView.show();
       },
+    },
+    {
+      id: "workspace.export-note-html",
+      label: "Export current note as standalone HTML",
+      category: "File",
+      keywords: ["export", "publish", "html", "standalone", "offline", "share"],
+      shortcut: shortcutFor("workspace.export-note-html"),
+      enabled: Boolean(
+        loadedNote && loadedVaultId && !opening && !busy && !saving && !dirty && !publishExportBusy,
+      ),
+      disabledReason: opening
+        ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+        : !loadedNote
+          ? "No note is open."
+          : dirty
+            ? "Save or revert the current note before exporting it."
+            : "Threadleaf is finishing another action.",
+      run: exportCurrentNoteAsHtml,
     },
     {
       id: "workspace.open-graph-view",
@@ -5275,6 +5304,79 @@ async function exportSupportBundle(): Promise<void> {
   }
 }
 
+function publishExportIdentityIsCurrent(
+  expectedVaultId: string,
+  expectedPath: string,
+  expectedRevision: string,
+): boolean {
+  return Boolean(
+    loadedVaultId === expectedVaultId &&
+      currentSnapshot?.vault.id === expectedVaultId &&
+      loadedNote?.path === expectedPath &&
+      loadedNote.revision === expectedRevision &&
+      !dirty &&
+      !saving,
+  );
+}
+
+async function exportCurrentNoteAsHtml(): Promise<void> {
+  const note = loadedNote;
+  const expectedVaultId = loadedVaultId;
+  if (!note || !expectedVaultId || dirty || saving || busy || publishExportBusy) {
+    if (dirty) {
+      showToast("Save or revert the current note before exporting it.");
+    }
+    return;
+  }
+
+  publishExportBusy = true;
+  setActionState(true);
+  try {
+    const rendered = document.createElement("div");
+    rendered.append(renderMarkdownPreview(note.content));
+    decoratePreviewLinks(rendered, note.outgoing, note.path);
+    await hydrateMarkdownPreview(rendered, {
+      sourceNotePath: note.path,
+      expectedVaultId,
+      loadImage: (sourceNotePath, target, vaultId) =>
+        window.threadleaf.loadVaultImage(sourceNotePath, target, vaultId),
+      loadNoteEmbed: (sourceNotePath, target, subpath, vaultId) =>
+        window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, vaultId),
+      decorateLinks: decoratePreviewLinks,
+      isCurrent: () => publishExportIdentityIsCurrent(expectedVaultId, note.path, note.revision),
+    });
+    if (!publishExportIdentityIsCurrent(expectedVaultId, note.path, note.revision)) {
+      showToast("The active note changed before export. Review it and export again.");
+      return;
+    }
+
+    const html = createStandalonePublishedNoteHtml(note.title, rendered);
+    if (new TextEncoder().encode(html).byteLength > maximumPublishNoteHtmlBytes) {
+      showToast("This standalone export is too large. Reduce embedded images and retry.");
+      return;
+    }
+    const response = await window.threadleaf.publishNote({
+      version: publishNoteExportVersion,
+      expectedVaultId,
+      sourcePath: note.path,
+      expectedRevision: note.revision,
+      html,
+    });
+    if (response.status === "saved") {
+      showToast("Standalone HTML export saved.");
+    } else if (response.status === "cancelled") {
+      showToast("Export cancelled. No file was created.");
+    } else {
+      showToast(response.message);
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    publishExportBusy = false;
+    setActionState(false);
+  }
+}
+
 function updatePolicyLabel(snapshot: AppUpdateSnapshot): string {
   switch (snapshot.disabledReason) {
     case "development-build":
@@ -7206,6 +7308,11 @@ function renderEditControls(): void {
   const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
   const splitBlocked = busy || anyPaneSaving() || (paneCount < 2 && anyPaneDirty());
   elements.newNote.disabled = opening || readOnly || busy || saving || dirty;
+  elements.exportNote.disabled =
+    opening || busy || saving || dirty || publishExportBusy || !loadedNote || !loadedVaultId;
+  elements.exportNote.title = dirty
+    ? "Save or revert the current note before exporting it"
+    : "Export current note as standalone HTML";
   elements.moveNote.disabled = readOnly || busy || saving || dirty || !loadedNote || !loadedVaultId;
   elements.deleteNote.disabled =
     readOnly || busy || saving || dirty || !loadedNote || !loadedVaultId;
@@ -7738,6 +7845,10 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   pane.bookmarkNote.addEventListener("click", () => {
     activate();
     void executeRendererCommand("workspace.toggle-note-bookmark");
+  });
+  pane.exportNote.addEventListener("click", () => {
+    activate();
+    void executeRendererCommand("workspace.export-note-html");
   });
   pane.deleteNote.addEventListener("click", () => {
     activate();

@@ -17,7 +17,8 @@ import { parseEditorDraft } from "../application/editor-draft";
 import { NoteBookmarkController } from "../application/note-bookmarks";
 import { parseVaultGraphRequest } from "../application/vault-graph";
 import { WorkspaceController } from "../application/workspace-controller";
-import { atomicWriteFile } from "../kernel/durability";
+import { atomicWriteFile, readStableFile } from "../kernel/durability";
+import { VaultPathPolicy } from "../kernel/path-policy";
 import { FixedStateRoot } from "../kernel/ports";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
@@ -53,6 +54,11 @@ import {
   parsePluginId,
   pluginCapabilityGrantMatches,
 } from "../shared/plugins";
+import {
+  maximumPublishNoteHtmlBytes,
+  type PublishNoteExportRequest,
+  type PublishNoteExportResponse,
+} from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
 import { createApplicationMenuTemplate } from "./application-menu";
 import {
@@ -71,6 +77,13 @@ import { loadObsidianMigrationPreview } from "./obsidian-migration-loader";
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
 import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
 import { PluginPackageManager } from "./plugin-package-manager";
+import {
+  ensureHtmlExtension,
+  isPublishExportTargetOutsideVault,
+  parsePublishNoteExportRequest,
+  readDevelopmentPublishExportPath,
+  suggestedPublishedNoteFilename,
+} from "./publish-export";
 import {
   createSupportBundleMarkdown,
   isSupportBundleTargetOutsideVault,
@@ -334,6 +347,99 @@ async function exportSupportBundle(): Promise<SupportBundleExportResponse> {
     return {
       status: "failed",
       message: "Threadleaf could not save the support bundle. Choose another location and retry.",
+    } as const;
+  }
+}
+
+async function publishRequestMatchesCurrentDiskNote(
+  request: PublishNoteExportRequest,
+): Promise<boolean> {
+  if (workspaceController.vaultId !== request.expectedVaultId) {
+    return false;
+  }
+  const snapshot = await workspaceController.getSnapshot();
+  const note = snapshot.workspace?.activeNote;
+  if (
+    snapshot.vault.id !== request.expectedVaultId ||
+    note?.path !== request.sourcePath ||
+    note.revision !== request.expectedRevision
+  ) {
+    return false;
+  }
+  const pathPolicy = await VaultPathPolicy.open(workspaceController.vaultPath);
+  let sourcePath: string;
+  try {
+    sourcePath = await pathPolicy.resolveForRead(request.sourcePath);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+  const source = await readStableFile(sourcePath);
+  return source?.revision === request.expectedRevision;
+}
+
+async function exportPublishedNote(value: unknown): Promise<PublishNoteExportResponse> {
+  try {
+    const request = parsePublishNoteExportRequest(value);
+    if (!(await publishRequestMatchesCurrentDiskNote(request))) {
+      return {
+        status: "stale-note",
+        message: "The active note changed before export. Review it and export again.",
+      } as const;
+    }
+
+    let targetPath = readDevelopmentPublishExportPath(app.isPackaged, process.env);
+    if (!targetPath) {
+      const options: SaveDialogOptions = {
+        title: "Export a standalone HTML note",
+        buttonLabel: "Export HTML",
+        defaultPath: join(
+          app.getPath("downloads"),
+          suggestedPublishedNoteFilename(request.sourcePath),
+        ),
+        filters: [{ name: "Standalone HTML", extensions: ["html"] }],
+        properties: ["createDirectory", "showOverwriteConfirmation"],
+      };
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) {
+        return { status: "cancelled" } as const;
+      }
+      targetPath = ensureHtmlExtension(result.filePath);
+    }
+
+    if (!(await isPublishExportTargetOutsideVault(workspaceController.vaultPath, targetPath))) {
+      return {
+        status: "failed",
+        message: "Choose a location outside the active vault so the export cannot become a note.",
+      } as const;
+    }
+    if (!(await publishRequestMatchesCurrentDiskNote(request))) {
+      return {
+        status: "stale-note",
+        message: "The active note changed while choosing a destination. Nothing was exported.",
+      } as const;
+    }
+
+    const bytes = Buffer.from(request.html, "utf8");
+    if (bytes.length > maximumPublishNoteHtmlBytes) {
+      return {
+        status: "failed",
+        message:
+          "This standalone export is too large. Reduce the note's embedded images and retry.",
+      } as const;
+    }
+    await atomicWriteFile(targetPath, bytes);
+    return { status: "saved" } as const;
+  } catch (error) {
+    console.error("Could not export a standalone Threadleaf note:", error);
+    return {
+      status: "failed",
+      message:
+        "Threadleaf could not save the standalone HTML note. Choose another location and retry.",
     } as const;
   }
 }
@@ -646,6 +752,12 @@ function registerIpcHandlers(): void {
       throw new Error("Support bundle export requires the active Threadleaf window.");
     }
     return exportSupportBundle();
+  });
+  ipcMain.handle(ipcChannels.publishNote, (event, value: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Published-note export requires the active Threadleaf window.");
+    }
+    return exportPublishedNote(value);
   });
   ipcMain.handle(ipcChannels.appUpdate, () => appUpdateController.getSnapshot());
   ipcMain.handle(ipcChannels.checkForAppUpdate, () => appUpdateController.checkForUpdates());
