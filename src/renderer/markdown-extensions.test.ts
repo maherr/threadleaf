@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectFootnotes,
   findInlineMathClose,
+  markdownHtmlRanges,
   renderSafeMath,
   safeMathLimits,
   scanInlineMath,
@@ -93,6 +94,45 @@ describe("bounded offline math", () => {
     const source = ["~~~~", "[^inside]: code", "~~~~", "", "[^outside]: footnote"].join("\n");
     expect(collectFootnotes(source).definitions.map((definition) => definition.id)).toEqual([
       "outside",
+    ]);
+  });
+});
+
+describe("raw HTML source protection", () => {
+  it("protects nested elements and quoted tag delimiters without consuming following Markdown", () => {
+    const source = 'before <span title="a > b"><em>- [ ] $x$</em></span> **after**';
+    const from =
+      source.indexOf("<span>") >= 0 ? source.indexOf("<span>") : source.indexOf("<span ");
+    const to = source.indexOf("</span>") + "</span>".length;
+    expect(markdownHtmlRanges(source)).toEqual([{ from, to }]);
+  });
+
+  it("keeps comments, void tags, self-closing tags, and malformed tags bounded", () => {
+    const comment = "<!-- <span>$x$</span> --> $after$";
+    expect(markdownHtmlRanges(comment)).toEqual([
+      { from: 0, to: "<!-- <span>$x$</span> -->".length },
+    ]);
+
+    const tags = '<br> $x$ <img src="a>b"> $y$ <span/> $z$';
+    expect(markdownHtmlRanges(tags)).toEqual([
+      { from: 0, to: 4 },
+      { from: 9, to: 24 },
+      { from: 29, to: 36 },
+    ]);
+
+    const malformed = '<span title="unterminated $x$ **after**';
+    expect(markdownHtmlRanges(malformed)).toEqual([{ from: 0, to: malformed.length }]);
+  });
+
+  it("does not mistake autolinks or inline-code lookalikes for HTML", () => {
+    expect(markdownHtmlRanges("<https://example.com> $x$")).toEqual([]);
+    const source = "`<span>$x$</span>` <span>$y$</span>";
+    const from = source.lastIndexOf("<span>");
+    expect(markdownHtmlRanges(source)).toEqual([{ from, to: source.length }]);
+
+    const tagWithBackticks = '<span title="`not code`">$x$</span> $y$';
+    expect(markdownHtmlRanges(tagWithBackticks)).toEqual([
+      { from: 0, to: tagWithBackticks.indexOf("</span>") + "</span>".length },
     ]);
   });
 });

@@ -197,6 +197,196 @@ export function markdownCodeRanges(source: string): MarkdownSourceRange[] {
   return ranges;
 }
 
+const htmlVoidElements = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
+interface HtmlTagScan {
+  kind: "opening" | "closing" | "standalone";
+  name: string | null;
+  end: number;
+  complete: boolean;
+  selfClosing: boolean;
+}
+
+function htmlTagEnd(source: string, from: number): number {
+  let quote: "'" | '"' | null = null;
+  for (let index = from + 1; index < source.length; index += 1) {
+    const character = source[index] ?? "";
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+    } else if (character === ">") {
+      return index + 1;
+    }
+  }
+  return -1;
+}
+
+function htmlTagName(source: string, from: number): { name: string; end: number } | null {
+  const first = source[from] ?? "";
+  if (!/[A-Za-z]/u.test(first)) return null;
+  let end = from + 1;
+  while (/[A-Za-z0-9-]/u.test(source[end] ?? "")) end += 1;
+  return { name: source.slice(from, end).toLowerCase(), end };
+}
+
+function scanHtmlTag(source: string, from: number): HtmlTagScan | null {
+  if (source[from] !== "<") return null;
+  if (source.startsWith("<!--", from)) {
+    const close = source.indexOf("-->", from + 4);
+    return {
+      kind: "standalone",
+      name: null,
+      end: close < 0 ? source.length : close + 3,
+      complete: close >= 0,
+      selfClosing: true,
+    };
+  }
+  if (source.startsWith("<![CDATA[", from)) {
+    const close = source.indexOf("]]>", from + 9);
+    return {
+      kind: "standalone",
+      name: null,
+      end: close < 0 ? source.length : close + 3,
+      complete: close >= 0,
+      selfClosing: true,
+    };
+  }
+  const next = source[from + 1] ?? "";
+  if (next === "!" || next === "?") {
+    const end = htmlTagEnd(source, from);
+    return {
+      kind: "standalone",
+      name: null,
+      end: end < 0 ? source.length : end,
+      complete: end >= 0,
+      selfClosing: true,
+    };
+  }
+
+  const closing = next === "/";
+  const name = htmlTagName(source, from + (closing ? 2 : 1));
+  if (!name) return null;
+  const boundary = source[name.end] ?? "";
+  if (boundary && !/[\s/>]/u.test(boundary)) return null;
+  const end = htmlTagEnd(source, from);
+  const tagEnd = end < 0 ? source.length : end;
+  const body = source.slice(from, tagEnd);
+  return {
+    kind: closing ? "closing" : "opening",
+    name: name.name,
+    end: tagEnd,
+    complete: end >= 0,
+    selfClosing: !closing && /\/\s*>$/u.test(body),
+  };
+}
+
+function mergeMarkdownRanges(ranges: readonly MarkdownSourceRange[]): MarkdownSourceRange[] {
+  const merged: MarkdownSourceRange[] = [];
+  for (const range of [...ranges].sort(
+    (left, right) => left.from - right.from || left.to - right.to,
+  )) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.from <= previous.to) {
+      previous.to = Math.max(previous.to, range.to);
+    } else if (range.from < range.to) {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Source-only ranges for raw HTML. Markdown treats the contents between an
+ * opening and closing tag as HTML source, not as an invitation to parse
+ * Markdown-looking task, math, link, or footnote syntax. This is a small
+ * lexical scanner rather than a tag regex so quoted `>` characters, nested
+ * elements, comments, and malformed tags remain bounded and source-visible.
+ */
+export function markdownHtmlRanges(
+  source: string,
+  codeRanges: readonly MarkdownSourceRange[] = markdownCodeRanges(source),
+): MarkdownSourceRange[] {
+  const ranges: MarkdownSourceRange[] = [];
+  const openTags: { name: string; from: number }[] = [];
+  let codeIndex = 0;
+  const insideCode = (position: number): boolean => {
+    while (codeIndex < codeRanges.length && position >= (codeRanges[codeIndex]?.to ?? 0)) {
+      codeIndex += 1;
+    }
+    const range = codeRanges[codeIndex];
+    return Boolean(range && range.from <= position && position < range.to);
+  };
+
+  for (let index = 0; index < source.length; ) {
+    if (openTags.length === 0 && insideCode(index)) {
+      index = codeRanges[codeIndex]?.to ?? source.length;
+      continue;
+    }
+    if (source[index] !== "<") {
+      index += 1;
+      continue;
+    }
+    const tag = scanHtmlTag(source, index);
+    if (!tag) {
+      index += 1;
+      continue;
+    }
+    if (!tag.complete) {
+      ranges.push({ from: index, to: source.length });
+      break;
+    }
+    if (tag.kind === "standalone") {
+      ranges.push({ from: index, to: tag.end });
+      index = tag.end;
+      continue;
+    }
+    const name = tag.name;
+    if (!name) {
+      index = tag.end;
+      continue;
+    }
+    if (tag.kind === "opening") {
+      if (tag.selfClosing || htmlVoidElements.has(name)) {
+        ranges.push({ from: index, to: tag.end });
+      } else {
+        openTags.push({ name, from: index });
+      }
+      index = tag.end;
+      continue;
+    }
+    const matchingIndex = openTags.findLastIndex((open) => open.name === name);
+    if (matchingIndex < 0) {
+      ranges.push({ from: index, to: tag.end });
+    } else {
+      ranges.push({ from: openTags[matchingIndex]?.from ?? index, to: tag.end });
+      openTags.splice(matchingIndex);
+    }
+    index = tag.end;
+  }
+  for (const open of openTags) {
+    ranges.push({ from: open.from, to: source.length });
+  }
+  return mergeMarkdownRanges(ranges);
+}
+
 export function joinSourceLines(source: string, lines: readonly string[]): string {
   const originalLines = sourceLinesWithEndings(source);
   const bytes = (ending: SourceLine["ending"]): string =>

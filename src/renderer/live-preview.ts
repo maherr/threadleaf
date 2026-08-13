@@ -18,6 +18,7 @@ import {
   createSafeMathElement,
   findInlineMathClose,
   markdownCodeRanges,
+  markdownHtmlRanges,
   renderSafeMath,
   scanFrontmatter,
   sourceLineStarts,
@@ -973,7 +974,10 @@ export function buildLivePreviewMapping(
     return unresolvedFrontmatterMapping(source);
   }
   const footnotes = collectFootnotes(source);
-  const protectedRanges = [...markdownCodeRanges(source), ...(options.protectedRanges ?? [])];
+  const codeRanges = markdownCodeRanges(source);
+  const htmlRanges = markdownHtmlRanges(source, codeRanges);
+  const protectedRanges = [...codeRanges, ...htmlRanges, ...(options.protectedRanges ?? [])];
+  const lineProtectedRanges = [...codeRanges, ...(options.protectedRanges ?? [])];
   const parsed: ParsedInlineToken[] = [];
   const lines = splitSourceLines(source);
   const lineStarts = sourceLineStarts(source);
@@ -988,9 +992,16 @@ export function buildLivePreviewMapping(
     const lineNumber = lineIndex + 1;
     const lineRange = sourceRange(lineFrom, lineFrom + line.length);
     // The pure mapping has no mounted CodeMirror syntax tree to hide behind.
-    // Leave every protected code line as an identity slice, including code
-    // that merely resembles a table, task, frontmatter marker, or math.
-    if (intersectsAny(lineRange, protectedRanges)) {
+    // Leave every line containing a protected non-HTML range as an identity
+    // slice, including code that merely resembles a table, task, frontmatter
+    // marker, or math. HTML ranges are handled at token boundaries so ordinary
+    // Markdown after a closing tag remains renderable.
+    const hasNonHtmlProtectedRange = lineProtectedRanges.some(
+      (range) =>
+        rangesIntersect(lineRange, range) &&
+        !htmlRanges.some((html) => html.from <= range.from && range.to <= html.to),
+    );
+    if (hasNonHtmlProtectedRange) {
       lineFrom = lineStarts[lineIndex + 1] ?? source.length;
       continue;
     }
@@ -2266,6 +2277,8 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
   const footnotes = collectFootnotes(source);
   const footnoteNumbers = new Map([...footnotes.ids].map((id, index) => [id, index + 1] as const));
   const protectedRanges: SourceRange[] = [];
+  const htmlRanges = markdownHtmlRanges(source);
+  protectedRanges.push(...htmlRanges);
   const sourceOnlyLineNumbers = collectSourceOnlyLineNumbers(view, footnotes.definitionLines);
   const sourceOnlyRanges = [...sourceOnlyLineNumbers].map((lineNumber) => {
     const line = view.state.doc.line(lineNumber);
@@ -2306,6 +2319,7 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
           const range = { from: node.from, to: node.to };
           if (
             !intersectsAny(range, sourceOnlyRanges) &&
+            !intersectsAny(range, htmlRanges) &&
             !intersectsAny(range, active) &&
             !tableRanges.some(
               (candidate) => candidate.from === range.from && candidate.to === range.to,
@@ -2470,6 +2484,9 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
       enter(node) {
         const nodeRange = { from: node.from, to: node.to };
         if (intersectsAny(nodeRange, sourceOnlyRanges)) {
+          return;
+        }
+        if (intersectsAny(nodeRange, htmlRanges)) {
           return;
         }
         const replaced = intersectsAny(nodeRange, replacedRanges);

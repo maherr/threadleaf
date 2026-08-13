@@ -153,6 +153,29 @@ describe("live preview inline model", () => {
     expect(mapping.rendered).toContain("| $tableLikeCode$ |");
   });
 
+  it("keeps inline raw HTML contents source-visible without hiding following Markdown", () => {
+    const source = "outside <span>- [ ] $x$ ![[Nested.md]] [^ok]</span> after $y$\n\n[^ok]: note";
+    const mapping = buildLivePreviewMapping(source);
+    const htmlFrom = source.indexOf("<span>");
+    const htmlTo = source.indexOf("</span>") + "</span>".length;
+    const insideTokens = mapping.tokens.filter(
+      (token) => token.from >= htmlFrom && token.to <= htmlTo,
+    );
+
+    expect(insideTokens).toEqual([]);
+    for (const kind of ["math", "image", "task", "footnote-ref"]) {
+      expect(
+        mapping.tokens.some(
+          (token) => token.kind === kind && token.from >= htmlFrom && token.to <= htmlTo,
+        ),
+      ).toBe(false);
+    }
+    expect(mapping.rendered).toContain(source.slice(htmlFrom, htmlTo));
+    expect(
+      mapping.tokens.some((token) => token.kind === "math" && token.sourceText === "$y$"),
+    ).toBe(true);
+  });
+
   it("keeps math literal after mismatched or unclosed standalone fences", () => {
     for (const source of [
       ["~~~", "```", "$tilde$"].join("\n"),

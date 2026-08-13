@@ -297,6 +297,31 @@ describe("Live Preview async ownership", () => {
     host.remove();
   });
 
+  it("keeps inline raw HTML contents source-visible without hiding following Markdown", async () => {
+    const source =
+      "outside <span>- [ ] $x$ ![[pixel.png]] ![[Nested.md]] [^ok]</span> **after**\n\n[^ok]: note";
+    const current = { path: "Current.md", vaultId: "vault-a" };
+    const { view, host } = editorFor(
+      source,
+      current,
+      async () => {
+        throw new Error("Inline HTML contents must not load note embeds.");
+      },
+      async () => {
+        throw new Error("Inline HTML contents must not load images.");
+      },
+    );
+
+    await flushAsyncWork();
+    expect(host.querySelector(".tl-live-task, .tl-live-math, .tl-live-image, .tl-live-embed")).toBe(
+      null,
+    );
+    expect(host.querySelector(".tl-live-strong")).not.toBeNull();
+    expect(view.state.doc.toString()).toBe(`${source}\n\n`);
+    view.destroy();
+    host.remove();
+  });
+
   it("binds each table body widget to its own source line", async () => {
     const source = [
       "| Field | Value |",
