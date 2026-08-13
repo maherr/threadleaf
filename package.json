@@ -86,6 +86,7 @@
     "test:support-bundle": "pnpm run build && node scripts/check-support-bundle.mjs",
     "test:upgrade-rollback": "node scripts/check-upgrade-rollback.mjs",
     "test:pinned-tabs": "pnpm run build && node scripts/check-pinned-tabs.mjs",
+    "test:workspace-docks-popouts": "pnpm run build && node scripts/check-workspace-docks-popouts.mjs",
     "test:workspace-panes": "pnpm run build && node scripts/check-workspace-panes.mjs",
     "test:json-canvas": "pnpm run build && node scripts/check-json-canvas.mjs",
     "test:windows-package": "node scripts/check-windows-package.mjs",

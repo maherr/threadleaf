@@ -220,6 +220,22 @@ The tab Pin or Unpin control, command palette, native Workspace entry, and remap
 all dispatch the same action. The menu therefore adds an operating-system entry point without
 creating a second command model.
 
+The renderer also exposes pointer and keyboard tab reordering through one vault-bound runtime
+operation. Its insertion model preserves the leading pinned region and permits explicit transfer
+between the two existing panes without a transient duplicate or lost tab. The left navigator and
+right inspector are stable docks whose collapsed state lives in a separate versioned, per-vault
+layout document under private application data. That document also stores bounded main and plugin
+window geometry. Display restoration clamps every window to a visible work area and minimum size.
+
+A supported compatibility-plugin `WebContentsView` can detach from the main window into a native
+`BrowserWindow`; the view itself is reparented rather than recreated. Closing the window returns the
+same view to the main workspace. A renderer crash, plugin unload, vault switch, or failed window
+load also reattaches it and records a visible degraded warning. An abrupt application stop can leave
+an `open` record on disk without a live native window, so activation converts that record to an
+honest degraded snapshot and asks the user to reopen the plugin view. Only the active main renderer
+may read or mutate this layout surface. Pop-out state and bounds never enter the vault or
+`.obsidian/`.
+
 ### Application settings and key bindings
 
 Threadleaf settings live in a versioned document under the operating system's application-data

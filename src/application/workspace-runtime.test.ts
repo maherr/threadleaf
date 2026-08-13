@@ -283,6 +283,7 @@ describe("WorkspaceRuntime", () => {
         name: "Remove note property",
         source: "workspace",
       },
+      { id: "workspace.reorder-tab", name: "Reorder workspace tab", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
       {
         id: "workspace.set-note-property",
@@ -607,6 +608,34 @@ describe("WorkspaceRuntime", () => {
     expect((await pin).error).toBeInstanceOf(Error);
     expect(String((await pin).error)).toContain("workspace state changed before it could be saved");
     await expect(workspace.getWorkspaceState(workspace.vaultId)).resolves.toEqual(migrated);
+  });
+
+  it("uses the same pinned-region reorder contract for keyboard and pointer callers", async () => {
+    const workspace = await openRuntime();
+    await workspace.openNote("Welcome.md");
+    await workspace.createNote("Third", "# Third\n", workspace.vaultId);
+
+    const moved = await workspace.reorderWorkspaceTab("Third.md", "primary", 1, workspace.vaultId);
+    expect(moved.workspace?.tabs.map(({ path }) => path)).toEqual([
+      "Linked Note.md",
+      "Third.md",
+      "Welcome.md",
+    ]);
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    const clamped = await workspace.reorderWorkspaceTab(
+      "Third.md",
+      "primary",
+      0,
+      workspace.vaultId,
+    );
+    expect(clamped.workspace?.tabs.map(({ path }) => path)).toEqual([
+      "Welcome.md",
+      "Third.md",
+      "Linked Note.md",
+    ]);
+    await expect(
+      workspace.reorderWorkspaceTab("Third.md", "primary", 1, "stale-vault"),
+    ).rejects.toThrow("active vault changed");
   });
 
   it("keeps pinned ordering through pane split, transfer, collapse, and restart", async () => {
@@ -2139,6 +2168,7 @@ describe("WorkspaceRuntime", () => {
         name: "Remove note property",
         source: "workspace",
       },
+      { id: "workspace.reorder-tab", name: "Reorder workspace tab", source: "workspace" },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
       {
         id: "workspace.set-note-property",

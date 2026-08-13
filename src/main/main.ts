@@ -8,6 +8,7 @@ import {
   Menu,
   type OpenDialogOptions,
   type SaveDialogOptions,
+  screen,
   type WebContents,
   type WebContentsView,
 } from "electron";
@@ -73,6 +74,12 @@ import {
 } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
 import {
+  restoreWorkspaceWindowBounds,
+  type WorkspaceWindowBounds,
+  workspaceWindowMinimumHeight,
+  workspaceWindowMinimumWidth,
+} from "../shared/workspace-layout";
+import {
   createDefaultVaultWorkspaceSettings,
   parseVaultWorkspaceSettings,
 } from "../shared/workspace-settings";
@@ -91,6 +98,7 @@ import { FileAppSettingsStore } from "./file-app-settings-store";
 import { FileEditorDraftStore } from "./file-editor-draft-store";
 import { FileNoteBookmarkStore } from "./file-note-bookmark-store";
 import { FileVaultSelectionStore } from "./file-vault-selection-store";
+import { FileWorkspaceLayoutStore } from "./file-workspace-layout-store";
 import { FileWorkspaceStateStore } from "./file-workspace-state-store";
 import { createGracefulShutdownHandler } from "./graceful-shutdown";
 import { createMainRendererRecoveryHandler } from "./main-renderer-recovery";
@@ -120,6 +128,7 @@ import {
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { VaultAppearanceWatcher } from "./vault-appearance-watcher";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
+import { WorkspaceLayoutController } from "./workspace-layout-controller";
 
 const applicationId = "org.threadleaf.Threadleaf";
 
@@ -144,16 +153,32 @@ let appUpdateController: AppUpdateController;
 let editorDraftStore: FileEditorDraftStore;
 let noteBookmarkController: NoteBookmarkController;
 let pluginPackageManager: PluginPackageManager;
+let workspaceLayoutController!: WorkspaceLayoutController;
 let pluginOperationTail: Promise<void> = Promise.resolve();
 let initialWorkspaceActivation: Promise<void> | null = null;
 let initialWorkspaceRecoveryPending = false;
 let attachedPluginView: WebContentsView | null = null;
+let attachedPluginHost: BrowserWindow | null = null;
+let pluginPopoutWindow: BrowserWindow | null = null;
+let pluginPopoutRendererMonitor: NodeJS.Timeout | undefined;
+let closingPluginPopout = false;
+let workspaceSnapshotSequence = 0;
 const compatibilityPluginViews = new Set<WebContentsView>();
 const compatibilityPluginWebContents = new Set<WebContents>();
 const visiblePluginViews = new Set<WebContentsView>();
 let pluginSurfaceBounds: PluginSurfaceBounds = { x: 0, y: 0, width: 0, height: 0 };
 let pluginSurfaceCss = "";
 const pluginSurfaceCssKeys = new Map<WebContents, string>();
+
+if (process.env.THREADLEAF_WORKSPACE_DOCKS_RUN) {
+  process.on("SIGUSR2", () => {
+    const popout = pluginPopoutWindow;
+    if (popout && !popout.isDestroyed() && !popout.webContents.isDestroyed()) {
+      popout.webContents.forcefullyCrashRenderer();
+      void handlePluginPopoutClosed(popout, true);
+    }
+  });
+}
 let pluginSurfaceTheme: "dark" | "light" = "dark";
 let pluginSurfacePresentationVisible = true;
 let appearanceWatcherLifecycle: AppearanceWatcherLifecycle | null = null;
@@ -369,17 +394,42 @@ async function applyPluginSurfaceCss(css: string, view?: WebContentsView): Promi
 }
 
 function detachPluginView(): void {
-  if (attachedPluginView && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.contentView.removeChildView(attachedPluginView);
+  if (attachedPluginView && attachedPluginHost && !attachedPluginHost.isDestroyed()) {
+    attachedPluginHost.contentView.removeChildView(attachedPluginView);
   }
   attachedPluginView = null;
+  attachedPluginHost = null;
 }
 
 function updatePluginViewBounds(): void {
   if (!attachedPluginView || pluginSurfaceBounds.width <= 0 || pluginSurfaceBounds.height <= 0) {
     return;
   }
+  if (
+    attachedPluginHost === pluginPopoutWindow &&
+    pluginPopoutWindow &&
+    !pluginPopoutWindow.isDestroyed()
+  ) {
+    const bounds = pluginPopoutWindow.getContentBounds();
+    attachedPluginView.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height });
+    return;
+  }
   attachedPluginView.setBounds(pluginSurfaceBounds);
+}
+
+function attachPluginViewToWindow(view: WebContentsView, target: BrowserWindow): void {
+  if (target.isDestroyed()) {
+    return;
+  }
+  if (attachedPluginView === view && attachedPluginHost === target) {
+    updatePluginViewBounds();
+    return;
+  }
+  detachPluginView();
+  target.contentView.addChildView(view);
+  attachedPluginView = view;
+  attachedPluginHost = target;
+  updatePluginViewBounds();
 }
 
 function setPluginViewVisibility(view: WebContentsView, visible: boolean): void {
@@ -395,17 +445,11 @@ function setPluginViewVisibility(view: WebContentsView, visible: boolean): void 
   if (!pluginSurfacePresentationVisible || !compatibilityPluginViews.has(view)) {
     return;
   }
-  if (!mainWindow || mainWindow.isDestroyed()) {
+  const targetWindow = pluginPopoutWindow ?? mainWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) {
     return;
   }
-  if (attachedPluginView && attachedPluginView !== view) {
-    detachPluginView();
-  }
-  if (attachedPluginView !== view) {
-    mainWindow.contentView.addChildView(view);
-    attachedPluginView = view;
-  }
-  updatePluginViewBounds();
+  attachPluginViewToWindow(view, targetWindow);
 }
 
 function setPluginSurfacePresentationVisible(visible: boolean): void {
@@ -434,12 +478,318 @@ async function registerCompatibilityPluginView(view: WebContentsView): Promise<v
     if (attachedPluginView === view) {
       detachPluginView();
     }
+    const popout = pluginPopoutWindow;
+    if (popout && !popout.isDestroyed()) {
+      closingPluginPopout = true;
+      popout.close();
+      pluginPopoutWindow = null;
+      closingPluginPopout = false;
+      void workspaceLayoutController
+        .reattachPopout(
+          workspaceController.vaultId,
+          "The plugin view unloaded; its pop-out was reattached safely.",
+        )
+        .catch((error) => console.error("Could not persist unloaded plugin reattachment:", error));
+    }
   });
   await Promise.all([
     applyPluginSurfaceTheme(pluginSurfaceTheme, webContents),
     applyPluginSurfaceCss(pluginSurfaceCss, view),
     applyPluginSurfaceAccessibility(pluginSurfaceAccessibility, webContents),
   ]);
+}
+
+function workspaceDisplayAreas(): Array<{ x: number; y: number; width: number; height: number }> {
+  return screen.getAllDisplays().map((display) => ({
+    x: display.workArea.x,
+    y: display.workArea.y,
+    width: display.workArea.width,
+    height: display.workArea.height,
+  }));
+}
+
+function windowBounds(window: BrowserWindow): WorkspaceWindowBounds {
+  const bounds = window.getBounds();
+  const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    width: Math.max(workspaceWindowMinimumWidth, bounds.width),
+    height: Math.max(workspaceWindowMinimumHeight, bounds.height),
+    scaleFactor: display?.scaleFactor ?? 1,
+  };
+}
+
+async function workspaceSnapshotWithLayout(snapshot: RuntimeSnapshot): Promise<RuntimeSnapshot> {
+  if (snapshot.vault.id && workspaceLayoutController.vaultId !== snapshot.vault.id) {
+    const previousVaultId = workspaceLayoutController.vaultId;
+    const popout = pluginPopoutWindow;
+    if (popout && !popout.isDestroyed()) {
+      closingPluginPopout = true;
+      popout.close();
+      pluginPopoutWindow = null;
+      closingPluginPopout = false;
+      const currentView = [...visiblePluginViews].find((view) => !view.webContents.isDestroyed());
+      if (currentView && mainWindow && !mainWindow.isDestroyed()) {
+        attachPluginViewToWindow(currentView, mainWindow);
+      }
+      await workspaceLayoutController
+        .reattachPopout(previousVaultId)
+        .catch((error) => console.error("Could not persist vault-switch reattachment:", error));
+    }
+    await workspaceLayoutController.activateVault(snapshot.vault.id);
+  }
+  return { ...snapshot, workspaceLayout: workspaceLayoutController.snapshot() };
+}
+
+async function handlePluginPopoutClosed(window: BrowserWindow, crashed: boolean): Promise<void> {
+  if (pluginPopoutRendererMonitor !== undefined) {
+    clearInterval(pluginPopoutRendererMonitor);
+    pluginPopoutRendererMonitor = undefined;
+  }
+  if (pluginPopoutWindow !== window) {
+    return;
+  }
+  pluginPopoutWindow = null;
+  if (closingPluginPopout) {
+    closingPluginPopout = false;
+    return;
+  }
+  const currentView = [...visiblePluginViews].find((view) => !view.webContents.isDestroyed());
+  if (currentView && mainWindow && !mainWindow.isDestroyed()) {
+    attachPluginViewToWindow(currentView, mainWindow);
+  }
+  if (crashed && !window.isDestroyed()) {
+    window.destroy();
+  }
+  const warning = crashed
+    ? "The pop-out window crashed; its view was reattached to the main window."
+    : null;
+  await workspaceLayoutController
+    .reattachPopout(workspaceController.vaultId, warning)
+    .catch((error) => {
+      console.error("Could not persist pop-out reattachment:", error);
+    });
+}
+
+async function popOutPluginView(
+  expectedVaultId: string,
+): Promise<ReturnType<WorkspaceLayoutController["snapshot"]>> {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    throw new Error("The active vault changed before the plugin view could pop out.");
+  }
+  const snapshot = await workspaceController.getSnapshot();
+  if (!snapshot.pluginSurface) {
+    throw new Error("Open a supported plugin view before popping it out.");
+  }
+  if (pluginPopoutWindow && !pluginPopoutWindow.isDestroyed()) {
+    pluginPopoutWindow.focus();
+    return workspaceLayoutController.snapshot();
+  }
+  const previous = workspaceLayoutController.snapshot().popout.bounds;
+  const fallback: WorkspaceWindowBounds = {
+    x: 120,
+    y: 90,
+    width: 820,
+    height: 620,
+    scaleFactor: 1,
+  };
+  const bounds = restoreWorkspaceWindowBounds(previous, workspaceDisplayAreas(), fallback);
+  const popout = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: workspaceWindowMinimumWidth,
+    minHeight: workspaceWindowMinimumHeight,
+    title: `Threadleaf · ${snapshot.pluginSurface.displayText}`,
+    show: false,
+    backgroundColor: "#11151c",
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  pluginPopoutWindow = popout;
+  let popoutBoundsTimer: NodeJS.Timeout | undefined;
+  let popoutRendererFailed = false;
+  const persistPopoutBounds = (): void => {
+    updatePluginViewBounds();
+    if (popoutBoundsTimer !== undefined) {
+      clearTimeout(popoutBoundsTimer);
+    }
+    popoutBoundsTimer = setTimeout(() => {
+      popoutBoundsTimer = undefined;
+      if (popout.isDestroyed() || pluginPopoutWindow !== popout) {
+        return;
+      }
+      const layout = workspaceLayoutController.snapshot();
+      if (layout.popout.state !== "open" || !layout.popout.viewType) {
+        return;
+      }
+      void workspaceLayoutController
+        .setPopout({ ...layout.popout, bounds: windowBounds(popout) }, workspaceController.vaultId)
+        .catch((error) => console.error("Could not persist pop-out bounds:", error));
+    }, 150);
+  };
+  popout.on("move", persistPopoutBounds);
+  popout.on("resize", persistPopoutBounds);
+  popout.once("ready-to-show", () => {
+    const currentView = [...visiblePluginViews].find((view) => !view.webContents.isDestroyed());
+    if (currentView) {
+      attachPluginViewToWindow(currentView, popout);
+    }
+    popout.show();
+  });
+  popout.on("closed", () => {
+    if (popoutBoundsTimer !== undefined) {
+      clearTimeout(popoutBoundsTimer);
+      popoutBoundsTimer = undefined;
+    }
+    setTimeout(() => {
+      void handlePluginPopoutClosed(popout, popoutRendererFailed);
+    }, 100);
+  });
+  popout.webContents.on("render-process-gone", (_event, details) => {
+    popoutRendererFailed = details.reason !== "clean-exit";
+    void handlePluginPopoutClosed(popout, popoutRendererFailed);
+  });
+  let popoutLoadTimer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      app.isPackaged || process.env.THREADLEAF_TEST_PLUGIN_POPOUT_LOAD_FAILURE !== "1"
+        ? popout.loadURL("about:blank")
+        : popout.loadFile(join(__dirname, "missing-plugin-popout-test-fixture.html")),
+      new Promise<never>((_, reject) => {
+        popoutLoadTimer = setTimeout(
+          () => reject(new Error("The plugin pop-out timed out while loading.")),
+          10_000,
+        );
+      }),
+    ]);
+  } catch {
+    if (popoutLoadTimer !== undefined) {
+      clearTimeout(popoutLoadTimer);
+      popoutLoadTimer = undefined;
+    }
+    if (pluginPopoutRendererMonitor !== undefined) {
+      clearInterval(pluginPopoutRendererMonitor);
+      pluginPopoutRendererMonitor = undefined;
+    }
+    if (pluginPopoutWindow === popout) {
+      closingPluginPopout = true;
+      if (!popout.isDestroyed()) {
+        popout.close();
+      }
+      pluginPopoutWindow = null;
+      closingPluginPopout = false;
+    }
+    const currentView = [...visiblePluginViews].find((view) => !view.webContents.isDestroyed());
+    if (currentView && mainWindow && !mainWindow.isDestroyed()) {
+      attachPluginViewToWindow(currentView, mainWindow);
+    }
+    const warning =
+      "The plugin pop-out could not be opened. Its view was reattached to the main window.";
+    const layout = workspaceLayoutController.snapshot();
+    try {
+      return await workspaceLayoutController.setPopout(
+        {
+          state: "degraded",
+          viewType: snapshot.pluginSurface.viewType,
+          filePath: snapshot.pluginSurface.filePath,
+          bounds: layout.popout.bounds ?? bounds,
+          warning,
+        },
+        expectedVaultId,
+      );
+    } catch (cleanupError) {
+      console.error("Could not persist pop-out load cleanup:", cleanupError);
+      throw new Error("The plugin pop-out could not be opened and recovery could not be saved.");
+    }
+  } finally {
+    if (popoutLoadTimer !== undefined) {
+      clearTimeout(popoutLoadTimer);
+      popoutLoadTimer = undefined;
+    }
+  }
+  if (popout.isDestroyed() || pluginPopoutWindow !== popout) {
+    throw new Error("The plugin pop-out closed before it finished opening.");
+  }
+  try {
+    await workspaceLayoutController.setPopout(
+      {
+        state: "open",
+        viewType: snapshot.pluginSurface.viewType,
+        filePath: snapshot.pluginSurface.filePath,
+        bounds,
+        warning: null,
+      },
+      expectedVaultId,
+    );
+  } catch (error) {
+    if (pluginPopoutWindow === popout) {
+      closingPluginPopout = true;
+      if (!popout.isDestroyed()) {
+        popout.close();
+      }
+      pluginPopoutWindow = null;
+      closingPluginPopout = false;
+    }
+    const currentView = [...visiblePluginViews].find((view) => !view.webContents.isDestroyed());
+    if (currentView && mainWindow && !mainWindow.isDestroyed()) {
+      attachPluginViewToWindow(currentView, mainWindow);
+    }
+    throw error;
+  }
+  const rendererPid = popout.webContents.getOSProcessId();
+  pluginPopoutRendererMonitor = setInterval(() => {
+    if (popout.isDestroyed() || pluginPopoutWindow !== popout) {
+      if (pluginPopoutRendererMonitor !== undefined) {
+        clearInterval(pluginPopoutRendererMonitor);
+        pluginPopoutRendererMonitor = undefined;
+      }
+      return;
+    }
+    try {
+      process.kill(rendererPid, 0);
+    } catch {
+      if (pluginPopoutRendererMonitor !== undefined) {
+        clearInterval(pluginPopoutRendererMonitor);
+        pluginPopoutRendererMonitor = undefined;
+      }
+      void handlePluginPopoutClosed(popout, true);
+    }
+  }, 250);
+  return workspaceLayoutController.snapshot();
+}
+
+async function reattachPluginView(
+  expectedVaultId: string,
+): Promise<ReturnType<WorkspaceLayoutController["snapshot"]>> {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    throw new Error("The active vault changed before the plugin view could be reattached.");
+  }
+  const popout = pluginPopoutWindow;
+  if (popout && !popout.isDestroyed()) {
+    closingPluginPopout = true;
+    popout.close();
+    pluginPopoutWindow = null;
+    closingPluginPopout = false;
+  }
+  const currentView = [...visiblePluginViews].find((view) => !view.webContents.isDestroyed());
+  if (currentView && mainWindow && !mainWindow.isDestroyed()) {
+    attachPluginViewToWindow(currentView, mainWindow);
+  }
+  const result = await workspaceLayoutController.reattachPopout(expectedVaultId);
+  return result;
+}
+
+async function closeCompatibilityPluginView(): Promise<RuntimeSnapshot> {
+  const expectedVaultId = workspaceController.vaultId;
+  if (
+    pluginPopoutWindow !== null ||
+    workspaceLayoutController.snapshot().popout.state !== "closed"
+  ) {
+    await reattachPluginView(expectedVaultId);
+  }
+  return workspaceController.closePluginView();
 }
 
 function isCompatibilityPluginSender(webContents: WebContents): boolean {
@@ -674,9 +1024,25 @@ function reconcileAppearanceWatcher(snapshot: RuntimeSnapshot): void {
 
 function broadcastWorkspaceSnapshot(snapshot: RuntimeSnapshot): void {
   reconcileAppearanceWatcher(snapshot);
-  for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send(ipcChannels.snapshotChanged, snapshot);
+  if (snapshot.vault.id && snapshot.vault.id !== workspaceController.vaultId) {
+    return;
   }
+  const sequence = ++workspaceSnapshotSequence;
+  void workspaceSnapshotWithLayout(snapshot)
+    .then((enriched) => {
+      if (
+        sequence !== workspaceSnapshotSequence ||
+        enriched.vault.id !== workspaceController.vaultId
+      ) {
+        return;
+      }
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send(ipcChannels.snapshotChanged, enriched);
+        }
+      }
+    })
+    .catch((error) => console.error("Could not publish workspace layout snapshot:", error));
 }
 
 function createAppearanceWatcherLifecycle(): AppearanceWatcherLifecycle {
@@ -1199,7 +1565,57 @@ function registerIpcHandlers(): void {
     if (initialWorkspaceRecoveryPending && initialWorkspaceActivation) {
       await initialWorkspaceActivation;
     }
-    return workspaceController.getSnapshot();
+    return workspaceSnapshotWithLayout(await workspaceController.getSnapshot());
+  });
+  ipcMain.handle(ipcChannels.workspaceLayout, async (event, expectedVaultId: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Workspace layout loading requires the active Threadleaf window.");
+    }
+    if (expectedVaultId !== undefined && typeof expectedVaultId !== "string") {
+      throw new Error("Workspace layout loading requires an optional vault identity.");
+    }
+    if (typeof expectedVaultId === "string" && workspaceController.vaultId !== expectedVaultId) {
+      throw new Error("The active vault changed before the workspace layout could be read.");
+    }
+    return workspaceLayoutController.snapshot();
+  });
+  ipcMain.handle(
+    ipcChannels.setWorkspaceDockCollapsed,
+    (event, dockId: unknown, collapsed: unknown, expectedVaultId: unknown) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Dock updates require the active Threadleaf window.");
+      }
+      if (
+        (dockId !== "left" && dockId !== "right") ||
+        typeof collapsed !== "boolean" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error(
+          "Dock updates require a left or right dock, boolean state, and vault identity.",
+        );
+      }
+      return workspaceLayoutController
+        .setDockCollapsed(dockId, collapsed, expectedVaultId)
+        .then((snapshot) => snapshot);
+    },
+  );
+  ipcMain.handle(ipcChannels.popOutPluginView, (event, expectedVaultId: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Plugin pop-outs require the active Threadleaf window.");
+    }
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Popping out a plugin view requires a vault identity.");
+    }
+    return popOutPluginView(expectedVaultId);
+  });
+  ipcMain.handle(ipcChannels.reattachPluginView, (event, expectedVaultId: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Plugin pop-out reattachment requires the active Threadleaf window.");
+    }
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Reattaching a plugin view requires a vault identity.");
+    }
+    return reattachPluginView(expectedVaultId);
   });
   ipcMain.on(ipcChannels.startupShellReady, (event) => {
     if (
@@ -1886,7 +2302,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.chooseVault, async () => {
     const developmentOverride = readDevelopmentPickerOverride(app.isPackaged, process.env);
     if (developmentOverride?.status === "cancelled") {
-      return { status: "cancelled", snapshot: await workspaceController.getSnapshot() } as const;
+      return {
+        status: "cancelled",
+        snapshot: await workspaceSnapshotWithLayout(await workspaceController.getSnapshot()),
+      } as const;
     }
     let selectedPath =
       developmentOverride?.status === "selected" ? developmentOverride.path : undefined;
@@ -1901,7 +2320,10 @@ function registerIpcHandlers(): void {
         : await dialog.showOpenDialog(options);
       selectedPath = result.filePaths[0];
       if (result.canceled || !selectedPath) {
-        return { status: "cancelled", snapshot: await workspaceController.getSnapshot() } as const;
+        return {
+          status: "cancelled",
+          snapshot: await workspaceSnapshotWithLayout(await workspaceController.getSnapshot()),
+        } as const;
       }
     }
     try {
@@ -1909,14 +2331,17 @@ function registerIpcHandlers(): void {
         status: "opened",
         snapshot: await serializePluginOperation(async () => {
           const opened = await workspaceController.switchVault(selectedPath);
-          return reconcileCompatibilityPlugins(opened.vault.id ?? workspaceController.vaultId);
+          const snapshot = await reconcileCompatibilityPlugins(
+            opened.vault.id ?? workspaceController.vaultId,
+          );
+          return workspaceSnapshotWithLayout(snapshot);
         }),
       } as const;
     } catch (error) {
       return {
         status: "failed",
         message: describeVaultOpenFailure(error),
-        snapshot: await workspaceController.getSnapshot(),
+        snapshot: await workspaceSnapshotWithLayout(await workspaceController.getSnapshot()),
       } as const;
     }
   });
@@ -2010,6 +2435,34 @@ function registerIpcHandlers(): void {
         filePath,
         fromPaneId,
         toPaneId,
+        expectedVaultId,
+      );
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.reorderWorkspaceTab,
+    (
+      _event,
+      filePath: unknown,
+      paneId: unknown,
+      targetIndex: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof filePath !== "string" ||
+        (paneId !== "primary" && paneId !== "secondary") ||
+        typeof targetIndex !== "number" ||
+        !Number.isFinite(targetIndex) ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error(
+          "Reordering a tab requires a path, pane, insertion target, and vault identity.",
+        );
+      }
+      return workspaceController.reorderWorkspaceTab(
+        filePath,
+        paneId,
+        targetIndex,
         expectedVaultId,
       );
     },
@@ -2329,9 +2782,12 @@ function registerIpcHandlers(): void {
     }
     return serializePluginOperation(() => workspaceController.openPluginView(viewType, filePath));
   });
-  ipcMain.handle(ipcChannels.closePluginView, () =>
-    serializePluginOperation(() => workspaceController.closePluginView()),
-  );
+  ipcMain.handle(ipcChannels.closePluginView, (event) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Closing a plugin view requires the active Threadleaf window.");
+    }
+    return serializePluginOperation(() => closeCompatibilityPluginView());
+  });
   ipcMain.handle(ipcChannels.setPluginSurfaceBounds, (_event, value: unknown) => {
     if (!value || typeof value !== "object") {
       throw new Error("Plugin surface bounds must be an object.");
@@ -2433,9 +2889,16 @@ function registerIpcHandlers(): void {
 
 async function createWindow(): Promise<void> {
   detachPluginView();
+  const restoredBounds = restoreWorkspaceWindowBounds(
+    workspaceLayoutController.snapshot().mainWindowBounds,
+    workspaceDisplayAreas(),
+    { x: 120, y: 70, width: 1180, height: 820, scaleFactor: 1 },
+  );
   const window = new BrowserWindow({
-    width: 1180,
-    height: 820,
+    x: restoredBounds.x,
+    y: restoredBounds.y,
+    width: Math.max(860, restoredBounds.width),
+    height: Math.max(640, restoredBounds.height),
     minWidth: 860,
     minHeight: 640,
     backgroundColor: "#11151c",
@@ -2450,6 +2913,25 @@ async function createWindow(): Promise<void> {
   });
   mainWindow = window;
 
+  let boundsTimer: NodeJS.Timeout | undefined;
+  const persistBounds = (): void => {
+    if (boundsTimer !== undefined) {
+      clearTimeout(boundsTimer);
+    }
+    const expectedVaultId = workspaceController.vaultId;
+    boundsTimer = setTimeout(() => {
+      boundsTimer = undefined;
+      if (window.isDestroyed()) {
+        return;
+      }
+      void workspaceLayoutController
+        .setMainWindowBounds(windowBounds(window), expectedVaultId)
+        .catch((error) => console.error("Could not persist main window bounds:", error));
+    }, 150);
+  };
+  window.on("move", persistBounds);
+  window.on("resize", persistBounds);
+
   window.once("ready-to-show", () => window.show());
   window.webContents.on("render-process-gone", (_event, details) => {
     recoverMainRenderer({ reason: details.reason, exitCode: details.exitCode });
@@ -2458,12 +2940,17 @@ async function createWindow(): Promise<void> {
     console.error("Threadleaf main window became unresponsive");
   });
   window.once("closed", () => {
+    if (boundsTimer !== undefined) {
+      clearTimeout(boundsTimer);
+      boundsTimer = undefined;
+    }
     if (mainWindow === window) {
       attachedPluginView = null;
       mainWindow = null;
     }
   });
   await window.loadFile(join(__dirname, "..", "renderer", "index.html"));
+  setPluginSurfacePresentationVisible(true);
 }
 
 async function replaceMainWindowAfterCrash(): Promise<void> {
@@ -2525,6 +3012,23 @@ app.whenReady().then(async () => {
     new FileNoteBookmarkStore(join(app.getPath("userData"), "bookmarks")),
   );
   workspaceController = await createWorkspaceController();
+  workspaceLayoutController = new WorkspaceLayoutController({
+    store: new FileWorkspaceLayoutStore(join(app.getPath("userData"), "workspace-layouts")),
+    supportedPopoutViewTypes: [
+      "drawing",
+      "renderer-view",
+      "excalidraw",
+      "threadleaf-plugin-settings",
+    ],
+  });
+  await workspaceLayoutController.activateVault(workspaceController.vaultId);
+  workspaceLayoutController.onSnapshot((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send(ipcChannels.workspaceLayoutChanged, snapshot);
+      }
+    }
+  });
   const migrationInterruptPhase = developmentMigrationInterruptPhase();
   let migrationInterrupted = false;
   migrationTransactionManager = new ObsidianMigrationTransactionManager(

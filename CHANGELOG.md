@@ -102,6 +102,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   remappable hotkey target share one vault-bound action. Isolated X11 Electron coverage drives real
   pointer and keyboard input, verifies restart persistence and close refusal, and captures dark,
   light, minimum-width, and visual-positive-control evidence.
+- Pointer and keyboard tab reordering within and across panes, persistent collapsible notes and
+  inspector docks, and native compatibility-plugin pop-out windows with private bounds, explicit
+  reattachment, vault-switch cleanup, stale-session detection, and crash recovery back into the
+  main workspace. Layout IPC is restricted to the active Threadleaf renderer, and plugin windows
+  never write layout metadata into the vault.
 - Native desktop File, Edit, Workspace, View, and Help menus whose accelerators follow the saved
   key bindings and whose commands target the focused workspace through the shared action surface.
 - Desktop move and rename through the whole-vault link-integrity preflight, with vault and revision

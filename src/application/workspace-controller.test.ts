@@ -309,6 +309,10 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return this.#snapshot;
   }
 
+  async reorderWorkspaceTab(): Promise<RuntimeSnapshot> {
+    return this.#snapshot;
+  }
+
   async moveNote(
     filePath: string,
     targetPath: string,

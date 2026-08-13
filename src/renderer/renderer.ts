@@ -109,7 +109,9 @@ import { pluginViewTypeForPath } from "./plugin-view-model";
 import { createStandalonePublishedNoteHtml } from "./publish-export";
 import { RecoveryViewController } from "./recovery-view";
 import "./styles.css";
+import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
+import { type TabDragState, tabInsertionIndex } from "./workspace-tab-dnd";
 
 const elements = {
   vaultName: getElement("vault-name"),
@@ -132,12 +134,16 @@ const elements = {
   canvasFileList: getElement("canvas-file-list"),
   indexStatus: getElement("index-status"),
   recoveryCount: getElement("recovery-count"),
+  workspaceRoot: getElement("workspace-root"),
+  collapseLeftDock: getButton("collapse-left-dock"),
+  collapseRightDock: getButton("collapse-right-dock"),
   workspacePanes: getElement("workspace-panes"),
   workspacePane: getElement("workspace-pane-primary"),
   noteTabs: getElement("note-tabs"),
   splitPaneRight: getButton("split-pane-right"),
   splitPaneDown: getButton("split-pane-down"),
   moveTabPane: getButton("move-tab-pane"),
+  popOutPluginView: getButton("pop-out-plugin-view"),
   closePane: getButton("close-pane"),
   notePath: getElement("note-path"),
   noteEmpty: getElement("note-empty"),
@@ -151,6 +157,7 @@ const elements = {
   readView: getButton("read-view"),
   pluginView: getButton("plugin-view"),
   pluginSurfaceHost: getElement("plugin-surface-host"),
+  pluginSurfaceStatus: getElement("plugin-surface-status"),
   noteEditorShell: getElement("note-editor-shell"),
   noteEditor: getElement("note-editor"),
   notePreview: getElement("note-preview"),
@@ -395,6 +402,7 @@ const paneElementKeys = [
   "splitPaneRight",
   "splitPaneDown",
   "moveTabPane",
+  "popOutPluginView",
   "closePane",
   "notePath",
   "noteEmpty",
@@ -408,6 +416,7 @@ const paneElementKeys = [
   "readView",
   "pluginView",
   "pluginSurfaceHost",
+  "pluginSurfaceStatus",
   "noteEditorShell",
   "noteEditor",
   "notePreview",
@@ -483,6 +492,7 @@ function paneElementsFor(
     splitPaneRight: button("split-pane-right"),
     splitPaneDown: button("split-pane-down"),
     moveTabPane: button("move-tab-pane"),
+    popOutPluginView: button("pop-out-plugin-view"),
     closePane: button("close-pane"),
     notePath: element("note-path"),
     noteEmpty: element("note-empty"),
@@ -496,6 +506,7 @@ function paneElementsFor(
     readView: button("read-view"),
     pluginView: button("plugin-view"),
     pluginSurfaceHost: element("plugin-surface-host"),
+    pluginSurfaceStatus: element("plugin-surface-status"),
     noteEditorShell: element("note-editor-shell"),
     noteEditor: element("note-editor"),
     notePreview: element("note-preview"),
@@ -717,12 +728,26 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
 
 const isMac = navigator.platform.toLocaleLowerCase("en-US").includes("mac");
 let currentSnapshot: RuntimeSnapshot | null = null;
+let workspaceLayoutSnapshot: WorkspaceLayoutSnapshot | null = null;
+let currentTabDrag: TabDragState | null = null;
+let pointerTabGesture: {
+  id: number;
+  path: string;
+  paneId: WorkspacePaneId;
+  sourcePinned: boolean;
+  insertionIndex: number;
+  startX: number;
+  startY: number;
+} | null = null;
+let suppressPointerActivationPath: string | null = null;
+let workspaceKeyboardShortcutsBound = false;
 let loadedNote: WorkspaceNoteSnapshot | null = null;
 let loadedVaultId: string | null = null;
 let pendingDiskNote: WorkspaceNoteSnapshot | null = null;
 let diskChanged = false;
 let editNoticeState: EditNoticeState | null = null;
 let lastVaultWarning: string | null = null;
+let lastWorkspaceLayoutWarningKey: string | null = null;
 let toastTimer: number | undefined;
 let busy = false;
 let bookmarkVaultId: string | null = null;
@@ -2019,6 +2044,10 @@ function renderDocumentView(): void {
     pluginSettingsTargetId !== null ||
     currentSnapshot?.pluginSurface?.viewType === "threadleaf-plugin-settings";
   const plugin = documentViewMode === "plugin" && (hasNote || pluginSettings);
+  const popoutState = workspaceLayoutSnapshot?.popout.state ?? "closed";
+  const popoutOpen = popoutState === "open";
+  const hasPluginSurface =
+    currentSnapshot?.pluginSurface !== null && currentSnapshot?.pluginSurface !== undefined;
   const pluginViewType = preferredPluginViewType();
   const visiblePluginViewType = pluginSettings
     ? "threadleaf-plugin-settings"
@@ -2029,6 +2058,14 @@ function renderDocumentView(): void {
   elements.noteView.hidden = !hasNote || plugin;
   elements.canvasView.hidden = !hasCanvas;
   elements.pluginSurfaceHost.hidden = !plugin;
+  elements.pluginSurfaceHost.dataset.popoutState = popoutState;
+  elements.pluginSurfaceStatus.textContent = !hasPluginSurface
+    ? "Opening plugin view…"
+    : popoutOpen
+      ? "Plugin view is open in a separate window."
+      : popoutState === "degraded"
+        ? "Plugin pop-out unavailable; plugin view is open in the main window."
+        : "Plugin view is open in the main window.";
   elements.noteView.dataset.view = reading ? "reading" : documentViewMode;
   elements.noteEditorShell.dataset.editorMode = editingViewMode;
   elements.noteEditorShell.classList.toggle("is-live-preview", editingViewMode === "live");
@@ -2049,6 +2086,11 @@ function renderDocumentView(): void {
     : visiblePluginViewType
       ? `Open ${visiblePluginViewType} community plugin view`
       : "No community plugin view is registered";
+  elements.popOutPluginView.hidden = !hasPluginSurface && !popoutOpen;
+  elements.popOutPluginView.disabled = busy || saving || (!hasPluginSurface && !popoutOpen);
+  elements.popOutPluginView.textContent = popoutOpen ? "↙" : "↗";
+  elements.popOutPluginView.ariaLabel = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";
+  elements.popOutPluginView.title = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";
   if (pluginSettings && plugin) {
     const pluginName = (currentSnapshot?.plugins ?? []).find(
       ({ id }) => id === pluginSettingsTargetId,
@@ -7090,9 +7132,86 @@ function renderWorkspacePanes(
   return displayedNote;
 }
 
+function renderWorkspaceLayout(layout: WorkspaceLayoutSnapshot | null | undefined): void {
+  if (!layout) {
+    return;
+  }
+  workspaceLayoutSnapshot = layout;
+  elements.workspaceRoot.dataset.leftDockCollapsed = String(layout.docks.left.collapsed);
+  elements.workspaceRoot.dataset.rightDockCollapsed = String(layout.docks.right.collapsed);
+  const leftCollapsed = layout.docks.left.collapsed;
+  elements.collapseLeftDock.setAttribute("aria-expanded", String(!leftCollapsed));
+  elements.collapseLeftDock.setAttribute(
+    "aria-label",
+    `${leftCollapsed ? "Expand" : "Collapse"} notes dock`,
+  );
+  elements.collapseLeftDock.title = leftCollapsed ? "Expand notes dock" : "Collapse notes dock";
+  elements.collapseLeftDock.textContent = leftCollapsed ? "›" : "‹";
+  const rightCollapsed = layout.docks.right.collapsed;
+  elements.collapseRightDock.setAttribute("aria-expanded", String(!rightCollapsed));
+  elements.collapseRightDock.setAttribute(
+    "aria-label",
+    `${rightCollapsed ? "Expand" : "Collapse"} inspector dock`,
+  );
+  elements.collapseRightDock.title = rightCollapsed
+    ? "Expand inspector dock"
+    : "Collapse inspector dock";
+  elements.collapseRightDock.textContent = rightCollapsed ? "‹" : "›";
+  const warning =
+    layout.popout.warning ?? layout.docks.left.warning ?? layout.docks.right.warning ?? null;
+  const warningKey = warning ? `${layout.vaultId}\u0000${warning}` : null;
+  if (warning && warningKey !== lastWorkspaceLayoutWarningKey) {
+    showToast(warning);
+  }
+  lastWorkspaceLayoutWarningKey = warningKey;
+}
+
+async function toggleWorkspaceDock(dockId: "left" | "right"): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  const layout = workspaceLayoutSnapshot;
+  if (!expectedVaultId || !layout || busy) {
+    return;
+  }
+  setActionState(true);
+  try {
+    renderWorkspaceLayout(
+      await window.threadleaf.setWorkspaceDockCollapsed(
+        dockId,
+        !layout.docks[dockId].collapsed,
+        expectedVaultId,
+      ),
+    );
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    setActionState(false);
+  }
+}
+
+async function togglePluginPopout(): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || busy) {
+    return;
+  }
+  setActionState(true);
+  try {
+    const popoutOpen = workspaceLayoutSnapshot?.popout.state === "open";
+    renderWorkspaceLayout(
+      popoutOpen
+        ? await window.threadleaf.reattachPluginView(expectedVaultId)
+        : await window.threadleaf.popOutPluginView(expectedVaultId),
+    );
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    setActionState(false);
+  }
+}
+
 function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
+  renderWorkspaceLayout(snapshot.workspaceLayout);
   if (snapshot.vault.id) {
     graphView.onSnapshot({
       vaultId: snapshot.vault.id,
@@ -7286,7 +7405,327 @@ function render(snapshot: RuntimeSnapshot): void {
   activatePaneContext(workspace?.activePaneId ?? "primary");
 }
 
+function clearTabDragVisual(tabsElement: HTMLElement): void {
+  tabsElement.dataset.dragging = "false";
+  for (const tab of tabsElement.querySelectorAll<HTMLElement>(".workspace-tab-header")) {
+    tab.dataset.dragTarget = "false";
+  }
+}
+
+function clearWorkspaceTabDragVisuals(): void {
+  for (const pane of paneElements.values()) {
+    clearTabDragVisual(pane.noteTabs);
+  }
+}
+
+function tabRectangles(tabsElement: HTMLElement): Array<{
+  index: number;
+  left: number;
+  right: number;
+  pinned: boolean;
+}> {
+  return [...tabsElement.querySelectorAll<HTMLElement>(".workspace-tab-header")].map((tab) => {
+    const bounds = tab.getBoundingClientRect();
+    return {
+      index: Number.parseInt(tab.dataset.tabIndex ?? "", 10),
+      left: bounds.left,
+      right: bounds.right,
+      pinned: tab.dataset.pinned === "true",
+    };
+  });
+}
+
+function updateTabDragTarget(
+  paneId: WorkspacePaneId,
+  tabsElement: HTMLElement,
+  pointerX: number,
+): number | null {
+  if (!currentTabDrag) {
+    return null;
+  }
+  clearWorkspaceTabDragVisuals();
+  const targetIndex =
+    tabInsertionIndex(pointerX, tabRectangles(tabsElement), currentTabDrag.sourcePinned) ??
+    (() => {
+      const targetTabs = workspacePaneSnapshot(paneId)?.tabs ?? [];
+      const pinnedCount = targetTabs.filter((tab) => tab.pinned).length;
+      if (currentTabDrag.sourcePinned) {
+        return pinnedCount === 0 ? 0 : null;
+      }
+      return targetTabs.length;
+    })();
+  for (const tab of tabsElement.querySelectorAll<HTMLElement>(".workspace-tab-header")) {
+    tab.dataset.dragTarget = String(
+      Number.parseInt(tab.dataset.tabIndex ?? "", 10) === targetIndex &&
+        tab.dataset.pinned === String(currentTabDrag.sourcePinned),
+    );
+  }
+  currentTabDrag = {
+    ...currentTabDrag,
+    targetPaneId: paneId,
+    insertionIndex: targetIndex ?? currentTabDrag.insertionIndex,
+  };
+  return targetIndex;
+}
+
+function tabsElementForPane(paneId: WorkspacePaneId): HTMLElement {
+  const pane = paneElements.get(paneId);
+  if (!pane) {
+    throw new Error(`Missing workspace tab surface: ${paneId}`);
+  }
+  return pane.noteTabs;
+}
+
+function finishTabDrag(
+  targetIndex: number | null = null,
+  targetPaneId: WorkspacePaneId | null = currentTabDrag?.targetPaneId ?? null,
+): void {
+  const drag = currentTabDrag;
+  clearWorkspaceTabDragVisuals();
+  currentTabDrag = null;
+  if (!drag || busy || saving || anyPaneDirty()) {
+    return;
+  }
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId) {
+    return;
+  }
+  if (drag.targetPaneId !== drag.paneId && targetPaneId === drag.targetPaneId) {
+    void runAction(async () => {
+      const moved = await window.threadleaf.moveNoteToWorkspacePane(
+        drag.path,
+        drag.paneId,
+        drag.targetPaneId,
+        expectedVaultId,
+      );
+      if (targetIndex === null) {
+        return moved;
+      }
+      return window.threadleaf.reorderWorkspaceTab(
+        drag.path,
+        drag.targetPaneId,
+        targetIndex,
+        expectedVaultId,
+      );
+    });
+    return;
+  }
+  if (targetIndex === null || targetPaneId !== drag.paneId) {
+    return;
+  }
+  void runAction(() =>
+    window.threadleaf.reorderWorkspaceTab(drag.path, drag.paneId, targetIndex, expectedVaultId),
+  );
+}
+
+function tabPaneAtPoint(clientX: number, clientY: number): WorkspacePaneId | null {
+  const element = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(".note-tabs");
+  if (!element) {
+    return null;
+  }
+  for (const [paneId, pane] of paneElements) {
+    if (pane.noteTabs === element) {
+      return paneId;
+    }
+  }
+  return null;
+}
+
+function updateTabDragAtPoint(clientX: number, clientY: number): number | null {
+  const paneId = tabPaneAtPoint(clientX, clientY);
+  if (!paneId) {
+    clearWorkspaceTabDragVisuals();
+    return null;
+  }
+  return updateTabDragTarget(paneId, tabsElementForPane(paneId), clientX);
+}
+
+function bindWorkspaceKeyboardShortcuts(): void {
+  if (workspaceKeyboardShortcutsBound) {
+    return;
+  }
+  workspaceKeyboardShortcutsBound = true;
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.button !== 0 || busy || saving || anyPaneDirty()) {
+        return;
+      }
+      const target =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>(".note-tab-activate")
+          : null;
+      const wrapper = target?.closest<HTMLElement>(".workspace-tab-header");
+      const paneElement = wrapper?.closest<HTMLElement>(".workspace-pane");
+      const paneId =
+        paneElement?.dataset.paneId === "primary" || paneElement?.dataset.paneId === "secondary"
+          ? paneElement.dataset.paneId
+          : null;
+      const path = target?.dataset.notePath;
+      const tabIndex = Number.parseInt(wrapper?.dataset.tabIndex ?? "", 10);
+      if (!wrapper || !paneId || !path || !Number.isSafeInteger(tabIndex)) {
+        return;
+      }
+      pointerTabGesture = {
+        id: event.pointerId,
+        path,
+        paneId,
+        sourcePinned: wrapper.dataset.pinned === "true",
+        insertionIndex: tabIndex,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+    },
+    true,
+  );
+  document.addEventListener(
+    "pointermove",
+    (event) => {
+      const gesture = pointerTabGesture;
+      if (!gesture || gesture.id !== event.pointerId) {
+        return;
+      }
+      if (!currentTabDrag) {
+        const distance = Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY);
+        if (distance < 5) {
+          return;
+        }
+        suppressPointerActivationPath = gesture.path;
+        currentTabDrag = {
+          path: gesture.path,
+          paneId: gesture.paneId,
+          targetPaneId: gesture.paneId,
+          sourcePinned: gesture.sourcePinned,
+          insertionIndex: gesture.insertionIndex,
+        };
+        tabsElementForPane(gesture.paneId).dataset.dragging = "true";
+      }
+      event.preventDefault();
+      updateTabDragAtPoint(event.clientX, event.clientY);
+    },
+    true,
+  );
+  document.addEventListener(
+    "pointerup",
+    (event) => {
+      const gesture = pointerTabGesture;
+      if (!gesture || gesture.id !== event.pointerId) {
+        return;
+      }
+      pointerTabGesture = null;
+      if (currentTabDrag?.path !== gesture.path) {
+        return;
+      }
+      event.preventDefault();
+      const targetPaneId = tabPaneAtPoint(event.clientX, event.clientY);
+      const targetIndex = targetPaneId
+        ? updateTabDragTarget(targetPaneId, tabsElementForPane(targetPaneId), event.clientX)
+        : null;
+      finishTabDrag(targetIndex, targetPaneId ?? gesture.paneId);
+      window.setTimeout(() => {
+        if (suppressPointerActivationPath === gesture.path) {
+          suppressPointerActivationPath = null;
+        }
+      }, 0);
+    },
+    true,
+  );
+  document.addEventListener(
+    "pointercancel",
+    (event) => {
+      const gesture = pointerTabGesture;
+      if (!gesture || gesture.id !== event.pointerId) {
+        return;
+      }
+      pointerTabGesture = null;
+      suppressPointerActivationPath = null;
+      if (currentTabDrag?.path === gesture.path) {
+        finishTabDrag(null, gesture.paneId);
+      }
+    },
+    true,
+  );
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      if (!event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+      if (!(event.target instanceof Node) || !elements.workspacePanes.contains(event.target)) {
+        return;
+      }
+      const focusedTab =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>(".workspace-tab-header")
+          : null;
+      const focusedPane = focusedTab?.closest<HTMLElement>(".workspace-pane");
+      const paneId =
+        focusedPane?.dataset.paneId === "primary" || focusedPane?.dataset.paneId === "secondary"
+          ? focusedPane.dataset.paneId
+          : activePaneContextId;
+      const pane = workspacePaneSnapshot(paneId);
+      if (!pane) {
+        return;
+      }
+      const filePath =
+        focusedTab?.querySelector<HTMLElement>(".note-tab-activate")?.dataset.notePath ??
+        pane.tabs.find((tab) => tab.active)?.path;
+      if (!filePath) {
+        return;
+      }
+      if (event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        void moveTabToOtherPane(filePath, paneId);
+        return;
+      }
+      const sourceIndex = pane.tabs.findIndex((tab) => tab.path === filePath);
+      if (sourceIndex === -1) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void reorderTab(filePath, paneId, sourceIndex + (event.key === "ArrowRight" ? 1 : -1));
+    },
+    true,
+  );
+}
+
+function bindTabDragSurface(paneId: WorkspacePaneId, tabsElement: HTMLElement): void {
+  bindWorkspaceKeyboardShortcuts();
+  if (tabsElement.dataset.dragBound === "true") {
+    return;
+  }
+  tabsElement.dataset.dragBound = "true";
+  tabsElement.addEventListener("dragover", (event) => {
+    if (!currentTabDrag || busy || saving || anyPaneDirty()) {
+      return;
+    }
+    event.preventDefault();
+    updateTabDragTarget(paneId, tabsElement, event.clientX);
+  });
+  tabsElement.addEventListener("drop", (event) => {
+    if (!currentTabDrag) {
+      return;
+    }
+    event.preventDefault();
+    const targetIndex = updateTabDragTarget(paneId, tabsElement, event.clientX);
+    finishTabDrag(targetIndex, paneId);
+  });
+  tabsElement.addEventListener("dragleave", (event) => {
+    if (event.relatedTarget instanceof Node && tabsElement.contains(event.relatedTarget)) {
+      return;
+    }
+    clearTabDragVisual(tabsElement);
+  });
+}
+
 function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): void {
+  const paneId = activePaneContextId;
+  bindTabDragSurface(paneId, elements.noteTabs);
   elements.noteTabs.replaceChildren();
   if (tabs.length === 0) {
     const empty = document.createElement("span");
@@ -7299,7 +7738,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
   const runtimeActivePath = tabs.find((tab) => tab.active)?.path ?? null;
   let activeTab: HTMLElement | null = null;
   let renderedPinnedTab = false;
-  for (const tab of tabs) {
+  for (const [tabIndex, tab] of tabs.entries()) {
     if (!tab.pinned && renderedPinnedTab) {
       const divider = document.createElement("span");
       divider.className = "note-tabs-pin-divider";
@@ -7313,6 +7752,8 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     wrapper.className = "note-tab workspace-tab-header";
     wrapper.dataset.active = String(isActive);
     wrapper.dataset.pinned = String(tab.pinned);
+    wrapper.dataset.tabIndex = String(tabIndex);
+    wrapper.draggable = true;
 
     const activate = document.createElement("button");
     activate.type = "button";
@@ -7338,14 +7779,46 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     if (isActive) {
       activeTab = wrapper;
     }
-    const paneId = activePaneContextId;
-    activate.addEventListener("click", () => void openNote(tab.path, undefined, paneId));
+    activate.addEventListener("click", () => {
+      if (suppressPointerActivationPath === tab.path) {
+        suppressPointerActivationPath = null;
+        return;
+      }
+      void openNote(tab.path, undefined, paneId);
+    });
     activate.addEventListener("keydown", (event) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
         return;
       }
       event.preventDefault();
-      void cycleTab(event.key === "ArrowRight" ? 1 : -1, paneId);
+      if (!event.altKey && !event.ctrlKey && !event.metaKey) {
+        void cycleTab(event.key === "ArrowRight" ? 1 : -1, paneId);
+      }
+    });
+
+    wrapper.addEventListener("dragstart", (event) => {
+      if (busy || saving || anyPaneDirty()) {
+        event.preventDefault();
+        showToast("Save or revert drafts before reordering tabs.");
+        return;
+      }
+      currentTabDrag = {
+        path: tab.path,
+        paneId,
+        targetPaneId: paneId,
+        sourcePinned: tab.pinned,
+        insertionIndex: tabIndex,
+      };
+      tabsElementForPane(paneId).dataset.dragging = "true";
+      event.dataTransfer?.setData("text/plain", tab.path);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+      }
+    });
+    wrapper.addEventListener("dragend", () => {
+      if (currentTabDrag?.path === tab.path) {
+        finishTabDrag(null, paneId);
+      }
     });
 
     const pin = document.createElement("button");
@@ -8557,6 +9030,27 @@ async function toggleTabPin(
   await runAction(() => window.threadleaf.toggleTabPin(filePath, paneId, expectedVaultId));
 }
 
+async function reorderTab(
+  filePath: string,
+  paneId: WorkspacePaneId,
+  targetIndex: number,
+): Promise<void> {
+  activatePaneContext(paneId);
+  if (busy || saving || anyPaneDirty()) {
+    if (anyPaneDirty()) {
+      showToast("Save or revert drafts before reordering tabs.");
+    }
+    return;
+  }
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || !Number.isSafeInteger(targetIndex)) {
+    return;
+  }
+  await runAction(() =>
+    window.threadleaf.reorderWorkspaceTab(filePath, paneId, targetIndex, expectedVaultId),
+  );
+}
+
 function toggleCurrentTabPin(): Promise<void> {
   const tab = workspacePaneSnapshot()?.tabs.find((candidate) => candidate.active);
   return tab ? toggleTabPin(tab.path) : Promise.resolve();
@@ -8839,10 +9333,20 @@ async function moveActiveTabToOtherPane(): Promise<void> {
   const expectedVaultId = currentSnapshot?.vault.id;
   const filePath = loadedNote?.path;
   const fromPaneId = activePaneContextId;
+  if (!filePath) {
+    return;
+  }
+  await moveTabToOtherPane(filePath, fromPaneId, expectedVaultId);
+}
+
+async function moveTabToOtherPane(
+  filePath: string,
+  fromPaneId: WorkspacePaneId,
+  expectedVaultId = currentSnapshot?.vault.id,
+): Promise<void> {
   const toPaneId = otherWorkspacePaneId(fromPaneId);
   if (
     !expectedVaultId ||
-    !filePath ||
     !workspacePaneSnapshot(toPaneId) ||
     busy ||
     anyPaneSaving() ||
@@ -8964,6 +9468,10 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     } else {
       void activatePluginView();
     }
+  });
+  pane.popOutPluginView.addEventListener("click", () => {
+    activate();
+    void togglePluginPopout();
   });
   pane.notePreview.addEventListener("click", (event) => {
     activate();
@@ -9095,6 +9603,21 @@ const recoveryView = new RecoveryViewController(elements.recoveryDialog, {
 
 for (const [paneId, pane] of paneElements) {
   bindWorkspacePaneEvents(paneId, pane);
+}
+
+elements.collapseLeftDock.addEventListener("click", () => void toggleWorkspaceDock("left"));
+elements.collapseRightDock.addEventListener("click", () => void toggleWorkspaceDock("right"));
+for (const [button, dockId] of [
+  [elements.collapseLeftDock, "left"],
+  [elements.collapseRightDock, "right"],
+] as const) {
+  button.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    void toggleWorkspaceDock(dockId);
+  });
 }
 
 elements.commandTrigger.addEventListener("click", openCommandPalette);
@@ -9537,6 +10060,10 @@ systemReducedMotion.addEventListener("change", handleSystemAccessibilityChange);
 systemReducedTransparency.addEventListener("change", handleSystemAccessibilityChange);
 
 const unsubscribe = window.threadleaf.onSnapshot(render);
+const unsubscribeWorkspaceLayout = window.threadleaf.onWorkspaceLayout((snapshot) => {
+  renderWorkspaceLayout(snapshot);
+  renderDocumentView();
+});
 const unsubscribeSettings = window.threadleaf.onSettings(applySettingsSnapshot);
 const unsubscribeAccessibility = window.threadleaf.onAccessibilityPreferences(
   applyAccessibilityPreferences,
@@ -9626,6 +10153,7 @@ window.addEventListener(
       });
     }
     unsubscribe();
+    unsubscribeWorkspaceLayout();
     unsubscribeSettings();
     unsubscribeAccessibility();
     unsubscribeAppUpdate();

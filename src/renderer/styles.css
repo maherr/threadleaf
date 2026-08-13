@@ -389,6 +389,18 @@ button:disabled {
   overflow: hidden;
 }
 
+.workspace[data-left-dock-collapsed="true"] {
+  grid-template-columns: 42px minmax(0, 1fr) 286px;
+}
+
+.workspace[data-right-dock-collapsed="true"] {
+  grid-template-columns: 246px minmax(0, 1fr) 42px;
+}
+
+.workspace[data-left-dock-collapsed="true"][data-right-dock-collapsed="true"] {
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+}
+
 .navigator,
 .inspector,
 .note-stage {
@@ -404,6 +416,70 @@ button:disabled {
   background: var(--surface-sunken);
 }
 
+.workspace[data-left-dock-collapsed="true"] .navigator {
+  grid-template-rows: 1fr;
+  overflow: hidden;
+}
+
+.workspace[data-left-dock-collapsed="true"] .navigator > :not(.navigator-heading),
+.workspace[data-right-dock-collapsed="true"] .inspector > :not(.dock-collapse-button) {
+  display: none;
+}
+
+.workspace[data-left-dock-collapsed="true"] .navigator-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100%;
+  padding: 12px 4px;
+}
+
+.workspace[data-left-dock-collapsed="true"] .navigator-heading > div:first-child,
+.workspace[data-left-dock-collapsed="true"] .navigator-heading .count-badge,
+.workspace[data-left-dock-collapsed="true"] .navigator-heading .navigator-new-note {
+  display: none;
+}
+
+.workspace[data-left-dock-collapsed="true"] .navigator-heading-actions {
+  display: block;
+}
+
+.workspace[data-right-dock-collapsed="true"] .inspector {
+  position: relative;
+  overflow: hidden;
+}
+
+.workspace[data-right-dock-collapsed="true"] .inspector-collapse-button {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: start center;
+  padding: 12px 4px;
+}
+
+.dock-collapse-button {
+  display: inline-grid;
+  width: 25px;
+  min-width: 25px;
+  height: 25px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-muted);
+  background: var(--surface);
+  cursor: pointer;
+  font: 16px / 1 var(--mono);
+}
+
+.dock-collapse-button:hover,
+.dock-collapse-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: collapsed dock overrides are intentionally declared before the shared heading rules. */
 .navigator-heading {
   grid-row: 1;
 }
@@ -445,6 +521,7 @@ h2 {
   line-height: 1;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: collapsed dock overrides are intentionally declared before the shared badge rules. */
 .count-badge {
   display: grid;
   min-width: 26px;
@@ -460,12 +537,14 @@ h2 {
   font-weight: 700;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: collapsed dock overrides are intentionally declared before the shared action rules. */
 .navigator-heading-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: collapsed dock overrides are intentionally declared before the shared button rules. */
 .navigator-new-note {
   display: inline-flex;
   min-height: 25px;
@@ -1128,6 +1207,15 @@ h2 {
 
 .note-tab[data-pinned="true"] {
   border-top: 2px solid var(--accent-strong);
+}
+
+.note-tab[data-drag-target="true"] {
+  outline: 2px dashed var(--accent-strong);
+  outline-offset: -3px;
+}
+
+.note-tabs[data-dragging="true"] .note-tab {
+  cursor: grabbing;
 }
 
 .note-tab-activate,
@@ -2875,6 +2963,17 @@ h2 {
   overflow-y: auto;
   border-left: 1px solid var(--line);
   background: var(--surface);
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: collapsed dock display intentionally wins over the default hidden state. */
+.inspector-collapse-button {
+  display: grid;
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  width: 25px;
+  height: 25px;
+  margin: 8px 8px 0 auto;
 }
 
 .inspector-section {

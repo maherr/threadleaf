@@ -319,8 +319,11 @@ Exit gate: selected high-value plugins complete named workflows against public f
       remappable-hotkey access. Isolated X11 Electron coverage drives real pointer and keyboard
       input, verifies the refusal and restart, and captures dark, light, minimum-width, and visual
       positive-control screenshots.
-- [ ] Split groups, draggable tabs, side docks, floating windows, pop-out views, history, quick
-      switcher, command discovery, and persistent workspace layouts beyond the current pane layout.
+- [x] Pointer and keyboard tab reordering and cross-pane transfer, independently collapsible side
+      docks, private per-vault dock and window bounds, and native compatibility-plugin pop-out views
+      with close, crash, vault-switch, and stale-session recovery.
+- [ ] Add freeform split groups, general floating windows, navigation history, a quick switcher,
+      broader command discovery, and persistent non-plugin view placement.
 - [ ] Complete the existing Source, Live Preview, and Reading modes with footnotes, rendered
       tables, math, diagrams, and large-document editing beyond the current source fallback, with
       reliable IME and undo.

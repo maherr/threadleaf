@@ -57,6 +57,7 @@ import type {
 import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
+import type { WorkspaceDockId, WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 
 const bridge: ThreadleafBridge = {
@@ -72,6 +73,32 @@ const bridge: ThreadleafBridge = {
   installAppUpdate: () =>
     ipcRenderer.invoke(ipcChannels.installAppUpdate) as Promise<AppUpdateSnapshot>,
   getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
+  getWorkspaceLayout: (expectedVaultId?: string) =>
+    ipcRenderer.invoke(
+      ipcChannels.workspaceLayout,
+      expectedVaultId,
+    ) as Promise<WorkspaceLayoutSnapshot>,
+  setWorkspaceDockCollapsed: (
+    dockId: WorkspaceDockId,
+    collapsed: boolean,
+    expectedVaultId: string,
+  ) =>
+    ipcRenderer.invoke(
+      ipcChannels.setWorkspaceDockCollapsed,
+      dockId,
+      collapsed,
+      expectedVaultId,
+    ) as Promise<WorkspaceLayoutSnapshot>,
+  popOutPluginView: (expectedVaultId: string) =>
+    ipcRenderer.invoke(
+      ipcChannels.popOutPluginView,
+      expectedVaultId,
+    ) as Promise<WorkspaceLayoutSnapshot>,
+  reattachPluginView: (expectedVaultId: string) =>
+    ipcRenderer.invoke(
+      ipcChannels.reattachPluginView,
+      expectedVaultId,
+    ) as Promise<WorkspaceLayoutSnapshot>,
   markStartupShellReady: () => ipcRenderer.send(ipcChannels.startupShellReady),
   getSettings: () => ipcRenderer.invoke(ipcChannels.settings) as Promise<AppSettingsSnapshot>,
   getAppearance: (expectedVaultId) =>
@@ -317,6 +344,14 @@ const bridge: ThreadleafBridge = {
       toPaneId,
       expectedVaultId,
     ) as Promise<RuntimeSnapshot>,
+  reorderWorkspaceTab: (filePath, paneId, targetIndex, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.reorderWorkspaceTab,
+      filePath,
+      paneId,
+      targetIndex,
+      expectedVaultId,
+    ) as Promise<RuntimeSnapshot>,
   moveNote: (filePath, targetPath, expectedRevision, expectedVaultId, confirmationId) =>
     ipcRenderer.invoke(
       ipcChannels.moveNote,
@@ -441,6 +476,13 @@ const bridge: ThreadleafBridge = {
     };
     ipcRenderer.on(ipcChannels.snapshotChanged, subscription);
     return () => ipcRenderer.removeListener(ipcChannels.snapshotChanged, subscription);
+  },
+  onWorkspaceLayout: (listener: (snapshot: WorkspaceLayoutSnapshot) => void) => {
+    const subscription = (_event: Electron.IpcRendererEvent, snapshot: WorkspaceLayoutSnapshot) => {
+      listener(snapshot);
+    };
+    ipcRenderer.on(ipcChannels.workspaceLayoutChanged, subscription);
+    return () => ipcRenderer.removeListener(ipcChannels.workspaceLayoutChanged, subscription);
   },
   onSettings: (listener) => {
     const subscription = (_event: Electron.IpcRendererEvent, snapshot: AppSettingsSnapshot) => {

@@ -6,6 +6,7 @@ import {
   createWorkspaceStateDocument,
   maximumPersistedWorkspaceTabs,
   parseWorkspaceState,
+  reorderWorkspaceTab,
 } from "./workspace-state";
 
 const vaultId = "a".repeat(64);
@@ -293,6 +294,44 @@ describe("workspace state", () => {
     );
     expect(() => createWorkspaceState(vaultId, paths, paths[0] ?? null)).toThrow(
       `${maximumPersistedWorkspaceTabs} tabs`,
+    );
+  });
+
+  it("reorders tabs deterministically without crossing the pinned region", () => {
+    const state = createWorkspaceLayout(
+      vaultId,
+      [
+        {
+          id: "primary",
+          openPaths: ["Pinned.md", "First.md", "Second.md", "Third.md"],
+          pinnedPaths: ["Pinned.md"],
+          activePath: "First.md",
+        },
+      ],
+      "primary",
+      null,
+    );
+
+    expect(reorderWorkspaceTab(state, "primary", "Third.md", 1).panes[0]?.openPaths).toEqual([
+      "Pinned.md",
+      "Third.md",
+      "First.md",
+      "Second.md",
+    ]);
+    expect(reorderWorkspaceTab(state, "primary", "Pinned.md", 99).panes[0]?.openPaths).toEqual([
+      "Pinned.md",
+      "First.md",
+      "Second.md",
+      "Third.md",
+    ]);
+    expect(reorderWorkspaceTab(state, "primary", "First.md", 0).panes[0]?.openPaths).toEqual([
+      "Pinned.md",
+      "First.md",
+      "Second.md",
+      "Third.md",
+    ]);
+    expect(() => reorderWorkspaceTab(state, "primary", "Missing.md", 0)).toThrow(
+      "does not contain this tab",
     );
   });
 });

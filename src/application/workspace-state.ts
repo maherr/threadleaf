@@ -350,3 +350,45 @@ export function createWorkspaceStateDocument(
     splitDirection: normalized.splitDirection,
   };
 }
+
+/**
+ * Reorders one tab inside the region it already belongs to. `targetIndex` is
+ * an insertion index in the pane's complete ordered tab list. Keeping the
+ * operation here, beside state normalization, means pointer and keyboard
+ * movement cannot accidentally cross the pinned boundary or lose a tab.
+ */
+export function reorderWorkspaceTab(
+  state: PersistedWorkspaceState,
+  paneId: WorkspacePaneId,
+  filePath: string,
+  targetIndex: number,
+): PersistedWorkspaceState {
+  const normalizedPath = normalizeWorkspacePath(filePath);
+  if (!Number.isFinite(targetIndex)) {
+    throw new Error("Workspace tab insertion targets must be finite numbers.");
+  }
+  const pane = state.panes.find(({ id }) => id === paneId);
+  if (!pane) {
+    throw new Error(`Workspace pane is not open: ${paneId}`);
+  }
+  const sourceIndex = pane.openPaths.indexOf(normalizedPath);
+  if (sourceIndex === -1) {
+    throw new Error(`The workspace pane does not contain this tab: ${normalizedPath}`);
+  }
+  const pinnedCount = pane.pinnedPaths.length;
+  const pinned = sourceIndex < pinnedCount;
+  const regionStart = pinned ? 0 : pinnedCount;
+  const regionEnd = pinned ? pinnedCount : pane.openPaths.length;
+  const requestedIndex = Math.max(regionStart, Math.min(regionEnd, Math.round(targetIndex)));
+  const nextPaths = [...pane.openPaths];
+  nextPaths.splice(sourceIndex, 1);
+  const insertionIndex = sourceIndex < requestedIndex ? requestedIndex - 1 : requestedIndex;
+  nextPaths.splice(insertionIndex, 0, normalizedPath);
+  if (nextPaths.every((path, index) => path === pane.openPaths[index])) {
+    return state;
+  }
+  const nextPanes = state.panes.map((candidate) =>
+    candidate.id === paneId ? { ...candidate, openPaths: nextPaths } : candidate,
+  );
+  return createWorkspaceLayout(state.vaultId, nextPanes, state.activePaneId, state.splitDirection);
+}

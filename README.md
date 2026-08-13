@@ -127,13 +127,18 @@ unpinning moves it to the beginning of the ordinary region. Pinned tabs use both
 an accessible Pin or Unpin control, cannot be closed or trashed until unpinned, and are available
 through the command palette, native Workspace menu, and a remappable hotkey target. The workspace
 can split right or down, move the active tab between panes, collapse back to one pane, and keep
-independent CodeMirror selection, undo, and protected crash-draft state in both. Tab order, pins,
-active notes, focused pane, and split direction restore per vault from versioned private application
-data. The stored document also retains a validated one-pane projection that the prior daily-driver
-build can read during rollback. An intentionally empty workspace stays empty, missing notes are
-pruned on restore, and malformed state remains available for diagnosis behind a visible warning
-without rewriting its bytes. Native application menus dispatch the same saved-keybinding actions to
-the focused workspace. No workspace metadata is written into the vault or `.obsidian/`.
+independent CodeMirror selection, undo, and protected crash-draft state in both. Tabs can also be
+reordered or transferred by pointer and keyboard without crossing the pinned boundary. The notes
+and inspector docks collapse independently. A visible compatibility-plugin view can move into a
+native window and return to the main workspace; a closed, crashed, stale, or vault-mismatched
+window is reattached or reported explicitly instead of remaining a false live layout entry. Tab
+order, pins, active notes, focused pane, split direction, docks, and safe window bounds restore per
+vault from versioned private application data. The stored tab document also retains a validated
+one-pane projection that the prior daily-driver build can read during rollback. An intentionally
+empty workspace stays empty, missing notes are pruned on restore, and malformed state remains
+available for diagnosis behind a visible warning without rewriting its bytes. Native application
+menus dispatch the same saved-keybinding actions to the focused workspace. No workspace metadata
+is written into the vault or `.obsidian/`.
 
 Daily notes and templates now use the same recovery-backed note-creation path as New. Settings can
 choose a template folder, default date and time formats, daily-note folder and date format, and an

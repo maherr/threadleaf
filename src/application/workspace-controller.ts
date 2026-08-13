@@ -113,6 +113,12 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
     expectedCurrent?: PersistedWorkspaceState | null,
   ): Promise<RuntimeSnapshot>;
+  reorderWorkspaceTab(
+    filePath: string,
+    paneId: WorkspacePaneId,
+    targetIndex: number,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
   moveNote(
     filePath: string,
     targetPath: string,
@@ -675,6 +681,20 @@ export class WorkspaceController {
       throw new Error("The active workspace does not support migration state writes.");
     }
     return runtime.setWorkspaceState(state, expectedVaultId, expectedCurrent);
+  }
+
+  reorderWorkspaceTab(
+    filePath: string,
+    paneId: WorkspacePaneId,
+    targetIndex: number,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("reorder a workspace tab").reorderWorkspaceTab(
+      filePath,
+      paneId,
+      targetIndex,
+      expectedVaultId,
+    );
   }
 
   moveNote(

@@ -29,6 +29,7 @@ import type { PluginRendererOperation } from "./plugin-runtime-protocol";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
+import type { WorkspaceLayoutSnapshot } from "./workspace-layout";
 import type { VaultWorkspaceSettings } from "./workspace-settings";
 
 export type AppearanceUpdateResponse =
@@ -233,6 +234,7 @@ export interface RuntimeSnapshot {
   resourcePolicy?: PluginResourcePolicySnapshot;
   resourceDiagnostics?: PluginResourceDiagnostic[];
   workspace?: WorkspaceSnapshot;
+  workspaceLayout?: WorkspaceLayoutSnapshot;
 }
 
 export interface WorkspaceFileSummary {
@@ -908,6 +910,14 @@ export interface ThreadleafBridge {
   downloadAppUpdate(): Promise<AppUpdateSnapshot>;
   installAppUpdate(): Promise<AppUpdateSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  getWorkspaceLayout(expectedVaultId?: string): Promise<WorkspaceLayoutSnapshot>;
+  setWorkspaceDockCollapsed(
+    dockId: "left" | "right",
+    collapsed: boolean,
+    expectedVaultId: string,
+  ): Promise<WorkspaceLayoutSnapshot>;
+  popOutPluginView(expectedVaultId: string): Promise<WorkspaceLayoutSnapshot>;
+  reattachPluginView(expectedVaultId: string): Promise<WorkspaceLayoutSnapshot>;
   markStartupShellReady(): void;
   getSettings(): Promise<AppSettingsSnapshot>;
   getAccessibilityPreferences(): Promise<AccessibilityPreferencesSnapshot>;
@@ -1045,6 +1055,12 @@ export interface ThreadleafBridge {
     toPaneId: WorkspacePaneId,
     expectedVaultId: string,
   ): Promise<RuntimeSnapshot>;
+  reorderWorkspaceTab(
+    path: string,
+    paneId: WorkspacePaneId,
+    targetIndex: number,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot>;
   moveNote(
     path: string,
     targetPath: string,
@@ -1102,6 +1118,7 @@ export interface ThreadleafBridge {
   ): Promise<EditorDraftClearResponse>;
   onMenuCommand(listener: (commandId: NativeMenuCommandId) => void): () => void;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
+  onWorkspaceLayout(listener: (snapshot: WorkspaceLayoutSnapshot) => void): () => void;
   onSettings(listener: (snapshot: AppSettingsSnapshot) => void): () => void;
   onAccessibilityPreferences(
     listener: (snapshot: AccessibilityPreferencesSnapshot) => void,

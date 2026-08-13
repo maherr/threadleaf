@@ -100,6 +100,7 @@ import {
   createWorkspaceLayout,
   type PersistedWorkspacePane,
   type PersistedWorkspaceState,
+  reorderWorkspaceTab,
   type WorkspaceStateStore,
   workspaceStatesEqual,
 } from "./workspace-state";
@@ -195,6 +196,13 @@ interface MoveNoteToPaneRequest {
 interface ToggleTabPinRequest {
   path: string;
   paneId: WorkspacePaneId;
+  expectedVaultId: string;
+}
+
+interface ReorderWorkspaceTabRequest {
+  path: string;
+  paneId: WorkspacePaneId;
+  targetIndex: number;
   expectedVaultId: string;
 }
 
@@ -373,6 +381,32 @@ function parseToggleTabPinRequest(payload: unknown): ToggleTabPinRequest {
   return {
     path: payload.path,
     paneId: payload.paneId,
+    expectedVaultId: payload.expectedVaultId,
+  };
+}
+
+function parseReorderWorkspaceTabRequest(payload: unknown): ReorderWorkspaceTabRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("paneId" in payload) ||
+    (payload.paneId !== "primary" && payload.paneId !== "secondary") ||
+    !("targetIndex" in payload) ||
+    typeof payload.targetIndex !== "number" ||
+    !Number.isFinite(payload.targetIndex) ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string"
+  ) {
+    throw new Error(
+      "Reordering a tab requires a path, pane, insertion target, and vault identity.",
+    );
+  }
+  return {
+    path: payload.path,
+    paneId: payload.paneId,
+    targetIndex: payload.targetIndex,
     expectedVaultId: payload.expectedVaultId,
   };
 }
@@ -623,6 +657,13 @@ export class WorkspaceRuntime {
         name: "Toggle tab pin",
         source: "workspace",
         execute: (payload) => this.toggleTabPinThroughState(parseToggleTabPinRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.reorder-tab",
+        name: "Reorder workspace tab",
+        source: "workspace",
+        execute: (payload) =>
+          this.reorderWorkspaceTabThroughState(parseReorderWorkspaceTabRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.move-note",
@@ -899,6 +940,21 @@ export class WorkspaceRuntime {
     await this.actions.dispatch("workspace.toggle-tab-pin", {
       path: filePath,
       paneId,
+      expectedVaultId,
+    });
+    return this.publishSnapshot();
+  }
+
+  async reorderWorkspaceTab(
+    filePath: string,
+    paneId: WorkspacePaneId,
+    targetIndex: number,
+    expectedVaultId: string,
+  ): Promise<RuntimeSnapshot> {
+    await this.actions.dispatch("workspace.reorder-tab", {
+      path: filePath,
+      paneId,
+      targetIndex,
       expectedVaultId,
     });
     return this.publishSnapshot();
@@ -1880,6 +1936,22 @@ export class WorkspaceRuntime {
       ),
       true,
     );
+  }
+
+  private async reorderWorkspaceTabThroughState(
+    request: ReorderWorkspaceTabRequest,
+  ): Promise<void> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this tab could be reordered.");
+    }
+    const normalizedPath = normalizeVaultPath(request.path);
+    const state = reorderWorkspaceTab(
+      this.currentWorkspaceState(),
+      request.paneId,
+      normalizedPath,
+      request.targetIndex,
+    );
+    await this.adoptWorkspaceState(state, true);
   }
 
   private async moveNoteThroughKernel(request: MoveNoteRequest): Promise<NoteMoveOutcome> {
