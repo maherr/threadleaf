@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
+import { constants } from "node:fs";
 import {
   mkdir,
   mkdtemp,
+  open,
   readdir,
   readFile,
   rename,
@@ -256,6 +258,57 @@ async function main() {
       collisionPreserved = true;
     }
 
+    assert(
+      typeof nativeAddon.publishBufferNoReplace === "function",
+      "Native addon lacks anonymous no-clobber publication.",
+    );
+    let anonymousPublish = "unsupported";
+    let anonymousExactBytes = false;
+    let anonymousCollisionPreserved = false;
+    let anonymousNoStage = false;
+    if (process.platform === "linux") {
+      const publishBytes = Buffer.from([0, 1, 2, 255, 10]);
+      const publishName = "anonymous-published.bin";
+      const directory = await open(root, constants.O_RDONLY | constants.O_DIRECTORY);
+      try {
+        nativeAddon.publishBufferNoReplace(directory.fd, publishName, publishBytes);
+        let collisionCode;
+        try {
+          nativeAddon.publishBufferNoReplace(directory.fd, publishName, Buffer.from("claimant"));
+        } catch (error) {
+          collisionCode = error?.code;
+        }
+        anonymousExactBytes = (await readFile(path.join(root, publishName))).equals(publishBytes);
+        anonymousCollisionPreserved = collisionCode === "exists" && anonymousExactBytes;
+        anonymousNoStage = (await readdir(root)).every(
+          (entry) => !entry.startsWith(".threadleaf-attachment-stage-"),
+        );
+      } finally {
+        await directory.close();
+      }
+      assert(anonymousExactBytes, "Anonymous publication changed the requested bytes.");
+      assert(
+        anonymousCollisionPreserved,
+        "Anonymous publication did not preserve an existing target claimant.",
+      );
+      assert(anonymousNoStage, "Anonymous publication exposed a target-side stage name.");
+      anonymousPublish = "otmpfile-linkat";
+    } else {
+      let unsupportedCode;
+      try {
+        nativeAddon.publishBufferNoReplace(0, "anonymous-published.bin", Buffer.alloc(0));
+      } catch (error) {
+        unsupportedCode = error?.code;
+      }
+      assert(
+        unsupportedCode === "unsupported",
+        "Non-Linux anonymous publication did not fail closed.",
+      );
+      anonymousExactBytes = true;
+      anonymousCollisionPreserved = true;
+      anonymousNoStage = true;
+    }
+
     const entries = await readdir(root);
     assert(entries.includes("state.lock"), "Persistent lock path disappeared.");
     assert(entries.includes("legacy.lock"), "Legacy lock directory disappeared.");
@@ -270,6 +323,10 @@ async function main() {
         legacyDirectory: "migration-required/quiescent",
         noClobberRename,
         collisionPreserved,
+        anonymousPublish,
+        anonymousExactBytes,
+        anonymousCollisionPreserved,
+        anonymousNoStage,
         localRuntimeOnly: platform === "posix",
       }),
     );

@@ -1981,6 +1981,73 @@
     </dialog>
 
     <dialog
+      class="new-note-dialog move-note-dialog attachment-move-dialog"
+      id="attachment-move-dialog"
+      aria-labelledby="attachment-move-title"
+      aria-describedby="attachment-move-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="attachment-move-form">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">↗</span>
+          <span>
+            <small>Recoverable attachment operation</small>
+            <strong id="attachment-move-title">Publish a copy of this attachment</strong>
+          </span>
+          <button id="attachment-move-close" type="button" aria-label="Cancel attachment publication">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="attachment-move-description" class="new-note-description">
+          Threadleaf publishes the exact attachment bytes without decoding them and keeps the
+          original source. It previews local wiki and Markdown reference updates, then applies the
+          publication and updates as one recoverable operation.
+        </p>
+        <div class="move-note-current">
+          <span>Current path</span>
+          <code id="attachment-move-current-path">No attachment selected</code>
+        </div>
+        <label class="new-note-field" for="attachment-move-target">
+          <span>Copy path</span>
+          <input
+            id="attachment-move-target"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Archive/renamed-file.pdf"
+            maxlength="4096"
+            required
+          />
+        </label>
+        <p class="new-note-error" id="attachment-move-error" role="alert" hidden></p>
+        <p
+          class="move-note-preview-message"
+          id="attachment-move-preview-message"
+          role="status"
+          hidden
+        ></p>
+        <section
+          class="move-note-blockers"
+          id="attachment-move-blockers"
+          aria-labelledby="attachment-move-blocker-summary"
+          hidden
+        >
+          <strong id="attachment-move-blocker-summary">Links that would change</strong>
+          <ol id="attachment-move-blocker-list"></ol>
+        </section>
+        <footer class="new-note-footer">
+          <span id="attachment-move-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="attachment-move-cancel" type="button">Cancel</button>
+            <button class="primary-button" id="attachment-move-submit" type="submit">
+              Check and publish
+            </button>
+          </span>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog
       class="new-note-dialog delete-note-dialog"
       id="delete-note-dialog"
       aria-labelledby="delete-note-title"

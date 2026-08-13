@@ -1,5 +1,6 @@
 import DOMPurify, { type Config } from "dompurify";
 import MarkdownIt, { type RendererRule, type StateBlock, type StateInline } from "markdown-it";
+import { parseMarkdownLinks, splitMarkdownDestinationTarget } from "../kernel/markdown-links";
 import type {
   CanvasLoadResponse,
   VaultAttachmentResponse,
@@ -113,17 +114,20 @@ function escapeText(value: string): string {
 }
 
 function splitTarget(value: string): { target: string; subpath: string | null } {
-  const headingIndex = value.indexOf("#");
-  const blockIndex = value.indexOf("^");
-  const indexes = [headingIndex, blockIndex].filter((index) => index >= 0);
-  const splitAt = indexes.length > 0 ? Math.min(...indexes) : -1;
-  if (splitAt === -1) {
-    return { target: value.trim(), subpath: null };
+  return splitMarkdownDestinationTarget(value);
+}
+
+function protectEscapedDestinationDelimiters(source: string): string {
+  const replacements = parseMarkdownLinks(source)
+    .map((link) => ({ start: link.targetStart, end: link.targetEnd }))
+    .filter(({ start, end }) => /\\[?#]/u.test(source.slice(start, end)));
+  let result = source;
+  for (const { start, end } of [...replacements].sort((left, right) => right.start - left.start)) {
+    const raw = result.slice(start, end);
+    const protectedRaw = raw.replaceAll("\\?", "%3F").replaceAll("\\#", "%23");
+    result = `${result.slice(0, start)}${protectedRaw}${result.slice(end)}`;
   }
-  return {
-    target: value.slice(0, splitAt).trim(),
-    subpath: value.slice(splitAt).trim() || null,
-  };
+  return result;
 }
 
 function parseWikiLink(raw: string, embed: boolean): PreviewWikiLink {
@@ -427,7 +431,10 @@ function renderFootnoteSection(
     .map((definition, index) => {
       const number = index + 1;
       const anchor = footnoteAnchor(definition.id, number);
-      const rendered = markdown.renderInline(definition.content, footnoteEnvironment);
+      const rendered = markdown.renderInline(
+        protectEscapedDestinationDelimiters(definition.content),
+        footnoteEnvironment,
+      );
       const references = environment.threadleafFootnoteReferences.get(definition.id) ?? 0;
       const backrefs = Array.from({ length: references }, (_, referenceIndex) => {
         const reference = `${anchor}-ref-${referenceIndex + 1}`;
@@ -844,14 +851,19 @@ function createAttachmentCard(
   body.append(title, detail);
   const actions = document.createElement("span");
   actions.className = "preview-attachment-actions";
-  for (const action of ["open", "reveal"] as const) {
+  const actionNames: Array<"open" | "reveal" | "move"> = [];
+  if (response.attachment.actions.open) actionNames.push("open");
+  if (response.attachment.actions.reveal) actionNames.push("reveal");
+  if (response.attachment.actions.move) actionNames.push("move");
+  for (const action of actionNames) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "preview-attachment-action";
     button.dataset.threadleafAttachmentAction = action;
     button.dataset.threadleafAttachmentPath = response.attachment.path;
-    button.textContent = action === "open" ? "Open" : "Reveal";
-    button.title = `${action === "open" ? "Open" : "Reveal"} ${response.attachment.path}`;
+    button.textContent =
+      action === "open" ? "Open" : action === "reveal" ? "Reveal" : "Publish copy";
+    button.title = `${action === "open" ? "Open" : action === "reveal" ? "Reveal" : "Publish a retained copy of"} ${response.attachment.path}`;
     actions.append(button);
   }
   card.append(marker, body, actions);
@@ -1287,9 +1299,8 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
     threadleafFootnotes: footnotes,
     threadleafFootnoteReferences: new Map(),
     threadleafRenderToken: renderToken,
-    threadleafSourceText: literalizeSourceOnlyLines(
-      maskFrontmatter(footnotes.body),
-      sourceOnlyLines,
+    threadleafSourceText: protectEscapedDestinationDelimiters(
+      literalizeSourceOnlyLines(maskFrontmatter(footnotes.body), sourceOnlyLines),
     ),
     threadleafInlineMathSource: null,
     threadleafInlineMathCandidates: null,

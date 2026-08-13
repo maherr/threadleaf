@@ -126,13 +126,47 @@ Local non-note embeds are resolved only inside the active vault. A bounded read 
 common documents, audio, video, text, archives, and unknown bytes by magic bytes, never by filename
 extension. The reading view shows metadata and explicit open/reveal affordances without injecting
 bytes into an executable or media element. Relative Markdown links and wiki embeds are rewritten
-by the recoverable attachment move planner, with case/NFC-aware duplicate-basename refusal and
-revision-bound external-edit conflicts. Media metadata probes use a fast seek, one-second bounded
+by the recoverable attachment publication planner, with one shared local-target parser, exact query and
+fragment preservation, case/NFC-aware source and duplicate-basename refusal, and revision-bound
+external-edit conflicts. Media metadata probes use a fast seek, one-second bounded
 sampling, capped output, and a kill deadline; no arbitrary decode is part of offline reading view.
-The packaged fixture runs under explicit X11 Xvfb with a dedicated profile and vault, proves the
-renderer argv, exact attachment bytes, and both light and dark screenshots plus a visual positive
-control. Shell actions remain intentionally inert until a separately reviewed native capability is
-implemented.
+The reading-view card exposes a reachable Publish copy workbench. It binds the source revision,
+previews exact local rewrite targets, and binds the exact Markdown path set, note revisions, and
+metadata generation. Direct write targets and the source revision are checked in the mutation lane.
+Attachment publication is a distinct source-retaining outcome: the exact source bytes are retained,
+the destination is installed without overwrite, Markdown references are rewritten only after that
+publication receipt, and success is reported as `published-source-retained`. A collision, source
+replacement, containment failure, unsupported sharing primitive, crash, or recovery mismatch keeps
+external bytes and retained evidence and returns a conflict or recovery result instead of claiming a
+rename.
+The strict publish gate is `FILE-PUBLISH-CAP-02`: vault open/create performs a non-mutating native
+binding, descriptor-containment, and destination-device preflight. The exact target filesystem is
+then gated by an unnamed `O_TMPFILE` inode and an atomic absent-name `linkat` publication before any
+Markdown mutation. No target-side staging pathname is exposed, and an existing claimant is never
+replaced.
+When link rewrites are required, every rewritten note parent and the receipt-gated private rollback
+claim directory must be on that device too. A cross-device layout fails before publication.
+There is no exclusive-copy fallback because a crash could expose a partial final target. ReFS-like
+unsupported anonymous-inode or link behavior, `EXDEV`, durability failure, unsupported
+descriptor/reparse behavior, and Windows sharing violations are typed unsupported capability states
+before Markdown mutation.
+Strict attachment claims are moved through no-clobber retention or left as recoverable evidence;
+they are never unlinked through a mutable pathname. Portable private stages use bounded
+high-entropy claims and clean only after exact verification under the documented ordinary-editor
+threat model. Private rollback claims are grouped by transaction and removed only after a
+durable `committed` history receipt, with the same receipt-gated sweep repeated at startup after a
+crash. An uncertain claim has no automatic pathname GC.
+The whole-corpus receipt is a conservative preflight and post-mutation check, not an atomic lock
+against arbitrary external writers: a change observed after the final preflight drives exact
+journaled rollback or a manual conflict, preserving surviving bytes and never silently retiring a
+pending transaction. Note tabs and bookmarks are not remapped: those are Markdown note identities, not
+attachment references. The packaged attachment fixture exercises metadata cards
+for a PDF-signature file, an MP3-signature file, and unknown bytes; its move byte-preservation path
+uses the PDF-signature fixture only. It makes no broader attachment format support claim. Its gate
+requires explicit X11 Xvfb, a dedicated profile and vault, real CDP pointer and keyboard input,
+hit-target checks, mandatory light/dark/positive-control screenshots, and a pixel-changing positive
+control before a completed run can count as packaged evidence. Open and Reveal remain inert until a
+separately reviewed native capability is implemented.
 
 The Excalidraw-specific public-format extension lives in
 [Excalidraw round-trip boundary](excalidraw-roundtrip.md). It adds native `.excalidraw` JSON,

@@ -67,7 +67,7 @@
     "pack:mac:x64": "node scripts/build-target.mjs darwin x64 && electron-builder --mac dmg zip --x64 --publish never --config.mac.identity=null --config.mac.hardenedRuntime=false",
     "pack:windows": "node scripts/build-target.mjs win32 x64 && electron-builder --win nsis zip --x64 --publish never",
     "pack:windows:signed": "node scripts/build-target.mjs win32 x64 && electron-builder --win nsis zip --x64 --publish never --config.win.forceCodeSigning=true --config.extraMetadata.threadleafUpdateTrust=signed-release-v1",
-    "release:linux": "pnpm run check && pnpm run pack:linux && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write",
+    "release:linux": "pnpm run check && pnpm run test:packaged-attachments && pnpm run pack:linux && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write",
     "start": "electron .",
     "test": "vitest run",
     "test:packaged": "pnpm run pack:dir && xvfb-run -a node scripts/check-packaged-app.mjs && xvfb-run -a node scripts/check-packaged-properties.mjs && xvfb-run -a -s '-screen 0 1440x900x24 -nolisten tcp' node scripts/check-packaged-attachments.mjs",

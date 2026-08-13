@@ -48,16 +48,94 @@ function nativeCode(error: unknown): NativeFilesystemCode {
     : "io";
 }
 
+function nativeFilesystemBinding() {
+  try {
+    return loadThreadleafNativeBindingForInternalUse();
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Threadleaf's native filesystem binding is unavailable.";
+    throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
+  }
+}
+
+/** Proves that this runtime can attempt Linux's atomic no-clobber rename. */
+export function assertRenameNoReplaceAvailable(): void {
+  if (process.platform !== "linux") {
+    throw new NativeFilesystemError(
+      "unsupported",
+      "Atomic no-clobber rename is currently available only on Linux.",
+    );
+  }
+  nativeFilesystemBinding();
+}
+
+/** Proves that this runtime can attempt Linux anonymous-inode publication. */
+export function assertAnonymousPublishAvailable(): void {
+  if (process.platform !== "linux") {
+    throw new NativeFilesystemError(
+      "unsupported",
+      "Anonymous no-clobber publication is currently available only on Linux.",
+    );
+  }
+  nativeFilesystemBinding();
+}
+
 /** Atomically move source to an absent target without replacing a claimant. */
 export function renameNoReplace(sourcePath: string, targetPath: string): void {
   assertPathInput(sourcePath);
   assertPathInput(targetPath);
+  assertRenameNoReplaceAvailable();
   try {
-    loadThreadleafNativeBindingForInternalUse().renameNoReplace(sourcePath, targetPath);
+    nativeFilesystemBinding().renameNoReplace(sourcePath, targetPath);
   } catch (error) {
     if (error instanceof NativeFilesystemError) throw error;
     const message =
       error instanceof Error ? error.message : "Native no-clobber rename did not complete.";
+    throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
+  }
+}
+
+/** Atomically publish exact bytes from an unnamed inode at an absent basename. */
+export function publishBufferNoReplace(
+  targetDirectoryFd: number,
+  targetName: string,
+  bytes: Buffer,
+): void {
+  if (
+    !Number.isSafeInteger(targetDirectoryFd) ||
+    targetDirectoryFd < 0 ||
+    targetDirectoryFd > 0x7fffffff
+  ) {
+    throw new NativeFilesystemError(
+      "invalid",
+      "Anonymous publication requires an open directory descriptor.",
+    );
+  }
+  if (
+    typeof targetName !== "string" ||
+    targetName.length === 0 ||
+    targetName === "." ||
+    targetName === ".." ||
+    targetName.includes("/") ||
+    targetName.includes("\u0000")
+  ) {
+    throw new NativeFilesystemError(
+      "invalid",
+      "Anonymous publication requires one non-empty target basename.",
+    );
+  }
+  if (!Buffer.isBuffer(bytes)) {
+    throw new NativeFilesystemError("invalid", "Anonymous publication content must be a Buffer.");
+  }
+  assertAnonymousPublishAvailable();
+  try {
+    nativeFilesystemBinding().publishBufferNoReplace(targetDirectoryFd, targetName, bytes);
+  } catch (error) {
+    if (error instanceof NativeFilesystemError) throw error;
+    const message =
+      error instanceof Error ? error.message : "Anonymous no-clobber publication failed.";
     throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
   }
 }

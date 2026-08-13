@@ -131,14 +131,22 @@ export type ExpectedVaultOperation =
 
 export class WatchOperationLedger {
   readonly #operations = new Map<string, ExpectedVaultOperation>();
+  #recentUnattributed: VaultChange[] = [];
 
   expect(operation: ExpectedVaultOperation): void {
+    const recent = this.#recentUnattributed;
+    this.normalizeMaterializedMove(operation, recent);
+    if (this.match(operation, recent)) {
+      this.#recentUnattributed = [];
+      return;
+    }
     this.#operations.set(operation.id, operation);
   }
 
   annotate(changes: readonly VaultChange[]): VaultChange[] {
     const annotated = changes.map((change) => ({ ...change }));
     for (const operation of this.#operations.values()) {
+      this.normalizeMaterializedMove(operation, annotated);
       const indexes = this.match(operation, annotated);
       if (!indexes) {
         continue;
@@ -151,6 +159,7 @@ export class WatchOperationLedger {
       }
       this.#operations.delete(operation.id);
     }
+    this.#recentUnattributed = annotated.filter((change) => change.operationId === undefined);
     return annotated;
   }
 
@@ -160,6 +169,51 @@ export class WatchOperationLedger {
 
   clear(): void {
     this.#operations.clear();
+    this.#recentUnattributed = [];
+  }
+
+  private normalizeMaterializedMove(
+    operation: ExpectedVaultOperation,
+    changes: VaultChange[],
+  ): void {
+    let move: { from: string; to: string; revision: string };
+    if (operation.kind === "rename") {
+      move = operation;
+    } else if (operation.kind === "move-with-writes" && !operation.sourceRewritten) {
+      move = { from: operation.from, to: operation.to, revision: operation.targetRevision };
+    } else {
+      return;
+    }
+    if (
+      changes.some(
+        (change) => change.kind === "move" && change.from === move.from && change.to === move.to,
+      )
+    ) {
+      return;
+    }
+
+    const deleteIndex = changes.findIndex(
+      (change) => change.kind === "delete" && change.path === move.from,
+    );
+    const upsertIndex = changes.findIndex(
+      (change) =>
+        change.kind === "upsert" &&
+        change.state.path === move.to &&
+        change.state.revision === move.revision,
+    );
+    if (deleteIndex === -1 || upsertIndex === -1) return;
+    const firstIndex = Math.min(deleteIndex, upsertIndex);
+    const secondIndex = Math.max(deleteIndex, upsertIndex);
+    const target = changes[upsertIndex];
+    if (target?.kind !== "upsert") return;
+    const materializedMove: VaultChange = {
+      kind: "move",
+      from: move.from,
+      to: move.to,
+      state: target.state,
+    };
+    changes.splice(secondIndex, 1);
+    changes.splice(firstIndex, 1, materializedMove);
   }
 
   private match(

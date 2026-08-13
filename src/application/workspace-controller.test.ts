@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  AttachmentMoveResponse,
   NoteCreateOutcome,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -105,6 +106,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
     expectedVaultId: string;
     confirmationId?: string;
   } | null = null;
+  attachmentMoveLoader: (() => Promise<AttachmentMoveResponse>) | null = null;
   deletedNote: {
     filePath: string;
     expectedRevision: string;
@@ -242,7 +244,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
         mimeType: "application/pdf",
         size: 1,
         revision: "b".repeat(64),
-        actions: { open: true, reveal: true, inline: false },
+        actions: { open: true, reveal: true, move: true, inline: false },
       },
     };
   }
@@ -341,6 +343,27 @@ class FakeRuntime implements WorkspaceRuntimePort {
         from: filePath,
         to: targetPath,
         transactionId: "move",
+        rewrites: [],
+        writes: [],
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async moveAttachment(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentMoveResponse> {
+    if (this.attachmentMoveLoader) return this.attachmentMoveLoader();
+    return {
+      outcome: {
+        status: "published-source-retained",
+        from: filePath,
+        to: targetPath,
+        transactionId: "attachment-move",
         rewrites: [],
         writes: [],
       },
@@ -1004,6 +1027,49 @@ describe("WorkspaceController", () => {
       expectedRevision,
       expectedVaultId,
       confirmationId,
+    });
+    await controller.close();
+  });
+
+  it("reports a source-retaining attachment publication from a runtime replaced before its reply", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const oldRuntime = harness.runtimes[0];
+    if (!oldRuntime) throw new Error("Expected the bundled runtime.");
+    const oldVaultId = controller.vaultId;
+    oldRuntime.attachmentMoveLoader = async () => {
+      await controller.switchVault("/replacement/vault");
+      return {
+        outcome: {
+          status: "published-source-retained",
+          from: "Assets/report.pdf",
+          to: "Archive/report.pdf",
+          transactionId: "attachment-move",
+          rewrites: [],
+          writes: [],
+        },
+        snapshot: await oldRuntime.getSnapshot(),
+      };
+    };
+
+    const response = await controller.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      "a".repeat(64),
+      oldVaultId,
+    );
+
+    expect(response).toMatchObject({
+      outcome: { status: "published-source-retained", to: "Archive/report.pdf" },
+      snapshot: { vault: { path: path.resolve("/replacement/vault") } },
+      committedVaultId: oldVaultId,
+      committedVaultName: path.basename(path.resolve(fixtureVaultPath)),
     });
     await controller.close();
   });

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type NativeFilesystemError, renameNoReplace } from "./index.js";
+import { type NativeFilesystemError, publishBufferNoReplace, renameNoReplace } from "./index.js";
 
 const temporaryRoots: string[] = [];
 
@@ -64,11 +64,39 @@ describe("native filesystem", () => {
     },
   );
 
+  it.runIf(process.platform === "linux")(
+    "publishes Buffer bytes from an anonymous inode without exposing a stage name",
+    async () => {
+      const root = await temporaryRoot();
+      const bytes = Buffer.from([0, 1, 2, 255, 10]);
+      const directory = await fs.open(root, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY);
+      try {
+        publishBufferNoReplace(directory.fd, "published.bin", bytes);
+        expect(() =>
+          publishBufferNoReplace(directory.fd, "published.bin", Buffer.from("claimant")),
+        ).toThrowError(expect.objectContaining<Partial<NativeFilesystemError>>({ code: "exists" }));
+      } finally {
+        await directory.close();
+      }
+      await expect(fs.readFile(path.join(root, "published.bin"))).resolves.toEqual(bytes);
+      await expect(fs.readdir(root)).resolves.toEqual(["published.bin"]);
+    },
+  );
+
   it("rejects relative and empty paths before native dispatch", () => {
     expect(() => renameNoReplace("relative", "/target")).toThrowError(
       expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
     );
     expect(() => renameNoReplace("/source", "")).toThrowError(
+      expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
+    );
+    expect(() => publishBufferNoReplace(-1, "target", Buffer.alloc(0))).toThrowError(
+      expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
+    );
+    expect(() => publishBufferNoReplace(0x80000000, "target", Buffer.alloc(0))).toThrowError(
+      expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
+    );
+    expect(() => publishBufferNoReplace(0, "../target", Buffer.alloc(0))).toThrowError(
       expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
     );
   });

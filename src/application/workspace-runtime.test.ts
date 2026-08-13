@@ -230,6 +230,43 @@ async function openRuntime(
 }
 
 describe("WorkspaceRuntime", () => {
+  it("reuses one visible-file inventory across attachment-card hydration", async () => {
+    await fs.mkdir(path.join(vaultPath, "Drawings"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Assets", "Ébauche"), { recursive: true });
+    await fs.writeFile(
+      path.join(vaultPath, "Drawings", "Scene.excalidraw.md"),
+      "![[Assets/Ébauche/diagram.svg]]",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(vaultPath, "Assets", "Ébauche", "diagram.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      "utf8",
+    );
+    const workspace = await openRuntime();
+    const listVisiblePaths = vi.spyOn(workspace.kernel, "listVisiblePaths");
+
+    const [first, second] = await Promise.all([
+      workspace.loadVaultAttachment(
+        "Drawings/Scene.excalidraw.md",
+        "Assets/Ébauche/diagram.svg",
+        workspace.vaultId,
+      ),
+      workspace.loadVaultAttachment(
+        "Drawings/Scene.excalidraw.md",
+        "Assets/Ébauche/diagram.svg",
+        workspace.vaultId,
+      ),
+    ]);
+
+    expect(first).toMatchObject({
+      status: "ready",
+      attachment: { path: "Assets/Ébauche/diagram.svg" },
+    });
+    expect(second).toMatchObject({ status: "ready" });
+    expect(listVisiblePaths).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the bundled demo vault read-only across native and plugin mutation paths", async () => {
     runtime = await WorkspaceRuntime.open({
       vaultRoot: vaultPath,
@@ -341,6 +378,7 @@ describe("WorkspaceRuntime", () => {
         name: "Open today's daily note",
         source: "workspace",
       },
+      { id: "workspace.move-attachment", name: "Publish attachment copy", source: "workspace" },
       {
         id: "workspace.remove-note-property",
         name: "Remove note property",
@@ -1391,6 +1429,101 @@ describe("WorkspaceRuntime", () => {
     await expect(fs.readFile(path.join(vaultPath, "Archive", "Welcome.md"), "utf8")).resolves.toBe(
       note.content,
     );
+  });
+
+  it("moves attachment bytes with reference preview while preserving note tabs and index convergence", async () => {
+    const bytes = Buffer.from("%PDF-1.7\nopaque attachment bytes\n", "ascii");
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), bytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Attachment Desk.md"),
+      "# Attachment Desk\n\n![[Assets/report.pdf|Report]]\n\n[download](Assets/report.pdf)\n",
+      "utf8",
+    );
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    const opened = await workspace.openNote("Attachment Desk.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the attachment note to open.");
+    await workspace.toggleTabPin(note.path, "primary", workspace.vaultId);
+    const source = await workspace.kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected the attachment bytes.");
+
+    const preview = await workspace.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report-renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+    );
+    expect(preview.outcome).toMatchObject({
+      status: "requires-confirmation",
+      rewrites: [
+        expect.objectContaining({ documentPath: "Attachment Desk.md", syntax: "wiki" }),
+        expect.objectContaining({ documentPath: "Attachment Desk.md", syntax: "markdown" }),
+      ],
+    });
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected an attachment move confirmation.");
+    }
+    expect(preview.snapshot.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Attachment Desk.md", pinned: true, active: true }),
+    );
+    await expect(
+      fs.stat(path.join(vaultPath, "Archive", "report-renamed.pdf")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    const moved = await workspace.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report-renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+    );
+    expect(moved.outcome).toMatchObject({
+      status: "published-source-retained",
+      from: "Assets/report.pdf",
+      to: "Archive/report-renamed.pdf",
+      writes: [{ path: "Attachment Desk.md" }],
+    });
+    expect(moved.snapshot.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Attachment Desk.md", pinned: true, active: true }),
+    );
+    await expect(
+      fs.readFile(path.join(vaultPath, "Archive", "report-renamed.pdf")),
+    ).resolves.toEqual(bytes);
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(bytes);
+    await expect(fs.readFile(path.join(vaultPath, "Attachment Desk.md"), "utf8")).resolves.toBe(
+      "# Attachment Desk\n\n![[Archive/report-renamed.pdf|Report]]\n\n[download](Archive/report-renamed.pdf)\n",
+    );
+
+    await workspace.reconcileNow();
+    expect(workspace.watcher.operations.size).toBe(0);
+    const afterReconcile = await workspace.getSnapshot();
+    expect(afterReconcile.workspace?.activeNote?.content).toContain("Archive/report-renamed.pdf");
+  });
+
+  it("rejects attachment publication outside visible vault containment without echoing the request", async () => {
+    const workspace = await openRuntime();
+    const source = await workspace.kernel.readBinary("Welcome.md", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected a bounded source read.");
+    await expect(
+      workspace.moveAttachment(
+        "../outside.bin",
+        "Archive/outside.bin",
+        source.snapshot.revision,
+        workspace.vaultId,
+      ),
+    ).rejects.toThrow("safe vault-relative files");
+    await expect(
+      workspace.moveAttachment(
+        ".obsidian/private.bin",
+        "Archive/private.bin",
+        source.snapshot.revision,
+        workspace.vaultId,
+      ),
+    ).rejects.toThrow("safe vault-relative files");
   });
 
   it("previews exact link rewrites and commits them only with the matching confirmation", async () => {
@@ -2493,6 +2626,7 @@ describe("WorkspaceRuntime", () => {
         name: "Open today's daily note",
         source: "workspace",
       },
+      { id: "workspace.move-attachment", name: "Publish attachment copy", source: "workspace" },
       {
         id: "workspace.remove-note-property",
         name: "Remove note property",

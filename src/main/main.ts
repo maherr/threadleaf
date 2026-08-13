@@ -2916,6 +2916,36 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.moveAttachment,
+    (
+      _event,
+      filePath: unknown,
+      targetPath: unknown,
+      expectedRevision: unknown,
+      expectedVaultId: unknown,
+      confirmationId: unknown,
+    ) => {
+      if (
+        typeof filePath !== "string" ||
+        typeof targetPath !== "string" ||
+        typeof expectedRevision !== "string" ||
+        typeof expectedVaultId !== "string" ||
+        !(confirmationId === undefined || typeof confirmationId === "string")
+      ) {
+        throw new Error(
+          "Move attachment requires string path, target, revision, and vault values with an optional confirmation.",
+        );
+      }
+      return workspaceController.moveAttachment(
+        filePath,
+        targetPath,
+        expectedRevision,
+        expectedVaultId,
+        confirmationId,
+      );
+    },
+  );
+  ipcMain.handle(
     ipcChannels.deleteNote,
     (_event, filePath: unknown, expectedRevision: unknown, expectedVaultId: unknown) => {
       if (

@@ -7495,6 +7495,10 @@ button.inspector-item:hover {
   max-height: calc(100vh - 24px);
 }
 
+.attachment-move-dialog {
+  max-height: calc(100vh - 24px);
+}
+
 .delete-note-dialog {
   width: min(570px, calc(100vw - 32px));
 }

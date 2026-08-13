@@ -562,6 +562,19 @@ returns exact path, revision, source range, content bytes, and nested-link summa
 sanitizes every returned fragment through the same Markdown pipeline, then recursively hydrates its
 nested notes, raster images, and passive attachment cards.
 
+Passive attachment cards also expose the revision-bound Publish copy workbench. The application
+attachment planner uses the same local-target parser as the attachment loader, rewrites only
+resolved local wiki and Markdown references, preserves exact query and fragment suffixes, refuses
+case- or NFC-ambiguous source identities and basenames, and commits source-retaining binary
+publication plus Markdown writes through the kernel's recoverable transaction. Each preview binds
+the exact Markdown path set, every note revision, and the metadata generation. Direct write targets and the source revision
+are checked in the mutation lane. The whole-corpus receipt is a conservative preflight and
+post-mutation check, not an atomic lock against arbitrary external writers: a change observed after
+the final preflight drives exact journaled rollback or a manual conflict, preserving surviving bytes
+and never silently retiring a pending transaction. Attachment publications intentionally do not remap
+note tabs or bookmarks, because those state entries identify Markdown notes rather than attachment
+references. Open and Reveal remain inert until a reviewed native capability is available.
+
 All three services receive the source note, raw target, and expected vault identity. The main
 process resolves note-relative and vault-rooted paths, follows symlinks only within the vault,
 excludes `.obsidian/`, `.git/`, and transaction artifacts, rechecks the active runtime after
@@ -713,19 +726,22 @@ changes, Threadleaf returns a refreshed preview instead of applying stale consen
 nothing on its first preview and requires `--update-links` to accept the plan rebuilt in that run.
 
 The kernel stages both the before and proposed bytes for every rewrite before recording one parent
-move journal. Child write journals apply revision-bound changes, then a child rename journal moves
-the final source revision. Recovery validates every parent blob before touching any pending child,
-recovers children before parents, and recognizes an already completed rename. A rewrite or
-destination race rolls applied entries back in reverse order. An external winner is never
-overwritten: Threadleaf preserves the losing proposal or original bytes as a conflict copy and
-reports whether recovery committed, rolled back, or requires manual review.
+move journal. Ordinary note moves apply revision-bound child writes, then a child rename moves the
+final source revision. Strict attachment publications publish the exact destination first, retain the
+source, and apply link rewrites only after the publication receipt. Recovery validates every parent
+blob before touching any pending child, recovers children before parents, and recognizes an already
+completed rename or source-retained publication. A rewrite or destination race rolls applied entries
+back in reverse order. An external winner is never overwritten: Threadleaf preserves the losing
+proposal or original bytes as a conflict copy and reports committed, published-source-retained,
+rolled back, or manual review truthfully.
 
-The desktop Move action dispatches through the same service. It carries the active vault identity
+The desktop Publish copy action dispatches through the same service. It carries the active vault identity
 and source revision across IPC, refuses dirty drafts, and keeps previews, blockers, and conflicts in
 a reviewable dialog. Each rewrite names its document, source line, syntax, and exact target change;
-each blocker retains before and after resolution evidence. After a committed move, the runtime
-attributes the compound filesystem changes, refreshes every affected index entry, and remaps every
-open tab from the old path to the new one before publishing its next snapshot.
+each blocker retains before and after resolution evidence. After a committed or source-retained
+publication, the runtime attributes the compound filesystem changes and refreshes every affected
+index entry before publishing its next snapshot. Attachment sources remain addressable at their
+original path; note tabs and bookmarks are not remapped for attachment publications.
 
 The desktop Trash action calls the same recoverable deletion service as the CLI rather than a
 renderer-owned filesystem path. Its request carries the active vault identity and exact source
@@ -761,16 +777,62 @@ claimed the name, recovery keeps both versions instead. A crash before durable s
 without inventing an empty note.
 
 The portable writer favors no-clobber installation over an unchecked replace. It durably stages a
-complete file beside its target, moves the old directory entry to a transaction-owned rollback
-name, and links the staged inode into the target only while that name remains absent. A concurrent
-external create therefore becomes a conflict instead of an overwrite. During that short operation,
-another process can observe the target name as absent, but never observe partially written bytes.
-The recovery journal restores or reconciles that state after interruption.
+complete file beside its target, materializes the target through an exclusive create into a fresh
+inode, and keeps transaction-owned rollback and recovery bytes until the result is verified. A
+concurrent external create therefore becomes a conflict instead of an overwrite. During that short
+operation, another process can observe the target name as absent, but never observe partially
+written bytes or an alias to the staged evidence. The recovery journal restores or reconciles that
+state after interruption.
 
 This protects against crashes and ordinary concurrent editors. It is not a security boundary
 against a malicious process running as the same operating-system user, which can race filesystem
 operations after validation. Symlink and canonical-path checks fail closed whenever such a change
 is observed.
+
+Attachment publication opts into a stricter transaction seam. The tested implementation is
+Linux-only: each attachment ancestor and final name is reopened from held descriptor-relative
+no-follow handles, and the exact source snapshot and revision are recorded in a private durable
+journal and evidence blob. The native boundary creates an unnamed `O_TMPFILE` inode in the held
+destination directory, writes the exact bytes with mode 0600, fsyncs the inode, and atomically links
+it at the absent basename with `linkat`. It first uses `AT_EMPTY_PATH` and retains the documented
+`/proc/self/fd` plus `AT_SYMLINK_FOLLOW` fallback for hosts that reject the empty-path form. The
+directory is then fsynced and the published bytes are verified. No target-side staging pathname
+exists for another process to replace before publication.
+
+Vault open/create performs a non-mutating host-binding, descriptor-containment, and
+filesystem-device preflight. The destination parent is checked against that receipt before each
+publication, while the anonymous-inode create and final link on the exact target filesystem remain
+the authoritative capability and no-overwrite checks before any Markdown mutation. For a
+publication that rewrites links, every rewritten note parent and the receipt-gated private
+rollback-claim directory must be on that same device; a cross-device layout is rejected before the
+destination copy is published.
+
+There is no exclusive-copy fallback because a crash could expose a partial final target. Missing
+`O_TMPFILE` or `linkat` support, `EXDEV`, durability failure, Windows sharing behavior, and
+unsupported descriptor or reparse primitives are typed capability conflicts before Markdown
+mutation. Failure before the final link closes the unnamed inode without creating a vault name.
+Failure after the link may leave the exact destination in place, so the retained source, private
+evidence, and pending journal remain available for recovery or explicit manual review instead of
+deleting a mutable target. The original source name is retained. Markdown rewrites begin only after
+the target publication is verified, and the terminal result is `published-source-retained`, not a
+rename. A destination claim, source replacement, parent symlink or reparse change, crash, sharing
+error, or recovery mismatch preserves external bytes and private evidence and reports a conflict.
+Other platforms, including Darwin and Windows, fail the strict attachment request before mutation
+until an equivalent no-follow primitive and sharing contract is proven.
+Ordinary private writers retain their cross-platform durability path. These guarantees protect
+against crashes and ordinary editors, not a malicious same-UID process that races after a check;
+that remains outside the threat model. Strict attachment claims never use a pathname unlink: they
+move through no-clobber retention or remain as recoverable residue. Portable private writers retain
+the narrower ordinary-editor cleanup path for high-entropy app-generated claims after exact
+verification; a changed claimant is never removed under that documented boundary. Successful
+ordinary writes clean that private claim, so they do not accumulate one full retained file per
+write. The private `rollback-claims/<transaction-id>`
+directory is removed only after that transaction's durable `committed` history receipt; startup
+repeats this exact receipt-gated sweep after an interruption. Uncertain claims remain bounded to
+the failed transaction's generated stage and are surfaced for explicit recovery, never
+garbage-collected by pathname guesswork. Compound moves still expose recoverable progress and
+published-source-retained, rolled-back, or manual-conflict states; they do not provide cross-file
+atomicity.
 
 Multi-file edits are durable roll-forward transactions rather than a claim of cross-file atomicity
 that portable filesystems cannot provide. Threadleaf stores and verifies every proposed version in

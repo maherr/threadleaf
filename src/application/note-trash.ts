@@ -20,6 +20,8 @@ interface TrashLocation {
   trashPath: string;
 }
 
+type OrdinaryRenameResult = Extract<VaultRenameResult, { status: "committed" | "conflict" }>;
+
 function trashLocationForOriginalPath(requestedPath: string): TrashLocation {
   const originalPath = normalizeMarkdownNotePath(requestedPath);
   return {
@@ -64,7 +66,7 @@ export async function trashMarkdownNote(
   vault: VaultMutationPort,
   requestedPath: string,
   expectedSourceRevision?: string,
-): Promise<VaultRenameResult> {
+): Promise<OrdinaryRenameResult> {
   const location = trashLocationForOriginalPath(requestedPath);
   const paths = await vault.listMarkdownPaths();
   if (!paths.includes(location.path)) {
@@ -79,14 +81,23 @@ export async function trashMarkdownNote(
       reason: "source-revision-changed",
     };
   }
-  return vault.renameFile(location.path, location.trashPath, source.revision);
+  const result = await vault.renameFile(location.path, location.trashPath, source.revision);
+  if (result.status === "published-source-retained") {
+    return {
+      status: "conflict",
+      from: result.from,
+      to: result.to,
+      reason: "source-retention-not-supported",
+    };
+  }
+  return result;
 }
 
 export async function restoreTrashedMarkdownNote(
   vault: VaultMutationPort,
   requestedPath: string,
   expectedSourceRevision?: string,
-): Promise<VaultRenameResult> {
+): Promise<OrdinaryRenameResult> {
   const location = trashLocationForReference(requestedPath);
   const trashPaths = await vault.listMarkdownPaths(vaultTrashDirectory);
   if (!trashPaths.includes(location.trashPath)) {
@@ -101,5 +112,14 @@ export async function restoreTrashedMarkdownNote(
       reason: "source-revision-changed",
     };
   }
-  return vault.renameFile(location.trashPath, location.path, source.revision);
+  const result = await vault.renameFile(location.trashPath, location.path, source.revision);
+  if (result.status === "published-source-retained") {
+    return {
+      status: "conflict",
+      from: result.from,
+      to: result.to,
+      reason: "source-retention-not-supported",
+    };
+  }
+  return result;
 }

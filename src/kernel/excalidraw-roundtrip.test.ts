@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { moveBinaryAttachment, planBinaryAttachmentMove } from "../application/attachment-move";
 import {
   canonicalExcalidrawSceneDigest,
   compareExcalidrawMarkdown,
@@ -150,6 +151,57 @@ describe("Excalidraw public-format round trip", () => {
     await expect(
       createExcalidrawAttachmentManifest(fixtureVault, ["../outside.txt"]),
     ).rejects.toThrow("escapes the vault");
+  });
+
+  it("moves the supplied Excalidraw wiki attachment through the real attachment boundary", async () => {
+    const { vault, state } = await copyFixture();
+    const kernel = await VaultKernel.open({
+      vaultRoot: vault,
+      stateRoot: new FixedStateRoot(state),
+    });
+    const sourcePath = "Assets/Ébauche/diagram.svg";
+    const targetPath = "Assets/Ébauche/diagram-renamed.svg";
+    const source = await kernel.readBinary(sourcePath, 1024 * 1024);
+    if (source.status !== "ready") throw new Error("Expected the SVG attachment fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      sourcePath,
+      targetPath,
+      source.snapshot.revision,
+    );
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned attachment move.");
+    expect(plan.rewrites).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentPath: "Drawings/Unicode Scene.excalidraw.md",
+          syntax: "wiki",
+          beforeTarget: "Assets/Ébauche/diagram.svg",
+        }),
+      ]),
+    );
+
+    const result = await moveBinaryAttachment(
+      kernel,
+      sourcePath,
+      targetPath,
+      source.snapshot.revision,
+      { plan, acceptCurrentRewrites: true },
+    );
+    expect(result).toMatchObject({
+      status: "published-source-retained",
+      from: sourcePath,
+      to: targetPath,
+    });
+    await expect(fs.readFile(path.join(vault, targetPath))).resolves.toEqual(source.snapshot.bytes);
+    await expect(fs.readFile(path.join(vault, sourcePath))).resolves.toEqual(source.snapshot.bytes);
+    const movedDrawing = await fs.readFile(
+      path.join(vault, "Drawings/Unicode Scene.excalidraw.md"),
+      "utf8",
+    );
+    expect(parseExcalidrawMarkdown(movedDrawing).attachmentReferences).toEqual([
+      "../Assets/Ébauche/diagram-renamed.svg",
+    ]);
   });
 
   it("routes stale scene revisions to a retained conflict copy", async () => {

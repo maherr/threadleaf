@@ -854,7 +854,7 @@ Working $y$`);
             mimeType: target.endsWith("pdf") ? "application/pdf" : null,
             size: 12,
             revision: "f".repeat(64),
-            actions: { open: true, reveal: true, inline: false },
+            actions: { open: true, reveal: true, move: true, inline: false },
           },
         };
       },
@@ -865,6 +865,17 @@ Working $y$`);
     expect(cards[0]?.textContent).toContain("application/pdf");
     expect(cards[1]?.textContent).toContain("unsupported");
     expect(rendered.querySelectorAll("img, video, audio, iframe")).toHaveLength(0);
-    expect(rendered.querySelectorAll(".preview-attachment-action")).toHaveLength(4);
+    expect(rendered.querySelectorAll(".preview-attachment-action")).toHaveLength(6);
+  });
+
+  it("keeps escaped query and fragment filename bytes out of renderer subpaths", () => {
+    const rendered = preview(
+      "![fragment](Assets/report\\#draft.pdf)\n\n![query](Assets/report\\?draft.pdf)",
+    );
+    expect(
+      [...rendered.querySelectorAll<HTMLElement>(".preview-attachment-placeholder")].map(
+        (element) => element.dataset.threadleafAttachmentTarget,
+      ),
+    ).toEqual(["Assets/report#draft.pdf", "Assets/report?draft.pdf"]);
   });
 });

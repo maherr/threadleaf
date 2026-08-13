@@ -157,7 +157,7 @@ equivalence through the real writer-to-watcher seam.
       text, list, number, checkbox, date, and datetime values, with revision binding, exact-byte
       preservation, explicit unsupported shapes, and packaged visual and behavior tests.
 - [x] Loss-preserving nested and complex property edits, broader magic-byte attachment metadata,
-      passive non-note non-raster wiki embeds, recoverable attachment moves, bounded media probes,
+      passive non-note non-raster wiki embeds, recoverable source-retaining attachment publication,
       and packaged X11 visual fixtures. Destructive YAML normalization and shell actions remain
       explicitly unsupported until their separate preservation and capability contracts exist.
 

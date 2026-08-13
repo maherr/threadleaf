@@ -1,10 +1,18 @@
 import path from "node:path";
 import { normalizeVaultPath } from "./path-policy";
+import type { VaultMarkdownCorpus } from "./ports";
 
 export type WritePhase = "intent" | "staged" | "backed-up" | "prepared" | "installed" | "committed";
-export type RenamePhase = "intent" | "linked" | "committed";
+export type RenamePhase = "intent" | "staged" | "linked" | "published" | "committed";
 export type MultiWritePhase = "intent" | "applying" | "committed";
-export type MoveWithWritesPhase = "intent" | "applying" | "renaming" | "rolling-back" | "committed";
+export type MoveWithWritesPhase =
+  | "intent"
+  | "publishing"
+  | "published"
+  | "applying"
+  | "renaming"
+  | "rolling-back"
+  | "committed";
 
 interface JournalBase {
   version: 1;
@@ -22,6 +30,7 @@ export interface WriteJournal extends JournalBase {
   expectedRevision: string | null;
   beforeRevision: string | null;
   nextRevision: string;
+  strictContainment?: boolean;
 }
 
 export interface RenameJournal extends JournalBase {
@@ -30,6 +39,11 @@ export interface RenameJournal extends JournalBase {
   sourcePath: string;
   targetPath: string;
   expectedRevision: string;
+  /** Optional for journals written before corpus-bound attachment moves. */
+  expectedMarkdownCorpus?: VaultMarkdownCorpus | null;
+  strictContainment?: boolean;
+  /** Attachment publication creates a new target but deliberately retains the source. */
+  sourceRetained?: boolean;
 }
 
 export type MultiWriteEntryStatus = "pending" | "committed" | "conflict";
@@ -69,6 +83,13 @@ export interface MoveWithWritesJournal extends JournalBase {
   renameRevision: string;
   reason: string | null;
   entries: MoveWithWritesJournalEntry[];
+  /** Corpus observed before any child rewrite was allowed to start. */
+  expectedMarkdownCorpusBeforeWrites?: VaultMarkdownCorpus | null;
+  /** Corpus expected after the journal's rewrite entries have been applied. */
+  expectedMarkdownCorpus?: VaultMarkdownCorpus | null;
+  strictContainment?: boolean;
+  /** Attachment publication creates a new target but deliberately retains the source. */
+  sourceRetained?: boolean;
 }
 
 export type TransactionJournal =
@@ -87,11 +108,13 @@ const writePhases = new Set<WritePhase>([
   "installed",
   "committed",
 ]);
-const renamePhases = new Set<RenamePhase>(["intent", "linked", "committed"]);
+const renamePhases = new Set<RenamePhase>(["intent", "staged", "linked", "published", "committed"]);
 const multiWritePhases = new Set<MultiWritePhase>(["intent", "applying", "committed"]);
 const multiWriteStatuses = new Set<MultiWriteEntryStatus>(["pending", "committed", "conflict"]);
 const moveWithWritesPhases = new Set<MoveWithWritesPhase>([
   "intent",
+  "publishing",
+  "published",
   "applying",
   "renaming",
   "rolling-back",
@@ -120,6 +143,50 @@ function isRevision(value: unknown): value is string {
 
 function isNullableRevision(value: unknown): value is string | null {
   return value === null || isRevision(value);
+}
+
+function isMarkdownCorpus(value: unknown): value is VaultMarkdownCorpus {
+  if (!isRecord(value) || !hasExactKeys(value, ["paths", "revisions", "generation"])) {
+    return false;
+  }
+  if (
+    typeof value.generation !== "string" ||
+    value.generation.length === 0 ||
+    !Array.isArray(value.paths) ||
+    !Array.isArray(value.revisions) ||
+    value.paths.some((entry) => typeof entry !== "string")
+  ) {
+    return false;
+  }
+  const paths = new Set<string>();
+  for (const entry of value.paths) {
+    try {
+      if (normalizeVaultPath(entry) !== entry || paths.has(entry)) return false;
+    } catch {
+      return false;
+    }
+    paths.add(entry);
+  }
+  if (value.revisions.length !== value.paths.length) return false;
+  const revisionPaths = new Set<string>();
+  for (const entry of value.revisions) {
+    if (
+      !isRecord(entry) ||
+      !hasExactKeys(entry, ["path", "revision"]) ||
+      typeof entry.path !== "string" ||
+      !isRevision(entry.revision) ||
+      !paths.has(entry.path) ||
+      revisionPaths.has(entry.path)
+    ) {
+      return false;
+    }
+    revisionPaths.add(entry.path);
+  }
+  return revisionPaths.size === paths.size;
+}
+
+function isOptionalMarkdownCorpus(value: unknown): value is VaultMarkdownCorpus | null {
+  return value === null || isMarkdownCorpus(value);
 }
 
 function isIsoTimestamp(value: unknown): value is string {
@@ -183,8 +250,9 @@ export function parseTransactionJournal(
       "beforeRevision",
       "nextRevision",
     ] as const;
+    const hasStrict = hasExactKeys(input, [...expectedKeys, "strictContainment"]);
     if (
-      !hasExactKeys(input, expectedKeys) ||
+      (!hasExactKeys(input, expectedKeys) && !hasStrict) ||
       typeof input.phase !== "string" ||
       !writePhases.has(input.phase as WritePhase) ||
       typeof input.targetPath !== "string" ||
@@ -192,7 +260,8 @@ export function parseTransactionJournal(
       typeof input.rollbackPath !== "string" ||
       !isNullableRevision(input.expectedRevision) ||
       !isNullableRevision(input.beforeRevision) ||
-      !isRevision(input.nextRevision)
+      !isRevision(input.nextRevision) ||
+      (hasStrict && input.strictContainment !== true)
     ) {
       throw new Error("Write journal shape is invalid.");
     }
@@ -221,13 +290,45 @@ export function parseTransactionJournal(
       "targetPath",
       "expectedRevision",
     ] as const;
+    const hasBase = hasExactKeys(input, expectedKeys);
+    const hasCorpus = hasExactKeys(input, [...expectedKeys, "expectedMarkdownCorpus"]);
+    const hasStrict = hasExactKeys(input, [...expectedKeys, "strictContainment"]);
+    const hasCorpusAndStrict = hasExactKeys(input, [
+      ...expectedKeys,
+      "expectedMarkdownCorpus",
+      "strictContainment",
+    ]);
+    const hasStrictAndRetained = hasExactKeys(input, [
+      ...expectedKeys,
+      "strictContainment",
+      "sourceRetained",
+    ]);
+    const hasCorpusStrictAndRetained = hasExactKeys(input, [
+      ...expectedKeys,
+      "expectedMarkdownCorpus",
+      "strictContainment",
+      "sourceRetained",
+    ]);
+    const includesCorpus = hasCorpus || hasCorpusAndStrict || hasCorpusStrictAndRetained;
+    const includesStrict =
+      hasStrict || hasCorpusAndStrict || hasStrictAndRetained || hasCorpusStrictAndRetained;
+    const includesRetained = hasStrictAndRetained || hasCorpusStrictAndRetained;
     if (
-      !hasExactKeys(input, expectedKeys) ||
+      (!hasBase &&
+        !hasCorpus &&
+        !hasStrict &&
+        !hasCorpusAndStrict &&
+        !hasStrictAndRetained &&
+        !hasCorpusStrictAndRetained) ||
       typeof input.phase !== "string" ||
       !renamePhases.has(input.phase as RenamePhase) ||
       typeof input.sourcePath !== "string" ||
       typeof input.targetPath !== "string" ||
-      !isRevision(input.expectedRevision)
+      !isRevision(input.expectedRevision) ||
+      (includesCorpus && !isOptionalMarkdownCorpus(input.expectedMarkdownCorpus)) ||
+      (includesStrict && input.strictContainment !== true) ||
+      (includesRetained && input.sourceRetained !== true) ||
+      (includesRetained && input.strictContainment !== true)
     ) {
       throw new Error("Rename journal shape is invalid.");
     }
@@ -239,6 +340,12 @@ export function parseTransactionJournal(
       sourcePath === targetPath
     ) {
       throw new Error("Rename journal paths are inconsistent.");
+    }
+    if (input.sourceRetained === true && input.strictContainment !== true) {
+      throw new Error("Source-retained attachment journals require strict containment.");
+    }
+    if (input.phase === "published" && input.sourceRetained !== true) {
+      throw new Error("Published rename journals must retain the source.");
     }
     return input as unknown as RenameJournal;
   }
@@ -329,8 +436,71 @@ export function parseTransactionJournal(
       "reason",
       "entries",
     ] as const;
+    const hasBase = hasExactKeys(input, expectedKeys);
+    const hasCorpus = hasExactKeys(input, [...expectedKeys, "expectedMarkdownCorpus"]);
+    const hasStrict = hasExactKeys(input, [...expectedKeys, "strictContainment"]);
+    const hasCorpusAndStrict = hasExactKeys(input, [
+      ...expectedKeys,
+      "expectedMarkdownCorpus",
+      "strictContainment",
+    ]);
+    const hasBeforeAndAfterCorpus = hasExactKeys(input, [
+      ...expectedKeys,
+      "expectedMarkdownCorpusBeforeWrites",
+      "expectedMarkdownCorpus",
+    ]);
+    const hasBeforeAfterAndStrict = hasExactKeys(input, [
+      ...expectedKeys,
+      "expectedMarkdownCorpusBeforeWrites",
+      "expectedMarkdownCorpus",
+      "strictContainment",
+    ]);
+    const hasStrictAndRetained = hasExactKeys(input, [
+      ...expectedKeys,
+      "strictContainment",
+      "sourceRetained",
+    ]);
+    const hasBeforeAfterStrictAndRetained = hasExactKeys(input, [
+      ...expectedKeys,
+      "expectedMarkdownCorpusBeforeWrites",
+      "expectedMarkdownCorpus",
+      "strictContainment",
+      "sourceRetained",
+    ]);
+    const hasCorpusStrictAndRetained = hasExactKeys(input, [
+      ...expectedKeys,
+      "expectedMarkdownCorpus",
+      "strictContainment",
+      "sourceRetained",
+    ]);
+    const includesCorpus =
+      hasCorpus ||
+      hasCorpusAndStrict ||
+      hasBeforeAndAfterCorpus ||
+      hasBeforeAfterAndStrict ||
+      hasCorpusStrictAndRetained ||
+      hasBeforeAfterStrictAndRetained;
+    const includesBeforeCorpus =
+      hasBeforeAndAfterCorpus || hasBeforeAfterAndStrict || hasBeforeAfterStrictAndRetained;
+    const includesStrict =
+      hasStrict ||
+      hasCorpusAndStrict ||
+      hasBeforeAfterAndStrict ||
+      hasStrictAndRetained ||
+      hasCorpusStrictAndRetained ||
+      hasBeforeAfterStrictAndRetained;
+    const includesRetained =
+      hasStrictAndRetained || hasCorpusStrictAndRetained || hasBeforeAfterStrictAndRetained;
     if (
-      !hasExactKeys(input, expectedKeys) ||
+      (!hasBase &&
+        !hasCorpus &&
+        !hasStrict &&
+        !hasCorpusAndStrict &&
+        !hasBeforeAndAfterCorpus &&
+        !hasBeforeAfterAndStrict &&
+        !hasStrictAndRetained &&
+        !hasCorpusStrictAndRetained &&
+        !hasBeforeAfterStrictAndRetained) ||
       typeof input.phase !== "string" ||
       !moveWithWritesPhases.has(input.phase as MoveWithWritesPhase) ||
       typeof input.sourcePath !== "string" ||
@@ -339,7 +509,13 @@ export function parseTransactionJournal(
       !isRevision(input.renameRevision) ||
       !(input.reason === null || typeof input.reason === "string") ||
       !Array.isArray(input.entries) ||
-      input.entries.length === 0
+      input.entries.length === 0 ||
+      (includesCorpus && !isOptionalMarkdownCorpus(input.expectedMarkdownCorpus)) ||
+      (includesBeforeCorpus &&
+        !isOptionalMarkdownCorpus(input.expectedMarkdownCorpusBeforeWrites)) ||
+      (includesStrict && input.strictContainment !== true) ||
+      (includesRetained && input.sourceRetained !== true) ||
+      (includesRetained && input.strictContainment !== true)
     ) {
       throw new Error("Move-with-writes journal shape is invalid.");
     }
@@ -411,6 +587,15 @@ export function parseTransactionJournal(
       (input.phase === "committed" && input.reason !== null)
     ) {
       throw new Error("Move-with-writes journal state is inconsistent.");
+    }
+    if (input.sourceRetained === true && input.strictContainment !== true) {
+      throw new Error("Source-retained attachment journals require strict containment.");
+    }
+    if (
+      (input.phase === "publishing" || input.phase === "published") &&
+      input.sourceRetained !== true
+    ) {
+      throw new Error("Publishing move journals must retain the source.");
     }
     return input as unknown as MoveWithWritesJournal;
   }

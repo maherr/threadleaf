@@ -112,6 +112,13 @@ try {
     extractedProbe.status === 0,
     `CLI-LOCK-01 extracted package proof failed: ${extractedProbe.stdout}${extractedProbe.stderr}`,
   );
+  const extractedReceipt = JSON.parse(extractedProbe.stdout.trim());
+  assert(
+    extractedReceipt.anonymousExactBytes &&
+      extractedReceipt.anonymousCollisionPreserved &&
+      extractedReceipt.anonymousNoStage,
+    "The extracted package did not prove anonymous exact-byte no-clobber publication.",
+  );
   console.log(
     JSON.stringify({
       verified: true,
@@ -120,6 +127,7 @@ try {
       runtimeResolution: "simulated resources/app.asar.unpacked from unrelated cwd",
       packagedOverride: "ignored",
       cliLock01: "independent-process extracted addon proof",
+      anonymousPublication: extractedReceipt.anonymousPublish,
       runtimePlatforms: "Linux focused locally; macOS and Windows require native CI",
     }),
   );

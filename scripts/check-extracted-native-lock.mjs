@@ -1,9 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
+  closeSync,
+  constants,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -79,6 +83,10 @@ assert(
 assert(
   typeof addon.renameNoReplace === "function",
   "Extracted native addon lacks atomic no-clobber rename.",
+);
+assert(
+  typeof addon.publishBufferNoReplace === "function",
+  "Extracted native addon lacks anonymous no-clobber publication.",
 );
 const addonPlatform = addon.platform();
 const addonMechanism = addon.mechanism();
@@ -249,6 +257,52 @@ try {
     );
     collisionPreserved = true;
   }
+  let anonymousPublish = "unsupported";
+  let anonymousExactBytes = false;
+  let anonymousCollisionPreserved = false;
+  let anonymousNoStage = false;
+  if (expectedPlatform === "linux") {
+    const publishBytes = Buffer.from([0, 1, 2, 255, 10]);
+    const publishName = "anonymous-published.bin";
+    const directoryFd = openSync(parent, constants.O_RDONLY | constants.O_DIRECTORY);
+    try {
+      addon.publishBufferNoReplace(directoryFd, publishName, publishBytes);
+      let collisionCode = null;
+      try {
+        addon.publishBufferNoReplace(directoryFd, publishName, Buffer.from("claimant"));
+      } catch (error) {
+        collisionCode = error?.code;
+      }
+      anonymousExactBytes = readFileSync(path.join(parent, publishName)).equals(publishBytes);
+      anonymousCollisionPreserved = collisionCode === "exists" && anonymousExactBytes;
+      anonymousNoStage = !readdirSync(parent).some((entry) =>
+        entry.startsWith(".threadleaf-attachment-stage-"),
+      );
+    } finally {
+      closeSync(directoryFd);
+    }
+    assert(anonymousExactBytes, "Extracted anonymous publication changed the requested bytes.");
+    assert(
+      anonymousCollisionPreserved,
+      "Extracted anonymous publication did not preserve an existing target claimant.",
+    );
+    assert(anonymousNoStage, "Extracted anonymous publication exposed a target-side stage name.");
+    anonymousPublish = "otmpfile-linkat";
+  } else {
+    let unsupportedCode = null;
+    try {
+      addon.publishBufferNoReplace(0, "anonymous-published.bin", Buffer.alloc(0));
+    } catch (error) {
+      unsupportedCode = error?.code;
+    }
+    assert(
+      unsupportedCode === "unsupported",
+      "Non-Linux extracted anonymous publication did not fail closed.",
+    );
+    anonymousExactBytes = true;
+    anonymousCollisionPreserved = true;
+    anonymousNoStage = true;
+  }
   console.log(
     JSON.stringify({
       verified: true,
@@ -264,6 +318,10 @@ try {
       cliLock01: "independent-process contention, killed-holder release, persistent pathname",
       noClobberRename,
       collisionPreserved,
+      anonymousPublish,
+      anonymousExactBytes,
+      anonymousCollisionPreserved,
+      anonymousNoStage,
       permissions: expectedPlatform === "win32" ? "owner-only DACL" : "0600",
     }),
   );

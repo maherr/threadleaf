@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { moveBinaryAttachment, planBinaryAttachmentMove } from "../application/attachment-move";
 import {
   canonicalizeExcalidrawScene,
   compareExcalidrawMarkdown,
@@ -9,7 +10,6 @@ import {
   parseExcalidrawMarkdown,
   parseUncompressedExcalidrawScene,
   replaceExcalidrawScene,
-  rewriteExcalidrawAttachmentReference,
 } from "../kernel/excalidraw-roundtrip";
 import { FixedStateRoot } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
@@ -312,24 +312,47 @@ async function runAttachmentCase(vaultRoot: string): Promise<void> {
 }
 
 async function runAttachmentRenameCase(vaultRoot: string, stateRoot: string): Promise<void> {
-  const notePath = "Drawings/Unicode Scene.excalidraw.md";
   const fromPath = "Assets/Ébauche/diagram.svg";
   const toPath = "Assets/Ébauche/diagram-renamed.svg";
   const kernel = await openKernel(vaultRoot, stateRoot);
-  const note = await kernel.readText(notePath);
-  const rewrite = rewriteExcalidrawAttachmentReference(note.content, fromPath, toPath);
-  assert(rewrite.replacements === 1, "attachment rename did not rewrite exactly one image target");
   const attachment = await kernel.readBinary(fromPath, 1024 * 1024);
   assert(attachment.status === "ready", "attachment could not be read before rename");
-  const rename = await kernel.renameFile(fromPath, toPath, attachment.snapshot.revision);
-  assert(rename.status === "committed", "attachment rename did not commit");
-  const save = await kernel.writeText(notePath, rewrite.markdown, note.revision);
-  assert(save.status === "committed", "attachment reference rewrite did not commit");
+  const plan = await planBinaryAttachmentMove(
+    kernel,
+    fromPath,
+    toPath,
+    attachment.snapshot.revision,
+  );
+  assert(plan.status === "planned", "attachment move plan was not created");
+  assert(plan.blockers.length === 0, "attachment move plan reported blockers");
+  const rename = await moveBinaryAttachment(
+    kernel,
+    fromPath,
+    toPath,
+    attachment.snapshot.revision,
+    { plan, acceptCurrentRewrites: true },
+  );
+  assert(
+    rename.status === "published-source-retained",
+    "attachment publication did not retain the source",
+  );
   const renamed = await kernel.readBinary(toPath, 1024 * 1024);
   assert(renamed.status === "ready", "renamed attachment could not be reopened");
   assert(
     sha256(renamed.snapshot.bytes) === sha256(attachment.snapshot.bytes),
     "attachment bytes changed during rename",
+  );
+  const retained = await kernel.readBinary(fromPath, 1024 * 1024);
+  assert(retained.status === "ready", "published attachment source was not retained");
+  assert(
+    sha256(retained.snapshot.bytes) === sha256(attachment.snapshot.bytes),
+    "retained attachment source bytes changed during publication",
+  );
+  const movedDrawing = await kernel.readText("Drawings/Unicode Scene.excalidraw.md");
+  assert(
+    parseExcalidrawMarkdown(movedDrawing.content).attachmentReferences[0] ===
+      "../Assets/Ébauche/diagram-renamed.svg",
+    "attachment move did not round-trip the supplied Excalidraw wiki target",
   );
 }
 

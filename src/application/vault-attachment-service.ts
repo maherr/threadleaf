@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { normalizeVaultPath, VaultPathError } from "../kernel/path-policy";
+import { parseMarkdownDestinationTarget } from "../kernel/markdown-links";
+import { VaultLinkResolver } from "../kernel/metadata-index";
+import { normalizeVaultPath, VaultPathError, type VisibleVaultPaths } from "../kernel/path-policy";
 import type { BinaryReadResult } from "../kernel/vault-kernel";
 import { sniffVaultImageMime } from "./vault-image-service";
 
@@ -23,6 +25,7 @@ export type VaultAttachmentKind =
 export interface VaultAttachmentActions {
   open: boolean;
   reveal: boolean;
+  move: boolean;
   inline: false;
 }
 
@@ -43,6 +46,7 @@ export type VaultAttachmentResponse =
       reason:
         | "external"
         | "invalid"
+        | "ambiguous"
         | "private"
         | "missing"
         | "outside-vault"
@@ -55,12 +59,14 @@ export type VaultAttachmentResponse =
 
 export interface VaultAttachmentReader {
   readonly vaultId: string;
+  listVisiblePaths?(relativeDirectory?: string): Promise<VisibleVaultPaths>;
   resolveReadPath(relativePath: string): Promise<string>;
   readBinary(relativePath: string, maxBytes: number): Promise<BinaryReadResult>;
 }
 
 export interface VaultAttachmentLoadOptions {
   maxBytes?: number;
+  visiblePaths?: readonly string[];
 }
 
 export interface SniffedAttachmentType {
@@ -77,9 +83,25 @@ interface RejectedAttachmentTarget {
   status: "rejected";
   reason: "external" | "invalid" | "private" | "outside-vault";
   message: string;
+  /** The normalized destination before a local safety policy rejected it. */
+  parsed?: ParsedVaultAttachmentTarget;
 }
 
 export type AttachmentTargetResolution = ResolvedAttachmentTarget | RejectedAttachmentTarget;
+
+export interface ParsedVaultAttachmentTarget {
+  path: string;
+  /** The exact source query/fragment suffix, retained by rewrite planning. */
+  suffix: string;
+  /** True when the destination path contains no directory separator. */
+  bareName: boolean;
+}
+
+export type VaultAttachmentTargetParse =
+  | ({ status: "local" } & ParsedVaultAttachmentTarget)
+  | RejectedAttachmentTarget;
+
+type VaultAttachmentTargetRejection = Extract<VaultAttachmentTargetParse, { status: "rejected" }>;
 
 function isPrivateVaultPath(relativePath: string): boolean {
   return relativePath.split("/").some((segment) => {
@@ -93,85 +115,75 @@ function isPrivateVaultPath(relativePath: string): boolean {
   });
 }
 
-function decodeTarget(rawTarget: string): string | null {
-  const trimmed = rawTarget.trim();
-  const unwrapped =
-    trimmed.startsWith("<") && trimmed.endsWith(">") ? trimmed.slice(1, -1).trim() : trimmed;
-  const separator = [unwrapped.indexOf("?"), unwrapped.indexOf("#")]
-    .filter((index) => index >= 0)
-    .reduce((lowest, index) => Math.min(lowest, index), unwrapped.length);
-  try {
-    return decodeURIComponent(unwrapped.slice(0, separator)).replaceAll("\\", "/");
-  } catch {
-    return null;
-  }
+function rejectedTarget(
+  reason: VaultAttachmentTargetRejection["reason"],
+  message: string,
+  parsed?: ParsedVaultAttachmentTarget,
+): VaultAttachmentTargetRejection {
+  return { status: "rejected", reason, message, ...(parsed ? { parsed } : {}) };
 }
 
 export function resolveVaultAttachmentTarget(
   sourceNotePath: string,
   rawTarget: string,
 ): AttachmentTargetResolution {
+  const parsed = parseVaultAttachmentTarget(sourceNotePath, rawTarget);
+  if (parsed.status === "local") return { status: "resolved", path: parsed.path };
+  return parsed;
+}
+
+/**
+ * Parses one local attachment destination for both bounded loading and
+ * source-preserving rewrite planning. The suffix is deliberately not decoded.
+ */
+export function parseVaultAttachmentTarget(
+  sourceNotePath: string,
+  rawTarget: string,
+): VaultAttachmentTargetParse {
   let sourcePath: string;
   try {
     sourcePath = normalizeVaultPath(sourceNotePath);
   } catch {
-    return {
-      status: "rejected",
-      reason: "invalid",
-      message: "The source path is not a valid vault path.",
-    };
+    return rejectedTarget("invalid", "The source path is not a valid vault path.");
   }
   if (!sourcePath.toLocaleLowerCase("en-US").endsWith(".md")) {
-    return {
-      status: "rejected",
-      reason: "invalid",
-      message: "Local attachments must be requested from a Markdown note.",
-    };
+    return rejectedTarget("invalid", "Local attachments must be requested from a Markdown note.");
   }
   if (!rawTarget.trim() || rawTarget.length > maxTargetLength || rawTarget.includes("\0")) {
-    return {
-      status: "rejected",
-      reason: "invalid",
-      message: "The attachment target is empty, malformed, or too long.",
-    };
+    return rejectedTarget("invalid", "The attachment target is empty, malformed, or too long.");
   }
-  const decoded = decodeTarget(rawTarget);
-  if (!decoded || decoded.includes("\0") || /^[a-z]:\//iu.test(decoded)) {
-    return {
-      status: "rejected",
-      reason: "invalid",
-      message: "The attachment target is not a portable vault path.",
-    };
+  const parsed = parseMarkdownDestinationTarget(rawTarget);
+  if (!parsed?.path || parsed.path.includes("\0") || /^[a-z]:\//iu.test(parsed.path)) {
+    return rejectedTarget("invalid", "The attachment target is not a portable vault path.");
   }
-  if (/^[a-z][a-z0-9+.-]*:/iu.test(decoded) || decoded.startsWith("//")) {
-    return {
-      status: "rejected",
-      reason: "external",
-      message: "Remote attachments remain disabled in offline reading view.",
-    };
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(parsed.path) || parsed.path.startsWith("//")) {
+    return rejectedTarget(
+      "external",
+      "Remote attachments remain disabled in offline reading view.",
+    );
   }
-  const rooted = decoded.startsWith("/");
+  const rooted = parsed.path.startsWith("/");
   const candidate = rooted
-    ? decoded.replace(/^\/+/, "")
-    : path.posix.join(path.posix.dirname(sourcePath), decoded);
+    ? parsed.path.replace(/^\/+/, "")
+    : path.posix.join(path.posix.dirname(sourcePath), parsed.path);
   let resolvedPath: string;
   try {
     resolvedPath = normalizeVaultPath(candidate);
   } catch {
-    return {
-      status: "rejected",
-      reason: "outside-vault",
-      message: "The attachment target leaves the active vault.",
-    };
+    return rejectedTarget(
+      "outside-vault",
+      "The attachment target leaves the active vault.",
+      parsed,
+    );
   }
   if (isPrivateVaultPath(resolvedPath)) {
-    return {
-      status: "rejected",
-      reason: "private",
-      message: "Private application and transaction paths are never exposed as attachments.",
-    };
+    return rejectedTarget(
+      "private",
+      "Private application and transaction paths are never exposed as attachments.",
+      { ...parsed, path: resolvedPath },
+    );
   }
-  return { status: "resolved", path: resolvedPath };
+  return { status: "local", path: resolvedPath, suffix: parsed.suffix, bareName: parsed.bareName };
 }
 
 function startsWithAscii(bytes: Uint8Array, signature: string): boolean {
@@ -347,7 +359,7 @@ export async function loadVaultAttachment(
   options: VaultAttachmentLoadOptions = {},
 ): Promise<VaultAttachmentResponse> {
   if (expectedVaultId !== reader.vaultId) return { status: "stale-vault", vaultId: reader.vaultId };
-  const resolution = resolveVaultAttachmentTarget(sourceNotePath, rawTarget);
+  const resolution = parseVaultAttachmentTarget(sourceNotePath, rawTarget);
   if (resolution.status === "rejected") {
     return {
       status: "unavailable",
@@ -356,9 +368,43 @@ export async function loadVaultAttachment(
       message: resolution.message,
     };
   }
+  let attachmentPath = resolution.path;
+  try {
+    const visiblePaths =
+      options.visiblePaths ?? (await reader.listVisiblePaths?.(""))?.files ?? null;
+    if (visiblePaths) {
+      const destination = parseMarkdownDestinationTarget(rawTarget)?.path ?? rawTarget;
+      const resolver = new VaultLinkResolver(
+        visiblePaths.filter(
+          (filePath) =>
+            !filePath.toLocaleLowerCase("en-US").endsWith(".md") && !isPrivateVaultPath(filePath),
+        ),
+      );
+      const linkResolution = resolver.resolve(normalizeVaultPath(sourceNotePath), destination);
+      if (linkResolution.status === "ambiguous") {
+        return {
+          status: "unavailable",
+          vaultId: reader.vaultId,
+          reason: "ambiguous",
+          message: "The attachment target has more than one possible destination.",
+        };
+      }
+      if (linkResolution.status !== "resolved" || !linkResolution.path) {
+        return {
+          status: "unavailable",
+          vaultId: reader.vaultId,
+          reason: "missing",
+          message: "The attachment target does not resolve in the active vault.",
+        };
+      }
+      attachmentPath = linkResolution.path;
+    }
+  } catch (error) {
+    return unavailableFromReadError(reader.vaultId, error);
+  }
   let canonicalPath: string;
   try {
-    canonicalPath = await reader.resolveReadPath(resolution.path);
+    canonicalPath = await reader.resolveReadPath(attachmentPath);
   } catch (error) {
     return unavailableFromReadError(reader.vaultId, error);
   }
@@ -388,12 +434,12 @@ export async function loadVaultAttachment(
   }
   const sniffed = sniffVaultAttachment(result.snapshot.bytes);
   const attachment: VaultAttachmentMetadata = {
-    path: resolution.path,
+    path: attachmentPath,
     kind: sniffed?.kind ?? "unsupported",
     mimeType: sniffed?.mimeType ?? null,
     size: result.snapshot.size,
     revision: result.snapshot.revision,
-    actions: { open: true, reveal: true, inline: false },
+    actions: { open: true, reveal: true, move: true, inline: false },
   };
   return { status: "ready", vaultId: reader.vaultId, attachment };
 }

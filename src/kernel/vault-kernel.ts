@@ -2,16 +2,26 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
+  type AttachmentPublishCapability,
+  assertContainedPublishCapability,
   atomicWriteFile,
+  type ContainedRemovalHooks,
   durableCreate,
+  durableCreateContainedFile,
+  FILE_PUBLISH_CAPABILITY,
   type FileSnapshot,
+  installContainedStagedFile,
   installStagedFile,
+  moveContainedFileAside,
   pathExists,
+  probeContainedPublishCapability,
+  readContainedFile,
   readStableFile,
   readStableFileWithinLimit,
+  removeExpectedContainedFile,
+  removeExpectedFilePortably,
   removeIfPresent,
   revisionOf,
-  sameFile,
   syncDirectory,
 } from "./durability";
 import {
@@ -39,6 +49,7 @@ import type {
   MultiWriteResult,
   StateRootPort,
   VaultDirectoryCreateResult,
+  VaultMarkdownCorpus,
   VaultMutationPort,
   VaultRenameResult,
   VaultTextSnapshot,
@@ -55,14 +66,27 @@ export type KernelFaultPoint =
   | "write:after-install"
   | "write:after-commit"
   | "rename:after-intent"
+  | "rename:after-stage"
+  | "rename:before-install"
+  | "rename:after-install"
   | "rename:after-link"
+  | "rename:before-publish"
+  | "rename:after-publish"
+  | "rename:after-source-check"
+  | "rename:after-source-claim"
+  | "rename:before-source-remove"
   | "rename:after-commit"
+  | "rename:before-recovery-restore"
+  | "rename:after-recovery-restore-copy"
   | "multi-write:after-intent"
   | "multi-write:after-entry"
   | "multi-write:after-commit"
   | "move-with-writes:after-intent"
+  | "move-with-writes:after-corpus-preflight"
   | "move-with-writes:after-entry"
   | "move-with-writes:before-rename"
+  | "move-with-writes:before-publish"
+  | "move-with-writes:after-publish"
   | "move-with-writes:after-rename"
   | "move-with-writes:after-rollback-entry"
   | "move-with-writes:after-commit";
@@ -90,6 +114,10 @@ export type BinaryReadResult =
   | { status: "ready"; snapshot: BinaryFileSnapshot }
   | { status: "too-large"; path: string; size: number };
 
+interface ExpectedRemovalOptions extends ContainedRemovalHooks {
+  strictContainment?: boolean;
+}
+
 export type WriteResult = VaultWriteResult;
 export type CreateResult =
   | { status: "committed"; path: string; revision: string; transactionId: string }
@@ -108,12 +136,18 @@ export type {
   MultiWriteEntryResult,
   MultiWriteRequest,
   MultiWriteResult,
+  VaultMarkdownCorpus,
 } from "./ports";
 
 export interface RecoveryAction {
   transactionId: string;
   kind: "write" | "rename" | "multi-write" | "move-with-writes";
-  outcome: "committed" | "conflict-copy" | "rolled-back" | "manual-conflict";
+  outcome:
+    | "committed"
+    | "published-source-retained"
+    | "conflict-copy"
+    | "rolled-back"
+    | "manual-conflict";
   path: string;
   paths?: string[];
   conflictPath?: string;
@@ -170,18 +204,62 @@ function assertExpectedRevision(revision: string | null): void {
   }
 }
 
+function markdownCorpusGeneration(
+  paths: readonly string[],
+  revisions: readonly { path: string; revision: string }[],
+): string {
+  const sortedPaths = [...paths].sort((left, right) => left.localeCompare(right));
+  const sortedRevisions = [...revisions]
+    .map((entry) => ({ path: entry.path, revision: entry.revision }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return createHash("sha256")
+    .update(JSON.stringify({ paths: sortedPaths, revisions: sortedRevisions }), "utf8")
+    .digest("hex");
+}
+
+function changedMarkdownCorpusPaths(
+  expected: VaultMarkdownCorpus,
+  actual: VaultMarkdownCorpus,
+): string[] {
+  const changed = new Set<string>();
+  const expectedPaths = new Set(expected.paths);
+  const actualPaths = new Set(actual.paths);
+  for (const entry of expectedPaths) if (!actualPaths.has(entry)) changed.add(entry);
+  for (const entry of actualPaths) if (!expectedPaths.has(entry)) changed.add(entry);
+  const expectedRevisions = new Map(
+    expected.revisions.map((entry) => [entry.path, entry.revision]),
+  );
+  for (const entry of actual.revisions) {
+    if (expectedRevisions.get(entry.path) !== entry.revision) changed.add(entry.path);
+  }
+  return [...changed].sort((left, right) => left.localeCompare(right));
+}
+
+function markdownCorpusConflictPaths(
+  expected: VaultMarkdownCorpus,
+  actual: VaultMarkdownCorpus,
+): string[] {
+  const changed = changedMarkdownCorpusPaths(expected, actual);
+  if (changed.length > 0 || expected.generation !== actual.generation) {
+    return changed.length > 0 ? changed : [...expected.paths];
+  }
+  return [];
+}
+
 export class VaultKernel implements VaultMutationPort {
   readonly paths: VaultPathPolicy;
   readonly stateRoot: string;
   readonly vaultId: string;
   readonly readOnly: boolean;
   readonly startupRecoveryActions: RecoveryAction[] = [];
+  readonly attachmentPublishCapability: AttachmentPublishCapability;
 
   private readonly faultInjector: KernelFaultInjector | undefined;
   private readonly clock: () => Date;
   private readonly journalDirectory: string;
   private readonly historyDirectory: string;
   private readonly recoveryDirectory: string;
+  private readonly rollbackClaimsDirectory: string;
   private readonly transactionDirectory: string;
   private mutationTail: Promise<void> = Promise.resolve();
 
@@ -189,17 +267,20 @@ export class VaultKernel implements VaultMutationPort {
     paths: VaultPathPolicy,
     stateRoot: string,
     vaultId: string,
+    attachmentPublishCapability: AttachmentPublishCapability,
     options: VaultKernelOptions,
   ) {
     this.paths = paths;
     this.stateRoot = stateRoot;
     this.vaultId = vaultId;
+    this.attachmentPublishCapability = attachmentPublishCapability;
     this.readOnly = options.readOnly ?? false;
     this.faultInjector = options.faultInjector;
     this.clock = options.clock ?? (() => new Date());
     this.journalDirectory = path.join(stateRoot, "journal");
     this.historyDirectory = path.join(stateRoot, "history");
     this.recoveryDirectory = path.join(stateRoot, "recovery");
+    this.rollbackClaimsDirectory = path.join(this.recoveryDirectory, "rollback-claims");
     this.transactionDirectory = path.join(stateRoot, "transactions");
   }
 
@@ -218,7 +299,15 @@ export class VaultKernel implements VaultMutationPort {
       process.platform === "win32" ? paths.rootPath.toLowerCase() : paths.rootPath;
     const vaultId = createHash("sha256").update(identityPath).digest("hex");
     const stateRoot = path.join(canonicalStateRoot, "vaults", vaultId);
-    const kernel = new VaultKernel(paths, stateRoot, vaultId, options);
+    const attachmentPublishCapability = options.readOnly
+      ? {
+          status: "unsupported" as const,
+          code: "unsupported-platform" as const,
+          contract: FILE_PUBLISH_CAPABILITY,
+          detail: "read-only vault",
+        }
+      : await probeContainedPublishCapability(paths.rootPath);
+    const kernel = new VaultKernel(paths, stateRoot, vaultId, attachmentPublishCapability, options);
     if (kernel.readOnly) {
       return kernel;
     }
@@ -237,6 +326,75 @@ export class VaultKernel implements VaultMutationPort {
 
   async listMarkdownPaths(relativeDirectory = ""): Promise<string[]> {
     return this.paths.listMarkdownPaths(relativeDirectory);
+  }
+
+  async readMarkdownCorpus(): Promise<VaultMarkdownCorpus> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const paths = (await this.listMarkdownPaths()).sort((left, right) =>
+        left.localeCompare(right),
+      );
+      const revisions: Array<{ path: string; revision: string }> = [];
+      let retry = false;
+      for (const relativePath of paths) {
+        try {
+          const snapshot = await this.readText(relativePath);
+          revisions.push({ path: relativePath, revision: snapshot.revision });
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith("File does not exist:")) {
+            retry = true;
+            break;
+          }
+          throw error;
+        }
+      }
+      if (retry) continue;
+      const finalPaths = (await this.listMarkdownPaths()).sort((left, right) =>
+        left.localeCompare(right),
+      );
+      if (
+        finalPaths.length !== paths.length ||
+        finalPaths.some((relativePath, index) => relativePath !== paths[index])
+      ) {
+        continue;
+      }
+      const finalRevisions: Array<{ path: string; revision: string }> = [];
+      for (const relativePath of finalPaths) {
+        try {
+          const snapshot = await this.readText(relativePath);
+          finalRevisions.push({ path: relativePath, revision: snapshot.revision });
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith("File does not exist:")) {
+            retry = true;
+            break;
+          }
+          throw error;
+        }
+      }
+      if (
+        retry ||
+        finalRevisions.some((entry, index) => entry.revision !== revisions[index]?.revision)
+      ) {
+        continue;
+      }
+      return {
+        paths,
+        revisions,
+        generation: markdownCorpusGeneration(paths, revisions),
+      };
+    }
+    throw new Error("Markdown corpus kept changing while it was read.");
+  }
+
+  private async verifyMarkdownCorpus(
+    expected: VaultMarkdownCorpus,
+  ): Promise<{ ok: true } | { ok: false; conflictPaths: string[] }> {
+    try {
+      const actual = await this.readMarkdownCorpus();
+      const conflictPaths = markdownCorpusConflictPaths(expected, actual);
+      return conflictPaths.length === 0 ? { ok: true } : { ok: false, conflictPaths };
+    } catch {
+      return { ok: false, conflictPaths: [...expected.paths] };
+    }
   }
 
   async listVisiblePaths(relativeDirectory = ""): Promise<VisibleVaultPaths> {
@@ -385,11 +543,19 @@ export class VaultKernel implements VaultMutationPort {
     sourcePath: string,
     targetPath: string,
     expectedSourceRevision: string,
+    expectedMarkdownCorpus?: VaultMarkdownCorpus,
+    options: { strictContainment?: boolean } = {},
   ): Promise<RenameResult> {
     this.assertWritable();
     assertExpectedRevision(expectedSourceRevision);
     return this.withMutation(() =>
-      this.performRename(sourcePath, targetPath, expectedSourceRevision),
+      this.performRename(
+        sourcePath,
+        targetPath,
+        expectedSourceRevision,
+        expectedMarkdownCorpus,
+        options.strictContainment === true,
+      ),
     );
   }
 
@@ -414,6 +580,8 @@ export class VaultKernel implements VaultMutationPort {
     sourcePath: string,
     targetPath: string,
     expectedSourceRevision: string,
+    expectedMarkdownCorpus?: VaultMarkdownCorpus,
+    strictContainment = false,
   ): Promise<RenameResult> {
     const source = normalizeVaultPath(sourcePath);
     const target = normalizeVaultPath(targetPath);
@@ -421,11 +589,27 @@ export class VaultKernel implements VaultMutationPort {
       return { status: "committed", from: source, to: target, transactionId: "no-op" };
     }
 
+    if (expectedMarkdownCorpus) {
+      const verification = await this.verifyMarkdownCorpus(expectedMarkdownCorpus);
+      if (!verification.ok) {
+        return {
+          status: "conflict",
+          from: source,
+          to: target,
+          reason: "markdown-corpus-changed",
+          conflictPaths: verification.conflictPaths,
+        };
+      }
+    }
+
     const sourceAbsolute = await this.paths.resolveForWrite(source);
     const targetAbsolute = await this.paths.resolveForWrite(target, true);
+    if (strictContainment) {
+      await this.assertAttachmentPublishAvailable(targetAbsolute);
+    }
     const [sourceSnapshot, targetSnapshot] = await Promise.all([
-      readStableFile(sourceAbsolute),
-      readStableFile(targetAbsolute),
+      this.readMutationFile(sourceAbsolute, strictContainment),
+      this.readMutationFile(targetAbsolute, strictContainment),
     ]);
 
     if (!sourceSnapshot || sourceSnapshot.revision !== expectedSourceRevision) {
@@ -435,24 +619,34 @@ export class VaultKernel implements VaultMutationPort {
       return { status: "conflict", from: source, to: target, reason: "target-exists" };
     }
 
+    const id = randomUUID();
+    const blobDirectory = this.getTransactionBlobDirectory(id);
+    await fs.mkdir(blobDirectory);
+    await syncDirectory(this.transactionDirectory);
     const journal: RenameJournal = {
       version: 1,
-      id: randomUUID(),
+      id,
       vaultId: this.vaultId,
       kind: "rename",
       phase: "intent",
       sourcePath: source,
       targetPath: target,
       expectedRevision: expectedSourceRevision,
+      expectedMarkdownCorpus: expectedMarkdownCorpus ?? null,
+      ...(strictContainment ? { strictContainment: true } : {}),
+      ...(strictContainment ? { sourceRetained: true } : {}),
       createdAt: this.clock().toISOString(),
     };
     await this.writeJournal(journal);
     await this.inject("rename:after-intent");
 
+    // Revalidate the no-follow paths after the durable intent. The initial
+    // receipt only protects preparation; a replaced parent or source must
+    // never be followed by a later transaction phase.
     await this.paths.resolveForWrite(source);
     await this.paths.resolveForWrite(target);
-    const finalSource = await readStableFile(sourceAbsolute);
-    const finalTarget = await readStableFile(targetAbsolute);
+    const finalSource = await this.readMutationFile(sourceAbsolute, strictContainment);
+    const finalTarget = await this.readMutationFile(targetAbsolute, strictContainment);
     if (!finalSource || finalSource.revision !== expectedSourceRevision) {
       await this.archiveJournal(journal, "manual-conflict");
       return { status: "conflict", from: source, to: target, reason: "source-revision-changed" };
@@ -462,45 +656,69 @@ export class VaultKernel implements VaultMutationPort {
       return { status: "conflict", from: source, to: target, reason: "target-created" };
     }
 
-    try {
-      await fs.link(sourceAbsolute, targetAbsolute);
-      await syncDirectory(path.dirname(targetAbsolute));
-    } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "EEXIST") {
-        await this.archiveJournal(journal, "manual-conflict");
-        return { status: "conflict", from: source, to: target, reason: "target-created" };
-      }
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        (error.code === "EXDEV" || error.code === "EPERM" || error.code === "EOPNOTSUPP")
-      ) {
+    // Recheck after the journal and final source/destination reads. The
+    // earlier receipt protects preparation; this is the last corpus gate
+    // before durable source bytes are staged.
+    if (expectedMarkdownCorpus) {
+      const verification = await this.verifyMarkdownCorpus(expectedMarkdownCorpus);
+      if (!verification.ok) {
         await this.archiveJournal(journal, "manual-conflict");
         return {
           status: "conflict",
           from: source,
           to: target,
-          reason: "hard-link-rename-unsupported",
+          reason: "markdown-corpus-changed",
+          conflictPaths: verification.conflictPaths,
         };
       }
-      throw error;
     }
 
+    const stagedPath = this.getRenameBlobPath(id);
+    await this.createMutationFile(stagedPath, finalSource.bytes, strictContainment);
+    await this.createMutationFile(this.getRecoveryPath(id), finalSource.bytes, strictContainment);
+    journal.phase = "staged";
+    await this.writeJournal(journal);
+    await this.inject("rename:after-stage");
+
+    // Stage first, then revalidate both names before installing the
+    // independently materialized destination. A destination race is a
+    // conflict, not an overwrite.
+    await this.paths.resolveForWrite(source);
+    await this.paths.resolveForWrite(target);
+    const stagedSource = await this.readMutationFile(sourceAbsolute, strictContainment);
+    const stagedTarget = await this.readMutationFile(targetAbsolute, strictContainment);
+    if (!stagedSource || stagedSource.revision !== expectedSourceRevision) {
+      await this.archiveJournal(journal, "manual-conflict");
+      return {
+        status: "conflict",
+        from: source,
+        to: target,
+        reason: "source-changed-during-rename",
+      };
+    }
+    if (stagedTarget) {
+      await this.archiveJournal(journal, "manual-conflict");
+      return { status: "conflict", from: source, to: target, reason: "target-created" };
+    }
+
+    await this.inject("rename:before-install");
+    if (strictContainment) await this.inject("rename:before-publish");
+    if (!(await this.installPreparedFile(stagedPath, targetAbsolute, strictContainment))) {
+      await this.archiveJournal(journal, "manual-conflict");
+      return { status: "conflict", from: source, to: target, reason: "target-created" };
+    }
+    await this.inject("rename:after-install");
+
     const [linkedSource, linkedTarget] = await Promise.all([
-      readStableFile(sourceAbsolute),
-      readStableFile(targetAbsolute),
+      this.readMutationFile(sourceAbsolute, strictContainment),
+      this.readMutationFile(targetAbsolute, strictContainment),
     ]);
     if (
       !linkedSource ||
       !linkedTarget ||
       linkedSource.revision !== expectedSourceRevision ||
-      linkedTarget.revision !== expectedSourceRevision ||
-      !(await sameFile(sourceAbsolute, targetAbsolute))
+      linkedTarget.revision !== expectedSourceRevision
     ) {
-      if (await sameFile(sourceAbsolute, targetAbsolute)) {
-        await removeIfPresent(targetAbsolute);
-        await syncDirectory(path.dirname(targetAbsolute));
-      }
       await this.archiveJournal(journal, "manual-conflict");
       return {
         status: "conflict",
@@ -513,8 +731,173 @@ export class VaultKernel implements VaultMutationPort {
     journal.phase = "linked";
     await this.writeJournal(journal);
     await this.inject("rename:after-link");
-    await fs.unlink(sourceAbsolute);
-    await syncDirectory(path.dirname(sourceAbsolute));
+
+    if (strictContainment) {
+      // Attachment publication is deliberately not a rename: the source is
+      // user-owned evidence and remains at its original name. Both names are
+      // independently verified before the durable terminal record is written.
+      if (expectedMarkdownCorpus) {
+        const verification = await this.verifyMarkdownCorpus(expectedMarkdownCorpus);
+        if (!verification.ok) {
+          await this.archiveJournal(journal, "manual-conflict");
+          return {
+            status: "conflict",
+            from: source,
+            to: target,
+            reason: "markdown-corpus-changed",
+            conflictPaths: verification.conflictPaths,
+          };
+        }
+      }
+      // Keep the old observable barriers as source-snapshot checks for
+      // callers that already use them. They no longer authorize deletion:
+      // either barrier can only turn publication into a conflict.
+      await this.inject("rename:after-source-check");
+      await this.inject("rename:after-source-claim");
+      // The publication receipt must precede the historical after-publish
+      // barrier. If that barrier crashes, recovery can distinguish our
+      // verified target from an exact-byte external claimant; the final
+      // source/target read below still converts any post-receipt mutation
+      // into a manual conflict.
+      journal.phase = "published";
+      await this.writeJournal(journal);
+      await this.inject("rename:after-publish");
+      const retainedSource = await this.readMutationFile(sourceAbsolute, true);
+      const publishedTarget = await this.readMutationFile(targetAbsolute, true);
+      if (
+        !retainedSource ||
+        retainedSource.revision !== expectedSourceRevision ||
+        !publishedTarget ||
+        publishedTarget.revision !== expectedSourceRevision
+      ) {
+        await this.archiveJournal(journal, "manual-conflict");
+        return {
+          status: "conflict",
+          from: source,
+          to: target,
+          reason: "source-changed-during-publish",
+        };
+      }
+      journal.phase = "committed";
+      await this.writeJournal(journal);
+      await this.inject("rename:after-commit");
+      await this.archiveJournal(journal, "published-source-retained");
+      return {
+        status: "published-source-retained",
+        from: source,
+        to: target,
+        transactionId: journal.id,
+      };
+    }
+
+    // Keep both independent copies until every receipt is clean. If a
+    // concurrent editor changes either name, leave both versions and report a
+    // conflict rather than deleting a winner.
+    if (expectedMarkdownCorpus) {
+      const verification = await this.verifyMarkdownCorpus(expectedMarkdownCorpus);
+      if (!verification.ok) {
+        await this.removeExpectedFile(targetAbsolute, expectedSourceRevision, {
+          strictContainment,
+        });
+        await this.archiveJournal(journal, "manual-conflict");
+        return {
+          status: "conflict",
+          from: source,
+          to: target,
+          reason: "markdown-corpus-changed",
+          conflictPaths: verification.conflictPaths,
+        };
+      }
+    }
+
+    await this.inject("rename:before-source-remove");
+    await this.paths.resolveForWrite(source);
+    await this.paths.resolveForWrite(target);
+    const beforeSourceRemoval = await this.readMutationFile(sourceAbsolute, strictContainment);
+    const beforeSourceRemovalTarget = await this.readMutationFile(
+      targetAbsolute,
+      strictContainment,
+    );
+    if (
+      !beforeSourceRemoval ||
+      beforeSourceRemoval.revision !== expectedSourceRevision ||
+      !beforeSourceRemovalTarget ||
+      beforeSourceRemovalTarget.revision !== expectedSourceRevision
+    ) {
+      await this.archiveJournal(journal, "manual-conflict");
+      return {
+        status: "conflict",
+        from: source,
+        to: target,
+        reason: "source-changed-during-rename",
+      };
+    }
+    if (
+      !(await this.removeExpectedFile(sourceAbsolute, expectedSourceRevision, {
+        strictContainment,
+        afterValidation: async () => {
+          await this.inject("rename:after-source-check");
+        },
+        afterClaim: async () => {
+          await this.inject("rename:after-source-claim");
+        },
+      }))
+    ) {
+      await this.archiveJournal(journal, "manual-conflict");
+      return {
+        status: "conflict",
+        from: source,
+        to: target,
+        reason: "source-changed-during-rename",
+      };
+    }
+    const sourceAfterRemoval = await this.readMutationFile(sourceAbsolute, strictContainment);
+    if (sourceAfterRemoval) {
+      // A concurrent creator won the old name. Keep both names and surface a
+      // manual conflict rather than deleting or repointing that winner.
+      await this.archiveJournal(journal, "manual-conflict");
+      return {
+        status: "conflict",
+        from: source,
+        to: target,
+        reason: "source-created-during-rename",
+      };
+    }
+    const targetAfterRemoval = await this.readMutationFile(targetAbsolute, strictContainment);
+    if (!targetAfterRemoval || targetAfterRemoval.revision !== expectedSourceRevision) {
+      const evidence = await this.readMutationFile(this.getRecoveryPath(id), strictContainment);
+      if (!evidence || evidence.revision !== expectedSourceRevision) {
+        await this.archiveJournal(journal, "manual-conflict");
+        return {
+          status: "conflict",
+          from: source,
+          to: target,
+          reason: "target-changed-during-rename",
+        };
+      }
+      if (
+        !(await this.installPreparedFile(
+          this.getRecoveryPath(id),
+          sourceAbsolute,
+          strictContainment,
+        ))
+      ) {
+        await this.archiveJournal(journal, "manual-conflict");
+        return {
+          status: "conflict",
+          from: source,
+          to: target,
+          reason: "target-changed-during-rename",
+        };
+      }
+      await this.archiveJournal(journal, "manual-conflict");
+      return {
+        status: "conflict",
+        from: source,
+        to: target,
+        reason: "target-changed-during-rename",
+      };
+    }
     journal.phase = "committed";
     await this.writeJournal(journal);
     await this.inject("rename:after-commit");
@@ -608,8 +991,10 @@ export class VaultKernel implements VaultMutationPort {
       fs.mkdir(this.journalDirectory, { recursive: true }),
       fs.mkdir(this.historyDirectory, { recursive: true }),
       fs.mkdir(this.recoveryDirectory, { recursive: true }),
+      fs.mkdir(this.rollbackClaimsDirectory, { recursive: true }),
       fs.mkdir(this.transactionDirectory, { recursive: true }),
     ]);
+    await this.cleanupTerminalRollbackClaims();
     const identityPath = path.join(this.stateRoot, "vault.json");
     const identity = {
       version: 1,
@@ -644,6 +1029,53 @@ export class VaultKernel implements VaultMutationPort {
     }
   }
 
+  /**
+   * Rollback claims are private evidence only while their transaction is
+   * live. A terminal committed history receipt permits bounded cleanup of
+   * that app-owned directory; an absent or malformed receipt leaves it for
+   * recovery instead of guessing ownership from a pathname.
+   */
+  private async cleanupTerminalRollbackClaims(): Promise<void> {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(this.rollbackClaimsDirectory, { withFileTypes: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const historyPath = path.join(this.historyDirectory, `${entry.name}.json`);
+      const journalPath = path.join(this.journalDirectory, `${entry.name}.json`);
+      try {
+        await fs.lstat(journalPath);
+        continue;
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) continue;
+      }
+      let history: unknown;
+      try {
+        history = JSON.parse(await fs.readFile(historyPath, "utf8"));
+      } catch {
+        continue;
+      }
+      if (
+        typeof history !== "object" ||
+        history === null ||
+        Array.isArray(history) ||
+        !("outcome" in history) ||
+        history.outcome !== "committed"
+      ) {
+        continue;
+      }
+      await fs.rm(path.join(this.rollbackClaimsDirectory, entry.name), {
+        recursive: true,
+        force: true,
+      });
+      await syncDirectory(this.rollbackClaimsDirectory).catch(() => undefined);
+    }
+  }
+
   private async performMoveWithWrites(
     request: MoveWithWritesRequest,
   ): Promise<MoveWithWritesResult> {
@@ -651,6 +1083,23 @@ export class VaultKernel implements VaultMutationPort {
     const targetPath = normalizeVaultPath(request.targetPath);
     if (sourcePath === targetPath) {
       throw new Error("A compound move requires different source and destination paths.");
+    }
+
+    // This receipt is checked while the kernel's mutation lane is held and
+    // before any journal/blob is created. A note created after application
+    // preview but immediately before this call therefore conflicts instead of
+    // permitting an attachment-only or partial move.
+    if (request.expectedMarkdownCorpus) {
+      const verification = await this.verifyMarkdownCorpus(request.expectedMarkdownCorpus);
+      if (!verification.ok) {
+        return {
+          status: "conflict",
+          from: sourcePath,
+          to: targetPath,
+          reason: "markdown-corpus-changed",
+          conflictPaths: verification.conflictPaths,
+        };
+      }
     }
 
     const seenPaths = new Set<string>();
@@ -674,11 +1123,53 @@ export class VaultKernel implements VaultMutationPort {
       };
     });
 
+    let expectedMarkdownCorpusAfterWrites: VaultMarkdownCorpus | null = null;
+    if (request.expectedMarkdownCorpus) {
+      const expectedRevisions = new Map(
+        request.expectedMarkdownCorpus.revisions.map((entry) => [entry.path, entry.revision]),
+      );
+      for (const item of prepared) {
+        if (!expectedRevisions.has(item.targetPath)) {
+          return {
+            status: "conflict",
+            from: sourcePath,
+            to: targetPath,
+            reason: "markdown-corpus-changed",
+            conflictPaths: [item.targetPath],
+          };
+        }
+        expectedRevisions.set(item.targetPath, revisionOf(item.nextBytes));
+      }
+      const revisions = request.expectedMarkdownCorpus.revisions.map((entry) => ({
+        path: entry.path,
+        revision: expectedRevisions.get(entry.path) ?? entry.revision,
+      }));
+      expectedMarkdownCorpusAfterWrites = {
+        paths: [...request.expectedMarkdownCorpus.paths],
+        revisions,
+        generation: markdownCorpusGeneration(request.expectedMarkdownCorpus.paths, revisions),
+      };
+    }
+
     const sourceAbsolute = await this.paths.resolveForWrite(sourcePath);
     const targetAbsolute = await this.paths.resolveForWrite(targetPath, true);
+    if (request.strictContainment === true) {
+      await this.assertAttachmentPublishAvailable(targetAbsolute);
+      await assertContainedPublishCapability(
+        this.attachmentPublishCapability,
+        this.rollbackClaimsDirectory,
+      );
+      for (const item of prepared) {
+        const writeAbsolute = await this.paths.resolveForWrite(item.targetPath);
+        await assertContainedPublishCapability(
+          this.attachmentPublishCapability,
+          path.dirname(writeAbsolute),
+        );
+      }
+    }
     const [source, target] = await Promise.all([
-      readStableFile(sourceAbsolute),
-      readStableFile(targetAbsolute),
+      this.readMutationFile(sourceAbsolute, request.strictContainment === true),
+      this.readMutationFile(targetAbsolute, request.strictContainment === true),
     ]);
     if (!source || source.revision !== request.expectedSourceRevision) {
       return {
@@ -702,7 +1193,7 @@ export class VaultKernel implements VaultMutationPort {
     const currentByPath = new Map<string, FileSnapshot>();
     for (const item of prepared) {
       const absolutePath = await this.paths.resolveForWrite(item.targetPath, true);
-      const current = await readStableFile(absolutePath);
+      const current = await this.readMutationFile(absolutePath, request.strictContainment === true);
       if (!current || current.revision !== item.expectedRevision) {
         return {
           status: "conflict",
@@ -733,8 +1224,24 @@ export class VaultKernel implements VaultMutationPort {
         if (!current) {
           throw new Error(`Compound move lost prepared bytes for ${item.targetPath}.`);
         }
-        await durableCreate(this.getTransactionBlobPath(id, index, "before"), current.bytes);
-        await durableCreate(this.getTransactionBlobPath(id, index, "next"), item.nextBytes);
+        await this.createMutationFile(
+          this.getTransactionBlobPath(id, index, "before"),
+          current.bytes,
+          request.strictContainment === true,
+        );
+        await this.createMutationFile(
+          this.getTransactionBlobPath(id, index, "next"),
+          item.nextBytes,
+          request.strictContainment === true,
+        );
+      }
+      if (request.strictContainment) {
+        // Attachment publication has its own exact source evidence. The
+        // private blob is durable before the journal can ask the vault to
+        // create the destination, so a crash never turns a source read into
+        // an unaccounted copy.
+        await this.createMutationFile(this.getRenameBlobPath(id), source.bytes, true);
+        await this.createMutationFile(this.getRecoveryPath(id), source.bytes, true);
       }
     } catch (error) {
       await fs.rm(blobDirectory, { recursive: true, force: true });
@@ -747,7 +1254,7 @@ export class VaultKernel implements VaultMutationPort {
       id,
       vaultId: this.vaultId,
       kind: "move-with-writes",
-      phase: "intent",
+      phase: request.strictContainment ? "publishing" : "intent",
       sourcePath,
       targetPath,
       expectedSourceRevision: request.expectedSourceRevision,
@@ -755,6 +1262,10 @@ export class VaultKernel implements VaultMutationPort {
         ? revisionOf(sourceWrite.nextBytes)
         : request.expectedSourceRevision,
       reason: null,
+      expectedMarkdownCorpusBeforeWrites: request.expectedMarkdownCorpus ?? null,
+      expectedMarkdownCorpus: expectedMarkdownCorpusAfterWrites,
+      ...(request.strictContainment ? { strictContainment: true } : {}),
+      ...(request.strictContainment ? { sourceRetained: true } : {}),
       createdAt: this.clock().toISOString(),
       entries: prepared.map((item) => ({
         targetPath: item.targetPath,
@@ -776,7 +1287,10 @@ export class VaultKernel implements VaultMutationPort {
   ): Promise<MoveWithWritesResult> {
     if (journal.phase === "committed") {
       const result = this.committedMoveWithWritesResult(journal);
-      await this.archiveJournal(journal, "committed");
+      await this.archiveJournal(
+        journal,
+        journal.sourceRetained === true ? "published-source-retained" : "committed",
+      );
       return result;
     }
     if (journal.phase === "rolling-back") {
@@ -789,8 +1303,17 @@ export class VaultKernel implements VaultMutationPort {
       }
     }
 
+    if (journal.sourceRetained === true) {
+      const published = await this.ensurePublishedAttachment(journal);
+      if (!published) {
+        return this.archivePublishedAttachmentConflict(journal, "publish-state-diverged");
+      }
+    }
+
     journal.phase = "applying";
     await this.writeJournal(journal);
+    const allEntriesPending = journal.entries.every((entry) => entry.status === "pending");
+    let checkedCorpusBeforeFirstWrite = false;
     for (let index = 0; index < journal.entries.length; index += 1) {
       const entry = journal.entries[index];
       const entryBlobs = blobs.get(index);
@@ -812,7 +1335,10 @@ export class VaultKernel implements VaultMutationPort {
         );
       }
 
-      const current = await this.readMoveWithWritesTarget(entry.targetPath);
+      const current = await this.readMoveWithWritesTarget(
+        entry.targetPath,
+        journal.strictContainment === true,
+      );
       if (entry.status === "applied") {
         if (current?.revision !== entry.nextRevision) {
           await this.recordMoveWithWritesConflict(
@@ -836,10 +1362,32 @@ export class VaultKernel implements VaultMutationPort {
         entry.status = "applied";
         entry.currentRevision = entry.nextRevision;
       } else {
+        // The entry receipt may have aged while blobs and the intent journal
+        // were staged. For a fresh transaction, take the authoritative corpus
+        // receipt at the first child-write boundary, before any canonical note
+        // can be changed. Once an entry is already applied, the after-write
+        // receipt below is the relevant recovery boundary.
+        if (allEntriesPending && !checkedCorpusBeforeFirstWrite) {
+          checkedCorpusBeforeFirstWrite = true;
+          if (journal.expectedMarkdownCorpusBeforeWrites) {
+            const verification = await this.verifyMarkdownCorpus(
+              journal.expectedMarkdownCorpusBeforeWrites,
+            );
+            if (!verification.ok) {
+              return this.beginMoveWithWritesRollback(
+                journal,
+                blobs,
+                "markdown-corpus-changed-before-writes",
+              );
+            }
+            await this.inject("move-with-writes:after-corpus-preflight");
+          }
+        }
         const result = await this.performWrite(
           entry.targetPath,
           entryBlobs.next,
           entry.beforeRevision,
+          journal.strictContainment === true,
         );
         if (result.status === "committed") {
           entry.status = "applied";
@@ -868,7 +1416,10 @@ export class VaultKernel implements VaultMutationPort {
       if (!entry || !entryBlobs) {
         throw new Error(`Missing compound move verification entry ${index}.`);
       }
-      const current = await this.readMoveWithWritesTarget(entry.targetPath);
+      const current = await this.readMoveWithWritesTarget(
+        entry.targetPath,
+        journal.strictContainment === true,
+      );
       if (current?.revision === entry.nextRevision) {
         continue;
       }
@@ -887,6 +1438,42 @@ export class VaultKernel implements VaultMutationPort {
       );
     }
 
+    if (journal.expectedMarkdownCorpus) {
+      const verification = await this.verifyMarkdownCorpus(journal.expectedMarkdownCorpus);
+      if (!verification.ok) {
+        return this.beginMoveWithWritesRollback(journal, blobs, "markdown-corpus-changed");
+      }
+    }
+
+    if (journal.sourceRetained === true) {
+      // Retain the historical boundary as the final pre-commit claimant
+      // control. It must run before the last source/target receipt, otherwise
+      // a target claimant injected at this point could be mistaken for a
+      // successful publication.
+      await this.inject("move-with-writes:before-rename");
+      const sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
+      const targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+      const [source, target] = await Promise.all([
+        this.readMutationFile(sourceAbsolute, true),
+        this.readMutationFile(targetAbsolute, true),
+      ]);
+      if (
+        !source ||
+        source.revision !== journal.expectedSourceRevision ||
+        !target ||
+        target.revision !== journal.expectedSourceRevision
+      ) {
+        return this.beginMoveWithWritesRollback(journal, blobs, "source-changed-during-publish");
+      }
+      await this.inject("rename:after-commit");
+      // Keep the historical post-rename interruption point meaningful for
+      // callers and crash tests. Publication already happened; a failure here
+      // leaves the journal and both attachment names for recovery, while the
+      // Markdown writes remain receipt-bound.
+      await this.inject("move-with-writes:after-rename");
+      return this.commitMoveWithWrites(journal);
+    }
+
     journal.phase = "renaming";
     journal.reason = null;
     await this.writeJournal(journal);
@@ -895,6 +1482,8 @@ export class VaultKernel implements VaultMutationPort {
       journal.sourcePath,
       journal.targetPath,
       journal.renameRevision,
+      journal.expectedMarkdownCorpus ?? undefined,
+      journal.strictContainment === true,
     );
     if (rename.status === "conflict") {
       return this.beginMoveWithWritesRollback(journal, blobs, `rename-${rename.reason}`);
@@ -903,17 +1492,148 @@ export class VaultKernel implements VaultMutationPort {
     return this.commitMoveWithWrites(journal);
   }
 
+  /**
+   * Publish the exact attachment snapshot before any Markdown rewrite. The
+   * source name is intentionally never retired. A target winner, changed
+   * source, missing evidence blob, or containment error is a manual conflict;
+   * recovery leaves every externally visible byte in place.
+   */
+  private async ensurePublishedAttachment(journal: MoveWithWritesJournal): Promise<boolean> {
+    let sourceAbsolute: string;
+    let targetAbsolute: string;
+    try {
+      sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
+      targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+      await this.assertAttachmentPublishAvailable(targetAbsolute);
+    } catch {
+      return false;
+    }
+
+    const source = await this.readMutationFile(sourceAbsolute, true);
+    if (!source || source.revision !== journal.expectedSourceRevision) return false;
+    let target = await this.readMutationFile(targetAbsolute, true);
+    if (target && target.revision !== journal.expectedSourceRevision) return false;
+    // Before the durable publication receipt, even an exact-byte target may
+    // be an external claimant. Do not treat it as our publication or rewrite
+    // Markdown on that ambiguous state.
+    if (target && journal.phase === "publishing") return false;
+
+    if (!target) {
+      const stagedPath = this.getRenameBlobPath(journal.id);
+      const evidencePath = this.getRecoveryPath(journal.id);
+      const staged = await this.readMutationFile(stagedPath, true);
+      const evidence = staged ? null : await this.readMutationFile(evidencePath, true);
+      const candidate = staged ?? evidence;
+      if (!candidate || candidate.revision !== journal.expectedSourceRevision) return false;
+      await this.inject("move-with-writes:before-publish");
+      let installed: boolean;
+      try {
+        installed = await this.installPreparedFile(
+          staged ? stagedPath : evidencePath,
+          targetAbsolute,
+          true,
+        );
+      } catch {
+        return false;
+      }
+      if (!installed) {
+        // A false install includes a post-publication cleanup or verification
+        // failure. Even if the target now happens to contain the expected
+        // bytes, this invocation did not obtain a clean publication receipt;
+        // let recovery/archive surface an explicit conflict instead of
+        // rewriting Markdown on an ambiguous stage owner.
+        return false;
+      }
+      target = await this.readMutationFile(targetAbsolute, true);
+      const retainedBeforeReceipt = await this.readMutationFile(sourceAbsolute, true);
+      if (
+        !target ||
+        target.revision !== journal.expectedSourceRevision ||
+        !retainedBeforeReceipt ||
+        retainedBeforeReceipt.revision !== journal.expectedSourceRevision
+      ) {
+        return false;
+      }
+      journal.phase = "published";
+      await this.writeJournal(journal);
+      await this.inject("move-with-writes:after-publish");
+      // Keep the historical post-link barrier at the new publication seam.
+      // It is still useful for separate-process tests that create a Markdown
+      // claimant or crash immediately after the target becomes durable.
+      await this.inject("rename:after-link");
+    }
+
+    target = await this.readMutationFile(targetAbsolute, true);
+    const retained = await this.readMutationFile(sourceAbsolute, true);
+    if (
+      !target ||
+      target.revision !== journal.expectedSourceRevision ||
+      !retained ||
+      retained.revision !== journal.expectedSourceRevision
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  private async archivePublishedAttachmentConflict(
+    journal: MoveWithWritesJournal,
+    reason: string,
+  ): Promise<MoveWithWritesResult> {
+    return this.archiveMoveWithWritesManualConflict(journal, reason, [
+      journal.sourcePath,
+      journal.targetPath,
+    ]);
+  }
+
   private async resumeMoveWithWritesRename(
     journal: MoveWithWritesJournal,
     blobs: Map<number, MoveWithWritesBlobs>,
   ): Promise<MoveWithWritesResult | null> {
-    const sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
-    const targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+    let sourceAbsolute: string;
+    let targetAbsolute: string;
+    try {
+      sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
+      targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+    } catch {
+      return this.archiveMoveWithWritesManualConflict(journal, "rename-path-replaced", [
+        journal.sourcePath,
+        journal.targetPath,
+      ]);
+    }
     const [source, target] = await Promise.all([
-      readStableFile(sourceAbsolute),
-      readStableFile(targetAbsolute),
+      this.readMutationFile(sourceAbsolute, journal.strictContainment === true),
+      this.readMutationFile(targetAbsolute, journal.strictContainment === true),
     ]);
+    if (source && source.revision !== journal.renameRevision) {
+      // The source path is owned by a different winner. Never roll back
+      // Markdown to this path, even when the destination still has the old
+      // bytes: that would repoint links at the winner.
+      return this.archiveMoveWithWritesManualConflict(journal, "rename-state-diverged", [
+        journal.sourcePath,
+        ...(target ? [journal.targetPath] : []),
+      ]);
+    }
     if (!source && target?.revision === journal.renameRevision) {
+      if (journal.expectedMarkdownCorpus) {
+        const verification = await this.verifyMarkdownCorpus(journal.expectedMarkdownCorpus);
+        if (!verification.ok) {
+          const restored = await this.restoreRenameSource(
+            sourceAbsolute,
+            targetAbsolute,
+            journal.renameRevision,
+            journal.id,
+            journal.strictContainment === true,
+          );
+          if (!restored) {
+            return this.archiveMoveWithWritesManualConflict(journal, "rename-state-diverged", [
+              journal.sourcePath,
+              journal.targetPath,
+            ]);
+          }
+          return this.beginMoveWithWritesRollback(journal, blobs, "markdown-corpus-changed");
+        }
+      }
       return this.commitMoveWithWrites(journal);
     }
     if (!source) {
@@ -937,6 +1657,132 @@ export class VaultKernel implements VaultMutationPort {
     return null;
   }
 
+  private async removeExpectedFile(
+    absolutePath: string,
+    expectedRevision: string,
+    options: ExpectedRemovalOptions = {},
+  ): Promise<boolean> {
+    const removalOptions: ExpectedRemovalOptions = {
+      ...options,
+      claimAuthority: options.claimAuthority ?? (options.strictContainment ? "vault" : "private"),
+      cleanupClaim: options.cleanupClaim ?? !options.strictContainment,
+    };
+    if (options.strictContainment) {
+      return removeExpectedContainedFile(absolutePath, expectedRevision, removalOptions);
+    }
+    return removeExpectedFilePortably(absolutePath, expectedRevision, removalOptions);
+  }
+
+  private async retainStrictWriteClaim(
+    journal: WriteJournal,
+    absolutePath: string,
+    expectedRevision: string,
+  ): Promise<boolean> {
+    return this.removeExpectedFile(absolutePath, expectedRevision, {
+      strictContainment: true,
+      retentionDirectory: path.join(this.rollbackClaimsDirectory, journal.id),
+      claimAuthority: "private",
+      cleanupClaim: false,
+    });
+  }
+
+  private async installPreparedFile(
+    stagedPath: string,
+    targetPath: string,
+    strictContainment = false,
+  ): Promise<boolean> {
+    return strictContainment
+      ? installContainedStagedFile(stagedPath, targetPath)
+      : installStagedFile(stagedPath, targetPath);
+  }
+
+  private async readMutationFile(
+    filePath: string,
+    strictContainment = false,
+  ): Promise<FileSnapshot | null> {
+    return strictContainment ? readContainedFile(filePath) : readStableFile(filePath);
+  }
+
+  private async createMutationFile(
+    filePath: string,
+    bytes: Uint8Array,
+    strictContainment = false,
+  ): Promise<void> {
+    if (strictContainment) {
+      await durableCreateContainedFile(filePath, bytes);
+    } else {
+      await durableCreate(filePath, bytes);
+    }
+  }
+
+  private async mutationFileExists(filePath: string, strictContainment = false): Promise<boolean> {
+    return strictContainment
+      ? (await this.readMutationFile(filePath, true)) !== null
+      : pathExists(filePath);
+  }
+
+  private async restoreRenameSource(
+    sourceAbsolute: string,
+    targetAbsolute: string,
+    expectedRevision: string,
+    transactionId: string,
+    strictContainment = false,
+  ): Promise<boolean> {
+    try {
+      await this.inject("rename:before-recovery-restore");
+      const [sourceBefore, targetBefore] = await Promise.all([
+        this.readMutationFile(sourceAbsolute, strictContainment),
+        this.readMutationFile(targetAbsolute, strictContainment),
+      ]);
+      if (sourceBefore || !targetBefore || targetBefore.revision !== expectedRevision) {
+        return false;
+      }
+
+      const stagedPath = this.getRenameRestoreBlobPath(transactionId);
+      const stagedExisting = await this.readMutationFile(stagedPath, strictContainment);
+      if (stagedExisting && stagedExisting.revision !== expectedRevision) {
+        return false;
+      }
+      if (!stagedExisting) {
+        await this.createMutationFile(stagedPath, targetBefore.bytes, strictContainment);
+      }
+
+      await this.paths.resolveForWrite(
+        path.relative(this.paths.rootPath, sourceAbsolute).split(path.sep).join("/"),
+      );
+      if ((await this.installPreparedFile(stagedPath, sourceAbsolute, strictContainment)) === false)
+        return false;
+      const restoredSource = await this.readMutationFile(sourceAbsolute, strictContainment);
+      if (!restoredSource || restoredSource.revision !== expectedRevision) return false;
+
+      await this.inject("rename:after-recovery-restore-copy");
+      const targetAfterCopy = await this.readMutationFile(targetAbsolute, strictContainment);
+      if (!targetAfterCopy || targetAfterCopy.revision !== expectedRevision) return false;
+      return await this.removeExpectedFile(targetAbsolute, expectedRevision, {
+        strictContainment,
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  private async archiveMoveWithWritesManualConflict(
+    journal: MoveWithWritesJournal,
+    reason: string,
+    conflictPaths: string[],
+  ): Promise<MoveWithWritesResult> {
+    journal.reason = reason;
+    await this.writeJournal(journal);
+    await this.archiveJournal(journal, "manual-conflict");
+    return {
+      status: "conflict",
+      from: journal.sourcePath,
+      to: journal.targetPath,
+      reason,
+      conflictPaths: [...new Set(conflictPaths)],
+    };
+  }
+
   private async commitMoveWithWrites(
     journal: MoveWithWritesJournal,
   ): Promise<MoveWithWritesResult> {
@@ -945,13 +1791,16 @@ export class VaultKernel implements VaultMutationPort {
     await this.writeJournal(journal);
     await this.inject("move-with-writes:after-commit");
     const result = this.committedMoveWithWritesResult(journal);
-    await this.archiveJournal(journal, "committed");
+    await this.archiveJournal(
+      journal,
+      journal.sourceRetained === true ? "published-source-retained" : "committed",
+    );
     return result;
   }
 
   private committedMoveWithWritesResult(journal: MoveWithWritesJournal): MoveWithWritesResult {
     return {
-      status: "committed",
+      status: journal.sourceRetained === true ? "published-source-retained" : "committed",
       from: journal.sourcePath,
       to: journal.targetPath,
       transactionId: journal.id,
@@ -983,7 +1832,10 @@ export class VaultKernel implements VaultMutationPort {
       if (!entry || !entryBlobs || entry.status === "rolled-back" || entry.status === "conflict") {
         continue;
       }
-      const current = await this.readMoveWithWritesTarget(entry.targetPath);
+      const current = await this.readMoveWithWritesTarget(
+        entry.targetPath,
+        journal.strictContainment === true,
+      );
       if (current?.revision === entry.beforeRevision) {
         entry.status = "rolled-back";
         entry.currentRevision = entry.beforeRevision;
@@ -992,6 +1844,7 @@ export class VaultKernel implements VaultMutationPort {
           entry.targetPath,
           entryBlobs.before,
           entry.nextRevision,
+          journal.strictContainment === true,
         );
         if (result.status === "committed") {
           entry.status = "rolled-back";
@@ -1012,11 +1865,12 @@ export class VaultKernel implements VaultMutationPort {
       .map((entry) => entry.conflictPath)
       .filter((entry): entry is string => entry !== null);
     const reason = journal.reason ?? "compound-move-conflict";
-    const outcome = reason.startsWith("rollback-conflict:")
-      ? "manual-conflict"
-      : conflictPaths.length > 0
-        ? "conflict-copy"
-        : "rolled-back";
+    const outcome =
+      reason.startsWith("rollback-conflict:") || reason === "rename-state-diverged"
+        ? "manual-conflict"
+        : conflictPaths.length > 0
+          ? "conflict-copy"
+          : "rolled-back";
     await this.archiveJournal(journal, outcome);
     return {
       status: "conflict",
@@ -1034,7 +1888,12 @@ export class VaultKernel implements VaultMutationPort {
     expectedRevision: string,
     reason: string,
   ): Promise<void> {
-    const result = await this.performWrite(entry.targetPath, bytes, expectedRevision);
+    const result = await this.performWrite(
+      entry.targetPath,
+      bytes,
+      expectedRevision,
+      journal.strictContainment === true,
+    );
     if (result.status === "committed") {
       entry.status = "applied";
       entry.currentRevision = result.revision;
@@ -1047,9 +1906,12 @@ export class VaultKernel implements VaultMutationPort {
     journal.reason = reason;
   }
 
-  private async readMoveWithWritesTarget(targetPath: string): Promise<FileSnapshot | null> {
+  private async readMoveWithWritesTarget(
+    targetPath: string,
+    strictContainment = false,
+  ): Promise<FileSnapshot | null> {
     const absolutePath = await this.paths.resolveForWrite(targetPath, true);
-    return readStableFile(absolutePath);
+    return this.readMutationFile(absolutePath, strictContainment);
   }
 
   private async performMultiWrite(
@@ -1175,6 +2037,7 @@ export class VaultKernel implements VaultMutationPort {
     journal: MoveWithWritesJournal,
   ): Promise<Map<number, MoveWithWritesBlobs>> {
     const blobs = new Map<number, MoveWithWritesBlobs>();
+    const strictContainment = journal.strictContainment === true;
     for (let index = 0; index < journal.entries.length; index += 1) {
       const entry = journal.entries[index];
       if (!entry) {
@@ -1182,18 +2045,23 @@ export class VaultKernel implements VaultMutationPort {
       }
       const beforePath = this.getTransactionBlobPath(journal.id, index, "before");
       const nextPath = this.getTransactionBlobPath(journal.id, index, "next");
-      const [beforeStat, nextStat] = await Promise.all([fs.lstat(beforePath), fs.lstat(nextPath)]);
-      if (
-        !beforeStat.isFile() ||
-        beforeStat.isSymbolicLink() ||
-        !nextStat.isFile() ||
-        nextStat.isSymbolicLink()
-      ) {
-        throw new Error(`Compound move blobs are not regular files: ${index}`);
+      if (!strictContainment) {
+        const [beforeStat, nextStat] = await Promise.all([
+          fs.lstat(beforePath),
+          fs.lstat(nextPath),
+        ]);
+        if (
+          !beforeStat.isFile() ||
+          beforeStat.isSymbolicLink() ||
+          !nextStat.isFile() ||
+          nextStat.isSymbolicLink()
+        ) {
+          throw new Error(`Compound move blobs are not regular files: ${index}`);
+        }
       }
       const [before, next] = await Promise.all([
-        readStableFile(beforePath),
-        readStableFile(nextPath),
+        this.readMutationFile(beforePath, strictContainment),
+        this.readMutationFile(nextPath, strictContainment),
       ]);
       if (!before || before.revision !== entry.beforeRevision) {
         throw new Error(`Compound move before blob failed its revision check: ${index}`);
@@ -1240,15 +2108,24 @@ export class VaultKernel implements VaultMutationPort {
     return path.join(this.getTransactionBlobDirectory(transactionId), `${index}.${version}`);
   }
 
+  private getRenameBlobPath(transactionId: string): string {
+    return path.join(this.getTransactionBlobDirectory(transactionId), "rename-source");
+  }
+
+  private getRenameRestoreBlobPath(transactionId: string): string {
+    return path.join(this.getTransactionBlobDirectory(transactionId), "rename-restore");
+  }
+
   private async performWrite(
     targetPath: string,
     bytes: Buffer,
     expectedRevision: string | null,
+    strictContainment = false,
   ): Promise<InternalWriteResult> {
     const targetAbsolute = await this.paths.resolveForWrite(targetPath, true);
-    const initial = await readStableFile(targetAbsolute);
+    const initial = await this.readMutationFile(targetAbsolute, strictContainment);
     if (!revisionsMatch(initial, expectedRevision)) {
-      const conflictPath = await this.createConflictCopy(targetPath, bytes);
+      const conflictPath = await this.createConflictCopy(targetPath, bytes, strictContainment);
       return {
         status: "conflict",
         currentRevision: initial?.revision ?? null,
@@ -1274,6 +2151,7 @@ export class VaultKernel implements VaultMutationPort {
       expectedRevision,
       beforeRevision: initial?.revision ?? null,
       nextRevision: revisionOf(bytes),
+      ...(strictContainment ? { strictContainment: true } : {}),
       createdAt: this.clock().toISOString(),
     };
     const temporaryAbsolute = await this.paths.resolveForWrite(temporaryPath);
@@ -1281,13 +2159,17 @@ export class VaultKernel implements VaultMutationPort {
 
     await this.writeJournal(journal);
     await this.inject("write:after-intent");
-    await durableCreate(temporaryAbsolute, bytes);
+    if (strictContainment) {
+      await durableCreateContainedFile(temporaryAbsolute, bytes);
+    } else {
+      await durableCreate(temporaryAbsolute, bytes);
+    }
     journal.phase = "staged";
     await this.writeJournal(journal);
     await this.inject("write:after-stage");
 
     if (initial) {
-      await durableCreate(this.getRecoveryPath(id), initial.bytes);
+      await this.createMutationFile(this.getRecoveryPath(id), initial.bytes, strictContainment);
     }
     journal.phase = "backed-up";
     await this.writeJournal(journal);
@@ -1295,7 +2177,7 @@ export class VaultKernel implements VaultMutationPort {
     await this.inject("write:before-final-check");
 
     await this.paths.resolveForWrite(targetPath);
-    const finalSnapshot = await readStableFile(targetAbsolute);
+    const finalSnapshot = await this.readMutationFile(targetAbsolute, strictContainment);
     if (!revisionsMatch(finalSnapshot, expectedRevision)) {
       const conflictPath = await this.promoteTemporaryToConflict(journal);
       await this.archiveJournal(journal, "conflict-copy");
@@ -1312,25 +2194,36 @@ export class VaultKernel implements VaultMutationPort {
     await this.inject("write:after-prepare");
 
     if (finalSnapshot) {
-      const movedAside = await installStagedFile(targetAbsolute, rollbackAbsolute);
+      const movedAside = await this.moveExistingTargetAside(
+        targetAbsolute,
+        rollbackAbsolute,
+        strictContainment,
+        finalSnapshot?.revision,
+        strictContainment ? path.join(this.rollbackClaimsDirectory, id) : undefined,
+      );
       if (!movedAside) {
         await this.preserveRollback(journal, rollbackAbsolute);
         const conflictPath = await this.promoteTemporaryToConflict(journal);
         await this.archiveJournal(journal, "conflict-copy");
         return {
           status: "conflict",
-          currentRevision: (await readStableFile(targetAbsolute))?.revision ?? null,
+          currentRevision:
+            (await this.readMutationFile(targetAbsolute, strictContainment))?.revision ?? null,
           conflictPath,
           transactionId: id,
         };
       }
-      const rollbackSnapshot = await readStableFile(rollbackAbsolute);
+      const rollbackSnapshot = await this.readMutationFile(rollbackAbsolute, strictContainment);
       if (!rollbackSnapshot || rollbackSnapshot.revision !== expectedRevision) {
         if (rollbackSnapshot) {
           await atomicWriteFile(this.getRecoveryPath(id), rollbackSnapshot.bytes);
         }
-        if (!(await pathExists(targetAbsolute))) {
-          const restored = await installStagedFile(rollbackAbsolute, targetAbsolute);
+        if (!(await this.mutationFileExists(targetAbsolute, strictContainment))) {
+          const restored = await this.installPreparedFile(
+            rollbackAbsolute,
+            targetAbsolute,
+            strictContainment,
+          );
           if (!restored) {
             await this.preserveRollback(journal, rollbackAbsolute);
           }
@@ -1349,13 +2242,17 @@ export class VaultKernel implements VaultMutationPort {
       await atomicWriteFile(this.getRecoveryPath(id), rollbackSnapshot.bytes);
       await this.inject("write:after-move-aside");
 
-      const latestRollback = await readStableFile(rollbackAbsolute);
+      const latestRollback = await this.readMutationFile(rollbackAbsolute, strictContainment);
       if (!latestRollback || latestRollback.revision !== expectedRevision) {
         if (latestRollback) {
           await atomicWriteFile(this.getRecoveryPath(id), latestRollback.bytes);
         }
-        if (!(await pathExists(targetAbsolute))) {
-          const restored = await installStagedFile(rollbackAbsolute, targetAbsolute);
+        if (!(await this.mutationFileExists(targetAbsolute, strictContainment))) {
+          const restored = await this.installPreparedFile(
+            rollbackAbsolute,
+            targetAbsolute,
+            strictContainment,
+          );
           if (!restored) {
             await this.preserveRollback(journal, rollbackAbsolute);
           }
@@ -1375,22 +2272,30 @@ export class VaultKernel implements VaultMutationPort {
 
     let installed: boolean;
     try {
-      installed = await installStagedFile(temporaryAbsolute, targetAbsolute);
+      installed = await this.installPreparedFile(
+        temporaryAbsolute,
+        targetAbsolute,
+        strictContainment,
+      );
     } catch (error) {
-      if ((await pathExists(rollbackAbsolute)) && !(await pathExists(targetAbsolute))) {
-        await installStagedFile(rollbackAbsolute, targetAbsolute);
+      if (
+        (await this.mutationFileExists(rollbackAbsolute, strictContainment)) &&
+        !(await this.mutationFileExists(targetAbsolute, strictContainment))
+      ) {
+        await this.installPreparedFile(rollbackAbsolute, targetAbsolute, strictContainment);
       }
       throw error;
     }
     if (!installed) {
-      if (await pathExists(rollbackAbsolute)) {
+      if (await this.mutationFileExists(rollbackAbsolute, strictContainment)) {
         await this.preserveRollback(journal, rollbackAbsolute);
       }
       const conflictPath = await this.promoteTemporaryToConflict(journal);
       await this.archiveJournal(journal, "conflict-copy");
       return {
         status: "conflict",
-        currentRevision: (await readStableFile(targetAbsolute))?.revision ?? null,
+        currentRevision:
+          (await this.readMutationFile(targetAbsolute, strictContainment))?.revision ?? null,
         conflictPath,
         transactionId: id,
       };
@@ -1400,6 +2305,18 @@ export class VaultKernel implements VaultMutationPort {
     await this.writeJournal(journal);
     await this.inject("write:after-install");
     await this.preserveRollback(journal, rollbackAbsolute);
+    if (strictContainment) {
+      const temporary = await this.readMutationFile(temporaryAbsolute, true);
+      if (temporary && temporary.revision !== journal.nextRevision) {
+        throw new Error(`Strict staged content changed after installation: ${journal.targetPath}`);
+      }
+      if (
+        temporary &&
+        !(await this.retainStrictWriteClaim(journal, temporaryAbsolute, journal.nextRevision))
+      ) {
+        throw new Error(`Strict staged content could not be retained: ${journal.targetPath}`);
+      }
+    }
     journal.phase = "committed";
     await this.writeJournal(journal);
     await this.inject("write:after-commit");
@@ -1410,9 +2327,10 @@ export class VaultKernel implements VaultMutationPort {
   private async createConflictCopy(
     targetPath: string,
     bytes: Buffer,
+    strictContainment = false,
   ): Promise<{ path: string; transactionId: string }> {
     const conflictPath = this.buildConflictPath(targetPath, randomUUID());
-    const result = await this.performWrite(conflictPath, bytes, null);
+    const result = await this.performWrite(conflictPath, bytes, null, strictContainment);
     if (result.status === "committed") {
       return { path: conflictPath, transactionId: result.transactionId };
     }
@@ -1430,27 +2348,92 @@ export class VaultKernel implements VaultMutationPort {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const conflictPath = this.buildConflictPath(journal.targetPath, randomUUID());
       const conflictAbsolute = await this.paths.resolveForWrite(conflictPath, true);
-      if (await installStagedFile(temporaryAbsolute, conflictAbsolute)) {
+      if (
+        await this.installPreparedFile(
+          temporaryAbsolute,
+          conflictAbsolute,
+          journal.strictContainment === true,
+        )
+      ) {
         return conflictPath;
       }
     }
     throw new Error(`Could not preserve staged content for ${journal.targetPath}`);
   }
 
+  private async moveExistingTargetAside(
+    targetAbsolute: string,
+    rollbackAbsolute: string,
+    strictContainment = false,
+    expectedRevision?: string,
+    retentionDirectory?: string,
+  ): Promise<boolean> {
+    if (strictContainment) {
+      if (!expectedRevision) return false;
+      return moveContainedFileAside(
+        targetAbsolute,
+        rollbackAbsolute,
+        expectedRevision,
+        retentionDirectory,
+        {
+          // The rollback claim is retained in an app-owned transaction
+          // directory until the committed receipt permits bounded cleanup.
+          claimAuthority: "vault",
+          cleanupClaim: false,
+        },
+      );
+    }
+    const target = await this.readMutationFile(targetAbsolute, strictContainment);
+    if (!target) return false;
+    try {
+      // Reserve the rollback name with a fresh inode. A plain rename would
+      // replace a claimant that won the rollback name between validation and
+      // the move. EEXIST is an explicit conflict and leaves that claimant.
+      if (strictContainment) {
+        await durableCreateContainedFile(rollbackAbsolute, target.bytes);
+      } else {
+        await durableCreate(rollbackAbsolute, target.bytes);
+      }
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
+      throw error;
+    }
+    const rollback = await this.readMutationFile(rollbackAbsolute, strictContainment);
+    if (!rollback || rollback.revision !== target.revision) return false;
+    return this.removeExpectedFile(targetAbsolute, target.revision, {
+      strictContainment,
+    });
+  }
+
   private async recoverWrite(journal: WriteJournal): Promise<RecoveryAction> {
     const targetAbsolute = await this.paths.resolveForWrite(journal.targetPath);
     const temporaryAbsolute = await this.paths.resolveForWrite(journal.temporaryPath);
     const rollbackAbsolute = await this.paths.resolveForWrite(journal.rollbackPath);
-    const target = await readStableFile(targetAbsolute);
+    const target = await this.readMutationFile(targetAbsolute, journal.strictContainment === true);
 
     if (target?.revision === journal.nextRevision) {
       await this.preserveRollback(journal, rollbackAbsolute);
-      const temporary = await readStableFile(temporaryAbsolute);
+      const temporary = await this.readMutationFile(
+        temporaryAbsolute,
+        journal.strictContainment === true,
+      );
       let conflictPath: string | undefined;
       if (temporary && temporary.revision !== journal.nextRevision) {
         conflictPath = await this.promoteTemporaryToConflict(journal);
-      } else {
-        await removeIfPresent(temporaryAbsolute);
+      } else if (temporary) {
+        const removed =
+          journal.strictContainment === true
+            ? await this.retainStrictWriteClaim(journal, temporaryAbsolute, temporary.revision)
+            : await this.removeExpectedFile(temporaryAbsolute, temporary.revision);
+        if (!removed) {
+          await this.archiveJournal(journal, "manual-conflict");
+          return {
+            transactionId: journal.id,
+            kind: "write",
+            outcome: "manual-conflict",
+            path: journal.targetPath,
+          };
+        }
       }
       await this.archiveJournal(
         journal,
@@ -1466,9 +2449,16 @@ export class VaultKernel implements VaultMutationPort {
     }
 
     if (journal.beforeRevision === null && !target) {
-      const temporary = await readStableFile(temporaryAbsolute);
+      const temporary = await this.readMutationFile(
+        temporaryAbsolute,
+        journal.strictContainment === true,
+      );
       if (temporary?.revision === journal.nextRevision) {
-        const installed = await installStagedFile(temporaryAbsolute, targetAbsolute);
+        const installed = await this.installPreparedFile(
+          temporaryAbsolute,
+          targetAbsolute,
+          journal.strictContainment === true,
+        );
         if (installed) {
           journal.phase = "committed";
           await this.writeJournal(journal);
@@ -1483,8 +2473,15 @@ export class VaultKernel implements VaultMutationPort {
       }
     }
 
-    if (!(await pathExists(targetAbsolute)) && (await pathExists(rollbackAbsolute))) {
-      const restored = await installStagedFile(rollbackAbsolute, targetAbsolute);
+    if (
+      !(await this.mutationFileExists(targetAbsolute, journal.strictContainment === true)) &&
+      (await this.mutationFileExists(rollbackAbsolute, journal.strictContainment === true))
+    ) {
+      const restored = await this.installPreparedFile(
+        rollbackAbsolute,
+        targetAbsolute,
+        journal.strictContainment === true,
+      );
       if (!restored) {
         await this.preserveRollback(journal, rollbackAbsolute);
       }
@@ -1493,10 +2490,13 @@ export class VaultKernel implements VaultMutationPort {
     }
 
     let conflictPath: string | undefined;
-    if (await pathExists(temporaryAbsolute)) {
+    if (await this.mutationFileExists(temporaryAbsolute, journal.strictContainment === true)) {
       conflictPath = await this.promoteTemporaryToConflict(journal);
     }
-    const finalTarget = await readStableFile(targetAbsolute);
+    const finalTarget = await this.readMutationFile(
+      targetAbsolute,
+      journal.strictContainment === true,
+    );
     const rolledBack = revisionsMatch(finalTarget, journal.beforeRevision);
     const outcome = conflictPath ? "conflict-copy" : rolledBack ? "rolled-back" : "manual-conflict";
     await this.archiveJournal(journal, outcome);
@@ -1510,57 +2510,133 @@ export class VaultKernel implements VaultMutationPort {
   }
 
   private async recoverRename(journal: RenameJournal): Promise<RecoveryAction> {
-    const sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
-    const targetAbsolute = await this.paths.resolveForWrite(journal.targetPath);
-    const [source, target] = await Promise.all([
-      readStableFile(sourceAbsolute),
-      readStableFile(targetAbsolute),
-    ]);
+    let sourceAbsolute: string;
+    let targetAbsolute: string;
+    try {
+      sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
+      targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+    } catch {
+      return this.archiveRenameConflict(journal);
+    }
 
-    if (source && target) {
-      const linked = await sameFile(sourceAbsolute, targetAbsolute);
-      if (
-        !linked ||
-        source.revision !== journal.expectedRevision ||
-        target.revision !== journal.expectedRevision
-      ) {
-        if (linked) {
-          await removeIfPresent(targetAbsolute);
-          await syncDirectory(path.dirname(targetAbsolute));
+    if (journal.sourceRetained === true) {
+      return this.recoverPublishedRename(journal, sourceAbsolute, targetAbsolute);
+    }
+
+    let source = await this.readMutationFile(sourceAbsolute, journal.strictContainment === true);
+    let target = await this.readMutationFile(targetAbsolute, journal.strictContainment === true);
+    if (
+      (source && source.revision !== journal.expectedRevision) ||
+      (target && target.revision !== journal.expectedRevision)
+    ) {
+      return this.archiveRenameConflict(journal);
+    }
+    if (journal.expectedMarkdownCorpus) {
+      const verification = await this.verifyMarkdownCorpus(journal.expectedMarkdownCorpus);
+      if (!verification.ok) {
+        if (!source && target?.revision === journal.expectedRevision) {
+          const restored = await this.restoreRenameSource(
+            sourceAbsolute,
+            targetAbsolute,
+            journal.expectedRevision,
+            journal.id,
+            journal.strictContainment === true,
+          );
+          if (!restored) return this.archiveRenameConflict(journal);
+        } else if (source && target) {
+          await this.removeExpectedFile(targetAbsolute, journal.expectedRevision, {
+            strictContainment: journal.strictContainment === true,
+          });
         }
         return this.archiveRenameConflict(journal);
       }
-      await fs.unlink(sourceAbsolute);
-      await syncDirectory(path.dirname(sourceAbsolute));
-    } else if (source) {
-      if (source.revision !== journal.expectedRevision) {
+    }
+
+    if (!source && !target) return this.archiveRenameConflict(journal);
+
+    if (source && !target) {
+      const stagedPath = this.getRenameBlobPath(journal.id);
+      const staged = await this.readMutationFile(stagedPath, journal.strictContainment === true);
+      if (staged && staged.revision !== journal.expectedRevision) {
         return this.archiveRenameConflict(journal);
       }
+      if (!staged) {
+        await this.createMutationFile(stagedPath, source.bytes, journal.strictContainment === true);
+      }
+      journal.phase = "staged";
+      await this.writeJournal(journal);
       try {
-        await fs.link(sourceAbsolute, targetAbsolute);
-        await syncDirectory(path.dirname(targetAbsolute));
-      } catch (error) {
-        if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+        await this.paths.resolveForWrite(journal.sourcePath);
+        targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+        if (
+          !(await this.installPreparedFile(
+            stagedPath,
+            targetAbsolute,
+            journal.strictContainment === true,
+          ))
+        ) {
           return this.archiveRenameConflict(journal);
         }
-        throw error;
+      } catch {
+        return this.archiveRenameConflict(journal);
       }
-      const linkedTarget = await readStableFile(targetAbsolute);
+      target = await this.readMutationFile(targetAbsolute, journal.strictContainment === true);
+      source = await this.readMutationFile(sourceAbsolute, journal.strictContainment === true);
       if (
-        !linkedTarget ||
-        linkedTarget.revision !== journal.expectedRevision ||
-        !(await sameFile(sourceAbsolute, targetAbsolute))
+        !target ||
+        target.revision !== journal.expectedRevision ||
+        !source ||
+        source.revision !== journal.expectedRevision
       ) {
-        if (await sameFile(sourceAbsolute, targetAbsolute)) {
-          await removeIfPresent(targetAbsolute);
-          await syncDirectory(path.dirname(targetAbsolute));
+        return this.archiveRenameConflict(journal);
+      }
+    }
+
+    if (!target || target.revision !== journal.expectedRevision) {
+      return this.archiveRenameConflict(journal);
+    }
+    if (source) {
+      const evidencePath = this.getRecoveryPath(journal.id);
+      const evidence = await this.readMutationFile(
+        evidencePath,
+        journal.strictContainment === true,
+      );
+      if (evidence && evidence.revision !== journal.expectedRevision) {
+        return this.archiveRenameConflict(journal);
+      }
+      if (!evidence) {
+        await this.createMutationFile(
+          evidencePath,
+          source.bytes,
+          journal.strictContainment === true,
+        );
+      }
+      if (
+        !(await this.removeExpectedFile(sourceAbsolute, journal.expectedRevision, {
+          strictContainment: journal.strictContainment === true,
+        }))
+      ) {
+        return this.archiveRenameConflict(journal);
+      }
+      const targetAfterRemoval = await this.readMutationFile(
+        targetAbsolute,
+        journal.strictContainment === true,
+      );
+      if (!targetAfterRemoval || targetAfterRemoval.revision !== journal.expectedRevision) {
+        const recoveryBytes = await this.readMutationFile(
+          evidencePath,
+          journal.strictContainment === true,
+        );
+        if (recoveryBytes?.revision === journal.expectedRevision) {
+          await this.installPreparedFile(
+            evidencePath,
+            sourceAbsolute,
+            journal.strictContainment === true,
+          );
         }
         return this.archiveRenameConflict(journal);
       }
-      await fs.unlink(sourceAbsolute);
-      await syncDirectory(path.dirname(sourceAbsolute));
-    } else if (!target || target.revision !== journal.expectedRevision) {
-      return this.archiveRenameConflict(journal);
+      source = null;
     }
 
     journal.phase = "committed";
@@ -1569,6 +2645,80 @@ export class VaultKernel implements VaultMutationPort {
       transactionId: journal.id,
       kind: "rename",
       outcome: "committed",
+      path: journal.targetPath,
+    };
+  }
+
+  private async recoverPublishedRename(
+    journal: RenameJournal,
+    sourceAbsolute: string,
+    targetAbsolute: string,
+  ): Promise<RecoveryAction> {
+    try {
+      await this.assertAttachmentPublishAvailable(targetAbsolute);
+    } catch {
+      return this.archiveRenameConflict(journal);
+    }
+    const source = await this.readMutationFile(sourceAbsolute, true);
+    let target = await this.readMutationFile(targetAbsolute, true);
+    if (
+      (source && source.revision !== journal.expectedRevision) ||
+      (target && target.revision !== journal.expectedRevision)
+    ) {
+      return this.archiveRenameConflict(journal);
+    }
+    if (target && journal.phase !== "published" && journal.phase !== "committed") {
+      // An exact-byte target without a durable publication receipt is still
+      // an ambiguous claimant. Preserve it and require manual recovery.
+      return this.archiveRenameConflict(journal);
+    }
+    if (journal.expectedMarkdownCorpus) {
+      const verification = await this.verifyMarkdownCorpus(journal.expectedMarkdownCorpus);
+      if (!verification.ok) return this.archiveRenameConflict(journal);
+    }
+    if (!source) return this.archiveRenameConflict(journal);
+    if (!target) {
+      const stagedPath = this.getRenameBlobPath(journal.id);
+      const evidencePath = this.getRecoveryPath(journal.id);
+      const staged = await this.readMutationFile(stagedPath, true);
+      const evidence = staged ? null : await this.readMutationFile(evidencePath, true);
+      const candidate = staged ?? evidence;
+      if (!candidate || candidate.revision !== journal.expectedRevision) {
+        return this.archiveRenameConflict(journal);
+      }
+      try {
+        if (
+          !(await this.installPreparedFile(
+            staged ? stagedPath : evidencePath,
+            targetAbsolute,
+            true,
+          ))
+        ) {
+          // A false install includes a collision or post-publication cleanup
+          // uncertainty. Do not infer ownership from an exact target that
+          // appeared without a receipt.
+          return this.archiveRenameConflict(journal);
+        }
+      } catch {
+        return this.archiveRenameConflict(journal);
+      }
+    }
+    target = await this.readMutationFile(targetAbsolute, true);
+    const retainedSource = await this.readMutationFile(sourceAbsolute, true);
+    if (
+      !target ||
+      target.revision !== journal.expectedRevision ||
+      !retainedSource ||
+      retainedSource.revision !== journal.expectedRevision
+    ) {
+      return this.archiveRenameConflict(journal);
+    }
+    journal.phase = "committed";
+    await this.archiveJournal(journal, "published-source-retained");
+    return {
+      transactionId: journal.id,
+      kind: "rename",
+      outcome: "published-source-retained",
       path: journal.targetPath,
     };
   }
@@ -1621,11 +2771,11 @@ export class VaultKernel implements VaultMutationPort {
     blobs: Map<number, MoveWithWritesBlobs>,
   ): Promise<RecoveryAction> {
     const result = await this.continueMoveWithWrites(journal, blobs);
-    if (result.status === "committed") {
+    if (result.status === "committed" || result.status === "published-source-retained") {
       return {
         transactionId: journal.id,
         kind: "move-with-writes",
-        outcome: "committed",
+        outcome: result.status,
         path: journal.targetPath,
         paths: journal.entries.map((entry) => entry.targetPath),
       };
@@ -1633,6 +2783,7 @@ export class VaultKernel implements VaultMutationPort {
     const manual =
       result.reason.startsWith("rollback-conflict:") ||
       result.reason === "rename-state-diverged" ||
+      result.reason === "publish-state-diverged" ||
       result.reason === "source-missing";
     return {
       transactionId: journal.id,
@@ -1649,11 +2800,23 @@ export class VaultKernel implements VaultMutationPort {
   }
 
   private async preserveRollback(journal: WriteJournal, rollbackAbsolute: string): Promise<void> {
-    const rollback = await readStableFile(rollbackAbsolute);
+    const rollback = await this.readMutationFile(
+      rollbackAbsolute,
+      journal.strictContainment === true,
+    );
     if (rollback) {
       await atomicWriteFile(this.getRecoveryPath(journal.id), rollback.bytes);
+      if (journal.beforeRevision !== null && rollback.revision === journal.beforeRevision) {
+        const removed =
+          journal.strictContainment === true
+            ? await this.retainStrictWriteClaim(journal, rollbackAbsolute, journal.beforeRevision)
+            : await this.removeExpectedFile(rollbackAbsolute, journal.beforeRevision);
+        if (!removed && journal.strictContainment === true) {
+          throw new Error(`Strict rollback evidence could not be retained: ${journal.targetPath}`);
+        }
+      }
+      return;
     }
-    await removeIfPresent(rollbackAbsolute);
   }
 
   private getRecoveryPath(transactionId: string): string {
@@ -1673,6 +2836,18 @@ export class VaultKernel implements VaultMutationPort {
       encodeJson({ ...journal, outcome, finishedAt: this.clock().toISOString() }),
     );
     await removeIfPresent(path.join(this.journalDirectory, `${journal.id}.json`));
+    if (outcome === "committed") {
+      // The history receipt is durable before private rollback claims are
+      // collected. A crash between these steps is repaired by the bounded
+      // startup sweep, while conflicts retain their evidence for review.
+      await fs
+        .rm(path.join(this.rollbackClaimsDirectory, journal.id), {
+          recursive: true,
+          force: true,
+        })
+        .catch(() => undefined);
+      await syncDirectory(this.rollbackClaimsDirectory).catch(() => undefined);
+    }
   }
 
   private async inject(point: KernelFaultPoint): Promise<void> {
@@ -1698,5 +2873,12 @@ export class VaultKernel implements VaultMutationPort {
     if (this.readOnly) {
       throw new Error("Vault kernel is open in read-only mode.");
     }
+  }
+
+  private async assertAttachmentPublishAvailable(targetAbsolute: string): Promise<void> {
+    await assertContainedPublishCapability(
+      this.attachmentPublishCapability,
+      path.dirname(targetAbsolute),
+    );
   }
 }

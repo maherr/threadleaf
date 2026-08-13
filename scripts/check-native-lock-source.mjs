@@ -37,6 +37,8 @@ for (const required of [
   "napi_unwrap",
   "napi_define_properties",
   "napi_create_string_utf8",
+  "napi_get_value_int32",
+  "napi_get_buffer_info",
 ]) {
   assert(
     source.includes(required) && header.includes(required),
@@ -95,6 +97,20 @@ for (const required of [
   '"cross-device"',
 ]) {
   assert(source.includes(required), `Native no-clobber rename invariant is missing: ${required}`);
+}
+for (const required of [
+  "O_TMPFILE",
+  "AT_EMPTY_PATH",
+  "AT_SYMLINK_FOLLOW",
+  "linkat(",
+  '"publishBufferNoReplace"',
+  '"exists"',
+  '"cross-device"',
+]) {
+  assert(
+    source.includes(required),
+    `Anonymous no-clobber publication invariant is missing: ${required}`,
+  );
 }
 assert(
   source.includes("#error") && !source.includes("#define O_NOFOLLOW 0"),
@@ -169,7 +185,11 @@ assert(
     electronTargetSource.includes("receipt.hostNapiVersion >= 10") &&
     electronTargetSource.includes('"10"') &&
     electronTargetSource.includes("renameNoReplace") &&
-    electronTargetSource.includes("collisionPreserved"),
+    electronTargetSource.includes("collisionPreserved") &&
+    electronTargetSource.includes("publishBufferNoReplace") &&
+    electronTargetSource.includes("anonymousExactBytes") &&
+    electronTargetSource.includes("anonymousCollisionPreserved") &&
+    electronTargetSource.includes("anonymousNoStage"),
   "Every native target must be rebuilt and loaded by its pinned Electron runtime.",
 );
 assert(
@@ -227,6 +247,8 @@ console.log(
     pathSafety: "O_NOFOLLOW plus ancestor validation",
     noClobberRename:
       "Linux renameat2(RENAME_NOREPLACE), target collision preserves both names; other platforms fail closed",
+    anonymousPublication:
+      "Linux O_TMPFILE plus linkat, exact bytes and target collision verified without a target-side stage; other platforms fail closed",
     permissions: "POSIX 0600 repair plus Windows owner-only DACL",
   }),
 );

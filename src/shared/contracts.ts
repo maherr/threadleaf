@@ -797,6 +797,63 @@ export interface NoteMoveResponse {
   bookmarkWarning?: string;
 }
 
+export interface AttachmentMoveRewritePreview {
+  documentPath: string;
+  line: number;
+  syntax: "wiki" | "markdown";
+  embed: boolean;
+  beforeTarget: string;
+  afterTarget: string;
+}
+
+export interface AttachmentMoveBlocker {
+  documentPath: string;
+  line: number;
+  target: string;
+  syntax: "wiki" | "markdown";
+  reason: "ambiguous" | "unresolved" | "unsupported";
+  candidates: string[];
+}
+
+export type AttachmentMoveOutcome =
+  | {
+      status: "published-source-retained";
+      from: string;
+      to: string;
+      transactionId: string;
+      rewrites: AttachmentMoveRewritePreview[];
+      writes: Array<{ path: string; revision: string }>;
+    }
+  | {
+      status: "requires-confirmation";
+      from: string;
+      to: string;
+      confirmationId: string;
+      rewrites: AttachmentMoveRewritePreview[];
+    }
+  | {
+      status: "conflict";
+      from: string;
+      to: string;
+      reason: string;
+      conflictPaths?: string[];
+    }
+  | {
+      status: "blocked";
+      from: string;
+      to: string;
+      blockers: AttachmentMoveBlocker[];
+    };
+
+export interface AttachmentMoveResponse {
+  outcome: AttachmentMoveOutcome;
+  snapshot: RuntimeSnapshot;
+  /** Set when the mutation committed in a runtime replaced before reply. */
+  committedVaultId?: string;
+  /** Basename-safe identity of the vault that committed the mutation. */
+  committedVaultName?: string;
+}
+
 export type NoteDeleteOutcome =
   | { status: "committed"; from: string; to: string; transactionId: string }
   | { status: "conflict"; from: string; to: string; reason: string };
@@ -885,12 +942,13 @@ export interface VaultAttachmentMetadata {
   mimeType: string | null;
   size: number;
   revision: string;
-  actions: { open: boolean; reveal: boolean; inline: false };
+  actions: { open: boolean; reveal: boolean; move: boolean; inline: false };
 }
 
 export type VaultAttachmentUnavailableReason =
   | "external"
   | "invalid"
+  | "ambiguous"
   | "private"
   | "missing"
   | "outside-vault"
@@ -1137,6 +1195,13 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
     confirmationId?: string,
   ): Promise<NoteMoveResponse>;
+  moveAttachment(
+    path: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentMoveResponse>;
   deleteNote(
     path: string,
     expectedRevision: string,

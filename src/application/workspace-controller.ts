@@ -8,6 +8,7 @@ import type {
 import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  AttachmentMoveResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -39,6 +40,18 @@ import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import type { RenderedNoteTemplate } from "./note-template";
 import { WorkspaceRuntime, type WorkspaceRuntimeOptions } from "./workspace-runtime";
 import type { PersistedWorkspaceState, WorkspaceStateStore } from "./workspace-state";
+
+function displaySafeVaultName(value: string): string {
+  const basenameSafe = basename(value.replaceAll("\\", "/"));
+  const cleaned = [...basenameSafe]
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
+    })
+    .join("")
+    .trim();
+  return cleaned || "previous vault";
+}
 
 export interface VaultSelectionStore {
   load(): Promise<string | null>;
@@ -129,6 +142,13 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
     confirmationId?: string,
   ): Promise<NoteMoveResponse>;
+  moveAttachment?(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentMoveResponse>;
   deleteNote(
     filePath: string,
     expectedRevision: string,
@@ -729,6 +749,45 @@ export class WorkspaceController {
       expectedVaultId,
       confirmationId,
     );
+  }
+
+  async moveAttachment(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentMoveResponse> {
+    const runtime = this.activeRuntime("move an attachment");
+    if (!runtime.moveAttachment) {
+      throw new Error("The active workspace does not support attachment publication.");
+    }
+    if (runtime.vaultId !== expectedVaultId) {
+      throw new Error("The active vault changed before this attachment copy could be published.");
+    }
+    const response = await runtime.moveAttachment(
+      filePath,
+      targetPath,
+      expectedRevision,
+      expectedVaultId,
+      confirmationId,
+    );
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      if (response.outcome.status === "published-source-retained") {
+        const activeRuntime = this.#runtime;
+        return {
+          ...response,
+          snapshot: await activeRuntime.getSnapshot(),
+          committedVaultId: runtime.vaultId,
+          committedVaultName: displaySafeVaultName(response.snapshot.vault.name),
+        };
+      }
+      return {
+        outcome: { status: "conflict", from: filePath, to: targetPath, reason: "stale-vault" },
+        snapshot: await this.#runtime.getSnapshot(),
+      };
+    }
+    return response;
   }
 
   deleteNote(

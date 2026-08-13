@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseMarkdownLinks } from "./markdown-links";
+import {
+  parseMarkdownLinks,
+  parseMarkdownReferenceDefinitions,
+  parseMarkdownReferenceUsages,
+} from "./markdown-links";
 
 describe("Markdown link source parser", () => {
   it("returns exact target ranges while preserving aliases, subpaths, embeds, and titles", () => {
@@ -144,6 +148,71 @@ describe("Markdown link source parser", () => {
       "[[Before|alias]]",
       "![[Nested|embed]]",
       "[After](Target.md)",
+    ]);
+  });
+
+  it("parses reference-style definitions with angle destinations and titles", () => {
+    const content = [
+      "Use [report][asset] and ![report image][asset].",
+      '[asset]: <../Assets/Report (draft).pdf?download=1#page=2> "Report title"',
+    ].join("\n");
+    const links = parseMarkdownLinks(content);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      target: "../Assets/Report (draft).pdf?download=1",
+      syntax: "markdown",
+      embed: false,
+      line: 2,
+    });
+    expect(content.slice(links[0]?.targetStart, links[0]?.targetEnd)).toBe(
+      "../Assets/Report (draft).pdf?download=1",
+    );
+    expect(content.slice(links[0]?.position, links[0]?.end)).toBe(
+      '[asset]: <../Assets/Report (draft).pdf?download=1#page=2> "Report title"',
+    );
+  });
+
+  it("parses escaped balanced-parenthesis destinations without consuming the title", () => {
+    const content = '[asset]: ../Assets/Report\\ \\(draft\\).pdf?download=1#page=2 "title"';
+    const links = parseMarkdownLinks(content);
+    expect(links).toHaveLength(1);
+    expect(content.slice(links[0]?.targetStart, links[0]?.targetEnd)).toBe(
+      "../Assets/Report\\ \\(draft\\).pdf?download=1",
+    );
+  });
+
+  it("excludes source-only YAML frontmatter while preserving later definitions", () => {
+    const content = ["---", "[asset]: Hidden.pdf", "---", "", "[asset]: Visible.pdf"].join("\n");
+    const links = parseMarkdownLinks(content);
+    expect(links.map((link) => link.target)).toEqual(["Visible.pdf"]);
+    expect(links[0]?.line).toBe(5);
+  });
+
+  it("does not treat escaped literal query or fragment bytes as suffixes", () => {
+    const links = parseMarkdownLinks(
+      "[query](Assets/report\\?draft.pdf) [fragment](Assets/report\\#draft.pdf)",
+    );
+    expect(links.map((link) => ({ target: link.target, subpath: link.subpath }))).toEqual([
+      { target: "Assets/report?draft.pdf", subpath: null },
+      { target: "Assets/report#draft.pdf", subpath: null },
+    ]);
+  });
+
+  it("finds visible full, collapsed, and shortcut image references without frontmatter definitions", () => {
+    const content = [
+      "---",
+      "[asset]: Hidden.pdf",
+      "---",
+      "![full][asset] ![collapsed][] ![shortcut]",
+      "[asset]: Visible.pdf",
+    ].join("\n");
+    expect(parseMarkdownReferenceUsages(content).map((usage) => usage.label)).toEqual([
+      "asset",
+      "collapsed",
+      "shortcut",
+    ]);
+    expect(parseMarkdownReferenceDefinitions(content)).toEqual([
+      { label: "asset", valid: true, external: false, line: 5 },
     ]);
   });
 });

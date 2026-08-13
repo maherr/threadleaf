@@ -58,6 +58,7 @@ export interface NativeStateLockHandle {
 export interface ThreadleafNativeBinding {
   acquire(lockPath: string): NativeStateLockHandle;
   renameNoReplace(sourcePath: string, targetPath: string): void;
+  publishBufferNoReplace(targetDirectoryFd: number, targetName: string, bytes: Buffer): void;
   platform(): StateLockPlatform;
   mechanism(): StateLockMechanism;
   napiVersion(): string;
@@ -212,6 +213,7 @@ export function loadThreadleafNativeBindingForInternalUse(): ThreadleafNativeBin
       if (
         typeof loaded.acquire === "function" &&
         typeof loaded.renameNoReplace === "function" &&
+        typeof loaded.publishBufferNoReplace === "function" &&
         typeof loaded.platform === "function" &&
         typeof loaded.mechanism === "function" &&
         typeof napiVersion === "function" &&

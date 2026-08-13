@@ -12,6 +12,7 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* Keep the Node-API contract explicit and stable across Node and Electron. */
 #define THREADLEAF_NAPI_VERSION 10
@@ -100,6 +101,15 @@ THREADLEAF_NAPI_EXTERN napi_status napi_get_value_string_utf8(
     char* buf,
     size_t bufsize,
     size_t* result);
+THREADLEAF_NAPI_EXTERN napi_status napi_get_value_int32(
+    napi_env env,
+    napi_value value,
+    int32_t* result);
+THREADLEAF_NAPI_EXTERN napi_status napi_get_buffer_info(
+    napi_env env,
+    napi_value value,
+    void** data,
+    size_t* length);
 THREADLEAF_NAPI_EXTERN napi_status napi_create_error(
     napi_env env,
     napi_value code,

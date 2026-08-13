@@ -15,6 +15,8 @@ import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type {
+  AttachmentMoveOutcome,
+  AttachmentMoveResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -65,6 +67,7 @@ import {
   type VaultWorkspaceSettings,
 } from "../shared/workspace-settings";
 import { ActionRegistry } from "./action-registry";
+import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
 import { loadCanvasAttachment } from "./canvas-attachment-service";
 import {
   isCanvasPath,
@@ -224,6 +227,14 @@ interface MoveNoteRequest {
   confirmationId: string | null;
 }
 
+interface MoveAttachmentRequest {
+  path: string;
+  targetPath: string;
+  expectedRevision: string;
+  expectedVaultId: string;
+  confirmationId: string | null;
+}
+
 interface DeleteNoteRequest {
   path: string;
   expectedRevision: string;
@@ -267,6 +278,37 @@ function parseMoveNoteRequest(payload: unknown): MoveNoteRequest {
   ) {
     throw new Error(
       "Move note requires string path, target, revision, and vault values with an optional confirmation.",
+    );
+  }
+  return {
+    path: payload.path,
+    targetPath: payload.targetPath,
+    expectedRevision: payload.expectedRevision,
+    expectedVaultId: payload.expectedVaultId,
+    confirmationId:
+      "confirmationId" in payload && typeof payload.confirmationId === "string"
+        ? payload.confirmationId
+        : null,
+  };
+}
+
+function parseMoveAttachmentRequest(payload: unknown): MoveAttachmentRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("path" in payload) ||
+    typeof payload.path !== "string" ||
+    !("targetPath" in payload) ||
+    typeof payload.targetPath !== "string" ||
+    !("expectedRevision" in payload) ||
+    typeof payload.expectedRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string" ||
+    ("confirmationId" in payload &&
+      !(payload.confirmationId === null || typeof payload.confirmationId === "string"))
+  ) {
+    throw new Error(
+      "Move attachment requires string path, target, revision, and vault values with an optional confirmation.",
     );
   }
   return {
@@ -697,6 +739,7 @@ export class WorkspaceRuntime {
   #lastWatchSequence = 0;
   #lastRescanReason: string | null = null;
   #indexProjection: WorkspaceIndexProjection | null = null;
+  #visibleVaultFiles: { sequence: number; promise: Promise<readonly string[]> } | null = null;
   readonly #listeners = new Set<SnapshotListener>();
   readonly #releaseActions: Array<() => void> = [];
 
@@ -821,6 +864,12 @@ export class WorkspaceRuntime {
         name: "Move or rename note",
         source: "workspace",
         execute: (payload) => this.moveNoteThroughKernel(parseMoveNoteRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.move-attachment",
+        name: "Publish attachment copy",
+        source: "workspace",
+        execute: (payload) => this.moveAttachmentThroughKernel(parseMoveAttachmentRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.delete-note",
@@ -967,6 +1016,22 @@ export class WorkspaceRuntime {
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
     return this.snapshotWithPluginState(await this.pluginHost.getSnapshot());
+  }
+
+  private visibleVaultFiles(): Promise<readonly string[]> {
+    const sequence = this.#lastWatchSequence;
+    if (this.#visibleVaultFiles?.sequence === sequence) {
+      return this.#visibleVaultFiles.promise;
+    }
+    const promise = this.kernel.listVisiblePaths().then(
+      (visible) => visible.files,
+      (error) => {
+        if (this.#visibleVaultFiles?.promise === promise) this.#visibleVaultFiles = null;
+        throw error;
+      },
+    );
+    this.#visibleVaultFiles = { sequence, promise };
+    return promise;
   }
 
   private async snapshotWithPluginState(pluginSnapshot: RuntimeSnapshot): Promise<RuntimeSnapshot> {
@@ -1163,6 +1228,26 @@ export class WorkspaceRuntime {
     return { outcome, snapshot: await this.publishSnapshot() };
   }
 
+  async moveAttachment(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentMoveResponse> {
+    const outcome = await this.actions.dispatch<AttachmentMoveOutcome>(
+      "workspace.move-attachment",
+      {
+        path: filePath,
+        targetPath,
+        expectedRevision,
+        expectedVaultId,
+        confirmationId: confirmationId ?? null,
+      },
+    );
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
   async deleteNote(
     filePath: string,
     expectedRevision: string,
@@ -1272,12 +1357,27 @@ export class WorkspaceRuntime {
     return loadVaultImage(this.kernel, sourceNotePath, target, expectedVaultId);
   }
 
-  loadVaultAttachment(
+  async loadVaultAttachment(
     sourceNotePath: string,
     target: string,
     expectedVaultId: string,
   ): Promise<VaultAttachmentResponse> {
-    return loadVaultAttachment(this.kernel, sourceNotePath, target, expectedVaultId);
+    if (expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    try {
+      const visiblePaths = await this.visibleVaultFiles();
+      return loadVaultAttachment(this.kernel, sourceNotePath, target, expectedVaultId, {
+        visiblePaths,
+      });
+    } catch {
+      return {
+        status: "unavailable",
+        vaultId: this.kernel.vaultId,
+        reason: "unreadable",
+        message: "The attachment inventory could not be read safely.",
+      };
+    }
   }
 
   loadVaultNoteEmbed(
@@ -1503,6 +1603,7 @@ export class WorkspaceRuntime {
       throw new Error(`Plugin file creation cannot target private application paths: ${filePath}`);
     }
     const outcome = await this.kernel.createBinary(normalizedPath, content);
+    this.#visibleVaultFiles = null;
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
     if (outcome.status === "committed") {
       if (isMarkdown) {
@@ -1549,6 +1650,7 @@ export class WorkspaceRuntime {
       throw new Error(`Plugin file saves cannot target private application paths: ${filePath}`);
     }
     const outcome = await this.kernel.writeBinary(normalizedPath, content, expectedRevision);
+    this.#visibleVaultFiles = null;
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
     if (outcome.status === "committed") {
       if (isMarkdown) {
@@ -1602,6 +1704,7 @@ export class WorkspaceRuntime {
       normalizedTarget,
       expectedRevision,
     );
+    this.#visibleVaultFiles = null;
     if (outcome.status === "committed") {
       this.watcher.operations.expect({
         id: outcome.transactionId,
@@ -1642,6 +1745,7 @@ export class WorkspaceRuntime {
       `${vaultTrashDirectory}/${normalizedSource}`,
       expectedRevision,
     );
+    this.#visibleVaultFiles = null;
     if (outcome.status === "committed") {
       this.watcher.operations.expect({
         id: outcome.transactionId,
@@ -2334,6 +2438,14 @@ export class WorkspaceRuntime {
       if (result.status === "conflict") {
         return result;
       }
+      if (result.status === "published-source-retained") {
+        return {
+          status: "conflict",
+          from: result.from,
+          to: result.to,
+          reason: "source-retention-not-supported",
+        };
+      }
       const target = await this.kernel.readText(result.to);
       this.watcher.operations.expect({
         id: result.transactionId,
@@ -2347,7 +2459,14 @@ export class WorkspaceRuntime {
       if (this.moveOpenPath(result.from, result.to)) {
         await this.persistWorkspaceStateBestEffort();
       }
-      return { ...result, rewrites: [], writes: [] };
+      return {
+        status: "committed",
+        from: result.from,
+        to: result.to,
+        transactionId: result.transactionId,
+        rewrites: [],
+        writes: [],
+      };
     }
     const outcome = await moveMarkdownNote(
       this.kernel,
@@ -2395,6 +2514,59 @@ export class WorkspaceRuntime {
     }
     if (this.moveOpenPath(outcome.from, outcome.to)) {
       await this.persistWorkspaceStateBestEffort();
+    }
+    return outcome;
+  }
+
+  private async moveAttachmentThroughKernel(
+    request: MoveAttachmentRequest,
+  ): Promise<AttachmentMoveOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before this attachment copy could be published.");
+    }
+    this.assertWritable("publish attachment copies");
+
+    let sourcePath: string;
+    let targetPath: string;
+    try {
+      sourcePath = normalizeVaultPath(request.path);
+      targetPath = movedAttachmentPath(sourcePath, request.targetPath);
+      if (
+        sourcePath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        targetPath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        hasPrivateVaultSegment(sourcePath) ||
+        hasPrivateVaultSegment(targetPath)
+      ) {
+        throw new Error("private-or-markdown");
+      }
+    } catch {
+      throw new Error("Attachment source and destination must be safe vault-relative files.");
+    }
+
+    const outcome = await moveBinaryAttachment(
+      this.kernel,
+      sourcePath,
+      targetPath,
+      request.expectedRevision,
+      {
+        ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+        expectedGeneration: this.indexReactor.index.generation,
+        currentGeneration: () => this.indexReactor.index.generation,
+      },
+    );
+    if (outcome.status !== "published-source-retained") {
+      return outcome;
+    }
+
+    if (outcome.writes.length > 0) {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "multi-write",
+        writes: outcome.writes,
+      });
+      for (const write of outcome.writes) {
+        await this.indexReactor.index.refresh(this.kernel, write.path);
+      }
     }
     return outcome;
   }
@@ -2630,6 +2802,7 @@ export class WorkspaceRuntime {
   }
 
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
+    this.#visibleVaultFiles = null;
     const result = await this.indexReactor.accept(batch);
     let workspaceChanged = false;
     if (result.mode === "incremental") {
@@ -2656,6 +2829,7 @@ export class WorkspaceRuntime {
   }
 
   private async publishSnapshot(pluginSnapshot?: RuntimeSnapshot): Promise<RuntimeSnapshot> {
+    this.#visibleVaultFiles = null;
     const snapshot = pluginSnapshot
       ? await this.snapshotWithPluginState(pluginSnapshot)
       : await this.getSnapshot();
@@ -2667,8 +2841,8 @@ export class WorkspaceRuntime {
 
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const index = this.indexReactor.index.snapshot();
-    const visible = await this.kernel.listVisiblePaths();
-    const canvasPaths = visible.files.filter(isCanvasPath);
+    const visibleFiles = await this.visibleVaultFiles();
+    const canvasPaths = visibleFiles.filter(isCanvasPath);
     const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
       path: filePath,
       title: titleForJsonCanvasPath(filePath),

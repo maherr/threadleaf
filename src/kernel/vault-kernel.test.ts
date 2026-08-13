@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -36,6 +37,34 @@ async function openKernel(
     ...(faultInjector ? { faultInjector } : {}),
   };
   return VaultKernel.open(options);
+}
+
+function replaceFromSeparateProcess(filePath: string, bytes: Uint8Array): Promise<void> {
+  const script = [
+    "const fs = require('node:fs');",
+    "const target = process.argv[1];",
+    "const bytes = Buffer.from(process.argv[2], 'base64');",
+    "const temporary = target + '.child-' + process.pid;",
+    "fs.writeFileSync(temporary, bytes, { mode: 0o600 });",
+    "fs.renameSync(temporary, target);",
+  ].join(" ");
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["-e", script, filePath, Buffer.from(bytes).toString("base64")],
+      {
+        stdio: "ignore",
+      },
+    );
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`separate-process barrier exited ${String(code)} ${String(signal)}`));
+      }
+    });
+  });
 }
 
 describe("VaultKernel path policy", () => {
@@ -396,7 +425,11 @@ describe("VaultKernel writes", () => {
     expect(recovered.startupRecoveryActions).toMatchObject([
       { kind: "write", outcome: "committed", path: "Note.md" },
     ]);
-    const recoveryFiles = await fs.readdir(path.join(recovered.stateRoot, "recovery"));
+    const recoveryFiles = (
+      await fs.readdir(path.join(recovered.stateRoot, "recovery"), { withFileTypes: true })
+    )
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
     expect(recoveryFiles).toHaveLength(1);
     await expect(
       fs.readFile(
@@ -441,6 +474,42 @@ describe("VaultKernel writes", () => {
 
     expect(result.status).toBe("conflict");
     await expect(fs.readFile(notePath, "utf8")).resolves.toBe("external");
+    if (result.status === "conflict") {
+      await expect(kernel.readText(result.conflictPath)).resolves.toMatchObject({
+        content: "threadleaf",
+      });
+    }
+  });
+
+  it("preserves a rollback-name claimant instead of overwriting it", async () => {
+    const notePath = path.join(vaultPath, "Note.md");
+    await fs.writeFile(notePath, "base", "utf8");
+    let stateRoot = "";
+    const kernel = await openKernel(async (point) => {
+      if (point !== "write:after-prepare") return;
+      const journalName = (await fs.readdir(path.join(stateRoot, "journal"))).find((entry) =>
+        entry.endsWith(".json"),
+      );
+      if (!journalName) throw new Error("write journal was not present");
+      const journal = JSON.parse(
+        await fs.readFile(path.join(stateRoot, "journal", journalName), "utf8"),
+      ) as { rollbackPath: string };
+      await fs.writeFile(path.join(vaultPath, journal.rollbackPath), "external claimant", "utf8");
+    });
+    stateRoot = kernel.stateRoot;
+    const base = await kernel.readText("Note.md");
+
+    const result = await kernel.writeText("Note.md", "threadleaf", base.revision);
+
+    expect(result.status).toBe("conflict");
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe("base");
+    const claimant = (await fs.readdir(vaultPath)).find((entry) =>
+      entry.startsWith(".threadleaf-rollback-"),
+    );
+    expect(claimant).toBeTypeOf("string");
+    await expect(fs.readFile(path.join(vaultPath, claimant ?? "missing"), "utf8")).resolves.toBe(
+      "external claimant",
+    );
     if (result.status === "conflict") {
       await expect(kernel.readText(result.conflictPath)).resolves.toMatchObject({
         content: "threadleaf",
@@ -590,6 +659,44 @@ describe("VaultKernel renames", () => {
     await expect(fs.readFile(path.join(vaultPath, "After.md"), "utf8")).resolves.toBe("rename me");
   });
 
+  it.each([
+    "rename:after-intent",
+    "rename:after-stage",
+    "rename:before-install",
+    "rename:after-install",
+    "rename:after-link",
+    "rename:after-source-check",
+    "rename:after-source-claim",
+    "rename:before-source-remove",
+    "rename:after-commit",
+  ] as const)("recovers an independent-byte rename after %s", async (faultPoint) => {
+    await fs.writeFile(path.join(vaultPath, "Before.md"), "rename me", "utf8");
+    const interrupted = await openKernel((point) => {
+      if (point === faultPoint) throw new Error(`interrupted at ${faultPoint}`);
+    });
+    const source = await interrupted.readText("Before.md");
+    await expect(interrupted.renameFile("Before.md", "After.md", source.revision)).rejects.toThrow(
+      `interrupted at ${faultPoint}`,
+    );
+
+    const recovered = await openKernel();
+
+    expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+      kind: "rename",
+      outcome: "committed",
+      path: "After.md",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "After.md"), "utf8")).resolves.toBe("rename me");
+    await expect(fs.stat(path.join(vaultPath, "Before.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      fs
+        .readdir(vaultPath)
+        .then((entries) => entries.filter((entry) => entry.startsWith(".threadleaf-claim-"))),
+    ).resolves.toEqual([]);
+  });
+
   it("keeps both files when a rename target already exists", async () => {
     await fs.writeFile(path.join(vaultPath, "Before.md"), "source", "utf8");
     await fs.writeFile(path.join(vaultPath, "After.md"), "target", "utf8");
@@ -605,6 +712,421 @@ describe("VaultKernel renames", () => {
     await expect(kernel.readText("Before.md")).resolves.toMatchObject({ content: "source" });
     await expect(kernel.readText("After.md")).resolves.toMatchObject({ content: "target" });
   });
+
+  it.runIf(process.platform === "linux")(
+    "returns the source-retained publication outcome for strict attachment copies",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.bin");
+      const targetPath = path.join(vaultPath, "After.bin");
+      const bytes = Buffer.from([0, 1, 2, 255, 10]);
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel();
+      const source = await kernel.readBinary("Before.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      const result = await kernel.renameFile(
+        "Before.bin",
+        "After.bin",
+        source.snapshot.revision,
+        undefined,
+        {
+          strictContainment: true,
+        },
+      );
+
+      expect(result).toMatchObject({
+        status: "published-source-retained",
+        from: "Before.bin",
+        to: "After.bin",
+      });
+      if (result.status !== "published-source-retained") {
+        throw new Error("Expected a source-retained publication.");
+      }
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(targetPath)).resolves.toEqual(bytes);
+      await expect(
+        fs.readFile(
+          path.join(kernel.stateRoot, "transactions", result.transactionId, "rename-source"),
+        ),
+      ).resolves.toEqual(bytes);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "recovers a strict publication interrupted after the publish barrier",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.bin");
+      const targetPath = path.join(vaultPath, "After.bin");
+      const bytes = Buffer.from([0, 1, 2, 255, 10]);
+      await fs.writeFile(sourcePath, bytes);
+      const interrupted = await openKernel(async (point) => {
+        if (point === "rename:after-publish") throw new Error("interrupted after publish");
+      });
+      const source = await interrupted.readBinary("Before.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        interrupted.renameFile("Before.bin", "After.bin", source.snapshot.revision, undefined, {
+          strictContainment: true,
+        }),
+      ).rejects.toThrow("interrupted after publish");
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(targetPath)).resolves.toEqual(bytes);
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+        kind: "rename",
+        outcome: "published-source-retained",
+        path: "After.bin",
+      });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(targetPath)).resolves.toEqual(bytes);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects a strict target claimant at the publish barrier",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.bin");
+      const targetPath = path.join(vaultPath, "After.bin");
+      const bytes = Buffer.from([0, 1, 2, 255, 10]);
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel(async (point) => {
+        if (point !== "rename:before-publish") return;
+        await fs.writeFile(targetPath, Buffer.from("external target", "utf8"));
+      });
+      const source = await kernel.readBinary("Before.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      const result = await kernel.renameFile(
+        "Before.bin",
+        "After.bin",
+        source.snapshot.revision,
+        undefined,
+        { strictContainment: true },
+      );
+
+      expect(result).toMatchObject({ status: "conflict", reason: "target-created" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("external target");
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps a separate-process source winner at the snapshot barrier",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Snapshot.bin");
+      const targetPath = path.join(vaultPath, "Snapshot-copy.bin");
+      const bytes = Buffer.from("snapshot source");
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel(async (point) => {
+        if (point === "rename:after-source-check") {
+          await replaceFromSeparateProcess(sourcePath, Buffer.from("separate source winner"));
+        }
+      });
+      const source = await kernel.readBinary("Snapshot.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      const result = await kernel.renameFile(
+        "Snapshot.bin",
+        "Snapshot-copy.bin",
+        source.snapshot.revision,
+        undefined,
+        { strictContainment: true },
+      );
+
+      expect(result).toMatchObject({ status: "conflict", reason: "source-changed-during-publish" });
+      await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("separate source winner");
+      await expect(fs.readFile(targetPath)).resolves.toEqual(bytes);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps a separate-process target claimant at the stage barrier",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Stage.bin");
+      const targetPath = path.join(vaultPath, "Stage-copy.bin");
+      const bytes = Buffer.from("stage source");
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel(async (point) => {
+        if (point === "rename:before-publish") {
+          await replaceFromSeparateProcess(targetPath, Buffer.from("separate target winner"));
+        }
+      });
+      const source = await kernel.readBinary("Stage.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      const result = await kernel.renameFile(
+        "Stage.bin",
+        "Stage-copy.bin",
+        source.snapshot.revision,
+        undefined,
+        { strictContainment: true },
+      );
+
+      expect(result).toMatchObject({ status: "conflict", reason: "target-created" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("separate target winner");
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps a separate-process target winner at the publish receipt barrier",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Publish.bin");
+      const targetPath = path.join(vaultPath, "Publish-copy.bin");
+      const bytes = Buffer.from("publish source");
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel(async (point) => {
+        if (point === "rename:after-publish") {
+          await replaceFromSeparateProcess(targetPath, Buffer.from("separate publish winner"));
+        }
+      });
+      const source = await kernel.readBinary("Publish.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      const result = await kernel.renameFile(
+        "Publish.bin",
+        "Publish-copy.bin",
+        source.snapshot.revision,
+        undefined,
+        { strictContainment: true },
+      );
+
+      expect(result).toMatchObject({ status: "conflict", reason: "source-changed-during-publish" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("separate publish winner");
+    },
+  );
+
+  it("does not alias the source inode when the destination is edited after creation", async () => {
+    const sourcePath = path.join(vaultPath, "Before.md");
+    const targetPath = path.join(vaultPath, "After.md");
+    await fs.writeFile(sourcePath, "source", "utf8");
+    const kernel = await openKernel(async (point) => {
+      if (point === "rename:after-link") {
+        await fs.writeFile(targetPath, "external target", "utf8");
+      }
+    });
+    const source = await kernel.readText("Before.md");
+
+    const result = await kernel.renameFile("Before.md", "After.md", source.revision);
+
+    expect(result).toMatchObject({ status: "conflict" });
+    await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
+    await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("external target");
+  });
+
+  it.runIf(process.platform === "linux")(
+    "preserves an atomic source replacement before the strict claim",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.md");
+      const targetPath = path.join(vaultPath, "After.md");
+      await fs.writeFile(sourcePath, "source", "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point !== "rename:after-source-check") return;
+        const replacement = `${sourcePath}.${randomUUID()}.replacement`;
+        await fs.writeFile(replacement, "external source winner", "utf8");
+        await fs.rename(replacement, sourcePath);
+      });
+      const source = await kernel.readText("Before.md");
+
+      const result = await kernel.renameFile("Before.md", "After.md", source.revision, undefined, {
+        strictContainment: true,
+      });
+
+      expect(result).toMatchObject({ status: "conflict", reason: "source-changed-during-publish" });
+      await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("external source winner");
+      await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("source");
+      await expect(
+        fs
+          .readdir(vaultPath)
+          .then((entries) => entries.filter((entry) => entry.startsWith(".threadleaf-claim-"))),
+      ).resolves.toEqual([]);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "preserves an atomic source replacement after the strict claim",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.md");
+      const targetPath = path.join(vaultPath, "After.md");
+      await fs.writeFile(sourcePath, "source", "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point !== "rename:after-source-claim") return;
+        const replacement = `${sourcePath}.${randomUUID()}.replacement`;
+        await fs.writeFile(replacement, "external source winner", "utf8");
+        await fs.rename(replacement, sourcePath);
+      });
+      const source = await kernel.readText("Before.md");
+
+      const result = await kernel.renameFile("Before.md", "After.md", source.revision, undefined, {
+        strictContainment: true,
+      });
+
+      expect(result).toMatchObject({ status: "conflict", reason: "source-changed-during-publish" });
+      await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("external source winner");
+      await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("source");
+      await expect(
+        fs
+          .readdir(vaultPath)
+          .then((entries) => entries.filter((entry) => entry.startsWith(".threadleaf-claim-"))),
+      ).resolves.toEqual([]);
+    },
+  );
+
+  it("keeps an external destination created after durable staging", async () => {
+    const sourcePath = path.join(vaultPath, "Before.md");
+    const targetPath = path.join(vaultPath, "After.md");
+    await fs.writeFile(sourcePath, "source", "utf8");
+    const kernel = await openKernel(async (point) => {
+      if (point === "rename:after-stage") {
+        await fs.writeFile(targetPath, "external target", "utf8");
+      }
+    });
+    const source = await kernel.readText("Before.md");
+
+    const result = await kernel.renameFile("Before.md", "After.md", source.revision);
+
+    expect(result).toMatchObject({ status: "conflict", reason: "target-created" });
+    await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
+    await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("external target");
+  });
+
+  it.runIf(process.platform === "linux")(
+    "fails closed when a destination parent is replaced by a symlink",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.md");
+      const targetDirectory = path.join(vaultPath, "Archive");
+      const outsideDirectory = path.join(sandboxPath, "outside");
+      await fs.mkdir(targetDirectory);
+      await fs.mkdir(outsideDirectory);
+      await fs.writeFile(sourcePath, "source", "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point === "rename:after-intent") {
+          await fs.rm(targetDirectory, { recursive: true, force: true });
+          await fs.symlink(outsideDirectory, targetDirectory, "dir");
+        }
+      });
+      const source = await kernel.readText("Before.md");
+
+      await expect(
+        kernel.renameFile("Before.md", "Archive/After.md", source.revision, undefined, {
+          strictContainment: true,
+        }),
+      ).rejects.toThrow();
+      await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
+      await expect(fs.stat(path.join(outsideDirectory, "After.md"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+        kind: "rename",
+        outcome: "manual-conflict",
+        path: "Archive/After.md",
+      });
+      await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
+      await expect(fs.stat(path.join(outsideDirectory, "After.md"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "does not create through a parent or ancestor swapped at the install window",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.md");
+      const targetDirectory = path.join(vaultPath, "Archive", "Nested");
+      const outsideDirectory = path.join(sandboxPath, "outside");
+      await fs.mkdir(targetDirectory, { recursive: true });
+      await fs.mkdir(outsideDirectory);
+      await fs.writeFile(sourcePath, "source", "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point !== "rename:before-install") return;
+        await fs.rm(path.join(vaultPath, "Archive"), { recursive: true, force: true });
+        await fs.symlink(outsideDirectory, path.join(vaultPath, "Archive"), "dir");
+      });
+      const source = await kernel.readText("Before.md");
+
+      await expect(
+        kernel.renameFile("Before.md", "Archive/Nested/After.md", source.revision, undefined, {
+          strictContainment: true,
+        }),
+      ).rejects.toThrow();
+      await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
+      await expect(
+        fs.stat(path.join(outsideDirectory, "Nested", "After.md")),
+      ).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "does not follow a final destination symlink created at install",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.md");
+      const targetDirectory = path.join(vaultPath, "Archive");
+      const outsidePath = path.join(sandboxPath, "outside.md");
+      const targetPath = path.join(targetDirectory, "After.md");
+      await fs.mkdir(targetDirectory);
+      await fs.writeFile(sourcePath, "source", "utf8");
+      await fs.writeFile(outsidePath, "outside", "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point !== "rename:before-install") return;
+        await fs.symlink(outsidePath, targetPath);
+      });
+      const source = await kernel.readText("Before.md");
+
+      const result = await kernel.renameFile(
+        "Before.md",
+        "Archive/After.md",
+        source.revision,
+        undefined,
+        { strictContainment: true },
+      );
+
+      expect(result).toMatchObject({ status: "conflict", reason: "target-created" });
+      await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
+      await expect(fs.readFile(outsidePath, "utf8")).resolves.toBe("outside");
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "does not follow a source path replaced by an outside symlink",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.md");
+      const outsidePath = path.join(sandboxPath, "outside.md");
+      await fs.writeFile(sourcePath, "source", "utf8");
+      await fs.writeFile(outsidePath, "outside", "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point === "rename:after-stage") {
+          await fs.unlink(sourcePath);
+          await fs.symlink(outsidePath, sourcePath);
+        }
+      });
+      const source = await kernel.readText("Before.md");
+
+      await expect(
+        kernel.renameFile("Before.md", "After.md", source.revision, undefined, {
+          strictContainment: true,
+        }),
+      ).rejects.toThrow();
+      await expect(fs.readFile(outsidePath, "utf8")).resolves.toBe("outside");
+      await expect(fs.stat(path.join(vaultPath, "After.md"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+        kind: "rename",
+        outcome: "manual-conflict",
+        path: "After.md",
+      });
+      await expect(fs.readFile(outsidePath, "utf8")).resolves.toBe("outside");
+    },
+  );
 
   it("aborts an interrupted rename when the linked source is externally edited", async () => {
     const sourcePath = path.join(vaultPath, "Before.md");
@@ -627,7 +1149,7 @@ describe("VaultKernel renames", () => {
       { kind: "rename", outcome: "manual-conflict", path: "After.md" },
     ]);
     await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("external edit");
-    await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("base");
   });
 
   it("keeps distinct source and target files after an interrupted rename", async () => {
@@ -1003,6 +1525,126 @@ describe("VaultKernel compound move transactions", () => {
     ).resolves.toBe("[[Renamed]]");
   });
 
+  it.runIf(process.platform === "linux")(
+    "cleans private rollback claims after a source-retained compound receipt",
+    async () => {
+      await seedFixture();
+      const kernel = await openKernel();
+      const result = await kernel.moveWithWrites({
+        ...(await prepareFixture(kernel)),
+        strictContainment: true,
+      });
+
+      expect(result.status).toBe("published-source-retained");
+      await expect(
+        fs.readdir(path.join(kernel.stateRoot, "recovery", "rollback-claims")),
+      ).resolves.toEqual([]);
+      await expect(fs.readFile(path.join(vaultPath, "Source.md"), "utf8")).resolves.toBe(
+        "# Source",
+      );
+      await expect(fs.readFile(path.join(vaultPath, "Renamed.md"), "utf8")).resolves.toBe(
+        "# Source",
+      );
+      await expect(
+        fs
+          .readdir(vaultPath)
+          .then((entries) => entries.filter((entry) => entry.startsWith(".threadleaf-"))),
+      ).resolves.toEqual([]);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects cross-device rollback retention before publishing an attachment",
+    async () => {
+      const crossDeviceState = await fs.mkdtemp(path.join("/dev/shm", "threadleaf-state-"));
+      try {
+        const [vaultStat, stateStat] = await Promise.all([
+          fs.stat(vaultPath),
+          fs.stat(crossDeviceState),
+        ]);
+        if (vaultStat.dev === stateStat.dev) return;
+        await seedFixture();
+        const kernel = await VaultKernel.open({
+          vaultRoot: vaultPath,
+          stateRoot: new FixedStateRoot(crossDeviceState),
+        });
+        const request = { ...(await prepareFixture(kernel)), strictContainment: true };
+
+        await expect(kernel.moveWithWrites(request)).rejects.toMatchObject({
+          name: "AttachmentPublishCapabilityError",
+          code: "cross-device",
+        });
+        await expect(fs.readFile(path.join(vaultPath, "Source.md"), "utf8")).resolves.toBe(
+          "# Source",
+        );
+        await expect(fs.readFile(path.join(vaultPath, "A.md"), "utf8")).resolves.toBe("[[Source]]");
+        await expect(fs.stat(path.join(vaultPath, "Renamed.md"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        await expect(
+          fs
+            .readdir(vaultPath)
+            .then((entries) => entries.filter((entry) => entry.startsWith(".threadleaf-"))),
+        ).resolves.toEqual([]);
+      } finally {
+        await fs.rm(crossDeviceState, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "preserves a strict rollback-name claimant during compound recovery",
+    async () => {
+      await seedFixture();
+      let stateRoot = "";
+      let afterPrepareCount = 0;
+      const kernel = await openKernel(async (point) => {
+        if (point === "move-with-writes:before-rename") {
+          await fs.writeFile(path.join(vaultPath, "Renamed.md"), "external target", "utf8");
+          return;
+        }
+        if (point !== "write:after-prepare" || ++afterPrepareCount !== 3) return;
+        const journalEntries = await Promise.all(
+          (await fs.readdir(path.join(stateRoot, "journal")))
+            .filter((entry) => entry.endsWith(".json"))
+            .map(
+              async (entry) =>
+                JSON.parse(await fs.readFile(path.join(stateRoot, "journal", entry), "utf8")) as {
+                  kind?: unknown;
+                  rollbackPath?: string;
+                },
+            ),
+        );
+        const journal = journalEntries.find(
+          (entry): entry is { kind: "write"; rollbackPath: string } =>
+            entry.kind === "write" && typeof entry.rollbackPath === "string",
+        );
+        if (!journal) throw new Error("rollback child journal was not present");
+        await fs.writeFile(
+          path.join(vaultPath, journal.rollbackPath),
+          "external rollback claimant",
+          "utf8",
+        );
+      });
+      stateRoot = kernel.stateRoot;
+      const request = { ...(await prepareFixture(kernel)), strictContainment: true };
+
+      const result = await kernel.moveWithWrites(request);
+
+      expect(result).toMatchObject({ status: "conflict" });
+      const claimant = (await fs.readdir(path.join(vaultPath, ""))).find((entry) =>
+        entry.startsWith(".threadleaf-rollback-"),
+      );
+      expect(claimant).toBeTypeOf("string");
+      await expect(fs.readFile(path.join(vaultPath, claimant ?? "missing"), "utf8")).resolves.toBe(
+        "external rollback claimant",
+      );
+      await expect(fs.readFile(path.join(vaultPath, "Renamed.md"), "utf8")).resolves.toBe(
+        "external target",
+      );
+    },
+  );
+
   it.each([
     "move-with-writes:after-intent",
     "move-with-writes:after-entry",
@@ -1102,6 +1744,77 @@ describe("VaultKernel compound move transactions", () => {
       content: "[renamed](./Renamed.md)",
     });
   });
+
+  it.each([
+    ["B/A", "original"],
+    ["B/C", "external-target"],
+    ["B/missing", "missing"],
+  ] as const)(
+    "archives manual recovery without repointing Markdown for a %s rename topology",
+    async (_topology, targetState) => {
+      await seedFixture();
+      const kernel = await openKernel((point) => {
+        if (point === "move-with-writes:after-rename") {
+          throw new Error("interrupted before rename recovery topology");
+        }
+      });
+      await expect(kernel.moveWithWrites(await prepareFixture(kernel))).rejects.toThrow(
+        "interrupted before rename recovery topology",
+      );
+
+      await fs.writeFile(path.join(vaultPath, "Source.md"), "external source winner", "utf8");
+      if (targetState === "external-target") {
+        await fs.writeFile(path.join(vaultPath, "Renamed.md"), "external target winner", "utf8");
+      } else if (targetState === "missing") {
+        await fs.unlink(path.join(vaultPath, "Renamed.md"));
+      }
+
+      const recovered = await openKernel();
+
+      expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+        kind: "move-with-writes",
+        outcome: "manual-conflict",
+        path: "Source.md",
+      });
+      await expect(recovered.readText("A.md")).resolves.toMatchObject({
+        content: "[[Renamed]]",
+      });
+      await expect(recovered.readText("B.md")).resolves.toMatchObject({
+        content: "[renamed](./Renamed.md)",
+      });
+      await expect(recovered.readText("Source.md")).resolves.toMatchObject({
+        content: "external source winner",
+      });
+      if (targetState === "original") {
+        await expect(recovered.readText("Renamed.md")).resolves.toMatchObject({
+          content: "# Source",
+        });
+      } else if (targetState === "external-target") {
+        await expect(recovered.readText("Renamed.md")).resolves.toMatchObject({
+          content: "external target winner",
+        });
+      } else {
+        await expect(recovered.readText("Renamed.md")).rejects.toThrow();
+      }
+
+      const historyEntries = await fs.readdir(path.join(recovered.stateRoot, "history"));
+      const parentHistory = await Promise.all(
+        historyEntries.map(async (entry) => {
+          const parsed = JSON.parse(
+            await fs.readFile(path.join(recovered.stateRoot, "history", entry), "utf8"),
+          ) as { kind?: unknown; outcome?: unknown; reason?: unknown };
+          return parsed.kind === "move-with-writes" ? parsed : null;
+        }),
+      );
+      expect(parentHistory).toContainEqual(
+        expect.objectContaining({
+          kind: "move-with-writes",
+          outcome: "manual-conflict",
+          reason: "rename-state-diverged",
+        }),
+      );
+    },
+  );
 
   it("fails closed on a corrupt parent blob before recovering a pending child", async () => {
     await seedFixture();

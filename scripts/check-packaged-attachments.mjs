@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 
 // This check is intentionally run under an explicit X11 Xvfb command from the
 // package script.  It owns a temporary profile and fixture vault, and uses CDP
@@ -12,8 +13,10 @@ const executablePath = path.resolve(
   process.env.THREADLEAF_PACKAGED_EXECUTABLE ??
     path.join(appRoot, "release", "linux-unpacked", "threadleaf"),
 );
-const screenshotDirectory = process.env.THREADLEAF_ATTACHMENT_SCREENSHOT_DIR;
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-packaged-attachments-"));
+const screenshotDirectory = path.resolve(
+  process.env.THREADLEAF_ATTACHMENT_SCREENSHOT_DIR ?? path.join(testRoot, "screenshots"),
+);
 const userDataPath = path.join(testRoot, "user-data");
 const vaultPath = path.join(testRoot, "attachment-vault");
 const notePath = path.join(vaultPath, "Attachment Desk.md");
@@ -38,6 +41,139 @@ function delay(milliseconds) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function paethPredictor(left, above, upperLeft) {
+  const estimate = left + above - upperLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const aboveDistance = Math.abs(estimate - above);
+  const upperLeftDistance = Math.abs(estimate - upperLeft);
+  if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) return left;
+  if (aboveDistance <= upperLeftDistance) return above;
+  return upperLeft;
+}
+
+function decodePng(buffer) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  assert(buffer.subarray(0, signature.length).equals(signature), "Screenshot was not a PNG.");
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const imageData = [];
+  let offset = signature.length;
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString("ascii", offset + 4, offset + 8);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    assert(dataEnd + 4 <= buffer.length, `Truncated PNG ${type} chunk.`);
+    const data = buffer.subarray(dataStart, dataEnd);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      assert(
+        data[12] === 0,
+        "Interlaced PNG screenshots are not supported by the positive control.",
+      );
+    } else if (type === "IDAT") {
+      imageData.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+    offset = dataEnd + 4;
+  }
+  assert(width > 0 && height > 0, "PNG screenshot dimensions were missing.");
+  assert(
+    bitDepth === 8 && (colorType === 2 || colorType === 6),
+    "Unsupported PNG screenshot format.",
+  );
+  const channels = colorType === 6 ? 4 : 3;
+  const rowBytes = width * channels;
+  const decoded = inflateSync(Buffer.concat(imageData));
+  assert(decoded.length >= height * (rowBytes + 1), "PNG screenshot pixel data was truncated.");
+  const rgba = Buffer.alloc(width * height * 4);
+  let sourceOffset = 0;
+  let previous = Buffer.alloc(rowBytes);
+  for (let y = 0; y < height; y += 1) {
+    const filter = decoded[sourceOffset++];
+    const row = Buffer.from(decoded.subarray(sourceOffset, sourceOffset + rowBytes));
+    sourceOffset += rowBytes;
+    for (let x = 0; x < rowBytes; x += 1) {
+      const left = x >= channels ? row[x - channels] : 0;
+      const above = previous[x] ?? 0;
+      const upperLeft = x >= channels ? (previous[x - channels] ?? 0) : 0;
+      if (filter === 1) row[x] = (row[x] + left) & 0xff;
+      else if (filter === 2) row[x] = (row[x] + above) & 0xff;
+      else if (filter === 3) row[x] = (row[x] + Math.floor((left + above) / 2)) & 0xff;
+      else if (filter === 4) row[x] = (row[x] + paethPredictor(left, above, upperLeft)) & 0xff;
+      else assert(filter === 0, `Unsupported PNG row filter ${filter}.`);
+    }
+    for (let x = 0; x < width; x += 1) {
+      const source = x * channels;
+      const target = (y * width + x) * 4;
+      rgba[target] = row[source];
+      rgba[target + 1] = row[source + 1];
+      rgba[target + 2] = row[source + 2];
+      rgba[target + 3] = channels === 4 ? row[source + 3] : 0xff;
+    }
+    previous = row;
+  }
+  return { width, height, rgba };
+}
+
+function changedPixelsInRegion(before, after, region) {
+  assert(
+    before.width === after.width && before.height === after.height,
+    "Screenshot dimensions changed.",
+  );
+  const left = Math.max(0, Math.floor(region.x));
+  const top = Math.max(0, Math.floor(region.y));
+  const right = Math.min(before.width, Math.ceil(region.x + region.width));
+  const bottom = Math.min(before.height, Math.ceil(region.y + region.height));
+  let changed = 0;
+  for (let y = top; y < bottom; y += 1) {
+    for (let x = left; x < right; x += 1) {
+      const offset = (y * before.width + x) * 4;
+      if (
+        before.rgba[offset] !== after.rgba[offset] ||
+        before.rgba[offset + 1] !== after.rgba[offset + 1] ||
+        before.rgba[offset + 2] !== after.rgba[offset + 2] ||
+        before.rgba[offset + 3] !== after.rgba[offset + 3]
+      ) {
+        changed += 1;
+      }
+    }
+  }
+  return changed;
+}
+
+function countPerimeterColorPixels(image, region, color, border = 12) {
+  const left = Math.max(0, Math.floor(region.x));
+  const top = Math.max(0, Math.floor(region.y));
+  const right = Math.min(image.width, Math.ceil(region.x + region.width));
+  const bottom = Math.min(image.height, Math.ceil(region.y + region.height));
+  const counts = { top: 0, right: 0, bottom: 0, left: 0 };
+  for (let y = top; y < bottom; y += 1) {
+    for (let x = left; x < right; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      if (
+        image.rgba[offset] !== color.r ||
+        image.rgba[offset + 1] !== color.g ||
+        image.rgba[offset + 2] !== color.b ||
+        image.rgba[offset + 3] !== color.a
+      ) {
+        continue;
+      }
+      if (y < top + border) counts.top += 1;
+      if (x >= right - border) counts.right += 1;
+      if (y >= bottom - border) counts.bottom += 1;
+      if (x < left + border) counts.left += 1;
+    }
+  }
+  return counts;
 }
 
 async function availablePort() {
@@ -129,6 +265,72 @@ async function evaluate(expression) {
   return response.result?.value;
 }
 
+async function clickPointer(selector) {
+  const target = await evaluate(`(() => {
+    const selector = ${JSON.stringify(selector)};
+    const element = document.querySelector(selector);
+    if (!(element instanceof HTMLElement)) return { ok: false, reason: 'missing' };
+    const rect = element.getBoundingClientRect();
+    const x = Math.floor(rect.left + rect.width / 2);
+    const y = Math.floor(rect.top + rect.height / 2);
+    const hit = document.elementFromPoint(x, y);
+    const style = getComputedStyle(element);
+    return {
+      ok: rect.width > 0 && rect.height > 0 && style.pointerEvents !== 'none',
+      x,
+      y,
+      hit: hit instanceof Element && (hit === element || hit.closest(selector) === element),
+      reason: hit instanceof Element ? hit.tagName : 'empty',
+    };
+  })()`);
+  assert(target?.ok, `Pointer target ${selector} is missing, hidden, or inert.`);
+  assert(target.hit, `Pointer hit-target check failed for ${selector}: ${target.reason}.`);
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: target.x,
+    y: target.y,
+    button: "none",
+    buttons: 0,
+  });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: target.x,
+    y: target.y,
+    button: "left",
+    buttons: 1,
+    clickCount: 1,
+  });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: target.x,
+    y: target.y,
+    button: "left",
+    buttons: 0,
+    clickCount: 1,
+  });
+}
+
+async function replaceInput(selector, value) {
+  await clickPointer(selector);
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+  });
+  await cdp.send("Input.insertText", { text: value });
+  const actual = await evaluate(`document.querySelector(${JSON.stringify(selector)})?.value ?? ''`);
+  assert(actual === value, `CDP input did not commit the expected value for ${selector}.`);
+}
+
 async function descendantCommandLines(rootPid) {
   const entries = await fs.readdir("/proc");
   const records = [];
@@ -215,7 +417,23 @@ async function waitForReady(deadline) {
 async function setTheme(theme) {
   const current = await evaluate("document.documentElement.dataset.theme");
   if (current !== theme) {
-    await evaluate("document.querySelector('#theme-toggle')?.click(); true");
+    const dialogOpen = await evaluate(
+      "document.querySelector('#attachment-move-dialog')?.open === true",
+    );
+    if (dialogOpen) {
+      await clickPointer("#attachment-move-cancel");
+      const closeDeadline = Date.now() + 5_000;
+      while (Date.now() < closeDeadline) {
+        if (!(await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")))
+          break;
+        await delay(30);
+      }
+      assert(
+        !(await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")),
+        "The attachment publication workbench could not close before switching theme.",
+      );
+    }
+    await clickPointer("#theme-toggle");
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
       if ((await evaluate("document.documentElement.dataset.theme")) === theme) break;
@@ -225,6 +443,39 @@ async function setTheme(theme) {
       (await evaluate("document.documentElement.dataset.theme")) === theme,
       `The packaged application did not switch to ${theme} mode.`,
     );
+    if (dialogOpen) {
+      await clickPointer(
+        '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="move"]',
+      );
+      const openDeadline = Date.now() + 5_000;
+      while (Date.now() < openDeadline) {
+        if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"))
+          break;
+        await delay(40);
+      }
+      assert(
+        await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"),
+        "The attachment publication workbench could not reopen after switching theme.",
+      );
+      await replaceInput("#attachment-move-target", "Archive/report-renamed.pdf");
+      await clickPointer("#attachment-move-submit");
+      const previewDeadline = Date.now() + 8_000;
+      while (Date.now() < previewDeadline) {
+        const preview = await evaluate(
+          "document.querySelector('#attachment-move-preview-message')?.textContent ?? ''",
+        );
+        if (preview.length > 0) break;
+        await delay(50);
+      }
+      assert(
+        (
+          await evaluate(
+            "document.querySelector('#attachment-move-preview-message')?.textContent ?? ''",
+          )
+        ).length > 0,
+        "The attachment publication preview could not be restored after switching theme.",
+      );
+    }
   }
 }
 
@@ -235,6 +486,8 @@ async function capture(name) {
   });
   const destination = path.join(screenshotDirectory, name);
   await fs.writeFile(destination, Buffer.from(screenshot.data, "base64"));
+  const stats = await fs.stat(destination);
+  assert(stats.size > 1_000, `Captured screenshot ${name} is unexpectedly small.`);
   return destination;
 }
 
@@ -304,8 +557,16 @@ try {
     "The attachment fixture is not writable.",
   );
 
-  await evaluate("document.querySelector('#read-view')?.click(); true");
+  await clickPointer("#read-view");
   await waitForFixture(deadline);
+  const screenshots = [];
+  await fs.mkdir(screenshotDirectory, { recursive: true });
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1180,
+    height: 820,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   const cardState =
     await evaluate(`(() => [...document.querySelectorAll('.preview-attachment-card')].map((card) => ({
     text: card.textContent ?? '',
@@ -313,8 +574,12 @@ try {
     actionCount: card.querySelectorAll('.preview-attachment-action').length,
   })))()`);
   assert(
-    cardState.length === 3 && cardState.every((card) => card.actionCount === 2),
-    "Attachment cards lost open/reveal metadata.",
+    cardState.length === 3 && cardState.every((card) => card.actionCount === 3),
+    "Attachment cards lost open/reveal/publication metadata.",
+  );
+  assert(
+    cardState.every((card) => card.text.includes("Publish copy")),
+    "Attachment cards did not expose truthful source-retaining publication controls.",
   );
   assert(
     cardState.some((card) => card.text.includes("unsupported")),
@@ -326,6 +591,15 @@ try {
     )) === 0,
     "The attachment card exposed an inline executable/media element.",
   );
+  await clickPointer(
+    '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="open"]',
+  );
+  assert(
+    (await evaluate("document.querySelector('#toast')?.textContent ?? ''")).includes(
+      "Opening local attachments is not enabled yet",
+    ),
+    "The packaged Open attachment affordance was not inert.",
+  );
   assert(
     (await fs.readFile(notePath, "utf8")) === originalNote,
     "Reading view changed fixture Markdown bytes.",
@@ -336,37 +610,209 @@ try {
     ),
     "Attachment bytes changed during metadata loading.",
   );
+  await evaluate(
+    "document.querySelector('.preview-attachment-card')?.scrollIntoView({ block: 'center' }); true",
+  );
+  await setTheme("dark");
+  screenshots.push(await capture("packaged-attachment-cards-dark.png"));
+  await setTheme("light");
+  screenshots.push(await capture("packaged-attachment-cards-light.png"));
+  await setTheme("dark");
 
-  const screenshots = [];
-  if (screenshotDirectory) {
-    await fs.mkdir(screenshotDirectory, { recursive: true });
-    await cdp.send("Emulation.setDeviceMetricsOverride", {
-      width: 1180,
-      height: 820,
-      deviceScaleFactor: 1,
-      mobile: false,
-    });
-    await evaluate(
-      "document.querySelector('.preview-attachment-card')?.scrollIntoView({ block: 'center' }); true",
-    );
-    await delay(120);
-    await setTheme("dark");
-    screenshots.push(await capture("packaged-attachments-dark.png"));
-    const positive = await evaluate(`(() => {
-      const card = document.querySelector('.preview-attachment-card');
-      if (!(card instanceof HTMLElement)) return false;
-      card.style.outline = '12px solid rgb(255, 0, 255)';
-      card.style.outlineOffset = '-12px';
-      return getComputedStyle(card).outlineColor === 'rgb(255, 0, 255)';
-    })()`);
-    assert(positive, "The attachment visual positive control did not reach a card.");
-    screenshots.push(await capture("packaged-attachments-positive-control.png"));
-    await evaluate(
-      "document.querySelector('.preview-attachment-card')?.style.removeProperty('outline'); document.querySelector('.preview-attachment-card')?.style.removeProperty('outline-offset'); true",
-    );
-    await setTheme("light");
-    screenshots.push(await capture("packaged-attachments-light.png"));
+  await clickPointer(
+    '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="move"]',
+  );
+  const dialogDeadline = Date.now() + 5_000;
+  while (Date.now() < dialogDeadline) {
+    if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")) break;
+    await delay(40);
   }
+  assert(
+    await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"),
+    "The packaged attachment card did not reach the publication workbench.",
+  );
+  const workbenchDom = await evaluate(`(() => {
+    const html = document.querySelector('#attachment-move-dialog')?.outerHTML ?? '';
+    const needle = ${JSON.stringify(vaultPath)};
+    const index = html.indexOf(needle);
+    return { index, context: index < 0 ? '' : html.slice(Math.max(0, index - 160), index + needle.length + 220) };
+  })()`);
+  assert(
+    workbenchDom?.index < 0,
+    `The attachment workbench leaked the absolute vault path into the renderer DOM: ${JSON.stringify(workbenchDom)}`,
+  );
+  await replaceInput("#attachment-move-target", "Archive/report-renamed.pdf");
+  await clickPointer("#attachment-move-submit");
+  const previewDeadline = Date.now() + 8_000;
+  while (Date.now() < previewDeadline) {
+    const state = await evaluate(`(() => ({
+      open: document.querySelector('#attachment-move-dialog')?.open === true,
+      preview: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
+      refs: document.querySelectorAll('#attachment-move-blocker-list li').length,
+    }))()`);
+    if (state.open && state.preview.length > 0 && state.refs > 0) break;
+    await delay(50);
+  }
+  const previewState = await evaluate(`(() => ({
+    open: document.querySelector('#attachment-move-dialog')?.open === true,
+    message: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
+    list: document.querySelector('#attachment-move-blocker-list')?.textContent ?? '',
+  }))()`);
+  assert(
+    previewState.open && previewState.message.length > 0,
+    "The attachment publication preview did not render.",
+  );
+  assert(
+    previewState.list.includes("Attachment Desk.md") &&
+      previewState.list.includes("Archive/report-renamed.pdf"),
+    "The attachment publication preview omitted its exact local reference update.",
+  );
+  assert(
+    !(await evaluate(
+      `(document.querySelector('#attachment-move-dialog')?.outerHTML ?? '').includes(${JSON.stringify(vaultPath)})`,
+    )),
+    "The attachment publication preview leaked the absolute vault path into its workbench DOM.",
+  );
+  assert(
+    (await fs.readFile(notePath, "utf8")) === originalNote,
+    "The attachment preview changed Markdown before confirmation.",
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).equals(
+      Buffer.from("%PDF-1.7\nfixture\0", "binary"),
+    ),
+    "The attachment preview changed bytes before confirmation.",
+  );
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, "Archive", "report-renamed.pdf"))
+      .then(() => true)
+      .catch(() => false)),
+    "The attachment preview created its destination before confirmation.",
+  );
+
+  await evaluate(
+    "document.querySelector('.preview-attachment-card')?.scrollIntoView({ block: 'center' }); true",
+  );
+  await delay(120);
+  await setTheme("dark");
+  const darkBaselinePath = await capture("packaged-attachments-dark.png");
+  screenshots.push(darkBaselinePath);
+  const dialogRegion = await evaluate(`(() => {
+    const dialog = document.querySelector('#attachment-move-dialog');
+    if (!(dialog instanceof HTMLElement)) return null;
+    const rect = dialog.getBoundingClientRect();
+    return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+  })()`);
+  assert(
+    dialogRegion && dialogRegion.width > 0 && dialogRegion.height > 0,
+    "The attachment dialog did not expose a positive-control region.",
+  );
+  const positive = await evaluate(`(() => {
+    const dialog = document.querySelector('#attachment-move-dialog');
+    if (!(dialog instanceof HTMLElement) || !dialog.matches(':modal')) return false;
+    dialog.style.outline = '12px solid rgb(255, 0, 255)';
+    dialog.style.outlineOffset = '-12px';
+    return getComputedStyle(dialog).outlineColor === 'rgb(255, 0, 255)';
+  })()`);
+  assert(positive, "The attachment visual positive control did not reach the visible workbench.");
+  const positivePath = await capture("packaged-attachments-positive-control.png");
+  screenshots.push(positivePath);
+  const changedPixels = changedPixelsInRegion(
+    decodePng(await fs.readFile(darkBaselinePath)),
+    decodePng(await fs.readFile(positivePath)),
+    dialogRegion,
+  );
+  assert(changedPixels > 0, "The attachment visual positive control changed no dialog pixels.");
+  const positiveImage = decodePng(await fs.readFile(positivePath));
+  const outlinePixels = countPerimeterColorPixels(positiveImage, dialogRegion, {
+    r: 255,
+    g: 0,
+    b: 255,
+    a: 255,
+  });
+  assert(
+    Object.values(outlinePixels).every((count) => count > 0),
+    `The decoded PNG did not contain the expected magenta outline on every dialog side: ${JSON.stringify(outlinePixels)}`,
+  );
+  await evaluate(
+    "document.querySelector('#attachment-move-dialog')?.style.removeProperty('outline'); document.querySelector('#attachment-move-dialog')?.style.removeProperty('outline-offset'); true",
+  );
+  await setTheme("light");
+  screenshots.push(await capture("packaged-attachments-light.png"));
+
+  await clickPointer("#attachment-move-submit");
+  const commitDeadline = Date.now() + 10_000;
+  while (Date.now() < commitDeadline) {
+    const targetExists = await fs
+      .stat(path.join(vaultPath, "Archive", "report-renamed.pdf"))
+      .then(() => true)
+      .catch(() => false);
+    const terminalUi = await evaluate(`(() => ({
+      dialogOpen: document.querySelector('#attachment-move-dialog')?.open === true,
+      toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+    }))()`);
+    if (
+      targetExists &&
+      !terminalUi.dialogOpen &&
+      terminalUi.toast.includes("Published a copy at")
+    ) {
+      break;
+    }
+    await delay(60);
+  }
+  assert(
+    await fs
+      .stat(path.join(vaultPath, "Archive", "report-renamed.pdf"))
+      .then(() => true)
+      .catch(() => false),
+    "The confirmed attachment publication did not create its destination.",
+  );
+  assert(
+    await fs
+      .stat(path.join(vaultPath, "Assets", "report.pdf"))
+      .then(() => true)
+      .catch(() => false),
+    "The confirmed attachment publication did not retain its source file.",
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).equals(
+      Buffer.from("%PDF-1.7\nfixture\0", "binary"),
+    ),
+    "The confirmed attachment publication changed the retained source bytes.",
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Archive", "report-renamed.pdf"))).equals(
+      Buffer.from("%PDF-1.7\nfixture\0", "binary"),
+    ),
+    "The confirmed attachment publication changed the copied bytes.",
+  );
+  assert(
+    (await fs.readFile(notePath, "utf8")) ===
+      originalNote.replaceAll("Assets/report.pdf", "Archive/report-renamed.pdf"),
+    "The confirmed attachment publication did not rewrite the expected local references.",
+  );
+  const toastText = await evaluate("document.querySelector('#toast')?.textContent?.trim() ?? ''");
+  assert(
+    toastText.includes("Published a copy at Archive/report-renamed.pdf") &&
+      toastText.includes("the original remains at Assets/report.pdf") &&
+      !toastText.includes("Moved attachment"),
+    `The attachment publication toast was not source-retention truthful: ${toastText}`,
+  );
+  const closedDeadline = Date.now() + 5_000;
+  while (Date.now() < closedDeadline) {
+    if (!(await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")))
+      break;
+    await delay(40);
+  }
+  assert(
+    !(await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")),
+    "The attachment publication workbench remained open after commit.",
+  );
+  await setTheme("dark");
+  screenshots.push(await capture("packaged-attachment-move-dark.png"));
+  await setTheme("light");
+  screenshots.push(await capture("packaged-attachment-move-light.png"));
 
   await evaluate("setTimeout(() => window.close(), 0); true");
   const exit = await Promise.race([
@@ -378,7 +824,16 @@ try {
     `Packaged attachment application did not exit cleanly: ${JSON.stringify(exit)}`,
   );
   console.log(
-    JSON.stringify({ executablePath, vaultPath, renderers, exactBytes: true, screenshots }),
+    JSON.stringify({
+      executablePath,
+      vaultPath,
+      renderers,
+      exactBytes: true,
+      attachmentMove: true,
+      changedPixels,
+      outlinePixels,
+      screenshots,
+    }),
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

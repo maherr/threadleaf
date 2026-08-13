@@ -55,6 +55,17 @@ function allJobs(document: WorkflowObject): WorkflowObject[] {
 }
 
 describe("release workflows", () => {
+  it("gates the Linux release on the packaged attachment workflow", async () => {
+    const packageDocument = JSON.parse(await readFile(path.resolve("package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const release = packageDocument.scripts?.["release:linux"] ?? "";
+    expect(release).toContain("pnpm run test:packaged-attachments");
+    expect(release.indexOf("pnpm run test:packaged-attachments")).toBeLessThan(
+      release.indexOf("pnpm run pack:linux"),
+    );
+  });
+
   it("pins every third-party action to an approved immutable commit", async () => {
     const uses = [
       ...collectUses(await workflow("ci.yml")),

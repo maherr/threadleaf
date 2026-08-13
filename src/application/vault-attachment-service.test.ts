@@ -6,6 +6,7 @@ import { FixedStateRoot } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import {
   loadVaultAttachment,
+  parseVaultAttachmentTarget,
   probeMediaFile,
   resolveVaultAttachmentTarget,
   sniffVaultAttachment,
@@ -94,6 +95,29 @@ describe("bounded attachment detection", () => {
     });
   });
 
+  it("shares the local target parse while retaining an exact query and fragment suffix", () => {
+    expect(
+      parseVaultAttachmentTarget(
+        "Notes/Current.md",
+        "../Assets/report%20file.pdf?download=1%26preview=1#page=2",
+      ),
+    ).toEqual({
+      status: "local",
+      path: "Assets/report file.pdf",
+      suffix: "?download=1%26preview=1#page=2",
+      bareName: false,
+    });
+    expect(
+      parseVaultAttachmentTarget("Notes/Current.md", "https://example.test/report.pdf#page=2"),
+    ).toMatchObject({ status: "rejected", reason: "external" });
+    expect(parseVaultAttachmentTarget("Notes/Current.md", "../Assets/report\\?draft.pdf")).toEqual({
+      status: "local",
+      path: "Assets/report?draft.pdf",
+      suffix: "",
+      bareName: false,
+    });
+  });
+
   it("returns metadata and open/reveal affordances without inline executable bytes", async () => {
     const bytes = Buffer.from("%PDF-1.7\nfixture", "ascii");
     await fs.writeFile(path.join(vaultPath, "Assets", "report.bin"), bytes);
@@ -110,10 +134,68 @@ describe("bounded attachment detection", () => {
         kind: "pdf",
         mimeType: "application/pdf",
         size: bytes.length,
-        actions: { open: true, reveal: true, inline: false },
+        actions: { open: true, reveal: true, move: true, inline: false },
       },
     });
     expect(response.status === "ready" && "base64" in response.attachment).toBe(false);
+  });
+
+  it("uses Obsidian relative-first and vault-root fallback resolution for nested attachments", async () => {
+    await fs.mkdir(path.join(vaultPath, "Drawings", "Assets"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Assets", "Ébauche"), { recursive: true });
+    await fs.writeFile(
+      path.join(vaultPath, "Drawings", "Unicode Scene.excalidraw.md"),
+      "![[Assets/Ébauche/diagram.svg]]",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(vaultPath, "Assets", "Ébauche", "diagram.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      "utf8",
+    );
+
+    await expect(
+      loadVaultAttachment(
+        kernel,
+        "Drawings/Unicode Scene.excalidraw.md",
+        "Assets/Ébauche/diagram.svg",
+        kernel.vaultId,
+      ),
+    ).resolves.toMatchObject({
+      status: "ready",
+      attachment: { path: "Assets/Ébauche/diagram.svg" },
+    });
+
+    await fs.writeFile(
+      path.join(vaultPath, "Drawings", "Assets", "diagram.pdf"),
+      "%PDF-relative",
+      "utf8",
+    );
+    await fs.writeFile(path.join(vaultPath, "Assets", "diagram.pdf"), "%PDF-root", "utf8");
+    await expect(
+      loadVaultAttachment(
+        kernel,
+        "Drawings/Unicode Scene.excalidraw.md",
+        "Assets/diagram.pdf",
+        kernel.vaultId,
+      ),
+    ).resolves.toMatchObject({
+      status: "ready",
+      attachment: { path: "Drawings/Assets/diagram.pdf" },
+    });
+  });
+
+  it("refuses an ambiguous Obsidian basename attachment target", async () => {
+    await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), "%PDF-assets", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Archive", "report.pdf"), "%PDF-archive", "utf8");
+
+    await expect(
+      loadVaultAttachment(kernel, "Notes/Current.md", "report.pdf", kernel.vaultId),
+    ).resolves.toMatchObject({
+      status: "unavailable",
+      reason: "ambiguous",
+    });
   });
 
   it("honors bounded reads and extension spoofing", async () => {

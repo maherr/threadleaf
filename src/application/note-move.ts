@@ -583,5 +583,20 @@ export async function moveMarkdownNote(
   if (result.status === "conflict") {
     return result;
   }
-  return { ...result, rewrites: [], writes: [] };
+  if (result.status === "published-source-retained") {
+    return {
+      status: "conflict",
+      from: result.from,
+      to: result.to,
+      reason: "source-retention-not-supported",
+    };
+  }
+  return {
+    status: "committed",
+    from: result.from,
+    to: result.to,
+    transactionId: result.transactionId,
+    rewrites: [],
+    writes: [],
+  };
 }

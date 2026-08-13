@@ -128,6 +128,24 @@ describe("watch protocol", () => {
     expect(ledger.size).toBe(0);
   });
 
+  it("acknowledges an exact result observed before the writer registers it", () => {
+    const ledger = new WatchOperationLedger();
+    const expectedRevision = revisionOf(Buffer.from("late result"));
+    const observed = ledger.annotate([
+      { kind: "upsert", state: state("Note.md", "fresh-inode", expectedRevision) },
+    ]);
+    expect(observed[0]).not.toHaveProperty("operationId");
+
+    ledger.expect({
+      id: "late-write-1",
+      kind: "write",
+      path: "Note.md",
+      revision: expectedRevision,
+    });
+
+    expect(ledger.size).toBe(0);
+  });
+
   it("attributes every exact result of a multi-file operation", () => {
     const ledger = new WatchOperationLedger();
     const firstRevision = revisionOf(Buffer.from("first"));
@@ -175,6 +193,34 @@ describe("watch protocol", () => {
     ]);
 
     expect(annotated).toMatchObject([{ operationId: "compound-1" }, { operationId: "compound-1" }]);
+    expect(ledger.size).toBe(0);
+  });
+
+  it("attributes a freshly materialized rename as one move", () => {
+    const ledger = new WatchOperationLedger();
+    const revision = revisionOf(Buffer.from("materialized"));
+    ledger.expect({
+      id: "rename-copy-1",
+      kind: "rename",
+      from: "Before.md",
+      to: "After.md",
+      revision,
+    });
+
+    const annotated = ledger.annotate([
+      { kind: "delete", path: "Before.md" },
+      { kind: "upsert", state: state("After.md", "fresh-inode", revision) },
+    ]);
+
+    expect(annotated).toEqual([
+      {
+        kind: "move",
+        from: "Before.md",
+        to: "After.md",
+        state: state("After.md", "fresh-inode", revision),
+        operationId: "rename-copy-1",
+      },
+    ]);
     expect(ledger.size).toBe(0);
   });
 

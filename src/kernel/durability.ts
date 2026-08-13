@@ -2,6 +2,512 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 
+import {
+  assertAnonymousPublishAvailable,
+  publishBufferNoReplace,
+  renameNoReplace,
+} from "../native-filesystem/index.js";
+
+// Linux is the only platform whose descriptor-relative path behavior is
+// exercised by this repository. Do not infer that Darwin's /dev/fd spelling
+// has identical openat-style guarantees. Unsupported platforms fail closed
+// for strict attachment mutations while ordinary writers remain portable.
+const descriptorRoot = process.platform === "linux" ? "/proc/self/fd" : null;
+const descriptorDirectoryFlags = constants.O_RDONLY | (constants.O_DIRECTORY ?? 0);
+const descriptorNoFollow = constants.O_NOFOLLOW ?? 0;
+
+export const strictContainmentSupported =
+  process.platform === "linux" && Boolean(constants.O_DIRECTORY && constants.O_NOFOLLOW);
+
+/** Stable contract name for strict, source-retaining attachment publication. */
+export const FILE_PUBLISH_CAPABILITY = "FILE-PUBLISH-CAP-02" as const;
+
+export type AttachmentPublishCapabilityCode =
+  | "unsupported-platform"
+  | "anonymous-publication-unsupported"
+  | "cross-device"
+  | "durability";
+
+export type AttachmentPublishCapability =
+  | {
+      status: "supported";
+      device: string;
+      contract: typeof FILE_PUBLISH_CAPABILITY;
+    }
+  | {
+      status: "unsupported";
+      code: AttachmentPublishCapabilityCode;
+      contract: typeof FILE_PUBLISH_CAPABILITY;
+      detail: string;
+    };
+
+export class AttachmentPublishCapabilityError extends Error {
+  readonly code: AttachmentPublishCapabilityCode;
+  readonly contract = FILE_PUBLISH_CAPABILITY;
+  readonly detail: string;
+
+  constructor(capability: Extract<AttachmentPublishCapability, { status: "unsupported" }>) {
+    super(`${FILE_PUBLISH_CAPABILITY}: ${capability.code}: ${capability.detail}`);
+    this.name = "AttachmentPublishCapabilityError";
+    this.code = capability.code;
+    this.detail = capability.detail;
+  }
+}
+
+/** Strict containment is deliberately opt-in for attachment transactions. */
+export class ContainedDurabilityError extends Error {
+  constructor(operation: string) {
+    super(
+      `${operation} requires descriptor-relative no-follow support; ` +
+        `strict attachment mutation is unavailable on ${process.platform}`,
+    );
+    this.name = "ContainedDurabilityError";
+  }
+}
+
+function requireDescriptorContainment(operation: string): string {
+  if (!strictContainmentSupported || !descriptorRoot) {
+    throw new ContainedDurabilityError(operation);
+  }
+  return descriptorRoot;
+}
+
+function unsupportedPublishCapability(
+  code: AttachmentPublishCapabilityCode,
+  detail: string,
+): Extract<AttachmentPublishCapability, { status: "unsupported" }> {
+  return { status: "unsupported", code, contract: FILE_PUBLISH_CAPABILITY, detail };
+}
+
+function classifyPublishCapabilityFailure(
+  error: unknown,
+): Extract<AttachmentPublishCapability, { status: "unsupported" }> {
+  const code = error instanceof Error && "code" in error ? error.code : undefined;
+  if (code === "cross-device" || code === "EXDEV") {
+    return unsupportedPublishCapability(
+      "cross-device",
+      "no-clobber publication crossed filesystem devices",
+    );
+  }
+  if (
+    code === "unsupported" ||
+    code === "EOPNOTSUPP" ||
+    code === "ENOTSUP" ||
+    code === "ENOSYS" ||
+    code === "EINVAL" ||
+    code === "EPERM" ||
+    code === "EACCES"
+  ) {
+    return unsupportedPublishCapability(
+      "anonymous-publication-unsupported",
+      `the runtime or filesystem rejected anonymous no-clobber publication (${String(code)})`,
+    );
+  }
+  return unsupportedPublishCapability(
+    "durability",
+    error instanceof Error ? error.message : "the filesystem probe did not complete",
+  );
+}
+
+function descriptorEntry(root: string, descriptor: number, name: string): string {
+  return path.join(root, String(descriptor), name);
+}
+
+function claimQuarantinePath(filePath: string): string {
+  return path.join(path.dirname(filePath), `.threadleaf-claim-${randomUUID()}.tmp`);
+}
+
+async function openContainedDirectory(directoryPath: string) {
+  const root = requireDescriptorContainment("Contained directory access");
+  const absolute = path.resolve(directoryPath);
+  const filesystemRoot = path.parse(absolute).root;
+  let current = await fs.open(filesystemRoot, descriptorDirectoryFlags | descriptorNoFollow);
+  try {
+    for (const segment of path.relative(filesystemRoot, absolute).split(path.sep).filter(Boolean)) {
+      const next = await fs.open(
+        descriptorEntry(root, current.fd, segment),
+        descriptorDirectoryFlags | descriptorNoFollow,
+      );
+      await current.close();
+      current = next;
+    }
+    return current;
+  } catch (error) {
+    await current.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+type ContainedDirectory = Awaited<ReturnType<typeof openContainedDirectory>>;
+
+async function readContainedFileAt(
+  directory: ContainedDirectory,
+  fileName: string,
+): Promise<FileSnapshot | null> {
+  const root = requireDescriptorContainment("Contained file read");
+  let file: Awaited<ReturnType<typeof fs.open>>;
+  try {
+    file = await fs.open(
+      descriptorEntry(root, directory.fd, fileName),
+      constants.O_RDONLY | descriptorNoFollow,
+    );
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+  try {
+    const before = await file.stat({ bigint: true });
+    const bytes = await file.readFile();
+    const after = await file.stat({ bigint: true });
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs
+    ) {
+      throw new Error(`Contained file changed while it was read: ${fileName}`);
+    }
+    return { bytes, revision: revisionOf(bytes), size: bytes.length };
+  } finally {
+    await file.close();
+  }
+}
+
+async function createContainedFileAt(
+  directory: ContainedDirectory,
+  fileName: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  const root = requireDescriptorContainment("Contained file create");
+  const file = await fs.open(
+    descriptorEntry(root, directory.fd, fileName),
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | descriptorNoFollow,
+    0o600,
+  );
+  try {
+    await file.writeFile(bytes);
+    await file.sync();
+    await directory.sync();
+  } finally {
+    await file.close();
+  }
+}
+
+async function renameContainedAt(
+  directory: ContainedDirectory,
+  sourceName: string,
+  targetName: string,
+): Promise<void> {
+  const root = requireDescriptorContainment("Contained file claim");
+  renameNoReplace(
+    descriptorEntry(root, directory.fd, sourceName),
+    descriptorEntry(root, directory.fd, targetName),
+  );
+  await directory.sync();
+}
+
+/**
+ * Preflight strict attachment publication without creating or deleting vault
+ * names. The host binding and descriptor-relative root are checked here; the
+ * exact destination filesystem remains authoritatively gated when an unnamed
+ * inode is linked at the absent target before any Markdown rewrite begins.
+ */
+export async function probeContainedPublishCapability(
+  vaultRoot: string,
+): Promise<AttachmentPublishCapability> {
+  if (!strictContainmentSupported) {
+    return unsupportedPublishCapability(
+      "unsupported-platform",
+      `descriptor-relative no-follow support is unavailable on ${process.platform}`,
+    );
+  }
+
+  let directory: ContainedDirectory | undefined;
+  let result: AttachmentPublishCapability = unsupportedPublishCapability(
+    "durability",
+    "attachment publication preflight did not complete",
+  );
+  try {
+    assertAnonymousPublishAvailable();
+    directory = await openContainedDirectory(vaultRoot);
+    const device = (await directory.stat({ bigint: true })).dev.toString();
+    result = { status: "supported", device, contract: FILE_PUBLISH_CAPABILITY };
+  } catch (error) {
+    result = classifyPublishCapabilityFailure(error);
+  } finally {
+    if (directory) {
+      await directory.close().catch((error) => {
+        result = unsupportedPublishCapability(
+          "durability",
+          `attachment publication preflight close failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }
+  }
+  return result;
+}
+
+export async function assertContainedPublishCapability(
+  capability: AttachmentPublishCapability,
+  targetDirectory: string,
+): Promise<void> {
+  if (capability.status !== "supported") {
+    throw new AttachmentPublishCapabilityError(capability);
+  }
+  const directory = await openContainedDirectory(targetDirectory);
+  try {
+    const device = (await directory.stat({ bigint: true })).dev.toString();
+    if (device !== capability.device) {
+      throw new AttachmentPublishCapabilityError(
+        unsupportedPublishCapability(
+          "cross-device",
+          "the attachment destination parent is on a different filesystem device",
+        ),
+      );
+    }
+  } finally {
+    await directory.close();
+  }
+}
+
+/**
+ * Preserve a strict claim without replacing a retention claimant. A
+ * same-filesystem no-clobber rename consumes the claim and is verified at its
+ * new name. Cross-device retention copies and verifies the evidence but leaves
+ * the source claim in place because no generation-conditional unlink exists.
+ */
+async function retainContainedClaim(
+  sourceDirectory: ContainedDirectory,
+  claimName: string,
+  expectedRevision: string,
+  retentionDirectory: string | undefined,
+): Promise<boolean> {
+  if (!retentionDirectory) return true;
+  await fs.mkdir(retentionDirectory, { recursive: true, mode: 0o700 });
+  const destinationDirectory = await openContainedDirectory(retentionDirectory);
+  const root = requireDescriptorContainment("Contained claim retention");
+  try {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const retainedName = `.threadleaf-retained-${randomUUID()}.bin`;
+      try {
+        renameNoReplace(
+          descriptorEntry(root, sourceDirectory.fd, claimName),
+          descriptorEntry(root, destinationDirectory.fd, retainedName),
+        );
+        await sourceDirectory.sync();
+        await destinationDirectory.sync();
+        const retained = await readContainedFileAt(destinationDirectory, retainedName);
+        return retained?.revision === expectedRevision;
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          (error.code === "cross-device" || error.code === "EXDEV")
+        ) {
+          // A vault and its private state may be on different devices. Copy
+          // the already-claimed bytes into an exclusive private evidence file
+          // and then verify the destination and source claim. A failed copy
+          // or changed claim leaves residue recoverable in the original
+          // directory; the EXDEV path never removes the user-vault claim by
+          // pathname because no generation-conditional unlink exists.
+          const claimed = await readContainedFileAt(sourceDirectory, claimName);
+          if (!claimed || claimed.revision !== expectedRevision) return false;
+          await createContainedFileAt(destinationDirectory, retainedName, claimed.bytes);
+          const retained = await readContainedFileAt(destinationDirectory, retainedName);
+          if (!retained || retained.revision !== claimed.revision) {
+            throw new Error("Cross-device claim retention verification failed.");
+          }
+          const stillClaimed = await readContainedFileAt(sourceDirectory, claimName);
+          if (!stillClaimed || stillClaimed.revision !== claimed.revision) {
+            return false;
+          }
+          // There is no portable generation-conditional unlink. The source
+          // parent is user-vault state, so never remove this pathname after a
+          // cross-device copy: a same-UID replacement could win between the
+          // final read and unlink. Leave the claim beside the original name
+          // as recoverable evidence and make the caller surface a conflict.
+          return false;
+        }
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          (error.code === "missing" || error.code === "ENOENT")
+        ) {
+          return false;
+        }
+        if (
+          !(
+            error instanceof Error &&
+            "code" in error &&
+            (error.code === "exists" || error.code === "EEXIST")
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+    throw new Error("Could not reserve a private claim-retention name.");
+  } finally {
+    await destinationDirectory.close();
+  }
+}
+
+async function settleContainedClaim(
+  directory: ContainedDirectory,
+  claimName: string,
+  expectedRevision: string,
+  hooks: ContainedRemovalHooks,
+): Promise<boolean> {
+  const claim = await readContainedFileAt(directory, claimName);
+  // A same-UID claimant may have replaced the quarantine name. Leave that
+  // evidence untouched rather than unlinking an uncertain pathname.
+  if (!claim || claim.revision !== expectedRevision) {
+    return false;
+  }
+  // This barrier is deliberately after the final validation and immediately
+  // before settlement. Tests and callers can model an editor winning this
+  // exact window; the second read then refuses to move the winner.
+  await hooks.beforeCleanup?.();
+  const afterBarrier = await readContainedFileAt(directory, claimName);
+  if (!afterBarrier || afterBarrier.revision !== expectedRevision) {
+    return false;
+  }
+  if (hooks.retentionDirectory) {
+    return retainContainedClaim(directory, claimName, expectedRevision, hooks.retentionDirectory);
+  }
+  // Strict vault paths never unlink a mutable claim name, including a
+  // high-entropy app-private one. Without an explicit retention destination,
+  // leave the claim as recoverable evidence and report that removal did not
+  // settle.
+  return false;
+}
+
+async function openContainedFile(
+  filePath: string,
+  flags: number,
+  mode?: number,
+): Promise<{
+  file: Awaited<ReturnType<typeof fs.open>>;
+  directory: Awaited<ReturnType<typeof fs.open>>;
+}> {
+  const root = requireDescriptorContainment("Contained file access");
+  const directory = await openContainedDirectory(path.dirname(filePath));
+  try {
+    const file = await fs.open(
+      descriptorEntry(root, directory.fd, path.basename(filePath)),
+      flags | descriptorNoFollow,
+      mode,
+    );
+    return { file, directory };
+  } catch (error) {
+    await directory.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function readContainedFile(filePath: string): Promise<FileSnapshot | null> {
+  let opened: Awaited<ReturnType<typeof openContainedFile>>;
+  try {
+    opened = await openContainedFile(filePath, constants.O_RDONLY);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+  try {
+    const before = await opened.file.stat({ bigint: true });
+    const bytes = await opened.file.readFile();
+    const after = await opened.file.stat({ bigint: true });
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs
+    ) {
+      throw new Error(`Contained file changed while it was read: ${filePath}`);
+    }
+    return { bytes, revision: revisionOf(bytes), size: bytes.length };
+  } finally {
+    await opened.file.close();
+    await opened.directory.close();
+  }
+}
+
+async function createContainedFile(filePath: string, bytes: Uint8Array): Promise<void> {
+  const opened = await openContainedFile(
+    filePath,
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+    0o600,
+  );
+  try {
+    await opened.file.writeFile(bytes);
+    await opened.file.sync();
+    await opened.directory.sync();
+  } finally {
+    await opened.file.close();
+    await opened.directory.close();
+  }
+}
+
+export async function durableCreateContainedFile(
+  filePath: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  await createContainedFile(filePath, bytes);
+}
+
+/**
+ * Reserve a rollback name and claim the expected target while keeping its
+ * parent descriptor open for the whole sequence. This is the strict sibling
+ * of the portable write rollback path: an ancestor replacement cannot move
+ * the read, exclusive create, or claim to a different directory generation.
+ */
+export async function moveContainedFileAside(
+  targetPath: string,
+  rollbackPath: string,
+  expectedRevision: string,
+  retentionDirectory: string | undefined,
+  hooks: Omit<ContainedRemovalHooks, "retentionDirectory"> = {},
+): Promise<boolean> {
+  const targetDirectoryPath = path.dirname(targetPath);
+  if (path.resolve(targetDirectoryPath) !== path.resolve(path.dirname(rollbackPath))) {
+    throw new Error("Contained rollback requires one directory.");
+  }
+  const directory = await openContainedDirectory(targetDirectoryPath);
+  try {
+    const targetName = path.basename(targetPath);
+    const rollbackName = path.basename(rollbackPath);
+    const target = await readContainedFileAt(directory, targetName);
+    if (!target || target.revision !== expectedRevision) return false;
+    try {
+      await createContainedFileAt(directory, rollbackName, target.bytes);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
+      throw error;
+    }
+    const rollback = await readContainedFileAt(directory, rollbackName);
+    if (!rollback || rollback.revision !== expectedRevision) return false;
+    const removed = await removeExpectedContainedFileInternal(
+      targetPath,
+      expectedRevision,
+      {
+        ...hooks,
+        // Direct callers default to vault authority. The kernel's rollback
+        // path opts into private authority only after it has copied the exact
+        // bytes into its private recovery record.
+        claimAuthority: hooks.claimAuthority ?? "vault",
+        cleanupClaim: hooks.cleanupClaim ?? false,
+        ...(retentionDirectory ? { retentionDirectory } : {}),
+      },
+      directory,
+    );
+    return removed;
+  } finally {
+    await directory.close();
+  }
+}
+
 export interface FileSnapshot {
   bytes: Buffer;
   revision: string;
@@ -122,7 +628,7 @@ export async function readStableFileWithinLimit(
 export async function durableCreate(filePath: string, bytes: Uint8Array): Promise<void> {
   const handle = await fs.open(
     filePath,
-    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0),
     0o600,
   );
   try {
@@ -151,22 +657,386 @@ export async function atomicWriteFile(filePath: string, bytes: Uint8Array): Prom
 }
 
 export async function installStagedFile(stagedPath: string, targetPath: string): Promise<boolean> {
+  const staged = await readStableFile(stagedPath);
+  if (!staged) {
+    throw new Error(`Staged file does not exist: ${stagedPath}`);
+  }
+
+  // The staged bytes are deliberately copied into a fresh inode. A hard link
+  // would make a later editor of either name mutate the other name, which is
+  // unsafe for rename/recovery and also lets a concurrent winner change the
+  // transaction's evidence in place.
+  const targetDirectory = path.dirname(targetPath);
+  const canonicalTargetDirectory = await fs.realpath(targetDirectory);
+  if (path.resolve(canonicalTargetDirectory) !== path.resolve(targetDirectory)) {
+    throw new Error(`Staged target parent changed through a symbolic link: ${targetPath}`);
+  }
+
   try {
-    await fs.link(stagedPath, targetPath);
+    await durableCreate(targetPath, staged.bytes);
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "EEXIST") {
       return false;
     }
     throw error;
   }
-  await fs.unlink(stagedPath);
-  const sourceDirectory = path.dirname(stagedPath);
-  const targetDirectory = path.dirname(targetPath);
-  await syncDirectory(targetDirectory);
-  if (sourceDirectory !== targetDirectory) {
-    await syncDirectory(sourceDirectory);
+
+  const installed = await readStableFile(targetPath);
+  if (!installed || installed.revision !== staged.revision) {
+    // Keep the staged proposal available to the caller as conflict evidence.
+    return false;
   }
-  return true;
+  // Claim the staged name through the same claim-and-verify primitive. A
+  // concurrent replacement of the temporary name must remain recoverable,
+  // even for ordinary cross-platform writers.
+  try {
+    return await removeExpectedFilePortably(stagedPath, staged.revision, {
+      claimAuthority: "private",
+      cleanupClaim: true,
+    });
+  } catch {
+    // The destination is already durable. Keep the private staged bytes and
+    // report an explicit install conflict so a journal can recover; never
+    // turn post-publication cleanup failure into a false success or overwrite.
+    return false;
+  }
+}
+
+/**
+ * Strict attachment installation. Every ancestor is opened no-follow from a
+ * held descriptor. The native boundary writes the exact bytes into an
+ * anonymous target-filesystem inode and atomically links it at an absent
+ * basename. No target-side staging pathname exists for another process to
+ * replace. Windows and other unsupported platforms fail only when an
+ * attachment requests strict containment.
+ */
+export async function installContainedStagedFile(
+  stagedPath: string,
+  targetPath: string,
+): Promise<boolean> {
+  const stagedDirectory = await openContainedDirectory(path.dirname(stagedPath));
+  let targetDirectory: ContainedDirectory;
+  try {
+    targetDirectory = await openContainedDirectory(path.dirname(targetPath));
+  } catch (error) {
+    await stagedDirectory.close().catch(() => undefined);
+    throw error;
+  }
+  try {
+    const staged = await readContainedFileAt(stagedDirectory, path.basename(stagedPath));
+    if (!staged) throw new Error(`Staged file does not exist: ${stagedPath}`);
+    try {
+      publishBufferNoReplace(targetDirectory.fd, path.basename(targetPath), staged.bytes);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "exists") return false;
+      throw new AttachmentPublishCapabilityError(classifyPublishCapabilityFailure(error));
+    }
+    const installed = await readContainedFileAt(targetDirectory, path.basename(targetPath));
+    if (!installed || installed.revision !== staged.revision) return false;
+    return true;
+  } finally {
+    await targetDirectory.close();
+    await stagedDirectory.close();
+  }
+}
+
+export interface ContainedRemovalHooks {
+  afterValidation?: () => Promise<void>;
+  afterClaim?: () => Promise<void>;
+  /** Barrier immediately after final claim validation and before cleanup. */
+  beforeCleanup?: () => Promise<void>;
+  /** Private, app-owned directory where claimed bytes remain recoverable. */
+  retentionDirectory?: string;
+  /** Whether the claimed name is an app-private generated stage or vault state. */
+  claimAuthority?: "private" | "vault";
+  /** Portable private writers may clean an exact claim under their documented threat model. */
+  cleanupClaim?: boolean;
+}
+
+/**
+ * Atomically claims a name into a same-directory quarantine before deciding
+ * whether it is safe to retire. A replacement that wins before the claim is
+ * moved into quarantine, verified as a different revision, and recreated at
+ * the original name with exclusive create. A replacement that appears after
+ * the claim remains at the original name while the claimed expected bytes are
+ * retained through the explicit evidence hook or left as recoverable residue.
+ * In neither window is a winner or an uncertain generation unlinked by name.
+ */
+export async function removeExpectedContainedFile(
+  filePath: string,
+  expectedRevision: string,
+  hooks: ContainedRemovalHooks = {},
+): Promise<boolean> {
+  return removeExpectedContainedFileInternal(filePath, expectedRevision, {
+    ...hooks,
+    // Strict callers operate on user-vault paths by default. A caller must
+    // explicitly name a private app-owned stage before cleanup is allowed.
+    claimAuthority: hooks.claimAuthority ?? "vault",
+    cleanupClaim: hooks.cleanupClaim ?? false,
+  });
+}
+
+async function removeExpectedContainedFileInternal(
+  filePath: string,
+  expectedRevision: string,
+  hooks: ContainedRemovalHooks,
+  existingDirectory?: ContainedDirectory,
+): Promise<boolean> {
+  const directory = existingDirectory ?? (await openContainedDirectory(path.dirname(filePath)));
+  const ownsDirectory = !existingDirectory;
+  const sourceName = path.basename(filePath);
+  const quarantineName = path.basename(claimQuarantinePath(filePath));
+  try {
+    const current = await readContainedFileAt(directory, sourceName);
+    if (!current || current.revision !== expectedRevision) return false;
+    await hooks.afterValidation?.();
+
+    try {
+      await renameContainedAt(directory, sourceName, quarantineName);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error.code === "missing" || error.code === "exists" || error.code === "ENOENT")
+      ) {
+        return false;
+      }
+      throw error;
+    }
+
+    let claimed = await readContainedFileAt(directory, quarantineName);
+    try {
+      await hooks.afterClaim?.();
+    } catch (error) {
+      const claimAfterFailure = await readContainedFileAt(directory, quarantineName);
+      const sourceAfterFailure = await readContainedFileAt(directory, sourceName);
+      if (claimAfterFailure) {
+        if (!sourceAfterFailure) {
+          try {
+            await createContainedFileAt(directory, sourceName, claimAfterFailure.bytes);
+          } catch (restoreError) {
+            if (
+              !(
+                restoreError instanceof Error &&
+                "code" in restoreError &&
+                restoreError.code === "EEXIST"
+              )
+            ) {
+              throw restoreError;
+            }
+          }
+        }
+        await settleContainedClaim(directory, quarantineName, expectedRevision, hooks);
+      }
+      throw error;
+    }
+
+    if (!claimed || claimed.revision !== expectedRevision) {
+      if (claimed) {
+        if (!(await readContainedFileAt(directory, sourceName))) {
+          try {
+            await createContainedFileAt(directory, sourceName, claimed.bytes);
+          } catch (error) {
+            if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+              throw error;
+            }
+          }
+        }
+        await settleContainedClaim(directory, quarantineName, expectedRevision, hooks);
+      }
+      return false;
+    }
+
+    const sourceAfterClaim = await readContainedFileAt(directory, sourceName);
+    claimed = await readContainedFileAt(directory, quarantineName);
+    if (sourceAfterClaim || !claimed || claimed.revision !== expectedRevision) {
+      if (claimed) {
+        if (!sourceAfterClaim) {
+          try {
+            await createContainedFileAt(directory, sourceName, claimed.bytes);
+          } catch (error) {
+            if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+              throw error;
+            }
+          }
+        }
+        await settleContainedClaim(directory, quarantineName, expectedRevision, hooks);
+      }
+      return false;
+    }
+
+    // The claim is ours, and its bytes were revalidated through the held
+    // parent descriptor. Strict callers either retain it in an explicit
+    // private evidence directory or leave it recoverable beside the source.
+    const settled = await settleContainedClaim(directory, quarantineName, expectedRevision, hooks);
+    return settled;
+  } finally {
+    if (ownsDirectory) await directory.close();
+  }
+}
+
+/**
+ * Cross-platform claim-then-verify removal for ordinary private writers. It
+ * avoids unlinking a name after a separate validation read while retaining the
+ * existing cross-platform writer implementation. An unchanged generated
+ * claim is cleaned immediately; only an uncertain replacement remains as
+ * recoverable residue. Attachment transactions use the descriptor-relative
+ * variant above so ancestor replacement is covered as well.
+ */
+export async function removeExpectedFilePortably(
+  filePath: string,
+  expectedRevision: string,
+  hooks: ContainedRemovalHooks = {},
+): Promise<boolean> {
+  const removalHooks: ContainedRemovalHooks = {
+    ...hooks,
+    claimAuthority: hooks.claimAuthority ?? "private",
+    cleanupClaim: hooks.cleanupClaim ?? true,
+  };
+  const current = await readStableFile(filePath);
+  if (!current || current.revision !== expectedRevision) return false;
+  await removalHooks.afterValidation?.();
+
+  const quarantine = claimQuarantinePath(filePath);
+  try {
+    await fs.rename(filePath, quarantine);
+    await syncDirectory(path.dirname(filePath));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+
+  const claimed = await readStableFile(quarantine);
+  try {
+    await removalHooks.afterClaim?.();
+  } catch (error) {
+    const claimedAfterFailure = await readStableFile(quarantine);
+    if (claimedAfterFailure) {
+      const sourceAfterFailure = await readStableFile(filePath);
+      if (!sourceAfterFailure) {
+        try {
+          await durableCreate(filePath, claimedAfterFailure.bytes);
+        } catch (cleanupError) {
+          if (
+            !(
+              cleanupError instanceof Error &&
+              "code" in cleanupError &&
+              cleanupError.code === "EEXIST"
+            )
+          ) {
+            throw cleanupError;
+          }
+        }
+      }
+      await settlePortableClaim(quarantine, expectedRevision, removalHooks);
+    }
+    throw error;
+  }
+  if (!claimed || claimed.revision !== expectedRevision) {
+    if (claimed) {
+      if (!(await readStableFile(filePath))) {
+        try {
+          await durableCreate(filePath, claimed.bytes);
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+        }
+      }
+      await settlePortableClaim(quarantine, expectedRevision, removalHooks);
+    }
+    return false;
+  }
+
+  const sourceAfterClaim = await readStableFile(filePath);
+  const claimAfterHook = await readStableFile(quarantine);
+  if (sourceAfterClaim || !claimAfterHook || claimAfterHook.revision !== expectedRevision) {
+    if (claimAfterHook) {
+      if (!sourceAfterClaim) {
+        try {
+          await durableCreate(filePath, claimAfterHook.bytes);
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+        }
+      }
+      await settlePortableClaim(quarantine, expectedRevision, removalHooks);
+    }
+    return false;
+  }
+
+  const settled = await settlePortableClaim(quarantine, expectedRevision, removalHooks);
+  return settled;
+}
+
+async function retainPortableClaim(
+  quarantinePath: string,
+  retentionDirectory: string | undefined,
+): Promise<boolean> {
+  if (!retentionDirectory) return true;
+  await fs.mkdir(retentionDirectory, { recursive: true, mode: 0o700 });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const retainedPath = path.join(retentionDirectory, `.threadleaf-retained-${randomUUID()}.bin`);
+    try {
+      await fs.rename(quarantinePath, retainedPath);
+      await syncDirectory(path.dirname(quarantinePath));
+      await syncDirectory(retentionDirectory);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EXDEV") {
+        const claimed = await readStableFile(quarantinePath);
+        if (!claimed) return false;
+        await durableCreate(retainedPath, claimed.bytes);
+        const retained = await readStableFile(retainedPath);
+        if (!retained || retained.revision !== claimed.revision) {
+          throw new Error("Cross-device portable claim retention verification failed.");
+        }
+        const stillClaimed = await readStableFile(quarantinePath);
+        if (!stillClaimed || stillClaimed.revision !== claimed.revision) {
+          return false;
+        }
+        // There is no portable generation-conditional unlink. This claim
+        // originated in a user-vault directory, so preserve it after an
+        // EXDEV copy rather than risking deletion of a same-UID replacement
+        // that wins between the final read and unlink. The false result is
+        // an explicit recoverable conflict, not a successful cleanup.
+        return false;
+      }
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return false;
+      }
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+    }
+  }
+  throw new Error("Could not reserve a private claim-retention name.");
+}
+
+async function settlePortableClaim(
+  quarantinePath: string,
+  expectedRevision: string,
+  hooks: ContainedRemovalHooks,
+): Promise<boolean> {
+  const claim = await readStableFile(quarantinePath);
+  // Leave a changed claimant as evidence; only an exact re-read authorizes
+  // cleanup of this generated quarantine name.
+  if (!claim || claim.revision !== expectedRevision) return false;
+  // Keep an explicit barrier between final validation and the cleanup
+  // attempt. The post-barrier re-read catches a claimant injected at this
+  // boundary; a same-UID process can still race the unlink syscall itself.
+  await hooks.beforeCleanup?.();
+  const afterBarrier = await readStableFile(quarantinePath);
+  if (!afterBarrier || afterBarrier.revision !== expectedRevision) return false;
+  if (hooks.retentionDirectory) {
+    return retainPortableClaim(quarantinePath, hooks.retentionDirectory);
+  }
+  if (hooks.claimAuthority !== "private" || !hooks.cleanupClaim) return false;
+  try {
+    await fs.unlink(quarantinePath);
+    await syncDirectory(path.dirname(quarantinePath));
+    return true;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+    return false;
+  }
 }
 
 export async function removeIfPresent(filePath: string): Promise<void> {
@@ -183,21 +1053,6 @@ export async function pathExists(filePath: string): Promise<boolean> {
   try {
     await fs.lstat(filePath);
     return true;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-}
-
-export async function sameFile(leftPath: string, rightPath: string): Promise<boolean> {
-  try {
-    const [left, right] = await Promise.all([
-      fs.stat(leftPath, { bigint: true }),
-      fs.stat(rightPath, { bigint: true }),
-    ]);
-    return left.dev === right.dev && left.ino === right.ino;
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return false;

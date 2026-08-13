@@ -45,6 +45,7 @@ typedef struct {
 #else
 
 #include <fcntl.h>
+#include <stdio.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -993,6 +994,188 @@ static napi_value threadleaf_rename_no_replace(napi_env env, napi_callback_info 
   return undefined;
 }
 
+/*
+ * Materialize bytes into an unnamed inode on an already-open target
+ * directory, then atomically link that inode at an absent basename. No
+ * staging pathname exists for another process to replace before publication.
+ */
+static napi_value threadleaf_publish_buffer_no_replace(
+    napi_env env,
+    napi_callback_info info) {
+  size_t argc = 3;
+  napi_value argv[3];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 3) {
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous no-clobber publication requires a directory descriptor, target basename, and Buffer.");
+  }
+
+  int32_t directory_fd = -1;
+  if (napi_get_value_int32(env, argv[0], &directory_fd) != napi_ok || directory_fd < 0) {
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous no-clobber publication requires an open directory descriptor.");
+  }
+  char* target = threadleaf_read_path_argument(
+      env, argv[1], "Anonymous no-clobber publication target must be a UTF-8 basename.");
+  if (!target) {
+    return NULL;
+  }
+  if (strcmp(target, ".") == 0 || strcmp(target, "..") == 0 || strchr(target, '/') != NULL) {
+    free(target);
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous no-clobber publication target must contain one basename.");
+  }
+  void* bytes = NULL;
+  size_t length = 0;
+  if (napi_get_buffer_info(env, argv[2], &bytes, &length) != napi_ok) {
+    free(target);
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous no-clobber publication content must be a Buffer.");
+  }
+
+#if defined(__linux__) && defined(O_TMPFILE) && defined(AT_EMPTY_PATH)
+  struct stat directory_stat;
+  if (fstat(directory_fd, &directory_stat) != 0 || !S_ISDIR(directory_stat.st_mode)) {
+    free(target);
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous no-clobber publication descriptor is not an open directory.");
+  }
+
+  int temporary_fd = openat(
+      directory_fd,
+      ".",
+      O_TMPFILE | O_RDWR | O_CLOEXEC,
+      S_IRUSR | S_IWUSR);
+  if (temporary_fd < 0) {
+    int open_error = errno;
+    free(target);
+    if (open_error == EOPNOTSUPP || open_error == ENOTSUP || open_error == EINVAL ||
+        open_error == EISDIR || open_error == ENOENT) {
+      return threadleaf_filesystem_error(
+          env,
+          "unsupported",
+          "The target filesystem does not support anonymous temporary files.");
+    }
+    if (open_error == EACCES || open_error == EPERM) {
+      return threadleaf_filesystem_error(
+          env,
+          "unsupported",
+          "The target directory rejected anonymous no-clobber publication.");
+    }
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "Could not create the anonymous attachment publication inode.");
+  }
+
+  size_t offset = 0;
+  while (offset < length) {
+    ssize_t written = write(temporary_fd, (const char*)bytes + offset, length - offset);
+    if (written < 0 && errno == EINTR) {
+      continue;
+    }
+    if (written <= 0) {
+      close(temporary_fd);
+      free(target);
+      return threadleaf_filesystem_error(
+          env,
+          "io",
+          "Could not write the anonymous attachment publication inode.");
+    }
+    offset += (size_t)written;
+  }
+  if (fchmod(temporary_fd, S_IRUSR | S_IWUSR) != 0 || fsync(temporary_fd) != 0) {
+    close(temporary_fd);
+    free(target);
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "Could not durably prepare the anonymous attachment publication inode.");
+  }
+
+  int result = linkat(temporary_fd, "", directory_fd, target, AT_EMPTY_PATH);
+  int publish_error = result == 0 ? 0 : errno;
+  if (
+      result != 0 &&
+      (publish_error == EPERM || publish_error == EACCES || publish_error == ENOENT)) {
+    char descriptor_path[64];
+    int descriptor_length = snprintf(
+        descriptor_path,
+        sizeof(descriptor_path),
+        "/proc/self/fd/%d",
+        temporary_fd);
+    if (descriptor_length > 0 && (size_t)descriptor_length < sizeof(descriptor_path)) {
+      result = linkat(
+          AT_FDCWD,
+          descriptor_path,
+          directory_fd,
+          target,
+          AT_SYMLINK_FOLLOW);
+      publish_error = result == 0 ? 0 : errno;
+    }
+  }
+  if (result == 0 && fsync(directory_fd) != 0) {
+    publish_error = errno;
+    result = -1;
+  }
+  int close_result = close(temporary_fd);
+  free(target);
+  if (result != 0) {
+    if (publish_error == EEXIST) {
+      return threadleaf_filesystem_error(
+          env,
+          "exists",
+          "The anonymous no-clobber publication target already exists.");
+    }
+    if (publish_error == EXDEV) {
+      return threadleaf_filesystem_error(
+          env,
+          "cross-device",
+          "The anonymous no-clobber publication crossed filesystem devices.");
+    }
+    if (publish_error == EOPNOTSUPP || publish_error == ENOTSUP || publish_error == ENOSYS ||
+        publish_error == EINVAL || publish_error == EPERM || publish_error == EACCES ||
+        publish_error == ENOENT) {
+      return threadleaf_filesystem_error(
+          env,
+          "unsupported",
+          "The runtime or filesystem rejected anonymous no-clobber publication.");
+    }
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "Anonymous no-clobber publication did not complete durably.");
+  }
+  if (close_result != 0) {
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "The anonymous attachment publication descriptor did not close cleanly.");
+  }
+#else
+  free(target);
+  return threadleaf_filesystem_error(
+      env,
+      "unsupported",
+      "Anonymous no-clobber publication is currently available only on Linux.");
+#endif
+
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) {
+    return NULL;
+  }
+  return undefined;
+}
+
 static napi_value threadleaf_platform(napi_env env, napi_callback_info info) {
   (void)info;
   const char* value;
@@ -1041,11 +1224,12 @@ napi_value napi_register_module_v1(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"acquire", NULL, threadleaf_acquire, NULL, NULL, NULL, napi_default, NULL},
       {"renameNoReplace", NULL, threadleaf_rename_no_replace, NULL, NULL, NULL, napi_default, NULL},
+      {"publishBufferNoReplace", NULL, threadleaf_publish_buffer_no_replace, NULL, NULL, NULL, napi_default, NULL},
       {"platform", NULL, threadleaf_platform, NULL, NULL, NULL, napi_default, NULL},
       {"mechanism", NULL, threadleaf_mechanism, NULL, NULL, NULL, napi_default, NULL},
       {"napiVersion", NULL, threadleaf_napi_version, NULL, NULL, NULL, napi_default, NULL},
   };
-  if (napi_define_properties(env, exports, 5, properties) != napi_ok) {
+  if (napi_define_properties(env, exports, 6, properties) != napi_ok) {
     return NULL;
   }
   return exports;

@@ -50,6 +50,43 @@ const probeSource = (await readFile(probePath, "utf8"))
   .replace(
     "napiVersion: addon.napiVersion(), noClobberRename",
     "napiVersion: addon.napiVersion(), hostNapiVersion, noClobberRename",
+  )
+  .replace(
+    'if (typeof addon.renameNoReplace !== "function") throw new Error("native addon lacks no-clobber rename");',
+    'if (typeof addon.renameNoReplace !== "function") throw new Error("native addon lacks no-clobber rename");\nif (typeof addon.publishBufferNoReplace !== "function") throw new Error("native addon lacks anonymous no-clobber publication");',
+  )
+  .replace(
+    'process.stdout.write(JSON.stringify({ loaded: true, acquired: true, asserted: true, released: true, napiVersion: addon.napiVersion(), hostNapiVersion, noClobberRename, collisionPreserved }) + "\\n");',
+    `let anonymousPublish = "unsupported";
+let anonymousExactBytes = false;
+let anonymousCollisionPreserved = false;
+let anonymousNoStage = false;
+if (targetPlatform === "linux") {
+  const publishBytes = Buffer.from([0, 1, 2, 255, 10]);
+  const publishName = "anonymous-published.bin";
+  const publishPath = path.join(root, publishName);
+  const directoryFd = fs.openSync(root, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
+  try {
+    addon.publishBufferNoReplace(directoryFd, publishName, publishBytes);
+    let collisionCode = null;
+    try { addon.publishBufferNoReplace(directoryFd, publishName, Buffer.from("claimant")); } catch (error) { collisionCode = error && error.code; }
+    anonymousExactBytes = fs.readFileSync(publishPath).equals(publishBytes);
+    anonymousCollisionPreserved = collisionCode === "exists" && anonymousExactBytes;
+    anonymousNoStage = fs.readdirSync(root).every((entry) => !entry.startsWith(".threadleaf-attachment-stage-"));
+  } finally {
+    fs.closeSync(directoryFd);
+  }
+  if (!anonymousExactBytes || !anonymousCollisionPreserved || !anonymousNoStage) throw new Error("anonymous no-clobber publication proof failed");
+  anonymousPublish = "otmpfile-linkat";
+} else {
+  let unsupportedCode = null;
+  try { addon.publishBufferNoReplace(0, "anonymous-published.bin", Buffer.alloc(0)); } catch (error) { unsupportedCode = error && error.code; }
+  if (unsupportedCode !== "unsupported") throw new Error("non-Linux anonymous publication did not fail closed");
+  anonymousExactBytes = true;
+  anonymousCollisionPreserved = true;
+  anonymousNoStage = true;
+}
+process.stdout.write(JSON.stringify({ loaded: true, acquired: true, asserted: true, released: true, napiVersion: addon.napiVersion(), hostNapiVersion, noClobberRename, collisionPreserved, anonymousPublish, anonymousExactBytes, anonymousCollisionPreserved, anonymousNoStage }) + "\\n");`,
   );
 await writeFile(probePath, `${probeSource}process.exit(0);\n`, "utf8");
 
@@ -91,7 +128,10 @@ try {
       receipt.asserted &&
       receipt.released &&
       receipt.hostNapiVersion >= 10 &&
-      receipt.collisionPreserved,
+      receipt.collisionPreserved &&
+      receipt.anonymousExactBytes &&
+      receipt.anonymousCollisionPreserved &&
+      receipt.anonymousNoStage,
     "Electron target probe did not complete the lock lifecycle.",
   );
   console.log(
@@ -103,6 +143,7 @@ try {
       hostNapiVersion: receipt.hostNapiVersion,
       lifecycle: "import-acquire-assert-release",
       noClobberRename: receipt.noClobberRename,
+      anonymousPublish: receipt.anonymousPublish,
     }),
   );
 } finally {

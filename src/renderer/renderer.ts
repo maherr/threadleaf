@@ -4,6 +4,7 @@ import { Compartment, EditorState, Transaction } from "@codemirror/state";
 import type { ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
+import { splitMarkdownDestinationTarget } from "../kernel/markdown-links";
 import {
   type AccessibilityAccent,
   type AccessibilityOverride,
@@ -25,6 +26,9 @@ import {
   type VaultAppearanceSettings,
 } from "../shared/appearance";
 import type {
+  AttachmentMoveBlocker,
+  AttachmentMoveResponse,
+  AttachmentMoveRewritePreview,
   EditorDraftSnapshot,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -99,6 +103,7 @@ import {
   type VaultWorkspaceSettings,
 } from "../shared/workspace-settings";
 import { applyAppearanceCss } from "./appearance-renderer";
+import { attachmentMoveCommitNotice, attachmentPublicationReceipt } from "./attachment-move-status";
 import { CanvasViewController } from "./canvas-view";
 import {
   filterPaletteCommands,
@@ -430,6 +435,19 @@ const elements = {
   moveNoteBlockers: getElement("move-note-blockers"),
   moveNoteBlockerSummary: getElement("move-note-blocker-summary"),
   moveNoteBlockerList: getElement("move-note-blocker-list"),
+  attachmentMoveDialog: getDialog("attachment-move-dialog"),
+  attachmentMoveForm: getForm("attachment-move-form"),
+  attachmentMoveTarget: getInput("attachment-move-target"),
+  attachmentMoveClose: getButton("attachment-move-close"),
+  attachmentMoveCancel: getButton("attachment-move-cancel"),
+  attachmentMoveSubmit: getButton("attachment-move-submit"),
+  attachmentMoveError: getElement("attachment-move-error"),
+  attachmentMovePreviewMessage: getElement("attachment-move-preview-message"),
+  attachmentMoveCurrentPath: getElement("attachment-move-current-path"),
+  attachmentMoveVault: getElement("attachment-move-vault"),
+  attachmentMoveBlockers: getElement("attachment-move-blockers"),
+  attachmentMoveBlockerSummary: getElement("attachment-move-blocker-summary"),
+  attachmentMoveBlockerList: getElement("attachment-move-blocker-list"),
   deleteNoteDialog: getDialog("delete-note-dialog"),
   deleteNoteForm: getForm("delete-note-form"),
   deleteNoteClose: getButton("delete-note-close"),
@@ -988,6 +1006,14 @@ let moveNoteRevision: string | null = null;
 let moveNoteBlockers: NoteMoveBlocker[] = [];
 let moveNoteRewrites: NoteMoveRewritePreview[] = [];
 let moveNoteConfirmationId: string | null = null;
+let attachmentMoveRestoreFocus: HTMLElement | null = null;
+let attachmentMoveBusy = false;
+let attachmentMoveVaultId: string | null = null;
+let attachmentMoveSourcePath: string | null = null;
+let attachmentMoveRevision: string | null = null;
+let attachmentMoveBlockers: AttachmentMoveBlocker[] = [];
+let attachmentMoveRewrites: AttachmentMoveRewritePreview[] = [];
+let attachmentMoveConfirmationId: string | null = null;
 let deleteNoteRestoreFocus: HTMLElement | null = null;
 let deleteNoteBusy = false;
 let deleteNoteVaultId: string | null = null;
@@ -2149,23 +2175,7 @@ function focusVaultSearch(): void {
 }
 
 function splitPreviewTarget(value: string): { target: string; subpath: string | null } {
-  let normalized: string;
-  try {
-    normalized = decodeURIComponent(value).replaceAll("\\", "/");
-  } catch {
-    normalized = value.replaceAll("\\", "/");
-  }
-  const headingIndex = normalized.indexOf("#");
-  const blockIndex = normalized.indexOf("^");
-  const indexes = [headingIndex, blockIndex].filter((index) => index >= 0);
-  const splitAt = indexes.length > 0 ? Math.min(...indexes) : -1;
-  if (splitAt === -1) {
-    return { target: normalized.trim(), subpath: null };
-  }
-  return {
-    target: normalized.slice(0, splitAt).trim(),
-    subpath: normalized.slice(splitAt).trim() || null,
-  };
+  return splitMarkdownDestinationTarget(value);
 }
 
 function previewLinkIdentity(anchor: HTMLAnchorElement): {
@@ -2760,12 +2770,62 @@ async function activatePreviewEmbed(openButton: HTMLButtonElement): Promise<void
   }
 }
 
+function openAttachmentMoveDialog(
+  sourcePath: string,
+  revision: string,
+  restoreFocus?: HTMLElement,
+): void {
+  if (elements.attachmentMoveDialog.open) {
+    elements.attachmentMoveTarget.focus();
+    elements.attachmentMoveTarget.select();
+    return;
+  }
+  if (!loadedVaultId || readOnlyVault() || busy || anyPaneSaving() || anyPaneDirty()) {
+    showToast(
+      readOnlyVault()
+        ? "Open a local vault before publishing attachment copies."
+        : anyPaneDirty()
+          ? "Save or revert drafts before publishing an attachment copy."
+          : "Threadleaf is finishing another action.",
+    );
+    return;
+  }
+  if (elements.commandPalette.open) closeCommandPalette(false);
+  if (documentViewMode === "plugin") setDocumentView(editingViewMode, false);
+  attachmentMoveRestoreFocus =
+    restoreFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  attachmentMoveBusy = false;
+  attachmentMoveVaultId = loadedVaultId;
+  attachmentMoveSourcePath = sourcePath;
+  attachmentMoveRevision = revision;
+  attachmentMoveBlockers = [];
+  attachmentMoveRewrites = [];
+  attachmentMoveConfirmationId = null;
+  elements.attachmentMoveTarget.value = sourcePath;
+  elements.attachmentMoveError.textContent = "";
+  elements.attachmentMovePreviewMessage.textContent = "";
+  elements.attachmentMoveDialog.showModal();
+  renderAttachmentMoveDialog();
+  window.requestAnimationFrame(() => {
+    const nameStart = sourcePath.lastIndexOf("/") + 1;
+    elements.attachmentMoveTarget.focus();
+    elements.attachmentMoveTarget.setSelectionRange(nameStart, sourcePath.length);
+  });
+}
+
 function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): void {
   const action = actionButton.dataset.threadleafAttachmentAction;
   const target = actionButton.dataset.threadleafAttachmentPath;
-  if (!target || (action !== "open" && action !== "reveal")) {
+  if (!target) {
     return;
   }
+  if (action === "move") {
+    const card = actionButton.closest<HTMLElement>(".preview-attachment-card");
+    const revision = card?.dataset.threadleafAttachmentRevision;
+    if (revision) openAttachmentMoveDialog(target, revision, actionButton);
+    return;
+  }
+  if (action !== "open" && action !== "reveal") return;
   // The card deliberately exposes the safe action metadata without granting a
   // renderer-originated shell/network capability.  A future native bridge can
   // consume these data attributes without changing the byte-preserving loader.
@@ -3984,12 +4044,18 @@ async function moveCurrentNote(): Promise<void> {
       moveNoteBlockers = response.outcome.blockers;
       elements.moveNotePreviewMessage.textContent = "";
       elements.moveNoteError.textContent = `Move blocked: ${response.outcome.blockers.length} internal link resolution${response.outcome.blockers.length === 1 ? " cannot" : "s cannot"} be rewritten safely. No files were changed.`;
-    } else if (response.outcome.reason === "target-exists") {
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "target-exists"
+    ) {
       moveNoteConfirmationId = null;
       moveNoteRewrites = [];
       elements.moveNotePreviewMessage.textContent = "";
       elements.moveNoteError.textContent = `${response.outcome.to} already exists. No files were changed.`;
-    } else if (response.outcome.reason === "source-revision-changed") {
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "source-revision-changed"
+    ) {
       moveNoteConfirmationId = null;
       moveNoteRewrites = [];
       elements.moveNotePreviewMessage.textContent = "";
@@ -4032,6 +4098,253 @@ async function moveCurrentNote(): Promise<void> {
   }
 }
 
+function renderAttachmentMoveDialog(): void {
+  const staleVault = Boolean(
+    attachmentMoveVaultId && attachmentMoveVaultId !== (currentSnapshot?.vault.id ?? null),
+  );
+  if (staleVault && !elements.attachmentMoveError.textContent) {
+    elements.attachmentMoveError.textContent =
+      "The active vault changed. Cancel and reopen Publish copy.";
+  }
+  const message = elements.attachmentMoveError.textContent ?? "";
+  elements.attachmentMoveError.hidden = message.length === 0;
+  const previewMessage = elements.attachmentMovePreviewMessage.textContent ?? "";
+  elements.attachmentMovePreviewMessage.hidden = previewMessage.length === 0;
+  elements.attachmentMoveCurrentPath.textContent =
+    attachmentMoveSourcePath ?? "No attachment selected";
+  elements.attachmentMoveTarget.disabled = attachmentMoveBusy;
+  elements.attachmentMoveClose.disabled = attachmentMoveBusy;
+  elements.attachmentMoveCancel.disabled = attachmentMoveBusy;
+  elements.attachmentMoveSubmit.disabled =
+    attachmentMoveBusy || staleVault || readOnlyVault() || anyPaneDirty();
+  elements.attachmentMoveSubmit.textContent = attachmentMoveBusy
+    ? attachmentMoveConfirmationId
+      ? "Publishing…"
+      : "Checking…"
+    : attachmentMoveConfirmationId
+      ? `Update ${attachmentMoveRewrites.length} ${attachmentMoveRewrites.length === 1 ? "link" : "links"} and publish`
+      : "Check and publish";
+  elements.attachmentMoveForm.setAttribute("aria-busy", String(attachmentMoveBusy));
+  elements.attachmentMoveVault.textContent = staleVault
+    ? "Vault changed"
+    : currentSnapshot
+      ? `In ${currentSnapshot.vault.name}`
+      : "Active vault";
+
+  elements.attachmentMoveBlockerList.replaceChildren();
+  const showingPreview = attachmentMoveRewrites.length > 0;
+  const visibleChanges = showingPreview ? attachmentMoveRewrites : attachmentMoveBlockers;
+  elements.attachmentMoveBlockers.hidden = visibleChanges.length === 0;
+  elements.attachmentMoveBlockers.dataset.mode = showingPreview ? "preview" : "blocked";
+  elements.attachmentMoveBlockerSummary.textContent = showingPreview
+    ? `Ready: ${attachmentMoveRewrites.length} link target ${attachmentMoveRewrites.length === 1 ? "update" : "updates"}`
+    : attachmentMoveBlockers.length === 1
+      ? "Blocked: 1 internal link resolution is unsafe"
+      : `Blocked: ${attachmentMoveBlockers.length} internal link resolutions are unsafe`;
+  for (const rewrite of attachmentMoveRewrites.slice(0, 100)) {
+    const item = document.createElement("li");
+    const origin = document.createElement("span");
+    origin.className = "move-note-blocker-origin";
+    origin.textContent = `${rewrite.documentPath}:${rewrite.line} · ${rewrite.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
+    const change = document.createElement("span");
+    change.className = "move-note-blocker-change";
+    const before = document.createElement("span");
+    before.textContent = rewrite.beforeTarget;
+    const arrow = document.createElement("span");
+    arrow.className = "move-note-blocker-arrow";
+    arrow.ariaHidden = "true";
+    arrow.textContent = "→";
+    const after = document.createElement("span");
+    after.textContent = rewrite.afterTarget;
+    change.append(before, arrow, after);
+    item.append(origin, change);
+    elements.attachmentMoveBlockerList.append(item);
+  }
+  for (const blocker of attachmentMoveBlockers.slice(0, 100)) {
+    const item = document.createElement("li");
+    const origin = document.createElement("span");
+    origin.className = "move-note-blocker-origin";
+    origin.textContent = `${blocker.documentPath}:${blocker.line} · ${blocker.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
+    const target = document.createElement("code");
+    target.textContent = blocker.target;
+    const detail = document.createElement("span");
+    detail.className = "move-note-blocker-change";
+    detail.textContent =
+      blocker.reason === "ambiguous"
+        ? `Ambiguous (${blocker.candidates.slice(0, 4).join(", ") || "multiple matches"})`
+        : blocker.reason === "unsupported"
+          ? "Unsupported link form"
+          : "Unresolved local link";
+    item.append(origin, target, detail);
+    elements.attachmentMoveBlockerList.append(item);
+  }
+  if (visibleChanges.length > 100) {
+    const remainder = document.createElement("li");
+    remainder.className = "move-note-blocker-more";
+    remainder.textContent = `${visibleChanges.length - 100} more ${showingPreview ? "updates" : "blockers"} are not shown.`;
+    elements.attachmentMoveBlockerList.append(remainder);
+  }
+}
+
+function closeAttachmentMoveDialog(restoreFocus = true): void {
+  if (!elements.attachmentMoveDialog.open || attachmentMoveBusy) return;
+  elements.attachmentMoveDialog.close();
+  attachmentMoveVaultId = null;
+  attachmentMoveSourcePath = null;
+  attachmentMoveRevision = null;
+  attachmentMoveBlockers = [];
+  attachmentMoveRewrites = [];
+  attachmentMoveConfirmationId = null;
+  elements.attachmentMoveError.textContent = "";
+  elements.attachmentMovePreviewMessage.textContent = "";
+  const restoreTarget = attachmentMoveRestoreFocus;
+  attachmentMoveRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) restoreTarget.focus();
+}
+
+async function moveCurrentAttachment(): Promise<void> {
+  const expectedVaultId = attachmentMoveVaultId;
+  const sourcePath = attachmentMoveSourcePath;
+  const expectedRevision = attachmentMoveRevision;
+  if (!expectedVaultId || !sourcePath || !expectedRevision || attachmentMoveBusy) return;
+  const requestedPath = elements.attachmentMoveTarget.value.trim();
+  if (!requestedPath) {
+    elements.attachmentMoveError.textContent = "Enter a new vault-relative path.";
+    attachmentMoveBlockers = [];
+    attachmentMoveRewrites = [];
+    attachmentMoveConfirmationId = null;
+    elements.attachmentMovePreviewMessage.textContent = "";
+    renderAttachmentMoveDialog();
+    elements.attachmentMoveTarget.focus();
+    return;
+  }
+  if (currentSnapshot?.vault.id !== expectedVaultId || anyPaneDirty()) {
+    elements.attachmentMoveError.textContent = anyPaneDirty()
+      ? "Save or revert drafts before publishing an attachment copy."
+      : "The vault changed. Cancel and reopen Publish copy.";
+    attachmentMoveBlockers = [];
+    attachmentMoveRewrites = [];
+    attachmentMoveConfirmationId = null;
+    elements.attachmentMovePreviewMessage.textContent = "";
+    renderAttachmentMoveDialog();
+    return;
+  }
+
+  let response: AttachmentMoveResponse | null = null;
+  let committedPath: string | null = null;
+  let retainedSourcePath: string | null = null;
+  let committedRewriteCount = 0;
+  let committedVaultNotice: string | null = null;
+  const submittedConfirmationId = attachmentMoveConfirmationId;
+  attachmentMoveBusy = true;
+  attachmentMoveBlockers = [];
+  if (!submittedConfirmationId) {
+    attachmentMoveRewrites = [];
+    elements.attachmentMovePreviewMessage.textContent = "";
+  }
+  elements.attachmentMoveError.textContent = "";
+  renderAttachmentMoveDialog();
+  setActionState(true);
+  try {
+    response = await window.threadleaf.moveAttachment(
+      sourcePath,
+      requestedPath,
+      expectedRevision,
+      expectedVaultId,
+      submittedConfirmationId ?? undefined,
+    );
+    render(response.snapshot);
+    if (response.outcome.status === "published-source-retained") {
+      const receipt = attachmentPublicationReceipt(response.outcome);
+      if (receipt) {
+        committedPath = receipt.targetPath;
+        committedRewriteCount = receipt.rewriteCount;
+        retainedSourcePath = receipt.sourcePath;
+        committedVaultNotice = attachmentMoveCommitNotice(response);
+      } else {
+        attachmentMoveConfirmationId = null;
+        attachmentMoveRewrites = [];
+        elements.attachmentMovePreviewMessage.textContent = "";
+        elements.attachmentMoveError.textContent =
+          "Threadleaf received an incomplete publication receipt. The workbench remains open; review both paths before continuing.";
+      }
+    } else if (response.outcome.status === "requires-confirmation") {
+      attachmentMoveBlockers = [];
+      attachmentMoveRewrites = response.outcome.rewrites;
+      attachmentMoveConfirmationId = response.outcome.confirmationId;
+      const boundedPreviewNotice =
+        response.outcome.rewrites.length > 100
+          ? ` The list shows the first 100 of ${response.outcome.rewrites.length} exact updates.`
+          : "";
+      elements.attachmentMovePreviewMessage.textContent = submittedConfirmationId
+        ? `The link plan changed on disk. Review this refreshed preview, then confirm it again.${boundedPreviewNotice}`
+        : `Review the exact local link target updates below. Submit again to publish the copy and apply them as one recoverable operation.${boundedPreviewNotice}`;
+    } else if (response.outcome.status === "blocked") {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      attachmentMoveBlockers = response.outcome.blockers;
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent = `Publication blocked: ${response.outcome.blockers.length} internal link resolution${response.outcome.blockers.length === 1 ? " cannot" : "s cannot"} be rewritten safely. No files were changed.`;
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "target-exists"
+    ) {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent =
+        "That destination already exists. No files were changed.";
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "source-revision-changed"
+    ) {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent =
+        "The attachment changed on disk while Threadleaf checked the publication. No files were changed.";
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "rewrite-plan-changed"
+    ) {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent =
+        "The referenced notes changed after the preview. Nothing was published; reopen the workbench to review the current links.";
+    } else {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent =
+        "The attachment publication did not commit. No files were overwritten; review the current vault state.";
+    }
+  } catch {
+    elements.attachmentMoveError.textContent =
+      "The attachment publication could not be confirmed. Review the current vault state; no further files were changed.";
+  } finally {
+    attachmentMoveBusy = false;
+    setActionState(false);
+    if (elements.attachmentMoveDialog.open) renderAttachmentMoveDialog();
+  }
+
+  if (committedPath && retainedSourcePath) {
+    closeAttachmentMoveDialog(false);
+    const operationNotice = `Published a copy at ${committedPath}${
+      committedRewriteCount > 0
+        ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
+        : ""
+    }; the original remains at ${retainedSourcePath}.`;
+    showToast(
+      committedVaultNotice ? `${committedVaultNotice} ${operationNotice}` : operationNotice,
+    );
+  } else if (response?.outcome.status === "requires-confirmation") {
+    elements.attachmentMoveSubmit.focus();
+  } else if (response) {
+    elements.attachmentMoveTarget.focus();
+    elements.attachmentMoveTarget.select();
+  }
+}
 function renderDeleteNoteDialog(): void {
   const staleVault = Boolean(
     deleteNoteVaultId && deleteNoteVaultId !== (currentSnapshot?.vault.id ?? null),
@@ -4160,9 +4473,15 @@ async function deleteCurrentNote(): Promise<void> {
     render(response.snapshot);
     if (response.outcome.status === "committed") {
       committed = true;
-    } else if (response.outcome.reason === "target-exists") {
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "target-exists"
+    ) {
       elements.deleteNoteError.textContent = `${response.outcome.to} already contains an earlier deletion. Restore or move that file first. No files were changed.`;
-    } else if (response.outcome.reason === "source-revision-changed") {
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "source-revision-changed"
+    ) {
       elements.deleteNoteError.textContent =
         "The note changed on disk before it could be moved. Review the current version and try again. No files were changed.";
     } else {
@@ -8379,6 +8698,9 @@ function render(snapshot: RuntimeSnapshot): void {
   if (elements.moveNoteDialog.open) {
     renderMoveNoteDialog();
   }
+  if (elements.attachmentMoveDialog.open) {
+    renderAttachmentMoveDialog();
+  }
   if (elements.deleteNoteDialog.open) {
     renderDeleteNoteDialog();
   }
@@ -11028,6 +11350,28 @@ elements.moveNoteDialog.addEventListener("click", (event) => {
   }
 });
 
+elements.attachmentMoveTarget.addEventListener("input", () => {
+  attachmentMoveBlockers = [];
+  attachmentMoveRewrites = [];
+  attachmentMoveConfirmationId = null;
+  elements.attachmentMoveError.textContent = "";
+  elements.attachmentMovePreviewMessage.textContent = "";
+  renderAttachmentMoveDialog();
+});
+elements.attachmentMoveForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void moveCurrentAttachment();
+});
+elements.attachmentMoveClose.addEventListener("click", () => closeAttachmentMoveDialog());
+elements.attachmentMoveCancel.addEventListener("click", () => closeAttachmentMoveDialog());
+elements.attachmentMoveDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeAttachmentMoveDialog();
+});
+elements.attachmentMoveDialog.addEventListener("click", (event) => {
+  if (event.target === elements.attachmentMoveDialog) closeAttachmentMoveDialog();
+});
+
 elements.deleteNoteForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void deleteCurrentNote();
@@ -11061,6 +11405,7 @@ document.addEventListener("keydown", (event) => {
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
+      elements.attachmentMoveDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.quickSwitcher.open ||
       elements.pluginPackageReviewDialog.open ||
@@ -11086,6 +11431,7 @@ document.addEventListener("keydown", (event) => {
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
+      elements.attachmentMoveDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.pluginPackageReviewDialog.open ||
       elements.pluginAuthorityReviewDialog.open ||
@@ -11109,6 +11455,7 @@ document.addEventListener("keydown", (event) => {
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
+      elements.attachmentMoveDialog.open ||
       elements.deleteNoteDialog.open ||
       elements.quickSwitcher.open ||
       elements.pluginPackageReviewDialog.open ||
@@ -11134,6 +11481,7 @@ document.addEventListener("keydown", (event) => {
     elements.templatePickerDialog.open ||
     elements.propertyDialog.open ||
     elements.moveNoteDialog.open ||
+    elements.attachmentMoveDialog.open ||
     elements.deleteNoteDialog.open ||
     elements.quickSwitcher.open ||
     elements.pluginPackageReviewDialog.open ||

@@ -1,10 +1,26 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { type ParsedMarkdownLink, parseMarkdownLinks } from "../kernel/markdown-links";
+import {
+  type ParsedMarkdownLink,
+  parseMarkdownDestinationTarget,
+  parseMarkdownLinks,
+  parseMarkdownReferenceDefinitions,
+  parseMarkdownReferenceUsages,
+} from "../kernel/markdown-links";
+import { VaultLinkResolver } from "../kernel/metadata-index";
 import type { VisibleVaultPaths } from "../kernel/path-policy";
 import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
-import type { VaultMutationPort, VaultReadPort, VaultTextSnapshot } from "../kernel/ports";
-import { DEFAULT_VAULT_ATTACHMENT_MAX_BYTES } from "./vault-attachment-service";
+import type {
+  VaultMarkdownCorpus,
+  VaultMutationPort,
+  VaultReadPort,
+  VaultTextSnapshot,
+} from "../kernel/ports";
+import {
+  DEFAULT_VAULT_ATTACHMENT_MAX_BYTES,
+  type ParsedVaultAttachmentTarget,
+  parseVaultAttachmentTarget,
+} from "./vault-attachment-service";
 
 /** A binary move reads only enough to obtain a bounded snapshot and revision. */
 export const MAX_ATTACHMENT_MOVE_BYTES = DEFAULT_VAULT_ATTACHMENT_MAX_BYTES;
@@ -26,6 +42,17 @@ export interface AttachmentMoveWriteProposal {
   content: string;
 }
 
+export interface AttachmentMoveMarkdownCorpus {
+  /** Exact lexical Markdown paths included in the preview. */
+  markdownPaths: string[];
+  /** Revisions for every path, including notes with no rewritten link. */
+  markdownRevisions: Array<{ path: string; revision: string }>;
+  /** The metadata/index generation observed while the preview was built. */
+  generation: number | null;
+  /** The kernel-authoritative receipt passed into the mutation boundary. */
+  kernel: VaultMarkdownCorpus;
+}
+
 export interface AttachmentMoveBlocker {
   documentPath: string;
   line: number;
@@ -36,7 +63,13 @@ export interface AttachmentMoveBlocker {
 }
 
 export type AttachmentMovePlan =
-  | { status: "conflict"; from: string; to: string; reason: string }
+  | {
+      status: "conflict";
+      from: string;
+      to: string;
+      reason: string;
+      conflictPaths?: string[];
+    }
   | {
       status: "planned";
       from: string;
@@ -45,6 +78,7 @@ export type AttachmentMovePlan =
       rewrites: AttachmentLinkRewrite[];
       blockers: AttachmentMoveBlocker[];
       writes: AttachmentMoveWriteProposal[];
+      corpus: AttachmentMoveMarkdownCorpus;
       confirmationId: string | null;
     };
 
@@ -59,7 +93,7 @@ export type AttachmentMoveOutcome =
       rewrites: AttachmentLinkRewrite[];
     }
   | {
-      status: "committed";
+      status: "published-source-retained";
       from: string;
       to: string;
       transactionId: string;
@@ -72,6 +106,15 @@ export interface AttachmentMoveOptions {
   acceptCurrentRewrites?: boolean;
   /** Apply a previously displayed preview without rebuilding it over a changed external winner. */
   plan?: AttachmentMovePlan;
+  /** Bind the mutation to the workspace generation used for its preview. */
+  expectedGeneration?: number;
+  /** Read the current workspace generation immediately before mutation. */
+  currentGeneration?: () => number;
+}
+
+export interface AttachmentMovePlanningContext {
+  generation?: number;
+  currentGeneration?: () => number;
 }
 
 interface AttachmentVaultReadPort extends VaultReadPort {
@@ -82,6 +125,8 @@ interface LinkResolution {
   status: "resolved" | "unresolved" | "ambiguous";
   path?: string;
   candidates?: string[];
+  parsed?: ParsedVaultAttachmentTarget;
+  rejectionReason?: "external" | "invalid" | "private" | "outside-vault";
 }
 
 interface PlannedCandidate {
@@ -96,29 +141,20 @@ function normalizedKey(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase("en-US");
 }
 
-function decodeTarget(rawTarget: string): string | null {
-  const trimmed = rawTarget.trim();
-  const unwrapped =
-    trimmed.startsWith("<") && trimmed.endsWith(">") ? trimmed.slice(1, -1).trim() : trimmed;
-  try {
-    return decodeURIComponent(unwrapped).replaceAll("\\", "/");
-  } catch {
-    return null;
-  }
-}
-
-function isExternalTarget(value: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:/iu.test(value) || value.startsWith("//");
-}
-
-function encodeWikiTarget(value: string): string {
+function encodeWikiSegment(value: string): string {
   return value
     .replaceAll("%", "%25")
+    .replaceAll("?", "%3F")
     .replaceAll("#", "%23")
     .replaceAll("^", "%5E")
     .replaceAll("|", "%7C")
     .replaceAll("[", "%5B")
-    .replaceAll("]", "%5D");
+    .replaceAll("]", "%5D")
+    .replaceAll("\\", "%5C");
+}
+
+function encodeWikiTarget(value: string): string {
+  return value.split("/").map(encodeWikiSegment).join("/");
 }
 
 function encodeMarkdownSegment(value: string): string {
@@ -133,11 +169,12 @@ function replacementTarget(
   syntax: "wiki" | "markdown",
   documentPath: string,
   targetPath: string,
+  suffix = "",
 ): string {
-  if (syntax === "wiki") return encodeWikiTarget(targetPath);
   const relative = path.posix.relative(path.posix.dirname(documentPath), targetPath);
+  if (syntax === "wiki") return `${encodeWikiTarget(relative)}${suffix}`;
   const encoded = relative.split("/").map(encodeMarkdownSegment).join("/");
-  return encoded.includes("/") ? encoded : `./${encoded}`;
+  return `${encoded.includes("/") ? encoded : `./${encoded}`}${suffix}`;
 }
 
 function isAttachmentPath(filePath: string): boolean {
@@ -146,58 +183,56 @@ function isAttachmentPath(filePath: string): boolean {
 
 async function collectVisibleFiles(vault: AttachmentVaultReadPort): Promise<string[]> {
   if (!vault.listVisiblePaths) return vault.listMarkdownPaths();
-  const files: string[] = [];
-  const visit = async (directory: string): Promise<void> => {
-    const listing = await vault.listVisiblePaths?.(directory);
-    if (!listing?.exists) return;
-    files.push(...listing.files);
-    for (const folder of listing.folders) await visit(folder);
-  };
-  await visit("");
-  return [...new Set(files)].sort((left, right) => left.localeCompare(right));
-}
-
-function matchingCandidates(
-  sourcePath: string,
-  rawTarget: string,
-  visibleFiles: readonly string[],
-): string[] {
-  const decoded = decodeTarget(rawTarget);
-  if (!decoded?.trim() || isExternalTarget(decoded)) return [];
-  const rooted = decoded.startsWith("/");
-  const withoutRoot = decoded.replace(/^\/+/, "");
-  let candidate: string;
-  try {
-    candidate = normalizeVaultPath(
-      rooted ? withoutRoot : path.posix.join(path.posix.dirname(sourcePath), withoutRoot),
-    );
-  } catch {
-    return [];
-  }
-  const foldedCandidate = normalizedKey(candidate);
-  const exact = visibleFiles.filter((filePath) => normalizedKey(filePath) === foldedCandidate);
-  if (exact.length > 0) return exact;
-  if (!decoded.includes("/")) {
-    const foldedName = normalizedKey(path.posix.basename(withoutRoot));
-    return visibleFiles.filter(
-      (filePath) => normalizedKey(path.posix.basename(filePath)) === foldedName,
-    );
-  }
-  return [];
+  const listing = await vault.listVisiblePaths("");
+  if (!listing.exists) return [];
+  return [...new Set(listing.files)].sort((left, right) => left.localeCompare(right));
 }
 
 function resolveAttachmentLink(
   documentPath: string,
-  link: ParsedMarkdownLink,
-  visibleFiles: readonly string[],
+  rawTarget: string,
+  resolver: VaultLinkResolver,
 ): LinkResolution {
-  if (isExternalTarget(link.target)) return { status: "unresolved" };
-  const candidates = matchingCandidates(documentPath, link.target, visibleFiles).filter(
-    isAttachmentPath,
+  const parsed = parseVaultAttachmentTarget(documentPath, rawTarget);
+  if (parsed.status === "rejected") {
+    // Keep a local-looking destination in the preview as an explicit blocker
+    // when path policy rejects it. External URLs are intentionally ignored.
+    return parsed.reason === "external"
+      ? { status: "unresolved" }
+      : {
+          status: "unresolved",
+          rejectionReason: parsed.reason,
+          ...(parsed.parsed ? { parsed: parsed.parsed } : {}),
+        };
+  }
+  // Resolve the original destination token through the same relative-first,
+  // vault-root-fallback resolver used by metadata/backlinks. The attachment
+  // parser's canonical path is intentionally not fed back into the resolver:
+  // doing so would resolve a relative target a second time and miss nested
+  // wiki links such as `Assets/Ébauche/diagram.svg` from `Drawings/`.
+  const destination = parseMarkdownDestinationTarget(rawTarget)?.path ?? rawTarget;
+  const resolution = resolver.resolve(documentPath, destination);
+  if (resolution.status === "resolved" && resolution.path && isAttachmentPath(resolution.path)) {
+    return { status: "resolved", path: resolution.path, parsed };
+  }
+  if (resolution.status === "ambiguous") {
+    return { status: "ambiguous", candidates: resolution.candidates ?? [], parsed };
+  }
+  return { status: "unresolved", parsed };
+}
+
+function mayReferenceSource(
+  parsed: ParsedVaultAttachmentTarget | undefined,
+  sourcePath: string,
+  rejectionReason?: LinkResolution["rejectionReason"],
+): boolean {
+  if (!parsed) return false;
+  return (
+    normalizedKey(parsed.path) === normalizedKey(sourcePath) ||
+    ((parsed.bareName || rejectionReason === "private" || rejectionReason === "outside-vault") &&
+      normalizedKey(path.posix.basename(parsed.path)) ===
+        normalizedKey(path.posix.basename(sourcePath)))
   );
-  if (candidates.length === 1 && candidates[0]) return { status: "resolved", path: candidates[0] };
-  if (candidates.length > 1) return { status: "ambiguous", candidates: candidates.sort() };
-  return { status: "unresolved" };
 }
 
 function rewriteContent(content: string, candidates: readonly PlannedCandidate[]): string {
@@ -224,8 +259,123 @@ function confirmationIdFor(
       expectedRevision: write.expectedRevision,
       contentRevision: createHash("sha256").update(write.content, "utf8").digest("hex"),
     })),
+    corpus: plan.corpus,
   };
   return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
+}
+
+function sortedMarkdownPaths(paths: readonly string[]): string[] {
+  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+}
+
+function changedCorpusPaths(
+  expectedPaths: readonly string[],
+  actualPaths: readonly string[],
+  expectedRevisions: readonly { path: string; revision: string }[],
+  actualRevisions: readonly { path: string; revision: string }[],
+): string[] {
+  const changed = new Set<string>();
+  const expectedPathSet = new Set(expectedPaths);
+  const actualPathSet = new Set(actualPaths);
+  for (const path of expectedPathSet) if (!actualPathSet.has(path)) changed.add(path);
+  for (const path of actualPathSet) if (!expectedPathSet.has(path)) changed.add(path);
+  const expectedByPath = new Map(
+    expectedRevisions.map((revision) => [revision.path, revision.revision]),
+  );
+  for (const revision of actualRevisions) {
+    if (expectedByPath.get(revision.path) !== revision.revision) changed.add(revision.path);
+  }
+  return [...changed].sort((left, right) => left.localeCompare(right));
+}
+
+function corpusGeneration(
+  paths: readonly string[],
+  revisions: readonly { path: string; revision: string }[],
+): string {
+  const sortedPaths = [...paths].sort((left, right) => left.localeCompare(right));
+  const sortedRevisions = [...revisions]
+    .map((entry) => ({ path: entry.path, revision: entry.revision }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return createHash("sha256")
+    .update(JSON.stringify({ paths: sortedPaths, revisions: sortedRevisions }), "utf8")
+    .digest("hex");
+}
+
+async function captureKernelCorpus(vault: VaultReadPort): Promise<VaultMarkdownCorpus | null> {
+  if (vault.readMarkdownCorpus) {
+    try {
+      return await vault.readMarkdownCorpus();
+    } catch {
+      return null;
+    }
+  }
+  // Test doubles and older ports may not expose the kernel's atomic corpus
+  // receipt. Enumerate, read, and enumerate again so a note created while the
+  // first pass is in flight cannot be mistaken for a stable corpus.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const firstPaths = sortedMarkdownPaths(await vault.listMarkdownPaths());
+    const firstRevisions = await readMarkdownRevisions(vault, firstPaths);
+    if (!firstRevisions) continue;
+    const secondPaths = sortedMarkdownPaths(await vault.listMarkdownPaths());
+    const secondRevisions = await readMarkdownRevisions(vault, secondPaths);
+    if (!secondRevisions) continue;
+    if (changedCorpusPaths(firstPaths, secondPaths, firstRevisions, secondRevisions).length > 0) {
+      continue;
+    }
+    return {
+      paths: secondPaths,
+      revisions: secondRevisions,
+      generation: corpusGeneration(secondPaths, secondRevisions),
+    };
+  }
+  return null;
+}
+
+async function readMarkdownRevisions(
+  vault: VaultReadPort,
+  paths: readonly string[],
+): Promise<Array<{ path: string; revision: string }> | null> {
+  const revisions: Array<{ path: string; revision: string }> = [];
+  for (const documentPath of paths) {
+    try {
+      const snapshot = await vault.readText(documentPath);
+      revisions.push({ path: documentPath, revision: snapshot.revision });
+    } catch {
+      return null;
+    }
+  }
+  return revisions;
+}
+
+async function verifyAttachmentMoveCorpus(
+  vault: VaultReadPort,
+  corpus: AttachmentMoveMarkdownCorpus,
+  expectedGeneration: number | undefined,
+  currentGeneration: (() => number) | undefined,
+): Promise<{ ok: true } | { ok: false; conflictPaths: string[] }> {
+  if (
+    expectedGeneration !== undefined &&
+    currentGeneration !== undefined &&
+    currentGeneration() !== expectedGeneration
+  ) {
+    return { ok: false, conflictPaths: [] };
+  }
+  const actual = await captureKernelCorpus(vault);
+  if (!actual) return { ok: false, conflictPaths: corpus.kernel.paths };
+  const conflictPaths = changedCorpusPaths(
+    corpus.kernel.paths,
+    actual.paths,
+    corpus.kernel.revisions,
+    actual.revisions,
+  );
+  if (
+    expectedGeneration !== undefined &&
+    currentGeneration !== undefined &&
+    currentGeneration() !== expectedGeneration
+  ) {
+    return { ok: false, conflictPaths };
+  }
+  return conflictPaths.length === 0 ? { ok: true } : { ok: false, conflictPaths };
 }
 
 /** Plan a non-note attachment move without ever decoding its bytes as text. */
@@ -245,6 +395,7 @@ export async function planBinaryAttachmentMove(
   requestedSourcePath: string,
   requestedTargetPath: string,
   expectedSourceRevision?: string,
+  context: AttachmentMovePlanningContext = {},
 ): Promise<AttachmentMovePlan> {
   let sourcePath = normalizeVaultPath(requestedSourcePath);
   const targetPath = normalizeVaultPath(requestedTargetPath);
@@ -256,18 +407,25 @@ export async function planBinaryAttachmentMove(
   }
   if (sourcePath === targetPath)
     throw new Error("Attachment move source and destination must differ.");
+  const markdownPaths = sortedMarkdownPaths(await vault.listMarkdownPaths());
+  const generation = context.generation ?? context.currentGeneration?.() ?? null;
   const visibleFiles = await collectVisibleFiles(vault);
-  const folded = visibleFiles.map(normalizedKey);
-  const visibleSourcePath = visibleFiles.find(
+  const sourceMatches = visibleFiles.filter(
     (candidate) => normalizedKey(candidate) === normalizedKey(sourcePath),
   );
-  if (!visibleSourcePath) {
+  if (sourceMatches.length === 0) {
     throw new Error(`Attachment is not present in the visible vault: ${sourcePath}`);
   }
+  if (sourceMatches.length > 1) {
+    throw new Error(
+      `Attachment source is ambiguous after case and Unicode normalization: ${sourceMatches.join(", ")}`,
+    );
+  }
   // Keep the on-disk spelling for the kernel call while resolving user/link
-  // paths case-insensitively and by NFC, as the metadata index does.
-  sourcePath = visibleSourcePath;
-  if (folded.includes(normalizedKey(targetPath))) {
+  // paths case-insensitively and by NFC, as the metadata index does. An exact
+  // lexical spelling is useful only after the normalized identity is unique.
+  sourcePath = sourceMatches[0] as string;
+  if (visibleFiles.some((candidate) => normalizedKey(candidate) === normalizedKey(targetPath))) {
     return { status: "conflict", from: sourcePath, to: targetPath, reason: "target-exists" };
   }
   const sourceResult = await vault.readBinary(sourcePath, MAX_ATTACHMENT_MOVE_BYTES);
@@ -282,14 +440,49 @@ export async function planBinaryAttachmentMove(
     };
   }
 
-  const markdownPaths = await vault.listMarkdownPaths();
   const rewrites: AttachmentLinkRewrite[] = [];
   const writes: AttachmentMoveWriteProposal[] = [];
+  const markdownRevisions: Array<{ path: string; revision: string }> = [];
+  const unresolvedBlockers: AttachmentMoveBlocker[] = [];
+  const resolver = new VaultLinkResolver(visibleFiles);
   for (const documentPath of markdownPaths) {
-    const snapshot = await vault.readText(documentPath);
+    let snapshot: VaultTextSnapshot;
+    try {
+      snapshot = await vault.readText(documentPath);
+    } catch {
+      return {
+        status: "conflict",
+        from: sourcePath,
+        to: targetPath,
+        reason: "markdown-corpus-changed",
+        conflictPaths: [documentPath],
+      };
+    }
+    markdownRevisions.push({ path: documentPath, revision: snapshot.revision });
+    const referenceDefinitions = parseMarkdownReferenceDefinitions(snapshot.content);
+    const definitionsByLabel = new Map<string, typeof referenceDefinitions>();
+    for (const definition of referenceDefinitions) {
+      const entries = definitionsByLabel.get(definition.label) ?? [];
+      entries.push(definition);
+      definitionsByLabel.set(definition.label, entries);
+    }
+    for (const usage of parseMarkdownReferenceUsages(snapshot.content)) {
+      const definitions = definitionsByLabel.get(usage.label) ?? [];
+      if (definitions.length === 1 && definitions[0]?.valid) continue;
+      const candidates = definitions.map((definition) => `${documentPath}:${definition.line}`);
+      unresolvedBlockers.push({
+        documentPath,
+        line: usage.line,
+        target: `![${usage.label}][]`,
+        syntax: "markdown",
+        reason: definitions.length > 1 ? "ambiguous" : "unsupported",
+        candidates,
+      });
+    }
     const candidates: PlannedCandidate[] = [];
     for (const link of parseMarkdownLinks(snapshot.content)) {
-      const resolution = resolveAttachmentLink(documentPath, link, visibleFiles);
+      const rawTarget = snapshot.content.slice(link.targetStart, link.targetEnd);
+      const resolution = resolveAttachmentLink(documentPath, rawTarget, resolver);
       if (resolution.status !== "resolved" || resolution.path !== sourcePath) {
         if (
           resolution.status === "ambiguous" &&
@@ -307,10 +500,31 @@ export async function planBinaryAttachmentMove(
             sourcePath,
             targetPath,
           });
+        } else if (
+          resolution.status === "unresolved" &&
+          mayReferenceSource(resolution.parsed, sourcePath, resolution.rejectionReason)
+        ) {
+          unresolvedBlockers.push({
+            documentPath,
+            line: link.line,
+            target: link.target,
+            syntax: link.syntax,
+            reason: "unresolved",
+            candidates: visibleFiles.filter(
+              (candidate) =>
+                normalizedKey(path.posix.basename(candidate)) ===
+                normalizedKey(path.posix.basename(sourcePath)),
+            ),
+          });
         }
         continue;
       }
-      const afterTarget = replacementTarget(link.syntax, documentPath, targetPath);
+      const afterTarget = replacementTarget(
+        link.syntax,
+        documentPath,
+        targetPath,
+        resolution.parsed?.suffix,
+      );
       const rewrite: AttachmentLinkRewrite = {
         documentPath,
         line: link.line,
@@ -338,7 +552,37 @@ export async function planBinaryAttachmentMove(
       }
     }
   }
-  const blockers = rewrites
+  const finalKernelCorpus = await captureKernelCorpus(vault);
+  const corpus = {
+    markdownPaths,
+    markdownRevisions,
+    generation,
+    kernel: finalKernelCorpus ?? {
+      paths: markdownPaths,
+      revisions: markdownRevisions,
+      generation: corpusGeneration(markdownPaths, markdownRevisions),
+    },
+  } satisfies AttachmentMoveMarkdownCorpus;
+  const corpusConflictPaths = changedCorpusPaths(
+    markdownPaths,
+    finalKernelCorpus?.paths ?? [],
+    markdownRevisions,
+    finalKernelCorpus?.revisions ?? [],
+  );
+  if (
+    finalKernelCorpus === null ||
+    corpusConflictPaths.length > 0 ||
+    (context.currentGeneration && context.currentGeneration() !== generation)
+  ) {
+    return {
+      status: "conflict",
+      from: sourcePath,
+      to: targetPath,
+      reason: "markdown-corpus-changed",
+      ...(corpusConflictPaths.length > 0 ? { conflictPaths: corpusConflictPaths } : {}),
+    };
+  }
+  const ambiguousBlockers = rewrites
     .filter((rewrite) => rewrite.afterTarget === "")
     .map((rewrite) => ({
       documentPath: rewrite.documentPath,
@@ -352,6 +596,7 @@ export async function planBinaryAttachmentMove(
           normalizedKey(path.posix.basename(sourcePath)),
       ),
     }));
+  const blockers = [...unresolvedBlockers, ...ambiguousBlockers];
   const plannedWithoutId = {
     status: "planned" as const,
     from: sourcePath,
@@ -360,6 +605,7 @@ export async function planBinaryAttachmentMove(
     rewrites: rewrites.filter((rewrite) => rewrite.afterTarget !== ""),
     blockers,
     writes,
+    corpus,
     confirmationId: null,
   };
   const confirmationId = writes.length > 0 ? confirmationIdFor(plannedWithoutId) : null;
@@ -385,6 +631,10 @@ export async function moveBinaryAttachment(
   expectedSourceRevision?: string,
   options: AttachmentMoveOptions = {},
 ): Promise<AttachmentMoveOutcome> {
+  const planningContext: AttachmentMovePlanningContext = {
+    ...(options.expectedGeneration !== undefined ? { generation: options.expectedGeneration } : {}),
+    ...(options.currentGeneration ? { currentGeneration: options.currentGeneration } : {}),
+  };
   const plan =
     options.plan ??
     (await planBinaryAttachmentMove(
@@ -392,10 +642,22 @@ export async function moveBinaryAttachment(
       requestedSourcePath,
       requestedTargetPath,
       expectedSourceRevision,
+      planningContext,
     ));
   if (plan.status === "conflict") return plan;
   if (plan.blockers.length > 0)
     return { status: "blocked", from: plan.from, to: plan.to, blockers: plan.blockers };
+  // A confirmation is a capability for the exact rewrite preview the user
+  // saw. If a later plan has no rewrites, the old capability must not silently
+  // turn into an attachment-only rename after an external edit.
+  if (options.confirmationId && plan.writes.length === 0 && plan.confirmationId === null) {
+    return {
+      status: "conflict",
+      from: plan.from,
+      to: plan.to,
+      reason: "rewrite-plan-changed",
+    };
+  }
   if (
     plan.writes.length > 0 &&
     !options.acceptCurrentRewrites &&
@@ -411,6 +673,23 @@ export async function moveBinaryAttachment(
       rewrites: plan.rewrites,
     };
   }
+  const corpusVerification = await verifyAttachmentMoveCorpus(
+    vault,
+    plan.corpus,
+    options.expectedGeneration ?? plan.corpus.generation ?? undefined,
+    options.currentGeneration,
+  );
+  if (!corpusVerification.ok) {
+    return {
+      status: "conflict",
+      from: plan.from,
+      to: plan.to,
+      reason: "markdown-corpus-changed",
+      ...(corpusVerification.conflictPaths.length > 0
+        ? { conflictPaths: corpusVerification.conflictPaths }
+        : {}),
+    };
+  }
   const result =
     plan.writes.length > 0
       ? await vault.moveWithWrites({
@@ -418,17 +697,39 @@ export async function moveBinaryAttachment(
           targetPath: plan.to,
           expectedSourceRevision: plan.sourceRevision,
           writes: plan.writes,
+          expectedMarkdownCorpus: plan.corpus.kernel,
+          strictContainment: true,
         })
-      : await vault.renameFile(plan.from, plan.to, plan.sourceRevision);
+      : await vault.renameFile(plan.from, plan.to, plan.sourceRevision, plan.corpus.kernel, {
+          strictContainment: true,
+        });
   if (result.status === "conflict") {
-    return { status: "conflict", from: result.from, to: result.to, reason: result.reason };
+    return {
+      status: "conflict",
+      from: result.from,
+      to: result.to,
+      reason: result.reason,
+      ...("conflictPaths" in result &&
+      Array.isArray(result.conflictPaths) &&
+      result.conflictPaths.length > 0
+        ? { conflictPaths: result.conflictPaths }
+        : {}),
+    };
+  }
+  if (result.status !== "published-source-retained") {
+    return {
+      status: "conflict",
+      from: result.from,
+      to: result.to,
+      reason: "source-retention-not-supported",
+    };
   }
   const revisions: Array<{ path: string; revision: string }> =
     plan.writes.length > 0 && "writes" in result
       ? (result.writes as Array<{ path: string; revision: string }>)
       : [];
   return {
-    status: "committed",
+    status: "published-source-retained",
     from: result.from,
     to: result.to,
     transactionId: result.transactionId,
