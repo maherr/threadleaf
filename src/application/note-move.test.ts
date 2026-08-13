@@ -175,6 +175,49 @@ describe("link-safe note moves", () => {
     );
   });
 
+  it("converts rewritten links only when the workspace link style asks for it", async () => {
+    await fs.writeFile(path.join(vaultPath, "Target.md"), "# Target\n", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Linker.md"), "[[Target|keep this label]]\n", "utf8");
+    const kernel = await openKernel();
+
+    const plan = await planMarkdownNoteMove(
+      kernel,
+      "Target.md",
+      "Renamed.md",
+      undefined,
+      undefined,
+      { linkStyle: "markdown" },
+    );
+
+    if (plan.status !== "planned") {
+      throw new Error(`Expected a move plan, received ${plan.status}.`);
+    }
+    expect(plan.blockers).toEqual([]);
+    expect(plan.rewrites[0]).toMatchObject({
+      syntax: "markdown",
+      beforeTarget: "Target",
+      afterTarget: "./Renamed.md",
+    });
+    expect(plan.writes[0]?.content).toBe("[keep this label](./Renamed.md)\n");
+  });
+
+  it("skips backlink writes when automatic updates are disabled", async () => {
+    await fs.writeFile(path.join(vaultPath, "Target.md"), "# Target\n", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Linker.md"), "[[Target]]\n", "utf8");
+    const kernel = await openKernel();
+
+    const plan = await planMarkdownNoteMove(
+      kernel,
+      "Target.md",
+      "Renamed.md",
+      undefined,
+      undefined,
+      { automaticLinkUpdates: "never" },
+    );
+
+    expect(plan).toMatchObject({ status: "planned", rewrites: [], writes: [] });
+  });
+
   it("preserves a BOM, CRLF line endings, and escaped filename delimiters", async () => {
     await fs.writeFile(path.join(vaultPath, "Target.md"), "# Target\r\n", "utf8");
     const linker = '\uFEFFtitle: kept\r\n[[Target#Section|alias]]\r\n[same](Target.md "title")\r\n';

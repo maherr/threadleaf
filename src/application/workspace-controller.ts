@@ -34,6 +34,7 @@ import type {
   WorkspaceSplitDirection,
 } from "../shared/contracts";
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
+import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import type { RenderedNoteTemplate } from "./note-template";
 import { WorkspaceRuntime, type WorkspaceRuntimeOptions } from "./workspace-runtime";
 import type { PersistedWorkspaceState, WorkspaceStateStore } from "./workspace-state";
@@ -77,7 +78,13 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
   ): Promise<CanvasSaveResponse>;
-  openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
+  openNote(
+    filePath: string,
+    paneId?: WorkspacePaneId,
+    activate?: boolean,
+  ): Promise<RuntimeSnapshot>;
+  getWorkspaceSettings(): VaultWorkspaceSettings;
+  setWorkspaceSettings(settings: VaultWorkspaceSettings, expectedVaultId: string): void;
   closeNote(
     filePath: string,
     expectedVaultId: string,
@@ -228,6 +235,7 @@ export interface WorkspaceControllerOptions {
   pluginRuntimeFactory?: PluginRuntimeFactory;
   runtimeFactory?: WorkspaceRuntimeFactory;
   workspaceStateStore?: WorkspaceStateStore;
+  workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -255,6 +263,7 @@ function runtimeOptions(
   pluginDirectory?: string,
   pluginModuleResolver?: PluginModuleResolver,
   pluginRuntimeFactory?: PluginRuntimeFactory,
+  workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings,
 ): WorkspaceRuntimeOptions {
   return {
     vaultRoot,
@@ -265,6 +274,7 @@ function runtimeOptions(
     ...(pluginDirectory ? { pluginDirectory } : {}),
     ...(pluginModuleResolver ? { pluginModuleResolver } : {}),
     ...(pluginRuntimeFactory ? { pluginRuntimeFactory } : {}),
+    ...(workspaceSettingsForVault ? { workspaceSettingsForVault } : {}),
   };
 }
 
@@ -275,6 +285,7 @@ export class WorkspaceController {
   readonly #runtimeFactory: WorkspaceRuntimeFactory;
   readonly #pluginModuleResolver: PluginModuleResolver | undefined;
   readonly #pluginRuntimeFactory: PluginRuntimeFactory | undefined;
+  readonly #workspaceSettingsForVault: ((vaultId: string) => VaultWorkspaceSettings) | undefined;
   readonly #listeners = new Set<SnapshotListener>();
   #runtime: WorkspaceRuntimePort;
   #releaseRuntimeListener: () => void;
@@ -295,6 +306,7 @@ export class WorkspaceController {
     this.#runtimeFactory = runtimeFactory;
     this.#pluginModuleResolver = options.pluginModuleResolver;
     this.#pluginRuntimeFactory = options.pluginRuntimeFactory;
+    this.#workspaceSettingsForVault = options.workspaceSettingsForVault;
     this.#deferredInitialVault = deferredInitialVault;
     this.#releaseRuntimeListener = this.bindRuntime(runtime);
   }
@@ -313,6 +325,7 @@ export class WorkspaceController {
             undefined,
             options.pluginModuleResolver,
             undefined,
+            options.workspaceSettingsForVault,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory, {
@@ -333,6 +346,7 @@ export class WorkspaceController {
           options.configuredPluginDirectory,
           options.pluginModuleResolver,
           options.pluginRuntimeFactory,
+          options.workspaceSettingsForVault,
         ),
       );
       return new WorkspaceController(runtime, options, runtimeFactory);
@@ -358,6 +372,7 @@ export class WorkspaceController {
             undefined,
             options.pluginModuleResolver,
             undefined,
+            options.workspaceSettingsForVault,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory, {
@@ -376,6 +391,7 @@ export class WorkspaceController {
             undefined,
             options.pluginModuleResolver,
             options.pluginRuntimeFactory,
+            options.workspaceSettingsForVault,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory);
@@ -394,6 +410,7 @@ export class WorkspaceController {
         options.fixturePluginDirectory,
         options.pluginModuleResolver,
         options.pluginRuntimeFactory,
+        options.workspaceSettingsForVault,
       ),
     );
     return new WorkspaceController(runtime, options, runtimeFactory);
@@ -431,6 +448,7 @@ export class WorkspaceController {
           target.pluginDirectory,
           this.#pluginModuleResolver,
           this.#pluginRuntimeFactory,
+          this.#workspaceSettingsForVault,
         ),
       );
     } catch (error) {
@@ -575,8 +593,23 @@ export class WorkspaceController {
     return response;
   }
 
-  openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
-    return this.activeRuntime("open a note").openNote(filePath, paneId);
+  openNote(
+    filePath: string,
+    paneId?: WorkspacePaneId,
+    activate?: boolean,
+  ): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("open a note").openNote(filePath, paneId, activate);
+  }
+
+  getWorkspaceSettings(): VaultWorkspaceSettings {
+    return this.activeRuntime("read workspace preferences").getWorkspaceSettings();
+  }
+
+  setWorkspaceSettings(settings: VaultWorkspaceSettings, expectedVaultId: string): void {
+    this.activeRuntime("apply workspace preferences").setWorkspaceSettings(
+      settings,
+      expectedVaultId,
+    );
   }
 
   closeNote(
@@ -933,6 +966,7 @@ export class WorkspaceController {
         undefined,
         this.#pluginModuleResolver,
         this.#pluginRuntimeFactory,
+        this.#workspaceSettingsForVault,
       ),
     );
     let adopted = false;

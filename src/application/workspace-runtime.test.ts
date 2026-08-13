@@ -7,6 +7,7 @@ import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
+import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import { WorkspaceRuntime } from "./workspace-runtime";
 import {
   createWorkspaceLayout,
@@ -139,12 +140,30 @@ afterEach(async () => {
   await fs.rm(sandboxPath, { recursive: true, force: true });
 });
 
-async function openRuntime(workspaceStateStore?: WorkspaceStateStore): Promise<WorkspaceRuntime> {
+async function openRuntime(
+  workspaceStateStore?: WorkspaceStateStore,
+  workspaceSettings?: Partial<VaultWorkspaceSettings>,
+): Promise<WorkspaceRuntime> {
   runtime = await WorkspaceRuntime.open({
     vaultRoot: vaultPath,
     stateRoot: new FixedStateRoot(statePath),
     pluginDirectory: path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"),
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
+    ...(workspaceSettings
+      ? {
+          workspaceSettings: {
+            defaultNoteFolder: "",
+            linkStyle: "preserve",
+            automaticLinkUpdates: "ask",
+            confirmDelete: "always",
+            newTabBehavior: "focus",
+            editorMode: "live",
+            documentView: "live",
+            restorePolicy: "restore",
+            ...workspaceSettings,
+          },
+        }
+      : {}),
   });
   return runtime;
 }
@@ -305,6 +324,70 @@ describe("WorkspaceRuntime", () => {
     const commanded = await workspace.runPluginCommand("threadleaf-fixture-confirm");
     expect(commanded.notices).toContain("Fixture command crossed the compatibility bridge.");
     expect(commanded.plugin?.compatibilityLevel).toBe(4);
+  });
+
+  it("applies private workspace defaults to native creation and background tabs", async () => {
+    const workspace = await openRuntime(undefined, {
+      defaultNoteFolder: "Notes",
+      newTabBehavior: "background",
+    });
+    const created = await workspace.createNote("Created.md", "# Created", workspace.vaultId);
+    expect(created.outcome).toMatchObject({ status: "committed", path: "Notes/Created.md" });
+    await expect(fs.readFile(path.join(vaultPath, "Notes/Created.md"), "utf8")).resolves.toBe(
+      "# Created",
+    );
+
+    await workspace.openNote("Welcome.md");
+    const before = await workspace.getSnapshot();
+    await workspace.openNote("Linked Note.md", "primary", false);
+    const after = await workspace.getSnapshot();
+    expect(after.workspace?.activeNote?.path).toBe(before.workspace?.activeNote?.path);
+    expect(after.workspace?.tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "Linked Note.md", active: false }),
+        expect.objectContaining({ path: "Welcome.md", active: true }),
+      ]),
+    );
+  });
+
+  it("honors the vault-bound fresh restart policy without deleting saved state", async () => {
+    const state = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md"],
+      activePath: "Welcome.md",
+    });
+    const workspace = await openRuntime(state, { restorePolicy: "fresh" });
+    const snapshot = await workspace.getSnapshot();
+    expect(snapshot.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(state.saved.at(-1)?.activePaneId).toBe("primary");
+    expect(state.saved.at(-1)?.panes[0]?.activePath).toBe("Linked Note.md");
+  });
+
+  it("moves without backlink writes when automatic updates are disabled", async () => {
+    const workspace = await openRuntime(undefined, { automaticLinkUpdates: "never" });
+    await workspace.openNote("Welcome.md");
+    const before = await workspace.getSnapshot();
+    const source = before.workspace?.activeNote;
+    if (!source) {
+      throw new Error("Expected a source note for the automatic-update test.");
+    }
+
+    const moved = await workspace.moveNote(
+      source.path,
+      "Moved.md",
+      source.revision,
+      workspace.vaultId,
+    );
+
+    expect(moved.outcome).toMatchObject({
+      status: "committed",
+      from: "Welcome.md",
+      to: "Moved.md",
+      rewrites: [],
+      writes: [],
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).resolves.toContain(
+      "[[Welcome]]",
+    );
   });
 
   it("merges actions and command workflows from an external plugin runtime", async () => {

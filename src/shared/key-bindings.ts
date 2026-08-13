@@ -13,6 +13,11 @@ import {
   parseVaultPluginSettings,
   type VaultPluginSettings,
 } from "./plugins";
+import {
+  createDefaultVaultWorkspaceSettings,
+  parseVaultWorkspaceSettings,
+  type VaultWorkspaceSettings,
+} from "./workspace-settings";
 
 export const shortcutTargetIds = [
   "ui.command-palette",
@@ -52,6 +57,7 @@ export interface AppSettings {
   appearanceByVault: Record<string, VaultAppearanceSettings>;
   pluginsByVault: Record<string, VaultPluginSettings>;
   noteWorkflowsByVault: Record<string, VaultNoteWorkflowSettings>;
+  workspaceByVault: Record<string, VaultWorkspaceSettings>;
 }
 
 export interface AppSettingsSnapshot {
@@ -203,6 +209,24 @@ function parseNoteWorkflowsByVault(value: unknown): Record<string, VaultNoteWork
   return noteWorkflowsByVault;
 }
 
+function parseWorkspaceByVault(value: unknown): Record<string, VaultWorkspaceSettings> {
+  if (!isRecord(value)) {
+    throw new Error("Settings workspaceByVault must be an object.");
+  }
+  const entries = Object.entries(value);
+  if (entries.length > 128) {
+    throw new Error("Settings contain workspace preferences for too many vaults.");
+  }
+  const workspaceByVault: Record<string, VaultWorkspaceSettings> = {};
+  for (const [vaultId, workspace] of entries) {
+    if (!vaultIdPattern.test(vaultId)) {
+      throw new Error("Workspace preferences require lowercase SHA-256 vault identities.");
+    }
+    workspaceByVault[vaultId] = parseVaultWorkspaceSettings(workspace);
+  }
+  return workspaceByVault;
+}
+
 function normalizeKey(value: string): string {
   const trimmed = eventKeyNames[value.trim()] ?? value.trim();
   if (/^[a-z0-9]$/i.test(trimmed)) {
@@ -255,6 +279,7 @@ export function createDefaultAppSettings(): AppSettings {
     appearanceByVault: {},
     pluginsByVault: {},
     noteWorkflowsByVault: {},
+    workspaceByVault: {},
   };
 }
 
@@ -293,7 +318,18 @@ export function parseAppSettings(value: unknown): AppSettings {
       : {};
   const noteWorkflowsByVault =
     value.version === 5 ? parseNoteWorkflowsByVault(value.noteWorkflowsByVault) : {};
-  return { version: 5, keyBindings, appearanceByVault, pluginsByVault, noteWorkflowsByVault };
+  const workspaceByVault =
+    value.version === 5 && value.workspaceByVault !== undefined
+      ? parseWorkspaceByVault(value.workspaceByVault)
+      : {};
+  return {
+    version: 5,
+    keyBindings,
+    appearanceByVault,
+    pluginsByVault,
+    noteWorkflowsByVault,
+    workspaceByVault,
+  };
 }
 
 export function isShortcutTargetId(value: string): value is ShortcutTargetId {
@@ -399,6 +435,25 @@ export function noteWorkflowsForVault(
     : createDefaultVaultNoteWorkflowSettings();
 }
 
+export function workspaceSettingsForVault(
+  settings: AppSettings,
+  vaultId: string,
+): VaultWorkspaceSettings {
+  const workspace = settings.workspaceByVault[vaultId];
+  return workspace
+    ? {
+        defaultNoteFolder: workspace.defaultNoteFolder,
+        linkStyle: workspace.linkStyle,
+        automaticLinkUpdates: workspace.automaticLinkUpdates,
+        confirmDelete: workspace.confirmDelete,
+        newTabBehavior: workspace.newTabBehavior,
+        editorMode: workspace.editorMode,
+        documentView: workspace.documentView,
+        restorePolicy: workspace.restorePolicy,
+      }
+    : createDefaultVaultWorkspaceSettings();
+}
+
 export function updateVaultNoteWorkflows(
   settings: AppSettings,
   vaultId: string,
@@ -412,6 +467,24 @@ export function updateVaultNoteWorkflows(
     ...settings,
     noteWorkflowsByVault: {
       ...settings.noteWorkflowsByVault,
+      [vaultId]: normalized,
+    },
+  };
+}
+
+export function updateVaultWorkspaceSettings(
+  settings: AppSettings,
+  vaultId: string,
+  workspace: VaultWorkspaceSettings,
+): AppSettings {
+  if (!vaultIdPattern.test(vaultId)) {
+    throw new Error("Workspace preferences require a lowercase SHA-256 vault identity.");
+  }
+  const normalized = parseVaultWorkspaceSettings(workspace);
+  return {
+    ...settings,
+    workspaceByVault: {
+      ...settings.workspaceByVault,
       [vaultId]: normalized,
     },
   };

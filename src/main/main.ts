@@ -73,6 +73,10 @@ import {
 } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
 import {
+  createDefaultVaultWorkspaceSettings,
+  parseVaultWorkspaceSettings,
+} from "../shared/workspace-settings";
+import {
   AppearanceWatcherLifecycle,
   type AppearanceWatchTarget,
 } from "./appearance-watcher-lifecycle";
@@ -980,6 +984,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
     workspaceStateStore: new FileWorkspaceStateStore(join(userDataPath, "workspaces")),
+    workspaceSettingsForVault: (vaultId) => settingsController.getVaultWorkspaceSettings(vaultId),
     pluginRuntimeFactory: async (vaultPath) => {
       const pluginOperationTimeout = developmentPluginOperationTimeout();
       return IsolatedPluginRuntime.open({
@@ -1769,6 +1774,59 @@ function registerIpcHandlers(): void {
         : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
     },
   );
+  ipcMain.handle(ipcChannels.workspaceSettings, (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Workspace preference loading requires a string vault identity.");
+    }
+    if (workspaceController.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+    }
+    return {
+      status: "ready" as const,
+      vaultId: expectedVaultId,
+      settings: workspaceController.getWorkspaceSettings(),
+    };
+  });
+  ipcMain.handle(
+    ipcChannels.setWorkspaceSettings,
+    async (_event, expectedVaultId: unknown, settingsValue: unknown) => {
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Workspace preference updates require a string vault identity.");
+      }
+      if (workspaceController.vaultId !== expectedVaultId) {
+        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+      }
+      const settings = parseVaultWorkspaceSettings(settingsValue);
+      const appSettings = await settingsController.setVaultWorkspaceSettings(
+        expectedVaultId,
+        settings,
+      );
+      workspaceController.setWorkspaceSettings(settings, expectedVaultId);
+      return {
+        status: "updated" as const,
+        vaultId: expectedVaultId,
+        settings: workspaceController.getWorkspaceSettings(),
+        appSettings,
+      };
+    },
+  );
+  ipcMain.handle(ipcChannels.resetWorkspaceSettings, async (_event, expectedVaultId: unknown) => {
+    if (typeof expectedVaultId !== "string") {
+      throw new Error("Workspace preference reset requires a string vault identity.");
+    }
+    if (workspaceController.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+    }
+    const appSettings = await settingsController.resetVaultWorkspaceSettings(expectedVaultId);
+    const settings = createDefaultVaultWorkspaceSettings();
+    workspaceController.setWorkspaceSettings(settings, expectedVaultId);
+    return {
+      status: "updated" as const,
+      vaultId: expectedVaultId,
+      settings: workspaceController.getWorkspaceSettings(),
+      appSettings,
+    };
+  });
   ipcMain.handle(ipcChannels.openDailyNote, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Opening today's daily note requires a string vault identity.");
@@ -1862,15 +1920,19 @@ function registerIpcHandlers(): void {
       } as const;
     }
   });
-  ipcMain.handle(ipcChannels.openNote, (_event, filePath: unknown, paneId: unknown) => {
-    if (
-      typeof filePath !== "string" ||
-      !(paneId === undefined || paneId === "primary" || paneId === "secondary")
-    ) {
-      throw new Error("Open note requires a string path and optional pane ID.");
-    }
-    return workspaceController.openNote(filePath, paneId);
-  });
+  ipcMain.handle(
+    ipcChannels.openNote,
+    (_event, filePath: unknown, paneId: unknown, activate: unknown) => {
+      if (
+        typeof filePath !== "string" ||
+        !(paneId === undefined || paneId === "primary" || paneId === "secondary") ||
+        !(activate === undefined || typeof activate === "boolean")
+      ) {
+        throw new Error("Open note requires a string path, optional pane ID, and activation flag.");
+      }
+      return workspaceController.openNote(filePath, paneId, activate);
+    },
+  );
   ipcMain.handle(
     ipcChannels.closeNote,
     (_event, filePath: unknown, expectedVaultId: unknown, paneId: unknown) => {

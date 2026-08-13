@@ -262,7 +262,23 @@ async function paneState(paneId) {
   })()`);
 }
 
+function paneTabPaths(snapshotValue, paneId) {
+  return (
+    snapshotValue.workspace?.panes
+      .find((pane) => pane.id === paneId)
+      ?.tabs.map((tab) => tab.path) ?? []
+  );
+}
+
 async function clickSelector(selector) {
+  const scrolled = await evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return false;
+    element.scrollIntoView({ block: "center", inline: "center" });
+    return true;
+  })()`);
+  assert(scrolled, `Pointer target is unavailable: ${selector}`);
+  await delay(50);
   const target = await evaluate(`(() => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!(element instanceof HTMLElement)) return { error: "missing" };
@@ -375,11 +391,13 @@ async function waitForDraft(vaultId, paneId, marker) {
 
 async function captureScreenshot(name) {
   if (!screenshotDirectory) {
-    return;
+    return null;
   }
   await fs.mkdir(screenshotDirectory, { recursive: true });
   const result = await cdp.send("Page.captureScreenshot", { format: "png", fromSurface: true });
-  await fs.writeFile(path.join(screenshotDirectory, `${name}.png`), result.data, "base64");
+  const bytes = Buffer.from(result.data, "base64");
+  await fs.writeFile(path.join(screenshotDirectory, `${name}.png`), bytes);
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 async function crashApplication() {
@@ -448,6 +466,158 @@ try {
   await launchApplication();
   let current = await waitForReady();
   assert(current.workspace.panes.length === 1, "A fresh workspace did not start with one pane.");
+  assert(
+    current.workspace.panes[0].tabs.length === 1,
+    `A fresh workspace did not auto-open exactly one fixture note: ${JSON.stringify(current.workspace.panes[0].tabs)}`,
+  );
+
+  phase = "deterministic empty workspace";
+  await clickSelector('[data-pane-id="primary"] .note-tab-close');
+  await waitFor(
+    async () => (await snapshot()).workspace?.panes[0]?.tabs.length === 0,
+    "The startup tab did not close through the visible tab control",
+  );
+
+  phase = "vault-bound workspace settings";
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1180,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await clickSelector("#settings-trigger");
+  await clickSelector("#settings-nav-workspace");
+  await waitFor(
+    () =>
+      evaluate(`(() => {
+        const dialog = document.querySelector('#shortcut-settings');
+        const page = document.querySelector('[data-settings-page="workspace"]');
+        const save = document.querySelector('#workspace-settings-save');
+        return dialog instanceof HTMLDialogElement && dialog.open &&
+          page instanceof HTMLElement && !page.hidden &&
+          save instanceof HTMLButtonElement && !save.disabled &&
+          document.querySelector('#workspace-settings-state')?.textContent === 'Ready';
+      })()`),
+    "The workspace settings page did not become ready",
+  );
+  await clickSelector("#workspace-default-folder");
+  await pressKey("a", "KeyA", 2);
+  await cdp.send("Input.insertText", { text: "Notes" });
+  assert(
+    (await evaluate("document.querySelector('#workspace-default-folder')?.value")) === "Notes",
+    "The visible default-folder field did not record real keyboard input.",
+  );
+  await clickSelector("#workspace-settings-save");
+  await waitFor(
+    () =>
+      evaluate(
+        "document.querySelector('#settings-status')?.textContent === 'Workspace preferences saved privately for this vault.'",
+      ),
+    "The workspace settings form did not report a durable save",
+  );
+  const recordedWorkspaceSettings = await evaluate(
+    `window.threadleaf.getWorkspaceSettings(${JSON.stringify(vaultId)})`,
+  );
+  assert(
+    recordedWorkspaceSettings?.status === "ready" &&
+      recordedWorkspaceSettings.settings?.defaultNoteFolder === "Notes",
+    "The application did not publish the workspace preference it saved.",
+  );
+  const persistedSettings = JSON.parse(
+    await fs.readFile(path.join(userDataPath, "settings.json"), "utf8"),
+  );
+  assert(
+    persistedSettings.workspaceByVault?.[vaultId]?.defaultNoteFolder === "Notes",
+    "The private app-settings document did not persist the vault-bound workspace preference.",
+  );
+  assert(
+    await evaluate(`(() => {
+      const content = document.querySelector('.settings-content');
+      if (!(content instanceof HTMLElement)) return false;
+      content.scrollTop = 0;
+      return content.scrollTop === 0;
+    })()`),
+    "The dark workspace-settings baseline could not return to the top of the page.",
+  );
+  await delay(50);
+  assert(
+    (await evaluate("document.documentElement.dataset.theme")) === "dark",
+    "The workspace-settings visual baseline did not start in dark mode.",
+  );
+  const darkSettingsDigest = await captureScreenshot("workspace-settings-dark");
+  const positiveControlReached = await evaluate(`(() => {
+    const page = document.querySelector('[data-settings-page="workspace"]');
+    if (!(page instanceof HTMLElement)) return false;
+    page.style.outline = '12px solid rgb(255, 0, 255)';
+    page.style.outlineOffset = '-12px';
+    return getComputedStyle(page).outlineColor === 'rgb(255, 0, 255)';
+  })()`);
+  assert(
+    positiveControlReached,
+    "The workspace-settings screenshot control did not reach the page.",
+  );
+  const positiveSettingsDigest = await captureScreenshot("workspace-settings-positive-control");
+  if (darkSettingsDigest && positiveSettingsDigest) {
+    assert(
+      darkSettingsDigest !== positiveSettingsDigest,
+      "The workspace-settings screenshot positive control changed no captured pixels.",
+    );
+  }
+  await evaluate(`(() => {
+    const page = document.querySelector('[data-settings-page="workspace"]');
+    if (!(page instanceof HTMLElement)) return false;
+    page.style.removeProperty('outline');
+    page.style.removeProperty('outline-offset');
+    return true;
+  })()`);
+  await clickSelector("#settings-close");
+  await clickSelector("#theme-toggle");
+  await waitFor(
+    () => evaluate("document.documentElement.dataset.theme === 'light'"),
+    "The light theme did not become active for workspace settings",
+  );
+  await clickSelector("#settings-trigger");
+  await clickSelector("#settings-nav-workspace");
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 900,
+    height: 720,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitFor(
+    () =>
+      evaluate(`(() => {
+        const dialog = document.querySelector('#shortcut-settings');
+        const page = document.querySelector('[data-settings-page="workspace"]');
+        return dialog instanceof HTMLDialogElement && dialog.open &&
+          page instanceof HTMLElement && !page.hidden &&
+          dialog.scrollWidth <= dialog.clientWidth;
+      })()`),
+    "The compact light workspace settings page overflowed horizontally",
+  );
+  assert(
+    await evaluate(`(() => {
+      const content = document.querySelector('.settings-content');
+      if (!(content instanceof HTMLElement)) return false;
+      content.scrollTop = 0;
+      return content.scrollTop === 0;
+    })()`),
+    "The compact workspace-settings baseline could not return to the top of the page.",
+  );
+  await delay(50);
+  await captureScreenshot("workspace-settings-light-compact");
+  await clickSelector("#settings-close");
+  await clickSelector("#theme-toggle");
+  await waitFor(
+    () => evaluate("document.documentElement.dataset.theme === 'dark'"),
+    "The dark theme was not restored after workspace-settings verification",
+  );
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 840,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
 
   phase = "pointer-driven split";
   await clickSelector('[data-note-path="Welcome.md"]');
@@ -473,6 +643,11 @@ try {
   await waitFor(
     async () => (await paneState("secondary"))?.path === "Linked Note.md",
     "Linked Note.md did not open in the secondary pane",
+  );
+  current = await snapshot();
+  assert(
+    paneTabPaths(current, "primary").join("\n") === "Welcome.md",
+    `Opening the secondary note changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
   );
 
   phase = "independent pane editing";
@@ -550,6 +725,11 @@ try {
     (await paneState("secondary")).active,
     "Recovered focus is not visible on the secondary pane.",
   );
+  current = await snapshot();
+  assert(
+    paneTabPaths(current, "primary").join("\n") === "Welcome.md",
+    `Draft recovery changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
+  );
   await captureScreenshot("workspace-two-pane-recovered");
 
   phase = "independent save";
@@ -573,6 +753,11 @@ try {
     (await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).includes(secondaryMarker),
     "The secondary saved bytes are missing.",
   );
+  current = await snapshot();
+  assert(
+    paneTabPaths(current, "primary").join("\n") === "Welcome.md",
+    `Independent save changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
+  );
 
   phase = "move tab and collapse pane";
   await clickSelector("#move-tab-pane");
@@ -585,10 +770,18 @@ try {
       ? candidate
       : null;
   }, "The active tab did not move from primary to secondary");
-  await evaluate(`window.threadleaf.focusWorkspacePane("primary", ${JSON.stringify(vaultId)})`);
+  assert(
+    current.workspace.panes.find((pane) => pane.id === "primary")?.tabs.length === 0,
+    `The source pane retained tabs after moving its only tab: ${JSON.stringify(current.workspace.panes)}`,
+  );
+  await clickSelector('[data-pane-id="primary"]');
   await waitFor(
-    async () => (await snapshot()).workspace?.activePaneId === "primary",
-    "The primary pane did not accept focus before closing",
+    async () =>
+      (await snapshot()).workspace?.activePaneId === "primary" &&
+      (await evaluate(
+        `document.querySelector('[data-pane-id="primary"]')?.dataset.active === 'true'`,
+      )),
+    "The primary pane did not accept and visibly render focus before closing",
   );
   await clickSelector("#close-pane");
   current = await waitFor(async () => {
@@ -601,7 +794,7 @@ try {
   }, "Closing the empty pane did not collapse the surviving pane");
   assert(
     current.workspace.panes[0].tabs.some((tab) => tab.path === "Welcome.md" && tab.active),
-    "The collapsed pane lost the moved active tab.",
+    `The collapsed pane lost the moved active tab: ${JSON.stringify(current.workspace.panes[0].tabs)}`,
   );
   const persistedCollapsed = JSON.parse(await fs.readFile(workspaceStatePath, "utf8"));
   assert(

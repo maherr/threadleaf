@@ -58,6 +58,7 @@ import {
   pluginsForVault,
   type ShortcutTargetId,
   shortcutTargetForEvent,
+  workspaceSettingsForVault,
 } from "../shared/key-bindings";
 import type {
   MigrationCandidate,
@@ -82,6 +83,10 @@ import {
   type VaultPluginSettings,
 } from "../shared/plugins";
 import { maximumPublishNoteHtmlBytes, publishNoteExportVersion } from "../shared/publish-export";
+import {
+  createDefaultVaultWorkspaceSettings,
+  type VaultWorkspaceSettings,
+} from "../shared/workspace-settings";
 import { CanvasViewController } from "./canvas-view";
 import {
   filterPaletteCommands,
@@ -205,6 +210,7 @@ const elements = {
   settingsNavAppearance: getButton("settings-nav-appearance"),
   settingsNavAccessibility: getButton("settings-nav-accessibility"),
   settingsNavNotes: getButton("settings-nav-notes"),
+  settingsNavWorkspace: getButton("settings-nav-workspace"),
   settingsNavPlugins: getButton("settings-nav-plugins"),
   settingsNavMigration: getButton("settings-nav-migration"),
   settingsNavUpdates: getButton("settings-nav-updates"),
@@ -288,6 +294,18 @@ const elements = {
   workflowDailyTemplate: getSelect("workflow-daily-template"),
   workflowTemplateCount: getElement("workflow-template-count"),
   workflowSave: getButton("workflow-save"),
+  workspaceSettingsState: getElement("workspace-settings-state"),
+  workspaceSettingsForm: getForm("workspace-settings-form"),
+  workspaceDefaultFolder: getInput("workspace-default-folder"),
+  workspaceLinkStyle: getSelect("workspace-link-style"),
+  workspaceAutomaticLinks: getSelect("workspace-automatic-links"),
+  workspaceConfirmDelete: getSelect("workspace-confirm-delete"),
+  workspaceNewTab: getSelect("workspace-new-tab"),
+  workspaceEditorMode: getSelect("workspace-editor-mode"),
+  workspaceDocumentView: getSelect("workspace-document-view"),
+  workspaceRestorePolicy: getSelect("workspace-restore-policy"),
+  workspaceSettingsReset: getButton("workspace-settings-reset"),
+  workspaceSettingsSave: getButton("workspace-settings-save"),
   newNoteDialog: getDialog("new-note-dialog"),
   newNoteForm: getForm("new-note-form"),
   newNotePath: getInput("new-note-path"),
@@ -553,6 +571,7 @@ type SettingsPage =
   | "appearance"
   | "accessibility"
   | "notes"
+  | "workspace"
   | "plugins"
   | "migration"
   | "updates"
@@ -765,6 +784,11 @@ let noteWorkflowRequest = 0;
 let noteWorkflowMessage = "Discovering templates and daily-note preferences in this vault.";
 let noteWorkflowMessageKind: "info" | "saved" | "error" = "info";
 let noteWorkflowDraft: VaultNoteWorkflowSettings | null = null;
+let workspaceSettingsBusy = false;
+let workspaceSettingsRequest = 0;
+let workspaceSettingsMessage = "Workspace preferences are private to this vault.";
+let workspaceSettingsMessageKind: "info" | "saved" | "error" = "info";
+let workspaceSettingsDraft: VaultWorkspaceSettings | null = null;
 let appearanceSnapshot: AppearanceSnapshot | null = null;
 let appearanceBusy = false;
 let appearanceRequest = 0;
@@ -2202,6 +2226,21 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
   }
 }
 
+function applyWorkspaceViewDefaults(settings: VaultWorkspaceSettings): void {
+  for (const paneId of ["primary", "secondary"] as const) {
+    runInPaneContext(paneId, () => {
+      if (dirty || saving) {
+        return;
+      }
+      editingViewMode = settings.documentView === "source" ? "source" : settings.editorMode;
+      documentViewMode = settings.documentView;
+      syncEditorPresentation();
+    });
+  }
+  activatePaneContext(activePaneContextId);
+  renderDocumentView();
+}
+
 function toggleDocumentView(): void {
   setDocumentView(documentViewMode === "reading" ? editingViewMode : "reading");
 }
@@ -2240,8 +2279,9 @@ async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
     return;
   }
   const identity = previewLinkIdentity(anchor);
-  const opened = await openNote(path);
-  if (!opened) {
+  const activate = currentWorkspacePreference().newTabBehavior === "focus";
+  const opened = await openNote(path, undefined, activePaneContextId, activate);
+  if (!opened || !activate) {
     return;
   }
   const line = sourceLineForSubpath(loadedNote, identity?.subpath);
@@ -2275,7 +2315,8 @@ async function activateLivePreviewLink(identity: LivePreviewLink): Promise<void>
     );
     return;
   }
-  if (!(await openNote(link.path))) {
+  const activate = currentWorkspacePreference().newTabBehavior === "focus";
+  if (!(await openNote(link.path, undefined, activePaneContextId, activate)) || !activate) {
     return;
   }
   const line = sourceLineForSubpath(loadedNote, identity.subpath);
@@ -2301,7 +2342,12 @@ async function activatePreviewSourceAction(sourceAction: HTMLButtonElement): Pro
 
 async function activatePreviewEmbed(openButton: HTMLButtonElement): Promise<void> {
   const filePath = openButton.dataset.threadleafOpenPath;
-  if (!filePath || !(await openNote(filePath))) {
+  const activate = currentWorkspacePreference().newTabBehavior === "focus";
+  if (
+    !filePath ||
+    !(await openNote(filePath, undefined, activePaneContextId, activate)) ||
+    !activate
+  ) {
     return;
   }
   const subpath = openButton.dataset.threadleafSubpath || null;
@@ -2460,6 +2506,9 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   const previousNoteWorkflows = vaultId
     ? noteWorkflowsForVault(settingsSnapshot.settings, vaultId)
     : createDefaultVaultNoteWorkflowSettings();
+  const previousWorkspaceSettings = vaultId
+    ? workspaceSettingsForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultWorkspaceSettings();
   settingsSnapshot = snapshot;
   settingsLoaded = true;
   updateShortcutLabels();
@@ -2471,7 +2520,16 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   const nextAppearance = currentAppearancePreference();
   const nextPlugins = currentPluginPreference();
   const nextNoteWorkflows = currentNoteWorkflowPreference();
+  const nextWorkspaceSettings = currentWorkspacePreference();
   applyColorScheme(nextAppearance.colorScheme);
+  if (
+    vaultId &&
+    !workspaceSettingsBusy &&
+    !workspaceSettingsEqual(previousWorkspaceSettings, nextWorkspaceSettings)
+  ) {
+    workspaceSettingsDraft = { ...nextWorkspaceSettings };
+    applyWorkspaceViewDefaults(nextWorkspaceSettings);
+  }
   if (
     vaultId &&
     !appearanceBusy &&
@@ -3446,12 +3504,18 @@ function renderDeleteNoteDialog(): void {
     : ".trash/";
   elements.deleteNoteImpactCopy.textContent =
     deleteNoteBacklinkCount === 0
-      ? "No indexed note currently links here. Restore this file later from .trash/."
+      ? currentWorkspacePreference().confirmDelete === "when-linked"
+        ? "No indexed note currently links here. Confirmation is still required; the file will remain recoverable in .trash/."
+        : "No indexed note currently links here. Confirm the recoverable move to .trash/."
       : `${deleteNoteBacklinkCount} indexed incoming link${deleteNoteBacklinkCount === 1 ? "" : "s"} will become unresolved. Restore this file later from .trash/.`;
   elements.deleteNoteClose.disabled = deleteNoteBusy;
   elements.deleteNoteCancel.disabled = deleteNoteBusy;
   elements.deleteNoteSubmit.disabled = deleteNoteBusy || staleVault || staleNote || readOnlyVault();
-  elements.deleteNoteSubmit.textContent = deleteNoteBusy ? "Moving…" : "Move to trash";
+  elements.deleteNoteSubmit.textContent = deleteNoteBusy
+    ? "Moving…"
+    : currentWorkspacePreference().confirmDelete === "when-linked" && deleteNoteBacklinkCount === 0
+      ? "Confirm recoverable move"
+      : "Move to trash";
   elements.deleteNoteForm.setAttribute("aria-busy", String(deleteNoteBusy));
   elements.deleteNoteVault.textContent = staleVault
     ? "Vault changed"
@@ -3578,6 +3642,7 @@ function settingsOperationBusy(): boolean {
   return (
     settingsBusy ||
     noteWorkflowBusy ||
+    workspaceSettingsBusy ||
     appearanceBusy ||
     accessibilityBusy ||
     pluginBusy ||
@@ -3592,6 +3657,188 @@ function currentNoteWorkflowPreference(): VaultNoteWorkflowSettings {
   return vaultId
     ? noteWorkflowsForVault(settingsSnapshot.settings, vaultId)
     : createDefaultVaultNoteWorkflowSettings();
+}
+
+function currentWorkspacePreference(): VaultWorkspaceSettings {
+  const vaultId = currentSnapshot?.vault.id;
+  return vaultId
+    ? workspaceSettingsForVault(settingsSnapshot.settings, vaultId)
+    : createDefaultVaultWorkspaceSettings();
+}
+
+function workspaceSettingsEqual(
+  left: VaultWorkspaceSettings,
+  right: VaultWorkspaceSettings,
+): boolean {
+  return (
+    left.defaultNoteFolder === right.defaultNoteFolder &&
+    left.linkStyle === right.linkStyle &&
+    left.automaticLinkUpdates === right.automaticLinkUpdates &&
+    left.confirmDelete === right.confirmDelete &&
+    left.newTabBehavior === right.newTabBehavior &&
+    left.editorMode === right.editorMode &&
+    left.documentView === right.documentView &&
+    left.restorePolicy === right.restorePolicy
+  );
+}
+
+async function refreshWorkspaceSettings(successMessage?: string): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || vaultOpening()) {
+    return;
+  }
+  const request = ++workspaceSettingsRequest;
+  workspaceSettingsBusy = true;
+  workspaceSettingsMessage = "Reading private workspace preferences.";
+  workspaceSettingsMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.getWorkspaceSettings(expectedVaultId);
+    if (
+      request !== workspaceSettingsRequest ||
+      response.status !== "ready" ||
+      response.vaultId !== currentSnapshot?.vault.id
+    ) {
+      return;
+    }
+    workspaceSettingsDraft = { ...response.settings };
+    applyWorkspaceViewDefaults(response.settings);
+    workspaceSettingsMessage = successMessage ?? "Private workspace preferences loaded.";
+    workspaceSettingsMessageKind = successMessage ? "saved" : "info";
+  } catch (error) {
+    if (request === workspaceSettingsRequest) {
+      workspaceSettingsMessage = error instanceof Error ? error.message : String(error);
+      workspaceSettingsMessageKind = "error";
+    }
+  } finally {
+    if (request === workspaceSettingsRequest) {
+      workspaceSettingsBusy = false;
+      renderSettings();
+    }
+  }
+}
+
+function renderWorkspaceSettings(): void {
+  const vaultId = currentSnapshot?.vault.id ?? null;
+  const settings = workspaceSettingsDraft ?? currentWorkspacePreference();
+  const disabled = !vaultId || vaultOpening() || workspaceSettingsBusy;
+  elements.workspaceDefaultFolder.value = settings.defaultNoteFolder;
+  elements.workspaceLinkStyle.value = settings.linkStyle;
+  elements.workspaceAutomaticLinks.value = settings.automaticLinkUpdates;
+  elements.workspaceConfirmDelete.value = settings.confirmDelete;
+  elements.workspaceNewTab.value = settings.newTabBehavior;
+  elements.workspaceEditorMode.value = settings.editorMode;
+  elements.workspaceDocumentView.value = settings.documentView;
+  elements.workspaceRestorePolicy.value = settings.restorePolicy;
+  for (const control of [
+    elements.workspaceDefaultFolder,
+    elements.workspaceLinkStyle,
+    elements.workspaceAutomaticLinks,
+    elements.workspaceConfirmDelete,
+    elements.workspaceNewTab,
+    elements.workspaceEditorMode,
+    elements.workspaceDocumentView,
+    elements.workspaceRestorePolicy,
+  ]) {
+    control.disabled = disabled;
+  }
+  elements.workspaceSettingsReset.disabled = disabled;
+  elements.workspaceSettingsReset.textContent = workspaceSettingsBusy
+    ? "Restoring…"
+    : "Reset this vault's defaults";
+  elements.workspaceSettingsSave.disabled = disabled;
+  elements.workspaceSettingsSave.textContent = workspaceSettingsBusy
+    ? "Saving…"
+    : "Save preferences";
+  elements.workspaceSettingsForm.setAttribute("aria-busy", String(workspaceSettingsBusy));
+  elements.workspaceSettingsState.textContent = workspaceSettingsBusy
+    ? "Loading"
+    : vaultId
+      ? "Ready"
+      : "No vault";
+  elements.workspaceSettingsState.dataset.state = vaultId ? "active" : "";
+}
+
+function captureWorkspaceSettingsDraft(): VaultWorkspaceSettings {
+  const draft: VaultWorkspaceSettings = {
+    defaultNoteFolder: elements.workspaceDefaultFolder.value,
+    linkStyle: elements.workspaceLinkStyle.value as VaultWorkspaceSettings["linkStyle"],
+    automaticLinkUpdates: elements.workspaceAutomaticLinks
+      .value as VaultWorkspaceSettings["automaticLinkUpdates"],
+    confirmDelete: elements.workspaceConfirmDelete.value as VaultWorkspaceSettings["confirmDelete"],
+    newTabBehavior: elements.workspaceNewTab.value as VaultWorkspaceSettings["newTabBehavior"],
+    editorMode: elements.workspaceEditorMode.value as VaultWorkspaceSettings["editorMode"],
+    documentView: elements.workspaceDocumentView.value as VaultWorkspaceSettings["documentView"],
+    restorePolicy: elements.workspaceRestorePolicy.value as VaultWorkspaceSettings["restorePolicy"],
+  };
+  workspaceSettingsDraft = draft;
+  return draft;
+}
+
+async function saveWorkspaceSettings(): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || vaultOpening() || workspaceSettingsBusy) {
+    return;
+  }
+  const requestedSettings = captureWorkspaceSettingsDraft();
+  workspaceSettingsBusy = true;
+  workspaceSettingsMessage = "Saving private workspace preferences.";
+  workspaceSettingsMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.setWorkspaceSettings(
+      expectedVaultId,
+      requestedSettings,
+    );
+    if (response.status !== "updated") {
+      workspaceSettingsMessage =
+        "The active vault changed. Review these preferences and save again.";
+      workspaceSettingsMessageKind = "error";
+      return;
+    }
+    workspaceSettingsDraft = { ...response.settings };
+    applySettingsSnapshot(response.appSettings);
+    applyWorkspaceViewDefaults(response.settings);
+    workspaceSettingsMessage = "Workspace preferences saved privately for this vault.";
+    workspaceSettingsMessageKind = "saved";
+  } catch (error) {
+    workspaceSettingsMessage = error instanceof Error ? error.message : String(error);
+    workspaceSettingsMessageKind = "error";
+  } finally {
+    workspaceSettingsBusy = false;
+    renderSettings();
+  }
+}
+
+async function resetWorkspaceSettings(): Promise<void> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || vaultOpening() || workspaceSettingsBusy) {
+    return;
+  }
+  workspaceSettingsBusy = true;
+  workspaceSettingsMessage = "Restoring safe workspace defaults.";
+  workspaceSettingsMessageKind = "info";
+  renderSettings();
+  try {
+    const response = await window.threadleaf.resetWorkspaceSettings(expectedVaultId);
+    if (response.status !== "updated") {
+      workspaceSettingsMessage =
+        "The active vault changed. Review these preferences and reset again if needed.";
+      workspaceSettingsMessageKind = "error";
+      return;
+    }
+    workspaceSettingsDraft = { ...response.settings };
+    applySettingsSnapshot(response.appSettings);
+    applyWorkspaceViewDefaults(response.settings);
+    workspaceSettingsMessage = "Safe workspace defaults restored for this vault.";
+    workspaceSettingsMessageKind = "saved";
+  } catch (error) {
+    workspaceSettingsMessage = error instanceof Error ? error.message : String(error);
+    workspaceSettingsMessageKind = "error";
+  } finally {
+    workspaceSettingsBusy = false;
+    renderSettings();
+  }
 }
 
 function noteWorkflowPreferencesEqual(
@@ -6207,6 +6454,7 @@ function openSettings(): void {
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
   recordingShortcut = null;
   noteWorkflowDraft = null;
+  workspaceSettingsDraft = null;
   settingsMessage = "Select a command, then press its new shortcut.";
   settingsMessageKind = "info";
   elements.settingsDialog.showModal();
@@ -6217,6 +6465,9 @@ function openSettings(): void {
   }
   if (!noteWorkflowCatalog || noteWorkflowCatalog.vaultId !== currentSnapshot?.vault.id) {
     void refreshNoteWorkflows();
+  }
+  if (!workspaceSettingsDraft) {
+    void refreshWorkspaceSettings();
   }
   if (!pluginCatalog || pluginCatalog.vaultId !== currentSnapshot?.vault.id) {
     void refreshPlugins();
@@ -6238,6 +6489,7 @@ function closeSettings(restoreFocus = true): void {
   }
   recordingShortcut = null;
   noteWorkflowDraft = null;
+  workspaceSettingsDraft = null;
   elements.settingsDialog.close();
   const restoreTarget = settingsRestoreFocus;
   settingsRestoreFocus = null;
@@ -6360,6 +6612,9 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
   if (page === "notes" && noteWorkflowDraft === null) {
     noteWorkflowDraft = { ...currentNoteWorkflowPreference() };
   }
+  if (page === "workspace" && workspaceSettingsDraft === null) {
+    workspaceSettingsDraft = { ...currentWorkspacePreference() };
+  }
   renderSettings();
   if (focusNavigation) {
     const target =
@@ -6369,13 +6624,15 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
           ? elements.settingsNavAccessibility
           : page === "notes"
             ? elements.settingsNavNotes
-            : page === "plugins"
-              ? elements.settingsNavPlugins
-              : page === "migration"
-                ? elements.settingsNavMigration
-                : page === "updates"
-                  ? elements.settingsNavUpdates
-                  : elements.settingsNavHotkeys;
+            : page === "workspace"
+              ? elements.settingsNavWorkspace
+              : page === "plugins"
+                ? elements.settingsNavPlugins
+                : page === "migration"
+                  ? elements.settingsNavMigration
+                  : page === "updates"
+                    ? elements.settingsNavUpdates
+                    : elements.settingsNavHotkeys;
     target.focus();
   }
 }
@@ -6385,6 +6642,7 @@ function renderSettingsNavigation(): void {
     appearance: { eyebrow: "Options", title: "Appearance" },
     accessibility: { eyebrow: "Inclusive workspace", title: "Accessibility" },
     notes: { eyebrow: "Core workflows", title: "Daily notes and templates" },
+    workspace: { eyebrow: "Core behavior", title: "Workspace and editing" },
     plugins: { eyebrow: "Trusted runtime", title: "Community plugins" },
     migration: { eyebrow: "Migration bridge", title: "Migration preview" },
     updates: { eyebrow: "Release safety", title: "About and updates" },
@@ -6396,6 +6654,7 @@ function renderSettingsNavigation(): void {
     ["appearance", elements.settingsNavAppearance],
     ["accessibility", elements.settingsNavAccessibility],
     ["notes", elements.settingsNavNotes],
+    ["workspace", elements.settingsNavWorkspace],
     ["plugins", elements.settingsNavPlugins],
     ["migration", elements.settingsNavMigration],
     ["updates", elements.settingsNavUpdates],
@@ -6427,21 +6686,23 @@ function renderSettings(): void {
         ? [accessibilityMessage, accessibilityMessageKind]
         : settingsPage === "notes"
           ? [noteWorkflowMessage, noteWorkflowMessageKind]
-          : settingsPage === "plugins"
-            ? [pluginMessage, pluginMessageKind]
-            : settingsPage === "migration"
-              ? [migrationMessage, migrationMessageKind]
-              : settingsPage === "updates"
-                ? [
-                    appUpdateSnapshot?.message ?? "Reading the local package update policy.",
-                    appUpdateSnapshot?.phase === "error"
-                      ? "error"
-                      : appUpdateSnapshot?.phase === "downloaded" ||
-                          appUpdateSnapshot?.phase === "up-to-date"
-                        ? "saved"
-                        : "info",
-                  ]
-                : [settingsMessage, settingsMessageKind];
+          : settingsPage === "workspace"
+            ? [workspaceSettingsMessage, workspaceSettingsMessageKind]
+            : settingsPage === "plugins"
+              ? [pluginMessage, pluginMessageKind]
+              : settingsPage === "migration"
+                ? [migrationMessage, migrationMessageKind]
+                : settingsPage === "updates"
+                  ? [
+                      appUpdateSnapshot?.message ?? "Reading the local package update policy.",
+                      appUpdateSnapshot?.phase === "error"
+                        ? "error"
+                        : appUpdateSnapshot?.phase === "downloaded" ||
+                            appUpdateSnapshot?.phase === "up-to-date"
+                          ? "saved"
+                          : "info",
+                    ]
+                  : [settingsMessage, settingsMessageKind];
   elements.settingsStatus.textContent =
     statusKind === "error" ? `Error: ${statusMessage}` : statusMessage;
   elements.settingsStatus.dataset.kind = statusKind;
@@ -6453,6 +6714,7 @@ function renderSettings(): void {
   renderAppearanceSettings();
   renderAccessibilitySettings();
   renderNoteWorkflowSettings();
+  renderWorkspaceSettings();
   renderPluginSettings();
   renderMigrationSettings();
   renderAppUpdateSettings();
@@ -6876,6 +7138,11 @@ function render(snapshot: RuntimeSnapshot): void {
     noteWorkflowDraft = null;
     noteWorkflowMessage = "Discovering templates and daily-note preferences in this vault.";
     noteWorkflowMessageKind = "info";
+    workspaceSettingsRequest += 1;
+    workspaceSettingsBusy = false;
+    workspaceSettingsDraft = null;
+    workspaceSettingsMessage = "Workspace preferences are private to this vault.";
+    workspaceSettingsMessageKind = "info";
     pluginRequest += 1;
     pluginPackageRequest += 1;
     pluginBusy = false;
@@ -6903,6 +7170,7 @@ function render(snapshot: RuntimeSnapshot): void {
     applyColorScheme(currentAppearancePreference().colorScheme);
     void refreshAppearance();
     void refreshNoteWorkflows();
+    void refreshWorkspaceSettings();
     void refreshPlugins();
     void refreshMigrationPreview();
     void maybeMigrateLegacyTheme();
@@ -8326,6 +8594,7 @@ async function openNote(
   filePath: string,
   line?: number,
   paneId: WorkspacePaneId = activePaneContextId,
+  activate = true,
 ): Promise<boolean> {
   activatePaneContext(paneId);
   if (busy) {
@@ -8337,7 +8606,11 @@ async function openNote(
     editor.focus();
     return false;
   }
-  await runAction(() => window.threadleaf.openNote(filePath, paneId));
+  await runAction(() => window.threadleaf.openNote(filePath, paneId, activate));
+  if (!activate) {
+    showToast(`Opened ${filePath} in the background.`);
+    return true;
+  }
   if (line && loadedNote?.path === filePath) {
     scrollToDocumentLine(line);
   }
@@ -8895,6 +9168,7 @@ elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
 elements.settingsNavAppearance.addEventListener("click", () => setSettingsPage("appearance"));
 elements.settingsNavAccessibility.addEventListener("click", () => setSettingsPage("accessibility"));
 elements.settingsNavNotes.addEventListener("click", () => setSettingsPage("notes"));
+elements.settingsNavWorkspace.addEventListener("click", () => setSettingsPage("workspace"));
 elements.settingsNavPlugins.addEventListener("click", () => setSettingsPage("plugins"));
 elements.settingsNavMigration.addEventListener("click", () => setSettingsPage("migration"));
 elements.settingsNavUpdates.addEventListener("click", () => setSettingsPage("updates"));
@@ -8910,6 +9184,14 @@ elements.noteWorkflowForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveNoteWorkflows();
 });
+elements.workspaceSettingsForm.addEventListener("input", () => {
+  captureWorkspaceSettingsDraft();
+});
+elements.workspaceSettingsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveWorkspaceSettings();
+});
+elements.workspaceSettingsReset.addEventListener("click", () => void resetWorkspaceSettings());
 elements.migrationRefresh.addEventListener("click", () => {
   void refreshMigrationPreview(
     "Migration preview refreshed. Review the exact candidates before applying.",

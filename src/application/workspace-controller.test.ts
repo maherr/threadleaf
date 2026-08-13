@@ -23,6 +23,10 @@ import type {
   VaultTrashResponse,
 } from "../shared/contracts";
 import {
+  createDefaultVaultWorkspaceSettings,
+  type VaultWorkspaceSettings,
+} from "../shared/workspace-settings";
+import {
   type VaultSelectionStore,
   WorkspaceController,
   type WorkspaceRuntimeFactory,
@@ -83,6 +87,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
   readonly vaultPath: string;
   readonly options: WorkspaceRuntimeOptions;
   readonly #snapshot: RuntimeSnapshot;
+  workspaceSettings: VaultWorkspaceSettings = createDefaultVaultWorkspaceSettings();
   readonly #listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
   attachmentLoader: (() => Promise<VaultAttachmentResponse>) | null = null;
@@ -264,6 +269,14 @@ class FakeRuntime implements WorkspaceRuntimePort {
 
   async openNote(): Promise<RuntimeSnapshot> {
     return this.#snapshot;
+  }
+
+  getWorkspaceSettings(): VaultWorkspaceSettings {
+    return { ...this.workspaceSettings };
+  }
+
+  setWorkspaceSettings(settings: VaultWorkspaceSettings): void {
+    this.workspaceSettings = { ...settings };
   }
 
   async closeNote(filePath: string, expectedVaultId: string): Promise<RuntimeSnapshot> {

@@ -29,6 +29,7 @@ import type { PluginRendererOperation } from "./plugin-runtime-protocol";
 import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
+import type { VaultWorkspaceSettings } from "./workspace-settings";
 
 export type AppearanceUpdateResponse =
   | {
@@ -668,6 +669,19 @@ export type NoteWorkflowValueResponse =
   | { status: "ready"; vaultId: string; value: string }
   | { status: "stale-vault"; vaultId: string };
 
+export type WorkspaceSettingsUpdateResponse =
+  | {
+      status: "updated";
+      vaultId: string;
+      settings: VaultWorkspaceSettings;
+      appSettings: AppSettingsSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export type WorkspaceSettingsResponse =
+  | { status: "ready"; vaultId: string; settings: VaultWorkspaceSettings }
+  | { status: "stale-vault"; vaultId: string };
+
 export interface NoteMoveLinkResolution {
   status: "resolved" | "unresolved" | "ambiguous";
   path?: string;
@@ -980,6 +994,12 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
     settings: VaultNoteWorkflowSettings,
   ): Promise<NoteWorkflowUpdateResponse>;
+  getWorkspaceSettings(expectedVaultId: string): Promise<WorkspaceSettingsResponse>;
+  setWorkspaceSettings(
+    expectedVaultId: string,
+    settings: VaultWorkspaceSettings,
+  ): Promise<WorkspaceSettingsUpdateResponse>;
+  resetWorkspaceSettings(expectedVaultId: string): Promise<WorkspaceSettingsUpdateResponse>;
   openDailyNote(expectedVaultId: string): Promise<NoteCreateResponse>;
   renderNoteTemplate(
     templatePath: string,
@@ -1002,7 +1022,7 @@ export interface ThreadleafBridge {
   setPluginSurfaceVisible(visible: boolean): Promise<void>;
   setPluginSurfaceTheme(theme: "dark" | "light"): Promise<void>;
   setPluginSurfaceAccessibility(preferences: EffectiveAccessibilityPreferences): Promise<void>;
-  openNote(path: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot>;
+  openNote(path: string, paneId?: WorkspacePaneId, activate?: boolean): Promise<RuntimeSnapshot>;
   closeNote(
     path: string,
     expectedVaultId: string,

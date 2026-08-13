@@ -41,6 +41,8 @@ import type {
   VaultOpenResponse,
   VaultSearchResponse,
   VaultTrashResponse,
+  WorkspaceSettingsResponse,
+  WorkspaceSettingsUpdateResponse,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
@@ -55,6 +57,7 @@ import type {
 import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
+import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 
 const bridge: ThreadleafBridge = {
   exportSupportBundle: () =>
@@ -235,6 +238,22 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       settings,
     ) as Promise<NoteWorkflowUpdateResponse>,
+  getWorkspaceSettings: (expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.workspaceSettings,
+      expectedVaultId,
+    ) as Promise<WorkspaceSettingsResponse>,
+  setWorkspaceSettings: (expectedVaultId, settings: VaultWorkspaceSettings) =>
+    ipcRenderer.invoke(
+      ipcChannels.setWorkspaceSettings,
+      expectedVaultId,
+      settings,
+    ) as Promise<WorkspaceSettingsUpdateResponse>,
+  resetWorkspaceSettings: (expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.resetWorkspaceSettings,
+      expectedVaultId,
+    ) as Promise<WorkspaceSettingsUpdateResponse>,
   openDailyNote: (expectedVaultId) =>
     ipcRenderer.invoke(ipcChannels.openDailyNote, expectedVaultId) as Promise<NoteCreateResponse>,
   renderNoteTemplate: (templatePath, targetPath, expectedVaultId) =>
@@ -251,8 +270,13 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
     ) as Promise<NoteWorkflowValueResponse>,
   chooseVault: () => ipcRenderer.invoke(ipcChannels.chooseVault) as Promise<VaultOpenResponse>,
-  openNote: (filePath, paneId) =>
-    ipcRenderer.invoke(ipcChannels.openNote, filePath, paneId) as Promise<RuntimeSnapshot>,
+  openNote: (filePath, paneId, activate) =>
+    ipcRenderer.invoke(
+      ipcChannels.openNote,
+      filePath,
+      paneId,
+      activate,
+    ) as Promise<RuntimeSnapshot>,
   closeNote: (filePath, expectedVaultId, paneId) =>
     ipcRenderer.invoke(
       ipcChannels.closeNote,

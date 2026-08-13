@@ -283,6 +283,7 @@ function settingsFixture(): AppSettingsSnapshot {
           },
         },
       },
+      workspaceByVault: {},
       noteWorkflowsByVault: {
         [vaultId]: {
           templateFolder: "PRIVATE_TEMPLATE_FOLDER",

@@ -10,6 +10,7 @@ import {
 import { normalizeMarkdownNotePath } from "../kernel/note-path";
 import type { VaultMutationPort, VaultReadPort, VaultTextSnapshot } from "../kernel/ports";
 import type { NoteMoveBlocker, NoteMoveOutcome, NoteMoveRewritePreview } from "../shared/contracts";
+import type { AutomaticLinkUpdatePolicy, WorkspaceLinkStyle } from "../shared/workspace-settings";
 
 export interface NoteMoveRewrite {
   documentPath: string;
@@ -45,12 +46,15 @@ export interface NoteMoveOptions {
   confirmationId?: string;
   acceptCurrentRewrites?: boolean;
   indexSnapshot?: MetadataIndexSnapshot;
+  automaticLinkUpdates?: AutomaticLinkUpdatePolicy;
+  linkStyle?: WorkspaceLinkStyle;
 }
 
 interface InternalRewrite {
   key: string;
-  start: number;
-  end: number;
+  replacementStart: number;
+  replacementEnd: number;
+  replacementText: string;
   rewrite: NoteMoveRewrite;
 }
 
@@ -110,6 +114,54 @@ function replacementTarget(
   return encoded.includes("/") ? encoded : `./${encoded}`;
 }
 
+function renderedLink(
+  parsedLink: ReturnType<typeof parseMarkdownLinks>[number],
+  style: WorkspaceLinkStyle,
+  resultPath: string,
+  resolvedTargetPath: string,
+): {
+  target: string;
+  syntax: "wiki" | "markdown";
+  replacementStart: number;
+  replacementEnd: number;
+  replacementText: string;
+} {
+  const requestedSyntax = style === "wikilink" ? "wiki" : "markdown";
+  if (style === "preserve" || parsedLink.syntax === requestedSyntax) {
+    const target = replacementTarget(parsedLink.syntax, resultPath, resolvedTargetPath);
+    return {
+      target,
+      syntax: parsedLink.syntax,
+      replacementStart: parsedLink.targetStart,
+      replacementEnd: parsedLink.targetEnd,
+      replacementText: replacementTarget(parsedLink.syntax, resultPath, resolvedTargetPath),
+    };
+  }
+
+  const target = replacementTarget(requestedSyntax, resultPath, resolvedTargetPath);
+  const subpath = parsedLink.subpath ?? "";
+  if (requestedSyntax === "wiki") {
+    const alias = parsedLink.alias ? `|${parsedLink.alias}` : "";
+    return {
+      target,
+      syntax: "wiki",
+      replacementStart: parsedLink.position,
+      replacementEnd: parsedLink.end,
+      replacementText: `${parsedLink.embed ? "!" : ""}[[${target}${subpath}${alias}]]`,
+    };
+  }
+
+  const markdownLabel =
+    parsedLink.alias ?? withoutMarkdownExtension(path.posix.basename(resolvedTargetPath));
+  return {
+    target,
+    syntax: "markdown",
+    replacementStart: parsedLink.position,
+    replacementEnd: parsedLink.end,
+    replacementText: `${parsedLink.embed ? "!" : ""}[${markdownLabel}](${target}${subpath})`,
+  };
+}
+
 function blockerFor(
   documentPath: string,
   target: string,
@@ -122,8 +174,10 @@ function blockerFor(
 
 function applyRewrites(content: string, rewrites: readonly InternalRewrite[]): string {
   let result = content;
-  for (const candidate of [...rewrites].sort((left, right) => right.start - left.start)) {
-    result = `${result.slice(0, candidate.start)}${candidate.rewrite.afterTarget}${result.slice(candidate.end)}`;
+  for (const candidate of [...rewrites].sort(
+    (left, right) => right.replacementStart - left.replacementStart,
+  )) {
+    result = `${result.slice(0, candidate.replacementStart)}${candidate.replacementText}${result.slice(candidate.replacementEnd)}`;
   }
   return result;
 }
@@ -162,6 +216,7 @@ export async function planMarkdownNoteMove(
   requestedTargetPath: string,
   expectedSourceRevision?: string,
   suppliedIndex?: MetadataIndexSnapshot,
+  options: Pick<NoteMoveOptions, "automaticLinkUpdates" | "linkStyle"> = {},
 ): Promise<NoteMovePlan> {
   const sourcePath = normalizeMarkdownNotePath(requestedSourcePath);
   const targetPath = normalizeMarkdownNotePath(requestedTargetPath);
@@ -194,6 +249,18 @@ export async function planMarkdownNoteMove(
     throw new Error(
       "The vault index changed while preparing this move. Wait for indexing and retry.",
     );
+  }
+
+  if (options.automaticLinkUpdates === "never") {
+    return {
+      status: "planned",
+      from: sourcePath,
+      to: targetPath,
+      sourceRevision: source.revision,
+      blockers: [],
+      rewrites: [],
+      writes: [],
+    };
   }
 
   const projectedPaths = paths.map((filePath) => (filePath === sourcePath ? targetPath : filePath));
@@ -272,19 +339,29 @@ export async function planMarkdownNoteMove(
       if (!resolvedTargetPath) {
         throw new Error(`Move preflight lost a resolved target in ${documentPath}.`);
       }
+      const rendered = renderedLink(
+        parsedLink,
+        options.linkStyle ?? "preserve",
+        resultPath,
+        resolvedTargetPath,
+      );
       entries.push({
         key,
-        start: parsedLink.targetStart,
-        end: parsedLink.targetEnd,
+        replacementStart: rendered.replacementStart,
+        replacementEnd: rendered.replacementEnd,
+        replacementText: rendered.replacementText,
         rewrite: {
           documentPath,
           resultPath,
           line: parsedLink.line,
-          syntax: currentLink.syntax,
+          syntax: rendered.syntax,
           beforeTarget: snapshot.content.slice(parsedLink.targetStart, parsedLink.targetEnd),
-          afterTarget: replacementTarget(currentLink.syntax, resultPath, resolvedTargetPath),
+          afterTarget: rendered.target,
           before: currentLink.resolution,
-          after: projectedResolver.resolve(resultPath, currentLink.target),
+          after: projectedResolver.resolve(
+            resultPath,
+            (options.linkStyle ?? "preserve") === "preserve" ? currentLink.target : rendered.target,
+          ),
         },
       });
     }
@@ -293,12 +370,14 @@ export async function planMarkdownNoteMove(
 
   const applicable: InternalRewrite[] = [];
   for (const [documentPath, entries] of candidatesByPath) {
-    const sorted = [...entries].sort((left, right) => left.start - right.start);
+    const sorted = [...entries].sort(
+      (left, right) => left.replacementStart - right.replacementStart,
+    );
     const overlapping = new Set<string>();
     for (let index = 1; index < sorted.length; index += 1) {
       const previous = sorted[index - 1];
       const current = sorted[index];
-      if (previous && current && current.start < previous.end) {
+      if (previous && current && current.replacementStart < previous.replacementEnd) {
         overlapping.add(previous.key);
         overlapping.add(current.key);
       }
@@ -437,6 +516,7 @@ export async function moveMarkdownNote(
     requestedTargetPath,
     expectedSourceRevision,
     options.indexSnapshot,
+    options,
   );
   if (plan.status === "conflict") {
     return plan;
@@ -447,7 +527,11 @@ export async function moveMarkdownNote(
   const rewrites = plan.rewrites.map(rewritePreview);
   if (plan.writes.length > 0) {
     const confirmationId = confirmationIdFor(plan);
-    if (!options.acceptCurrentRewrites && options.confirmationId !== confirmationId) {
+    if (
+      !options.acceptCurrentRewrites &&
+      options.automaticLinkUpdates !== "always" &&
+      options.confirmationId !== confirmationId
+    ) {
       return {
         status: "requires-confirmation",
         from: plan.from,

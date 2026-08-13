@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type AppSettings, createDefaultAppSettings } from "../shared/key-bindings";
+import { createDefaultVaultWorkspaceSettings } from "../shared/workspace-settings";
 import { AppSettingsController, type AppSettingsStore } from "./app-settings-controller";
 
 class MemorySettingsStore implements AppSettingsStore {
@@ -183,5 +184,63 @@ describe("AppSettingsController", () => {
       controller.replaceSettings(createDefaultAppSettings(), reviewedBefore),
     ).rejects.toThrow("private settings changed");
     expect(controller.getSnapshot().settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+  });
+
+  it("persists private per-vault workspace preferences before publishing them", async () => {
+    const store = new MemorySettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const vaultId = "f".repeat(64);
+    const workspace = {
+      defaultNoteFolder: "Notes",
+      linkStyle: "markdown" as const,
+      automaticLinkUpdates: "always" as const,
+      confirmDelete: "when-linked" as const,
+      newTabBehavior: "background" as const,
+      editorMode: "source" as const,
+      documentView: "reading" as const,
+      restorePolicy: "fresh" as const,
+    };
+    const observed: string[] = [];
+    controller.onSnapshot((snapshot) =>
+      observed.push(snapshot.settings.workspaceByVault[vaultId]?.linkStyle ?? "missing"),
+    );
+
+    const snapshot = await controller.setVaultWorkspaceSettings(vaultId, workspace);
+
+    expect(store.saved).toEqual([snapshot.settings]);
+    expect(observed).toEqual(["markdown"]);
+    expect(controller.getVaultWorkspaceSettings(vaultId)).toEqual(workspace);
+    expect(snapshot.settings.appearanceByVault).toEqual({});
+    expect(snapshot.settings.noteWorkflowsByVault).toEqual({});
+  });
+
+  it("resets only one vault workspace entry back to validated defaults", async () => {
+    const firstVault = "a".repeat(64);
+    const secondVault = "b".repeat(64);
+    const customized = createDefaultAppSettings();
+    customized.workspaceByVault[firstVault] = {
+      defaultNoteFolder: "Notes",
+      linkStyle: "markdown",
+      automaticLinkUpdates: "always",
+      confirmDelete: "when-linked",
+      newTabBehavior: "background",
+      editorMode: "source",
+      documentView: "reading",
+      restorePolicy: "fresh",
+    };
+    customized.workspaceByVault[secondVault] = { ...customized.workspaceByVault[firstVault] };
+    const store = new MemorySettingsStore(customized);
+    const controller = await AppSettingsController.open(store);
+
+    const snapshot = await controller.resetVaultWorkspaceSettings(firstVault);
+
+    expect(controller.getVaultWorkspaceSettings(firstVault)).toEqual(
+      createDefaultVaultWorkspaceSettings(),
+    );
+    expect(controller.getVaultWorkspaceSettings(secondVault)).toEqual(
+      customized.workspaceByVault[secondVault],
+    );
+    expect(snapshot.settings.workspaceByVault[firstVault]).toBeUndefined();
+    expect(store.saved).toEqual([snapshot.settings]);
   });
 });

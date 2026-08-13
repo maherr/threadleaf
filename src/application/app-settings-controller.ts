@@ -12,9 +12,12 @@ import {
   updateVaultAppearance,
   updateVaultNoteWorkflows,
   updateVaultPlugins,
+  updateVaultWorkspaceSettings,
+  workspaceSettingsForVault,
 } from "../shared/key-bindings";
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type { VaultPluginSettings } from "../shared/plugins";
+import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 
 export interface AppSettingsStore {
   load(): Promise<AppSettings | null>;
@@ -109,6 +112,32 @@ export class AppSettingsController {
     return this.enqueueSave((settings) =>
       updateVaultNoteWorkflows(settings, vaultId, noteWorkflows),
     );
+  }
+
+  getVaultWorkspaceSettings(vaultId: string): VaultWorkspaceSettings {
+    return workspaceSettingsForVault(this.#snapshot.settings, vaultId);
+  }
+
+  async setVaultWorkspaceSettings(
+    vaultId: string,
+    workspace: VaultWorkspaceSettings,
+  ): Promise<AppSettingsSnapshot> {
+    const candidate = updateVaultWorkspaceSettings(this.#snapshot.settings, vaultId, workspace);
+    const settings = await this.#store.save(candidate);
+    return this.adopt(settings);
+  }
+
+  async resetVaultWorkspaceSettings(vaultId: string): Promise<AppSettingsSnapshot> {
+    if (!/^[a-f0-9]{64}$/.test(vaultId)) {
+      throw new Error("Workspace preferences require a lowercase SHA-256 vault identity.");
+    }
+    const workspaceByVault = { ...this.#snapshot.settings.workspaceByVault };
+    delete workspaceByVault[vaultId];
+    const settings = await this.#store.save({
+      ...this.#snapshot.settings,
+      workspaceByVault,
+    });
+    return this.adopt(settings);
   }
 
   onSnapshot(listener: SettingsListener): () => void {

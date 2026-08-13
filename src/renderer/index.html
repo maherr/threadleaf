@@ -609,6 +609,10 @@
               <span aria-hidden="true">▤</span>
               <span>Daily notes and templates</span>
             </button>
+            <button id="settings-nav-workspace" type="button" data-settings-target="workspace">
+              <span aria-hidden="true">⌘</span>
+              <span>Workspace and editing</span>
+            </button>
             <button id="settings-nav-plugins" type="button" data-settings-target="plugins">
               <span aria-hidden="true">◇</span>
               <span>Community plugins</span>
@@ -995,6 +999,149 @@
                 <button class="primary-button" id="workflow-save" type="submit">
                   Save preferences
                 </button>
+              </div>
+            </form>
+          </section>
+
+          <section
+            class="settings-page workspace-settings"
+            data-settings-page="workspace"
+            aria-labelledby="workspace-settings-heading"
+            hidden
+          >
+            <header class="settings-section-heading workspace-settings-heading">
+              <span>
+                <small>Private vault behavior</small>
+                <strong id="workspace-settings-heading">Workspace and editing</strong>
+              </span>
+              <span class="appearance-state" id="workspace-settings-state">Not scanned</span>
+            </header>
+
+            <article class="note-workflow-intro workspace-settings-intro">
+              <span class="note-workflow-mark" aria-hidden="true">⌘</span>
+              <span>
+                <strong>Predictable, recoverable defaults</strong>
+                <small>
+                  These choices are versioned in Threadleaf's private app data for this vault. They
+                  never rewrite vault metadata, and note deletion always keeps an exact copy in
+                  recoverable <code>.trash/</code>.
+                </small>
+              </span>
+            </article>
+
+            <form class="note-workflow-form workspace-settings-form" id="workspace-settings-form">
+              <fieldset class="note-workflow-group">
+                <legend>Notes and links</legend>
+                <label class="note-workflow-field" for="workspace-default-folder">
+                  <span>
+                    <strong>Default note location</strong>
+                    <small>Vault-relative folder for notes created from New note</small>
+                  </span>
+                  <input
+                    id="workspace-default-folder"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    maxlength="4096"
+                    placeholder="Vault root"
+                  />
+                </label>
+                <label class="note-workflow-field" for="workspace-link-style">
+                  <span>
+                    <strong>Link style after a move</strong>
+                    <small>Existing aliases and anchors stay intact</small>
+                  </span>
+                  <select id="workspace-link-style">
+                    <option value="preserve">Preserve each link's syntax</option>
+                    <option value="wikilink">Use WikiLinks</option>
+                    <option value="markdown">Use Markdown links</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-automatic-links">
+                  <span>
+                    <strong>Automatic link updates</strong>
+                    <small>Ask keeps a reviewed preview; Always applies that preview safely</small>
+                  </span>
+                  <select id="workspace-automatic-links">
+                    <option value="ask">Ask with a rewrite preview</option>
+                    <option value="always">Always apply safe rewrites</option>
+                    <option value="never">Never rewrite backlinks</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <fieldset class="note-workflow-group">
+                <legend>Opening and deletion</legend>
+                <label class="note-workflow-field" for="workspace-confirm-delete">
+                  <span>
+                    <strong>Delete confirmation</strong>
+                    <small>Threadleaf keeps confirmation even when no incoming links are indexed</small>
+                  </span>
+                  <select id="workspace-confirm-delete">
+                    <option value="always">Confirm every recoverable move</option>
+                    <option value="when-linked">Emphasize confirmation when links exist</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-new-tab">
+                  <span>
+                    <strong>Open linked notes</strong>
+                    <small>Choose whether a link changes the active tab</small>
+                  </span>
+                  <select id="workspace-new-tab">
+                    <option value="focus">Focus the opened note</option>
+                    <option value="background">Keep the current note focused</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <fieldset class="note-workflow-group">
+                <legend>Editor and restart</legend>
+                <label class="note-workflow-field" for="workspace-editor-mode">
+                  <span>
+                    <strong>Editor default</strong>
+                    <small>Choose rendered Live Preview or exact Source mode for new notes</small>
+                  </span>
+                  <select id="workspace-editor-mode">
+                    <option value="live">Live Preview</option>
+                    <option value="source">Source</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-document-view">
+                  <span>
+                    <strong>Initial document view</strong>
+                    <small>Reading view stays separate from the editable source</small>
+                  </span>
+                  <select id="workspace-document-view">
+                    <option value="live">Live Preview editor</option>
+                    <option value="source">Source editor</option>
+                    <option value="reading">Reading view</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-restore-policy">
+                  <span>
+                    <strong>Restart workspace</strong>
+                    <small>Restore is vault-bound; Fresh starts from the first indexed note</small>
+                  </span>
+                  <select id="workspace-restore-policy">
+                    <option value="restore">Restore open tabs and panes</option>
+                    <option value="fresh">Start fresh</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <div class="note-workflow-actions workspace-settings-actions">
+                <small id="workspace-settings-help">
+                  Preferences are validated before persistence and written atomically outside the
+                  vault.
+                </small>
+                <span class="workspace-settings-action-buttons">
+                  <button class="secondary-button" id="workspace-settings-reset" type="button">
+                    Reset this vault's defaults
+                  </button>
+                  <button class="primary-button" id="workspace-settings-save" type="submit">
+                    Save preferences
+                  </button>
+                </span>
               </div>
             </form>
           </section>

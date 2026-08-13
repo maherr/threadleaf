@@ -57,6 +57,12 @@ import {
   parseVaultNoteWorkflowSettings,
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
+import {
+  createDefaultVaultWorkspaceSettings,
+  defaultNotePath,
+  parseVaultWorkspaceSettings,
+  type VaultWorkspaceSettings,
+} from "../shared/workspace-settings";
 import { ActionRegistry } from "./action-registry";
 import { loadCanvasAttachment } from "./canvas-attachment-service";
 import {
@@ -107,6 +113,8 @@ export interface WorkspaceRuntimeOptions {
   selectionSource?: VaultSelectionSource;
   warning?: string | null;
   workspaceStateStore?: WorkspaceStateStore;
+  workspaceSettings?: VaultWorkspaceSettings;
+  workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -164,6 +172,7 @@ interface CloseNoteRequest {
 interface OpenNoteRequest {
   path: string;
   paneId?: WorkspacePaneId;
+  activate?: boolean;
 }
 
 interface SplitWorkspaceRequest {
@@ -283,14 +292,17 @@ function parseOpenNoteRequest(payload: unknown): OpenNoteRequest {
     payload === null ||
     !("path" in payload) ||
     typeof payload.path !== "string" ||
-    ("paneId" in payload && payload.paneId !== "primary" && payload.paneId !== "secondary")
+    ("paneId" in payload && payload.paneId !== "primary" && payload.paneId !== "secondary") ||
+    ("activate" in payload && typeof payload.activate !== "boolean")
   ) {
     throw new Error("Open note requires a vault-relative Markdown path and optional pane ID.");
   }
   const paneId = "paneId" in payload ? payload.paneId : undefined;
+  const activate = "activate" in payload ? (payload as { activate?: unknown }).activate : undefined;
   return {
     path: payload.path,
     ...(paneId === "primary" || paneId === "secondary" ? { paneId } : {}),
+    ...(typeof activate === "boolean" ? { activate } : {}),
   };
 }
 
@@ -503,6 +515,7 @@ export class WorkspaceRuntime {
   readonly readOnly: boolean;
   readonly #baseWarning: string | null;
   readonly #workspaceStateStore: WorkspaceStateStore | undefined;
+  #workspaceSettings: VaultWorkspaceSettings;
 
   #panes: PersistedWorkspacePane[] = [
     { id: "primary", openPaths: [], pinnedPaths: [], activePath: null },
@@ -543,6 +556,7 @@ export class WorkspaceRuntime {
     warning: string | null,
     workspaceStateStore: WorkspaceStateStore | undefined,
     workspaceLoadWarning: string | null,
+    workspaceSettings: VaultWorkspaceSettings,
   ) {
     this.actions = actions;
     this.kernel = kernel;
@@ -553,6 +567,7 @@ export class WorkspaceRuntime {
     this.readOnly = selectionSource === "bundled";
     this.#baseWarning = warning;
     this.#workspaceStateStore = workspaceStateStore;
+    this.#workspaceSettings = workspaceSettings;
     this.#workspaceLoadWarning = workspaceLoadWarning;
     this.#releaseActions.push(
       this.actions.register("threadleaf-workspace", {
@@ -669,7 +684,12 @@ export class WorkspaceRuntime {
     let restoredWorkspace: PersistedWorkspaceState | null = null;
     let workspaceLoadWarning: string | null = null;
     let workspaceStateReadable = true;
-    if (options.workspaceStateStore) {
+    const workspaceSettings = parseVaultWorkspaceSettings(
+      options.workspaceSettingsForVault?.(kernel.vaultId) ??
+        options.workspaceSettings ??
+        createDefaultVaultWorkspaceSettings(),
+    );
+    if (options.workspaceStateStore && workspaceSettings.restorePolicy === "restore") {
       try {
         restoredWorkspace = await options.workspaceStateStore.load(kernel.vaultId);
       } catch (error) {
@@ -687,6 +707,7 @@ export class WorkspaceRuntime {
       options.warning ?? null,
       options.workspaceStateStore,
       workspaceLoadWarning,
+      workspaceSettings,
     );
 
     if (restoredWorkspace) {
@@ -762,12 +783,28 @@ export class WorkspaceRuntime {
     };
   }
 
-  async openNote(filePath: string, paneId?: WorkspacePaneId): Promise<RuntimeSnapshot> {
+  async openNote(
+    filePath: string,
+    paneId?: WorkspacePaneId,
+    activate = true,
+  ): Promise<RuntimeSnapshot> {
     await this.actions.dispatch("workspace.open-note", {
       path: filePath,
       ...(paneId ? { paneId } : {}),
+      activate,
     });
     return this.publishSnapshot();
+  }
+
+  getWorkspaceSettings(): VaultWorkspaceSettings {
+    return { ...this.#workspaceSettings };
+  }
+
+  setWorkspaceSettings(settings: VaultWorkspaceSettings, expectedVaultId: string): void {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      throw new Error("The active vault changed before workspace preferences could be applied.");
+    }
+    this.#workspaceSettings = parseVaultWorkspaceSettings(settings);
   }
 
   async closeNote(
@@ -1204,6 +1241,7 @@ export class WorkspaceRuntime {
     const outcome = await this.createNoteThroughKernel(
       { path: filePath, content, expectedVaultId },
       false,
+      false,
     );
     await this.publishSnapshot();
     return outcome;
@@ -1556,9 +1594,12 @@ export class WorkspaceRuntime {
     if (!pane.openPaths.includes(filePath)) {
       pane.openPaths.push(filePath);
     }
-    pane.activePath = filePath;
+    if (request.activate !== false) {
+      pane.activePath = filePath;
+    }
+    const activePaneId = request.activate === false ? state.activePaneId : paneId;
     await this.adoptWorkspaceState(
-      createWorkspaceLayout(this.kernel.vaultId, state.panes, paneId, state.splitDirection),
+      createWorkspaceLayout(this.kernel.vaultId, state.panes, activePaneId, state.splitDirection),
       true,
     );
   }
@@ -1848,6 +1889,35 @@ export class WorkspaceRuntime {
     this.assertWritable("move notes");
     const sourcePath = normalizeVaultPath(request.path);
     const targetPath = movedMarkdownPath(sourcePath, request.targetPath);
+    if (this.#workspaceSettings.automaticLinkUpdates === "never") {
+      const source = await this.kernel.readText(sourcePath);
+      if (source.revision !== request.expectedRevision) {
+        return {
+          status: "conflict",
+          from: sourcePath,
+          to: targetPath,
+          reason: "source-revision-changed",
+        };
+      }
+      const result = await this.kernel.renameFile(sourcePath, targetPath, source.revision);
+      if (result.status === "conflict") {
+        return result;
+      }
+      const target = await this.kernel.readText(result.to);
+      this.watcher.operations.expect({
+        id: result.transactionId,
+        kind: "rename",
+        from: result.from,
+        to: result.to,
+        revision: target.revision,
+      });
+      this.indexReactor.index.remove(result.from);
+      await this.indexReactor.index.refresh(this.kernel, result.to);
+      if (this.moveOpenPath(result.from, result.to)) {
+        await this.persistWorkspaceStateBestEffort();
+      }
+      return { ...result, rewrites: [], writes: [] };
+    }
     const outcome = await moveMarkdownNote(
       this.kernel,
       sourcePath,
@@ -1855,6 +1925,8 @@ export class WorkspaceRuntime {
       request.expectedRevision,
       {
         ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+        automaticLinkUpdates: this.#workspaceSettings.automaticLinkUpdates,
+        linkStyle: this.#workspaceSettings.linkStyle,
         indexSnapshot: this.indexReactor.index.snapshot(),
       },
     );
@@ -2050,12 +2122,16 @@ export class WorkspaceRuntime {
   private async createNoteThroughKernel(
     request: CreateNoteRequest,
     activate = true,
+    applyDefaultFolder = true,
   ): Promise<NoteCreateOutcome> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this note could be created.");
     }
     this.assertWritable("create notes");
-    const outcome = await createMarkdownNote(this.kernel, request.path, request.content);
+    const requestedPath = applyDefaultFolder
+      ? defaultNotePath(this.#workspaceSettings.defaultNoteFolder, request.path)
+      : request.path;
+    const outcome = await createMarkdownNote(this.kernel, requestedPath, request.content);
     await this.integrateNoteCreateOutcome(outcome, activate, false);
     return outcome;
   }

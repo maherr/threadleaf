@@ -4923,6 +4923,7 @@ button.inspector-item:hover {
 
 .appearance-settings,
 .note-workflow-settings,
+.workspace-settings,
 .plugin-settings,
 .migration-settings,
 .app-update-settings,
@@ -4953,6 +4954,19 @@ button.inspector-item:hover {
     radial-gradient(
       circle at 92% 3%,
       color-mix(in srgb, var(--accent-soft) 72%, transparent),
+      transparent 30%
+    ),
+    var(--surface);
+}
+
+.workspace-settings {
+  display: grid;
+  align-content: start;
+  gap: 17px;
+  background:
+    radial-gradient(
+      circle at 92% 3%,
+      color-mix(in srgb, var(--signal-soft) 72%, transparent),
       transparent 30%
     ),
     var(--surface);
@@ -5125,6 +5139,13 @@ button.inspector-item:hover {
   min-height: 36px;
   padding: 0 14px;
   font-size: 9px;
+}
+
+.workspace-settings-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .app-update-settings {
@@ -7630,6 +7651,7 @@ button.inspector-item:hover {
 
   .appearance-settings,
   .note-workflow-settings,
+  .workspace-settings,
   .plugin-settings,
   .migration-settings,
   .app-update-settings,
@@ -7679,6 +7701,11 @@ button.inspector-item:hover {
 
   .note-workflow-actions button {
     align-self: start;
+  }
+
+  .workspace-settings-action-buttons {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .snippet-list {
