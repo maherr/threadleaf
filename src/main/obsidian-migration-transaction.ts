@@ -35,6 +35,7 @@ const planIdPattern = /^[a-f0-9]{64}$/;
 const transactionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const maxTransactionsPerVault = 16;
 const maximumJournalBytes = 16 * 1024 * 1024;
+const retentionMarkerPrefix = ".threadleaf-retention-";
 
 export interface MigrationPrivateState {
   settings: AppSettings;
@@ -51,6 +52,7 @@ export interface MigrationTransactionAdapter {
 
 export interface MigrationTransactionHooks {
   afterPhase?: (phase: MigrationTransactionPhase, transactionId: string) => Promise<void> | void;
+  afterJournalDeletion?: (transactionId: string) => Promise<void> | void;
 }
 
 export type MigrationTransactionPhase =
@@ -78,6 +80,12 @@ interface MigrationJournal {
   afterRevision: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface JournalRetentionMarker {
+  version: 1;
+  vaultId: string;
+  transactionIds: string[];
 }
 
 export interface MigrationRecoveryNotice {
@@ -589,6 +597,29 @@ function parseJournal(
   };
 }
 
+function parseRetentionMarker(value: unknown, expectedVaultId: string): JournalRetentionMarker {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    value.vaultId !== expectedVaultId ||
+    !Array.isArray(value.transactionIds) ||
+    value.transactionIds.length === 0 ||
+    value.transactionIds.length > 2 ||
+    !value.transactionIds.every(
+      (transactionId): transactionId is string =>
+        typeof transactionId === "string" && transactionIdPattern.test(transactionId),
+    ) ||
+    new Set(value.transactionIds).size !== value.transactionIds.length
+  ) {
+    throw new Error("Migration journal retention marker is malformed.");
+  }
+  return {
+    version: 1,
+    vaultId: expectedVaultId,
+    transactionIds: [...value.transactionIds],
+  };
+}
+
 function validateJournalRelationships(journals: readonly MigrationJournal[]): void {
   const byId = new Map(journals.map((journal) => [journal.id, journal] as const));
   const committedRollbackOf = new Set(
@@ -663,6 +694,7 @@ export class ObsidianMigrationTransactionManager {
     return this.#serialize(async () => {
       const vaultId = parseVaultId(vaultIdValue);
       let current = typeof currentState === "function" ? await currentState() : currentState;
+      await this.#reapRetentionMarkers(vaultId);
       const root = this.#vaultRoot(vaultId);
       let entries: Dirent<string>[];
       try {
@@ -675,7 +707,11 @@ export class ObsidianMigrationTransactionManager {
       }
       const journals: MigrationJournal[] = [];
       for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-        if (!entry.isFile() || !entry.name.endsWith(".json")) {
+        if (
+          !entry.isFile() ||
+          !entry.name.endsWith(".json") ||
+          !transactionIdPattern.test(entry.name.slice(0, -5))
+        ) {
           continue;
         }
         journals.push(await this.#readJournal(vaultId, entry.name.slice(0, -5)));
@@ -778,6 +814,7 @@ export class ObsidianMigrationTransactionManager {
   async latestRollbackTransaction(vaultIdValue: string): Promise<string | null> {
     return this.#serialize(async () => {
       const vaultId = parseVaultId(vaultIdValue);
+      await this.#reapRetentionMarkers(vaultId);
       const root = this.#vaultRoot(vaultId);
       let entries: Dirent<string>[];
       try {
@@ -790,7 +827,12 @@ export class ObsidianMigrationTransactionManager {
       }
       const journals: MigrationJournal[] = [];
       for (const entry of entries
-        .filter((candidate) => candidate.isFile() && candidate.name.endsWith(".json"))
+        .filter(
+          (candidate) =>
+            candidate.isFile() &&
+            candidate.name.endsWith(".json") &&
+            transactionIdPattern.test(candidate.name.slice(0, -5)),
+        )
         .sort((left, right) => left.name.localeCompare(right.name))) {
         journals.push(await this.#readJournal(vaultId, entry.name.slice(0, -5)));
       }
@@ -885,6 +927,23 @@ export class ObsidianMigrationTransactionManager {
       };
       await this.#writeJournal(journal);
       await this.#afterPhase(journal);
+      try {
+        const commitReview = await validateReview();
+        if (
+          commitReview.planId !== plan.planId ||
+          commitReview.sourceDigest !== plan.sourceDigest ||
+          commitReview.privateStateRevision !== plan.privateStateRevision
+        ) {
+          throw new Error(
+            "Obsidian metadata, workspace paths, or private state changed before commit. Refresh the preview.",
+          );
+        }
+      } catch (error) {
+        journal.phase = "aborted";
+        journal.updatedAt = this.#clock().toISOString();
+        await this.#writeJournal(journal).catch(() => undefined);
+        throw error;
+      }
       await this.#adapter.writeSettings(cloneSettings(next.settings), current.settings);
       journal.phase = "settings-committed";
       journal.updatedAt = this.#clock().toISOString();
@@ -1031,6 +1090,13 @@ export class ObsidianMigrationTransactionManager {
     return path.join(this.#vaultRoot(vaultId), `${transactionId}.json`);
   }
 
+  #retentionMarkerPath(vaultId: string, markerId: string): string {
+    if (!transactionIdPattern.test(markerId)) {
+      throw new Error("Migration journal retention marker identity is malformed.");
+    }
+    return path.join(this.#vaultRoot(vaultId), `${retentionMarkerPrefix}${markerId}.json`);
+  }
+
   async #readJournal(vaultId: string, transactionId: string): Promise<MigrationJournal> {
     const result = await readStableFileWithinLimit(
       this.#journalPath(vaultId, transactionId),
@@ -1050,6 +1116,59 @@ export class ObsidianMigrationTransactionManager {
       throw new Error("Migration transaction journal is not valid JSON.");
     }
     return parseJournal(value, vaultId, transactionId);
+  }
+
+  async #readRetentionMarker(vaultId: string, markerId: string): Promise<JournalRetentionMarker> {
+    const markerPath = this.#retentionMarkerPath(vaultId, markerId);
+    const result = await readStableFileWithinLimit(markerPath, maximumJournalBytes);
+    if (!result) {
+      throw new Error("Migration journal retention marker is missing.");
+    }
+    if (result.status === "too-large") {
+      throw new Error("Migration journal retention marker exceeds the private-state safety limit.");
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.snapshot.bytes));
+    } catch {
+      throw new Error("Migration journal retention marker is not valid JSON.");
+    }
+    return parseRetentionMarker(value, vaultId);
+  }
+
+  async #reapRetentionMarkers(vaultId: string): Promise<void> {
+    let entries: Dirent<string>[];
+    try {
+      entries = await fs.readdir(this.#vaultRoot(vaultId), { withFileTypes: true });
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        return;
+      }
+      throw error;
+    }
+    const markers = entries
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.startsWith(retentionMarkerPrefix) &&
+          entry.name.endsWith(".json"),
+      )
+      .map((entry) => entry.name.slice(retentionMarkerPrefix.length, -5))
+      .filter((markerId) => transactionIdPattern.test(markerId))
+      .sort((left, right) => left.localeCompare(right));
+    for (const markerId of markers) {
+      const marker = await this.#readRetentionMarker(vaultId, markerId);
+      for (const transactionId of marker.transactionIds) {
+        try {
+          await fs.unlink(this.#journalPath(vaultId, transactionId));
+        } catch (error) {
+          if (errorCode(error) !== "ENOENT") {
+            throw error;
+          }
+        }
+      }
+      await fs.unlink(this.#retentionMarkerPath(vaultId, markerId));
+    }
   }
 
   async #writeJournal(journal: MigrationJournal): Promise<void> {
@@ -1090,8 +1209,9 @@ export class ObsidianMigrationTransactionManager {
     targetCount: number,
     protectedIds: ReadonlySet<string> = new Set(),
   ): Promise<number> {
+    await this.#reapRetentionMarkers(vaultId);
     const entries = (await fs.readdir(this.#vaultRoot(vaultId)))
-      .filter((entry) => entry.endsWith(".json"))
+      .filter((entry) => entry.endsWith(".json") && transactionIdPattern.test(entry.slice(0, -5)))
       .sort((left, right) => left.localeCompare(right));
     if (entries.length <= targetCount) {
       return entries.length;
@@ -1156,10 +1276,20 @@ export class ObsidianMigrationTransactionManager {
       if (remaining <= targetCount) {
         break;
       }
+      const markerId = randomUUID();
+      const markerPath = this.#retentionMarkerPath(vaultId, markerId);
+      const marker: JournalRetentionMarker = {
+        version: 1,
+        vaultId,
+        transactionIds: [...group.ids],
+      };
+      await atomicWriteFile(markerPath, Buffer.from(`${JSON.stringify(marker)}\n`, "utf8"));
       for (const id of group.ids) {
         await fs.unlink(this.#journalPath(vaultId, id));
         remaining -= 1;
+        await this.#hooks.afterJournalDeletion?.(id);
       }
+      await fs.unlink(markerPath);
     }
     return remaining;
   }

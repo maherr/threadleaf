@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -272,6 +273,52 @@ describe("reviewed Obsidian migration transactions", () => {
     await expect(fs.readdir(path.join(stateRoot, "transactions", vaultA))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("rejects a source mutation after the final receipt read and before journaling", async () => {
+    const current = state();
+    const sourcePath = path.join(sandboxPath, "source.json");
+    await fs.writeFile(sourcePath, "before", "utf8");
+    const migrationPreview = preview(vaultA);
+    migrationPreview.sourceDigest = createHash("sha256").update("before", "utf8").digest("hex");
+    const plan = buildMigrationPlan(migrationPreview, current);
+    const request = {
+      planId: plan.planId,
+      sourceDigest: plan.sourceDigest,
+      selectedItemIds: ["plugin:exact"],
+    };
+    const adapter = new MemoryAdapter(current);
+    let firstValidation = true;
+    const manager = new ObsidianMigrationTransactionManager(
+      path.join(sandboxPath, "state"),
+      adapter,
+    );
+    await manager.initialize();
+    await expect(
+      manager.apply({
+        plan,
+        request,
+        sourceDigest: plan.sourceDigest,
+        current,
+        next: applyMigrationSelections(plan, request, current),
+        validateReview: async () => {
+          const sourceDigest = createHash("sha256")
+            .update(await fs.readFile(sourcePath))
+            .digest("hex");
+          if (firstValidation) {
+            firstValidation = false;
+            await fs.writeFile(sourcePath, "after", "utf8");
+          }
+          return {
+            planId: plan.planId,
+            sourceDigest,
+            privateStateRevision: plan.privateStateRevision,
+          };
+        },
+      }),
+    ).rejects.toThrow("changed before commit");
+    expect(adapter.current).toEqual(current);
+    expect(firstValidation).toBe(false);
   });
 
   it("applies a partial reviewed choice, records before/after state, and rolls it back", async () => {
@@ -587,6 +634,77 @@ describe("reviewed Obsidian migration transactions", () => {
     await expect(fs.readdir(path.join(stateRoot, "transactions", vaultA))).resolves.toHaveLength(
       16,
     );
+  });
+
+  it("reaps an interrupted apply/rollback retention pair before validating journals", async () => {
+    const current = state();
+    const plan = buildMigrationPlan(preview(vaultA), current);
+    const request = {
+      planId: plan.planId,
+      sourceDigest: plan.sourceDigest,
+      selectedItemIds: ["plugin:exact"],
+    };
+    const stateRoot = path.join(sandboxPath, "state");
+    const adapter = new MemoryAdapter(current);
+    let injectRetentionFailure = false;
+    let deletedBeforeFailure = 0;
+    const manager = new ObsidianMigrationTransactionManager(
+      stateRoot,
+      adapter,
+      () => new Date("2026-08-12T22:00:00.000Z"),
+      {
+        afterJournalDeletion: () => {
+          if (injectRetentionFailure) {
+            deletedBeforeFailure += 1;
+            throw new Error("simulated retention interruption");
+          }
+        },
+      },
+    );
+    await manager.initialize();
+    for (let index = 0; index < 8; index += 1) {
+      const outcome = await manager.apply({
+        plan,
+        request,
+        sourceDigest: plan.sourceDigest,
+        current,
+        next: applyMigrationSelections(plan, request, current),
+        validateReview: validateReview(plan),
+      });
+      await expect(
+        manager.rollback(vaultA, outcome.transactionId, adapter.current),
+      ).resolves.toMatchObject({
+        status: "rolled-back",
+      });
+    }
+
+    injectRetentionFailure = true;
+    await expect(
+      manager.apply({
+        plan,
+        request,
+        sourceDigest: plan.sourceDigest,
+        current,
+        next: applyMigrationSelections(plan, request, current),
+        validateReview: validateReview(plan),
+      }),
+    ).rejects.toThrow("simulated retention interruption");
+    expect(deletedBeforeFailure).toBe(1);
+
+    const vaultRoot = path.join(stateRoot, "transactions", vaultA);
+    await expect(
+      fs
+        .readdir(vaultRoot)
+        .then((entries) => entries.some((entry) => entry.startsWith(".threadleaf-retention-"))),
+    ).resolves.toBe(true);
+
+    const recovered = new ObsidianMigrationTransactionManager(stateRoot, adapter);
+    await recovered.initialize();
+    await expect(recovered.recover(vaultA, adapter.current)).resolves.toEqual([]);
+    await expect(
+      fs.readdir(vaultRoot).then((entries) => entries.filter((entry) => entry.endsWith(".json"))),
+    ).resolves.toHaveLength(14);
+    await expect(recovered.latestRollbackTransaction(vaultA)).resolves.toBeNull();
   });
 
   it("rejects malformed selection and unsupported candidates without writing state", async () => {

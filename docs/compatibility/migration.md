@@ -13,7 +13,10 @@ plan also records the private-state revision observed before review and a safe b
 projection. The user checks
 individual ready candidates. Missing packages, unsupported mappings, unresolved review items,
 stale source receipts, private-state drift, duplicate selections, and capability-grant conflicts
-are refused without a write. Plugin settings values are never copied or returned.
+are refused without a write. Threadleaf validates the receipts before journaling and again after the
+prepared journal is durable; that second validation is the commit barrier for the reviewed source
+generation. A later external source edit is a new generation for the next preview and does not
+rewrite the committed private snapshot. Plugin settings values are never copied or returned.
 
 The apply journal is atomically persisted in private application data before either settings or
 workspace state is written. It records the before and after snapshots, phase, exact selection, and
