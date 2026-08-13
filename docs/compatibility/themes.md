@@ -10,8 +10,9 @@ tested without conversion:
   snippets/<name>.css
 ```
 
-These paths are compatibility input only. Threadleaf does not install into, rewrite, enable, or
-disable files under `.obsidian/` in the current phase.
+These paths are compatibility input for discovery and selection. Package lifecycle operations are
+separate explicit transactions: they write only after a reviewed package plan has been shown and
+applied. Selection remains Threadleaf-private and is never stored in `.obsidian/`.
 
 ## Discovery and identity
 
@@ -102,10 +103,24 @@ Safe mode suppresses custom CSS for that process without deleting the saved sele
 still lists the discovered catalog, selected values, and diagnostic warning so the user can inspect
 or permanently clear them.
 
+## Package lifecycle
+
+Themes and snippets can be inspected from an exact package archive before installation. Inspection
+records the archive SHA-256, exact version, source provenance, bounded asset evidence, stylesheet
+static report, and bounded README and license previews. ZIP extraction rejects traversal, absolute
+paths, duplicate or case-colliding names, symlinks, encrypted entries, invalid UTF-8, and bounded
+size violations. Stylesheets reject imports, direct external URLs, and legacy executable CSS.
+
+Preview stores the archive and extracted bytes under private application data. It does not apply CSS
+or write a vault file. Applying a still-valid review uses a stable target revision, a durable journal,
+an exact private history snapshot, and an atomic target swap. Updates preserve bytes that were not
+part of the prior managed package. Uninstall, rollback, and restore retain complete prior bytes.
+External edits, changed review bytes, interrupted swaps, and changed recovery evidence fail closed
+with the available bytes left for review. Package receipts and inventory remain outside the vault;
+the installed theme or snippet remains an ordinary `.obsidian/` file or directory.
+
 ## Remaining work
 
-- Preview a theme or snippet before persisting it.
-- Install, update, roll back, uninstall, and export packages through an open index.
 - Generate selector and token coverage from representative open community themes.
 - Add high-contrast, zoom, high-DPI, localization, and committed screenshot matrices.
 - Extend compatibility to every future workspace view, pop-out, Canvas surface, and plugin-provided

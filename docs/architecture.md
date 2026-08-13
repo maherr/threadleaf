@@ -287,12 +287,13 @@ privacy boundary, and renders both color schemes.
 
 ### Appearance boundary
 
-Threadleaf treats a vault's Obsidian theme and snippet folders as read-only compatibility input.
-The main process discovers `.obsidian/themes/<folder>/theme.css` plus optional `manifest.json`
-metadata and `.obsidian/snippets/*.css`. It never uses those directories for Threadleaf state.
-Per-vault color scheme, theme ID, and ordered snippet IDs live in the versioned application settings
-document under a SHA-256 vault identity. Version 1 and 2 settings migrate to version 3 with empty
-maps for any settings surface they predate.
+Threadleaf treats a vault's Obsidian theme and snippet folders as read-only compatibility input
+during discovery, selection, and watcher operation. A separate package lifecycle manager can write
+an explicitly reviewed package target, but never stores Threadleaf state in `.obsidian/`. The main
+process discovers `.obsidian/themes/<folder>/theme.css` plus optional `manifest.json` metadata and
+`.obsidian/snippets/*.css`. Per-vault color scheme, theme ID, and ordered snippet IDs live in the
+versioned application settings document under a SHA-256 vault identity. Version 1 and 2 settings
+migrate to version 3 with empty maps for any settings surface they predate.
 
 The loader resolves real paths and requires every theme, manifest, and snippet to remain inside its
 expected vault directory. Theme CSS is limited to 2 MiB, each snippet to 512 KiB, each manifest to
@@ -322,6 +323,18 @@ the existing contained loader, then sends the existing typed appearance snapshot
 unselected asset update refreshes the catalog without replacing unchanged active CSS, and no
 read-only source edit writes private selection state. See the
 [theme compatibility contract](compatibility/themes.md).
+
+Package acquisition is a separate two-step boundary from compatibility discovery. An exact package
+archive is bounded, inspected for path and symlink safety, checked for CSS hazards, and shown with
+version, archive hash, provenance, asset hashes, and license/README evidence before any vault write.
+Preview bytes stay in private application data. Apply is bound to the reviewed vault, package,
+archive, and complete target revision; it writes a private durable journal, retains exact rollback
+bytes, and uses a same-parent atomic swap. Updates preserve bytes outside the previously managed
+assets. Uninstall, rollback, and restore retain recoverable history. Startup recovery restores only
+matching revisions; external edits or changed recovery evidence remain in place and fail closed.
+Receipts and inventory stay private, while an installed theme or snippet remains an ordinary
+`.obsidian/` file or directory. Package lifecycle never changes the private selected theme or
+snippet order.
 
 ### Community plugin lifecycle boundary
 
