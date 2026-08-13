@@ -9,6 +9,8 @@ import {
   assertSafeCacheRoot,
   assertValidManifest,
   CACHE_FILE_LIMITS,
+  COMMUNITY_FIXTURE_REQUIRED_FILES,
+  COMMUNITY_FIXTURE_TREE_SHA256,
   readCommunityCacheFile,
   readCommunityManifest,
   sha256,
@@ -25,9 +27,22 @@ const positiveControl = args.has("--positive-control");
 const redControl =
   args.has("--red-control") || process.env.THREADLEAF_COMMUNITY_THEME_RED_CONTROL === "1";
 const updateRequested = args.has("--update") || process.env.THREADLEAF_VISUAL_UPDATE === "1";
-const isCi = ["CI", "GITHUB_ACTIONS", "BUILDKITE", "GITLAB_CI", "JENKINS_URL"].some(
-  (name) => process.env[name] === "true" || process.env[name] === "1",
-);
+const CI_MARKERS = Object.freeze(["CI", "GITHUB_ACTIONS", "BUILDKITE", "GITLAB_CI", "JENKINS_URL"]);
+const REQUIRED_THEME_CASES = Object.freeze([
+  { id: "dark-laptop", scheme: "dark", viewport: "laptop", highContrast: false },
+  { id: "light-laptop", scheme: "light", viewport: "laptop", highContrast: false },
+  { id: "light-minimum", scheme: "light", viewport: "minimum", highContrast: false },
+  { id: "dark-high-contrast", scheme: "dark", viewport: "laptop", highContrast: true },
+  { id: "light-high-contrast", scheme: "light", viewport: "laptop", highContrast: true },
+]);
+
+function isCiEnvironment(environment = process.env) {
+  return CI_MARKERS.some(
+    (name) => typeof environment[name] === "string" && environment[name].length > 0,
+  );
+}
+
+const isCi = isCiEnvironment();
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 const output = [];
@@ -50,6 +65,65 @@ async function readJson(filePath) {
   return JSON.parse(await fs.readFile(filePath, "utf8"));
 }
 
+async function collectFixtureFiles(rootPath) {
+  const files = [];
+  async function visit(current, relative = "") {
+    const entries = await fs.readdir(current, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      const entryRelative = relative ? path.join(relative, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        await visit(entryPath, entryRelative);
+      } else if (entry.isFile()) {
+        const bytes = await fs.readFile(entryPath);
+        files.push({ path: entryRelative.split(path.sep).join("/"), sha256: sha256(bytes) });
+      }
+    }
+  }
+  await visit(rootPath);
+  return files;
+}
+
+function fixtureTreeHash(files) {
+  return sha256(files.map((file) => `${file.path}\0${file.sha256}\n`).join(""));
+}
+
+async function assertFixtureTree(manifest) {
+  const fixtureFiles = await collectFixtureFiles(fixtureRoot);
+  const fixtureNames = new Set(fixtureFiles.map((file) => file.path));
+  for (const required of COMMUNITY_FIXTURE_REQUIRED_FILES) {
+    assert(fixtureNames.has(required), `Community theme fixture is missing ${required}.`);
+  }
+  assert(
+    JSON.stringify(manifest.fixture.requiredFiles) ===
+      JSON.stringify(COMMUNITY_FIXTURE_REQUIRED_FILES),
+    "Community theme manifest required fixture files drifted.",
+  );
+  const actualTreeSha256 = fixtureTreeHash(fixtureFiles);
+  assert(
+    actualTreeSha256 === COMMUNITY_FIXTURE_TREE_SHA256,
+    `Community theme fixture bytes drifted from the verified tree: ${actualTreeSha256}.`,
+  );
+  process.stdout.write(
+    `COMMUNITY_THEME_FIXTURE_TREE PASS files=${fixtureFiles.length} sha256=${actualTreeSha256}\n`,
+  );
+  return actualTreeSha256;
+}
+
+function assertCiControls() {
+  assert(!isCiEnvironment({}), "CI marker control unexpectedly detected an empty environment.");
+  for (const marker of CI_MARKERS) {
+    for (const value of ["false", "0", "https://ci.example.test/job/1"]) {
+      assert(
+        isCiEnvironment({ [marker]: value }),
+        `CI marker control did not detect nonempty ${marker}=${value}.`,
+      );
+    }
+  }
+  process.stdout.write(`COMMUNITY_THEME_CI_CONTROLS PASS markers=${CI_MARKERS.join(",")}\n`);
+}
+
 async function availablePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
@@ -69,6 +143,22 @@ async function commandAvailable(command) {
   return new Promise((resolve) => {
     probe.once("error", () => resolve(false));
     probe.once("exit", () => resolve(true));
+  });
+}
+
+async function runCommand(command, commandArgs) {
+  const processHandle = spawn(command, commandArgs, { stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  processHandle.stdout.on("data", (chunk) => {
+    stdout += String(chunk);
+  });
+  processHandle.stderr.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
+  return new Promise((resolve) => {
+    processHandle.once("error", (error) => resolve({ code: null, stdout, stderr, error }));
+    processHandle.once("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
   });
 }
 
@@ -181,6 +271,36 @@ async function assertServedBundleHash(targetUrl) {
   return { source, sha256: expectedHash };
 }
 
+async function assertLiveRuntimeVersions(manifest) {
+  const environmentPath = path.join(appRoot, "visual", "environment.v1.json");
+  const environment = await readJson(environmentPath);
+  assert(
+    environment.electron === manifest.renderer.electron &&
+      environment.nodeMajor === manifest.renderer.nodeMajor,
+    "Pinned community theme renderer and environment metadata disagree.",
+  );
+  const nodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
+  assert(
+    nodeMajor === environment.nodeMajor,
+    `Live checker Node ${process.versions.node} is not pinned Node ${environment.nodeMajor}.x.`,
+  );
+  const electronVersion = await runCommand(electronPath, ["--version"]);
+  const reportedElectron = electronVersion.stdout.trim().replace(/^v/u, "");
+  assert(
+    electronVersion.code === 0 && reportedElectron === environment.electron,
+    `Live Electron binary is ${electronVersion.stdout.trim() || electronVersion.stderr.trim()}, expected ${environment.electron}.`,
+  );
+  const runtime = await evaluate("({ userAgent: navigator.userAgent })");
+  assert(
+    typeof runtime?.userAgent === "string" &&
+      runtime.userAgent.includes(`Electron/${environment.electron}`),
+    `Live renderer user agent is not Electron/${environment.electron}: ${runtime?.userAgent ?? "(missing)"}.`,
+  );
+  process.stdout.write(
+    `COMMUNITY_THEME_RUNTIME PASS electron=${environment.electron} node=${process.versions.node}\n`,
+  );
+}
+
 async function waitFor(probe, message, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   let last;
@@ -190,6 +310,71 @@ async function waitFor(probe, message, timeoutMs = 10_000) {
     await delay(50);
   }
   throw new Error(`${message}. Last observation: ${JSON.stringify(last)}`);
+}
+
+async function targetCenter(selector) {
+  const target = await evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return { error: "missing" };
+    const root = element.closest("button, [role=button], input, select") ?? element;
+    const rect = root.getBoundingClientRect();
+    const style = getComputedStyle(root);
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {
+      error: null,
+      x,
+      y,
+      width: rect.width,
+      height: rect.height,
+      hidden: root.hidden || style.display === "none" || style.visibility === "hidden",
+      disabled: root instanceof HTMLButtonElement || root instanceof HTMLInputElement || root instanceof HTMLSelectElement ? root.disabled : false,
+      hit: Boolean(hit && (hit === root || root.contains(hit))),
+    };
+  })()`);
+  assert(target && !target.error, `Pointer target is unavailable: ${selector}`);
+  assert(!target.hidden && !target.disabled, `Pointer target is not interactive: ${selector}`);
+  assert(
+    target.width > 0 && target.height > 0 && target.hit,
+    `Pointer target is covered or has no geometry: ${selector}: ${JSON.stringify(target)}`,
+  );
+  return target;
+}
+
+async function clickSelector(selector) {
+  const target = await targetCenter(selector);
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+    await cdp.send("Input.dispatchMouseEvent", {
+      type,
+      button: type === "mouseMoved" ? "none" : "left",
+      buttons: type === "mousePressed" ? 1 : 0,
+      clickCount: type === "mouseMoved" ? 0 : 1,
+      x: target.x,
+      y: target.y,
+    });
+  }
+}
+
+const keyCodes = {
+  ArrowDown: 40,
+  Enter: 13,
+  Escape: 27,
+  Home: 36,
+};
+
+async function pressKey(key, code, modifiers = 0) {
+  const windowsVirtualKeyCode =
+    keyCodes[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : undefined);
+  for (const type of ["keyDown", "keyUp"]) {
+    await cdp.send("Input.dispatchKeyEvent", {
+      type,
+      code,
+      key,
+      modifiers,
+      windowsVirtualKeyCode,
+    });
+  }
 }
 
 function decodePng(bytes, label) {
@@ -479,7 +664,26 @@ function assertDeuteranomalyCue(probe) {
   return { stressRatios: ratios, focusColor: focus, backgroundColor: background, colourPairs };
 }
 
-async function launch(theme, cacheRoot) {
+function verifiedCacheBytes(verification, themeId, relativePath) {
+  const receipt = verification.files?.[themeId]?.[relativePath];
+  assert(
+    receipt && Buffer.isBuffer(receipt.bytes),
+    `Verified cache snapshot is missing ${themeId}/${relativePath}.`,
+  );
+  assert(
+    receipt.byteLength === receipt.bytes.length && sha256(receipt.bytes) === receipt.sha256,
+    `Verified cache snapshot changed before copy: ${themeId}/${relativePath}.`,
+  );
+  return Buffer.from(receipt.bytes);
+}
+
+async function atomicWriteBytes(targetPath, bytes) {
+  const temporaryPath = `${targetPath}.community-theme-update-${process.pid}`;
+  await fs.writeFile(temporaryPath, bytes, { mode: 0o600 });
+  await fs.rename(temporaryPath, targetPath);
+}
+
+async function launch(theme, verification) {
   testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-community-theme-"));
   runOutput = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-community-theme-captures-"));
   const vaultPath = path.join(testRoot, "vault");
@@ -488,7 +692,7 @@ async function launch(theme, cacheRoot) {
   const themePath = path.join(vaultPath, ".obsidian", "themes", theme.folder);
   await fs.mkdir(themePath, { recursive: true });
   for (const filename of ["theme.css", "manifest.json"]) {
-    const bytes = await readCommunityCacheFile(cacheRoot, theme.id, filename);
+    const bytes = verifiedCacheBytes(verification, theme.id, filename);
     await fs.writeFile(path.join(themePath, filename), bytes, { mode: 0o600 });
   }
   await fs.mkdir(userDataPath, { recursive: true });
@@ -531,6 +735,7 @@ async function launch(theme, cacheRoot) {
   await cdp.send("Runtime.enable");
   await cdp.send("Page.enable");
   await cdp.send("Network.enable");
+  await assertLiveRuntimeVersions(currentManifest);
   await assertServedBundleHash(target.url);
   const expectedPath = await fs.realpath(vaultPath);
   await waitFor(
@@ -622,7 +827,7 @@ async function closeApplication() {
 }
 
 async function openSettings() {
-  await evaluate("document.querySelector('#settings-trigger')?.click(); true");
+  await clickSelector("#settings-trigger");
   await waitFor(
     async () =>
       (await evaluate("document.querySelector('#shortcut-settings')?.open === true")) ? true : null,
@@ -638,7 +843,7 @@ async function closeSettings() {
         : null,
     "Settings close control remained busy",
   );
-  await evaluate("document.querySelector('#settings-close')?.click(); true");
+  await clickSelector("#settings-close");
   await waitFor(
     async () =>
       (await evaluate("document.querySelector('#shortcut-settings')?.open !== true")) ? true : null,
@@ -647,14 +852,18 @@ async function closeSettings() {
 }
 
 async function setControlValue(selector, value) {
-  const changed = await evaluate(`(() => {
+  const optionIndex = await evaluate(`(() => {
     const control = document.querySelector(${JSON.stringify(selector)});
-    if (!(control instanceof HTMLSelectElement || control instanceof HTMLInputElement)) return false;
-    control.value = ${JSON.stringify(value)};
-    control.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
+    if (!(control instanceof HTMLSelectElement)) return -1;
+    return [...control.options].findIndex((option) => option.value === ${JSON.stringify(value)});
   })()`);
-  assert(changed, `Missing control ${selector}`);
+  assert(optionIndex >= 0, `Missing option ${value} in control ${selector}`);
+  await clickSelector(selector);
+  await pressKey("Home", "Home");
+  for (let index = 0; index < optionIndex; index += 1) {
+    await pressKey("ArrowDown", "ArrowDown");
+  }
+  await pressKey("Enter", "Enter");
   await waitFor(
     async () =>
       (await evaluate(`document.querySelector(${JSON.stringify(selector)})?.value`)) === value,
@@ -662,7 +871,7 @@ async function setControlValue(selector, value) {
   );
 }
 
-async function applyTheme(theme) {
+async function applyTheme(theme, verification) {
   await openSettings();
   const themeId = `obsidian-theme:${encodeURIComponent(theme.folder)}`;
   const themeOptionSelector = `#appearance-theme option[value=${JSON.stringify(themeId)}]`;
@@ -697,9 +906,7 @@ async function applyTheme(theme) {
     `Theme ${theme.name} did not load through the contained appearance loader: ${JSON.stringify(lastAppearance)}`,
     15_000,
   );
-  const source = (await readCommunityCacheFile(currentCacheRoot, theme.id, "theme.css")).toString(
-    "utf8",
-  );
+  const source = verifiedCacheBytes(verification, theme.id, "theme.css").toString("utf8");
   assert(!/@import\b/iu.test(source), `${theme.name} contains a forbidden @import.`);
   assert(!/url\(\s*["']?https?:/iu.test(source), `${theme.name} contains a direct remote URL.`);
   await closeSettings();
@@ -708,7 +915,7 @@ async function applyTheme(theme) {
 
 async function setScheme(scheme) {
   await openSettings();
-  await evaluate(`document.querySelector('#scheme-${scheme}')?.click(); true`);
+  await clickSelector(`#scheme-${scheme}`);
   await waitFor(
     async () => (await evaluate("document.documentElement.dataset.theme")) === scheme,
     `Color scheme did not become ${scheme}`,
@@ -718,7 +925,7 @@ async function setScheme(scheme) {
 
 async function setHighContrast(enabled) {
   await openSettings();
-  await evaluate("document.querySelector('#settings-nav-accessibility')?.click(); true");
+  await clickSelector("#settings-nav-accessibility");
   await waitFor(
     async () =>
       (await evaluate(
@@ -758,6 +965,7 @@ async function setViewport(viewport) {
 }
 
 async function probeCues() {
+  await clickSelector("#file-search");
   const probe = await evaluate(`(() => {
     const parse = (value) => {
       const numbers = value.match(/-?(?:\\d*\\.\\d+|\\d+)(?:e[+-]?\\d+)?/giu)?.map(Number) ?? [];
@@ -800,7 +1008,6 @@ async function probeCues() {
     const inactive = [...document.querySelectorAll('#file-list .file-item')].find((candidate) => candidate !== active);
     const input = document.querySelector('#file-search');
     if (!(active instanceof HTMLElement) || !(inactive instanceof HTMLElement) || !(input instanceof HTMLElement)) return null;
-    input.focus({ focusVisible: true });
     const focusStyle = getComputedStyle(input);
     const focusBackground = paintedBackground(input);
     const roleSelectors = [
@@ -910,6 +1117,47 @@ async function probeViewportGeometry(viewport) {
       );
     }
   }
+  const forced = await evaluate(`(() => {
+    const host = document.createElement("div");
+    const child = document.createElement("div");
+    host.style.cssText = "position:fixed;left:-10000px;top:0;width:120px;height:80px;overflow:auto;scrollbar-gutter:stable both-edges;opacity:0;pointer-events:none;";
+    child.style.cssText = "width:240px;height:400px;";
+    host.append(child);
+    document.body.append(host);
+    const computed = getComputedStyle(host);
+    const thumb = getComputedStyle(host, "::-webkit-scrollbar");
+    const result = {
+      clientWidth: host.clientWidth,
+      offsetWidth: host.offsetWidth,
+      clientHeight: host.clientHeight,
+      offsetHeight: host.offsetHeight,
+      scrollWidth: host.scrollWidth,
+      scrollHeight: host.scrollHeight,
+      overflowY: computed.overflowY,
+      scrollbarGutter: computed.scrollbarGutter,
+      scrollbarWidth: computed.scrollbarWidth,
+      thumbWidth: thumb.width,
+    };
+    host.remove();
+    return result;
+  })()`);
+  assert(
+    forced.scrollHeight > forced.clientHeight && forced.scrollWidth > forced.clientWidth,
+    `Forced overflow control did not create scrollable content: ${JSON.stringify(forced)}.`,
+  );
+  assert(
+    ["auto", "scroll"].includes(forced.overflowY),
+    `Forced overflow control lost vertical overflow: ${JSON.stringify(forced)}.`,
+  );
+  assert(
+    forced.scrollbarWidth !== "none" && forced.thumbWidth !== "0px",
+    `Forced overflow control has hidden scrollbar geometry: ${JSON.stringify(forced)}.`,
+  );
+  assert(
+    forced.offsetWidth > forced.clientWidth || forced.scrollbarGutter.includes("stable"),
+    `Forced overflow control has no measurable gutter: ${JSON.stringify(forced)}.`,
+  );
+  geometry.forcedOverflow = forced;
   return geometry;
 }
 
@@ -926,20 +1174,64 @@ async function capture(theme, caseId, outputName) {
   return { bytes, image, path: path.join(runOutput, outputName), key: `${theme.id}:${caseId}` };
 }
 
-async function runTheme(theme, cacheRoot, baselineManifest) {
+async function exerciseThemeWatcher(theme, themePath, verification, themeId) {
+  const sourceBytes = verifiedCacheBytes(verification, theme.id, "theme.css");
+  const marker = `threadleaf-community-watcher-${theme.id}-${process.pid}`;
+  const updatedBytes = Buffer.concat([
+    sourceBytes,
+    Buffer.from(`\n/* ${marker} */\n:root { --${marker}: 1; }\n`),
+  ]);
+  const themeCssPath = path.join(themePath, "theme.css");
+  await atomicWriteBytes(themeCssPath, updatedBytes);
+  await waitFor(
+    async () => {
+      const appearance = await evaluate(
+        "(async () => { const snapshot = await window.threadleaf.getSnapshot(); return window.threadleaf.getAppearance(snapshot.vault.id); })()",
+      );
+      return appearance?.status === "ready" && appearance.appearance.css.includes(marker)
+        ? appearance
+        : null;
+    },
+    `Theme ${theme.name} filesystem watcher did not reload the updated theme.css`,
+    15_000,
+  );
+  await atomicWriteBytes(themeCssPath, sourceBytes);
+  await waitFor(
+    async () => {
+      const appearance = await evaluate(
+        "(async () => { const snapshot = await window.threadleaf.getSnapshot(); return window.threadleaf.getAppearance(snapshot.vault.id); })()",
+      );
+      return appearance?.status === "ready" && !appearance.appearance.css.includes(marker)
+        ? appearance
+        : null;
+    },
+    `Theme ${theme.name} filesystem watcher did not reload the restored theme.css`,
+    15_000,
+  );
+  const restoredBytes = await fs.readFile(themeCssPath);
+  assert(
+    sha256(restoredBytes) === sha256(sourceBytes),
+    `Theme ${theme.name} watcher exercise did not restore the verified source bytes.`,
+  );
+  return { themeId, marker };
+}
+
+async function runTheme(theme, verification, baselineManifest) {
   networkRequests = [];
   const captures = [];
   const audits = [];
-  await launch(theme, cacheRoot);
   try {
+    await launch(theme, verification);
     const snapshot = await evaluate("window.threadleaf.getSnapshot()");
     assert(snapshot?.vault?.id, `Theme ${theme.id} fixture has no vault id.`);
-    await applyTheme(theme);
-    const themeCases = currentManifest.cases.filter((testCase) => testCase.theme === theme.id);
-    assert(
-      themeCases.length === 5,
-      `Theme ${theme.id} does not have the five committed matrix cases.`,
+    const appearance = await applyTheme(theme, verification);
+    await exerciseThemeWatcher(
+      theme,
+      path.join(snapshot.vault.path, ".obsidian", "themes", theme.folder),
+      verification,
+      appearance.themeId,
     );
+    const themeCases = themeCasesInRequiredOrder(currentManifest, theme.id);
     for (const testCase of themeCases) {
       await setScheme(testCase.scheme);
       await setHighContrast(Boolean(testCase.highContrast));
@@ -1007,7 +1299,50 @@ async function runTheme(theme, cacheRoot, baselineManifest) {
 }
 
 let currentManifest;
-let currentCacheRoot;
+
+function assertExactThemeCaseSet(manifest) {
+  assert(Array.isArray(manifest.cases), "Community theme matrix has no explicit cases.");
+  const themeIds = new Set(manifest.themes.map((theme) => theme.id));
+  for (const testCase of manifest.cases) {
+    assert(themeIds.has(testCase.theme), `Case ${testCase.id} references an unknown theme.`);
+    assert(
+      ["dark", "light"].includes(testCase.scheme),
+      `Case ${testCase.id} has an invalid scheme.`,
+    );
+    assert(
+      ["laptop", "minimum"].includes(testCase.viewport),
+      `Case ${testCase.id} has an invalid viewport.`,
+    );
+  }
+  for (const themeId of themeIds) {
+    const themeCases = manifest.cases.filter((testCase) => testCase.theme === themeId);
+    const ids = new Set(themeCases.map((testCase) => testCase.id));
+    assert(ids.size === themeCases.length, `Theme ${themeId} has duplicate matrix case ids.`);
+    assert(
+      themeCases.length === REQUIRED_THEME_CASES.length,
+      `Theme ${themeId} must have exactly the required five visual cases.`,
+    );
+    for (const expected of REQUIRED_THEME_CASES) {
+      const actual = themeCases.find((testCase) => testCase.id === expected.id);
+      assert(actual, `Theme ${themeId} is missing required case ${expected.id}.`);
+      assert(
+        actual.scheme === expected.scheme &&
+          actual.viewport === expected.viewport &&
+          Boolean(actual.highContrast) === expected.highContrast,
+        `Theme ${themeId} case ${expected.id} does not match the required matrix combination.`,
+      );
+    }
+  }
+  process.stdout.write(
+    `COMMUNITY_THEME_CASE_SET PASS themes=${themeIds.size} casesPerTheme=${REQUIRED_THEME_CASES.length}\n`,
+  );
+}
+
+function themeCasesInRequiredOrder(manifest, themeId) {
+  return REQUIRED_THEME_CASES.map((expected) =>
+    manifest.cases.find((testCase) => testCase.theme === themeId && testCase.id === expected.id),
+  );
+}
 
 async function assertStaticManifest(manifest) {
   assert(manifest.schemaVersion === 1, "Community theme manifest schema is unsupported.");
@@ -1024,6 +1359,7 @@ async function assertStaticManifest(manifest) {
     manifest.cache.shippedThirdPartyAssets === false,
     "Community theme assets must not be shipped.",
   );
+  assertCiControls();
   assert(
     manifest.sourceUpdate?.watcherPath === ".obsidian/themes/<folder>/theme.css" &&
       manifest.sourceUpdate.watcherEvent === "filesystem-event" &&
@@ -1041,25 +1377,7 @@ async function assertStaticManifest(manifest) {
     manifest.themes.length >= 3 && manifest.themes.length <= 5,
     "Community theme matrix is not a small representative set.",
   );
-  assert(Array.isArray(manifest.cases), "Community theme matrix has no explicit cases.");
-  const themeIds = new Set(manifest.themes.map((theme) => theme.id));
-  for (const testCase of manifest.cases) {
-    assert(themeIds.has(testCase.theme), `Case ${testCase.id} references an unknown theme.`);
-    assert(
-      ["dark", "light"].includes(testCase.scheme),
-      `Case ${testCase.id} has an invalid scheme.`,
-    );
-    assert(
-      ["laptop", "minimum"].includes(testCase.viewport),
-      `Case ${testCase.id} has an invalid viewport.`,
-    );
-  }
-  for (const themeId of themeIds) {
-    assert(
-      manifest.cases.filter((testCase) => testCase.theme === themeId).length === 5,
-      `Theme ${themeId} must have five explicit visual cases including light high contrast.`,
-    );
-  }
+  assertExactThemeCaseSet(manifest);
   for (const theme of manifest.themes) {
     assert(/^[a-z0-9-]+$/u.test(theme.id), `Invalid community theme id ${theme.id}.`);
     assert(
@@ -1092,12 +1410,13 @@ function expectedCaseKey(testCase) {
   return `${testCase.theme}:${testCase.id}`;
 }
 
-async function assertBaselineIntegrity(manifest, baselineManifest) {
+async function assertBaselineIntegrity(manifest, baselineManifest, actualFixtureTreeSha256) {
   assert(baselineManifest?.schemaVersion === 1, "Community theme baseline schema is unsupported.");
   assert(baselineManifest.matrix === manifest.id, "Community theme baseline matrix drifted.");
   assert(
-    baselineManifest.fixtureTreeSha256 === manifest.fixture.treeSha256,
-    "Community theme baselines are not bound to the fixture tree.",
+    baselineManifest.fixtureTreeSha256 === actualFixtureTreeSha256 &&
+      actualFixtureTreeSha256 === COMMUNITY_FIXTURE_TREE_SHA256,
+    "Community theme baselines are not bound to the recomputed fixture tree.",
   );
   assert(
     JSON.stringify(baselineManifest.renderer) === JSON.stringify(manifest.renderer),
@@ -1311,7 +1630,15 @@ async function assertStaticCacheControls(manifest) {
       path.join(appRoot, "scripts", "acquire-community-theme-fixtures.mjs"),
       "utf8",
     );
-    for (const required of ["response.body.getReader()", "O_NOFOLLOW", "O_EXCL", "fs.rename("]) {
+    for (const required of [
+      "response.body.getReader()",
+      "O_NOFOLLOW",
+      "O_EXCL",
+      "fs.rename(",
+      "AbortController",
+      "signal: controller.signal",
+      "setTimeout(() => controller.abort()",
+    ]) {
       assert(
         acquisitionSource.includes(required),
         `Acquisition safety primitive is missing: ${required}`,
@@ -1356,6 +1683,7 @@ async function main() {
   }
   currentManifest = await readCommunityManifest();
   await assertStaticManifest(currentManifest);
+  const actualFixtureTreeSha256 = await assertFixtureTree(currentManifest);
   assertManifestNegativeControls(currentManifest);
   assertStaticColourControls(currentManifest);
   await assertStaticCacheControls(currentManifest);
@@ -1368,7 +1696,7 @@ async function main() {
     baselineManifest = {
       schemaVersion: 1,
       matrix: currentManifest.id,
-      fixtureTreeSha256: currentManifest.fixture.treeSha256,
+      fixtureTreeSha256: actualFixtureTreeSha256,
       renderer: currentManifest.renderer,
       environment: {
         path: "visual/environment.v1.json",
@@ -1384,7 +1712,7 @@ async function main() {
     };
   }
   if (Object.keys(baselineManifest.cases ?? {}).length > 0) {
-    await assertBaselineIntegrity(currentManifest, baselineManifest);
+    await assertBaselineIntegrity(currentManifest, baselineManifest, actualFixtureTreeSha256);
   } else if (integrityOnly || !updateRequested) {
     throw new Error("Community theme baseline manifest is missing its declared cases.");
   }
@@ -1411,8 +1739,7 @@ async function main() {
       "COMMUNITY_THEME_RED_CONTROL_EXPECTED_FAILURE: tampered community baseline was rejected.",
     );
   }
-  currentCacheRoot = (await verifyCommunityCache(currentManifest)).cacheRoot;
-  const verification = await verifyCommunityCache(currentManifest, currentCacheRoot);
+  const verification = await verifyCommunityCache(currentManifest);
   if (!verification.complete) {
     const message =
       `COMMUNITY_THEME_VISUAL_SKIP cache incomplete: ${verification.missing.join(", ")}. ` +
@@ -1429,7 +1756,7 @@ async function main() {
   }
   assert(await fs.stat(electronPath), "Electron executable is missing; run pnpm install.");
   for (const theme of currentManifest.themes) {
-    const result = await runTheme(theme, currentCacheRoot, baselineManifest);
+    const result = await runTheme(theme, verification, baselineManifest);
     process.stdout.write(
       `COMMUNITY_THEME_VISUAL_PASS ${theme.id} cases=${result.captures} deutan=${JSON.stringify(result.audits)}\n`,
     );

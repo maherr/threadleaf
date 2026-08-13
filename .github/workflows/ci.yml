@@ -58,6 +58,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build and verify Linux packages
         run: pnpm run release:linux
+      - name: Check community theme integrity
+        run: pnpm run community-theme:integrity
       - name: Run committed visual regression matrix
         env:
           THREADLEAF_VISUAL_REQUIRED: "1"
@@ -99,6 +101,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check source on macOS
         run: pnpm check
+      - name: Check community theme integrity
+        run: pnpm run community-theme:integrity
       - name: Check visual matrix integrity
         run: pnpm run visual:integrity
       - name: Build unsigned native package
@@ -156,6 +160,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check source on Windows
         run: pnpm check
+      - name: Check community theme integrity
+        run: pnpm run community-theme:integrity
       - name: Check visual matrix integrity
         run: pnpm run visual:integrity
       - name: Build unsigned native package

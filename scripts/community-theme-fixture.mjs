@@ -5,6 +5,21 @@ import path from "node:path";
 
 const appRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const manifestPath = path.join(appRoot, "visual", "community-themes.v1.json");
+const COMMUNITY_FIXTURE_REQUIRED_FILES = Object.freeze([
+  "00 Overview.md",
+  "01 Linked Note.md",
+  "02 Empty Note.md",
+  "03 Missing Target.md",
+  "04 Long Text.md",
+  ".obsidian/plugins/threadleaf-fixture/main.js",
+  ".obsidian/plugins/threadleaf-fixture/manifest.json",
+  ".obsidian/plugins/threadleaf-fixture/styles.css",
+  ".obsidian/snippets/visual-spacing.css",
+  ".obsidian/themes/Threadleaf Visual/manifest.json",
+  ".obsidian/themes/Threadleaf Visual/theme.css",
+]);
+const COMMUNITY_FIXTURE_TREE_SHA256 =
+  "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff";
 const CACHE_FILE_LIMITS = Object.freeze({
   "theme.css": 2 * 1024 * 1024,
   "manifest.json": 64 * 1024,
@@ -60,9 +75,11 @@ function assertValidManifest(manifest) {
   }
   if (
     manifest.fixture?.root !== "fixtures/vaults/visual-regression" ||
-    !/^[a-f0-9]{64}$/u.test(manifest.fixture?.treeSha256 ?? "")
+    manifest.fixture.treeSha256 !== COMMUNITY_FIXTURE_TREE_SHA256 ||
+    JSON.stringify(manifest.fixture.requiredFiles) !==
+      JSON.stringify(COMMUNITY_FIXTURE_REQUIRED_FILES)
   ) {
-    throw new Error("Community theme fixture tree is not pinned.");
+    throw new Error("Community theme fixture tree and required files are not pinned.");
   }
   if (
     manifest.sourceUpdate?.kind !== "manual-receipt-refresh" ||
@@ -256,6 +273,7 @@ export async function verifyCommunityCache(manifest, cacheRoot = defaultCacheRoo
 
   const receipts = [];
   const missing = [];
+  const files = {};
   for (const theme of manifest.themes ?? []) {
     for (const file of theme.files ?? []) {
       const target = cachePath(resolvedRoot, theme.id, file.path);
@@ -270,6 +288,12 @@ export async function verifyCommunityCache(manifest, cacheRoot = defaultCacheRoo
           missing.push(`${theme.id}/${file.path} (sha256 ${actual}, expected ${file.sha256})`);
           continue;
         }
+        if (!files[theme.id]) files[theme.id] = {};
+        files[theme.id][file.path] = {
+          bytes,
+          sha256: actual,
+          byteLength: bytes.length,
+        };
         receipts.push({ theme: theme.id, path: file.path, sha256: actual, bytes: bytes.length });
         if (file.path === "manifest.json") {
           let packageManifest;
@@ -294,7 +318,7 @@ export async function verifyCommunityCache(manifest, cacheRoot = defaultCacheRoo
       }
     }
   }
-  return { cacheRoot: resolvedRoot, receipts, missing, complete: missing.length === 0 };
+  return { cacheRoot: resolvedRoot, receipts, missing, files, complete: missing.length === 0 };
 }
 
 export {
@@ -303,5 +327,7 @@ export {
   assertSafeCacheRoot,
   assertValidManifest,
   CACHE_FILE_LIMITS,
+  COMMUNITY_FIXTURE_REQUIRED_FILES,
+  COMMUNITY_FIXTURE_TREE_SHA256,
   manifestPath,
 };

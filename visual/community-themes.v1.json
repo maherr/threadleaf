@@ -8,7 +8,20 @@
   },
   "fixture": {
     "root": "fixtures/vaults/visual-regression",
-    "treeSha256": "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff"
+    "treeSha256": "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff",
+    "requiredFiles": [
+      "00 Overview.md",
+      "01 Linked Note.md",
+      "02 Empty Note.md",
+      "03 Missing Target.md",
+      "04 Long Text.md",
+      ".obsidian/plugins/threadleaf-fixture/main.js",
+      ".obsidian/plugins/threadleaf-fixture/manifest.json",
+      ".obsidian/plugins/threadleaf-fixture/styles.css",
+      ".obsidian/snippets/visual-spacing.css",
+      ".obsidian/themes/Threadleaf Visual/manifest.json",
+      ".obsidian/themes/Threadleaf Visual/theme.css"
+    ]
   },
   "cache": {
     "defaultDirectory": "$XDG_CACHE_HOME/threadleaf/community-themes-v1",
