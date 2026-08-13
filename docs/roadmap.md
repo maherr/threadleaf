@@ -236,8 +236,10 @@ normal external vault backup and the privacy-safe feedback workflow.
 - [x] Publish deterministic public benchmark corpora and relative regression budgets for the
       supported headless index, rebuild, watcher-burst, search, and runtime-activation seams,
       with correctness checks, machine-readable results, and an opt-in timing gate.
-- [ ] Add cross-platform Electron first-paint, editor-latency, plugin-activation, image-decoding,
-      and reliable memory regression seams once they can be measured without proxy claims.
+- [x] Add a Linux/Xvfb Electron seam for first-paint, editor-latency, plugin-activation,
+      bounded local image decoding, and renderer/main memory with event, correctness, warm/cold,
+      environment, relative-budget, machine-readable, and cleanup guards. Windows and macOS remain
+      explicitly unsupported until equivalent non-X11 probes exist.
 - [ ] Run plugin bundles through automated compatibility and security checks before distribution.
 - [ ] Verify representative open plugins for queries, tasks, templates, Git, citations, calendars,
       tables, and databases through named end-to-end workflows.

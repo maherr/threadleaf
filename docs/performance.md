@@ -60,12 +60,12 @@ robust p90 tail, correctness checks, and a host-dependent memory observation. Th
 relative corpus paths and aggregate counts only, never the generated temporary directory, note
 content, or a private vault path.
 
-The current runner measures the largest coherent non-Electron seam: full metadata-index rebuild,
-workspace runtime activation (kernel, watcher, index, and plugin host without window paint), a
-deterministic external watcher burst plus incremental index reconciliation, and rare and broad
-search queries. Editor keystroke latency, plugin activation, image decoding, and Electron first
-paint are deliberately omitted because this architecture does not yet expose a stable headless
-seam for them. Memory is an observation, not a budget.
+The public scale runner measures the largest coherent non-Electron seam: full metadata-index
+rebuild, workspace runtime activation (kernel, watcher, index, and plugin host without window
+paint), a deterministic external watcher burst plus incremental index reconciliation, and rare and
+broad search queries. The separate Electron seam below measures first paint, editor input,
+plugin activation, bounded local image decode, and renderer/main resident memory with real
+renderer events and process observations rather than proxy timers.
 
 The checked-in [`benchmarks/baseline.json`](../benchmarks/baseline.json) is a Linux x64 reference
 run for the `large` profile, not a cross-machine SLA. Relative budgets compare p50 and p90 against
@@ -78,6 +78,52 @@ with the documented warmup/sample count, inspect correctness and host metadata, 
 checked-in baseline metrics with that reviewed result, and record the reason in the changelog.
 Do not update it to make an unexplained regression green. The baseline and relative policy live in
 `benchmarks/baseline.json` and `benchmarks/budgets.ts`.
+
+## Electron performance seams
+
+The isolated Electron harness is Linux-only and requires Xvfb with explicit X11. Build first, then
+run a reviewed repeated sample set:
+
+```sh
+pnpm run build
+node scripts/check-performance-seams.mjs \
+  --warmups 1 --samples 5 --output /tmp/threadleaf-performance-seams.json
+```
+
+The machine-readable result follows [`benchmarks/performance-result-schema.json`](../benchmarks/performance-result-schema.json).
+It records Node and Electron versions, commit and dirty-worktree state, CPU, kernel, memory,
+display mode, GPU mode, cold and warm definitions, correctness guards, raw samples, median, p90,
+budget evaluation and enforcement status, and explicit limitations. A baseline is comparable only
+when its platform, architecture, display/GPU mode, CPU identity/count, and memory total match the
+current host profile; `--enforce-budgets` fails closed on a mismatch. `pnpm check` runs deterministic metric-policy checks plus
+the cleanup fixture through
+`pnpm test:performance-seams`; the cleanup case starts reparented and delayed marked watchers, then
+proves that no marked process, inotify descriptor, or owned profile survives cleanup.
+
+The measured events are deliberately narrow:
+
+- First paint is the renderer's `threadleaf:shell-ready` performance mark after the initial
+  snapshot render and the next `requestAnimationFrame`, with a visible body and shell data marker.
+- Editor input is CDP `Input.dispatchKeyEvent` to CodeMirror's committed text by the next
+  `requestAnimationFrame`, with one input event per key and the expected suffix check.
+- Plugin activation is the first real `setPluginEnabled` lifecycle response after each cold or warm
+  launch for a fixture plugin, guarded by loaded state and its registered command.
+- Image timing is the first decode after each cold or warm launch. It starts when the first exact
+  local fixture image enters reading view and ends only after every `HTMLImageElement.decode()`
+  resolves and every image is `complete` with the expected natural dimensions. Vault read and IPC
+  time before that first image are intentionally outside this interval.
+- Memory is Linux `/proc` `VmRSS` for the Electron browser and descendant renderer processes before
+  and after plugin activation. It is not a JavaScript heap or leak proof.
+
+Cold launches use a fresh Electron user-data directory and renderer process. Warm launches reuse
+one user-data directory after a discarded warmup; filesystem and renderer caches remain host
+dependent. Relative timing and memory budgets compare only against a reviewed same-host baseline,
+and are opt-in. A single-sample run is a smoke check, not a useful regression baseline.
+
+This does not claim Windows or macOS coverage. Their Electron display, input, process-tree, and
+memory probes remain unsupported until equivalent non-X11 seams exist. The editor event excludes a
+physical keyboard, OS input stack, and display scanout; first paint is not a compositor swap or a
+human-perceived paint timestamp; GPU-disabled Xvfb is not a normal desktop rendering profile.
 
 ## Large mixed-workspace cold-start observation
 

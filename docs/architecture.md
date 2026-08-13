@@ -879,7 +879,7 @@ Capability host ---> native Threadleaf extension
   deterministic fallbacks documented above.
 - Metadata schema and migration strategy.
 - Behavior-import apply, rollback, and conflict semantics for the existing preview schema.
-- Cross-platform Electron-window, editor-latency, and plugin-activation benchmark seams; the
-  headless kernel/index/watcher benchmark corpus and relative budgets are now public.
+- Windows and macOS Electron-window, editor-latency, and plugin-activation benchmark seams; the
+  Linux/Xvfb seam, headless kernel/index/watcher corpus, and relative budgets are now public.
 - Signing, notarization, native-package reproducibility, and automatic-update channels.
 - Encrypted object format, key hierarchy, recovery model, and residual-metadata budget.

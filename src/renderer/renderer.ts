@@ -11161,7 +11161,11 @@ void window.threadleaf
   .getSnapshot()
   .then((snapshot) => {
     render(snapshot);
-    window.requestAnimationFrame(() => window.threadleaf.markStartupShellReady());
+    window.requestAnimationFrame(() => {
+      document.documentElement.dataset.threadleafShellReady = "true";
+      performance.mark("threadleaf:shell-ready");
+      window.threadleaf.markStartupShellReady();
+    });
   })
   .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
 void window.threadleaf
