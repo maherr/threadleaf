@@ -381,7 +381,28 @@ describe("live preview inline model", () => {
       ).toBe(false);
     }
   });
+
+  it("never resolves a Markdown destination close across an embedded newline", () => {
+    // buildLivePreviewMapping always splits into single lines before calling
+    // parseLivePreviewLine, but parseLivePreviewLine is itself exported and
+    // its name is the only promise of single-line input -- nothing enforces
+    // it on a caller. The pre-scan cursor loop this replaced explicitly
+    // stopped at `if (character === "\n") break`; scanMarkdownDestinations
+    // must keep that boundary rather than silently matching a destination's
+    // closing parenthesis on a later line.
+    const tokens = parseLivePreviewLine("[a](\nb) [c](d)", 0);
+    expect(tokens.find((token) => token.from === 0)?.link).toBeUndefined();
+    expect(tokens.find((token) => token.link?.target === "d")).toBeDefined();
+  });
 });
+
+function measureNestedDestinationScan(size: number): number {
+  const source = "[label](".repeat(size) + ")".repeat(size);
+  const started = performance.now();
+  const mapping = buildLivePreviewMapping(source);
+  expect(mapping.source).toBe(source);
+  return performance.now() - started;
+}
 
 describe("source/decorated mapping fixture", () => {
   it("matches every public delimiter and nested-combination offset", () => {

@@ -386,11 +386,26 @@ function scanMarkdownDestinations(text: string): MarkdownDestinationScan {
     stack.push(index);
   }
 
+  // A destination can never be found to close past a newline. One backward
+  // pass records the nearest newline at or after each position so a close
+  // that would cross one can be rejected in O(1) per start below, matching
+  // the single-pass cursor scan's original `if (character === "\n") break`
+  // without rescanning the intervening text (which would reintroduce a
+  // quadratic cost on inputs with many nested opens).
+  const nextNewlineFrom = new Int32Array(text.length + 1);
+  nextNewlineFrom[text.length] = text.length;
+  for (let index = text.length - 1; index >= 0; index -= 1) {
+    nextNewlineFrom[index] =
+      text[index] === "\n" ? index : (nextNewlineFrom[index + 1] ?? text.length);
+  }
+
   const closingByStart = new Int32Array(text.length + 1);
   closingByStart.fill(-1);
   for (let start = 0; start < text.length; start += 1) {
     const lower = nextLower[start] ?? -1;
-    if (lower > start) closingByStart[start] = lower - 1;
+    if (lower > start && lower - 1 < (nextNewlineFrom[start] ?? text.length)) {
+      closingByStart[start] = lower - 1;
+    }
   }
   return {
     closingByStart,
