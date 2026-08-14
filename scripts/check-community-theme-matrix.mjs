@@ -1011,7 +1011,7 @@ async function probeCues() {
     const focusStyle = getComputedStyle(input);
     const focusBackground = paintedBackground(input);
     const roleSelectors = [
-      ['active-file', '#file-list [aria-current="page"]', 'color'],
+      ['active-file', '#file-list [aria-current="page"]', 'borderColor'],
       ['section-heading', '#files-heading', 'color'],
       ['muted-summary', '#filter-summary', 'color'],
       ['signal-accent', '.toast', 'borderColor'],
