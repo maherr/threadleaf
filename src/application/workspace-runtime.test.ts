@@ -4,11 +4,19 @@ import path from "node:path";
 import moment from "moment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
+import type { KernelFaultInjector } from "../kernel/vault-kernel";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
-import { WorkspaceRuntime } from "./workspace-runtime";
+import {
+  absenceConfirmationIntervalMs,
+  maximumAbsenceConfirmationAttempts,
+  startupAbsenceMaximumSettleMs,
+  startupAbsenceSettleMs,
+  transientAbsenceSettleMs,
+  WorkspaceRuntime,
+} from "./workspace-runtime";
 import {
   createWorkspaceLayout,
   type PersistedWorkspaceState,
@@ -158,9 +166,22 @@ class BlockingWorkspaceStateStore implements WorkspaceStateStore {
     if (this.#saveCount >= target) {
       return;
     }
-    await new Promise<void>((resolve) => {
+    // Bounded and rejecting: an unbounded wait made every race test that
+    // uses this store fail at vitest's global default under machine load,
+    // with the timeout blamed on whichever assertion happened to be next.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `waitForSaveCount(${target}) still at ${this.#saveCount} after 15000ms`,
+          ),
+        );
+      }, 15_000);
       const waiters = this.#saveCountWaiters.get(target) ?? [];
-      waiters.push(resolve);
+      waiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
       this.#saveCountWaiters.set(target, waiters);
     });
   }
@@ -199,10 +220,29 @@ afterEach(async () => {
   await fs.rm(sandboxPath, { recursive: true, force: true });
 });
 
+/**
+ * The clock the absence settle windows are measured against.
+ *
+ * A test that has to prove either side of a window drives this instead of
+ * sleeping, so its result says which side of the boundary the behaviour is on
+ * rather than how quickly this machine happened to get through the passes.
+ */
+function manualClock(start = Date.now()): { now: () => number; advance: (ms: number) => void } {
+  let value = start;
+  return {
+    now: () => value,
+    advance: (ms: number) => {
+      value += ms;
+    },
+  };
+}
+
 async function openRuntime(
   workspaceStateStore?: WorkspaceStateStore,
   workspaceSettings?: Partial<VaultWorkspaceSettings>,
   beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>,
+  faultInjector?: KernelFaultInjector,
+  now?: () => number,
 ): Promise<WorkspaceRuntime> {
   runtime = await WorkspaceRuntime.open({
     vaultRoot: vaultPath,
@@ -210,6 +250,8 @@ async function openRuntime(
     pluginDirectory: path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"),
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
     ...(beforeWorkspaceStateRestore ? { beforeWorkspaceStateRestore } : {}),
+    ...(faultInjector ? { faultInjector } : {}),
+    ...(now ? { now } : {}),
     ...(workspaceSettings
       ? {
           workspaceSettings: {
@@ -1123,17 +1165,42 @@ describe("WorkspaceRuntime", () => {
     expect(second.workspace?.files).toBe(first.workspace?.files);
   });
 
-  it("restores ordered tabs, chooses a surviving active note, and prunes stale paths", async () => {
+  it("restores ordered tabs, keeps one the vault has not listed, and prunes it once confirmed", async () => {
     const store = new MemoryWorkspaceStateStore({
       openPaths: ["Welcome.md", "Missing.md", "Linked Note.md"],
       pinnedPaths: ["Welcome.md", "Missing.md"],
       activePath: "Missing.md",
     });
-    const workspace = await openRuntime(store);
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
 
+    // A file the vault has not listed yet is not a file anyone deleted, and the
+    // restore has watched nothing happen to it. The tab and its pin survive on
+    // first sight, and no state that drops them is written back. The selection
+    // does move: nothing readable has been published for the path this session,
+    // so it cannot be what the pane renders yet.
     const snapshot = await workspace.getSnapshot();
-
     expect(snapshot.workspace).toMatchObject({
+      tabs: [
+        { path: "Welcome.md", active: false, pinned: true },
+        { path: "Missing.md", active: false, pinned: true },
+        { path: "Linked Note.md", active: true, pinned: false },
+      ],
+      activeNote: { path: "Linked Note.md" },
+    });
+    for (const saved of store.saved) {
+      expect(saved.panes[0]?.openPaths).toContain("Missing.md");
+      expect(saved.panes[0]?.pinnedPaths).toContain("Missing.md");
+    }
+    expect(snapshot.vault.warning).toBeNull();
+
+    // It is still confirm-scanned, so a file deleted before this session started
+    // does resolve away rather than keeping a tab forever.
+    clock.advance(startupAbsenceSettleMs + 1);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    const pruned = await workspace.reconcileNow();
+    expect(pruned.workspace).toMatchObject({
       tabs: [
         { path: "Welcome.md", active: false, pinned: true },
         { path: "Linked Note.md", active: true, pinned: false },
@@ -1149,7 +1216,6 @@ describe("WorkspaceRuntime", () => {
         },
       ],
     });
-    expect(snapshot.vault.warning).toBeNull();
   });
 
   it("runs startup recovery before restoring and pruning workspace state", async () => {
@@ -1164,14 +1230,27 @@ describe("WorkspaceRuntime", () => {
       return load(vaultId);
     };
 
-    const workspace = await openRuntime(store, undefined, async () => {
-      events.push("recover");
-    });
+    const clock = manualClock();
+    const workspace = await openRuntime(
+      store,
+      undefined,
+      async () => {
+        events.push("recover");
+      },
+      undefined,
+      clock.now,
+    );
 
     expect(events).toEqual(["recover", "restore"]);
     expect((await workspace.getSnapshot()).workspace).toMatchObject({
       activeNote: { path: "Linked Note.md" },
     });
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Missing.md", "Linked Note.md"]);
+
+    clock.advance(startupAbsenceSettleMs + 1);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    await workspace.reconcileNow();
     expect(store.saved.at(-1)).toMatchObject({
       panes: [{ openPaths: ["Linked Note.md"], activePath: "Linked Note.md" }],
     });
@@ -1334,7 +1413,8 @@ describe("WorkspaceRuntime", () => {
 
   it("keeps open tabs aligned with external note renames and deletions", async () => {
     const store = new MemoryWorkspaceStateStore();
-    const workspace = await openRuntime(store);
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
     await workspace.openNote("Welcome.md");
     const pinned = await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
     expect(pinned.workspace?.tabs).toContainEqual(
@@ -1353,6 +1433,14 @@ describe("WorkspaceRuntime", () => {
     });
 
     await fs.unlink(path.join(vaultPath, "Renamed.md"));
+    // A deletion nothing in this process performed is accepted once it has
+    // survived its settle window and a run of re-reads that all found it gone.
+    // That is what tells a removal apart from the gap in the middle of an
+    // outside writer's atomic replace, which no claim in this process covers.
+    await workspace.reconcileNow();
+    clock.advance(2000);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const deleted = await workspace.reconcileNow();
     expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
     expect(deleted.workspace).toMatchObject({
@@ -1363,7 +1451,8 @@ describe("WorkspaceRuntime", () => {
 
   it("remaps and removes history entries when notes are renamed or deleted", async () => {
     const store = new MemoryWorkspaceStateStore();
-    const workspace = await openRuntime(store);
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
     await workspace.openNote("Welcome.md");
     await workspace.openNote("Linked Note.md");
 
@@ -1378,6 +1467,12 @@ describe("WorkspaceRuntime", () => {
 
     await workspace.goForward(workspace.vaultId);
     await fs.unlink(path.join(vaultPath, "Renamed.md"));
+    // History entries are scrubbed once the absence is confirmed, which is after
+    // its settle window rather than on the pass straight after it was observed.
+    await workspace.reconcileNow();
+    clock.advance(2000);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const deleted = await workspace.reconcileNow();
     expect(deleted.workspace?.activeNote?.path).toBe("Linked Note.md");
     expect(deleted.workspace?.panes[0]).toMatchObject({ canGoBack: false });
@@ -2646,5 +2741,1823 @@ describe("WorkspaceRuntime", () => {
     await expect(workspace.openNote("Welcome.md")).resolves.toMatchObject({
       workspace: { activeNote: { path: "Welcome.md" } },
     });
+  });
+});
+
+describe("WorkspaceRuntime atomic-replace reconciliation", () => {
+  const attachmentBytes = Buffer.from("%PDF-1.7\nopaque attachment bytes\n", "ascii");
+
+  async function seedAttachmentDesk(): Promise<void> {
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), attachmentBytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Attachment Desk.md"),
+      "# Attachment Desk\n\n![[Assets/report.pdf|Report]]\n\n[download](Assets/report.pdf)\n",
+      "utf8",
+    );
+  }
+
+  function tabPaths(snapshot: RuntimeSnapshot): string[] {
+    return (snapshot.workspace?.tabs ?? []).map(({ path: filePath }) => filePath);
+  }
+
+  it("keeps a pinned tab through the move-aside window of an attachment move", async () => {
+    await seedAttachmentDesk();
+    const store = new MemoryWorkspaceStateStore();
+    let racedScans = 0;
+    let observedAbsence = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || racedScans > 0) {
+        return;
+      }
+      racedScans += 1;
+      // The transaction is holding the note aside right now, which is exactly
+      // the state a scan misreads as a deletion.
+      observedAbsence = await fs
+        .stat(path.join(vaultPath, "Attachment Desk.md"))
+        .then(() => false)
+        .catch(() => true);
+      await runtime?.reconcileNow();
+    });
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Attachment Desk.md");
+    await workspace.toggleTabPin("Attachment Desk.md", "primary", workspace.vaultId);
+    const before = store.saved.at(-1);
+
+    const source = await workspace.kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected the attachment bytes.");
+    const preview = await workspace.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report-renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+    );
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected an attachment move confirmation.");
+    }
+    const moved = await workspace.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report-renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+    );
+    expect(moved.outcome).toMatchObject({ status: "published-source-retained" });
+    expect(racedScans).toBe(1);
+    expect(observedAbsence).toBe(true);
+
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Attachment Desk.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toContain("Archive/report-renamed.pdf");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Attachment Desk.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(before?.panes[0]?.openPaths);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Attachment Desk.md");
+  });
+
+  it("keeps a pinned tab through the move-aside window of a note save", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let racedScans = 0;
+    let observedAbsence = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || racedScans > 0) {
+        return;
+      }
+      racedScans += 1;
+      observedAbsence = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      await runtime?.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the race\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect(racedScans).toBe(1);
+    expect(observedAbsence).toBe(true);
+
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toBe("# Welcome\n\nsaved through the race\n");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+  });
+
+  it("keeps a pinned tab through an external atomic replace", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    const before = store.saved.at(-1);
+
+    // No kernel transaction: an outside writer renaming its replacement into
+    // place leaves the same gap, and the workspace has nothing to attribute it to.
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(path.join(vaultPath, "Welcome.md"), asidePath);
+    const during = await workspace.reconcileNow();
+    // The tab is not hidden while the absence is unconfirmed: it stays open,
+    // pinned and active, and its note is republished from what was last read.
+    expect(during.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+
+    await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome\n\nreplaced\n", "utf8");
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toBe("# Welcome\n\nreplaced\n");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(before?.panes[0]?.openPaths);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+  });
+
+  it("closes the tab once an external deletion is confirmed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(2000);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+    expect(settled.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+  });
+
+  it("closes the tab for a live watcher deletion with no further vault activity", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+
+    // Deferring a deletion is only safe if something still asks the vault the
+    // second question. A deletion is the last filesystem event of its burst, so
+    // nothing here drives the watcher and no test call reconciles: the
+    // confirmation pass has to be requested by the deferral itself. This asserts
+    // the persisted layout rather than the published one, because only the
+    // written-back projection distinguishes a confirmed close from the one pass
+    // the display hides an unconfirmed path for.
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    const deadline = Date.now() + 15000;
+    while (
+      Date.now() < deadline &&
+      (store.saved.at(-1)?.panes[0]?.openPaths ?? []).includes("Welcome.md")
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    const settled = await workspace.getSnapshot();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+    expect(settled.workspace?.activeNote?.path).toBe("Linked Note.md");
+  }, 30000);
+
+  it("closes the tab on a deliberate trash and still refuses a pinned one", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await expect(
+      workspace.deleteNote("Welcome.md", note.revision, workspace.vaultId),
+    ).rejects.toThrow("Unpin this tab before closing it.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const deleted = await workspace.deleteNote("Welcome.md", note.revision, workspace.vaultId);
+    expect(deleted.outcome).toMatchObject({ status: "committed" });
+    expect(tabPaths(deleted.snapshot)).toEqual(["Linked Note.md"]);
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+  });
+
+  it("keeps the tab and releases the claim when a write rolls its target back", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let racedScans = 0;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || racedScans > 0) {
+        return;
+      }
+      racedScans += 1;
+      await runtime?.reconcileNow();
+      // Change the rolled-back copy so the transaction takes its restore-and-
+      // conflict exit instead of installing the replacement.
+      const rollbackName = (await fs.readdir(vaultPath)).find((name) =>
+        name.startsWith(".threadleaf-rollback-"),
+      );
+      if (!rollbackName) throw new Error("Expected a rollback copy inside the window.");
+      await fs.writeFile(path.join(vaultPath, rollbackName), "# Welcome\n\nrolled back\n", "utf8");
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nnever installed\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "conflict" });
+    expect(racedScans).toBe(1);
+    expect(workspace.kernel.transientAbsences.operationFor("Welcome.md")).toBeUndefined();
+
+    const settled = await workspace.reconcileNow();
+    // A conflict activates its conflict copy, which is unchanged behaviour. What
+    // matters here is that the note's own tab and pin survived the window.
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
+    expect(settled.workspace?.activeNote?.path).toMatch(/^Welcome\.threadleaf-conflict-/);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(
+      "# Welcome\n\nrolled back\n",
+    );
+  });
+
+  it("keeps the tab when a second write reopens the window before the first is confirmed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let windows = 0;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside") {
+        return;
+      }
+      windows += 1;
+      await runtime?.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const first = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\none\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    if (first.outcome.status !== "committed") throw new Error("Expected the first save.");
+    // The second window opens before anything confirmed the absence the first
+    // one left behind, so the confirmation lands while the file is aside again.
+    const second = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\ntwo\n",
+      first.outcome.revision,
+      workspace.vaultId,
+    );
+    expect(second.outcome).toMatchObject({ status: "committed" });
+    expect(windows).toBe(2);
+
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toBe("# Welcome\n\ntwo\n");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("releases the claim when a write throws inside its move-aside window", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    let raced = false;
+    const workspace = await openRuntime(
+      store,
+      undefined,
+      undefined,
+      async (point) => {
+        if (point !== "write:after-move-aside" || raced) {
+          return;
+        }
+        raced = true;
+        await runtime?.reconcileNow();
+        throw new Error("injected move-aside failure");
+      },
+      clock.now,
+    );
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+
+    await expect(
+      workspace.saveNote("Welcome.md", "# Welcome\n\nlost\n", note.revision, workspace.vaultId),
+    ).rejects.toThrow("injected move-aside failure");
+    expect(raced).toBe(true);
+    expect(workspace.kernel.transientAbsences.operationFor("Welcome.md")).toBeUndefined();
+
+    // The claim is gone, so the absence is now confirmable like any other: the
+    // file really did not come back, and the tab closes once its window ends.
+    await workspace.reconcileNow();
+    clock.advance(2000);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+  });
+});
+
+describe("WorkspaceRuntime absence confirmation at the sink", () => {
+  // Several of these replace a global filesystem call. A test that fails before
+  // its own restore would otherwise hand the stub to every test after it.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function tabPaths(snapshot: RuntimeSnapshot): string[] {
+    return (snapshot.workspace?.tabs ?? []).map(({ path: filePath }) => filePath);
+  }
+
+  async function openPinnedPair(
+    store: MemoryWorkspaceStateStore,
+    now?: () => number,
+  ): Promise<WorkspaceRuntime> {
+    const workspace = await openRuntime(store, undefined, undefined, undefined, now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    return workspace;
+  }
+
+  function persistedTrackedPaths(store: BlockingWorkspaceStateStore): string[] {
+    return (store.inner.value?.panes ?? []).flatMap((pane) => [
+      ...pane.openPaths,
+      ...pane.pinnedPaths,
+      ...(pane.activePath ? [pane.activePath] : []),
+      ...(pane.navigationHistory?.back ?? []),
+      ...(pane.navigationHistory?.forward ?? []),
+    ]);
+  }
+
+  async function raceConfirmedWelcomeRemovalAgainst(
+    workspace: WorkspaceRuntime,
+    store: BlockingWorkspaceStateStore,
+    clock: ReturnType<typeof manualClock>,
+    mutation: () => Promise<RuntimeSnapshot>,
+  ): Promise<void> {
+    await workspace.watcher.close();
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    const firstConfirmation = await workspace.reconcileNow();
+    expect(
+      firstConfirmation.workspace?.panes.flatMap((pane) =>
+        pane.tabs.map(({ path: filePath }) => filePath),
+      ),
+    ).toContain("Welcome.md");
+    clock.advance(absenceConfirmationIntervalMs + 1);
+
+    store.resetSaveCount();
+    store.blockSaves();
+    let pendingMutation: Promise<RuntimeSnapshot> | undefined;
+    let confirmation: Promise<RuntimeSnapshot> | undefined;
+    try {
+      pendingMutation = mutation();
+      await store.waitForSaveCount(1);
+      confirmation = workspace.reconcileNow();
+      await store.waitForSaveCount(2);
+    } finally {
+      store.releaseSaves();
+    }
+    if (!pendingMutation || !confirmation) {
+      throw new Error("The blocked workspace mutation did not reach the confirmation race.");
+    }
+    await Promise.all([pendingMutation, confirmation]);
+  }
+
+  it("bounds confirmation work during unrelated churn and still closes deleted notes and canvases", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+    await workspace.openNote("Linked Note.md");
+    await workspace.watcher.close();
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await fs.unlink(path.join(vaultPath, "Boards", "Overview.canvas"));
+    const observed = await workspace.reconcileNow();
+    expect(tabPaths(observed)).toEqual(
+      expect.arrayContaining(["Welcome.md", "Boards/Overview.canvas"]),
+    );
+
+    const probes = new Map([
+      ["Welcome.md", 0],
+      ["Boards/Overview.canvas", 0],
+    ]);
+    const realpath = fs.realpath;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string") {
+        for (const filePath of probes.keys()) {
+          if (probed.endsWith(`/${filePath}`)) {
+            probes.set(filePath, (probes.get(filePath) ?? 0) + 1);
+          }
+        }
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    // Activity elsewhere in the vault may cause arbitrarily many reconciliation
+    // passes. It cannot spend, replenish, or otherwise touch either target's
+    // per-absence confirmation work while the settle window is still open.
+    for (let pass = 0; pass < 24; pass += 1) {
+      await fs.writeFile(path.join(vaultPath, "Churn.md"), `# Churn ${pass}\n`, "utf8");
+      const during = await workspace.reconcileNow();
+      expect(tabPaths(during)).toEqual(
+        expect.arrayContaining(["Welcome.md", "Boards/Overview.canvas"]),
+      );
+    }
+
+    clock.advance(transientAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let confirmation = 0; confirmation < 6; confirmation += 1) {
+      await fs.writeFile(
+        path.join(vaultPath, "Churn.md"),
+        `# Confirmation churn ${confirmation}\n`,
+        "utf8",
+      );
+      settled = await workspace.reconcileNow();
+      clock.advance(250);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(tabPaths(settled)).not.toContain("Boards/Overview.canvas");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).not.toContain("Boards/Overview.canvas");
+    expect(Object.fromEntries(probes)).toEqual({
+      "Welcome.md": expect.any(Number),
+      "Boards/Overview.canvas": expect.any(Number),
+    });
+    expect(probes.get("Welcome.md")).toBeLessThanOrEqual(4);
+    expect(probes.get("Boards/Overview.canvas")).toBeLessThanOrEqual(4);
+  });
+
+  it("converges after bounded alternating indeterminate and absent reads", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.watcher.close();
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+
+    const realpath = fs.realpath;
+    let targetProbes = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        targetProbes += 1;
+        if (targetProbes % 2 === 1) {
+          const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
+          error.code = "EACCES";
+          throw error;
+        }
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    let settled = await workspace.getSnapshot();
+    for (let confirmation = 0; confirmation < 12; confirmation += 1) {
+      settled = await workspace.reconcileNow();
+      clock.advance(250);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(targetProbes).toBeGreaterThan(0);
+    expect(targetProbes).toBeLessThanOrEqual(4);
+  });
+
+  it("does not let a retained-tab selection resurrect a concurrently confirmed deletion", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.watcher.close();
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+
+    store.resetSaveCount();
+    store.blockSaves();
+    const selection = workspace.openNote("Welcome.md");
+    await store.waitForSaveCount(1);
+    const confirmation = workspace.reconcileNow();
+    await store.waitForSaveCount(2);
+    store.releaseSaves();
+    await Promise.all([selection, confirmation]);
+
+    const openPaths = store.inner.value?.panes[0]?.openPaths ?? [];
+    expect(openPaths).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a tab-pin save against a concurrently confirmed removal and permits a later reopen", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+
+    await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome\n\nreturned\n", "utf8");
+    await workspace.reconcileNow();
+    await workspace.openNote("Welcome.md");
+    const repinned = await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    expect(repinned.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(store.inner.value?.panes[0]?.pinnedPaths).toContain("Welcome.md");
+  });
+
+  it("guards a tab-reorder save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    const created = await workspace.createNote("Third", "# Third\n", workspace.vaultId);
+    expect(created.outcome).toMatchObject({ status: "committed", path: "Third.md" });
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.reorderWorkspaceTab("Third.md", "primary", 1, workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a pane-transfer save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.moveNoteToWorkspacePane("Welcome.md", "primary", "secondary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a history-navigation save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    expect(store.inner.value?.panes[0]?.navigationHistory?.back).toContain("Welcome.md");
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.goBack(workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a pane-close save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.closeWorkspacePane("secondary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards history navigation when confirmation lands inside its visible-path read", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    expect(store.value?.panes[0]?.navigationHistory?.back).toContain("Welcome.md");
+
+    await workspace.watcher.close();
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    const first = await workspace.reconcileNow();
+    expect(tabPaths(first)).toContain("Welcome.md");
+    clock.advance(absenceConfirmationIntervalMs + 1);
+
+    const realList = workspace.kernel.listVisiblePaths.bind(workspace.kernel);
+    let injected = false;
+    vi.spyOn(workspace.kernel, "listVisiblePaths").mockImplementation(async () => {
+      const result = await realList();
+      if (!injected) {
+        injected = true;
+        await workspace.reconcileNow();
+      }
+      return result;
+    });
+
+    await workspace.goBack(workspace.vaultId);
+    vi.restoreAllMocks();
+    expect(injected).toBe(true);
+
+    const persisted = store.value?.panes.flatMap((pane) => [
+      ...pane.openPaths,
+      ...pane.pinnedPaths,
+      ...(pane.activePath ? [pane.activePath] : []),
+      ...(pane.navigationHistory?.back ?? []),
+      ...(pane.navigationHistory?.forward ?? []),
+    ]);
+    expect(persisted).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("keeps an unrelated pin when a confirmed removal scrubs the same pane state", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.toggleTabPin("Linked Note.md", "primary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+
+    const snapshot = await workspace.getSnapshot();
+    expect(store.inner.value?.panes[0]?.pinnedPaths ?? []).toContain("Linked Note.md");
+    expect(snapshot.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Linked Note.md", pinned: true }),
+    );
+  });
+
+  it("keeps another pane's pin when a confirmed removal scrubs the workspace state", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    expect(store.inner.value?.panes[0]?.openPaths).toContain("Welcome.md");
+    expect(store.inner.value?.panes[1]?.openPaths).toEqual(["Linked Note.md"]);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.toggleTabPin("Linked Note.md", "secondary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+
+    const snapshot = await workspace.getSnapshot();
+    expect(store.inner.value?.panes[1]?.pinnedPaths ?? []).toContain("Linked Note.md");
+    expect(snapshot.workspace?.panes.find(({ id }) => id === "secondary")?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Linked Note.md", pinned: true }),
+    );
+  });
+
+  it("extends a startup absence while that exact path is active and keeps a slow arrival", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Syncing.md"],
+      pinnedPaths: ["Syncing.md"],
+      activePath: "Syncing.md",
+    });
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.watcher.close();
+    let syncingActivity = 0;
+    vi.spyOn(workspace.watcher, "activityVersionForPath").mockImplementation((filePath) =>
+      filePath === "Syncing.md" ? syncingActivity : 0,
+    );
+
+    clock.advance(startupAbsenceSettleMs - 1);
+    syncingActivity += 1;
+    await workspace.reconcileNow();
+
+    // This is beyond the fixed startup window. Two confirmation opportunities
+    // would have removed the tab without the exact-path quiet extension.
+    clock.advance(2);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    const beyondFixedWindow = await workspace.reconcileNow();
+    expect(tabPaths(beyondFixedWindow)).toContain("Syncing.md");
+
+    clock.advance(startupAbsenceSettleMs / 2);
+    await fs.writeFile(
+      path.join(vaultPath, "Syncing.md"),
+      "# Syncing\n\narrived after the fixed window\n",
+      "utf8",
+    );
+    await workspace.reconcileNow();
+    const landed = await workspace.openNote("Syncing.md");
+    expect(landed.workspace?.activeNote?.content).toBe(
+      "# Syncing\n\narrived after the fixed window\n",
+    );
+    expect(landed.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true, active: true }),
+    );
+    for (const saved of store.saved) {
+      expect(saved.panes[0]?.openPaths).toContain("Syncing.md");
+      expect(saved.panes[0]?.pinnedPaths).toEqual(["Syncing.md"]);
+    }
+  });
+
+  it("closes a startup absence within the bounded confirmation tail once the vault is quiet", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Never Arrives.md"],
+      pinnedPaths: ["Never Arrives.md"],
+      activePath: "Never Arrives.md",
+    });
+    const clock = manualClock();
+    const startedAt = clock.now();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.watcher.close();
+    const realpath = fs.realpath;
+    let targetProbes = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Never Arrives.md")) {
+        targetProbes += 1;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    clock.advance(startupAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let attempt = 0; attempt < maximumAbsenceConfirmationAttempts; attempt += 1) {
+      settled = await workspace.reconcileNow();
+      if (!tabPaths(settled).includes("Never Arrives.md")) break;
+      clock.advance(absenceConfirmationIntervalMs + 1);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Never Arrives.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+    expect(targetProbes).toBeLessThanOrEqual(maximumAbsenceConfirmationAttempts);
+    expect(clock.now() - startedAt).toBeLessThanOrEqual(
+      startupAbsenceSettleMs +
+        maximumAbsenceConfirmationAttempts * (absenceConfirmationIntervalMs + 1) +
+        1,
+    );
+  });
+
+  it("caps startup extensions even when exact-path activity never becomes quiet", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Still Syncing.md"],
+      pinnedPaths: ["Still Syncing.md"],
+      activePath: "Still Syncing.md",
+    });
+    const clock = manualClock();
+    const startedAt = clock.now();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.watcher.close();
+    let syncingActivity = 0;
+    vi.spyOn(workspace.watcher, "activityVersionForPath").mockImplementation((filePath) =>
+      filePath === "Still Syncing.md" ? syncingActivity : 0,
+    );
+
+    const activityStepMs = startupAbsenceSettleMs / 2;
+    while (clock.now() - startedAt < startupAbsenceMaximumSettleMs) {
+      clock.advance(activityStepMs);
+      syncingActivity += 1;
+      await workspace.reconcileNow();
+    }
+    let settled = await workspace.getSnapshot();
+    for (let attempt = 0; attempt < maximumAbsenceConfirmationAttempts; attempt += 1) {
+      syncingActivity += 1;
+      settled = await workspace.reconcileNow();
+      if (!tabPaths(settled).includes("Still Syncing.md")) break;
+      clock.advance(absenceConfirmationIntervalMs + 1);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Still Syncing.md");
+    expect(clock.now() - startedAt).toBeLessThanOrEqual(
+      startupAbsenceMaximumSettleMs +
+        maximumAbsenceConfirmationAttempts * (absenceConfirmationIntervalMs + 1),
+    );
+  });
+
+  it("keeps the tab when an external replacement lands before the batch is handled", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+
+    // The install lands between the scan listing the directory and the workspace
+    // acting on what it listed. A pass-through spy only chooses that instant; the
+    // reconciliation under test is untouched.
+    const accept = workspace.indexReactor.accept.bind(workspace.indexReactor);
+    let sawDelete = false;
+    const spy = vi.spyOn(workspace.indexReactor, "accept").mockImplementation(async (batch) => {
+      const result = await accept(batch);
+      if (batch.changes.some((c) => c.kind === "delete" && c.path === "Welcome.md")) {
+        sawDelete = true;
+        await fs.rename(asidePath, target);
+        spy.mockRestore();
+      }
+      return result;
+    });
+
+    await workspace.reconcileNow();
+    expect(sawDelete).toBe(true);
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab across every replace-window width", async () => {
+    for (const delayMs of [0, 1, 2, 5]) {
+      const store = new MemoryWorkspaceStateStore();
+      const workspace = await openPinnedPair(store);
+      const target = path.join(vaultPath, "Welcome.md");
+      const asidePath = path.join(sandboxPath, `Welcome.md.aside-${delayMs}`);
+
+      // No stubs at all: a real rename-aside, a reconcile started inside the gap,
+      // and a real rename-back after `delayMs`. delay 0 is the band the panel
+      // localised, where the install wins the race with the deferred re-read.
+      await fs.rename(target, asidePath);
+      const reconcile = workspace.reconcileNow();
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await fs.rename(asidePath, target);
+      await reconcile;
+      await workspace.reconcileNow();
+      const settled = await workspace.reconcileNow();
+
+      expect({ delayMs, tabs: tabPaths(settled) }).toEqual({
+        delayMs,
+        tabs: expect.arrayContaining(["Welcome.md"]),
+      });
+      expect({ delayMs, pinned: store.saved.at(-1)?.panes[0]?.pinnedPaths }).toEqual({
+        delayMs,
+        pinned: ["Welcome.md"],
+      });
+      await workspace.close();
+      runtime = undefined;
+    }
+  }, 30000);
+
+  it("keeps the tab when the kernel's own save is scanned on a large vault", async () => {
+    // The claim is released when the write finishes. On a vault big enough that
+    // the scan is still walking at that moment, the deletion reaches the ledger
+    // unattributed - which is the ordinary case, not an exotic one.
+    const bulk = path.join(vaultPath, "Bulk");
+    await fs.mkdir(bulk, { recursive: true });
+    await Promise.all(
+      Array.from({ length: 600 }, (_, index) =>
+        fs.writeFile(path.join(bulk, `n${index}.md`), `# Note ${index}\n`, "utf8"),
+      ),
+    );
+    const store = new MemoryWorkspaceStateStore();
+    let raced = 0;
+    let fileAbsent = false;
+    let reconcile: Promise<unknown> | undefined;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      fileAbsent = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      // Started, not awaited: the walk overlaps the rest of the transaction, so
+      // the claim is released before the diff is annotated and handled.
+      reconcile = runtime.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved on a large vault\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect({ raced, fileAbsent }).toEqual({ raced: 1, fileAbsent: true });
+    await reconcile;
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  }, 30000);
+
+  it("keeps the tab when a read-race rebuild lands during an external replace", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+
+    // The production catch in VaultIndexReactor.accept: one refresh that loses
+    // its race with the filesystem escalates the whole batch to a full rebuild,
+    // which then reads the vault while the file is still aside.
+    const spy = vi.spyOn(workspace.indexReactor.index, "refresh").mockImplementation(async () => {
+      spy.mockRestore();
+      throw new Error("read race");
+    });
+    await fs.writeFile(
+      path.join(vaultPath, "Linked Note.md"),
+      "# Linked Note\n\ntouched\n",
+      "utf8",
+    );
+    const during = await workspace.reconcileNow();
+    expect(during.workspace?.watcher.lastRescanReason).toBe("read-race");
+
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when an overflow rescan lands during an external replace", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.watcher.reportOverflow();
+
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when an overflow rescan lands while the kernel holds the file aside", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let raced = 0;
+    let claimHeld = false;
+    let fileAbsent = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      claimHeld = runtime.kernel.transientAbsences.operationFor("Welcome.md") !== undefined;
+      fileAbsent = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      await runtime.watcher.reportOverflow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the overflow\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect({ raced, claimHeld, fileAbsent }).toEqual({
+      raced: 1,
+      claimHeld: true,
+      fileAbsent: true,
+    });
+
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when a rebuild lands while the kernel holds the file aside", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let raced = 0;
+    let claimHeld = false;
+    let fileAbsent = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      claimHeld = runtime.kernel.transientAbsences.operationFor("Welcome.md") !== undefined;
+      fileAbsent = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      const spy = vi.spyOn(runtime.indexReactor.index, "refresh").mockImplementation(async () => {
+        spy.mockRestore();
+        throw new Error("read race");
+      });
+      await runtime.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    await fs.writeFile(
+      path.join(vaultPath, "Linked Note.md"),
+      "# Linked Note\n\ntouched\n",
+      "utf8",
+    );
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the rebuild\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect({ raced, claimHeld, fileAbsent }).toEqual({
+      raced: 1,
+      claimHeld: true,
+      fileAbsent: true,
+    });
+
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when the confirming re-read cannot tell", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    // An unreadable filesystem is not evidence a file was deleted, and this one
+    // stays unreadable for several passes before the replacement lands.
+    let injected = 0;
+    const realpath = fs.realpath;
+    const spy = vi.spyOn(fs, "realpath").mockImplementation((async (
+      target: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof target === "string" && target.endsWith("/Welcome.md")) {
+        injected += 1;
+        const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
+        error.code = "EACCES";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(target, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    clock.advance(transientAbsenceSettleMs + 1);
+    const blocked = await workspace.reconcileNow();
+    expect(injected).toBeGreaterThan(0);
+    expect(tabPaths(blocked)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    expect(blocked.workspace?.watcher.error).toBeNull();
+
+    spy.mockRestore();
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("applies the rest of a batch when one deleted path cannot be read", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
+    const realpath = fs.realpath;
+    let injected = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        injected += 1;
+        const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
+        error.code = "EACCES";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    // One unreadable path in a batch must not take the batch down with it: the
+    // watcher snapshot has already advanced, so anything dropped here is never
+    // re-emitted, and the failure escalates into a rescan.
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await fs.writeFile(path.join(vaultPath, "Linked Note.md"), "# Linked Note\n\nedited\n", "utf8");
+    // The batch itself makes no filesystem call for the deleted path, which is
+    // why it cannot be taken down by one; the confirming re-read on the pass
+    // after it is where the unreadable path is actually met.
+    const applied = await workspace.reconcileNow();
+    expect(injected).toBe(0);
+    clock.advance(transientAbsenceSettleMs + 1);
+    const settled = await workspace.reconcileNow();
+
+    expect(injected).toBeGreaterThan(0);
+    expect(applied.workspace?.watcher.error).toBeNull();
+    expect(settled.workspace?.watcher.error).toBeNull();
+    expect(settled.workspace?.watcher.lastRescanReason).toBeNull();
+    expect(settled.workspace?.state).toBe("ready");
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    const linked = settled.workspace?.files.find(
+      ({ path: filePath }) => filePath === "Linked Note.md",
+    );
+    expect(linked).toBeDefined();
+    await expect(workspace.kernel.readText("Linked Note.md")).resolves.toMatchObject({
+      content: "# Linked Note\n\nedited\n",
+    });
+  });
+
+  it("republishes the active note unchanged while its file is held aside", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const published: RuntimeSnapshot[] = [];
+    let raced = 0;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      published.push(await runtime.reconcileNow());
+      published.push(await runtime.reconcileNow());
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the window\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(raced).toBe(1);
+    // The editor is showing this buffer. Anything else published for it - a
+    // different note promoted to active, or a re-read of a file that is not
+    // there - resets the document and discards its undo history.
+    expect(published).toHaveLength(2);
+    for (const snapshot of published) {
+      expect(snapshot.workspace?.activeNote).toMatchObject({
+        path: note.path,
+        revision: note.revision,
+        content: note.content,
+      });
+      expect(snapshot.workspace?.tabs).toContainEqual(
+        expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+      );
+    }
+  });
+
+  it("ignores a deletion the workspace is not tracking", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await fs.writeFile(path.join(vaultPath, "Untracked.md"), "# Untracked\n", "utf8");
+    await workspace.reconcileNow();
+    await fs.unlink(path.join(vaultPath, "Untracked.md"));
+
+    let probes = 0;
+    const realpath = fs.realpath;
+    const spy = vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Untracked.md")) {
+        probes += 1;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    spy.mockRestore();
+
+    // A path no pane holds needs no protection, so it never becomes an absence
+    // and never costs a confirmation read. Its file is gone, so the scan cannot
+    // be the source of these probes.
+    expect(probes).toBe(0);
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(tabPaths(settled)).not.toContain("Untracked.md");
+  });
+
+  it("closes an all-indeterminate absence exactly at the confirmation hard cap", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
+    await workspace.watcher.close();
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+
+    const realpath = fs.realpath;
+    let targetProbes = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        targetProbes += 1;
+        const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
+        error.code = "EIO";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    clock.advance(transientAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let attempt = 1; attempt <= maximumAbsenceConfirmationAttempts; attempt += 1) {
+      settled = await workspace.reconcileNow();
+      expect(targetProbes).toBe(attempt);
+      if (attempt < maximumAbsenceConfirmationAttempts) {
+        expect(tabPaths(settled)).toContain("Welcome.md");
+        expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+        clock.advance(absenceConfirmationIntervalMs + 1);
+      }
+    }
+
+    expect(targetProbes).toBe(maximumAbsenceConfirmationAttempts);
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+  });
+
+  it("stops asking for watcher scans while bounded direct re-reads keep failing", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    const realpath = fs.realpath;
+    const failing = vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
+        error.code = "EIO";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+    const followUps = vi.spyOn(workspace.watcher, "requestFollowUpScan");
+    clock.advance(transientAbsenceSettleMs + 1);
+    for (let pass = 0; pass < maximumAbsenceConfirmationAttempts; pass += 1) {
+      await workspace.reconcileNow();
+      clock.advance(absenceConfirmationIntervalMs + 1);
+    }
+    const requested = followUps.mock.calls.length;
+    followUps.mockRestore();
+    failing.mockRestore();
+
+    // Indeterminate reads consume the epoch's fixed direct-read budget. They do
+    // not request watcher scans, and a filesystem that never answers cannot hold
+    // the tab forever.
+    expect(requested).toBe(0);
+    const settled = await workspace.getSnapshot();
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+  }, 30000);
+
+  it("does not reset an absence epoch merely because the filesystem answers again", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    const target = path.join(vaultPath, "Welcome.md");
+    await fs.rename(target, path.join(sandboxPath, "Welcome.md.aside"));
+    await workspace.reconcileNow();
+
+    const realpath = fs.realpath;
+    let targetProbe = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        targetProbe += 1;
+        if (targetProbe % 2 === 1) {
+          const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
+          error.code = "EIO";
+          throw error;
+        }
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+    const followUps = vi.spyOn(workspace.watcher, "requestFollowUpScan");
+    clock.advance(transientAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let pass = 0; pass < maximumAbsenceConfirmationAttempts; pass += 1) {
+      settled = await workspace.reconcileNow();
+      clock.advance(absenceConfirmationIntervalMs + 1);
+    }
+
+    // EIO, absent, EIO, absent is one epoch. Definitive reads do not replenish
+    // work after an indeterminate one, so the fourth bounded read must settle it.
+    expect(targetProbe).toBe(maximumAbsenceConfirmationAttempts);
+    expect(followUps.mock.calls).toHaveLength(0);
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+  }, 30000);
+
+  it("restores a deferred tab when the workspace is reopened mid-window", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+    await workspace.close();
+    runtime = undefined;
+
+    await fs.rename(asidePath, target);
+    const restarted = await openRuntime(store);
+    const snapshot = await restarted.getSnapshot();
+    expect(tabPaths(snapshot)).toContain("Welcome.md");
+    expect(snapshot.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
+  });
+
+  it("keeps a restored pinned tab whose file has not arrived yet, and opens it when it does", async () => {
+    // The vault this session restores against is one three hosts write to, and a
+    // boot can beat the sync. The tab is the user's, not the filesystem's.
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Syncing.md"],
+      pinnedPaths: ["Syncing.md"],
+      activePath: "Syncing.md",
+    });
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+
+    const restored = await workspace.getSnapshot();
+    expect(restored.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true }),
+    );
+
+    clock.advance(startupAbsenceSettleMs / 2);
+    await fs.writeFile(
+      path.join(vaultPath, "Syncing.md"),
+      "# Syncing\n\narrived from another host\n",
+      "utf8",
+    );
+    await workspace.reconcileNow();
+    const landed = await workspace.openNote("Syncing.md");
+    expect(landed.workspace?.activeNote?.content).toBe("# Syncing\n\narrived from another host\n");
+    expect(landed.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true, active: true }),
+    );
+
+    // Retention is the claim, so it is asserted on every state that was written,
+    // not on the one that happens to be current after the file landed.
+    for (const saved of store.saved) {
+      expect(saved.panes[0]?.openPaths).toContain("Syncing.md");
+      expect(saved.panes[0]?.pinnedPaths).toEqual(["Syncing.md"]);
+    }
+  });
+
+  it("restores navigation history across a path that is missing at startup", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const first = await openRuntime(store);
+    await first.openNote("Welcome.md");
+    await first.openNote("Linked Note.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: ["Welcome.md"],
+      forward: [],
+    });
+    await first.close();
+    runtime = undefined;
+
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+
+    const savedBeforeRestore = store.saved.length;
+    const clock = manualClock();
+    const reopened = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    expect((await reopened.getSnapshot()).workspace?.panes[0]).toMatchObject({ canGoBack: true });
+    // Nothing written while the file was away may have dropped the entry.
+    for (const saved of store.saved.slice(savedBeforeRestore)) {
+      expect(saved.panes[0]?.navigationHistory?.back ?? []).toContain("Welcome.md");
+    }
+
+    await fs.rename(asidePath, target);
+    await reopened.reconcileNow();
+    const back = await reopened.goBack(reopened.vaultId);
+    expect(back.workspace?.activeNote?.path).toBe("Welcome.md");
+  });
+
+  it("keeps a history entry for a briefly missing path when Back is pressed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await fs.writeFile(path.join(vaultPath, "Third.md"), "# Third\n", "utf8");
+    await workspace.reconcileNow();
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Third.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory?.back).toEqual([
+      "Linked Note.md",
+      "Welcome.md",
+    ]);
+
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    // Back does not step onto the missing path here - it steps onto the entry in
+    // front of it - so nothing about this navigation is about that file. It was
+    // pruned all the same, because traversal reconciled the whole history
+    // against the listing and persisted the result.
+    const back = await workspace.goBack(workspace.vaultId);
+    expect(back.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: ["Welcome.md"],
+      forward: ["Third.md"],
+    });
+
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const returned = await workspace.goBack(workspace.vaultId);
+    expect(returned.workspace?.activeNote?.path).toBe("Welcome.md");
+  });
+
+  it("navigates onto a briefly missing path rather than swallowing the Back", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    const back = await workspace.goBack(workspace.vaultId);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: [],
+      forward: ["Linked Note.md"],
+    });
+    // The pane says what it is waiting for rather than rendering a document it
+    // cannot read, and the tab it landed on is the selected one.
+    expect(back.workspace?.panes[0]?.activeUnavailable).toMatchObject({ path: "Welcome.md" });
+    expect(back.workspace?.panes[0]?.activeNote).toBeNull();
+    expect(back.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", active: true }),
+    );
+
+    await fs.writeFile(target, "# Welcome\n\nback again\n", "utf8");
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.panes[0]?.activeUnavailable ?? null).toBeNull();
+    expect(settled.workspace?.activeNote).toMatchObject({
+      path: "Welcome.md",
+      content: "# Welcome\n\nback again\n",
+    });
+  });
+
+  it("selects a retained tab instead of throwing out of the click", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Syncing.md"],
+      pinnedPaths: ["Syncing.md"],
+      activePath: "Welcome.md",
+    });
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    expect((await workspace.getSnapshot()).workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true, active: false }),
+    );
+
+    // Nothing has ever been read for this path in this session, so there is no
+    // retained snapshot to fall back on either. The click still has to work.
+    const clicked = await workspace.openNote("Syncing.md");
+    expect(clicked.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true, active: true }),
+    );
+    expect(clicked.workspace?.panes[0]?.activeUnavailable).toEqual({
+      path: "Syncing.md",
+      title: "Syncing",
+    });
+    expect(clicked.workspace?.activeNote).toBeNull();
+
+    await fs.writeFile(path.join(vaultPath, "Syncing.md"), "# Syncing\n\nlanded\n", "utf8");
+    const landed = await workspace.reconcileNow();
+    expect(landed.workspace?.panes[0]?.activeUnavailable ?? null).toBeNull();
+    expect(landed.workspace?.activeNote).toMatchObject({
+      path: "Syncing.md",
+      content: "# Syncing\n\nlanded\n",
+    });
+  });
+
+  it("keeps a retained canvas selectable and reports it as unavailable", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Boards/Missing.canvas"],
+      activePath: "Welcome.md",
+    });
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+
+    const clicked = await workspace.openNote("Boards/Missing.canvas");
+    expect(clicked.workspace?.panes[0]?.activeUnavailable).toMatchObject({
+      path: "Boards/Missing.canvas",
+    });
+    expect(clicked.workspace?.panes[0]?.activeCanvas ?? null).toBeNull();
+    expect(clicked.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Boards/Missing.canvas", active: true }),
+    );
+  });
+
+  it("observes a canvas going missing even though the watcher never diffs one", async () => {
+    // The watcher snapshots Markdown only, so a canvas rename produces no diff
+    // and no batch of its own. Anything that decided when to look at the vault
+    // again from the watcher's sequence therefore never looked at all, and the
+    // absence of a canvas was invisible until unrelated Markdown activity moved
+    // the sequence on.
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+
+    const target = path.join(vaultPath, "Boards", "Overview.canvas");
+    const asidePath = path.join(sandboxPath, "Overview.canvas.aside");
+    await fs.rename(target, asidePath);
+    expect(await workspace.watcher.scanNow()).toBeNull();
+
+    const during = await workspace.reconcileNow();
+    expect(during.workspace?.canvasFiles ?? []).not.toContainEqual(
+      expect.objectContaining({ path: "Boards/Overview.canvas" }),
+    );
+
+    await fs.rename(asidePath, target);
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.canvasFiles ?? []).toContainEqual(
+      expect.objectContaining({ path: "Boards/Overview.canvas" }),
+    );
+  });
+
+  it("keeps an active canvas tab, its pin, and its selection through a transient absence", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+    await workspace.toggleTabPin("Boards/Overview.canvas", "primary", workspace.vaultId);
+    const settledSetup = store.saved.length;
+
+    const target = path.join(vaultPath, "Boards", "Overview.canvas");
+    const asidePath = path.join(sandboxPath, "Overview.canvas.aside");
+    await fs.rename(target, asidePath);
+    const during = await workspace.reconcileNow();
+    expect(during.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Boards/Overview.canvas", pinned: true, active: true }),
+    );
+    // Republished exactly as it was, not emptied to a waiting state. A canvas
+    // view is a live surface with its own view state, and rebuilding it for a
+    // gap nobody caused throws away everything the pane was showing - which is
+    // the same reason an active note is republished rather than re-read.
+    expect(during.workspace?.panes[0]?.activeUnavailable ?? null).toBeNull();
+    expect(during.workspace?.panes[0]?.activeCanvas?.path).toBe("Boards/Overview.canvas");
+
+    await fs.rename(asidePath, target);
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.panes[0]?.activeCanvas?.path).toBe("Boards/Overview.canvas");
+    // The selection is the assertion, not just the tab: a retained path that
+    // cannot hold it has its pane's activePath rewritten and persisted, and
+    // nothing puts the selection back when the file returns.
+    for (const saved of store.saved.slice(settledSetup)) {
+      expect(saved.panes[0]?.activePath).toBe("Boards/Overview.canvas");
+      expect(saved.panes[0]?.openPaths).toContain("Boards/Overview.canvas");
+      expect(saved.panes[0]?.pinnedPaths).toEqual(["Boards/Overview.canvas"]);
+    }
+  });
+
+  it("closes a canvas tab once its deletion is confirmed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+
+    await fs.unlink(path.join(vaultPath, "Boards", "Overview.canvas"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    const confirmed = await workspace.reconcileNow();
+    expect(tabPaths(confirmed)).not.toContain("Boards/Overview.canvas");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).not.toContain("Boards/Overview.canvas");
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+  });
+
+  it("keeps an unattributed replace for as many passes as its settle window lasts", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    const settledSetup = store.saved.length;
+
+    // No kernel claim covers an outside writer, so the number of passes that fit
+    // inside its gap is whatever this machine happened to manage. Ten of them
+    // land inside the window here, and the count is not what decides.
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs - 1);
+    for (let pass = 0; pass < 10; pass += 1) {
+      await workspace.reconcileNow();
+    }
+    for (const saved of store.saved.slice(settledSetup)) {
+      expect(saved.panes[0]?.openPaths).toContain("Welcome.md");
+      expect(saved.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    }
+
+    await fs.writeFile(target, "# Welcome\n\nreplaced by an outside writer\n", "utf8");
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toBe(
+      "# Welcome\n\nreplaced by an outside writer\n",
+    );
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("closes an unattributed absence that outlives its settle window", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+
+    // The window ending is necessary and not sufficient: one re-read past it is
+    // still a single look, and a run of them is what confirmation is made of.
+    const single = await workspace.reconcileNow();
+    expect(tabPaths(single)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    const confirmed = await workspace.reconcileNow();
+    expect(tabPaths(confirmed)).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+  });
+
+  it("keeps a pinned tab across live replace gaps and still closes a live deletion", async () => {
+    // Both boundaries against the real debounced watcher, on the real clock,
+    // with nothing driving reconciliation but the watcher itself. The kept side
+    // is asserted on every persisted state rather than on the last one, so it
+    // says the tab was never written away rather than that it came back in time.
+    for (const gapMs of [50, 150, 300, 500]) {
+      const store = new MemoryWorkspaceStateStore();
+      const workspace = await openRuntime(store);
+      await workspace.openNote("Linked Note.md");
+      await workspace.openNote("Welcome.md");
+      await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+      const target = path.join(vaultPath, "Welcome.md");
+      const asidePath = path.join(sandboxPath, `Welcome.md.aside-${gapMs}`);
+      const settledSetup = store.saved.length;
+
+      await fs.rename(target, asidePath);
+      await new Promise((resolve) => setTimeout(resolve, gapMs));
+      await fs.writeFile(target, `# Welcome\n\nreplaced after ${gapMs}ms\n`, "utf8");
+      // Well past the window the gap sat inside, so a decision has been reached.
+      await new Promise((resolve) => setTimeout(resolve, transientAbsenceSettleMs + 1000));
+
+      for (const saved of store.saved.slice(settledSetup)) {
+        expect({ gapMs, openPaths: saved.panes[0]?.openPaths }).toEqual({
+          gapMs,
+          openPaths: expect.arrayContaining(["Welcome.md"]),
+        });
+        expect({ gapMs, pinnedPaths: saved.panes[0]?.pinnedPaths }).toEqual({
+          gapMs,
+          pinnedPaths: ["Welcome.md"],
+        });
+      }
+      const snapshot = await workspace.getSnapshot();
+      expect({ gapMs, tabs: tabPaths(snapshot) }).toEqual({
+        gapMs,
+        tabs: expect.arrayContaining(["Welcome.md"]),
+      });
+      await workspace.close();
+      runtime = undefined;
+    }
+
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const deletedAt = Date.now();
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    const deadline = deletedAt + 20000;
+    while (
+      Date.now() < deadline &&
+      (store.saved.at(-1)?.panes[0]?.openPaths ?? []).includes("Welcome.md")
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const closedAfterMs = Date.now() - deletedAt;
+
+    // The deletion closes, and it does not close early: the window it had to
+    // outlive is the same one the gaps above sat inside. Only the lower bound is
+    // asserted, because how far past it a loaded machine lands is not a contract.
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+    expect(closedAfterMs).toBeGreaterThanOrEqual(transientAbsenceSettleMs);
+  }, 60000);
+
+  it("keeps a path both panes track through a transient absence", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.openNote("Welcome.md");
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+    await fs.rename(asidePath, target);
+    const settled = await workspace.reconcileNow();
+    for (const pane of settled.workspace?.panes ?? []) {
+      expect(pane.tabs.map(({ path: filePath }) => filePath)).toContain("Welcome.md");
+    }
+    for (const pane of store.saved.at(-1)?.panes ?? []) {
+      expect(pane.openPaths).toContain("Welcome.md");
+    }
   });
 });

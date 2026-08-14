@@ -5,11 +5,13 @@ import {
   hasHiddenVaultSegment,
   isPathInside,
   normalizeVaultDirectoryPath,
+  normalizeVaultPath,
   VaultPathPolicy,
 } from "./path-policy";
 import type { VaultTextSnapshot } from "./ports";
 import {
   type RescanRequest,
+  type TransientAbsenceRegistry,
   type VaultChange,
   type VaultChangeBatch,
   WatchBatchSequencer,
@@ -18,6 +20,69 @@ import {
 } from "./watch-protocol";
 
 export type VaultSnapshot = Map<string, WatchedPathState>;
+
+/**
+ * The workspace path a filesystem event says is making progress.
+ *
+ * Syncthing writes a hidden `.syncthing.<name>.tmp` beside the eventual file.
+ * Hidden files still stay out of vault discovery, but that exact temporary name
+ * is useful evidence that the corresponding restored tab is still arriving.
+ * No directory-wide inference is made: activity for another path must not keep
+ * this one alive.
+ */
+export function workspacePathForFilesystemActivity(
+  fileName: string | Buffer | null,
+): string | null {
+  if (!fileName) {
+    return null;
+  }
+  const raw = fileName.toString().replaceAll("\\", "/");
+  if (!raw || raw.startsWith("/") || raw.split("/").includes("..")) {
+    return null;
+  }
+  const normalized = path.posix.normalize(raw).replace(/^\.\//, "");
+  const directory = path.posix.dirname(normalized);
+  const basename = path.posix.basename(normalized);
+  const syncthingTemporary = /^\.syncthing\.(.+)\.tmp$/u.exec(basename);
+  const candidate = syncthingTemporary
+    ? path.posix.join(directory === "." ? "" : directory, syncthingTemporary[1] ?? "")
+    : normalized;
+  const folded = candidate.toLocaleLowerCase("en-US");
+  if (
+    !candidate ||
+    hasHiddenVaultSegment(candidate) ||
+    (!folded.endsWith(".md") && !folded.endsWith(".canvas"))
+  ) {
+    return null;
+  }
+  try {
+    return normalizeVaultPath(candidate);
+  } catch {
+    return null;
+  }
+}
+
+/** Monotonic exact-path receipts consumed by adaptive startup reconciliation. */
+export class WorkspacePathActivityLedger {
+  #version = 0;
+  // Do not evict by unrelated-path volume. The runtime reads a startup path's
+  // receipt only at reconciliation boundaries, so eviction would make other
+  // vault churn erase the very activity that extends that path's quiet window.
+  readonly #versions = new Map<string, number>();
+
+  record(fileName: string | Buffer | null): void {
+    const activityPath = workspacePathForFilesystemActivity(fileName);
+    if (!activityPath) {
+      return;
+    }
+    this.#version += 1;
+    this.#versions.set(activityPath, this.#version);
+  }
+
+  versionForPath(relativePath: string): number {
+    return this.#versions.get(normalizeVaultPath(relativePath)) ?? 0;
+  }
+}
 
 export interface VaultBootstrapScan {
   documents: VaultTextSnapshot[];
@@ -126,6 +191,35 @@ async function readWatchedState(
   previous: WatchedPathState | undefined,
 ): Promise<WatchedPathState | null> {
   return (await readWatchedFile(policy, relativePath, previous, false))?.state ?? null;
+}
+
+/**
+ * Whether a watched path is a file inside the vault right now.
+ *
+ * A snapshot diff reports what was true when the scan listed the directory. This
+ * re-reads a single path so a caller can tell a completed removal apart from the
+ * gap in the middle of an atomic replace, without paying for the file's bytes.
+ */
+export async function watchedPathExists(
+  policy: VaultPathPolicy,
+  relativePath: string,
+): Promise<boolean> {
+  try {
+    const canonicalPath = await fs.realpath(policy.resolveLexical(relativePath));
+    if (!isPathInside(policy.rootPath, canonicalPath)) {
+      return false;
+    }
+    return (await fs.stat(canonicalPath)).isFile();
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function captureVaultBootstrap(policy: VaultPathPolicy): Promise<VaultBootstrapScan> {
@@ -261,12 +355,15 @@ export interface NodeVaultWatcherOptions {
   clock?: () => Date;
   streamId?: string;
   onError?: (error: unknown) => void;
+  /** Paths a write transaction is holding aside; see {@link TransientAbsenceRegistry}. */
+  transientAbsences?: TransientAbsenceRegistry;
 }
 
 export class NodeVaultWatcher {
   readonly policy: VaultPathPolicy;
   readonly #sequencer: WatchBatchSequencer;
-  readonly #ledger = new WatchOperationLedger();
+  readonly #ledger: WatchOperationLedger;
+  readonly #transientAbsences: TransientAbsenceRegistry | undefined;
   readonly #debounceMs: number;
   readonly #onError: (error: unknown) => void;
   #snapshot: VaultSnapshot;
@@ -275,6 +372,7 @@ export class NodeVaultWatcher {
   #listener: ((batch: VaultChangeBatch) => void | Promise<void>) | undefined;
   #flushTail: Promise<void> = Promise.resolve();
   #activitySinceScan = false;
+  readonly #pathActivity = new WorkspacePathActivityLedger();
   #closed = false;
 
   private constructor(
@@ -286,6 +384,10 @@ export class NodeVaultWatcher {
     this.#snapshot = snapshot;
     this.#debounceMs = options.debounceMs ?? 80;
     this.#onError = options.onError ?? (() => undefined);
+    this.#transientAbsences = options.transientAbsences;
+    this.#ledger = new WatchOperationLedger(
+      options.transientAbsences ? { transientAbsences: options.transientAbsences } : {},
+    );
     this.#sequencer = new WatchBatchSequencer({
       streamId: options.streamId ?? randomUUID(),
       ...(options.clock ? { clock: options.clock } : {}),
@@ -313,6 +415,11 @@ export class NodeVaultWatcher {
     return this.#ledger;
   }
 
+  /** Monotonic activity receipt for one exact visible workspace path. */
+  activityVersionForPath(relativePath: string): number {
+    return this.#pathActivity.versionForPath(relativePath);
+  }
+
   start(listener: (batch: VaultChangeBatch) => void | Promise<void>): void {
     if (this.#closed) {
       throw new Error("Vault watcher is closed.");
@@ -322,6 +429,7 @@ export class NodeVaultWatcher {
     }
     this.#listener = listener;
     this.#watcher = watch(this.policy.rootPath, { recursive: true }, (_eventType, fileName) => {
+      this.#pathActivity.record(fileName);
       if (fileName && hasHiddenVaultSegment(fileName.toString())) {
         return;
       }
@@ -339,6 +447,10 @@ export class NodeVaultWatcher {
   }
 
   async scanNow(): Promise<VaultChangeBatch | null> {
+    // Taken before the walk: a file this scan reads as missing was missing at
+    // some point inside the walk, and the transaction responsible may well have
+    // finished and released its claim before the diff is annotated below.
+    const since = this.#transientAbsences?.mark();
     const next = await captureVaultSnapshot(this.policy, this.#snapshot);
     const diff = diffVaultSnapshots(this.#snapshot, next);
     this.#snapshot = next;
@@ -349,12 +461,13 @@ export class NodeVaultWatcher {
       this.#ledger.clear();
     }
     return this.#sequencer.next({
-      changes: this.#ledger.annotate(diff.changes),
+      changes: this.#ledger.annotate(diff.changes, since),
       ...(diff.rescan ? { rescan: diff.rescan } : {}),
     });
   }
 
   async scanSubtree(relativeDirectory: string): Promise<VaultChangeBatch | null> {
+    const since = this.#transientAbsences?.mark();
     const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
     const prefix = normalizedDirectory ? `${normalizedDirectory}/` : "";
     const nextSubtree = await captureVaultSnapshot(
@@ -380,9 +493,26 @@ export class NodeVaultWatcher {
       this.#ledger.clear();
     }
     return this.#sequencer.next({
-      changes: this.#ledger.annotate(diff.changes),
+      changes: this.#ledger.annotate(diff.changes, since),
       ...(diff.rescan ? { rescan: diff.rescan } : {}),
     });
+  }
+
+  /**
+   * Ask for one more scan cycle without waiting for a filesystem event.
+   *
+   * An atomic replace can be observed as a deletion, and the rename that brings
+   * the file back may be the last event of the burst the watcher already
+   * drained. A consumer that has to tell those apart needs a later look at the
+   * vault, so it requests one here: the request rides the normal debounce, and
+   * it emits a batch even when the scan itself finds nothing.
+   */
+  requestFollowUpScan(): void {
+    if (this.#closed || !this.#listener) {
+      return;
+    }
+    this.#activitySinceScan = true;
+    this.scheduleScan();
   }
 
   async reportOverflow(): Promise<VaultChangeBatch> {

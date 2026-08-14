@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { revisionOf } from "./durability";
 import {
   captureVaultBootstrap,
@@ -9,9 +9,15 @@ import {
   diffVaultSnapshots,
   NodeVaultWatcher,
   type VaultSnapshot,
+  WorkspacePathActivityLedger,
+  workspacePathForFilesystemActivity,
 } from "./node-vault-watcher";
 import { VaultPathPolicy } from "./path-policy";
+import { FixedStateRoot } from "./ports";
+import { VaultKernel } from "./vault-kernel";
 import {
+  type VaultChangeBatch,
+  VaultTransientAbsences,
   WatchBatchSequencer,
   type WatchedPathState,
   WatchOperationLedger,
@@ -49,6 +55,32 @@ function state(
 function snapshot(...states: WatchedPathState[]): VaultSnapshot {
   return new Map(states.map((entry) => [entry.path, entry]));
 }
+
+describe("workspace path activity", () => {
+  it("attributes a Syncthing temporary to its exact eventual workspace path", () => {
+    expect(workspacePathForFilesystemActivity(".syncthing.Syncing.md.tmp")).toBe("Syncing.md");
+    expect(workspacePathForFilesystemActivity("Boards/.syncthing.Overview.canvas.tmp")).toBe(
+      "Boards/Overview.canvas",
+    );
+    expect(workspacePathForFilesystemActivity("Other.md")).toBe("Other.md");
+    expect(workspacePathForFilesystemActivity(".syncthing.image.png.tmp")).toBeNull();
+    expect(workspacePathForFilesystemActivity("../Outside.md")).toBeNull();
+  });
+
+  it("keeps one path's receipt independent of activity on other paths", () => {
+    const activity = new WorkspacePathActivityLedger();
+    activity.record(".syncthing.Syncing.md.tmp");
+    const syncingVersion = activity.versionForPath("Syncing.md");
+
+    for (let index = 0; index < 5_000; index += 1) {
+      activity.record(`Unrelated-${index}.md`);
+    }
+
+    expect(syncingVersion).toBeGreaterThan(0);
+    expect(activity.versionForPath("Syncing.md")).toBe(syncingVersion);
+    expect(activity.versionForPath("Unrelated-4999.md")).toBeGreaterThan(syncingVersion);
+  });
+});
 
 describe("snapshot diff", () => {
   it("pairs a unique inode move and reports edits, creates, and deletes deterministically", () => {
@@ -502,5 +534,212 @@ describe("NodeVaultWatcher", () => {
     await expect(watcher.close()).resolves.toBeUndefined();
     releaseListener?.();
     expect(() => watcher.start(() => undefined)).toThrow("Vault watcher is closed");
+  });
+});
+
+describe("transient absence attribution", () => {
+  it("marks a deletion observed inside a write's move-aside window", async () => {
+    const statePath = path.join(sandboxPath, "state");
+    await fs.writeFile(path.join(vaultPath, "Note.md"), "before\n", "utf8");
+    const observed: VaultChangeBatch[] = [];
+    let insideWindow = false;
+    const kernel = await VaultKernel.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      faultInjector: async (point) => {
+        if (point !== "write:after-move-aside" || insideWindow) {
+          return;
+        }
+        insideWindow = true;
+        const batch = await watcher.scanNow();
+        if (batch) {
+          observed.push(batch);
+        }
+      },
+    });
+    const watcher = await NodeVaultWatcher.open(vaultPath, {
+      streamId: "transient-stream",
+      transientAbsences: kernel.transientAbsences,
+    });
+    const before = await kernel.readText("Note.md");
+
+    const written = await kernel.writeText("Note.md", "after\n", before.revision);
+    expect(written).toMatchObject({ status: "committed" });
+    expect(insideWindow).toBe(true);
+    // Without this the deletion is indistinguishable from a removal, and the
+    // guards that refuse to read one as an expected removal or as half of a
+    // materialized move have nothing to key on.
+    expect(observed.at(0)?.changes).toEqual([
+      { kind: "delete", path: "Note.md", transientOperationId: expect.any(String) },
+    ]);
+    expect(kernel.transientAbsences.operationFor("Note.md")).toBeUndefined();
+    await watcher.close();
+  });
+
+  it("leaves an ordinary deletion unmarked", async () => {
+    const statePath = path.join(sandboxPath, "state");
+    await fs.writeFile(path.join(vaultPath, "Note.md"), "before\n", "utf8");
+    const kernel = await VaultKernel.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+    });
+    const watcher = await NodeVaultWatcher.open(vaultPath, {
+      streamId: "ordinary-stream",
+      transientAbsences: kernel.transientAbsences,
+    });
+
+    await fs.unlink(path.join(vaultPath, "Note.md"));
+    const batch = await watcher.scanNow();
+    expect(batch?.changes).toEqual([{ kind: "delete", path: "Note.md" }]);
+    await watcher.close();
+  });
+});
+
+describe("transient absence attribution timing", () => {
+  function heldAbsence(filePath: string, operationId: string) {
+    const absences = new VaultTransientAbsences();
+    const since = absences.mark();
+    const handle = absences.reserve(filePath);
+    handle.hold(operationId);
+    return { absences, since, handle };
+  }
+
+  it("attributes a deletion to a claim the write already released", () => {
+    const { absences, since, handle } = heldAbsence("Note.md", "write-1");
+    // The scan listed the directory while the file was aside, and the write
+    // finished before the diff reached the ledger. That is the ordinary case on
+    // any vault large enough for the walk to outlast the transaction.
+    handle.release();
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+
+    expect(ledger.annotate([{ kind: "delete", path: "Note.md" }], since)).toEqual([
+      { kind: "delete", path: "Note.md", transientOperationId: "write-1" },
+    ]);
+  });
+
+  it("does not attribute a claim released before the scan began", () => {
+    const { absences, handle } = heldAbsence("Note.md", "write-1");
+    handle.release();
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    const since = absences.mark();
+
+    expect(ledger.annotate([{ kind: "delete", path: "Note.md" }], since)).toEqual([
+      { kind: "delete", path: "Note.md" },
+    ]);
+  });
+
+  it("refuses to fold a transient deletion into a materialized move", () => {
+    const { absences, since } = heldAbsence("A.md", "write-1");
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    ledger.expect({ id: "rename-1", kind: "rename", from: "A.md", to: "B.md", revision: "rev-b" });
+
+    const annotated = ledger.annotate(
+      [
+        { kind: "delete", path: "A.md" },
+        { kind: "upsert", state: state("B.md", "9", "rev-b") },
+      ],
+      since,
+    );
+
+    // Folding these into a move would drive the workspace to rename the tab of a
+    // file that is merely being rewritten.
+    expect(annotated.map((change) => change.kind)).toEqual(["delete", "upsert"]);
+    expect(annotated[0]).toMatchObject({ transientOperationId: "write-1" });
+  });
+
+  it("refuses to settle an expected removal with a transient deletion", () => {
+    const { absences, since } = heldAbsence("A.md", "write-1");
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    ledger.expect({ id: "trash-1", kind: "delete", path: "A.md" });
+
+    const annotated = ledger.annotate([{ kind: "delete", path: "A.md" }], since);
+
+    expect(annotated[0]?.operationId).toBeUndefined();
+    expect(ledger.size).toBe(1);
+  });
+
+  /**
+   * Drive one scan whose walk both takes and releases a claim on `Held.md`,
+   * which is the window the scan's own mark exists to cover. Only a scan that
+   * took its mark before walking, and asked what was held since then, can still
+   * attribute the deletion it is about to report.
+   */
+  async function scanAcrossAReleasedClaim(
+    scan: (watcher: NodeVaultWatcher) => Promise<VaultChangeBatch | null>,
+  ): Promise<{ batch: VaultChangeBatch | null; absences: VaultTransientAbsences }> {
+    await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Notes", "Held.md"), "# Held\n", "utf8");
+    const absences = new VaultTransientAbsences();
+    const watcher = await NodeVaultWatcher.open(vaultPath, { transientAbsences: absences });
+    const handle = absences.reserve("Notes/Held.md");
+    const listMarkdownPaths = watcher.policy.listMarkdownPaths.bind(watcher.policy);
+    let walks = 0;
+    const spy = vi
+      .spyOn(watcher.policy, "listMarkdownPaths")
+      .mockImplementation(async (relativeDirectory?: string) => {
+        walks += 1;
+        if (walks > 1) {
+          return listMarkdownPaths(relativeDirectory);
+        }
+        handle.hold("write-held");
+        await fs.rename(
+          path.join(vaultPath, "Notes", "Held.md"),
+          path.join(sandboxPath, "Held.md.aside"),
+        );
+        const paths = await listMarkdownPaths(relativeDirectory);
+        handle.release();
+        return paths;
+      });
+    try {
+      const batch = await scan(watcher);
+      return { batch, absences };
+    } finally {
+      spy.mockRestore();
+      await watcher.close();
+    }
+  }
+
+  it("marks a full scan before walking, so a claim released inside it still attributes", async () => {
+    const { batch, absences } = await scanAcrossAReleasedClaim((watcher) => watcher.scanNow());
+
+    // Nothing holds the path by the time the diff is annotated, which is the
+    // ordinary case on any vault whose walk outlasts the transaction.
+    expect(absences.operationFor("Notes/Held.md")).toBeUndefined();
+    expect(batch?.changes).toEqual([
+      { kind: "delete", path: "Notes/Held.md", transientOperationId: "write-held" },
+    ]);
+  });
+
+  it("marks a subtree scan before walking too", async () => {
+    const { batch } = await scanAcrossAReleasedClaim((watcher) => watcher.scanSubtree("Notes"));
+
+    expect(batch?.changes).toEqual([
+      { kind: "delete", path: "Notes/Held.md", transientOperationId: "write-held" },
+    ]);
+  });
+
+  it("refuses to settle a rewritten move source with a transient deletion", () => {
+    const { absences, since } = heldAbsence("A.md", "write-1");
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    ledger.expect({
+      id: "move-1",
+      kind: "move-with-writes",
+      from: "A.md",
+      to: "B.md",
+      targetRevision: "rev-b",
+      sourceRewritten: true,
+      writes: [],
+    });
+
+    const annotated = ledger.annotate(
+      [
+        { kind: "delete", path: "A.md" },
+        { kind: "upsert", state: state("B.md", "9", "rev-b") },
+      ],
+      since,
+    );
+
+    expect(annotated.every((change) => change.operationId === undefined)).toBe(true);
+    expect(ledger.size).toBe(1);
   });
 });

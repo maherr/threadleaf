@@ -11,7 +11,18 @@ export interface WatchedPathState {
 
 export type VaultChange =
   | { kind: "upsert"; state: WatchedPathState; operationId?: string }
-  | { kind: "delete"; path: string; operationId?: string }
+  | {
+      kind: "delete";
+      path: string;
+      operationId?: string;
+      /**
+       * The write transaction that was holding this path aside when the scan
+       * observed it missing. The file is between its move-aside and the install
+       * that restores it, so the deletion is an artifact of the transaction
+       * rather than a removal anyone asked for.
+       */
+      transientOperationId?: string;
+    }
   | { kind: "move"; from: string; to: string; state: WatchedPathState; operationId?: string };
 
 export type RescanReason =
@@ -129,9 +140,135 @@ export type ExpectedVaultOperation =
       writes: Array<{ path: string; revision: string }>;
     };
 
+/**
+ * Read side of the paths a write transaction is currently holding aside.
+ *
+ * Replacing an existing file means moving the target out of its canonical path
+ * and renaming a prepared replacement in. The file is genuinely absent for the
+ * width of that window, so a scan landing inside it reports a deletion for a
+ * path that is about to come back.
+ */
+export interface TransientAbsenceRegistry {
+  /** The transaction holding `path` aside right now, when one holds it. */
+  operationFor(path: string): string | undefined;
+  /**
+   * A marker for the current instant. A scan takes one before it starts reading
+   * the vault so it can ask about the window it just walked rather than about
+   * the moment it finished, which is a different and later instant.
+   */
+  mark(): number;
+  /**
+   * The transaction holding `path` aside now, or the last one to have released
+   * it since `mark`. A claim taken and released entirely inside a scan is still
+   * the reason that scan saw the file missing.
+   */
+  operationSince(path: string, mark: number): string | undefined;
+}
+
+/** One transaction's claim on one path, released on every transaction exit. */
+export interface TransientAbsenceHandle {
+  hold(operationId: string): void;
+  release(): void;
+}
+
+/**
+ * How many recently released claims stay answerable. A scan only ever asks
+ * about the window it just walked, so this bounds memory without bounding
+ * correctness for any realistic scan.
+ */
+const rememberedReleaseCount = 512;
+
+/** Write side of {@link TransientAbsenceRegistry}; owned by the vault kernel. */
+export class VaultTransientAbsences implements TransientAbsenceRegistry {
+  readonly #held = new Map<string, string[]>();
+  readonly #released = new Map<string, { operationId: string; at: number }>();
+  #clock = 0;
+
+  /**
+   * Reserve a claim without taking it. The caller takes the claim once the file
+   * is actually aside and releases it from a `finally`, so a transaction that
+   * conflicts, rolls back, or throws never leaves the path marked transient.
+   */
+  reserve(path: string): TransientAbsenceHandle {
+    let operationId: string | undefined;
+    return {
+      hold: (id: string) => {
+        if (operationId !== undefined) {
+          return;
+        }
+        operationId = id;
+        this.#clock += 1;
+        this.#released.delete(path);
+        const stack = this.#held.get(path);
+        if (stack) {
+          stack.push(id);
+        } else {
+          this.#held.set(path, [id]);
+        }
+      },
+      release: () => {
+        const held = operationId;
+        if (held === undefined) {
+          return;
+        }
+        operationId = undefined;
+        this.#clock += 1;
+        const stack = this.#held.get(path);
+        if (stack) {
+          const index = stack.lastIndexOf(held);
+          if (index !== -1) {
+            stack.splice(index, 1);
+          }
+          if (stack.length === 0) {
+            this.#held.delete(path);
+          }
+        }
+        if (this.#held.has(path)) {
+          return;
+        }
+        this.#released.delete(path);
+        this.#released.set(path, { operationId: held, at: this.#clock });
+        while (this.#released.size > rememberedReleaseCount) {
+          const oldest = this.#released.keys().next().value;
+          if (oldest === undefined) {
+            break;
+          }
+          this.#released.delete(oldest);
+        }
+      },
+    };
+  }
+
+  operationFor(path: string): string | undefined {
+    return this.#held.get(path)?.at(-1);
+  }
+
+  mark(): number {
+    return this.#clock;
+  }
+
+  operationSince(path: string, mark: number): string | undefined {
+    const held = this.#held.get(path)?.at(-1);
+    if (held !== undefined) {
+      return held;
+    }
+    const released = this.#released.get(path);
+    return released && released.at > mark ? released.operationId : undefined;
+  }
+}
+
+export interface WatchOperationLedgerOptions {
+  transientAbsences?: TransientAbsenceRegistry;
+}
+
 export class WatchOperationLedger {
   readonly #operations = new Map<string, ExpectedVaultOperation>();
+  readonly #transientAbsences: TransientAbsenceRegistry | undefined;
   #recentUnattributed: VaultChange[] = [];
+
+  constructor(options: WatchOperationLedgerOptions = {}) {
+    this.#transientAbsences = options.transientAbsences;
+  }
 
   expect(operation: ExpectedVaultOperation): void {
     const recent = this.#recentUnattributed;
@@ -143,8 +280,14 @@ export class WatchOperationLedger {
     this.#operations.set(operation.id, operation);
   }
 
-  annotate(changes: readonly VaultChange[]): VaultChange[] {
-    const annotated = changes.map((change) => ({ ...change }));
+  /**
+   * `since` is the marker the caller took before it began reading the vault.
+   * Attribution has to answer for that window, not for the instant annotation
+   * happens: a write that finished while the scan was still walking has already
+   * released its claim by the time the changes reach here.
+   */
+  annotate(changes: readonly VaultChange[], since?: number): VaultChange[] {
+    const annotated = changes.map((change) => this.attributeTransientAbsence({ ...change }, since));
     for (const operation of this.#operations.values()) {
       this.normalizeMaterializedMove(operation, annotated);
       const indexes = this.match(operation, annotated);
@@ -172,6 +315,21 @@ export class WatchOperationLedger {
     this.#recentUnattributed = [];
   }
 
+  private attributeTransientAbsence(change: VaultChange, since?: number): VaultChange {
+    if (change.kind !== "delete") {
+      return change;
+    }
+    const registry = this.#transientAbsences;
+    if (!registry) {
+      return change;
+    }
+    const operationId =
+      since === undefined
+        ? registry.operationFor(change.path)
+        : registry.operationSince(change.path, since);
+    return operationId === undefined ? change : { ...change, transientOperationId: operationId };
+  }
+
   private normalizeMaterializedMove(
     operation: ExpectedVaultOperation,
     changes: VaultChange[],
@@ -193,7 +351,10 @@ export class WatchOperationLedger {
     }
 
     const deleteIndex = changes.findIndex(
-      (change) => change.kind === "delete" && change.path === move.from,
+      (change) =>
+        change.kind === "delete" &&
+        change.path === move.from &&
+        change.transientOperationId === undefined,
     );
     const upsertIndex = changes.findIndex(
       (change) =>
@@ -248,7 +409,8 @@ export class WatchOperationLedger {
         (change) =>
           change.kind === "delete" &&
           change.path === operation.path &&
-          change.operationId === undefined,
+          change.operationId === undefined &&
+          change.transientOperationId === undefined,
       );
       return deleteIndex === -1 ? null : [deleteIndex];
     }
@@ -260,7 +422,8 @@ export class WatchOperationLedger {
           (change) =>
             change.kind === "delete" &&
             change.path === operation.from &&
-            change.operationId === undefined,
+            change.operationId === undefined &&
+            change.transientOperationId === undefined,
         );
         const targetIndex = changes.findIndex(
           (change) =>

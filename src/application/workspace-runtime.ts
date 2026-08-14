@@ -1,7 +1,11 @@
 import moment, { type Moment } from "moment";
 import { SearchQueryError } from "../kernel/full-text-search";
 import { type DocumentMetadataSnapshot, VaultIndexReactor } from "../kernel/metadata-index";
-import { captureVaultBootstrap, NodeVaultWatcher } from "../kernel/node-vault-watcher";
+import {
+  captureVaultBootstrap,
+  NodeVaultWatcher,
+  watchedPathExists,
+} from "../kernel/node-vault-watcher";
 import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
 import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
 import type {
@@ -10,7 +14,7 @@ import type {
   VaultRenameResult,
   VaultWriteResult,
 } from "../kernel/ports";
-import { VaultKernel } from "../kernel/vault-kernel";
+import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
@@ -125,9 +129,90 @@ export interface WorkspaceRuntimeOptions {
   beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>;
   workspaceSettings?: VaultWorkspaceSettings;
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings;
+  /**
+   * Test seam. Forwarded verbatim to the vault kernel so a test can suspend a
+   * write transaction at a named fault point and drive the watcher through the
+   * window it opens. Production callers leave it unset.
+   */
+  faultInjector?: KernelFaultInjector;
+  /**
+   * Test seam. Reads the wall clock the absence settle windows are measured
+   * against, so a test can prove either side of a window without waiting for it
+   * and without its result depending on how loaded the machine is. Production
+   * callers leave it unset.
+   */
+  now?: () => number;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
+
+/** Confirmed-absent re-reads that settle an ordinary absence. */
+const confirmedAbsenceObservations = 2;
+
+/** Space between bounded confirmation reads after an absence may settle. */
+export const absenceConfirmationIntervalMs = 100;
+
+/**
+ * Total confirmation reads an absence epoch may spend. An indeterminate read
+ * consumes one without erasing earlier absent evidence, so a filesystem that
+ * never answers cannot keep a deleted tab alive forever.
+ */
+export const maximumAbsenceConfirmationAttempts = 4;
+
+/**
+ * How long a path first missed mid-session must stay missing before its tab may
+ * close.
+ *
+ * Nothing in this process attributes an outside writer's replace: a second
+ * Threadleaf, a Syncthing conflict resolution, and an editor that unlinks
+ * before rewriting all leave the file genuinely absent for the width of their
+ * own gap, and the kernel's claim registry knows nothing about any of them. The
+ * only thing that separates that gap from a deletion is whether the file comes
+ * back, so the answer is a window wide enough to contain a replace and narrow
+ * enough that a real deletion still closes its tab while the user is watching.
+ * Both boundaries are asserted: a replace up to this wide keeps the tab, and a
+ * genuine deletion closes within roughly this plus one debounce.
+ */
+export const transientAbsenceSettleMs = 1500;
+
+/**
+ * The same window for a path that was already missing when the session opened.
+ *
+ * A restored tab has no transition behind it. This process did not watch the
+ * vault lose the file; it has simply never seen it, which on a machine that
+ * syncs its vault from other hosts is the ordinary state of a boot that beat
+ * the sync. With no observed loss to weigh against, the window is sized for a
+ * vault still arriving rather than for one atomic replace.
+ */
+export const startupAbsenceSettleMs = 60_000;
+
+/**
+ * Absolute extension limit for one startup absence epoch. Target activity can
+ * move its quiet deadline, but never beyond five minutes from first observation.
+ */
+export const startupAbsenceMaximumSettleMs = 5 * 60_000;
+
+type AbsencePolicy = "transient" | "startup";
+
+/** A tracked path observed missing, and how far its confirmation has got. */
+interface UnconfirmedAbsence {
+  /** Which settle and activity rules created this epoch. */
+  policy: AbsencePolicy;
+  /** Re-reads that found the path genuinely absent. Never decreases. */
+  absentObservations: number;
+  /** Re-reads that could not tell. Never decreases. */
+  indeterminateObservations: number;
+  /** All reads spent by this epoch, against the hard cap. */
+  confirmationAttempts: number;
+  /** Clock reading before which this absence may not close a tab. */
+  settleUntil: number;
+  /** Next clock reading at which this path may spend a confirmation read. */
+  nextConfirmationAt: number;
+  /** Latest startup quiet deadline target activity is allowed to create. */
+  activityExtensionLimit: number;
+  /** Exact-path watcher activity already incorporated into the quiet deadline. */
+  activityVersion: number;
+}
 
 interface WorkspaceIndexProjection {
   generation: number;
@@ -700,6 +785,39 @@ function navigationHistoryEqual(
   );
 }
 
+function removeWorkspacePath(panes: PersistedWorkspacePane[], filePath: string): boolean {
+  let changed = false;
+  for (const pane of panes) {
+    if (pane.navigationHistory) {
+      const nextHistory: WorkspaceNavigationHistory = {
+        back: pane.navigationHistory.back.filter((path) => path !== filePath),
+        forward: pane.navigationHistory.forward.filter((path) => path !== filePath),
+      };
+      if (!navigationHistoryEqual(pane.navigationHistory, nextHistory)) {
+        pane.navigationHistory = nextHistory;
+        changed = true;
+      }
+    }
+    const index = pane.openPaths.indexOf(filePath);
+    if (index === -1) {
+      continue;
+    }
+    pane.openPaths.splice(index, 1);
+    pane.pinnedPaths = pane.pinnedPaths.filter((pinnedPath) => pinnedPath !== filePath);
+    if (pane.activePath === filePath) {
+      pane.activePath = pane.openPaths[index] ?? pane.openPaths[index - 1] ?? null;
+    }
+    if (pane.navigationHistory && pane.activePath) {
+      pane.navigationHistory = {
+        back: pane.navigationHistory.back.filter((path) => path !== pane.activePath),
+        forward: pane.navigationHistory.forward.filter((path) => path !== pane.activePath),
+      };
+    }
+    changed = true;
+  }
+  return changed;
+}
+
 function recordNavigation(
   history: WorkspaceNavigationHistory | undefined,
   from: string,
@@ -742,6 +860,42 @@ export class WorkspaceRuntime {
   #lastRescanReason: string | null = null;
   #indexProjection: WorkspaceIndexProjection | null = null;
   #visibleVaultFiles: { sequence: number; promise: Promise<readonly string[]> } | null = null;
+  /**
+   * Tracked paths the workspace has not accepted as gone. Closing a tab is not
+   * reversible, and both the kernel and outside writers replace a file by
+   * renaming it aside and renaming a replacement in, so an absence has to be
+   * confirmed by a later look before it may close anything.
+   */
+  readonly #unconfirmedAbsences = new Map<string, UnconfirmedAbsence>();
+  /**
+   * Per-path receipts for confirmations that permanently removed a tracked path.
+   * Incoming workspace state may not put one back until a later positive vault
+   * observation justifies that path's presence at the same receipt version.
+   */
+  readonly #confirmedRemovalVersions = new Map<string, number>();
+  readonly #presenceJustificationVersions = new Map<string, number>();
+  #confirmedRemovalSequence = 0;
+  /**
+   * The last snapshot published for a note, kept only while that note is a
+   * pane's active path or is awaiting confirmation. It is what an active note
+   * is published from while its file is briefly not on disk, so the editor is
+   * never handed a different document and never re-reads one that is missing.
+   */
+  readonly #retainedNotes = new Map<string, WorkspaceNoteSnapshot>();
+  /**
+   * The same for a canvas. A pane showing one is showing a live surface with its
+   * own view state, so a canvas whose file is briefly not on disk is republished
+   * exactly as it was rather than emptied and rebuilt for a gap nobody caused.
+   */
+  readonly #retainedCanvases = new Map<string, WorkspaceCanvasSnapshot>();
+  #reconcilePass = 0;
+  readonly #now: () => number;
+  /**
+   * One timer for the whole runtime, set for the earliest direct confirmation.
+   * Without it, an otherwise idle vault would never revisit a deletion after its
+   * settle window.
+   */
+  #absenceWake: { at: number; timer: ReturnType<typeof setTimeout> } | null = null;
   readonly #listeners = new Set<SnapshotListener>();
   readonly #releaseActions: Array<() => void> = [];
 
@@ -772,7 +926,9 @@ export class WorkspaceRuntime {
     workspacePersistedState: PersistedWorkspaceState | null | undefined,
     workspaceLoadWarning: string | null,
     workspaceSettings: VaultWorkspaceSettings,
+    now: () => number = Date.now,
   ) {
+    this.#now = now;
     this.actions = actions;
     this.kernel = kernel;
     this.watcher = watcher;
@@ -907,12 +1063,14 @@ export class WorkspaceRuntime {
     const kernel = await VaultKernel.open({
       vaultRoot: options.vaultRoot,
       stateRoot: options.stateRoot,
+      ...(options.faultInjector ? { faultInjector: options.faultInjector } : {}),
     });
     await options.beforeWorkspaceStateRestore?.(kernel.vaultId);
     let runtime: WorkspaceRuntime | undefined;
     const bootstrap = await captureVaultBootstrap(kernel.paths);
     const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, bootstrap.snapshot, {
       onError: (error) => runtime?.recordWatcherError(error),
+      transientAbsences: kernel.transientAbsences,
     });
     const indexReactor = await VaultIndexReactor.fromSnapshotsAsync(kernel, bootstrap.documents);
     bootstrap.documents.length = 0;
@@ -961,6 +1119,7 @@ export class WorkspaceRuntime {
       workspaceStateReadable ? persistedWorkspace : undefined,
       workspaceLoadWarning,
       workspaceSettings,
+      options.now ?? Date.now,
     );
 
     if (restoredWorkspace) {
@@ -969,15 +1128,43 @@ export class WorkspaceRuntime {
         ...indexReactor.index.snapshot().documents.map((document) => document.path),
         ...visible.files.filter(isCanvasPath),
       ]);
+      // The restore reconciles against the vault listing like the projection
+      // does, so it retains through the same authority rather than dropping on
+      // first sight. A tab whose file has not arrived on this machine yet - the
+      // ordinary state of a boot that beat the sync - would otherwise be closed,
+      // unpinned, and written back over the saved workspace before anything had
+      // looked at the vault twice.
+      const restoredTracked = new Set<string>();
+      for (const pane of restoredWorkspace.panes) {
+        for (const filePath of pane.openPaths) {
+          restoredTracked.add(filePath);
+        }
+        for (const filePath of pane.navigationHistory?.back ?? []) {
+          restoredTracked.add(filePath);
+        }
+        for (const filePath of pane.navigationHistory?.forward ?? []) {
+          restoredTracked.add(filePath);
+        }
+      }
+      const { retainedPaths } = runtime.retainTrackedPaths(
+        availablePaths,
+        restoredTracked,
+        "startup",
+      );
       const panes = restoredWorkspace.panes.map((pane) => {
-        const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
+        const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
+        // A retained path holds its tab but cannot hold the selection yet:
+        // nothing readable has been published for it in this session, so the
+        // snapshot would have to read a file that is not there.
         const activePath =
-          pane.activePath && openPaths.includes(pane.activePath)
+          pane.activePath &&
+          openPaths.includes(pane.activePath) &&
+          availablePaths.has(pane.activePath)
             ? pane.activePath
-            : (openPaths.at(-1) ?? null);
+            : (openPaths.filter((filePath) => availablePaths.has(filePath)).at(-1) ?? null);
         const navigationHistory = navigationHistoryForPaths(
           pane.navigationHistory,
-          availablePaths,
+          retainedPaths,
           activePath,
         );
         return {
@@ -1012,6 +1199,7 @@ export class WorkspaceRuntime {
     }
     if (!runtime.readOnly) {
       watcher.start((batch) => runtime?.handleWatchBatch(batch));
+      runtime.requestRestoredAbsenceFollowUp();
     }
     return runtime;
   }
@@ -1021,7 +1209,13 @@ export class WorkspaceRuntime {
   }
 
   private visibleVaultFiles(): Promise<readonly string[]> {
-    const sequence = this.#lastWatchSequence;
+    // Keyed on the reconcile pass rather than the watcher's sequence. The
+    // watcher snapshots Markdown only, so a canvas appearing or disappearing
+    // moves no sequence, and an inventory held against one was reused across the
+    // very reconciliation meant to notice. Every pass advances this, so no look
+    // at the vault is answered from before it - and a pass is still one pass, so
+    // a single snapshot build still lists the vault once.
+    const sequence = this.#reconcilePass;
     if (this.#visibleVaultFiles?.sequence === sequence) {
       return this.#visibleVaultFiles.promise;
     }
@@ -1856,10 +2050,26 @@ export class WorkspaceRuntime {
     return this.publishSnapshot(await this.pluginHost.unloadAllPlugins());
   }
 
+  /**
+   * Reconcile against the vault once, without waiting for the watcher.
+   *
+   * A test seam. Nothing in the application calls it, and nothing has to: a
+   * running workspace is driven by watcher batches, by the follow-up scans an
+   * unconfirmed absence asks for, and by the wake set for the end of its settle
+   * window. An absence that could only be resolved from here would be one no
+   * user could ever resolve.
+   */
   async reconcileNow(): Promise<RuntimeSnapshot> {
     const batch = await this.watcher.scanNow();
     if (batch) {
       await this.handleWatchBatch(batch, false);
+    } else {
+      // A scan with nothing to report is still a look at the vault, and it is the
+      // look that confirms an absence observed on the pass before it.
+      this.#reconcilePass += 1;
+      if (await this.settleUnconfirmedAbsences()) {
+        await this.persistWorkspaceStateBestEffort();
+      }
     }
     return this.getSnapshot();
   }
@@ -1870,6 +2080,12 @@ export class WorkspaceRuntime {
   }
 
   async close(): Promise<void> {
+    this.clearAbsenceWake();
+    this.#unconfirmedAbsences.clear();
+    this.#retainedNotes.clear();
+    this.#retainedCanvases.clear();
+    this.#confirmedRemovalVersions.clear();
+    this.#presenceJustificationVersions.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
     for (const release of this.#releaseActions.reverse()) {
       release();
@@ -1887,8 +2103,26 @@ export class WorkspaceRuntime {
     );
   }
 
-  private applyWorkspaceState(state: PersistedWorkspaceState): void {
-    this.#panes = state.panes.map((pane) => {
+  private justifyWorkspacePathPresence(filePath: string): void {
+    // Absent entries mean justified: a later genuine removal re-arms the pair
+    // with a strictly higher version, so deleting here is behavior-identical
+    // to storing j = v while keeping both maps bounded by live removals.
+    if (this.#confirmedRemovalVersions.delete(filePath)) {
+      this.#presenceJustificationVersions.delete(filePath);
+    }
+  }
+
+  private workspacePathIsStale(filePath: string): boolean {
+    const confirmedRemovalVersion = this.#confirmedRemovalVersions.get(filePath);
+    if (confirmedRemovalVersion === undefined) {
+      return false;
+    }
+    const presenceJustificationVersion = this.#presenceJustificationVersions.get(filePath) ?? 0;
+    return confirmedRemovalVersion > presenceJustificationVersion;
+  }
+
+  private scrubConfirmedRemovals(state: PersistedWorkspaceState): PersistedWorkspaceState {
+    const panes = state.panes.map((pane) => {
       const navigationHistory = cloneNavigationHistory(pane.navigationHistory);
       return {
         id: pane.id,
@@ -1898,16 +2132,44 @@ export class WorkspaceRuntime {
         ...(navigationHistory ? { navigationHistory } : {}),
       };
     });
-    this.#activePaneId = state.activePaneId;
-    this.#splitDirection = state.splitDirection;
+    const stalePaths = new Set<string>();
+    for (const pane of panes) {
+      for (const filePath of [
+        ...pane.openPaths,
+        ...pane.pinnedPaths,
+        ...(pane.activePath ? [pane.activePath] : []),
+        ...(pane.navigationHistory?.back ?? []),
+        ...(pane.navigationHistory?.forward ?? []),
+      ]) {
+        if (!stalePaths.has(filePath) && this.workspacePathIsStale(filePath)) {
+          stalePaths.add(filePath);
+        }
+      }
+    }
+    let changed = false;
+    for (const filePath of stalePaths) {
+      changed = removeWorkspacePath(panes, filePath) || changed;
+    }
+    return changed
+      ? createWorkspaceLayout(state.vaultId, panes, state.activePaneId, state.splitDirection)
+      : state;
   }
 
-  private workspacePane(paneId: WorkspacePaneId): PersistedWorkspacePane {
-    const pane = this.#panes.find(({ id }) => id === paneId);
-    if (!pane) {
-      throw new Error(`Workspace pane is not open: ${paneId}`);
-    }
-    return pane;
+  private applyWorkspaceState(state: PersistedWorkspaceState): PersistedWorkspaceState {
+    const scrubbed = this.scrubConfirmedRemovals(state);
+    this.#panes = scrubbed.panes.map((pane) => {
+      const navigationHistory = cloneNavigationHistory(pane.navigationHistory);
+      return {
+        id: pane.id,
+        openPaths: [...pane.openPaths],
+        pinnedPaths: [...pane.pinnedPaths],
+        activePath: pane.activePath,
+        ...(navigationHistory ? { navigationHistory } : {}),
+      };
+    });
+    this.#activePaneId = scrubbed.activePaneId;
+    this.#splitDirection = scrubbed.splitDirection;
+    return scrubbed;
   }
 
   private async adoptWorkspaceState(
@@ -1932,12 +2194,34 @@ export class WorkspaceRuntime {
       this.#workspacePersistedState = persisted;
       this.#workspaceLoadWarning = null;
       this.#workspaceSaveWarning = null;
-      this.applyWorkspaceState(persisted);
+      const applied = this.applyWorkspaceState(persisted);
+      if (!workspaceStatesEqual(persisted, applied)) {
+        // The save raced a confirmed removal. Apply the healthy parts of the
+        // mutation, then repair the private document from that scrubbed state.
+        await this.persistWorkspaceStateBestEffort();
+      }
     } catch (error) {
+      const scrubbed = this.scrubConfirmedRemovals(state);
+      if (!workspaceStatesEqual(state, scrubbed)) {
+        // A racing confirmation may have won the store's compare-and-save first.
+        // Keep the mutation's unrelated changes and converge the store from the
+        // scrubbed in-memory result instead of treating the whole action as lost.
+        this.applyWorkspaceState(scrubbed);
+        await this.persistWorkspaceStateBestEffort();
+        return;
+      }
       const message = `Could not save workspace state: ${errorMessage(error)}`;
       this.#workspaceSaveWarning = message;
       throw new Error(message, { cause: error });
     }
+  }
+
+  private workspacePane(paneId: WorkspacePaneId): PersistedWorkspacePane {
+    const pane = this.#panes.find(({ id }) => id === paneId);
+    if (!pane) {
+      throw new Error(`Workspace pane is not open: ${paneId}`);
+    }
+    return pane;
   }
 
   private async persistWorkspaceStateBestEffort(): Promise<void> {
@@ -1971,7 +2255,16 @@ export class WorkspaceRuntime {
 
   private async selectNote(request: OpenNoteRequest): Promise<void> {
     const filePath = normalizeVaultPath(request.path);
-    if (isCanvasPath(filePath)) {
+    // A tab the workspace is deliberately holding through an unconfirmed absence
+    // is one the user can see, so it is one they will click. Both branches below
+    // prove the file is there by reading it, which for such a path throws out of
+    // the click and leaves a tab that can be seen and not used. Selecting it is
+    // allowed; the pane reports it as unavailable until its file is back or its
+    // absence is confirmed, and either way the answer arrives on its own.
+    const retained = this.#unconfirmedAbsences.has(filePath) && this.tracksWorkspacePath(filePath);
+    if (retained) {
+      // Nothing to read.
+    } else if (isCanvasPath(filePath)) {
       const visible = await this.kernel.listVisiblePaths();
       if (!visible.files.includes(filePath)) {
         throw new Error(`Canvas is not present in the active vault: ${filePath}`);
@@ -1985,6 +2278,9 @@ export class WorkspaceRuntime {
         throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
       }
       await this.kernel.readText(filePath);
+    }
+    if (!retained) {
+      this.justifyWorkspacePathPresence(filePath);
     }
     const paneId = request.paneId ?? this.#activePaneId;
     this.workspacePane(paneId);
@@ -2029,9 +2325,16 @@ export class WorkspaceRuntime {
       ...this.indexReactor.index.snapshot().documents.map((document) => document.path),
       ...visible.files.filter(isCanvasPath),
     ]);
+    // Traversing history reconciles this pane against the vault listing and
+    // writes the result back, which makes it a sink like the projection: an
+    // entry pruned here is gone for good. It asks the same authority what may
+    // still be held, so pressing Back while a file is briefly not there neither
+    // destroys its entry nor refuses to navigate to it. A confirmed deletion
+    // still scrubs its entries, from removeOpenPath, where that decision is made.
+    const { retainedPaths } = this.retainTrackedPaths(availablePaths, this.trackedWorkspacePaths());
     const reconciledHistory = navigationHistoryForPaths(
       pane.navigationHistory,
-      availablePaths,
+      retainedPaths,
       pane.activePath,
     );
     const history = reconciledHistory ?? { back: [], forward: [] };
@@ -2115,36 +2418,7 @@ export class WorkspaceRuntime {
   }
 
   private removeOpenPath(filePath: string): boolean {
-    let changed = false;
-    for (const pane of this.#panes) {
-      if (pane.navigationHistory) {
-        const nextHistory: WorkspaceNavigationHistory = {
-          back: pane.navigationHistory.back.filter((path) => path !== filePath),
-          forward: pane.navigationHistory.forward.filter((path) => path !== filePath),
-        };
-        if (!navigationHistoryEqual(pane.navigationHistory, nextHistory)) {
-          pane.navigationHistory = nextHistory;
-          changed = true;
-        }
-      }
-      const index = pane.openPaths.indexOf(filePath);
-      if (index === -1) {
-        continue;
-      }
-      pane.openPaths.splice(index, 1);
-      pane.pinnedPaths = pane.pinnedPaths.filter((pinnedPath) => pinnedPath !== filePath);
-      if (pane.activePath === filePath) {
-        pane.activePath = pane.openPaths[index] ?? pane.openPaths[index - 1] ?? null;
-      }
-      if (pane.navigationHistory && pane.activePath) {
-        pane.navigationHistory = {
-          back: pane.navigationHistory.back.filter((path) => path !== pane.activePath),
-          forward: pane.navigationHistory.forward.filter((path) => path !== pane.activePath),
-        };
-      }
-      changed = true;
-    }
-    return changed;
+    return removeWorkspacePath(this.#panes, filePath);
   }
 
   private assertNoPinnedWorkspaceTabsForRemoval(filePath: string): void {
@@ -2838,6 +3112,12 @@ export class WorkspaceRuntime {
 
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
     this.#visibleVaultFiles = null;
+    this.#reconcilePass += 1;
+    // The metadata index keeps applying deletions as they are observed. During a
+    // transient absence the file really is missing, so removing it keeps the
+    // index honest about the vault, and the upsert that follows refreshes it. The
+    // opposite choice would leave the index claiming a document whose bytes
+    // cannot be read, which turns a lost tab into a failing snapshot.
     const result = await this.indexReactor.accept(batch);
     let workspaceChanged = false;
     if (result.mode === "incremental") {
@@ -2845,10 +3125,14 @@ export class WorkspaceRuntime {
         if (change.kind === "move") {
           workspaceChanged = this.moveOpenPath(change.from, change.to) || workspaceChanged;
         } else if (change.kind === "delete") {
-          workspaceChanged = this.removeOpenPath(change.path) || workspaceChanged;
+          this.recordUnconfirmedAbsence(change.path);
         }
       }
     }
+    // A rebuild carries no per-path deletions, so nothing is recorded here for
+    // one. That is not a gap: the snapshot projection is where a tracked path
+    // missing from the index is caught, whichever way it went missing.
+    workspaceChanged = (await this.settleUnconfirmedAbsences()) || workspaceChanged;
     if (workspaceChanged) {
       await this.persistWorkspaceStateBestEffort();
     }
@@ -2856,6 +3140,307 @@ export class WorkspaceRuntime {
     this.#lastRescanReason = result.mode === "rebuild" ? (result.reason ?? "unknown") : null;
     if (publish) {
       await this.publishSnapshot();
+    }
+  }
+
+  /** Whether any pane holds this path as a tab or in its navigation history. */
+  private tracksWorkspacePath(filePath: string): boolean {
+    return this.#panes.some(
+      (pane) =>
+        pane.openPaths.includes(filePath) ||
+        pane.navigationHistory?.back.includes(filePath) === true ||
+        pane.navigationHistory?.forward.includes(filePath) === true,
+    );
+  }
+
+  /** Every path any pane holds as a tab or in its navigation history. */
+  private trackedWorkspacePaths(): Set<string> {
+    const tracked = new Set<string>();
+    for (const pane of this.#panes) {
+      for (const filePath of pane.openPaths) {
+        tracked.add(filePath);
+      }
+      for (const filePath of pane.navigationHistory?.back ?? []) {
+        tracked.add(filePath);
+      }
+      for (const filePath of pane.navigationHistory?.forward ?? []) {
+        tracked.add(filePath);
+      }
+    }
+    return tracked;
+  }
+
+  private vaultPathExists(filePath: string): Promise<boolean> {
+    return watchedPathExists(this.kernel.paths, filePath);
+  }
+
+  /**
+   * Note that a path is missing, without acting on it.
+   *
+   * Deliberately makes no filesystem call. A file-present answer here would say
+   * nothing useful anyway, because the index has already dropped the path and
+   * the projection decides from the index; and a failed stat on this path would
+   * reject the whole batch. Confirmation belongs on a later pass, alone, where
+   * settling also drops whatever the workspace has stopped tracking.
+   *
+   * `policy` carries which kind of absence this is, because that is decided by
+   * whoever noticed and cannot be recovered later: a path the vault was observed
+   * losing gets the replace window, and a path that was already missing when the
+   * session opened gets the adaptive startup window.
+   */
+  private recordUnconfirmedAbsence(filePath: string, policy: AbsencePolicy = "transient"): boolean {
+    if (this.#unconfirmedAbsences.has(filePath)) {
+      return false;
+    }
+    const now = this.#now();
+    const settleMs = policy === "startup" ? startupAbsenceSettleMs : transientAbsenceSettleMs;
+    const settleUntil = now + settleMs;
+    this.#unconfirmedAbsences.set(filePath, {
+      policy,
+      absentObservations: 0,
+      indeterminateObservations: 0,
+      confirmationAttempts: 0,
+      settleUntil,
+      nextConfirmationAt: settleUntil,
+      activityExtensionLimit:
+        policy === "startup" ? now + startupAbsenceMaximumSettleMs : settleUntil,
+      activityVersion: this.watcher.activityVersionForPath(filePath),
+    });
+    return true;
+  }
+
+  /** Extend one startup deadline only from activity attributable to its path. */
+  private extendStartupAbsenceForActivity(filePath: string, absence: UnconfirmedAbsence): void {
+    if (absence.policy !== "startup") {
+      return;
+    }
+    const activityVersion = this.watcher.activityVersionForPath(filePath);
+    if (activityVersion <= absence.activityVersion) {
+      return;
+    }
+    absence.activityVersion = activityVersion;
+    const extendedUntil = Math.min(
+      this.#now() + startupAbsenceSettleMs,
+      absence.activityExtensionLimit,
+    );
+    if (extendedUntil > absence.settleUntil) {
+      absence.settleUntil = extendedUntil;
+      absence.nextConfirmationAt = Math.max(absence.nextConfirmationAt, extendedUntil);
+    }
+  }
+
+  /**
+   * Keep one timer set for the earliest settle window still running.
+   *
+   * The look that closes a tab has to happen after the window. This timer calls
+   * the path confirmation directly instead of feeding the watcher's trailing
+   * debounce, so writes elsewhere cannot postpone it indefinitely.
+   */
+  private armAbsenceWake(): void {
+    let earliest: number | null = null;
+    const now = this.#now();
+    for (const absence of this.#unconfirmedAbsences.values()) {
+      if (earliest === null || absence.nextConfirmationAt < earliest) {
+        earliest = absence.nextConfirmationAt;
+      }
+    }
+    if (earliest === null) {
+      this.clearAbsenceWake();
+      return;
+    }
+    if (this.#absenceWake && this.#absenceWake.at <= earliest) {
+      return;
+    }
+    this.clearAbsenceWake();
+    const timer = setTimeout(
+      () => {
+        this.#absenceWake = null;
+        void this.settleAbsencesFromWake().catch((error) => this.recordWatcherError(error));
+      },
+      Math.max(1, earliest - now),
+    );
+    timer.unref?.();
+    this.#absenceWake = { at: earliest, timer };
+  }
+
+  private clearAbsenceWake(): void {
+    if (this.#absenceWake) {
+      clearTimeout(this.#absenceWake.timer);
+      this.#absenceWake = null;
+    }
+  }
+
+  private async settleAbsencesFromWake(): Promise<void> {
+    if (await this.settleUnconfirmedAbsences()) {
+      await this.persistWorkspaceStateBestEffort();
+      await this.publishSnapshot();
+    }
+  }
+
+  /**
+   * Close tabs for absences that are now confirmed.
+   *
+   * An absence a write transaction still owns is not eligible at all: its file is
+   * coming back by construction. Everything else has to outlive its settle window
+   * and then receives at most four spaced reads. Absent and indeterminate counts
+   * only increase. Two absent reads close normally; four total attempts close an
+   * epoch whose filesystem never gives a usable answer.
+   *
+   * The window is what covers the writers this process cannot attribute. Passes
+   * alone cannot: how many of them fit inside an outside writer's replace depends
+   * on how loaded the machine is, so a pass count that survives a replace on an
+   * idle machine closes the tab on a busy one. The clock does not move with load.
+   */
+  private async settleUnconfirmedAbsences(): Promise<boolean> {
+    if (this.#unconfirmedAbsences.size === 0) {
+      return false;
+    }
+    let changed = false;
+    for (const [filePath, absence] of [...this.#unconfirmedAbsences]) {
+      if (!this.tracksWorkspacePath(filePath)) {
+        this.#unconfirmedAbsences.delete(filePath);
+        continue;
+      }
+      this.extendStartupAbsenceForActivity(filePath, absence);
+      const now = this.#now();
+      if (now < absence.settleUntil) {
+        absence.nextConfirmationAt = Math.max(absence.nextConfirmationAt, absence.settleUntil);
+        continue;
+      }
+      if (this.kernel.transientAbsences.operationFor(filePath) !== undefined) {
+        // A write transaction is holding this path aside right now, so its file
+        // is coming back by construction. Whether that is the transaction which
+        // opened the absence or a later one does not change the answer.
+        absence.nextConfirmationAt = now + absenceConfirmationIntervalMs;
+        continue;
+      }
+      if (now < absence.nextConfirmationAt) {
+        continue;
+      }
+      absence.confirmationAttempts += 1;
+      absence.nextConfirmationAt = now + absenceConfirmationIntervalMs;
+      const epoch = absence;
+      let present: boolean;
+      let indeterminate = false;
+      try {
+        present = await this.vaultPathExists(filePath);
+      } catch {
+        if (this.#unconfirmedAbsences.get(filePath) !== epoch) {
+          continue;
+        }
+        indeterminate = true;
+        present = false;
+      }
+      if (this.#unconfirmedAbsences.get(filePath) !== epoch) {
+        continue;
+      }
+      if (present) {
+        this.#unconfirmedAbsences.delete(filePath);
+        continue;
+      }
+      if (indeterminate) {
+        absence.indeterminateObservations += 1;
+      } else {
+        absence.absentObservations += 1;
+      }
+      if (
+        absence.absentObservations >= confirmedAbsenceObservations &&
+        absence.confirmationAttempts >= confirmedAbsenceObservations
+      ) {
+        this.#unconfirmedAbsences.delete(filePath);
+        this.markConfirmedRemoval(filePath);
+        changed = this.removeOpenPath(filePath) || changed;
+        continue;
+      }
+      if (absence.confirmationAttempts >= maximumAbsenceConfirmationAttempts) {
+        this.#unconfirmedAbsences.delete(filePath);
+        this.markConfirmedRemoval(filePath);
+        changed = this.removeOpenPath(filePath) || changed;
+      }
+    }
+    this.armAbsenceWake();
+    return changed;
+  }
+
+  private markConfirmedRemoval(filePath: string): void {
+    this.#confirmedRemovalSequence += 1;
+    this.#confirmedRemovalVersions.set(filePath, this.#confirmedRemovalSequence);
+  }
+
+  /** Remove a returned path's old epoch before a later loss can reuse it. */
+  private clearReturnedAbsences(
+    availablePaths: ReadonlySet<string>,
+    trackedPaths: readonly string[],
+  ): void {
+    for (const filePath of trackedPaths) {
+      if (availablePaths.has(filePath)) {
+        this.#unconfirmedAbsences.delete(filePath);
+      }
+    }
+  }
+
+  /**
+   * The paths a workspace may still hold, given what the vault currently lists.
+   *
+   * Index membership is not evidence a file is gone. An atomic replace, an
+   * outside writer's unlink-and-rewrite, a rebuild that ran while a file was
+   * held aside, a failed re-read, and a vault still syncing onto this machine
+   * all take a path out of the listing while it is still there or coming back.
+   * So a tracked path the listing has lost is never dropped by whoever noticed:
+   * it is retained, recorded as an unconfirmed absence, and left for the
+   * confirmation pass to decide.
+   *
+   * Every reconciliation path goes through here - the snapshot projection, the
+   * session restore, and navigation history - because a single guarded sink is
+   * only a guard if it is the only sink. Each of those computed the same
+   * available set for itself and wrote its own answer back, so each was one.
+   */
+  private retainTrackedPaths(
+    availablePaths: ReadonlySet<string>,
+    trackedPaths: Iterable<string>,
+    policy: AbsencePolicy = "transient",
+  ): { retainedPaths: ReadonlySet<string>; trackedMissing: string[] } {
+    for (const filePath of availablePaths) {
+      this.justifyWorkspacePathPresence(filePath);
+    }
+    const tracked = [...trackedPaths];
+    this.clearReturnedAbsences(availablePaths, tracked);
+    const trackedMissing = tracked.filter((filePath) => !availablePaths.has(filePath));
+    let armFollowUpScan = false;
+    for (const filePath of trackedMissing) {
+      armFollowUpScan = this.recordUnconfirmedAbsence(filePath, policy) || armFollowUpScan;
+      const absence = this.#unconfirmedAbsences.get(filePath);
+      if (absence) {
+        this.extendStartupAbsenceForActivity(filePath, absence);
+      }
+    }
+    if (armFollowUpScan) {
+      // One early rescan lets a returned file refresh the index before its
+      // settle timer. Confirmation itself is direct and does not spend scans.
+      this.watcher.requestFollowUpScan();
+    }
+    this.armAbsenceWake();
+    return {
+      retainedPaths:
+        trackedMissing.length === 0
+          ? availablePaths
+          : new Set([...availablePaths, ...trackedMissing]),
+      trackedMissing,
+    };
+  }
+
+  /**
+   * Ask for the confirmation pass a path retained by the restore is waiting on.
+   *
+   * The watcher ignores a follow-up request before it is started and the restore
+   * runs first, so a tab kept there would otherwise be waiting on unrelated
+   * vault activity for the look that resolves it - which on a vault nobody is
+   * touching never arrives, and a file deleted before this session started would
+   * keep its tab forever.
+   */
+  private requestRestoredAbsenceFollowUp(): void {
+    if (this.#unconfirmedAbsences.size > 0) {
+      this.watcher.requestFollowUpScan();
     }
   }
 
@@ -2907,15 +3492,41 @@ export class WorkspaceRuntime {
     }
     const { documents, backlinks, files } = projection;
     const availablePaths = new Set([...documents.keys(), ...canvasPaths]);
+    // Reconciliation closes a tab here and in the two sibling call sites that
+    // reconcile against the vault listing, so all three ask the same authority
+    // what may still be held. Only the confirmed-absent path in
+    // settleUnconfirmedAbsences may take a retained path out of the panes.
+    const { retainedPaths, trackedMissing } = this.retainTrackedPaths(
+      availablePaths,
+      this.trackedWorkspacePaths(),
+    );
+    // A retained path can still be unrenderable: nothing readable was ever
+    // published for it. It may hold the selection anyway - the pane says what it
+    // is waiting for instead of rendering a document - because a selection this
+    // pane was given is not something reconciliation gets to overwrite for an
+    // absence it has not confirmed. What renderability decides is which tab is
+    // picked when the pane has to choose one for itself.
+    const renderablePaths =
+      trackedMissing.length === 0
+        ? availablePaths
+        : new Set([
+            ...availablePaths,
+            ...trackedMissing.filter(
+              (filePath) =>
+                this.#retainedNotes.has(filePath) || this.#retainedCanvases.has(filePath),
+            ),
+          ]);
     const reconciledPanes = this.#panes.map((pane) => {
-      const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
+      const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
       const activePath =
         pane.activePath && openPaths.includes(pane.activePath)
           ? pane.activePath
-          : (openPaths.at(-1) ?? null);
+          : (openPaths.filter((filePath) => renderablePaths.has(filePath)).at(-1) ??
+            openPaths.at(-1) ??
+            null);
       const navigationHistory = navigationHistoryForPaths(
         pane.navigationHistory,
-        availablePaths,
+        retainedPaths,
         activePath,
       );
       return {
@@ -2944,37 +3555,60 @@ export class WorkspaceRuntime {
         return cached;
       }
       const activeMetadata = documents.get(filePath);
+      // A note whose file is momentarily not on disk is published exactly as it
+      // was last published: same path, same revision, same bytes. The editor is
+      // already showing that document, so re-reading it, or handing over a
+      // different one, would discard the buffer's selection and undo history for
+      // a change nobody made.
+      const retained = this.#retainedNotes.get(filePath);
       if (!activeMetadata) {
-        throw new Error(`Active workspace note is not indexed: ${filePath}`);
+        if (!retained) {
+          throw new Error(`Active workspace note is not indexed: ${filePath}`);
+        }
+        const republished = Promise.resolve(retained);
+        noteSnapshots.set(filePath, republished);
+        return republished;
       }
-      const pending = this.kernel.readText(filePath).then((note) => {
-        const propertyInspection = inspectMarkdownNoteProperties(
-          note.content,
-          activeMetadata.properties,
-        );
-        return {
-          path: note.path,
-          title: displayTitleFromVaultPath(note.path),
-          content: note.content,
-          revision: note.revision,
-          tags: activeMetadata.tags,
-          headings: activeMetadata.headings,
-          outgoing: activeMetadata.links.filter(isWorkspaceNoteLink).map(
-            (link): WorkspaceLinkSummary => ({
-              label: link.alias ?? `${link.target}${link.subpath ?? ""}`,
-              status: link.resolution.status,
-              target: link.target,
-              subpath: link.subpath,
-              embed: link.embed,
-              syntax: link.syntax,
-              ...(link.resolution.path ? { path: link.resolution.path } : {}),
-            }),
-          ),
-          backlinks: backlinks.get(note.path) ?? [],
-          properties: propertyInspection.properties,
-          propertyEditor: propertyInspection.editor,
-        };
-      });
+      const pending = this.kernel.readText(filePath).then(
+        (note) => {
+          const propertyInspection = inspectMarkdownNoteProperties(
+            note.content,
+            activeMetadata.properties,
+          );
+          const snapshot: WorkspaceNoteSnapshot = {
+            path: note.path,
+            title: displayTitleFromVaultPath(note.path),
+            content: note.content,
+            revision: note.revision,
+            tags: activeMetadata.tags,
+            headings: activeMetadata.headings,
+            outgoing: activeMetadata.links.filter(isWorkspaceNoteLink).map(
+              (link): WorkspaceLinkSummary => ({
+                label: link.alias ?? `${link.target}${link.subpath ?? ""}`,
+                status: link.resolution.status,
+                target: link.target,
+                subpath: link.subpath,
+                embed: link.embed,
+                syntax: link.syntax,
+                ...(link.resolution.path ? { path: link.resolution.path } : {}),
+              }),
+            ),
+            backlinks: backlinks.get(note.path) ?? [],
+            properties: propertyInspection.properties,
+            propertyEditor: propertyInspection.editor,
+          };
+          this.#retainedNotes.set(note.path, snapshot);
+          return snapshot;
+        },
+        (error: unknown) => {
+          // The index still lists it because a committed write refreshed it
+          // directly, but a later write has its file aside. Same answer.
+          if (retained) {
+            return retained;
+          }
+          throw error;
+        },
+      );
       noteSnapshots.set(filePath, pending);
       return pending;
     };
@@ -2984,28 +3618,52 @@ export class WorkspaceRuntime {
       if (cached) {
         return cached;
       }
+      // Same answer as a note whose file is momentarily not on disk: republish
+      // what was last published for it rather than failing the whole snapshot.
+      const retained = this.#retainedCanvases.get(filePath);
       const pending = loadJsonCanvas(this.kernel, filePath, this.kernel.vaultId, {
         readOnly: this.readOnly,
-      }).then((response) => {
-        if (response.status !== "ready") {
-          throw new Error(
-            response.status === "unavailable" ? response.message : "The active vault changed.",
-          );
-        }
-        return response.canvas;
-      });
+      }).then(
+        (response) => {
+          if (response.status !== "ready") {
+            if (retained && response.status === "unavailable" && response.reason === "missing") {
+              return retained;
+            }
+            throw new Error(
+              response.status === "unavailable" ? response.message : "The active vault changed.",
+            );
+          }
+          this.#retainedCanvases.set(filePath, response.canvas);
+          return response.canvas;
+        },
+        (error: unknown) => {
+          if (retained) {
+            return retained;
+          }
+          throw error;
+        },
+      );
       canvasSnapshots.set(filePath, pending);
       return pending;
     };
     const snapshotState = reconciledState;
     const panes: WorkspacePaneSnapshot[] = await Promise.all(
       snapshotState.panes.map(async (pane) => {
+        // The selected tab may be one whose file is not there and for which
+        // nothing readable has been published this session - a tab restored on a
+        // vault that has not finished arriving, or one navigated to during an
+        // absence. Reading it is what used to throw out of here and fail the
+        // whole publish, so the pane names what it is waiting for instead.
+        const unavailablePath =
+          pane.activePath && !renderablePaths.has(pane.activePath) ? pane.activePath : null;
         const activeCanvas =
-          pane.activePath && isCanvasPath(pane.activePath)
+          !unavailablePath && pane.activePath && isCanvasPath(pane.activePath)
             ? await loadCanvasSnapshot(pane.activePath)
             : null;
         const activeNote =
-          pane.activePath && !activeCanvas ? await loadNoteSnapshot(pane.activePath) : null;
+          !unavailablePath && pane.activePath && !activeCanvas
+            ? await loadNoteSnapshot(pane.activePath)
+            : null;
         return {
           id: pane.id,
           active: pane.id === snapshotState.activePaneId,
@@ -3021,12 +3679,39 @@ export class WorkspaceRuntime {
           canGoBack: Boolean(pane.navigationHistory?.back.length),
           canGoForward: Boolean(pane.navigationHistory?.forward.length),
           ...(activeCanvas ? { activeCanvas } : {}),
+          ...(unavailablePath
+            ? {
+                activeUnavailable: {
+                  path: unavailablePath,
+                  title: isCanvasPath(unavailablePath)
+                    ? titleForJsonCanvasPath(unavailablePath)
+                    : displayTitleFromVaultPath(unavailablePath),
+                },
+              }
+            : {}),
         };
       }),
     );
     const activePane = panes.find(({ id }) => id === snapshotState.activePaneId);
     if (!activePane) {
       throw new Error("The active workspace pane is missing from its snapshot.");
+    }
+    // Keep only what a later publish could still have to republish: the notes a
+    // pane is showing, and any path whose absence is still unconfirmed.
+    const republishable = new Set(
+      snapshotState.panes
+        .map((pane) => pane.activePath)
+        .filter((filePath): filePath is string => filePath !== null),
+    );
+    for (const filePath of this.#retainedNotes.keys()) {
+      if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
+        this.#retainedNotes.delete(filePath);
+      }
+    }
+    for (const filePath of this.#retainedCanvases.keys()) {
+      if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
+        this.#retainedCanvases.delete(filePath);
+      }
     }
     return {
       state: this.#watcherError ? "degraded" : "ready",
@@ -3038,6 +3723,7 @@ export class WorkspaceRuntime {
       splitDirection: snapshotState.splitDirection,
       tabs: activePane.tabs,
       activeNote: activePane.activeNote,
+      ...(activePane.activeUnavailable ? { activeUnavailable: activePane.activeUnavailable } : {}),
       recoveryActionCount: this.kernel.startupRecoveryActions.length,
       watcher: {
         lastSequence: this.#lastWatchSequence,

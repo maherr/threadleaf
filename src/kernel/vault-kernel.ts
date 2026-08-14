@@ -58,6 +58,11 @@ import type {
   VaultTextSnapshot,
   VaultWriteResult,
 } from "./ports";
+import {
+  type TransientAbsenceHandle,
+  type TransientAbsenceRegistry,
+  VaultTransientAbsences,
+} from "./watch-protocol";
 
 export type KernelFaultPoint =
   | "write:after-intent"
@@ -270,6 +275,7 @@ export class VaultKernel implements VaultMutationPort {
   private readonly rollbackClaimsDirectory: string;
   private readonly transactionDirectory: string;
   private mutationTail: Promise<void> = Promise.resolve();
+  readonly #transientAbsences = new VaultTransientAbsences();
 
   private constructor(
     paths: VaultPathPolicy,
@@ -290,6 +296,15 @@ export class VaultKernel implements VaultMutationPort {
     this.recoveryDirectory = path.join(stateRoot, "recovery");
     this.rollbackClaimsDirectory = path.join(this.recoveryDirectory, "rollback-claims");
     this.transactionDirectory = path.join(stateRoot, "transactions");
+  }
+
+  /**
+   * The paths this kernel currently holds aside mid-write. A watcher that scans
+   * inside such a window sees a deletion for a file that is coming back, and
+   * this is how it can tell that reading apart from a real removal.
+   */
+  get transientAbsences(): TransientAbsenceRegistry {
+    return this.#transientAbsences;
   }
 
   static async open(options: VaultKernelOptions): Promise<VaultKernel> {
@@ -2242,6 +2257,31 @@ export class VaultKernel implements VaultMutationPort {
     expectedRevision: string | null,
     strictContainment = false,
   ): Promise<InternalWriteResult> {
+    // Replacing an existing file leaves the target genuinely missing between its
+    // move-aside and the install that restores it. The claim is taken inside the
+    // transaction, once the file is actually aside, and released here so every
+    // exit path clears it: commit, conflict, rollback, and thrown failure alike.
+    const absence = this.#transientAbsences.reserve(targetPath);
+    try {
+      return await this.performWriteTransaction(
+        targetPath,
+        bytes,
+        expectedRevision,
+        strictContainment,
+        absence,
+      );
+    } finally {
+      absence.release();
+    }
+  }
+
+  private async performWriteTransaction(
+    targetPath: string,
+    bytes: Buffer,
+    expectedRevision: string | null,
+    strictContainment: boolean,
+    absence: TransientAbsenceHandle,
+  ): Promise<InternalWriteResult> {
     const targetAbsolute = await this.paths.resolveForWrite(targetPath, !strictContainment);
     const initial = await this.readMutationFile(targetAbsolute, strictContainment);
     if (!revisionsMatch(initial, expectedRevision)) {
@@ -2314,6 +2354,10 @@ export class VaultKernel implements VaultMutationPort {
     await this.inject("write:after-prepare");
 
     if (finalSnapshot) {
+      // Claimed before the move rather than after it, so the window a watcher
+      // can scan through is covered from its first instant. A move-aside that
+      // fails leaves the file where it is, which makes the claim inert.
+      absence.hold(id);
       const movedAside = await this.moveExistingTargetAside(
         targetAbsolute,
         rollbackAbsolute,
