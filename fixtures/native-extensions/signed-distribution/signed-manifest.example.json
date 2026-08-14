@@ -1,0 +1,48 @@
+{
+  "distributionVersion": 1,
+  "manifest": {
+    "manifestVersion": 1,
+    "apiVersion": "1.0",
+    "id": "threadleaf.signed-summary",
+    "name": "Signed summary fixture",
+    "version": "1.0.0",
+    "entrypoint": "bundle.js",
+    "portable": true,
+    "desktopOnly": false,
+    "capabilities": [
+      {
+        "id": "vault.read",
+        "reason": "Read one selected note for the fixture workflow."
+      },
+      {
+        "id": "vault.write",
+        "reason": "Write the generated summary through the public vault port."
+      }
+    ]
+  },
+  "bundleSha256": "f965d7a8e63cd47af1dc2ee5bfc6cf3ea88f91fa9f5841707bc58f4601362a4f",
+  "packageTreeSha256": "f965d7a8e63cd47af1dc2ee5bfc6cf3ea88f91fa9f5841707bc58f4601362a4f",
+  "authorityDigest": "a7f0a7fc697a207606c77ed8d7c3122c7d128889a032c51eabde0ba92ae17b72",
+  "publisher": {
+    "publisherId": "fixture.publisher",
+    "keyId": "key-2",
+    "algorithm": "ed25519",
+    "publicKey": "MCowBQYDK2VwAyEAGwMgInNvevkxl9CQhbWNYN5h89jUlt8ZlSL3CRy_f0U",
+    "fingerprint": "sha256:e81a5961edb8335e267be4ee30c67cba38d9025e7194e1c31d29972a3cec9a3c"
+  },
+  "issuedAt": "2026-01-01T00:00:00.000Z",
+  "expiresAt": "2027-01-01T00:00:00.000Z",
+  "keyRotation": {
+    "rotationVersion": 1,
+    "previous": {
+      "publisherId": "fixture.publisher",
+      "keyId": "key-1",
+      "algorithm": "ed25519",
+      "publicKey": "MCowBQYDK2VwAyEAamkB5vJRGTssqYywPnyYZq0jtSgLaMIZSv6CgJYpSYc",
+      "fingerprint": "sha256:eba4fc90c7b4ada9e930b133d9fdb8a54dd426c4de5271f3e91bf827618309a9"
+    },
+    "effectiveAt": "2026-01-01T00:00:00.000Z",
+    "signature": "AkCQ-pZx8D4Cx5rH8KLKNzYvqJZ1tdOWSRnkhatXHBuFIkbWZiKUnnFMXOTXBbtdlHj34jr_d86ELudh21m-CA"
+  },
+  "signature": "m4KlvE7EDxXdAK9BtVsu9ky_9jILi_wtDsYIbGXsWZtRbO55kTQgn38wk6XwBfPvkOXon6NPXBxO2WRRYIt-AA"
+}

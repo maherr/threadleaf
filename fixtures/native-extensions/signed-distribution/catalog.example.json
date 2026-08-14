@@ -1,0 +1,109 @@
+{
+  "catalogVersion": 1,
+  "revision": 1,
+  "generatedAt": "2026-06-01T00:00:00.000Z",
+  "expiresAt": "2026-06-30T00:00:00.000Z",
+  "catalogRoot": {
+    "publisherId": "threadleaf.catalog",
+    "keyId": "root-1",
+    "algorithm": "ed25519",
+    "publicKey": "MCowBQYDK2VwAyEAASEDxCRQQs0yQ_voMWhmOu9_B24Dt--OmSokNjS4Lks",
+    "fingerprint": "sha256:27dc63726079cf6aa8f9de6485c670db3d5fc8e51f3569532988b6ad910c5c61"
+  },
+  "entriesSha256": "8c68eda0200023148405230ad6548e6d3049e5c98a1c64eefed21f4ddc03de4a",
+  "entries": [
+    {
+      "distributionVersion": 1,
+      "manifest": {
+        "manifestVersion": 1,
+        "apiVersion": "1.0",
+        "id": "threadleaf.signed-summary",
+        "name": "Signed summary fixture",
+        "version": "1.0.0",
+        "entrypoint": "bundle.js",
+        "portable": true,
+        "desktopOnly": false,
+        "capabilities": [
+          {
+            "id": "vault.read",
+            "reason": "Read one selected note for the fixture workflow."
+          },
+          {
+            "id": "vault.write",
+            "reason": "Write the generated summary through the public vault port."
+          }
+        ]
+      },
+      "bundleSha256": "f965d7a8e63cd47af1dc2ee5bfc6cf3ea88f91fa9f5841707bc58f4601362a4f",
+      "packageTreeSha256": "f965d7a8e63cd47af1dc2ee5bfc6cf3ea88f91fa9f5841707bc58f4601362a4f",
+      "authorityDigest": "a7f0a7fc697a207606c77ed8d7c3122c7d128889a032c51eabde0ba92ae17b72",
+      "publisher": {
+        "publisherId": "fixture.publisher",
+        "keyId": "key-2",
+        "algorithm": "ed25519",
+        "publicKey": "MCowBQYDK2VwAyEAGwMgInNvevkxl9CQhbWNYN5h89jUlt8ZlSL3CRy_f0U",
+        "fingerprint": "sha256:e81a5961edb8335e267be4ee30c67cba38d9025e7194e1c31d29972a3cec9a3c"
+      },
+      "issuedAt": "2026-01-01T00:00:00.000Z",
+      "expiresAt": "2027-01-01T00:00:00.000Z",
+      "keyRotation": {
+        "rotationVersion": 1,
+        "previous": {
+          "publisherId": "fixture.publisher",
+          "keyId": "key-1",
+          "algorithm": "ed25519",
+          "publicKey": "MCowBQYDK2VwAyEAamkB5vJRGTssqYywPnyYZq0jtSgLaMIZSv6CgJYpSYc",
+          "fingerprint": "sha256:eba4fc90c7b4ada9e930b133d9fdb8a54dd426c4de5271f3e91bf827618309a9"
+        },
+        "effectiveAt": "2026-01-01T00:00:00.000Z",
+        "signature": "AkCQ-pZx8D4Cx5rH8KLKNzYvqJZ1tdOWSRnkhatXHBuFIkbWZiKUnnFMXOTXBbtdlHj34jr_d86ELudh21m-CA"
+      },
+      "signature": "m4KlvE7EDxXdAK9BtVsu9ky_9jILi_wtDsYIbGXsWZtRbO55kTQgn38wk6XwBfPvkOXon6NPXBxO2WRRYIt-AA"
+    }
+  ],
+  "revocations": [],
+  "delistings": [
+    {
+      "extensionId": "threadleaf.signed-summary",
+      "version": "0.9.0",
+      "at": "2026-02-01T00:00:00.000Z"
+    }
+  ],
+  "tombstones": [
+    {
+      "extensionId": "threadleaf.signed-summary",
+      "version": "0.8.0",
+      "at": "2026-01-15T00:00:00.000Z",
+      "bundleSha256": "f965d7a8e63cd47af1dc2ee5bfc6cf3ea88f91fa9f5841707bc58f4601362a4f",
+      "authorityDigest": "a7f0a7fc697a207606c77ed8d7c3122c7d128889a032c51eabde0ba92ae17b72",
+      "packageTreeSha256": "f965d7a8e63cd47af1dc2ee5bfc6cf3ea88f91fa9f5841707bc58f4601362a4f",
+      "metadataSha256": "2fe9680ee3ebbe4bd1bf8c8c1c0e7e90f0a1208d0030098133345911617733b3",
+      "tombstonedAt": "2026-01-15T00:00:00.000Z",
+      "reason": "Withdrawn by the publisher."
+    }
+  ],
+  "successorPath": [],
+  "publisherSuccessors": [
+    {
+      "successorVersion": 1,
+      "previous": {
+        "publisherId": "fixture.publisher",
+        "keyId": "key-1",
+        "algorithm": "ed25519",
+        "publicKey": "MCowBQYDK2VwAyEAamkB5vJRGTssqYywPnyYZq0jtSgLaMIZSv6CgJYpSYc",
+        "fingerprint": "sha256:eba4fc90c7b4ada9e930b133d9fdb8a54dd426c4de5271f3e91bf827618309a9"
+      },
+      "next": {
+        "publisherId": "fixture.publisher",
+        "keyId": "key-2",
+        "algorithm": "ed25519",
+        "publicKey": "MCowBQYDK2VwAyEAGwMgInNvevkxl9CQhbWNYN5h89jUlt8ZlSL3CRy_f0U",
+        "fingerprint": "sha256:e81a5961edb8335e267be4ee30c67cba38d9025e7194e1c31d29972a3cec9a3c"
+      },
+      "issuedAt": "2026-01-01T00:00:00.000Z",
+      "effectiveAt": "2026-01-01T00:00:00.000Z",
+      "signature": "ZF6MV4ibPYsW8B2ZFwsxhN2gxDjY5keIfEhiP60rPdG8ycsXGiGuhA14IFk_bxOkkHLTtYCozzHrjfJg4nzRAQ"
+    }
+  ],
+  "signature": "cW1arpWpY2Otp4luUZEdfvwOg0qztJzO_c1Q29Xd3VyJU-03Sap_hZTDSKrj39s-NcB7FzW832OFsXZdtt2iAg"
+}

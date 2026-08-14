@@ -2,7 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://threadleaf.org/schemas/native-extension-distribution.v1.json",
   "title": "Threadleaf native extension signed distribution metadata and catalog v1",
-  "oneOf": [{ "$ref": "#/$defs/signedManifest" }, { "$ref": "#/$defs/catalog" }],
+  "$comment": "The three documents this family defines: one signed record, one signed catalog, and the offline trust anchor set the host parses to authorize either.",
+  "oneOf": [
+    { "$ref": "#/$defs/signedManifest" },
+    { "$ref": "#/$defs/catalog" },
+    { "$ref": "#/$defs/trustAnchorSet" }
+  ],
   "$defs": {
     "publisherKey": {
       "type": "object",
@@ -106,7 +111,8 @@
       "description": "Exactly 64 bytes of Ed25519 signature, unpadded base64url."
     },
     "manifest": {
-      "$ref": "./native-extension-manifest.v1.schema.json"
+      "$comment": "Resolved by the sibling schema's own $id, which does not carry the .schema file-name segment.",
+      "$ref": "https://threadleaf.org/schemas/native-extension-manifest.v1.json"
     },
     "signedManifest": {
       "type": "object",

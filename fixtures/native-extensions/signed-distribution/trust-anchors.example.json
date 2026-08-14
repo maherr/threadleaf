@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "publishers": [
+    {
+      "publisherId": "fixture.publisher",
+      "keyId": "key-0",
+      "algorithm": "ed25519",
+      "publicKey": "MCowBQYDK2VwAyEAQfvf1vz5ISn32u7uOuNnN5_fIlW5QJvW3HvzIY17584",
+      "fingerprint": "sha256:988c49472b3dcf24d4e6c6b74997725afcbd9aa292fde864ab4d2bb077460459",
+      "revokedAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "publisherId": "fixture.publisher",
+      "keyId": "key-1",
+      "algorithm": "ed25519",
+      "publicKey": "MCowBQYDK2VwAyEAamkB5vJRGTssqYywPnyYZq0jtSgLaMIZSv6CgJYpSYc",
+      "fingerprint": "sha256:eba4fc90c7b4ada9e930b133d9fdb8a54dd426c4de5271f3e91bf827618309a9"
+    },
+    {
+      "publisherId": "fixture.publisher",
+      "keyId": "key-2",
+      "algorithm": "ed25519",
+      "publicKey": "MCowBQYDK2VwAyEAGwMgInNvevkxl9CQhbWNYN5h89jUlt8ZlSL3CRy_f0U",
+      "fingerprint": "sha256:e81a5961edb8335e267be4ee30c67cba38d9025e7194e1c31d29972a3cec9a3c"
+    }
+  ],
+  "catalogRoots": [
+    {
+      "publisherId": "threadleaf.catalog",
+      "keyId": "root-1",
+      "algorithm": "ed25519",
+      "publicKey": "MCowBQYDK2VwAyEAASEDxCRQQs0yQ_voMWhmOu9_B24Dt--OmSokNjS4Lks",
+      "fingerprint": "sha256:27dc63726079cf6aa8f9de6485c670db3d5fc8e51f3569532988b6ad910c5c61"
+    }
+  ]
+}

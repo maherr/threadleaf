@@ -940,6 +940,40 @@ describe("native extension offline distribution trust", () => {
     );
   });
 
+  it("keeps the published schema fixtures verifiable by the production parsers", () => {
+    // scripts/check-native-extension-distribution-schema.mjs validates these same three files
+    // against the JSON Schema. This side proves they are real documents the code accepts, so the
+    // schema and the parser cannot drift apart behind a fixture nobody exercises.
+    const fixtureDirectory = new URL(
+      "../../fixtures/native-extensions/signed-distribution/",
+      import.meta.url,
+    );
+    const read = (name: string) =>
+      JSON.parse(readFileSync(new URL(name, fixtureDirectory), "utf8"));
+    const metadata = read("signed-manifest.example.json");
+    const catalog = read("catalog.example.json");
+    const anchors = read("trust-anchors.example.json");
+
+    expect(
+      verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
+        trustedPublishers: anchors,
+      }),
+    ).toMatchObject({ status: "trusted", publisherId: "fixture.publisher" });
+    expect(
+      verifyNativeExtensionMarketplaceCatalog(catalog, {
+        trustedPublishers: anchors,
+        trustedCatalogRoots: anchors.catalogRoots,
+        bundleBytesByEntry: new Map([
+          [
+            `${metadata.manifest.id}\u0000${metadata.manifest.version}`,
+            signedDistributionBundle.bundleBytes,
+          ],
+        ]),
+        stateStore: new InMemoryNativeExtensionMarketplaceCatalogStateStore(),
+      }),
+    ).toHaveLength(1);
+  });
+
   it("refuses a catalog state store that cannot compare-and-swap", async () => {
     const publisherPair = keyPair();
     const rootPair = keyPair();
