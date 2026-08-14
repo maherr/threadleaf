@@ -119,29 +119,31 @@ describe("search text projection scale", () => {
     // concatenation or a rescan per grapheme) would show up as a growing
     // per-unit cost well before one million units. The short/long sizes
     // below are a 4x step (16k vs 64k, after a smaller untimed warmup), so
-    // a quadratic cost predicts roughly a 16x increase -- clearly over the
-    // 4x ceiling. A 2x step (e.g. 32k vs 64k) only predicts a ~4x increase
-    // for a quadratic, which is indistinguishable from the ceiling itself
-    // under ordinary timing noise.
+    // a linear cost predicts about a 4x increase (measured slightly above 4x
+    // once the larger working set spills cache), while a quadratic predicts
+    // roughly 16x. The ceiling is 8x: about 2x margin over real linear
+    // behavior and 2x under a quadratic, so neither side is a coin flip. A
+    // strict ceiling at exactly 4x would demand sub-linear scaling and fail
+    // correct code.
     measureFoldSearchText(4_096);
     const shortRuns = Array.from({ length: 3 }, () => measureFoldSearchText(16_384));
     const longRuns = Array.from({ length: 3 }, () => measureFoldSearchText(65_536));
     const short = Math.min(...shortRuns);
     const long = Math.min(...longRuns);
 
-    expect(long).toBeLessThan(Math.max(short * 4, 50));
+    expect(long).toBeLessThan(Math.max(short * 8, 50));
   });
 
   it("keeps projectSearchText's per-grapheme case folding near-linear at 16k/64k character scales", () => {
-    // Same 4x short/long step as the foldSearchText scale test above, for the same reason: a
-    // quadratic cost predicts roughly a 16x increase against these sizes, clearly over the 4x
-    // ceiling, where a 2x step would not reliably distinguish it from noise.
+    // Same 4x short/long step and 8x ceiling as the foldSearchText scale test above, for the
+    // same reason: linear predicts about 4x (slightly above with cache effects), quadratic
+    // roughly 16x, and the 8x ceiling leaves about 2x margin to each side.
     measureCaseFoldingProjection(4_096);
     const shortRuns = Array.from({ length: 3 }, () => measureCaseFoldingProjection(16_384));
     const longRuns = Array.from({ length: 3 }, () => measureCaseFoldingProjection(65_536));
     const short = Math.min(...shortRuns);
     const long = Math.min(...longRuns);
 
-    expect(long).toBeLessThan(Math.max(short * 4, 50));
+    expect(long).toBeLessThan(Math.max(short * 8, 50));
   });
 });
