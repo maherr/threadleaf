@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import {
@@ -221,6 +221,45 @@ function withManifest(
       releaseTag: version,
     },
   };
+}
+
+/**
+ * Spies on `fs.mkdtemp` to capture the exact per-run temporary root that
+ * `inspectPluginPackage` materializes for the given call, instead of scanning the shared
+ * `os.tmpdir()` namespace for `threadleaf-plugin-inspection-*` entries. A namespace scan cannot
+ * tell this run's own directory apart from a same-prefixed directory belonging to a genuinely
+ * parallel, unrelated run sharing the same host temp directory, so it can misattribute that
+ * sibling as this run's leaked residue. Capturing the exact created path keeps residue
+ * accounting scoped only to what this specific call created.
+ */
+async function withCapturedMaterializedRoot<T>(
+  action: () => Promise<T>,
+): Promise<{ outcome: T; rootPath: string }> {
+  const realMkdtemp = fs.mkdtemp.bind(fs);
+  let capturedRoot: string | undefined;
+  const mkdtempSpy = vi
+    .spyOn(fs, "mkdtemp")
+    .mockImplementation(async (prefix: string, options?: unknown) => {
+      const created = await realMkdtemp(prefix, options as Parameters<typeof fs.mkdtemp>[1]);
+      capturedRoot = created;
+      return created;
+    });
+  try {
+    const outcome = await action();
+    if (!capturedRoot) {
+      throw new Error("expected inspectPluginPackage to materialize a temporary root");
+    }
+    return { outcome, rootPath: capturedRoot };
+  } finally {
+    mkdtempSpy.mockRestore();
+  }
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  return fs
+    .stat(target)
+    .then(() => true)
+    .catch(() => false);
 }
 
 describe("exact plugin package inspection", () => {
@@ -512,17 +551,77 @@ describe("exact plugin package inspection", () => {
 
   it("does not leave the materialized disposable package on disk", async () => {
     const input = await fixtureInput("inspection-safe");
-    const before = new Set(
-      (await fs.readdir(os.tmpdir())).filter((entry) =>
-        entry.startsWith("threadleaf-plugin-inspection-"),
-      ),
+    const { outcome: report, rootPath } = await withCapturedMaterializedRoot(() =>
+      inspectPluginPackage(input),
     );
-    await inspectPluginPackage(input);
-    const after = new Set(
-      (await fs.readdir(os.tmpdir())).filter((entry) =>
-        entry.startsWith("threadleaf-plugin-inspection-"),
-      ),
-    );
-    expect([...after].filter((entry) => !before.has(entry))).toEqual([]);
+    expect(report.overall).toBe("pass");
+    expect(await pathExists(rootPath)).toBe(false);
+  });
+
+  it("does not misattribute a foreign sibling inspection directory created during a run", async () => {
+    const input = await fixtureInput("inspection-safe");
+    const realMkdtemp = fs.mkdtemp.bind(fs);
+    let foreignSibling = "";
+    const { outcome: report, rootPath } = await withCapturedMaterializedRoot(async () => {
+      const inspectionPromise = inspectPluginPackage(input);
+      // Simulate a genuinely parallel, unrelated run whose own uniquely mkdtemp'd root lands in
+      // the same shared `threadleaf-plugin-inspection-*` namespace while this run is in flight.
+      // A namespace scan taken before and after this call would see this directory appear in
+      // between and mistake it for this run's own leaked residue.
+      foreignSibling = await realMkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-inspection-"));
+      await fs.writeFile(
+        path.join(foreignSibling, "unrelated-run.marker"),
+        "belongs to a different, still-in-flight run",
+        "utf8",
+      );
+      return inspectionPromise;
+    });
+    try {
+      expect(report.overall).toBe("pass");
+      expect(rootPath).not.toBe(foreignSibling);
+      // This run's own materialized root was still cleaned up normally...
+      expect(await pathExists(rootPath)).toBe(false);
+      // ...while the foreign sibling was never touched, swept, or blamed on this run.
+      expect(await pathExists(foreignSibling)).toBe(true);
+      expect(await fs.readdir(foreignSibling)).toEqual(["unrelated-run.marker"]);
+    } finally {
+      await fs.rm(foreignSibling, { recursive: true, force: true });
+    }
+  });
+
+  it("still detects a genuine leak of its own materialized directory", async () => {
+    const input = await fixtureInput("inspection-safe");
+    const realMkdtemp = fs.mkdtemp.bind(fs);
+    const realRm = fs.rm.bind(fs);
+    let capturedRoot: string | undefined;
+    const mkdtempSpy = vi
+      .spyOn(fs, "mkdtemp")
+      .mockImplementation(async (prefix: string, options?: unknown) => {
+        const created = await realMkdtemp(prefix, options as Parameters<typeof fs.mkdtemp>[1]);
+        capturedRoot = created;
+        return created;
+      });
+    const rmSpy = vi.spyOn(fs, "rm").mockImplementation(async (target, options) => {
+      if (capturedRoot && String(target) === capturedRoot) {
+        // Simulate a cleanup call that silently fails to remove this run's own root, the way a
+        // permission race or unsupported filesystem behavior could in production.
+        return;
+      }
+      return realRm(target as Parameters<typeof fs.rm>[0], options as Parameters<typeof fs.rm>[1]);
+    });
+    try {
+      const report = await inspectPluginPackage(input);
+      expect(report.overall).toBe("pass");
+      expect(capturedRoot).toBeDefined();
+      // A genuine leak of this run's own root remains observable: a residue check would
+      // correctly go red here instead of passing regardless of what happened on disk.
+      expect(await pathExists(capturedRoot as string)).toBe(true);
+    } finally {
+      mkdtempSpy.mockRestore();
+      rmSpy.mockRestore();
+      if (capturedRoot) {
+        await fs.rm(capturedRoot, { recursive: true, force: true });
+      }
+    }
   });
 });
