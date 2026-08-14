@@ -60,9 +60,15 @@ threadleaf --vault /path/to/vault plugin id=<plugin-id>
 threadleaf --vault /path/to/vault themes [versions]
 threadleaf --vault /path/to/vault theme name=<theme-name>
 threadleaf --vault /path/to/vault snippets
+threadleaf port inspect /path/to/unpacked-plugin [--receipt /path/to/inspection.json]
+threadleaf port ci /path/to/unpacked-plugin [--receipt /path/to/inspection.json] [--json]
+threadleaf port scaffold <native|compatibility> /path/to/unpacked-plugin --output /path/to/output [--receipt /path/to/inspection.json]
 ```
 
 During development, prefix the same arguments with `pnpm cli`.
+
+`port inspect`, `port ci`, and `port scaffold` are vault-free: do not pass `--vault`. See
+[Extension porting](#extension-porting) below for the full contract.
 
 Shell completion is generated without a vault and never queries the filesystem:
 
@@ -127,6 +133,9 @@ paths, plugin packages, themes, snippets, and other user data are never enumerat
 | `themes` | Sorted community-theme catalog, with optional versions | Shared bounded appearance catalog; never reads active selection |
 | `theme` | One community-theme projection by explicit name | Shared bounded appearance catalog; never reads active selection |
 | `snippets` | Sorted CSS snippet names | Shared bounded appearance catalog; never reads enabled selection |
+| `port inspect` | Deterministic API, authority, exact-bundle, and CI diagnostics for an unpacked plugin | Read-only exact-byte static inspection; never imports or executes plugin code |
+| `port ci` | The same report, exiting nonzero when it contains an error diagnostic | Offline static inspection and existing source gates |
+| `port scaffold` | An independently authored native extension or trusted compatibility fixture template | New empty output directory; no input source, asset, or generated bundle bytes are copied |
 
 The visible file inventory includes ordinary attachments, Canvas documents, and other user files.
 The Markdown note corpus remains the narrower input to read, search, graph, task, property, and
@@ -493,5 +502,67 @@ catalog mutations, action inventory, hotkey inventory, and workspace or tab inve
 current headless authority either does not exist or is private application state.
 `trash list`, `trash:list`, and `restore` are native Threadleaf recovery commands rather than
 claimed Obsidian CLI compatibility.
+
+## Extension porting
+
+`port inspect`, `port ci`, and `port scaffold` are an offline, read-only toolkit for an author who
+has an unpacked Obsidian-compatible plugin directory (a folder containing `manifest.json`,
+`main.js`, and an optional `styles.css`) and wants to decide whether to write a native Threadleaf
+extension or an independently authored trusted compatibility fixture. They are vault-free: do not
+pass `--vault`, and do not point them at a vault.
+
+```sh
+pnpm cli port inspect /path/to/unpacked-plugin
+pnpm cli port inspect /path/to/unpacked-plugin --json
+pnpm cli port inspect /path/to/unpacked-plugin --receipt /path/to/inspection.json --json
+pnpm cli port ci /path/to/unpacked-plugin --receipt /path/to/inspection.json --json
+pnpm cli port scaffold native /path/to/unpacked-plugin --output /path/to/new-extension
+pnpm cli port scaffold compatibility /path/to/unpacked-plugin --output /path/to/new-fixture
+```
+
+The fused `port:inspect`, `port:ci`, and `port:scaffold` spellings (used by shell completion) are
+equivalent, single-token alternatives to the two-token `port <verb>` form shown above. The plugin
+directory accepts either a bare positional or `path=<directory>`.
+
+`port inspect` and `port ci` read the exact package bytes, hash the assets, validate the manifest,
+and statically scan the bundle; they never import, evaluate, activate, or `require()` the input
+directory. `port ci` runs the same inspection and exits nonzero when the report contains an error
+diagnostic, including a tampered manifest, stylesheet, receipt, or unexpected package entry. An
+optional `--receipt <path>` supplies a canonical package-inspection receipt as diagnostic input
+only: it is normalized, bounded, and checked against the exact manifest, bundle, optional
+stylesheet, provenance, and package entry set, but it can never become authoritative, raise a
+compatibility level, or make `port ci` pass. Package symlinks must remain inside the package root;
+a symlinked `manifest.json` or `main.js` fails closed, and any other unexpected entry is reported as
+a diagnostic rather than read.
+
+`port scaffold <native|compatibility> <directory> --output <directory>` writes a new,
+independently authored native-extension or trusted-compatibility-fixture starting point: a version
+1 manifest, a typed entrypoint or CommonJS fixture, `PORTING_PLAN.json`, a README, and a conformance
+test. It copies no source, asset, or generated bundle bytes from the inspected plugin. The output
+must be a new, empty directory that does not overlap the inspected plugin directory; scaffolding
+writes to a contained sibling staging directory first and publishes with an atomic rename, so a
+failed write never leaves a partial scaffold that could be mistaken for a completed port.
+
+The machine-readable report (schema version 1) is defined by
+[`extension-porting-report.v1.schema.json`](compatibility/extension-porting-report.v1.schema.json).
+Its public contract gate is `pnpm run test:extension-porting-contract`, which checks the schema
+envelope, the checked-in golden report, adversarial over-limit and unknown-field rejection, digest
+relationships, duplicate limits, and bounded output. `port ci` itself emits the CI recipe as part of
+its report, using the `$PLUGIN_DIR` variable rather than embedding a local path:
+
+```sh
+pnpm cli port inspect "$PLUGIN_DIR" --json
+pnpm cli port ci "$PLUGIN_DIR" --json
+pnpm exec vitest run src/extension-porting/porting-toolkit.test.ts
+pnpm run test:extension-porting-contract
+pnpm run typecheck
+pnpm check
+```
+
+An unmeasured API reference or unmapped authority class is a review difference, not proof that the
+corresponding API is absent or unsupported. Static inspection is a review aid, not a sandbox or a
+proof of safety. Neither report raises a compatibility level; a named workflow must pass through
+Threadleaf's production path and be recorded in the generated compatibility registry before a
+compatibility claim is made.
 
 Reference behavior: [Obsidian CLI help](https://obsidian.md/help/cli).
