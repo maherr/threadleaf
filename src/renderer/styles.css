@@ -2616,6 +2616,61 @@ h2 {
   font-size: 0.76em;
 }
 
+/*
+ * A bounded, explicitly labeled settled Markdown post-processor projection for exactly the CITE
+ * 0.1.2 compatibility fixture (see docs/compatibility/open-plugin-api.md). State is carried in
+ * text and `data-plugin-projection-state`, never color alone.
+ */
+.plugin-markdown-projection {
+  width: min(100%, 780px);
+  margin: 28px auto 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 4px double var(--accent);
+  border-radius: 3px 8px 8px 3px;
+  background: var(--surface-raised);
+  font-family: var(--font-interface);
+}
+
+.plugin-markdown-projection-heading {
+  margin: 0 0 8px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.plugin-markdown-projection-body {
+  color: var(--ink-soft);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.plugin-markdown-projection[data-plugin-projection-state="unavailable"] {
+  border-left-color: var(--line-strong);
+}
+
+.plugin-markdown-projection[data-plugin-projection-state="unavailable"]
+  .plugin-markdown-projection-body {
+  color: var(--ink-muted);
+  font-family: var(--font-interface);
+  font-size: 12px;
+}
+
+.cite-citation {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.cite-citation-summary {
+  color: var(--ink-muted);
+  font-family: var(--font-interface);
+  font-size: 11px;
+}
+
 .preview-attachment-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

@@ -108,6 +108,7 @@ export const pluginRendererOperations = [
   "open-settings",
   "open-view",
   "reload-plugin",
+  "render-markdown",
   "run-command",
   "unload-all",
   "unload-plugin",
@@ -445,6 +446,18 @@ export function requirePayloadString(request: PluginRendererRequest, key: string
   const value = request.payload?.[key];
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${request.operation} requires a non-empty ${key} string.`);
+  }
+  return value;
+}
+
+/**
+ * Like {@link requirePayloadString}, but for a payload member such as note content that is a
+ * required string yet may legitimately be empty (an empty note).
+ */
+export function requirePayloadContent(request: PluginRendererRequest, key: string): string {
+  const value = request.payload?.[key];
+  if (typeof value !== "string") {
+    throw new Error(`${request.operation} requires a ${key} string.`);
   }
   return value;
 }

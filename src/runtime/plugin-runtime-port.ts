@@ -34,6 +34,22 @@ export interface PluginRuntimePort {
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
+  /**
+   * Render `content` through exactly `pluginId`'s currently registered Markdown post processors
+   * inside the trusted compatibility renderer and return the settled (already-awaited, non-live)
+   * result via `RuntimeSnapshot.markdownProjection`. Rejects if the plugin is not loaded, its
+   * processor throws, or the operation deadline elapses; never returns a partial or unprocessed
+   * projection silently.
+   *
+   * Optional so existing fixtures and fakes that predate this capability keep satisfying the
+   * port; every production implementation (`PluginHost`, `IsolatedPluginRuntime`,
+   * `RecoveringPluginRuntime`, `ElectronPluginRuntime`) always provides it.
+   */
+  renderMarkdownProjection?(
+    pluginId: string,
+    sourcePath: string,
+    content: string,
+  ): Promise<RuntimeSnapshot>;
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;

@@ -1,0 +1,9 @@
+{
+  "id": "cite",
+  "name": "CITE",
+  "version": "0.1.2",
+  "minAppVersion": "1.12.7",
+  "description": "Exact CITE release fixture.",
+  "author": "Fixture author",
+  "isDesktopOnly": false
+}

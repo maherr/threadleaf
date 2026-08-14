@@ -27,12 +27,15 @@ import {
   CommandRegistry,
   type CompatibilityVaultWritePort,
   createObsidianCompatibilityModule,
+  MarkdownRenderer,
   NoticeBus,
+  normalizePath,
   Plugin,
   type PluginManifest,
   sleep,
   Vault,
 } from "./obsidian-compat";
+import { Component } from "./obsidian-components";
 import { FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import type { CompatibilitySettingTab } from "./obsidian-workspace-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
@@ -261,6 +264,65 @@ export class PluginHost implements PluginRuntimePort {
   async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     await this.vault.waitForPluginMutations(options);
     return this.getSnapshot();
+  }
+
+  /**
+   * Execute `pluginId`'s currently registered Markdown post processors against `content` through
+   * the same `MarkdownRenderer.render` path plugins use, then discard the ephemeral render
+   * component. The settled (already-awaited) sanitizer-bound HTML crosses back on the snapshot;
+   * no DOM node, callback, or live render child survives this call. Rejects rather than returning
+   * a partial snapshot when the plugin is not loaded or its processor throws, so a caller never
+   * mistakes an unprocessed or partial result for a settled one.
+   */
+  async renderMarkdownProjection(
+    pluginId: string,
+    sourcePath: string,
+    content: string,
+  ): Promise<RuntimeSnapshot> {
+    const record = this.plugins.get(pluginId);
+    if (record?.summary.state !== "loaded" || !record.instance) {
+      throw pluginDiagnosticError(
+        "runtime-render-failed",
+        { pluginId },
+        new Error(`Plugin is not loaded: ${pluginId}`),
+      );
+    }
+    if (typeof document === "undefined") {
+      throw new Error("Plugin markdown rendering requires a renderer document.");
+    }
+    const normalizedSourcePath = normalizePath(sourcePath);
+    const contentSha256 = createHash("sha256").update(content, "utf8").digest("hex");
+    const postProcessorCount = this.app.compatibility.snapshot().markdownPostProcessors;
+    const component = new Component();
+    component.load();
+    const element = document.createElement("div");
+    let html: string;
+    try {
+      await MarkdownRenderer.render(this.app, content, element, sourcePath, component);
+      // Capture the settled markup before unloading: an `onunload` handler's job is releasing
+      // resources (timers, listeners), not producing the rendered artifact, and must never be
+      // able to erase evidence of what the processor actually rendered.
+      html = element.innerHTML;
+    } catch (error) {
+      this.record("error", createPluginDiagnostic("runtime-render-failed", { pluginId }).message);
+      throw pluginDiagnosticError("runtime-render-failed", { pluginId }, error);
+    } finally {
+      // The projection is settled and captured above; nothing will call back into this component
+      // afterward, so its render children release deterministically right here.
+      component.unload();
+    }
+    this.record("plugin", `Rendered a settled Markdown projection for ${record.summary.name}.`);
+    const snapshot = await this.getSnapshot();
+    return {
+      ...snapshot,
+      markdownProjection: {
+        contentSha256,
+        html,
+        pluginId,
+        postProcessorCount,
+        sourcePath: normalizedSourcePath,
+      },
+    };
   }
 
   private async openNativeEditorContext(context: PluginEditorContext): Promise<void> {

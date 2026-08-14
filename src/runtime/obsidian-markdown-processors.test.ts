@@ -266,3 +266,118 @@ describe("measured Markdown processor compatibility", () => {
     ]);
   });
 });
+
+describe("CITE settled Reading projection", () => {
+  const citeVaultPath = path.resolve("fixtures/vaults/cite-settled-reading");
+  const citePluginPath = path.join(citeVaultPath, ".obsidian", "plugins", "cite");
+
+  it("renders CITE's settled, sanitizer-bound projection bound to the exact content hash", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    exposeDom(dom);
+    const host = new PluginHost(citeVaultPath);
+    await host.loadPlugin(citePluginPath);
+
+    const content =
+      "Grounded by prior work [cite: Doe 2024] and a second source [cite: Smith 2023].";
+    const snapshot = await host.renderMarkdownProjection("cite", "Citations.md", content);
+
+    const projection = snapshot.markdownProjection;
+    expect(projection).not.toBeNull();
+    if (!projection) {
+      throw new Error("Expected a settled Markdown projection.");
+    }
+    expect(projection.pluginId).toBe("cite");
+    expect(projection.sourcePath).toBe("Citations.md");
+    expect(projection.postProcessorCount).toBe(1);
+    expect(projection.contentSha256).toBe(
+      createHash("sha256").update(content, "utf8").digest("hex"),
+    );
+    expect(projection.html).toContain('<span class="cite-citation">Doe 2024</span>');
+    expect(projection.html).toContain('<span class="cite-citation">Smith 2023</span>');
+    expect(projection.html).toContain("CITE recognized 2 citations.");
+
+    await host.close();
+  });
+
+  it("reports an honest zero rather than fabricating a citation", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    exposeDom(dom);
+    const host = new PluginHost(citeVaultPath);
+    await host.loadPlugin(citePluginPath);
+
+    const snapshot = await host.renderMarkdownProjection(
+      "cite",
+      "No Citations.md",
+      "An ordinary note with no citation markers at all.",
+    );
+
+    expect(snapshot.markdownProjection?.html).toContain("CITE found no citations in this note.");
+    expect(snapshot.markdownProjection?.html).not.toContain('cite-citation"');
+
+    await host.close();
+  });
+
+  it("settles each request independently, proving no live callback or DOM state survives between calls", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    exposeDom(dom);
+    const host = new PluginHost(citeVaultPath);
+    await host.loadPlugin(citePluginPath);
+
+    // Each call's render-child is loaded and unloaded synchronously inside
+    // renderMarkdownProjection itself (see PluginHost.renderMarkdownProjection). Nothing outside
+    // that call ever mounts or later unmounts this DOM tree, so a second, differently worded
+    // request must reflect only its own content -- proof this is a settled, one-shot execution
+    // rather than a live callback accumulating state or waiting on a native Reading view.
+    const first = await host.renderMarkdownProjection("cite", "Citations.md", "[cite: Doe 2024]");
+    const second = await host.renderMarkdownProjection(
+      "cite",
+      "Citations.md",
+      "[cite: Smith 2023] [cite: Lee 2022]",
+    );
+
+    expect(first.markdownProjection?.html).toContain("Doe 2024");
+    expect(first.markdownProjection?.html).toContain("CITE recognized 1 citation.");
+    expect(first.markdownProjection?.html).not.toContain("Smith 2023");
+
+    expect(second.markdownProjection?.html).toContain("Smith 2023");
+    expect(second.markdownProjection?.html).toContain("Lee 2022");
+    expect(second.markdownProjection?.html).toContain("CITE recognized 2 citations.");
+    expect(second.markdownProjection?.html).not.toContain("Doe 2024");
+    expect(second.markdownProjection?.contentSha256).not.toBe(
+      first.markdownProjection?.contentSha256,
+    );
+
+    await host.close();
+  });
+
+  it("rejects explicitly rather than returning a partial snapshot when the plugin is not loaded", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    exposeDom(dom);
+    const host = new PluginHost(citeVaultPath);
+
+    await expect(
+      host.renderMarkdownProjection("cite", "Citations.md", "[cite: Doe 2024]"),
+    ).rejects.toThrow(/\[runtime-render-failed\]\.$/u);
+
+    await host.close();
+  });
+
+  it("rejects with an explicit processor-error diagnostic when the registered processor throws", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    exposeDom(dom);
+    const host = new PluginHost(citeVaultPath);
+    const brokenPluginPath = path.join(citeVaultPath, ".obsidian", "plugins", "cite-broken");
+    await host.loadPlugin(brokenPluginPath);
+
+    await expect(
+      host.renderMarkdownProjection("cite-broken", "Citations.md", "[cite: Doe 2024]"),
+    ).rejects.toThrow(/\[runtime-render-failed\]\.$/u);
+
+    // The compatibility host itself must stay usable for sibling plugins after one plugin's
+    // processor throws while settling a projection.
+    const snapshot = await host.getSnapshot();
+    expect(snapshot.plugins?.find(({ id }) => id === "cite-broken")?.state).toBe("loaded");
+
+    await host.close();
+  });
+});

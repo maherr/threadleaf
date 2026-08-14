@@ -1356,6 +1356,29 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
   return fragment;
 }
 
+/**
+ * Sanitize an exact plugin's settled (already-executed) Markdown post-processor HTML for display
+ * as a bounded, explicitly labeled Reading-view projection. Reuses the exact same allowlist as
+ * ordinary note content (`sanitizeConfig`), then additionally strips every
+ * `data-threadleaf-*`/`data-source-line` attribute and inert-links every anchor: plugin-produced
+ * markup is never a trusted render-token source and must never be able to pose as an internal
+ * link, footnote, wiki embed, or other privileged native control.
+ */
+export function sanitizePluginMarkdownProjection(html: string): DocumentFragment {
+  const fragment = DOMPurify.sanitize(html, sanitizeConfig);
+  for (const element of fragment.querySelectorAll<HTMLElement>("*")) {
+    for (const attribute of [...element.attributes]) {
+      if (attribute.name.startsWith("data-threadleaf-") || attribute.name === "data-source-line") {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  }
+  for (const anchor of fragment.querySelectorAll<HTMLAnchorElement>("a")) {
+    anchor.removeAttribute("href");
+  }
+  return fragment;
+}
+
 export interface PreviewSourceControlOptions {
   sourceNotePath?: string;
   lineOffset?: number;

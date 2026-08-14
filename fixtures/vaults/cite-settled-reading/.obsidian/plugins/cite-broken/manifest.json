@@ -1,0 +1,9 @@
+{
+  "id": "cite-broken",
+  "name": "CITE Broken Processor Fixture",
+  "version": "0.1.2",
+  "minAppVersion": "1.12.7",
+  "description": "A registered Markdown post processor that always throws, for explicit processor-error evidence.",
+  "author": "Threadleaf fixtures",
+  "isDesktopOnly": false
+}

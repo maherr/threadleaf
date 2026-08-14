@@ -22,6 +22,7 @@ import type {
   NoteRestoreResponse,
   NoteSaveResponse,
   PluginEditorContext,
+  PluginMarkdownProjectionResponse,
   PluginMutationWaitOptions,
   RuntimeSnapshot,
   VaultAttachmentResponse,
@@ -80,6 +81,12 @@ export interface WorkspaceRuntimePort {
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse>;
+  renderPluginMarkdownProjection(
+    pluginId: string,
+    sourceNotePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<PluginMarkdownProjectionResponse>;
   loadCanvas?(filePath: string, expectedVaultId: string): Promise<CanvasLoadResponse>;
   loadCanvasAttachment?(
     sourceCanvasPath: string,
@@ -587,6 +594,28 @@ export class WorkspaceController {
       sourceNotePath,
       target,
       subpath,
+      expectedVaultId,
+    );
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async renderPluginMarkdownProjection(
+    pluginId: string,
+    sourceNotePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<PluginMarkdownProjectionResponse> {
+    const runtime = this.activeRuntime("render a plugin Markdown projection");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.renderPluginMarkdownProjection(
+      pluginId,
+      sourceNotePath,
+      content,
       expectedVaultId,
     );
     if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {

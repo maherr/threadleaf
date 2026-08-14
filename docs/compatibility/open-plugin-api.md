@@ -29,6 +29,42 @@ This family unlocks three bounded desktop workflows represented by the measured 
 
 These are compatibility workflows, not claims that the corresponding plugins are fully supported.
 
+## Settled Reading projection
+
+Native Reading and CodeMirror 6 do not consume an ordinary community plugin's Markdown
+postprocessor directly: the compatibility runtime and the isolated plugin renderer communicate
+only through the versioned `PluginRendererOperation` IPC surface, which carries typed metadata and
+counts, never an arbitrary callback or DOM reference. `RuntimeSnapshot.integrations` reports how
+many post processors a plugin registered; it never lets native Reading call them.
+
+The `render-markdown` operation is a bounded, plugin-exact bridge for this family, not a general
+delivery architecture. It runs exactly the requested, already-loaded plugin's registered
+processors to completion through the existing `MarkdownRenderer.render` path (the same host used by
+this document's Phase 0 evidence and the `markdown-processors-fixture` corpus), inside the trusted
+isolated compatibility renderer, then discards the ephemeral render component. The resulting
+settled DOM -- sanitized in the primary renderer through the same allowlist Reading view uses for
+ordinary note content -- crosses back on `RuntimeSnapshot.markdownProjection`, bound to the exact
+plugin ID, source path, and a SHA-256 of the rendered content. It is a point-in-time record of what
+the plugin produced, never a live callback: no render child, timer, or DOM reference from the
+compatibility renderer survives the call.
+
+The exact evidenced instance is the established `cite` fixture identity (name `CITE`, version
+`0.1.2`, `minAppVersion` `1.12.7`; see `src/main/plugin-package-inspection.test.ts` and
+`scripts/check-plugin-package-inspection-e2e.mjs`), reified as an independently written Markdown
+post-processor bundle at `fixtures/vaults/cite-settled-reading/.obsidian/plugins/cite/`. Native
+Reading view fetches and mounts CITE's settled projection in an explicitly labeled panel beneath
+the note's own rendered content, honestly showing one of: the settled projection, an installed but
+inactive plugin, or a processor/timeout failure -- never unprocessed content silently standing in
+for a settled result. `src/runtime/obsidian-markdown-processors.test.ts` and
+`src/application/plugin-markdown-projection-service.test.ts` cover the settled render, its explicit
+failure states, and the vault/content staleness guard; `pnpm test:cite-settled-reading` is the
+packaged Electron/Xvfb proof that it renders visibly in both themes.
+
+This slice does not claim general dynamic render-child or Live Preview/CM6 delivery for arbitrary
+community plugins, and it does not claim Tasks compatibility. Live Preview and CodeMirror 6 remain
+outside this bridge entirely (see [Live Preview compatibility](live-preview.md)); the architecture
+for a general, multi-plugin dynamic delivery surface remains a separate, undecided future question.
+
 ## Public signatures
 
 The following signatures are compatible with the public Obsidian API definitions, with the

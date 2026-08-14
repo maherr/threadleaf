@@ -49,6 +49,7 @@ export const defaultPluginResourcePolicy: PluginResourcePolicy = {
     "open-settings": 10_000,
     "open-view": 15_000,
     "reload-plugin": 30_000,
+    "render-markdown": 15_000,
     "run-command": 30_000,
     "unload-all": 10_000,
     "unload-plugin": 10_000,

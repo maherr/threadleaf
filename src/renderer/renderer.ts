@@ -142,6 +142,7 @@ import {
   addPreviewSourceControls,
   hydrateMarkdownPreview,
   renderMarkdownPreview,
+  sanitizePluginMarkdownProjection,
 } from "./markdown-preview";
 import {
   type MigrationReviewIdentityState,
@@ -2246,6 +2247,100 @@ function decoratePreviewLinks(
   }
 }
 
+/**
+ * The exact CITE 0.1.2 compatibility fixture is the only plugin wired into this bounded settled
+ * Reading projection slice (see docs/compatibility/open-plugin-api.md). This deliberately targets
+ * one named, already-evidenced plugin rather than every installed plugin that registers a
+ * Markdown post processor: it is a plugin-exact compatibility workflow, not a claim of general
+ * dynamic render-child or Live Preview/CM6 delivery for arbitrary community plugins.
+ */
+const settledMarkdownProjectionPluginId = "cite";
+
+function renderPluginMarkdownProjectionPanel(
+  container: HTMLElement,
+  state: "loading" | "ready" | "unavailable",
+  detail: { html?: DocumentFragment; pluginName: string; message?: string },
+): void {
+  container.querySelector<HTMLElement>('[data-plugin-projection="cite"]')?.remove();
+  const doc = container.ownerDocument;
+  const panel = doc.createElement("section");
+  panel.className = "plugin-markdown-projection";
+  panel.dataset.pluginProjection = "cite";
+  panel.dataset.pluginProjectionState = state;
+  const heading = doc.createElement("p");
+  heading.className = "plugin-markdown-projection-heading";
+  heading.textContent = `${detail.pluginName} settled Reading projection`;
+  panel.append(heading);
+  const body = doc.createElement("div");
+  body.className = "plugin-markdown-projection-body";
+  if (state === "ready" && detail.html) {
+    body.append(detail.html);
+  } else {
+    body.textContent = detail.message ?? (state === "loading" ? "Rendering…" : "Unavailable.");
+  }
+  panel.append(body);
+  container.append(panel);
+}
+
+/**
+ * Fetch and mount CITE's settled (already-executed, sanitized) Markdown post-processor
+ * projection for the note currently shown in Reading view. `isCurrent` is the same
+ * note+revision+vault staleness guard `hydrateMarkdownPreview` uses, so a response that arrives
+ * after the user switched notes, edited the draft, or the vault changed is dropped instead of
+ * being mounted against different content. Silently does nothing when CITE is not installed in
+ * this vault at all; an installed-but-inactive CITE renders its honest "unavailable" state.
+ */
+function renderCiteSettledProjection(
+  sourceNotePath: string,
+  source: string,
+  vaultId: string,
+  isCurrent: () => boolean,
+): void {
+  const citePlugin = currentSnapshot?.plugins?.find(
+    ({ id }) => id === settledMarkdownProjectionPluginId,
+  );
+  if (!citePlugin) {
+    return;
+  }
+  renderPluginMarkdownProjectionPanel(elements.notePreview, "loading", {
+    pluginName: citePlugin.name,
+  });
+  window.threadleaf
+    .renderPluginMarkdownProjection(
+      settledMarkdownProjectionPluginId,
+      sourceNotePath,
+      source,
+      vaultId,
+    )
+    .then((response) => {
+      if (!isCurrent()) {
+        return;
+      }
+      if (response.status === "ready") {
+        renderPluginMarkdownProjectionPanel(elements.notePreview, "ready", {
+          html: sanitizePluginMarkdownProjection(response.html),
+          pluginName: citePlugin.name,
+        });
+      } else if (response.status === "unavailable") {
+        renderPluginMarkdownProjectionPanel(elements.notePreview, "unavailable", {
+          pluginName: citePlugin.name,
+          message: response.message,
+        });
+      } else {
+        elements.notePreview.querySelector('[data-plugin-projection="cite"]')?.remove();
+      }
+    })
+    .catch(() => {
+      if (!isCurrent()) {
+        return;
+      }
+      renderPluginMarkdownProjectionPanel(elements.notePreview, "unavailable", {
+        pluginName: citePlugin.name,
+        message: "The settled Markdown projection request failed.",
+      });
+    });
+}
+
 function sourceLineForSubpath(
   note: WorkspaceNoteSnapshot | null,
   subpath: string | null | undefined,
@@ -2300,6 +2395,11 @@ function renderReadingView(): void {
   renderedPreviewVaultId = vaultId;
   renderedPreviewWatchSequence = watchSequence;
   if (vaultId) {
+    const isCurrent = () =>
+      previewHydrationRequest === request &&
+      loadedVaultId === vaultId &&
+      renderedPreviewPath === loadedNote?.path &&
+      renderedPreviewSource === source;
     void hydrateMarkdownPreview(elements.notePreview, {
       sourceNotePath: loadedNote.path,
       expectedVaultId: vaultId,
@@ -2311,12 +2411,9 @@ function renderReadingView(): void {
         window.threadleaf.loadVaultNoteEmbed(sourceNotePath, target, subpath, expectedVaultId),
       loadCanvas: (path, expectedVaultId) => window.threadleaf.loadCanvas(path, expectedVaultId),
       decorateLinks: decoratePreviewLinks,
-      isCurrent: () =>
-        previewHydrationRequest === request &&
-        loadedVaultId === vaultId &&
-        renderedPreviewPath === loadedNote?.path &&
-        renderedPreviewSource === source,
+      isCurrent,
     });
+    renderCiteSettledProjection(loadedNote.path, source, vaultId, isCurrent);
   }
 }
 

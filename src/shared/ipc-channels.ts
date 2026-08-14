@@ -38,6 +38,7 @@ export const ipcChannels = {
   setPluginCapabilityGrant: "threadleaf:set-plugin-capability-grant",
   setPluginEnabled: "threadleaf:set-plugin-enabled",
   reloadPlugins: "threadleaf:reload-plugins",
+  renderPluginMarkdownProjection: "threadleaf:render-plugin-markdown-projection",
   migrationPreview: "threadleaf:migration-preview",
   migrationApply: "threadleaf:migration-apply",
   migrationRollback: "threadleaf:migration-rollback",

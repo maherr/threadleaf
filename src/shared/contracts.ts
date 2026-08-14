@@ -199,6 +199,20 @@ export interface PluginIntegrationSnapshot {
   viewTypes: string[];
 }
 
+/**
+ * A settled Markdown post-processor projection: the plugin's registered processors already ran
+ * to completion inside the trusted compatibility renderer, and `html` is that sanitizer-bound
+ * result, not a live callback. Bound to `pluginId` + `sourcePath` + `contentSha256` so a consumer
+ * can refuse a stale result rather than showing it against different content.
+ */
+export interface PluginMarkdownProjectionSnapshot {
+  contentSha256: string;
+  html: string;
+  pluginId: string;
+  postProcessorCount: number;
+  sourcePath: string;
+}
+
 export interface PluginSurfaceSnapshot {
   displayText: string;
   filePath: string | null;
@@ -262,6 +276,7 @@ export interface RuntimeSnapshot {
   events: RuntimeEvent[];
   integrations?: PluginIntegrationSnapshot;
   editorUpdate?: PluginEditorUpdate | null;
+  markdownProjection?: PluginMarkdownProjectionSnapshot | null;
   pluginSurface?: PluginSurfaceSnapshot | null;
   resourcePolicy?: PluginResourcePolicySnapshot;
   resourceDiagnostics?: PluginResourceDiagnostic[];
@@ -1003,6 +1018,39 @@ export type VaultNoteEmbedResponse =
       vaultId: string;
     };
 
+export type PluginMarkdownProjectionUnavailableReason =
+  | "plugin-disabled"
+  | "processor-error"
+  | "timeout";
+
+/**
+ * The primary-renderer-facing result of requesting an explicit settled Markdown post-processor
+ * projection for one exact, already-loaded compatibility plugin. `ready` carries sanitizer-bound
+ * evidence (`contentSha256`, `postProcessorCount`) so a stale or mismatched result can be refused
+ * by the caller instead of silently replacing unrelated note content.
+ */
+export type PluginMarkdownProjectionResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      pluginId: string;
+      sourcePath: string;
+      contentSha256: string;
+      html: string;
+      postProcessorCount: number;
+    }
+  | {
+      status: "unavailable";
+      vaultId: string;
+      pluginId: string;
+      reason: PluginMarkdownProjectionUnavailableReason;
+      message: string;
+    }
+  | {
+      status: "stale-vault";
+      vaultId: string;
+    };
+
 export type VaultOpenResponse =
   | { status: "cancelled"; snapshot: RuntimeSnapshot }
   | { status: "opened"; snapshot: RuntimeSnapshot }
@@ -1105,6 +1153,12 @@ export interface ThreadleafBridge {
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse>;
+  renderPluginMarkdownProjection(
+    pluginId: string,
+    sourceNotePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<PluginMarkdownProjectionResponse>;
   loadCanvas(path: string, expectedVaultId: string): Promise<CanvasLoadResponse>;
   saveCanvas(
     path: string,

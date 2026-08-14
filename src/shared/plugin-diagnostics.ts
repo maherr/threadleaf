@@ -25,6 +25,7 @@ export const pluginDiagnosticCodes = [
   "runtime-settings-failed",
   "runtime-unload-failed",
   "runtime-recovery-failed",
+  "runtime-render-failed",
   "registry-index-invalid",
   "package-operation-failed",
   "package-inventory-invalid",
@@ -72,6 +73,8 @@ const diagnosticDescriptions: Readonly<Record<PluginDiagnosticCode, string>> = {
   "runtime-unload-failed": "The plugin did not finish cleanup in the compatibility runtime.",
   "runtime-recovery-failed":
     "The compatibility runtime recovered with the plugin operation stopped.",
+  "runtime-render-failed":
+    "The plugin could not settle a Markdown post-processor projection in the compatibility runtime.",
   "registry-index-invalid": "The community package index could not be validated.",
   "package-operation-failed": "The community plugin package operation could not be completed.",
   "package-inventory-invalid": "The private community package inventory could not be validated.",

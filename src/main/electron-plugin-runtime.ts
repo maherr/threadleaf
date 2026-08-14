@@ -257,6 +257,14 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     });
   }
 
+  renderMarkdownProjection(
+    pluginId: string,
+    sourcePath: string,
+    content: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("render-markdown", { pluginId, sourcePath, content });
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.requestSnapshot(
       "wait-for-mutations",

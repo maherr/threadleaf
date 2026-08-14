@@ -36,6 +36,7 @@ import type {
   NoteSaveOutcome,
   NoteSaveResponse,
   PluginEditorContext,
+  PluginMarkdownProjectionResponse,
   PluginMutationWaitOptions,
   RuntimeSnapshot,
   VaultAttachmentResponse,
@@ -96,6 +97,7 @@ import {
   trashMarkdownNote,
   vaultTrashDirectory,
 } from "./note-trash";
+import { renderPluginMarkdownProjection } from "./plugin-markdown-projection-service";
 import { loadVaultAttachment } from "./vault-attachment-service";
 import { projectVaultGraph } from "./vault-graph";
 import { loadVaultImage } from "./vault-image-service";
@@ -1392,6 +1394,39 @@ export class WorkspaceRuntime {
       sourceNotePath,
       target,
       subpath,
+      expectedVaultId,
+    );
+  }
+
+  /**
+   * A bounded, plugin-exact settled Reading projection: `pluginId` must already be loaded. Its
+   * registered Markdown post processors run to completion in the isolated compatibility renderer
+   * against `content`, and the sanitizer-bound settled result crosses back, never a live
+   * callback. See {@link renderPluginMarkdownProjection} for the explicit failure states.
+   */
+  renderPluginMarkdownProjection(
+    pluginId: string,
+    sourceNotePath: string,
+    content: string,
+    expectedVaultId: string,
+  ): Promise<PluginMarkdownProjectionResponse> {
+    const pluginHost = this.pluginHost;
+    return renderPluginMarkdownProjection(
+      {
+        vaultId: this.kernel.vaultId,
+        getSnapshot: () => pluginHost.getSnapshot(),
+        renderMarkdownProjection: (id, sourcePath, text) => {
+          if (!pluginHost.renderMarkdownProjection) {
+            return Promise.reject(
+              new Error("The active plugin runtime does not support settled Markdown projections."),
+            );
+          }
+          return pluginHost.renderMarkdownProjection(id, sourcePath, text);
+        },
+      },
+      pluginId,
+      sourceNotePath,
+      content,
       expectedVaultId,
     );
   }

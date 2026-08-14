@@ -14,6 +14,7 @@ import type {
   NotePropertyType,
   NoteRestoreResponse,
   NoteSaveResponse,
+  PluginMarkdownProjectionResponse,
   RuntimeSnapshot,
   VaultAttachmentResponse,
   VaultGraphRequest,
@@ -266,6 +267,24 @@ class FakeRuntime implements WorkspaceRuntimePort {
       kind: "note",
       subpath: null,
       links: [],
+    };
+  }
+
+  async renderPluginMarkdownProjection(
+    pluginId: string,
+    _sourceNotePath: string,
+    _content: string,
+    expectedVaultId: string,
+  ): Promise<PluginMarkdownProjectionResponse> {
+    if (expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return {
+      status: "unavailable",
+      vaultId: this.vaultId,
+      pluginId,
+      reason: "plugin-disabled",
+      message: `${pluginId} is not currently active in the compatibility runtime.`,
     };
   }
 

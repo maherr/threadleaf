@@ -156,6 +156,23 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     });
   }
 
+  renderMarkdownProjection(
+    pluginId: string,
+    sourcePath: string,
+    content: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      const slot = this.requireSlot(pluginId);
+      if (!slot.runtime.renderMarkdownProjection) {
+        throw new Error("The active plugin runtime does not support settled Markdown projections.");
+      }
+      const snapshot = await slot.runtime.renderMarkdownProjection(pluginId, sourcePath, content);
+      this.rememberSlotSnapshot(pluginId, snapshot);
+      this.lastPluginId = pluginId;
+      return this.mergeSnapshot(pluginId, snapshot);
+    });
+  }
+
   markLayoutReady(): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
       this.layoutReady = true;
@@ -456,6 +473,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       events: [...this.eventLedger],
       ...(integrations ? { integrations } : {}),
       editorUpdate: operationSnapshot?.editorUpdate ?? null,
+      markdownProjection: operationSnapshot?.markdownProjection ?? null,
       pluginSurface: visibleSurface,
       ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),
       ...(resourcePolicy ? { resourcePolicy } : {}),

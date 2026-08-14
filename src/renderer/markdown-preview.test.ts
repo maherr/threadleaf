@@ -13,6 +13,7 @@ import {
   hydrateMarkdownPreviewAttachments,
   hydrateMarkdownPreviewImages,
   renderMarkdownPreview,
+  sanitizePluginMarkdownProjection,
 } from "./markdown-preview";
 
 function preview(source: string): HTMLElement {
@@ -877,5 +878,53 @@ Working $y$`);
         (element) => element.dataset.threadleafAttachmentTarget,
       ),
     ).toEqual(["Assets/report#draft.pdf", "Assets/report?draft.pdf"]);
+  });
+});
+
+describe("sanitizePluginMarkdownProjection", () => {
+  it("keeps allowed structure and text from a settled plugin projection", () => {
+    const fragment = sanitizePluginMarkdownProjection(
+      '<p>CITE recognized 1 citation.</p><p><span class="cite-citation">Doe 2024</span></p>',
+    );
+    const container = document.createElement("div");
+    container.append(fragment);
+    expect(container.querySelectorAll("p")).toHaveLength(2);
+    expect(container.querySelector(".cite-citation")?.textContent).toBe("Doe 2024");
+  });
+
+  it("removes script, event-handler, and disallowed elements like the ordinary sanitizer", () => {
+    const fragment = sanitizePluginMarkdownProjection(
+      '<p onclick="evil()">safe</p><script>evil()</script><img src="x" onerror="evil()">',
+    );
+    const container = document.createElement("div");
+    container.append(fragment);
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("p")?.outerHTML).toBe("<p>safe</p>");
+  });
+
+  it("strips data-threadleaf-* and data-source-line so plugin output cannot pose as trusted native markup", () => {
+    const fragment = sanitizePluginMarkdownProjection(
+      '<p data-threadleaf-link="markdown" data-threadleaf-target="Secret.md" data-source-line="3">text</p>',
+    );
+    const container = document.createElement("div");
+    container.append(fragment);
+    const paragraph = container.querySelector("p");
+    expect(paragraph?.getAttribute("data-threadleaf-link")).toBeNull();
+    expect(paragraph?.getAttribute("data-threadleaf-target")).toBeNull();
+    expect(paragraph?.getAttribute("data-source-line")).toBeNull();
+    expect(paragraph?.textContent).toBe("text");
+  });
+
+  it("inert-links every anchor so a settled projection cannot trigger native navigation", () => {
+    const fragment = sanitizePluginMarkdownProjection(
+      '<a href="https://example.com">external</a><a href="Other.md">internal-looking</a>',
+    );
+    const container = document.createElement("div");
+    container.append(fragment);
+    for (const anchor of container.querySelectorAll("a")) {
+      expect(anchor.hasAttribute("href")).toBe(false);
+    }
+    expect(container.textContent).toBe("externalinternal-looking");
   });
 });

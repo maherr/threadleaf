@@ -54,7 +54,13 @@ The measured Markdown processor family has a separate public contract in
 [`open-plugin-api.md`](open-plugin-api.md). It covers fenced-block replacement, ordered Markdown
 post-processing, render-child lifecycle, context metadata, and explicit failure behavior; those
 bounded workflows do not raise the compatibility level of any external plugin until its exact
-bundle passes a named host workflow.
+bundle passes a named host workflow. That contract's
+[settled Reading projection](open-plugin-api.md#settled-reading-projection) section documents the
+one exact evidenced bridge from this family into native Reading view: the established `cite`
+0.1.2 fixture identity, reified as an independently written bundle, with its registered post
+processor executed to completion and shown honestly beneath a note's own rendered content. It is
+deliberately plugin-exact and does not imply general dynamic render-child or Live Preview/CM6
+delivery for other installed plugins.
 
 ## Reviewed package management
 

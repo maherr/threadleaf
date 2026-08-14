@@ -62,6 +62,9 @@ function diagnosticCodeForOperation(operation: string): PluginDiagnosticCode {
   if (operation === "recovery") {
     return "runtime-recovery-failed";
   }
+  if (operation === "render-markdown") {
+    return "runtime-render-failed";
+  }
   return "runtime-load-failed";
 }
 
@@ -182,6 +185,19 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     return this.runSnapshot({ operation: "wait-for-mutations" }, (runtime) =>
       runtime.waitForPluginMutations(options),
     );
+  }
+
+  renderMarkdownProjection(
+    pluginId: string,
+    sourcePath: string,
+    content: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "render-markdown", pluginId }, (runtime) => {
+      if (!runtime.renderMarkdownProjection) {
+        throw new Error("The active plugin runtime does not support settled Markdown projections.");
+      }
+      return runtime.renderMarkdownProjection(pluginId, sourcePath, content);
+    });
   }
 
   unloadAllPlugins(): Promise<RuntimeSnapshot> {

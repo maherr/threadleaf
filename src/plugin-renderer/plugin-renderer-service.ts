@@ -21,6 +21,7 @@ import {
   type PluginVaultWriteBinaryResponse,
   type PluginVaultWriteRequest,
   type PluginVaultWriteResponse,
+  requirePayloadContent,
   requirePayloadString,
 } from "../shared/plugin-runtime-protocol";
 
@@ -132,6 +133,12 @@ export class PluginRendererService {
       case "reload-plugin":
         await this.requireHost().closePluginView();
         return this.requireHost().reloadPlugin(optionalPayloadString(request, "pluginId"));
+      case "render-markdown":
+        return this.requireHost().renderMarkdownProjection(
+          requirePayloadString(request, "pluginId"),
+          requirePayloadString(request, "sourcePath"),
+          requirePayloadContent(request, "content"),
+        );
       case "run-command":
         return this.requireHost().runCommand(
           requirePayloadString(request, "commandId"),

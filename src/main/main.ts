@@ -2452,6 +2452,33 @@ function registerIpcHandlers(): void {
       );
     },
   );
+  ipcMain.handle(
+    ipcChannels.renderPluginMarkdownProjection,
+    (
+      _event,
+      pluginId: unknown,
+      sourceNotePath: unknown,
+      content: unknown,
+      expectedVaultId: unknown,
+    ) => {
+      if (
+        typeof pluginId !== "string" ||
+        typeof sourceNotePath !== "string" ||
+        typeof content !== "string" ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error(
+          "Rendering a plugin Markdown projection requires string plugin, note, content, and vault values.",
+        );
+      }
+      return workspaceController.renderPluginMarkdownProjection(
+        pluginId,
+        sourceNotePath,
+        content,
+        expectedVaultId,
+      );
+    },
+  );
   ipcMain.handle(ipcChannels.loadCanvas, (_event, filePath: unknown, expectedVaultId: unknown) => {
     if (typeof filePath !== "string" || typeof expectedVaultId !== "string") {
       throw new Error("Load canvas requires string path and vault values.");

@@ -32,6 +32,7 @@ import type {
   NoteWorkflowCatalogResponse,
   NoteWorkflowUpdateResponse,
   NoteWorkflowValueResponse,
+  PluginMarkdownProjectionResponse,
   PluginPackageApplyResponse,
   PluginSurfaceBounds,
   PluginUpdateResponse,
@@ -271,6 +272,14 @@ const bridge: ThreadleafBridge = {
       subpath,
       expectedVaultId,
     ) as Promise<VaultNoteEmbedResponse>,
+  renderPluginMarkdownProjection: (pluginId, sourceNotePath, content, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.renderPluginMarkdownProjection,
+      pluginId,
+      sourceNotePath,
+      content,
+      expectedVaultId,
+    ) as Promise<PluginMarkdownProjectionResponse>,
   loadCanvas: (filePath, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.loadCanvas,
