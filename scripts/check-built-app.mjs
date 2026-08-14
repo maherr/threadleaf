@@ -3,6 +3,11 @@ import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/pro
 import os from "node:os";
 import path from "node:path";
 
+process.once("uncaughtException", (error) => {
+  process.exitCode = 1;
+  console.error(`[built-app] ${error instanceof Error ? error.message : String(error)}`);
+});
+
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const rendererDirectory = path.join(projectRoot, "dist", "renderer");
 const indexPath = path.join(rendererDirectory, "index.html");

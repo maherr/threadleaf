@@ -218,4 +218,12 @@ describe("native extension test-only boundary", () => {
     const code = sdk.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(code.includes("entrypoint")).toBe(false);
   });
+
+  it("documents the direct-anchor rotation migration after predecessor revocation", () => {
+    const contract = readSource("docs/compatibility/native-extensions.md");
+    expect(contract).toContain(
+      "A direct-anchor publisher must stop shipping its `K1 -> K2` `keyRotation` proof",
+    );
+    expect(contract).toContain("`publisherSuccessors` path");
+  });
 });

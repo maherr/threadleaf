@@ -242,6 +242,42 @@ describe("native extension offline distribution trust", () => {
     );
   });
 
+  it("reports the revoked predecessor fingerprint in both rotation trust paths", () => {
+    const oldPair = keyPair();
+    const newPair = keyPair();
+    const previous = publisher(oldPair.privateKey, "key-1");
+    const successor = publisher(newPair.privateKey, "key-2");
+    const rotation = signNativeExtensionKeyRotation(
+      {
+        previous,
+        next: successor,
+        effectiveAt: "2026-05-01T00:00:00.000Z",
+      },
+      oldPair.privateKey,
+    );
+    const metadata = signed(newPair.privateKey, successor, {
+      issuedAt: "2026-05-02T00:00:00.000Z",
+      keyRotation: rotation,
+    });
+    const revokedPrevious = { ...previous, revokedAt: "2026-05-01T00:00:00.000Z" };
+
+    for (const trustedPublishers of [[revokedPrevious, successor], [revokedPrevious]]) {
+      try {
+        verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
+          trustedPublishers,
+        });
+        throw new Error("expected a revoked predecessor failure");
+      } catch (error) {
+        expect(error).toMatchObject({
+          name: "NativeExtensionTrustError",
+          code: "key-revoked",
+          message: "Publisher key is revoked.",
+          publisherFingerprint: previous.fingerprint,
+        });
+      }
+    }
+  });
+
   it("refuses a rotation whose predecessor revocation is already effective, at the exact instant", () => {
     // This case previously asserted an accept. `issuedAt = effectiveAt = revokedAt` is the single
     // point where the two rotation window clauses do not overlap into a rejection, and revokedAt

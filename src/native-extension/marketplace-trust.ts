@@ -1261,7 +1261,7 @@ function verifyKeyTrust(
       // revokedAt, so on their own they accept a rotation minted from a stolen revoked key using
       // only the public revokedAt value.
       if (previous.revokedAt !== undefined && previous.revokedAt <= now) {
-        trustFailure("key-revoked", "Publisher key is revoked.", metadata.publisher.fingerprint);
+        trustFailure("key-revoked", "Publisher key is revoked.", previous.fingerprint);
       }
       // Defence in depth, not redundant: this still rejects every rotation whose predecessor
       // carries a revocation scheduled in the future, which the predicate above deliberately
@@ -1321,7 +1321,7 @@ function verifyKeyTrust(
   // revokedAt, and revokedAt is public: without this check a stolen revoked key yields a
   // permanent forged trusted identity.
   if (previous.revokedAt !== undefined && previous.revokedAt <= now) {
-    trustFailure("key-revoked", "Publisher key is revoked.", metadata.publisher.fingerprint);
+    trustFailure("key-revoked", "Publisher key is revoked.", previous.fingerprint);
   }
   // Defence in depth, not redundant: this still rejects every rotation whose predecessor carries
   // a revocation scheduled in the future, which the predicate above deliberately leaves alone

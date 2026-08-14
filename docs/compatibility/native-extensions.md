@@ -92,6 +92,11 @@ those records use the bundle digest as a bundle-only compatibility identity. Pub
 accepted only from an offline trusted predecessor. If that anchor is revoked, a rotation issued
 after revocation or with an effective time backdated before revocation is rejected.
 
+A direct-anchor publisher must stop shipping its `K1 -> K2` `keyRotation` proof once `K1` is
+revoked in the client's anchor set. A direct `K2` anchor does not neutralize the revoked
+predecessor carried by that proof. The supported migration is to omit that direct proof after
+`K1` revocation, or use the signed catalog's root-authorized `publisherSuccessors` path.
+
 `NativeExtensionMarketplaceCatalog` is the signed catalog index. The catalog root signs its
 `generatedAt`, `expiresAt`, revision, entry-set digest, complete signed entries, lifecycle state,
 and successor paths. The host applies a fixed 31-day local max-age and an explicit verification
