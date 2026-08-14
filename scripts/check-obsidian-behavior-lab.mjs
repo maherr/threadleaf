@@ -1214,7 +1214,13 @@ async function run() {
       2,
     )}\n`,
   );
-  if (receipts.some((receipt) => receipt.status === "failed")) process.exitCode = 1;
+  // CLI-01 is unconditionally "blocked" (see blockedCliReceipt): a documented capability gap,
+  // not a failure, because this lane has no separately authorized, isolated public CLI binary.
+  // Every other cell must be "observed" or the run is not clean.
+  const unobservedFailures = receipts.filter(
+    (receipt) => receipt.status !== "observed" && receipt.cellId !== "CLI-01",
+  );
+  if (unobservedFailures.length > 0) process.exitCode = 1;
   if (!keepRun) {
     process.stdout.write(
       "cleanup requested, but the receipt root is retained for independent sealing verification\n",
