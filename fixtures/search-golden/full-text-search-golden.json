@@ -1,0 +1,6170 @@
+{
+  "schemaVersion": 1,
+  "corpus": {
+    "documentCount": 39,
+    "paths": [
+      "Research/Café Notes.md",
+      "Research/Other.md",
+      "Research/Café NFD.md",
+      "Français/Café.md",
+      "Greek/Logos.md",
+      "German/Weather Note.md",
+      "Languages.md",
+      "Marks/Fatha.md",
+      "Marks/Plain.md",
+      "Unicode/Prepend.md",
+      "Unicode/Kelvin.md",
+      "Unicode/DottedI.md",
+      "Emoji/Astral.md",
+      "Endings/Crlf.md",
+      "Endings/LoneCr.md",
+      "Endings/Mixed.md",
+      "Whitespace/Indented.md",
+      "Long/Line.md",
+      "Long/Café.md",
+      "Long/MarkedPrefix.md",
+      "Projects/Launch Plan.md",
+      "Zeta/Tagged.md",
+      "Orbit.md",
+      "Alpha/Body.md",
+      "Beta/Body.md",
+      "Archive/Case.md",
+      "Research/Case.md",
+      "Repeats/Duplicate.md",
+      "Repeats/Heading Echo.md",
+      "Multiline/Span.md",
+      "Properties/List.md",
+      "Notes/00.md",
+      "Notes/01.md",
+      "Notes/02.md",
+      "Notes/03.md",
+      "Notes/04.md",
+      "Notes/05.md",
+      "Notes/06.md",
+      "Notes/07.md"
+    ]
+  },
+  "cases": [
+    {
+      "id": "exact-title",
+      "query": "orbit",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "orbit",
+        "terms": [
+          "orbit"
+        ],
+        "total": 4,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Orbit.md",
+            "score": 240,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Orbit.md"
+              }
+            ]
+          },
+          {
+            "path": "Zeta/Tagged.md",
+            "score": 130,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "tag",
+                "text": "#orbit"
+              }
+            ]
+          },
+          {
+            "path": "Alpha/Body.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "orbit appears only in body",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Beta/Body.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "orbit appears only in body",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "exact-title-limit-2",
+      "query": "orbit",
+      "limit": 2,
+      "options": {},
+      "page": {
+        "query": "orbit",
+        "terms": [
+          "orbit"
+        ],
+        "total": 4,
+        "truncated": true,
+        "results": [
+          {
+            "path": "Orbit.md",
+            "score": 240,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Orbit.md"
+              }
+            ]
+          },
+          {
+            "path": "Zeta/Tagged.md",
+            "score": 130,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "tag",
+                "text": "#orbit"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "and-terms",
+      "query": "ALPHA beta",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "ALPHA beta",
+        "terms": [
+          "alpha",
+          "beta"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Research/Café Notes.md",
+            "score": 94,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Alpha beta lives here.",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "alpha only below.",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Endings/LoneCr.md",
+            "score": 91,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "alpha\rbeta on one source line",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "quoted-phrase",
+      "query": "\"alpha beta\"",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "\"alpha beta\"",
+        "terms": [
+          "alpha beta"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Research/Café Notes.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Alpha beta lives here.",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "quoted-phrase-escaped",
+      "query": "\"say \\\"needle\\\"\"",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "\"say \\\"needle\\\"\"",
+        "terms": [
+          "say \"needle\""
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "substring-partial",
+      "query": "ac",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "ac",
+        "terms": [
+          "ac"
+        ],
+        "total": 3,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Whitespace/Indented.md"
+              }
+            ]
+          },
+          {
+            "path": "Français/Café.md",
+            "score": 66,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Português ação and Vietnamese ấc in body.",
+                "line": 5
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-folded-upper",
+      "query": "NEEDLE",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "NEEDLE",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 69,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle second",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "accent-nfd-query",
+      "query": "Café",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "Café",
+        "terms": [
+          "cafe"
+        ],
+        "total": 4,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 281,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Café heading",
+                "line": 4
+              },
+              {
+                "kind": "content",
+                "text": "const café = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café NFD.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café Notes",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café Notes.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "accent-stripped-query",
+      "query": "cafe",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "cafe",
+        "terms": [
+          "cafe"
+        ],
+        "total": 4,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 281,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Café heading",
+                "line": 4
+              },
+              {
+                "kind": "content",
+                "text": "const café = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café NFD.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café Notes",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café Notes.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "accent-native-query",
+      "query": "café",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "café",
+        "terms": [
+          "cafe"
+        ],
+        "total": 4,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 281,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Café heading",
+                "line": 4
+              },
+              {
+                "kind": "content",
+                "text": "const café = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café NFD.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café Notes",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café Notes.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "greek-final-sigma",
+      "query": "λόγος",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "λόγος",
+        "terms": [
+          "λόγοσ"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Greek/Logos.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Μια αναφορά στον λόγος και τη λογική.",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "greek-medial-sigma",
+      "query": "λόγοσ",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "λόγοσ",
+        "terms": [
+          "λόγοσ"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Greek/Logos.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Μια αναφορά στον λόγος και τη λογική.",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "greek-upper",
+      "query": "ΛΟΓΟΣ",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "ΛΟΓΟΣ",
+        "terms": [
+          "λογοσ"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Greek/Logos.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "ΛΟΓΟΣ σε κεφαλαία.",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "sharp-s",
+      "query": "straße",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "straße",
+        "terms": [
+          "straße"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "German/Weather Note.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Die Straße ist ruhig heute Abend.",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "sharp-s-expanded",
+      "query": "strasse",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "strasse",
+        "terms": [
+          "strasse"
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "arabic-marked",
+      "query": "عَرَبِيّ",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "عَرَبِيّ",
+        "terms": [
+          "عَرَبِيّ"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Languages.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "عَرَبِيّ",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "arabic-unmarked",
+      "query": "عربي",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "عربي",
+        "terms": [
+          "عربي"
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "hebrew-marked",
+      "query": "שָׁלוֹם",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "שָׁלוֹם",
+        "terms": [
+          "שָׁלוֹם"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Languages.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "שָׁלוֹם",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "greek-nfc-of-nfd-source",
+      "query": "ἔ",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "ἔ",
+        "terms": [
+          "ἔ"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Languages.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "ἔ",
+                "line": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "mark-bearing-grapheme",
+      "query": "aَ",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "aَ",
+        "terms": [
+          "aَ"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Marks/Fatha.md",
+            "score": 168,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "aَ",
+                "line": 1
+              },
+              {
+                "kind": "heading",
+                "text": "aَ",
+                "line": 1
+              },
+              {
+                "kind": "property",
+                "text": "Ω: aَ"
+              }
+            ]
+          },
+          {
+            "path": "Long/MarkedPrefix.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "aَxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "mark-bearing-base-only",
+      "query": "a",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "a",
+        "terms": [
+          "a"
+        ],
+        "total": 27,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Emoji/Astral.md",
+            "score": 221,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "👩‍👩‍👧‍👦 family line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "🇨🇦 flag line",
+                "line": 3
+              },
+              {
+                "kind": "path",
+                "text": "Emoji/Astral.md"
+              }
+            ]
+          },
+          {
+            "path": "Français/Café.md",
+            "score": 205,
+            "matchCount": 10,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Português ação and Vietnamese ấc in body.",
+                "line": 5
+              },
+              {
+                "kind": "content",
+                "text": "status: déjà-vu",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 196,
+            "matchCount": 7,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "ordinary paragraph",
+                "line": 8
+              },
+              {
+                "kind": "content",
+                "text": "status: waiting-review",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "# Release checklist",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 193,
+            "matchCount": 6,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Alpha beta lives here.",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "alpha only below.",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "# Café Notes",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Multiline/Span.md",
+            "score": 190,
+            "matchCount": 5,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "the phrase starts here",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "unrelated tail",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "and finishes on the following line",
+                "line": 2
+              }
+            ]
+          },
+          {
+            "path": "German/Weather Note.md",
+            "score": 181,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Die Straße ist ruhig heute Abend.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "German/Weather Note.md"
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 181,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Archive/Case.md"
+              }
+            ]
+          },
+          {
+            "path": "Long/MarkedPrefix.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…a",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/MarkedPrefix.md"
+              }
+            ]
+          },
+          {
+            "path": "Marks/Plain.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "a",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Marks/Plain.md"
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Heading Echo.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "heading",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Repeats/Heading Echo.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café NFD.md"
+              }
+            ]
+          },
+          {
+            "path": "Zeta/Tagged.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "No title match here.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Zeta/Tagged.md"
+              }
+            ]
+          },
+          {
+            "path": "Languages.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Languages.md"
+              }
+            ]
+          },
+          {
+            "path": "Marks/Fatha.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Marks/Fatha.md"
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Repeats/Duplicate.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Research/Case.md"
+              }
+            ]
+          },
+          {
+            "path": "Alpha/Body.md",
+            "score": 111,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "orbit appears only in body",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Alpha/Body.md"
+              }
+            ]
+          },
+          {
+            "path": "Beta/Body.md",
+            "score": 111,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "orbit appears only in body",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Beta/Body.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Other.md",
+            "score": 111,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Alpha only.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Other.md"
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 108,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "after",
+                "line": 3
+              },
+              {
+                "kind": "path",
+                "text": "Whitespace/Indented.md"
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 96,
+            "matchCount": 21,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word…",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Endings/LoneCr.md",
+            "score": 75,
+            "matchCount": 5,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "alpha\rbeta on one source line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "gamma on the next",
+                "line": 2
+              }
+            ]
+          },
+          {
+            "path": "Unicode/DottedI.md",
+            "score": 75,
+            "matchCount": 5,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "İstanbul and Istanbul and istanbul.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Kelvin.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The K sign and a plain k on one line.",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "kelvin alone.",
+                "line": 2
+              }
+            ]
+          },
+          {
+            "path": "Orbit.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "A body without the query outside its title.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Properties/List.md",
+            "score": 55,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "property",
+                "text": "aliases: First Alias, Second Alias"
+              },
+              {
+                "kind": "property",
+                "text": "stage: draft"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "prepend-grapheme",
+      "query": "؀",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "؀",
+        "terms": [
+          "؀"
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "prepend-needle",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "maxContexts": 100
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 69,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle second",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "kelvin-sign",
+      "query": "K",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "K",
+        "terms": [
+          "k"
+        ],
+        "total": 7,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Unicode/Kelvin.md",
+            "score": 224,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The K sign and a plain k on one line.",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "kelvin alone.",
+                "line": 2
+              },
+              {
+                "kind": "path",
+                "text": "Unicode/Kelvin.md"
+              }
+            ]
+          },
+          {
+            "path": "Long/MarkedPrefix.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Long/MarkedPrefix.md"
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Heading Echo.md",
+            "score": 128,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "heading",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "property",
+                "text": "topic: release checklist"
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 118,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Release checklist",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Release checklist",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Greek/Logos.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Greek/Logos.md"
+              }
+            ]
+          },
+          {
+            "path": "Marks/Fatha.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Marks/Fatha.md"
+              }
+            ]
+          },
+          {
+            "path": "Marks/Plain.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Marks/Plain.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "kelvin-ascii",
+      "query": "k",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "k",
+        "terms": [
+          "k"
+        ],
+        "total": 7,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Unicode/Kelvin.md",
+            "score": 224,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The K sign and a plain k on one line.",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "kelvin alone.",
+                "line": 2
+              },
+              {
+                "kind": "path",
+                "text": "Unicode/Kelvin.md"
+              }
+            ]
+          },
+          {
+            "path": "Long/MarkedPrefix.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Long/MarkedPrefix.md"
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Heading Echo.md",
+            "score": 128,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "heading",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "property",
+                "text": "topic: release checklist"
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 118,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Release checklist",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Release checklist",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Greek/Logos.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Greek/Logos.md"
+              }
+            ]
+          },
+          {
+            "path": "Marks/Fatha.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Marks/Fatha.md"
+              }
+            ]
+          },
+          {
+            "path": "Marks/Plain.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Marks/Plain.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dotted-capital-i",
+      "query": "İstanbul",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "İstanbul",
+        "terms": [
+          "İstanbul"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Unicode/DottedI.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "İstanbul and Istanbul and istanbul.",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dotted-plain-i",
+      "query": "istanbul",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "istanbul",
+        "terms": [
+          "istanbul"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Unicode/DottedI.md",
+            "score": 66,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "İstanbul and Istanbul and istanbul.",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "astral-emoji",
+      "query": "😀",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "😀",
+        "terms": [
+          "😀"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Long/Café.md",
+            "score": 96,
+            "matchCount": 28,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀…",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Emoji/Astral.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "😀 joy line",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "astral-zwj-family",
+      "query": "👩‍👩‍👧‍👦",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "👩‍👩‍👧‍👦",
+        "terms": [
+          "👩‍👩‍👧‍👦"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Emoji/Astral.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "👩‍👩‍👧‍👦 family line",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "astral-flag",
+      "query": "🇨🇦",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "🇨🇦",
+        "terms": [
+          "🇨🇦"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Emoji/Astral.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "🇨🇦 flag line",
+                "line": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "astral-with-word",
+      "query": "😀 joy",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "😀 joy",
+        "terms": [
+          "😀",
+          "joy"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Emoji/Astral.md",
+            "score": 91,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "😀 joy line",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crlf-line",
+      "query": "second crlf",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "second crlf",
+        "terms": [
+          "second",
+          "crlf"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Endings/Crlf.md",
+            "score": 312,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "second crlf line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "first crlf line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "third crlf line",
+                "line": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "lone-cr-line",
+      "query": "beta on one",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "beta on one",
+        "terms": [
+          "beta",
+          "on",
+          "one"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Endings/LoneCr.md",
+            "score": 355,
+            "matchCount": 5,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "alpha\rbeta on one source line",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Endings/LoneCr.md"
+              },
+              {
+                "kind": "content",
+                "text": "gamma on the next",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "mixed-endings",
+      "query": "two",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "two",
+        "terms": [
+          "two"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Endings/Mixed.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "two",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "line-anchored-bonus",
+      "query": "needle line",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "needle line",
+        "terms": [
+          "needle",
+          "line"
+        ],
+        "total": 10,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Long/Line.md",
+            "score": 268,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/Line.md"
+              }
+            ]
+          },
+          {
+            "path": "Notes/00.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 109,
+            "matchCount": 8,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "multi-line-span-quoted",
+      "query": "\"starts here\nand finishes\"",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "\"starts here\nand finishes\"",
+        "terms": [
+          "starts here\nand finishes"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Multiline/Span.md",
+            "score": 28,
+            "matchCount": 1,
+            "contexts": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "multi-line-span-terms",
+      "query": "starts finishes",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "starts finishes",
+        "terms": [
+          "starts",
+          "finishes"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Multiline/Span.md",
+            "score": 56,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "the phrase starts here",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "and finishes on the following line",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "heading-only",
+      "query": "checklist",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "checklist",
+        "terms": [
+          "checklist"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Repeats/Heading Echo.md",
+            "score": 128,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "heading",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "property",
+                "text": "topic: release checklist"
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 118,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Release checklist",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Release checklist",
+                "line": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "tag-only",
+      "query": "ship-it",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "ship-it",
+        "terms": [
+          "ship-it"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 130,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "tag",
+                "text": "#ship-it"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "property-only",
+      "query": "waiting-review",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "waiting-review",
+        "terms": [
+          "waiting-review"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 93,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "status: waiting-review",
+                "line": 2
+              },
+              {
+                "kind": "property",
+                "text": "status: waiting-review"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "property-list-value",
+      "query": "Second Alias",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "Second Alias",
+        "terms": [
+          "second",
+          "alias"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Properties/List.md",
+            "score": 110,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "property",
+                "text": "aliases: First Alias, Second Alias"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "path-only",
+      "query": "Français",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "Français",
+        "terms": [
+          "francais"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 70,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Français/Café.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "fenced-code",
+      "query": "hiddenNeedle",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "hiddenNeedle",
+        "terms": [
+          "hiddenneedle"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate-lines",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "maxContexts": 4
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 69,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle second",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "echoed-across-fields",
+      "query": "release checklist",
+      "limit": null,
+      "options": {
+        "maxContexts": 100
+      },
+      "page": {
+        "query": "release checklist",
+        "terms": [
+          "release",
+          "checklist"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Repeats/Heading Echo.md",
+            "score": 221,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "heading",
+                "text": "release checklist",
+                "line": 1
+              },
+              {
+                "kind": "property",
+                "text": "topic: release checklist"
+              },
+              {
+                "kind": "tag",
+                "text": "#release checklist"
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 201,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Release checklist",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Release checklist",
+                "line": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "long-line-clipped",
+      "query": "needle",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 69,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle second",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "long-line-exact",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "exactContext": true
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 69,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle second",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "    const needle = true;   ",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "long-decomposed-clip",
+      "query": "cafe",
+      "limit": null,
+      "options": {
+        "maxContexts": 1
+      },
+      "page": {
+        "query": "cafe",
+        "terms": [
+          "cafe"
+        ],
+        "total": 4,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 281,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café Notes",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "marked-prefix-anchor",
+      "query": "a",
+      "limit": null,
+      "options": {
+        "maxContexts": 1
+      },
+      "page": {
+        "query": "a",
+        "terms": [
+          "a"
+        ],
+        "total": 27,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Emoji/Astral.md",
+            "score": 221,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "👩‍👩‍👧‍👦 family line",
+                "line": 2
+              }
+            ]
+          },
+          {
+            "path": "Français/Café.md",
+            "score": 205,
+            "matchCount": 10,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Português ação and Vietnamese ấc in body.",
+                "line": 5
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 196,
+            "matchCount": 7,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "ordinary paragraph",
+                "line": 8
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 193,
+            "matchCount": 6,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Alpha beta lives here.",
+                "line": 2
+              }
+            ]
+          },
+          {
+            "path": "Multiline/Span.md",
+            "score": 190,
+            "matchCount": 5,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "the phrase starts here",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "German/Weather Note.md",
+            "score": 181,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Die Straße ist ruhig heute Abend.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 181,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/MarkedPrefix.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…a",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Marks/Plain.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "a",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Heading Echo.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "release checklist",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Zeta/Tagged.md",
+            "score": 178,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "No title match here.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Languages.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Languages.md"
+              }
+            ]
+          },
+          {
+            "path": "Marks/Fatha.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Marks/Fatha.md"
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Repeats/Duplicate.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 140,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "path",
+                "text": "Research/Case.md"
+              }
+            ]
+          },
+          {
+            "path": "Alpha/Body.md",
+            "score": 111,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "orbit appears only in body",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Beta/Body.md",
+            "score": 111,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "orbit appears only in body",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Research/Other.md",
+            "score": 111,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Alpha only.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 108,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "after",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 96,
+            "matchCount": 21,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word…",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Endings/LoneCr.md",
+            "score": 75,
+            "matchCount": 5,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "alpha\rbeta on one source line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Unicode/DottedI.md",
+            "score": 75,
+            "matchCount": 5,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "İstanbul and Istanbul and istanbul.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Kelvin.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The K sign and a plain k on one line.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Orbit.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "A body without the query outside its title.",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Properties/List.md",
+            "score": 55,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "property",
+                "text": "aliases: First Alias, Second Alias"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "indent-preserved-exact",
+      "query": "const needle",
+      "limit": null,
+      "options": {
+        "exactContext": true
+      },
+      "page": {
+        "query": "const needle",
+        "terms": [
+          "const",
+          "needle"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 91,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 91,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "    const needle = true;   ",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "indent-trimmed-default",
+      "query": "const needle",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "const needle",
+        "terms": [
+          "const",
+          "needle"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 91,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 91,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-lower",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 13,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle second",
+                "line": 2
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-upper",
+      "query": "Needle",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "Needle",
+        "terms": [
+          "Needle"
+        ],
+        "total": 3,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Research/Case.md",
+            "score": 66,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-shout",
+      "query": "NEEDLE",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "NEEDLE",
+        "terms": [
+          "NEEDLE"
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "case-sensitive-accent",
+      "query": "Cafe",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "Cafe",
+        "terms": [
+          "Cafe"
+        ],
+        "total": 4,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Café heading",
+                "line": 4
+              },
+              {
+                "kind": "path",
+                "text": "Français/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café NFD.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café Notes",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café Notes.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-accent-native",
+      "query": "Café",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "Café",
+        "terms": [
+          "Cafe"
+        ],
+        "total": 4,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Café heading",
+                "line": 4
+              },
+              {
+                "kind": "path",
+                "text": "Français/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Long/Café.md",
+            "score": 278,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 prefix 😀 Café target suffix",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Long/Café.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café NFD.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The source is Café in decomposed form.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café NFD.md"
+              }
+            ]
+          },
+          {
+            "path": "Research/Café Notes.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café Notes",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Research/Café Notes.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-sharp-s",
+      "query": "Straße",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "Straße",
+        "terms": [
+          "Straße"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "German/Weather Note.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Die Straße ist ruhig heute Abend.",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-greek",
+      "query": "ΛΟΓΟΣ",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "ΛΟΓΟΣ",
+        "terms": [
+          "ΛΟΓΟΣ"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Greek/Logos.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "ΛΟΓΟΣ σε κεφαλαία.",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-quoted",
+      "query": "\"Cafe heading\"",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "\"Cafe heading\"",
+        "terms": [
+          "Cafe heading"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Français/Café.md",
+            "score": 153,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "# Café heading",
+                "line": 4
+              },
+              {
+                "kind": "heading",
+                "text": "Café heading",
+                "line": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-marked",
+      "query": "aَ",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "aَ",
+        "terms": [
+          "aَ"
+        ],
+        "total": 2,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Marks/Fatha.md",
+            "score": 168,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "aَ",
+                "line": 1
+              },
+              {
+                "kind": "heading",
+                "text": "aَ",
+                "line": 1
+              },
+              {
+                "kind": "property",
+                "text": "Ω: aَ"
+              }
+            ]
+          },
+          {
+            "path": "Long/MarkedPrefix.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "aَxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-kelvin",
+      "query": "K",
+      "limit": null,
+      "options": {
+        "caseSensitive": true
+      },
+      "page": {
+        "query": "K",
+        "terms": [
+          "K"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Unicode/Kelvin.md",
+            "score": 218,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "The K sign and a plain k on one line.",
+                "line": 1
+              },
+              {
+                "kind": "path",
+                "text": "Unicode/Kelvin.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "case-sensitive-folder-scope",
+      "query": "Needle",
+      "limit": null,
+      "options": {
+        "caseSensitive": true,
+        "folder": "Research"
+      },
+      "page": {
+        "query": "Needle",
+        "terms": [
+          "Needle"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Research/Case.md",
+            "score": 66,
+            "matchCount": 2,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "folder-scope",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "folder": "Archive"
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "folder-scope-trailing-slash",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "folder": "Notes/"
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 8,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "folder-scope-empty",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "folder": "Nowhere"
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "truncated-page",
+      "query": "needle",
+      "limit": 3,
+      "options": {},
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": true,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "max-contexts-one",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "maxContexts": 1
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 69,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "max-contexts-hundred",
+      "query": "needle",
+      "limit": null,
+      "options": {
+        "maxContexts": 100
+      },
+      "page": {
+        "query": "needle",
+        "terms": [
+          "needle"
+        ],
+        "total": 15,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Notes/00.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/01.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/02.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/03.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/04.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/05.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/06.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Notes/07.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "first needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "second needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "third needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "fourth needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Repeats/Duplicate.md",
+            "score": 72,
+            "matchCount": 4,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 3
+              },
+              {
+                "kind": "content",
+                "text": "needle line",
+                "line": 4
+              }
+            ]
+          },
+          {
+            "path": "Research/Case.md",
+            "score": 69,
+            "matchCount": 3,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle first",
+                "line": 1
+              },
+              {
+                "kind": "content",
+                "text": "needle second",
+                "line": 2
+              },
+              {
+                "kind": "content",
+                "text": "Needle third",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Archive/Case.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "Needle archived",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Long/Line.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "…word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word padding word needle exact suffix",
+                "line": 1
+              }
+            ]
+          },
+          {
+            "path": "Projects/Launch Plan.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const hiddenNeedle = true;",
+                "line": 6
+              }
+            ]
+          },
+          {
+            "path": "Unicode/Prepend.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "needle",
+                "line": 3
+              }
+            ]
+          },
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "const needle = true;",
+                "line": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "twelve-terms",
+      "query": "needle line first second third fourth alpha beta orbit cafe a k",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "needle line first second third fourth alpha beta orbit cafe a k",
+        "terms": [
+          "needle",
+          "line",
+          "first",
+          "second",
+          "third",
+          "fourth",
+          "alpha",
+          "beta",
+          "orbit",
+          "cafe",
+          "a",
+          "k"
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "empty-query",
+      "query": "  ",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "  ",
+        "terms": [],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "no-match",
+      "query": "zzzznotpresentzzzz",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "zzzznotpresentzzzz",
+        "terms": [
+          "zzzznotpresentzzzz"
+        ],
+        "total": 0,
+        "truncated": false,
+        "results": []
+      }
+    },
+    {
+      "id": "whitespace-only-line-skip",
+      "query": "before",
+      "limit": null,
+      "options": {},
+      "page": {
+        "query": "before",
+        "terms": [
+          "before"
+        ],
+        "total": 1,
+        "truncated": false,
+        "results": [
+          {
+            "path": "Whitespace/Indented.md",
+            "score": 63,
+            "matchCount": 1,
+            "contexts": [
+              {
+                "kind": "content",
+                "text": "before",
+                "line": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "mutation": {
+    "before-upsert": {
+      "query": "before",
+      "terms": [
+        "before"
+      ],
+      "total": 1,
+      "truncated": false,
+      "results": [
+        {
+          "path": "Mutable/Note.md",
+          "score": 66,
+          "matchCount": 2,
+          "contexts": [
+            {
+              "kind": "content",
+              "text": "before text",
+              "line": 1
+            },
+            {
+              "kind": "content",
+              "text": "second before line",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    "after-upsert-old-term": {
+      "query": "before",
+      "terms": [
+        "before"
+      ],
+      "total": 0,
+      "truncated": false,
+      "results": []
+    },
+    "after-upsert-new-term": {
+      "query": "after",
+      "terms": [
+        "after"
+      ],
+      "total": 1,
+      "truncated": false,
+      "results": [
+        {
+          "path": "Mutable/Note.md",
+          "score": 66,
+          "matchCount": 2,
+          "contexts": [
+            {
+              "kind": "content",
+              "text": "after text",
+              "line": 1
+            },
+            {
+              "kind": "content",
+              "text": "second after line",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    "after-remove": {
+      "query": "after",
+      "terms": [
+        "after"
+      ],
+      "total": 0,
+      "truncated": false,
+      "results": []
+    }
+  }
+}
