@@ -11,7 +11,10 @@ import {
   type VaultSnapshot,
 } from "./node-vault-watcher";
 import { VaultPathPolicy } from "./path-policy";
+import { FixedStateRoot } from "./ports";
+import { VaultKernel } from "./vault-kernel";
 import {
+  type VaultChangeBatch,
   WatchBatchSequencer,
   type WatchedPathState,
   WatchOperationLedger,
@@ -502,5 +505,63 @@ describe("NodeVaultWatcher", () => {
     await expect(watcher.close()).resolves.toBeUndefined();
     releaseListener?.();
     expect(() => watcher.start(() => undefined)).toThrow("Vault watcher is closed");
+  });
+});
+
+describe("transient absence attribution", () => {
+  it("marks a deletion observed inside a write's move-aside window", async () => {
+    const statePath = path.join(sandboxPath, "state");
+    await fs.writeFile(path.join(vaultPath, "Note.md"), "before\n", "utf8");
+    const observed: VaultChangeBatch[] = [];
+    let insideWindow = false;
+    const kernel = await VaultKernel.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      faultInjector: async (point) => {
+        if (point !== "write:after-move-aside" || insideWindow) {
+          return;
+        }
+        insideWindow = true;
+        const batch = await watcher.scanNow();
+        if (batch) {
+          observed.push(batch);
+        }
+      },
+    });
+    const watcher = await NodeVaultWatcher.open(vaultPath, {
+      streamId: "transient-stream",
+      transientAbsences: kernel.transientAbsences,
+    });
+    const before = await kernel.readText("Note.md");
+
+    const written = await kernel.writeText("Note.md", "after\n", before.revision);
+    expect(written).toMatchObject({ status: "committed" });
+    expect(insideWindow).toBe(true);
+    // Without this the deletion is indistinguishable from a removal, and the
+    // guards that refuse to read one as an expected removal or as half of a
+    // materialized move have nothing to key on.
+    expect(observed.at(0)?.changes).toEqual([
+      { kind: "delete", path: "Note.md", transientOperationId: expect.any(String) },
+    ]);
+    expect(kernel.transientAbsences.operationFor("Note.md")).toBeUndefined();
+    await watcher.close();
+  });
+
+  it("leaves an ordinary deletion unmarked", async () => {
+    const statePath = path.join(sandboxPath, "state");
+    await fs.writeFile(path.join(vaultPath, "Note.md"), "before\n", "utf8");
+    const kernel = await VaultKernel.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+    });
+    const watcher = await NodeVaultWatcher.open(vaultPath, {
+      streamId: "ordinary-stream",
+      transientAbsences: kernel.transientAbsences,
+    });
+
+    await fs.unlink(path.join(vaultPath, "Note.md"));
+    const batch = await watcher.scanNow();
+    expect(batch?.changes).toEqual([{ kind: "delete", path: "Note.md" }]);
+    await watcher.close();
   });
 });

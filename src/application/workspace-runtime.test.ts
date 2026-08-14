@@ -4,6 +4,7 @@ import path from "node:path";
 import moment from "moment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
+import type { KernelFaultInjector } from "../kernel/vault-kernel";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
@@ -203,6 +204,7 @@ async function openRuntime(
   workspaceStateStore?: WorkspaceStateStore,
   workspaceSettings?: Partial<VaultWorkspaceSettings>,
   beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>,
+  faultInjector?: KernelFaultInjector,
 ): Promise<WorkspaceRuntime> {
   runtime = await WorkspaceRuntime.open({
     vaultRoot: vaultPath,
@@ -210,6 +212,7 @@ async function openRuntime(
     pluginDirectory: path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"),
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
     ...(beforeWorkspaceStateRestore ? { beforeWorkspaceStateRestore } : {}),
+    ...(faultInjector ? { faultInjector } : {}),
     ...(workspaceSettings
       ? {
           workspaceSettings: {
@@ -1353,6 +1356,11 @@ describe("WorkspaceRuntime", () => {
     });
 
     await fs.unlink(path.join(vaultPath, "Renamed.md"));
+    // A deletion is accepted on the reconcile pass after the one that observed
+    // it, because that is what tells a removal apart from the gap in the middle
+    // of an atomic replace. The first pass already hides the tab; the second is
+    // what closes it and rewrites the persisted pin set.
+    await workspace.reconcileNow();
     const deleted = await workspace.reconcileNow();
     expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
     expect(deleted.workspace).toMatchObject({
@@ -1378,6 +1386,8 @@ describe("WorkspaceRuntime", () => {
 
     await workspace.goForward(workspace.vaultId);
     await fs.unlink(path.join(vaultPath, "Renamed.md"));
+    // Second pass: history entries are scrubbed once the absence is confirmed.
+    await workspace.reconcileNow();
     const deleted = await workspace.reconcileNow();
     expect(deleted.workspace?.activeNote?.path).toBe("Linked Note.md");
     expect(deleted.workspace?.panes[0]).toMatchObject({ canGoBack: false });
@@ -2646,5 +2656,327 @@ describe("WorkspaceRuntime", () => {
     await expect(workspace.openNote("Welcome.md")).resolves.toMatchObject({
       workspace: { activeNote: { path: "Welcome.md" } },
     });
+  });
+});
+
+describe("WorkspaceRuntime atomic-replace reconciliation", () => {
+  const attachmentBytes = Buffer.from("%PDF-1.7\nopaque attachment bytes\n", "ascii");
+
+  async function seedAttachmentDesk(): Promise<void> {
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), attachmentBytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Attachment Desk.md"),
+      "# Attachment Desk\n\n![[Assets/report.pdf|Report]]\n\n[download](Assets/report.pdf)\n",
+      "utf8",
+    );
+  }
+
+  function tabPaths(snapshot: RuntimeSnapshot): string[] {
+    return (snapshot.workspace?.tabs ?? []).map(({ path: filePath }) => filePath);
+  }
+
+  it("keeps a pinned tab through the move-aside window of an attachment move", async () => {
+    await seedAttachmentDesk();
+    const store = new MemoryWorkspaceStateStore();
+    let racedScans = 0;
+    let observedAbsence = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || racedScans > 0) {
+        return;
+      }
+      racedScans += 1;
+      // The transaction is holding the note aside right now, which is exactly
+      // the state a scan misreads as a deletion.
+      observedAbsence = await fs
+        .stat(path.join(vaultPath, "Attachment Desk.md"))
+        .then(() => false)
+        .catch(() => true);
+      await runtime?.reconcileNow();
+    });
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Attachment Desk.md");
+    await workspace.toggleTabPin("Attachment Desk.md", "primary", workspace.vaultId);
+    const before = store.saved.at(-1);
+
+    const source = await workspace.kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected the attachment bytes.");
+    const preview = await workspace.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report-renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+    );
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected an attachment move confirmation.");
+    }
+    const moved = await workspace.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report-renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+    );
+    expect(moved.outcome).toMatchObject({ status: "published-source-retained" });
+    expect(racedScans).toBe(1);
+    expect(observedAbsence).toBe(true);
+
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Attachment Desk.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toContain("Archive/report-renamed.pdf");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Attachment Desk.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(before?.panes[0]?.openPaths);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Attachment Desk.md");
+  });
+
+  it("keeps a pinned tab through the move-aside window of a note save", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let racedScans = 0;
+    let observedAbsence = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || racedScans > 0) {
+        return;
+      }
+      racedScans += 1;
+      observedAbsence = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      await runtime?.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the race\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect(racedScans).toBe(1);
+    expect(observedAbsence).toBe(true);
+
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toBe("# Welcome\n\nsaved through the race\n");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+  });
+
+  it("keeps a pinned tab through an external atomic replace", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    const before = store.saved.at(-1);
+
+    // No kernel transaction: an outside writer renaming its replacement into
+    // place leaves the same gap, and the workspace has nothing to attribute it to.
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(path.join(vaultPath, "Welcome.md"), asidePath);
+    const during = await workspace.reconcileNow();
+    expect(tabPaths(during)).not.toContain("Welcome.md");
+
+    await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome\n\nreplaced\n", "utf8");
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toBe("# Welcome\n\nreplaced\n");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(before?.panes[0]?.openPaths);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+  });
+
+  it("closes the tab once an external deletion is confirmed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+    expect(settled.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+  });
+
+  it("closes the tab for a live watcher deletion with no further vault activity", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+
+    // Deferring a deletion is only safe if something still asks the vault the
+    // second question. A deletion is the last filesystem event of its burst, so
+    // nothing here drives the watcher and no test call reconciles: the
+    // confirmation pass has to be requested by the deferral itself. This asserts
+    // the persisted layout rather than the published one, because only the
+    // written-back projection distinguishes a confirmed close from the one pass
+    // the display hides an unconfirmed path for.
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    const deadline = Date.now() + 15000;
+    while (
+      Date.now() < deadline &&
+      (store.saved.at(-1)?.panes[0]?.openPaths ?? []).includes("Welcome.md")
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    const settled = await workspace.getSnapshot();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+    expect(settled.workspace?.activeNote?.path).toBe("Linked Note.md");
+  }, 30000);
+
+  it("closes the tab on a deliberate trash and still refuses a pinned one", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await expect(
+      workspace.deleteNote("Welcome.md", note.revision, workspace.vaultId),
+    ).rejects.toThrow("Unpin this tab before closing it.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const deleted = await workspace.deleteNote("Welcome.md", note.revision, workspace.vaultId);
+    expect(deleted.outcome).toMatchObject({ status: "committed" });
+    expect(tabPaths(deleted.snapshot)).toEqual(["Linked Note.md"]);
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+  });
+
+  it("keeps the tab and releases the claim when a write rolls its target back", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let racedScans = 0;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || racedScans > 0) {
+        return;
+      }
+      racedScans += 1;
+      await runtime?.reconcileNow();
+      // Change the rolled-back copy so the transaction takes its restore-and-
+      // conflict exit instead of installing the replacement.
+      const rollbackName = (await fs.readdir(vaultPath)).find((name) =>
+        name.startsWith(".threadleaf-rollback-"),
+      );
+      if (!rollbackName) throw new Error("Expected a rollback copy inside the window.");
+      await fs.writeFile(path.join(vaultPath, rollbackName), "# Welcome\n\nrolled back\n", "utf8");
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nnever installed\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "conflict" });
+    expect(racedScans).toBe(1);
+    expect(workspace.kernel.transientAbsences.operationFor("Welcome.md")).toBeUndefined();
+
+    const settled = await workspace.reconcileNow();
+    // A conflict activates its conflict copy, which is unchanged behaviour. What
+    // matters here is that the note's own tab and pin survived the window.
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
+    expect(settled.workspace?.activeNote?.path).toMatch(/^Welcome\.threadleaf-conflict-/);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(
+      "# Welcome\n\nrolled back\n",
+    );
+  });
+
+  it("keeps the tab when a second write reopens the window before the first is confirmed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let windows = 0;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside") {
+        return;
+      }
+      windows += 1;
+      await runtime?.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const first = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\none\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    if (first.outcome.status !== "committed") throw new Error("Expected the first save.");
+    // The second window opens before anything confirmed the absence the first
+    // one left behind, so the confirmation lands while the file is aside again.
+    const second = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\ntwo\n",
+      first.outcome.revision,
+      workspace.vaultId,
+    );
+    expect(second.outcome).toMatchObject({ status: "committed" });
+    expect(windows).toBe(2);
+
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(settled.workspace?.activeNote?.content).toBe("# Welcome\n\ntwo\n");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("releases the claim when a write throws inside its move-aside window", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let raced = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced) {
+        return;
+      }
+      raced = true;
+      await runtime?.reconcileNow();
+      throw new Error("injected move-aside failure");
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+
+    await expect(
+      workspace.saveNote("Welcome.md", "# Welcome\n\nlost\n", note.revision, workspace.vaultId),
+    ).rejects.toThrow("injected move-aside failure");
+    expect(raced).toBe(true);
+    expect(workspace.kernel.transientAbsences.operationFor("Welcome.md")).toBeUndefined();
+
+    // The claim is gone, so the absence is now confirmable like any other: the
+    // file really did not come back, and the tab closes on the next pass.
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
   });
 });
