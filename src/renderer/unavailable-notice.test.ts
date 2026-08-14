@@ -15,6 +15,7 @@ describe("unavailableNoticeText", () => {
     expect(notice.heading).toBe("Waiting for Overview");
     expect(notice.detail).toContain("Boards/Overview.canvas");
     expect(notice.detail).toContain("The tab stays open");
+    expect(notice.toolbarLabel).toBe("Waiting for Boards/Overview.canvas");
     expect(notice).not.toMatchObject(unavailableNoticeText(null));
   });
 });

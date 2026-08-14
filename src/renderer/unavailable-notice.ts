@@ -3,11 +3,13 @@ import type { WorkspaceUnavailableEntry } from "../shared/contracts";
 export interface UnavailableNoticeText {
   heading: string;
   detail: string;
+  toolbarLabel: string;
 }
 
 const noSelection: UnavailableNoticeText = {
   heading: "Select a note",
   detail: "The filesystem remains authoritative. This surface reads through the safe vault kernel.",
+  toolbarLabel: "No note selected",
 };
 
 /**
@@ -29,5 +31,6 @@ export function unavailableNoticeText(
   return {
     heading: `Waiting for ${entry.title}`,
     detail: `${entry.path} is not in the vault right now. The tab stays open, and this opens as soon as its file is back.`,
+    toolbarLabel: `Waiting for ${entry.path}`,
   };
 }

@@ -9597,6 +9597,7 @@ function renderVaultSearchResults(activePath: string | null, indexedCount: numbe
 
 function renderUnavailableNotice(entry: WorkspaceUnavailableEntry | null | undefined): void {
   const text = unavailableNoticeText(entry);
+  elements.notePath.textContent = text.toolbarLabel;
   const heading = elements.noteEmpty.querySelector("h2");
   const detail = elements.noteEmpty.querySelector("p");
   if (heading) {
