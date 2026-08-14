@@ -32,6 +32,14 @@ import {
   restoreTrashedMarkdownNote,
   trashMarkdownNote,
 } from "../application/note-trash";
+import {
+  ExtensionPortingError,
+  inspectUnpackedPlugin,
+  type PortingReport,
+  type PortingScaffoldKind,
+  type PortingScaffoldResult,
+  scaffoldPortingTemplate,
+} from "../extension-porting/porting-toolkit";
 import { maxSearchResults, SearchQueryError } from "../kernel/full-text-search";
 import { normalizeMarkdownTaskStatus } from "../kernel/markdown-tasks";
 import {
@@ -391,6 +399,20 @@ interface CliSnippetsCommand extends CliVaultCommand {
   id: "snippets";
 }
 
+interface CliPortInspectCommand extends CliBaseCommand {
+  id: "port.inspect" | "port.ci";
+  pluginDirectory: string;
+  receiptPath: string | null;
+}
+
+interface CliPortScaffoldCommand extends CliBaseCommand {
+  id: "port.scaffold";
+  pluginDirectory: string;
+  outputDirectory: string;
+  kind: PortingScaffoldKind;
+  receiptPath: string | null;
+}
+
 export type ParsedCliCommand =
   | CliHelpCommand
   | CliVaultInfoCommand
@@ -431,9 +453,14 @@ export type ParsedCliCommand =
   | CliThemesCommand
   | CliThemeCommand
   | CliSnippetsCommand
-  | CliCompletionCommand;
+  | CliCompletionCommand
+  | CliPortInspectCommand
+  | CliPortScaffoldCommand;
 
-type ExecutableCliCommand = Exclude<ParsedCliCommand, CliHelpCommand | CliCompletionCommand>;
+type ExecutableCliCommand = Exclude<
+  ParsedCliCommand,
+  CliHelpCommand | CliCompletionCommand | CliPortInspectCommand | CliPortScaffoldCommand
+>;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -528,6 +555,15 @@ function parseCliTarget(value: string): CliTargetParameter {
     return { filePath: value.slice("path=".length), targetKind: "path" };
   }
   return { filePath: value, targetKind: "path" };
+}
+
+/**
+ * A porting-command target is a raw filesystem directory, never a vault-relative note. It accepts
+ * a bare positional or the path= alias (matching the schema's port.* completion grammar), but not
+ * file=, which implies vault-relative unique-note-name resolution that does not apply here.
+ */
+function parsePortDirectory(value: string): string {
+  return value.startsWith("path=") ? value.slice("path=".length) : value;
 }
 
 interface PropertyParameters {
@@ -637,7 +673,11 @@ function parseCompatibilityFormat(value: string, commandName: string): "text" | 
   return parseTabularFormat(value, commandName);
 }
 
-const cliHelpTopics = new Set(schemaCliHelpTopics);
+// "port" itself is never a schema-registered command spelling (only the fused "port:inspect",
+// "port:ci", and "port:scaffold" tokens are), but the bare space form "port inspect <dir>" makes
+// "port" the first positional token the parser sees. Without this, "threadleaf port inspect --help"
+// would resolve topic="port" and fail with "Unknown help topic: port" instead of a graceful summary.
+const cliHelpTopics = new Set([...schemaCliHelpTopics, "port"]);
 
 export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let json = false;
@@ -650,6 +690,8 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
   let renamedName: string | null = null;
   let updateLinks = false;
   let help = false;
+  let outputPath: string | null = null;
+  let receiptPath: string | null = null;
   const positional: string[] = [];
 
   for (let index = 0; index < args.length; index += 1) {
@@ -765,6 +807,32 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       }
       continue;
     }
+    if (option?.id === "output") {
+      if (outputPath !== null) {
+        usageFailure("--output may be supplied only once.");
+      }
+      outputPath = option.inlineValue ?? takeOptionValue(args, index, "--output");
+      if (!outputPath) {
+        usageFailure("--output requires a value.");
+      }
+      if (option.inlineValue === null) {
+        index += 1;
+      }
+      continue;
+    }
+    if (option?.id === "receipt") {
+      if (receiptPath !== null) {
+        usageFailure("--receipt may be supplied only once.");
+      }
+      receiptPath = option.inlineValue ?? takeOptionValue(args, index, "--receipt");
+      if (!receiptPath) {
+        usageFailure("--receipt requires a value.");
+      }
+      if (option.inlineValue === null) {
+        index += 1;
+      }
+      continue;
+    }
     if (token.startsWith("-") && token !== "-") {
       usageFailure(`Unknown option: ${token}`);
     }
@@ -802,6 +870,76 @@ export function parseCliArguments(args: readonly string[]): ParsedCliCommand {
       usageFailure("completion shell must be bash, zsh, fish, or powershell.");
     }
     return { id: "completion", json, shell };
+  }
+  if (
+    positional[0] === "port" ||
+    positional[0] === "port:inspect" ||
+    positional[0] === "port:ci" ||
+    positional[0] === "port:scaffold"
+  ) {
+    if (
+      vaultPath !== null ||
+      directory !== null ||
+      limit !== null ||
+      content !== null ||
+      inline ||
+      destination !== null ||
+      renamedName !== null ||
+      updateLinks
+    ) {
+      usageFailure("Porting commands do not use a vault or content options.");
+    }
+    // "port inspect <dir>" (space form, tested end to end and documented as the CI recipe) and
+    // "port:inspect <dir>" (the fused single-token spelling schema.ts registers for shell
+    // completion) are equivalent, parallel spellings of the same command.
+    const isSpaceForm = positional[0] === "port";
+    const subcommand = isSpaceForm ? positional[1] : positional[0].slice("port:".length);
+    const rest = isSpaceForm ? positional.slice(2) : positional.slice(1);
+    if (subcommand !== "inspect" && subcommand !== "ci" && subcommand !== "scaffold") {
+      usageFailure("port requires inspect, ci, or scaffold.");
+    }
+    if (subcommand === "inspect" || subcommand === "ci") {
+      if (rest.length !== 1 || outputPath !== null) {
+        usageFailure(`port ${subcommand} requires exactly one unpacked plugin directory.`);
+      }
+      const pluginDirectory = parsePortDirectory(rest[0] ?? "");
+      if (!pluginDirectory) {
+        usageFailure(`port ${subcommand} requires a non-empty plugin directory.`);
+      }
+      return {
+        id: subcommand === "inspect" ? "port.inspect" : "port.ci",
+        json,
+        pluginDirectory,
+        receiptPath,
+      };
+    }
+    if (rest.length !== 2 || !outputPath) {
+      usageFailure(
+        "port scaffold requires native or compatibility, a plugin directory, and --output.",
+      );
+    }
+    const kind = rest[0];
+    if (kind !== "native" && kind !== "compatibility") {
+      usageFailure("port scaffold kind must be native or compatibility.");
+    }
+    const pluginDirectory = parsePortDirectory(rest[1] ?? "");
+    if (!pluginDirectory) {
+      usageFailure("port scaffold requires a non-empty plugin directory.");
+    }
+    return {
+      id: "port.scaffold",
+      json,
+      pluginDirectory,
+      outputDirectory: outputPath,
+      kind,
+      receiptPath,
+    };
+  }
+  if (receiptPath !== null) {
+    usageFailure("--receipt is available only for port inspect, port ci, or port scaffold.");
+  }
+  if (outputPath !== null) {
+    usageFailure("--output is available only for port scaffold.");
   }
   if (!vaultPath) {
     usageFailure("Every vault command requires --vault <path>.");
@@ -2918,6 +3056,72 @@ function selectRandomNote(
   throw new Error("The random-note selector returned a path outside the candidate set.");
 }
 
+function portFailure(error: unknown): never {
+  if (error instanceof ExtensionPortingError) {
+    throw new CliFailure(
+      error.code === "output" ? "CONFLICT" : "VAULT",
+      error.code === "output" ? cliExitCodes.conflict : cliExitCodes.vault,
+      error.message,
+      { cause: error },
+    );
+  }
+  throw error;
+}
+
+/**
+ * Porting commands never open a vault or kernel; they are handled entirely outside
+ * executeWithCommandState/executeCommand, matching how "completion" bypasses that machinery.
+ */
+async function executePortCommand(
+  command: CliPortInspectCommand | CliPortScaffoldCommand,
+): Promise<unknown> {
+  let report: PortingReport;
+  try {
+    report = await inspectUnpackedPlugin(
+      command.pluginDirectory,
+      command.receiptPath === null ? {} : { receiptPath: command.receiptPath },
+    );
+  } catch (error) {
+    portFailure(error);
+  }
+  if (command.id === "port.ci") {
+    const errors = report.diagnostics.filter((item) => item.severity === "error");
+    if (errors.length > 0) {
+      throw new CliFailure(
+        "VAULT",
+        cliExitCodes.vault,
+        `Port CI found ${errors.length} error diagnostic${errors.length === 1 ? "" : "s"}.`,
+        { details: { diagnostics: errors } },
+      );
+    }
+    return report;
+  }
+  if (command.id === "port.inspect") {
+    return report;
+  }
+  if (command.id !== "port.scaffold") {
+    throw new Error("Unknown porting command.");
+  }
+  try {
+    return await scaffoldPortingTemplate(
+      report,
+      command.kind,
+      command.outputDirectory,
+      command.pluginDirectory,
+    );
+  } catch (error) {
+    portFailure(error);
+  }
+}
+
+function isPortCommand(
+  command: ParsedCliCommand,
+): command is CliPortInspectCommand | CliPortScaffoldCommand {
+  return (
+    command.id === "port.inspect" || command.id === "port.ci" || command.id === "port.scaffold"
+  );
+}
+
 function isCliMutationCommand(command: ExecutableCliCommand): boolean {
   return (
     command.id === "create" ||
@@ -3639,12 +3843,69 @@ function catalogDiagnosticSuffix(diagnostics: number): string {
     : "";
 }
 
+function humanPortingReport(report: PortingReport): string {
+  const manifest = report.input.manifest;
+  const lines = [
+    `Plugin: ${manifest?.id ?? "<invalid-manifest>"}`,
+    `Version: ${manifest?.version ?? "<unknown>"}`,
+    `Compatibility: ${report.compatibility.status} (level ${report.compatibility.level})`,
+    `Bundle SHA-256: ${report.input.assets.find((asset) => asset.name === "main.js")?.sha256 ?? "<unavailable>"}`,
+    "",
+    "API references:",
+    ...(report.api.observed.length > 0
+      ? report.api.observed.map(
+          (entry) => `  ${entry.status}: ${entry.member} (${entry.evidencePath})`,
+        )
+      : ["  none observed"]),
+    "API differences:",
+    ...(report.api.differences.length > 0
+      ? report.api.differences.map((difference) => `  warning: ${difference.member}`)
+      : ["  none"]),
+    "Authority mappings:",
+    ...(report.authority.observed.length > 0
+      ? report.authority.observed.map(
+          (entry) =>
+            `  ${entry.sourceCapability} -> ${entry.nativeCapability ?? "unmapped"} (${entry.availability})`,
+        )
+      : ["  none observed"]),
+    "Authority differences:",
+    ...(report.authority.differences.length > 0
+      ? report.authority.differences.map(
+          (difference) => `  ${difference.severity}: ${difference.sourceCapability}`,
+        )
+      : ["  none"]),
+    "CI commands:",
+    ...report.ci.commands.map((command) => `  ${command}`),
+    `Diagnostics: ${report.diagnostics.length}`,
+    "",
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function humanPortingScaffold(result: PortingScaffoldResult): string {
+  return [
+    `Scaffold: ${result.kind}`,
+    `Target: ${result.target.id}`,
+    `Runtime: ${result.target.runtime}`,
+    `Files: ${result.files.join(", ")}`,
+    "CI commands:",
+    ...result.commands.map((command) => `  ${command}`),
+    "",
+  ].join("\n");
+}
+
 function humanOutput(command: ParsedCliCommand, data: unknown): string {
   if (command.id === "help") {
     return cliHelpFor(command.topic);
   }
   if (command.id === "completion") {
     return generateCliCompletion(command.shell);
+  }
+  if (command.id === "port.inspect" || command.id === "port.ci") {
+    return humanPortingReport(data as PortingReport);
+  }
+  if (command.id === "port.scaffold") {
+    return humanPortingScaffold(data as PortingScaffoldResult);
   }
   if (command.id === "read") {
     return (data as { content: string }).content;
@@ -4166,7 +4427,9 @@ export async function runCli(
         ? { usage: cliHelpFor(command.topic) }
         : command.id === "completion"
           ? { shell: command.shell, script: generateCliCompletion(command.shell) }
-          : await executeWithCommandState(command, options);
+          : isPortCommand(command)
+            ? await executePortCommand(command)
+            : await executeWithCommandState(command, options);
     try {
       io.stdout(command.json ? jsonOutput(command.id, data) : humanOutput(command, data));
     } catch (error) {

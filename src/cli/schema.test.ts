@@ -263,6 +263,13 @@ function completionCandidateArgs(
     case "plugin":
     case "theme":
       return [...command, candidate];
+    case "port.scaffold":
+      // Unlike port.inspect/port.ci (whose single path= candidate is already a complete
+      // invocation), scaffold also requires a kind literal and --output; every static candidate
+      // must be completed into a full <kind> <target> --output <dir> invocation to parse.
+      return word === "path="
+        ? [...command, "native", candidate, "--output", "/tmp/threadleaf-scaffold-output"]
+        : [...command, candidate, ...target, "--output", "/tmp/threadleaf-scaffold-output"];
     default:
       return [...command, candidate];
   }

@@ -55,7 +55,10 @@ export type CliCommandId =
   | "plugin"
   | "themes"
   | "theme"
-  | "snippets";
+  | "snippets"
+  | "port.inspect"
+  | "port.ci"
+  | "port.scaffold";
 
 export const cliShells: readonly CliShell[] = ["bash", "zsh", "fish", "powershell"];
 
@@ -69,7 +72,9 @@ export type CliGlobalOptionId =
   | "inline"
   | "update-links"
   | "to"
-  | "name";
+  | "name"
+  | "output"
+  | "receipt";
 
 export interface CliGlobalOptionSpec {
   id: CliGlobalOptionId;
@@ -154,6 +159,8 @@ export const cliGlobalOptions: readonly CliGlobalOptionSpec[] = [
   { id: "update-links", names: ["--update-links"], usage: "--update-links", takesValue: false },
   { id: "to", names: ["--to"], usage: "--to <path>", takesValue: true },
   { id: "name", names: ["--name"], usage: "--name <name>", takesValue: true },
+  { id: "output", names: ["--output"], usage: "--output <path>", takesValue: true },
+  { id: "receipt", names: ["--receipt"], usage: "--receipt <path>", takesValue: true },
 ];
 
 /** Resolve one parser token using the same option table used by completion. */
@@ -179,6 +186,8 @@ const inlineContentOptions = ["vault", "content", "inline", "json", "help"] as c
 const moveOptions = ["vault", "to", "update-links", "json", "help"] as const;
 const renameOptions = ["vault", "name", "update-links", "json", "help"] as const;
 const globalOptions = ["json", "help"] as const;
+const portInspectOptions = ["receipt", "json", "help"] as const;
+const portScaffoldOptions = ["output", "receipt", "json", "help"] as const;
 
 export const cliCommandSpecs: readonly CliCommandSpec[] = [
   {
@@ -626,6 +635,32 @@ export const cliCommandSpecs: readonly CliCommandSpec[] = [
     completionWords: [],
     globalOptions: vaultOptions,
   },
+  {
+    id: "port.inspect",
+    names: ["port:inspect"],
+    usage: ["port inspect <unpacked-plugin-directory> [--receipt <receipt.json>]"],
+    requiresVault: false,
+    completionWords: ["path="],
+    globalOptions: portInspectOptions,
+  },
+  {
+    id: "port.ci",
+    names: ["port:ci"],
+    usage: ["port ci <unpacked-plugin-directory> [--receipt <receipt.json>]"],
+    requiresVault: false,
+    completionWords: ["path="],
+    globalOptions: portInspectOptions,
+  },
+  {
+    id: "port.scaffold",
+    names: ["port:scaffold"],
+    usage: [
+      "port scaffold <native|compatibility> <unpacked-plugin-directory> --output <directory> [--receipt <receipt.json>]",
+    ],
+    requiresVault: false,
+    completionWords: ["path=", "native", "compatibility"],
+    globalOptions: portScaffoldOptions,
+  },
 ];
 
 const targetAliases = { "file=": "target", "path=": "target" } as const;
@@ -633,6 +668,8 @@ const createTargetAliases = { "name=": "target", "path=": "target" } as const;
 const templateTargetAliases = { "name=": "target", "path=": "target" } as const;
 const targetValueRules = { "file=": "path", "path=": "path" } as const;
 const pathValueRules = { "path=": "path" } as const;
+const portTargetAliases = { "path=": "target" } as const;
+const portTargetValueRules = { "path=": "path" } as const;
 const optionalFolderValueRules = { "folder=": "optional-path" } as const;
 
 /**
@@ -1043,6 +1080,26 @@ const completionGrammarById: Record<CliCommandId, CliCompletionGrammar> = {
     valueRules: { "name=": "nonempty-text" },
   },
   snippets: { positionalMax: 0 },
+  "port.inspect": {
+    positionalMax: 1,
+    positionalGroup: "target",
+    groupAliases: portTargetAliases,
+    valueRules: portTargetValueRules,
+  },
+  "port.ci": {
+    positionalMax: 1,
+    positionalGroup: "target",
+    groupAliases: portTargetAliases,
+    valueRules: portTargetValueRules,
+  },
+  "port.scaffold": {
+    positionalMax: 1,
+    positionalGroup: "target",
+    groupAliases: portTargetAliases,
+    argumentGroups: { native: "kind", compatibility: "kind" },
+    groupConflicts: [["kind", "kind"]],
+    valueRules: portTargetValueRules,
+  },
 };
 
 function completionGrammarFor(spec: CliCommandSpec, spelling?: string): CliCompletionGrammar {
@@ -1143,6 +1200,8 @@ export const cliTargetRules = [
   "",
   "Commands are headless and never require a running Electron process.",
   "Plugin, theme, and snippet catalogs never execute code or expose private application selections.",
+  "Porting commands are vault-free and static-only; they never import, evaluate, or require() the",
+  "inspected package.",
 ];
 
 export function renderCliHelp(): string {
@@ -1407,6 +1466,8 @@ function completionOptionValueRule(id: CliGlobalOptionId): CliCompletionValueRul
     case "directory":
     case "to":
     case "name":
+    case "output":
+    case "receipt":
       return "path";
     default:
       throw new Error(`CLI option ${id} does not take a completion value.`);
