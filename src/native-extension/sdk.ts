@@ -35,12 +35,6 @@ export interface NativeExtensionContext {
   onTeardown(callback: () => void | Promise<void>): () => void;
 }
 
-/** Type-only compatibility alias for fixture entrypoints. Production bundles remain byte-only. */
-export type NativeExtensionEntrypoint = (
-  context: NativeExtensionContext,
-  input: unknown,
-) => unknown | Promise<unknown>;
-
 /**
  * A production bundle is bytes plus its manifest. It deliberately has no callable entrypoint:
  * the production host must either evaluate verified bytes through a future runtime adapter or

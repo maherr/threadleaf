@@ -1,4 +1,4 @@
-import type { NativeExtensionEntrypoint } from "../../../src/native-extension/sdk";
+import type { NativeExtensionTestEntrypoint as NativeExtensionEntrypoint } from "../../../src/native-extension/test-support";
 
 /** Entry points used by the conformance suite to exercise denied public-port calls. */
 export const undeclaredNetwork: NativeExtensionEntrypoint = async (context) =>

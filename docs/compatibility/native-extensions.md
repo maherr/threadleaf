@@ -3,7 +3,10 @@
 Native Threadleaf extensions are a separate runtime from the trusted CommonJS compatibility host.
 The first stable manifest is version 1, with API version `1.0`. Its machine-readable schema is
 [`native-extension-manifest.v1.schema.json`](./native-extension-manifest.v1.schema.json), and the
-TypeScript vocabulary is exported from `src/native-extension/manifest.ts`.
+TypeScript vocabulary is exported from `src/native-extension/manifest.ts`. Signed distribution
+records, publisher key rotations, and signed marketplace catalogs have their own machine-readable
+schema in
+[`native-extension-distribution.v1.schema.json`](./native-extension-distribution.v1.schema.json).
 
 ## Manifest and review
 
@@ -56,6 +59,22 @@ choice and are delegated to the host's recoverable writer.
 
 ## Lifecycle and trust
 
+Install is a trust gate and never creates a grant. `install` requires an explicit options object
+whose `mode` is `trusted-distribution` together with signed metadata; a missing options object, any
+other mode, or absent metadata is a `distribution-untrusted` failure. `NativeExtensionInstallMode`
+has exactly one member, so no configuration value, settings file, or environment variable can put a
+production host into an unsigned mode. Public `register` always fails closed, because callable
+registration is unavailable on production hosts.
+
+Unsigned development is therefore not a host setting. It is reachable only by importing the
+source-only `src/native-extension/test-support.ts` module, which is not a package export and not a
+build entry. Grants created that way are permanently labelled `unsigned-development`, are rejected
+by the grant parser if they carry any trust metadata, and never count as marketplace trust or as a
+production fallback. `scripts/check-native-extension-build-artifact.mjs` enforces this boundary at
+build time: it fails when test-only source appears as a build entry, as a package export, in the
+public native-extension index, in any production source file, or anywhere in the emitted `dist`
+bundles, and when the byte-only production SDK artifact contains a callable entrypoint field.
+
 Signed distribution metadata uses Ed25519 and binds the exact bundle bytes, authority digest, and
 the complete installed package-tree digest. A package-tree field is optional only for old records;
 those records use the bundle digest as a bundle-only compatibility identity. Publisher rotation is
@@ -96,8 +115,9 @@ boundary, not an OS sandbox, worker isolation boundary, or guarantee of rollback
 
 Inspection deliberately reports `sandboxed: false`. The capability host in this version is an
 in-process API boundary, not an OS sandbox, seccomp policy, worker isolation boundary, or guarantee
-against extension code importing a host module through a future packaging mistake. The fixture
-entrypoint is supplied as a typed SDK function so the conformance suite can exercise the boundary;
+against extension code importing a host module through a future packaging mistake. The production
+SDK exports only byte-only bundle definitions; function-injected fixture entrypoints are confined to
+the source-only test-support module so the conformance suite can exercise the boundary, and
 production bundle evaluation and process isolation are separate work. The trusted desktop runtime
 also reports `trusted-desktop-escape` for navigation, subprocess, secrets, and dynamic code. Those
 operations must never be described as sandboxed or portable.
