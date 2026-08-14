@@ -1224,11 +1224,11 @@ export function buildLivePreviewMapping(
     const sourceOnlyLine =
       isFrontmatter || isFrontmatterFence || isTableLine || isFootnoteSourceLine;
     if (!sourceOnlyLine) {
+      const parseOptions = options.stats
+        ? { footnoteIds: footnotes.ids, stats: options.stats }
+        : { footnoteIds: footnotes.ids };
       parsed.push(
-        ...parseLivePreviewLine(line, lineFrom, localProtectedRanges, {
-          footnoteIds: footnotes.ids,
-          stats: options.stats,
-        }),
+        ...parseLivePreviewLine(line, lineFrom, localProtectedRanges, parseOptions),
       );
     }
     if (isFrontmatter) {
@@ -2837,7 +2837,7 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
             break;
           case "Table":
             if (!replaced) {
-              addNodeLines(node.from, node.to, "tl-live-table-line");
+              addNodeLines(node.from, node.to, "tl-live-table-source-line");
             }
             break;
           case "HorizontalRule":

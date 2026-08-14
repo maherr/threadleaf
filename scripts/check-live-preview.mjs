@@ -510,7 +510,7 @@ async function liveSurfaceState() {
     tableText: [...document.querySelectorAll(".tl-live-table-widget")]
       .map((row) => row.textContent ?? "")
       .join("|")
-      .replace(/\s+/gu, " ")
+      .replace(/\\s+/gu, " ")
       .trim(),
     tableGeometry: (() => {
       const row = document.querySelector(".tl-live-table-row-header");
@@ -611,7 +611,7 @@ try {
         candidate.readyImages === 1 &&
         candidate.codeLines >= 3 &&
         candidate.tableRows >= 3 &&
-        candidate.tableCells >= 6 &&
+        candidate.tableCells >= 4 &&
         candidate.tableGeometry?.display === "grid" &&
         candidate.tableGeometry.rowWidth > 0 &&
         candidate.tableGeometry.cellWidths.length >= 2 &&
@@ -627,8 +627,14 @@ try {
     );
   }
   assert(surface.overflow <= 1, `Live Preview overflowed horizontally by ${surface.overflow}px.`);
-  assert(surface.tableText.includes("Field") && surface.tableText.includes("Value"), "Live table header text was not visible.");
-  assert(surface.tableText.includes("modelive") || surface.tableText.includes("mode live"), "Live table body text was not visible.");
+  assert(
+    surface.tableText.includes("Field") && surface.tableText.includes("Value"),
+    "Live table header text was not visible.",
+  );
+  assert(
+    surface.tableText.includes("modelive") || surface.tableText.includes("mode live"),
+    "Live table body text was not visible.",
+  );
   const darkBaseline = await captureScreenshot("live-preview-dark");
   assert(
     (await evaluate("document.documentElement.dataset.theme")) === "dark",

@@ -2390,12 +2390,78 @@ h2 {
   line-height: 1.62;
 }
 
-.note-editor-shell[data-editor-mode="live"] .tl-live-table-line,
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-source-line,
 .note-editor-shell[data-editor-mode="live"] .tl-live-frontmatter-line {
   color: var(--ink-muted);
   background: color-mix(in srgb, var(--surface-sunken) 74%, transparent);
   font-family: var(--mono);
   font-size: 0.78em;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-widget {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0.16em 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--surface-sunken));
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-row-header,
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-row-body {
+  display: grid;
+  grid-template-columns: repeat(var(--tl-live-table-columns, 1), minmax(0, 1fr));
+  min-width: 0;
+  gap: 1px;
+  background: var(--line);
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-row-header {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-sunken));
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-row-body {
+  color: var(--ink-soft);
+  background: var(--line);
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-row-separator {
+  display: block;
+  min-height: 0.42em;
+  box-sizing: border-box;
+  border-top: 1px dashed var(--line-strong);
+  border-bottom: 1px dashed var(--line-strong);
+  color: transparent;
+  background: var(--surface-sunken);
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-cell {
+  display: block;
+  min-width: 0;
+  padding: 0.48em 0.72em;
+  overflow-wrap: anywhere;
+  color: inherit;
+  background: var(--surface-raised);
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-row-header .tl-live-table-cell {
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-sunken));
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-cell.align-center {
+  text-align: center;
+}
+
+.note-editor-shell[data-editor-mode="live"] .tl-live-table-cell.align-right {
+  text-align: right;
 }
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-frontmatter-line {
