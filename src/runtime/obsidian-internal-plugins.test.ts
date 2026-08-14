@@ -120,4 +120,16 @@ describe("internal plugin compatibility", () => {
     expect(enabled).not.toHaveProperty("views");
     expect(canvasEntry).toHaveProperty("views", expect.any(Object));
   });
+
+  it("returns null, never undefined, for an enabled entry whose instance is unbacked", () => {
+    // getEnabledPluginById() promises an instance or null; a present-but-undefined
+    // `instance` property must not leak `undefined` past a `result === null` check.
+    const app = createApp();
+    Object.assign(app.internalPlugins.plugins.canvas, {
+      enabled: true,
+      instance: undefined,
+    });
+
+    expect(app.internalPlugins.getEnabledPluginById("canvas")).toBeNull();
+  });
 });

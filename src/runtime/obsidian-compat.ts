@@ -1392,7 +1392,7 @@ function createInternalPlugins() {
       if (!plugin?.enabled || !("instance" in plugin)) {
         return null;
       }
-      return plugin.instance;
+      return plugin.instance ?? null;
     },
   };
 }
