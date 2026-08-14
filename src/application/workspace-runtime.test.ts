@@ -2785,7 +2785,11 @@ describe("WorkspaceRuntime atomic-replace reconciliation", () => {
     const asidePath = path.join(sandboxPath, "Welcome.md.aside");
     await fs.rename(path.join(vaultPath, "Welcome.md"), asidePath);
     const during = await workspace.reconcileNow();
-    expect(tabPaths(during)).not.toContain("Welcome.md");
+    // The tab is not hidden while the absence is unconfirmed: it stays open,
+    // pinned and active, and its note is republished from what was last read.
+    expect(during.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
 
     await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome\n\nreplaced\n", "utf8");
     const settled = await workspace.reconcileNow();
@@ -2978,5 +2982,510 @@ describe("WorkspaceRuntime atomic-replace reconciliation", () => {
     await workspace.reconcileNow();
     const settled = await workspace.reconcileNow();
     expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
+  });
+});
+
+describe("WorkspaceRuntime absence confirmation at the sink", () => {
+  // Several of these replace a global filesystem call. A test that fails before
+  // its own restore would otherwise hand the stub to every test after it.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function tabPaths(snapshot: RuntimeSnapshot): string[] {
+    return (snapshot.workspace?.tabs ?? []).map(({ path: filePath }) => filePath);
+  }
+
+  async function openPinnedPair(store: MemoryWorkspaceStateStore): Promise<WorkspaceRuntime> {
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    return workspace;
+  }
+
+  it("keeps the tab when an external replacement lands before the batch is handled", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+
+    // The install lands between the scan listing the directory and the workspace
+    // acting on what it listed. A pass-through spy only chooses that instant; the
+    // reconciliation under test is untouched.
+    const accept = workspace.indexReactor.accept.bind(workspace.indexReactor);
+    let sawDelete = false;
+    const spy = vi.spyOn(workspace.indexReactor, "accept").mockImplementation(async (batch) => {
+      const result = await accept(batch);
+      if (batch.changes.some((c) => c.kind === "delete" && c.path === "Welcome.md")) {
+        sawDelete = true;
+        await fs.rename(asidePath, target);
+        spy.mockRestore();
+      }
+      return result;
+    });
+
+    await workspace.reconcileNow();
+    expect(sawDelete).toBe(true);
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab across every replace-window width", async () => {
+    for (const delayMs of [0, 1, 2, 5]) {
+      const store = new MemoryWorkspaceStateStore();
+      const workspace = await openPinnedPair(store);
+      const target = path.join(vaultPath, "Welcome.md");
+      const asidePath = path.join(sandboxPath, `Welcome.md.aside-${delayMs}`);
+
+      // No stubs at all: a real rename-aside, a reconcile started inside the gap,
+      // and a real rename-back after `delayMs`. delay 0 is the band the panel
+      // localised, where the install wins the race with the deferred re-read.
+      await fs.rename(target, asidePath);
+      const reconcile = workspace.reconcileNow();
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await fs.rename(asidePath, target);
+      await reconcile;
+      await workspace.reconcileNow();
+      const settled = await workspace.reconcileNow();
+
+      expect({ delayMs, tabs: tabPaths(settled) }).toEqual({
+        delayMs,
+        tabs: expect.arrayContaining(["Welcome.md"]),
+      });
+      expect({ delayMs, pinned: store.saved.at(-1)?.panes[0]?.pinnedPaths }).toEqual({
+        delayMs,
+        pinned: ["Welcome.md"],
+      });
+      await workspace.close();
+      runtime = undefined;
+    }
+  }, 30000);
+
+  it("keeps the tab when the kernel's own save is scanned on a large vault", async () => {
+    // The claim is released when the write finishes. On a vault big enough that
+    // the scan is still walking at that moment, the deletion reaches the ledger
+    // unattributed - which is the ordinary case, not an exotic one.
+    const bulk = path.join(vaultPath, "Bulk");
+    await fs.mkdir(bulk, { recursive: true });
+    await Promise.all(
+      Array.from({ length: 600 }, (_, index) =>
+        fs.writeFile(path.join(bulk, `n${index}.md`), `# Note ${index}\n`, "utf8"),
+      ),
+    );
+    const store = new MemoryWorkspaceStateStore();
+    let raced = 0;
+    let fileAbsent = false;
+    let reconcile: Promise<unknown> | undefined;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      fileAbsent = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      // Started, not awaited: the walk overlaps the rest of the transaction, so
+      // the claim is released before the diff is annotated and handled.
+      reconcile = runtime.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved on a large vault\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect({ raced, fileAbsent }).toEqual({ raced: 1, fileAbsent: true });
+    await reconcile;
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+
+    expect(settled.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  }, 30000);
+
+  it("keeps the tab when a read-race rebuild lands during an external replace", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+
+    // The production catch in VaultIndexReactor.accept: one refresh that loses
+    // its race with the filesystem escalates the whole batch to a full rebuild,
+    // which then reads the vault while the file is still aside.
+    const spy = vi.spyOn(workspace.indexReactor.index, "refresh").mockImplementation(async () => {
+      spy.mockRestore();
+      throw new Error("read race");
+    });
+    await fs.writeFile(
+      path.join(vaultPath, "Linked Note.md"),
+      "# Linked Note\n\ntouched\n",
+      "utf8",
+    );
+    const during = await workspace.reconcileNow();
+    expect(during.workspace?.watcher.lastRescanReason).toBe("read-race");
+
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when an overflow rescan lands during an external replace", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.watcher.reportOverflow();
+
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when an overflow rescan lands while the kernel holds the file aside", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let raced = 0;
+    let claimHeld = false;
+    let fileAbsent = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      claimHeld = runtime.kernel.transientAbsences.operationFor("Welcome.md") !== undefined;
+      fileAbsent = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      await runtime.watcher.reportOverflow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the overflow\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect({ raced, claimHeld, fileAbsent }).toEqual({
+      raced: 1,
+      claimHeld: true,
+      fileAbsent: true,
+    });
+
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when a rebuild lands while the kernel holds the file aside", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    let raced = 0;
+    let claimHeld = false;
+    let fileAbsent = false;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      claimHeld = runtime.kernel.transientAbsences.operationFor("Welcome.md") !== undefined;
+      fileAbsent = await fs
+        .stat(path.join(vaultPath, "Welcome.md"))
+        .then(() => false)
+        .catch(() => true);
+      const spy = vi.spyOn(runtime.indexReactor.index, "refresh").mockImplementation(async () => {
+        spy.mockRestore();
+        throw new Error("read race");
+      });
+      await runtime.reconcileNow();
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    await fs.writeFile(
+      path.join(vaultPath, "Linked Note.md"),
+      "# Linked Note\n\ntouched\n",
+      "utf8",
+    );
+
+    const saved = await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the rebuild\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(saved.outcome).toMatchObject({ status: "committed" });
+    expect({ raced, claimHeld, fileAbsent }).toEqual({
+      raced: 1,
+      claimHeld: true,
+      fileAbsent: true,
+    });
+
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("keeps the tab when the confirming re-read cannot tell", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    // An unreadable filesystem is not evidence a file was deleted, and this one
+    // stays unreadable for several passes before the replacement lands.
+    let injected = 0;
+    const realpath = fs.realpath;
+    const spy = vi.spyOn(fs, "realpath").mockImplementation((async (
+      target: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof target === "string" && target.endsWith("/Welcome.md")) {
+        injected += 1;
+        const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
+        error.code = "EACCES";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(target, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    await workspace.reconcileNow();
+    const blocked = await workspace.reconcileNow();
+    expect(injected).toBeGreaterThan(0);
+    expect(tabPaths(blocked)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    expect(blocked.workspace?.watcher.error).toBeNull();
+
+    spy.mockRestore();
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  });
+
+  it("applies the rest of a batch when one deleted path cannot be read", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const realpath = fs.realpath;
+    let injected = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        injected += 1;
+        const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
+        error.code = "EACCES";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    // One unreadable path in a batch must not take the batch down with it: the
+    // watcher snapshot has already advanced, so anything dropped here is never
+    // re-emitted, and the failure escalates into a rescan.
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await fs.writeFile(path.join(vaultPath, "Linked Note.md"), "# Linked Note\n\nedited\n", "utf8");
+    // The batch itself makes no filesystem call for the deleted path, which is
+    // why it cannot be taken down by one; the confirming re-read on the pass
+    // after it is where the unreadable path is actually met.
+    const applied = await workspace.reconcileNow();
+    expect(injected).toBe(0);
+    const settled = await workspace.reconcileNow();
+
+    expect(injected).toBeGreaterThan(0);
+    expect(applied.workspace?.watcher.error).toBeNull();
+    expect(settled.workspace?.watcher.error).toBeNull();
+    expect(settled.workspace?.watcher.lastRescanReason).toBeNull();
+    expect(settled.workspace?.state).toBe("ready");
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    const linked = settled.workspace?.files.find(
+      ({ path: filePath }) => filePath === "Linked Note.md",
+    );
+    expect(linked).toBeDefined();
+    await expect(workspace.kernel.readText("Linked Note.md")).resolves.toMatchObject({
+      content: "# Linked Note\n\nedited\n",
+    });
+  });
+
+  it("republishes the active note unchanged while its file is held aside", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const published: RuntimeSnapshot[] = [];
+    let raced = 0;
+    const workspace = await openRuntime(store, undefined, undefined, async (point) => {
+      if (point !== "write:after-move-aside" || raced > 0 || !runtime) {
+        return;
+      }
+      raced += 1;
+      published.push(await runtime.reconcileNow());
+      published.push(await runtime.reconcileNow());
+    });
+    await workspace.openNote("Linked Note.md");
+    const opened = await workspace.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected the note to open.");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await workspace.saveNote(
+      "Welcome.md",
+      "# Welcome\n\nsaved through the window\n",
+      note.revision,
+      workspace.vaultId,
+    );
+    expect(raced).toBe(1);
+    // The editor is showing this buffer. Anything else published for it - a
+    // different note promoted to active, or a re-read of a file that is not
+    // there - resets the document and discards its undo history.
+    expect(published).toHaveLength(2);
+    for (const snapshot of published) {
+      expect(snapshot.workspace?.activeNote).toMatchObject({
+        path: note.path,
+        revision: note.revision,
+        content: note.content,
+      });
+      expect(snapshot.workspace?.tabs).toContainEqual(
+        expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+      );
+    }
+  });
+
+  it("ignores a deletion the workspace is not tracking", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await fs.writeFile(path.join(vaultPath, "Untracked.md"), "# Untracked\n", "utf8");
+    await workspace.reconcileNow();
+    await fs.unlink(path.join(vaultPath, "Untracked.md"));
+
+    let probes = 0;
+    const realpath = fs.realpath;
+    const spy = vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Untracked.md")) {
+        probes += 1;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+    await workspace.reconcileNow();
+    const settled = await workspace.reconcileNow();
+    spy.mockRestore();
+
+    // A path no pane holds needs no protection, so it never becomes an absence
+    // and never costs a confirmation read. Its file is gone, so the scan cannot
+    // be the source of these probes.
+    expect(probes).toBe(0);
+    expect(tabPaths(settled)).toContain("Welcome.md");
+    expect(tabPaths(settled)).not.toContain("Untracked.md");
+  });
+
+  it("stops asking for more scans while a re-read keeps failing", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    const realpath = fs.realpath;
+    const failing = vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
+        error.code = "EIO";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+    const followUps = vi.spyOn(workspace.watcher, "requestFollowUpScan");
+    const passes = 40;
+    for (let pass = 0; pass < passes; pass += 1) {
+      await workspace.reconcileNow();
+    }
+    const requested = followUps.mock.calls.length;
+    followUps.mockRestore();
+    failing.mockRestore();
+
+    // An absence that cannot be read is kept, but it must not drive the watcher
+    // for as long as the filesystem stays unreadable. Re-recording it each pass
+    // would reset the count and spin at the debounce rate indefinitely.
+    expect(requested).toBeLessThan(passes / 2);
+    const held = await workspace.getSnapshot();
+    expect(tabPaths(held)).toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+  }, 30000);
+
+  it("restores a deferred tab when the workspace is reopened mid-window", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openPinnedPair(store);
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+    await workspace.close();
+    runtime = undefined;
+
+    await fs.rename(asidePath, target);
+    const restarted = await openRuntime(store);
+    const snapshot = await restarted.getSnapshot();
+    expect(tabPaths(snapshot)).toContain("Welcome.md");
+    expect(snapshot.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true }),
+    );
+  });
+
+  it("keeps a path both panes track through a transient absence", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const workspace = await openRuntime(store);
+    await workspace.openNote("Welcome.md");
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.openNote("Welcome.md");
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+    await fs.rename(asidePath, target);
+    const settled = await workspace.reconcileNow();
+    for (const pane of settled.workspace?.panes ?? []) {
+      expect(pane.tabs.map(({ path: filePath }) => filePath)).toContain("Welcome.md");
+    }
+    for (const pane of store.saved.at(-1)?.panes ?? []) {
+      expect(pane.openPaths).toContain("Welcome.md");
+    }
   });
 });

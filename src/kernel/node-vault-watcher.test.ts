@@ -15,6 +15,7 @@ import { FixedStateRoot } from "./ports";
 import { VaultKernel } from "./vault-kernel";
 import {
   type VaultChangeBatch,
+  VaultTransientAbsences,
   WatchBatchSequencer,
   type WatchedPathState,
   WatchOperationLedger,
@@ -563,5 +564,94 @@ describe("transient absence attribution", () => {
     const batch = await watcher.scanNow();
     expect(batch?.changes).toEqual([{ kind: "delete", path: "Note.md" }]);
     await watcher.close();
+  });
+});
+
+describe("transient absence attribution timing", () => {
+  function heldAbsence(filePath: string, operationId: string) {
+    const absences = new VaultTransientAbsences();
+    const since = absences.mark();
+    const handle = absences.reserve(filePath);
+    handle.hold(operationId);
+    return { absences, since, handle };
+  }
+
+  it("attributes a deletion to a claim the write already released", () => {
+    const { absences, since, handle } = heldAbsence("Note.md", "write-1");
+    // The scan listed the directory while the file was aside, and the write
+    // finished before the diff reached the ledger. That is the ordinary case on
+    // any vault large enough for the walk to outlast the transaction.
+    handle.release();
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+
+    expect(ledger.annotate([{ kind: "delete", path: "Note.md" }], since)).toEqual([
+      { kind: "delete", path: "Note.md", transientOperationId: "write-1" },
+    ]);
+  });
+
+  it("does not attribute a claim released before the scan began", () => {
+    const { absences, handle } = heldAbsence("Note.md", "write-1");
+    handle.release();
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    const since = absences.mark();
+
+    expect(ledger.annotate([{ kind: "delete", path: "Note.md" }], since)).toEqual([
+      { kind: "delete", path: "Note.md" },
+    ]);
+  });
+
+  it("refuses to fold a transient deletion into a materialized move", () => {
+    const { absences, since } = heldAbsence("A.md", "write-1");
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    ledger.expect({ id: "rename-1", kind: "rename", from: "A.md", to: "B.md", revision: "rev-b" });
+
+    const annotated = ledger.annotate(
+      [
+        { kind: "delete", path: "A.md" },
+        { kind: "upsert", state: state("B.md", "9", "rev-b") },
+      ],
+      since,
+    );
+
+    // Folding these into a move would drive the workspace to rename the tab of a
+    // file that is merely being rewritten.
+    expect(annotated.map((change) => change.kind)).toEqual(["delete", "upsert"]);
+    expect(annotated[0]).toMatchObject({ transientOperationId: "write-1" });
+  });
+
+  it("refuses to settle an expected removal with a transient deletion", () => {
+    const { absences, since } = heldAbsence("A.md", "write-1");
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    ledger.expect({ id: "trash-1", kind: "delete", path: "A.md" });
+
+    const annotated = ledger.annotate([{ kind: "delete", path: "A.md" }], since);
+
+    expect(annotated[0]?.operationId).toBeUndefined();
+    expect(ledger.size).toBe(1);
+  });
+
+  it("refuses to settle a rewritten move source with a transient deletion", () => {
+    const { absences, since } = heldAbsence("A.md", "write-1");
+    const ledger = new WatchOperationLedger({ transientAbsences: absences });
+    ledger.expect({
+      id: "move-1",
+      kind: "move-with-writes",
+      from: "A.md",
+      to: "B.md",
+      targetRevision: "rev-b",
+      sourceRewritten: true,
+      writes: [],
+    });
+
+    const annotated = ledger.annotate(
+      [
+        { kind: "delete", path: "A.md" },
+        { kind: "upsert", state: state("B.md", "9", "rev-b") },
+      ],
+      since,
+    );
+
+    expect(annotated.every((change) => change.operationId === undefined)).toBe(true);
+    expect(ledger.size).toBe(1);
   });
 });
