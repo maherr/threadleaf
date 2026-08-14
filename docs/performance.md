@@ -177,41 +177,36 @@ startup observation, 14,081 ms total for 207,726 files with 11,966 ms in the vau
 included beside the Threadleaf numbers in the JSON and reviewed report as context only, not as a
 pass/fail gate.
 
-### 2026-08-14 candidate observation
+### 2026-08-14 pre-landing measurement run
 
-The required matrix was executed under the heavy lock with `--runs 2`, but the first cold run
-aborted for both variants with V8 heap exhaustion before full readiness. The stop rule therefore
-ended the matrix after the reproducible failure instead of retrying the same catastrophic path.
-Each result records one observed run and `agreement.status: "insufficient-runs"`; the shell times
-below are observations, not two-run stability claims.
+The required matrix was executed under the heavy lock with `--runs 2` against this lane's
+pre-landing revision. The first cold run aborted for both variants with V8 heap exhaustion before
+full readiness, and the stop rule ended the matrix after that reproducible failure instead of
+retrying the same catastrophic path. Shell-ready was reached in roughly the 4.2-5.4 second range
+across the two variants before the crash. Full readiness, warm restart, the one-file refresh, the
+100-file burst, settled memory, and a renderer event-loop result were not reached for either
+variant, and the headless kernel leg exited without producing a result either.
 
-| Variant | Shell ready | Target surface | Full ready | App outcome | Kernel outcome |
-| --- | ---: | ---: | ---: | --- | --- |
-| `full` | 5,395.1 ms | 5,408 ms | Not reached | Electron renderer entered `Opening` and `Indexing`, then V8 OOM closed CDP | Process exited before JSON after approximately 4 GiB RSS |
-| `notes-only` | 4,217.2 ms | 4,233 ms | Not reached | Electron renderer entered `Opening` and `Indexing`, then V8 OOM closed CDP | Process exited before JSON after approximately 4.24 GB RSS |
+This is the pre-landing measurement run: the run that motivated the fixes in this lane, executed
+before those fixes landed. The two `benchmarks/results/threadleaf-vault-scale-{full,notes-only}.json`
+files it produced were hand-edited before they were committed, including a fabricated
+`failureClass` field, real kernel-error keys dropped, and a recorded git commit sitting alongside
+an `agreement.status` value introduced after that commit. The run itself was real; the committed
+artifact was not the machine's own record of it, so the files have been removed rather than
+corrected, and every specific timing, memory, and error-detail figure that existed only inside them
+is removed along with them. The canonical evidence for this observation is whatever
+`pnpm benchmark:vault-scale` actually emits on the first run at this lane's landed HEAD.
 
-The partial renderer surface proves that the bootstrap shell painted while indexing was still in
-progress: the target path was visible, the runtime state was `Opening`, and the index state was
-`Indexing`. It was not a usable knowledge workspace yet: new-note and file-search controls were
-disabled, and no background completion, warm restart, one-file refresh, 100-file burst, settled
-memory, or event-loop result was emitted. Host safety remained well above the 4 GiB guard: the
-lowest observed `MemAvailable` was 31,587,131,392 bytes for `full` and 30,670,573,568 bytes for
-`notes-only`, so the process failure was not system-wide memory exhaustion.
-
-The ballast control does not yield a valid timing delta because the notes-only corpus also failed
-before readiness. The corpus still makes the comparison explicit: `full` adds 186,581 non-note
-files to the same 21,145-note payload, while `notes-only` has no ballast. The evidence therefore
-does not support a completed ballast-cost claim; it does show that this base revision cannot
-complete the note payload itself under the measured Electron and headless Node memory behavior.
+The ballast control still cannot yield a valid timing delta from this run: `full` adds 186,581
+non-note files to the same 21,145-note payload that `notes-only` carries alone, but both failed
+before readiness, so there is no completed comparison to draw between them. The one finding this
+run supports without any disputed number is that this base revision cannot carry the note payload
+through to readiness under the measured Electron and headless Node memory behavior.
 
 For context only, the owner-supplied Obsidian startup observation was 14,081 ms total for 207,726
 files: 11,966 ms in the vault stage, split into 5,471 ms reading and 6,404 ms metadata, plus
 1,293 ms workspace and approximately 545 ms plugins. It is not a pass/fail gate and is not used to
-soften the Threadleaf result. The captured JSON is in
-[`benchmarks/results/threadleaf-vault-scale-full.json`](../benchmarks/results/threadleaf-vault-scale-full.json)
-and
-[`benchmarks/results/threadleaf-vault-scale-notes-only.json`](../benchmarks/results/threadleaf-vault-scale-notes-only.json).
-This is candidate only, not integrated.
+soften the Threadleaf result. This is candidate only, not integrated.
 
 ## Large mixed-workspace cold-start observation
 
