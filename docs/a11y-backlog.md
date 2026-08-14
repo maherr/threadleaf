@@ -105,9 +105,9 @@ Credited so the backlog below reads as gap-filling, not a rebuild.
   (`live-preview.ts:2160-2166`), keyboard-operable by default, not simulated with a styled div.
 - Decorative glyphs are consistently marked `aria-hidden="true"` (63 occurrences across
   `index.html`) alongside a text label or a separate `aria-label` on the interactive parent, and
-  a `cursor: pointer` sweep of the entire stylesheet found only 4 selectors, all of which resolve
-  to genuinely keyboard-operable elements (a `<button>`, the graph SVG node, another `<button>`,
-  and the one exception logged as P1 finding 1).
+  a `cursor: pointer` sweep of all 48 declarations in the stylesheet resolved every one to a
+  `<button>`, a native input, a `tabIndex`/`role`-carrying element, or the graph SVG node, with
+  the single exception logged as P1 finding 1.
 
 ## Findings
 
