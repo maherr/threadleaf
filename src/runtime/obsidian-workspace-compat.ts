@@ -171,6 +171,7 @@ export class Workspace {
       if (this.activeLeaf === leaf) {
         const nextLeaf = [...this.leaves].at(-1) ?? null;
         this.activeLeaf = null;
+        this.activeEditor = null;
         if (nextLeaf) {
           this.setActiveLeaf(nextLeaf);
         }

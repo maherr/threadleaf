@@ -125,6 +125,18 @@ describe("Obsidian workspace compatibility wedge", () => {
       expect(workspace.activeEditor).toBe(embeddedEditor);
       workspace.setActiveLeaf(utilityLeaf);
       expect(workspace.activeEditor).toBeNull();
+
+      const finalWorkspace = new Workspace();
+      const finalView = { editor: {}, file: { path: "Notes/Final.md" } };
+      const finalLeaf = {
+        containerEl: document.createElement("div"),
+        view: finalView,
+      };
+      const unregisterFinalLeaf = finalWorkspace.registerLeaf(finalLeaf);
+      expect(finalWorkspace.activeEditor).toBe(finalView);
+      unregisterFinalLeaf();
+      expect(finalWorkspace.activeLeaf).toBeNull();
+      expect(finalWorkspace.activeEditor).toBeNull();
     });
   });
 
