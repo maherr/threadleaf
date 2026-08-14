@@ -786,11 +786,17 @@ async function launch(theme, verification) {
   const vaultPath = path.join(testRoot, "vault");
   const userDataPath = path.join(testRoot, "user-data");
   await fs.cp(fixtureRoot, vaultPath, { recursive: true });
-  const themePath = path.join(vaultPath, ".obsidian", "themes", theme.folder);
-  await fs.mkdir(themePath, { recursive: true });
-  for (const filename of ["theme.css", "manifest.json"]) {
-    const bytes = verifiedCacheBytes(verification, theme.id, filename);
-    await fs.writeFile(path.join(themePath, filename), bytes, { mode: 0o600 });
+  // A built-in subject applies no community theme.css at all: there is nothing to copy
+  // into .obsidian/themes, and the fixture vault's own catalog stays empty of it.
+  const themePath = theme.builtin
+    ? undefined
+    : path.join(vaultPath, ".obsidian", "themes", theme.folder);
+  if (themePath) {
+    await fs.mkdir(themePath, { recursive: true });
+    for (const filename of ["theme.css", "manifest.json"]) {
+      const bytes = verifiedCacheBytes(verification, theme.id, filename);
+      await fs.writeFile(path.join(themePath, filename), bytes, { mode: 0o600 });
+    }
   }
   await fs.mkdir(userDataPath, { recursive: true });
   const port = await availablePort();
@@ -1340,13 +1346,25 @@ async function runTheme(theme, verification, baselineManifest) {
     await launch(theme, verification);
     const snapshot = await evaluate("window.threadleaf.getSnapshot()");
     assert(snapshot?.vault?.id, `Theme ${theme.id} fixture has no vault id.`);
-    const appearance = await applyTheme(theme, verification);
-    await exerciseThemeWatcher(
-      theme,
-      path.join(snapshot.vault.path, ".obsidian", "themes", theme.folder),
-      verification,
-      appearance.themeId,
-    );
+    if (theme.builtin) {
+      // The built-in subject measures Threadleaf's own unthemed baseline: confirm no
+      // community theme is selected instead of applying and watch-exercising one.
+      const appearance = await evaluate(
+        "(async () => { const s = await window.threadleaf.getSnapshot(); return window.threadleaf.getAppearance(s.vault.id); })()",
+      );
+      assert(
+        appearance?.status === "ready" && !appearance.appearance.activeThemeId,
+        `Built-in subject ${theme.id} unexpectedly has a community theme selected: ${JSON.stringify(appearance)}.`,
+      );
+    } else {
+      const appearance = await applyTheme(theme, verification);
+      await exerciseThemeWatcher(
+        theme,
+        path.join(snapshot.vault.path, ".obsidian", "themes", theme.folder),
+        verification,
+        appearance.themeId,
+      );
+    }
     const themeCases = themeCasesInRequiredOrder(currentManifest, theme.id);
     for (const testCase of themeCases) {
       process.stdout.write(`COMMUNITY_THEME_CASE_START ${theme.id} ${testCase.id}\n`);
@@ -1504,6 +1522,16 @@ async function assertStaticManifest(manifest) {
   assertExactThemeCaseSet(manifest);
   for (const theme of manifest.themes) {
     assert(/^[a-z0-9-]+$/u.test(theme.id), `Invalid community theme id ${theme.id}.`);
+    if (theme.builtin === true) {
+      // A built-in subject ships with Threadleaf itself: no commit, license, or file
+      // receipts to pin. community-theme-fixture.mjs's assertValidManifest already
+      // requires every acquisition field to be explicitly null for it.
+      assert(
+        theme.folder === null && Array.isArray(theme.files) && theme.files.length === 0,
+        `Built-in theme ${theme.id} must declare no folder and no file receipts.`,
+      );
+      continue;
+    }
     assert(
       /^[0-9a-f]{40}$/u.test(theme.commit),
       `Theme ${theme.id} is not pinned to a full commit.`,

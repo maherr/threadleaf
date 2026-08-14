@@ -99,20 +99,45 @@ function assertValidManifest(manifest) {
     if (
       !/^[a-z0-9-]+$/u.test(theme.id) ||
       ids.has(theme.id) ||
-      folders.has(theme.folder) ||
       typeof theme.name !== "string" ||
-      theme.name.trim() === "" ||
+      theme.name.trim() === ""
+    ) {
+      throw new Error(`Community theme ${theme.id ?? "(unknown)"} has an invalid id or name.`);
+    }
+    ids.add(theme.id);
+    if (theme.builtin === true) {
+      // A built-in subject (Threadleaf's own unthemed appearance) has nothing to acquire: it
+      // ships with the app and applies no community theme.css. Every "acquired third-party
+      // theme" field must be explicitly absent, never merely omitted, so a typo can't silently
+      // masquerade as a real pinned download.
+      if (
+        theme.folder !== null ||
+        theme.release !== null ||
+        theme.repository !== null ||
+        theme.commit !== null ||
+        theme.commitUrl !== null ||
+        theme.license !== null ||
+        theme.licenseUrl !== null ||
+        theme.shippedThirdPartyAssets !== false ||
+        !Array.isArray(theme.files) ||
+        theme.files.length !== 0
+      ) {
+        throw new Error(
+          `Built-in community theme subject ${theme.id} must declare null acquisition fields and no file receipts.`,
+        );
+      }
+      continue;
+    }
+    if (
+      folders.has(theme.folder) ||
       !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$/u.test(theme.folder) ||
       theme.folder.includes("/") ||
       theme.folder.includes("\\") ||
       !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u.test(theme.release) ||
       theme.license !== "MIT"
     ) {
-      throw new Error(
-        `Community theme ${theme.id ?? "(unknown)"} has invalid name, version, folder, or license.`,
-      );
+      throw new Error(`Community theme ${theme.id} has an invalid version, folder, or license.`);
     }
-    ids.add(theme.id);
     folders.add(theme.folder);
     assertValidGithubRepository(theme.repository, `Community theme ${theme.id} repository`);
     if (theme.commit !== theme.commit.toLowerCase() || !/^[0-9a-f]{40}$/u.test(theme.commit)) {

@@ -125,6 +125,21 @@
           "sha256": "e47f41c970543cabb188965952eecb4050719352912c77131a0f9fd9d96f47e3"
         }
       ]
+    },
+    {
+      "id": "default",
+      "builtin": true,
+      "folder": null,
+      "name": "Threadleaf default",
+      "release": null,
+      "repository": null,
+      "commit": null,
+      "commitUrl": null,
+      "license": null,
+      "licenseUrl": null,
+      "shippedThirdPartyAssets": false,
+      "pattern": "no community theme.css applied; Threadleaf's own unthemed baseline",
+      "files": []
     }
   ],
   "viewports": [
@@ -179,6 +194,23 @@
     {
       "id": "light-high-contrast",
       "theme": "sanctum",
+      "scheme": "light",
+      "viewport": "laptop",
+      "highContrast": true
+    },
+    { "id": "dark-laptop", "theme": "default", "scheme": "dark", "viewport": "laptop" },
+    { "id": "light-laptop", "theme": "default", "scheme": "light", "viewport": "laptop" },
+    { "id": "light-minimum", "theme": "default", "scheme": "light", "viewport": "minimum" },
+    {
+      "id": "dark-high-contrast",
+      "theme": "default",
+      "scheme": "dark",
+      "viewport": "laptop",
+      "highContrast": true
+    },
+    {
+      "id": "light-high-contrast",
+      "theme": "default",
       "scheme": "light",
       "viewport": "laptop",
       "highContrast": true
