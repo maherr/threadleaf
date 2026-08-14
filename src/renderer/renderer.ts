@@ -157,7 +157,7 @@ import {
   quickSwitcherNotesFromFiles,
 } from "./quick-switcher-model";
 import { RecoveryViewController } from "./recovery-view";
-import { unavailableNoticeText } from "./unavailable-notice";
+import { renderUnavailableNoticeToolbarLabel, unavailableNoticeText } from "./unavailable-notice";
 import { vaultSearchDisplayContext } from "./vault-search-model";
 import "./styles.css";
 import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
@@ -9597,7 +9597,7 @@ function renderVaultSearchResults(activePath: string | null, indexedCount: numbe
 
 function renderUnavailableNotice(entry: WorkspaceUnavailableEntry | null | undefined): void {
   const text = unavailableNoticeText(entry);
-  elements.notePath.textContent = text.toolbarLabel;
+  renderUnavailableNoticeToolbarLabel(elements.notePath, entry, text);
   const heading = elements.noteEmpty.querySelector("h2");
   const detail = elements.noteEmpty.querySelector("p");
   if (heading) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unavailableNoticeText } from "./unavailable-notice";
+import { renderUnavailableNoticeToolbarLabel, unavailableNoticeText } from "./unavailable-notice";
 
 describe("unavailableNoticeText", () => {
   it("invites a choice when no tab is selected", () => {
@@ -17,5 +17,18 @@ describe("unavailableNoticeText", () => {
     expect(notice.detail).toContain("The tab stays open");
     expect(notice.toolbarLabel).toBe("Waiting for Boards/Overview.canvas");
     expect(notice).not.toMatchObject(unavailableNoticeText(null));
+  });
+
+  it("keeps an available note path when the empty-notice render follows the note render", () => {
+    const notePath: { textContent: string | null } = { textContent: "No note selected" };
+    const renderNote = (path: string): void => {
+      notePath.textContent = path;
+    };
+
+    renderNote("Welcome.md");
+    renderUnavailableNoticeToolbarLabel(notePath, null);
+
+    expect(notePath.textContent).toBe("Welcome.md");
+    expect(notePath.textContent).not.toBe("No note selected");
   });
 });

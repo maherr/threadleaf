@@ -3093,6 +3093,48 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     return workspace;
   }
 
+  function persistedTrackedPaths(store: BlockingWorkspaceStateStore): string[] {
+    return (store.inner.value?.panes ?? []).flatMap((pane) => [
+      ...pane.openPaths,
+      ...pane.pinnedPaths,
+      ...(pane.activePath ? [pane.activePath] : []),
+      ...(pane.navigationHistory?.back ?? []),
+      ...(pane.navigationHistory?.forward ?? []),
+    ]);
+  }
+
+  async function raceConfirmedWelcomeRemovalAgainst(
+    workspace: WorkspaceRuntime,
+    store: BlockingWorkspaceStateStore,
+    clock: ReturnType<typeof manualClock>,
+    mutation: () => Promise<RuntimeSnapshot>,
+  ): Promise<void> {
+    await workspace.watcher.close();
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    const firstConfirmation = await workspace.reconcileNow();
+    expect(tabPaths(firstConfirmation)).toContain("Welcome.md");
+    clock.advance(absenceConfirmationIntervalMs + 1);
+
+    store.resetSaveCount();
+    store.blockSaves();
+    let pendingMutation: Promise<RuntimeSnapshot> | undefined;
+    let confirmation: Promise<RuntimeSnapshot> | undefined;
+    try {
+      pendingMutation = mutation();
+      await store.waitForSaveCount(1);
+      confirmation = workspace.reconcileNow();
+      await store.waitForSaveCount(2);
+    } finally {
+      store.releaseSaves();
+    }
+    if (!pendingMutation || !confirmation) {
+      throw new Error("The blocked workspace mutation did not reach the confirmation race.");
+    }
+    await Promise.all([pendingMutation, confirmation]);
+  }
+
   it("bounds confirmation work during unrelated churn and still closes deleted notes and canvases", async () => {
     const store = new MemoryWorkspaceStateStore();
     const clock = manualClock();
@@ -3229,6 +3271,82 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
 
     const openPaths = store.inner.value?.panes[0]?.openPaths ?? [];
     expect(openPaths).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a tab-pin save against a concurrently confirmed removal and permits a later reopen", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+
+    await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome\n\nreturned\n", "utf8");
+    await workspace.reconcileNow();
+    await workspace.openNote("Welcome.md");
+    const repinned = await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    expect(repinned.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", pinned: true, active: true }),
+    );
+    expect(store.inner.value?.panes[0]?.pinnedPaths).toContain("Welcome.md");
+  });
+
+  it("guards a tab-reorder save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    const created = await workspace.createNote("Third", "# Third\n", workspace.vaultId);
+    expect(created.outcome).toMatchObject({ status: "committed", path: "Third.md" });
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.reorderWorkspaceTab("Third.md", "primary", 1, workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a pane-transfer save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.moveNoteToWorkspacePane("Welcome.md", "primary", "secondary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a history-navigation save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    expect(store.inner.value?.panes[0]?.navigationHistory?.back).toContain("Welcome.md");
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.goBack(workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
     expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
   });
 
@@ -3762,6 +3880,47 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(probes).toBe(0);
     expect(tabPaths(settled)).toContain("Welcome.md");
     expect(tabPaths(settled)).not.toContain("Untracked.md");
+  });
+
+  it("closes an all-indeterminate absence exactly at the confirmation hard cap", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
+    await workspace.watcher.close();
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+
+    const realpath = fs.realpath;
+    let targetProbes = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        targetProbes += 1;
+        const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
+        error.code = "EIO";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    clock.advance(transientAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let attempt = 1; attempt <= maximumAbsenceConfirmationAttempts; attempt += 1) {
+      settled = await workspace.reconcileNow();
+      expect(targetProbes).toBe(attempt);
+      if (attempt < maximumAbsenceConfirmationAttempts) {
+        expect(tabPaths(settled)).toContain("Welcome.md");
+        expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+        clock.advance(absenceConfirmationIntervalMs + 1);
+      }
+    }
+
+    expect(targetProbes).toBe(maximumAbsenceConfirmationAttempts);
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
   });
 
   it("stops asking for watcher scans while bounded direct re-reads keep failing", async () => {

@@ -407,6 +407,19 @@ async function waitForTabs(expected) {
   );
 }
 
+async function waitForNoteToolbarLabel(expected) {
+  return waitFor(
+    async () => {
+      const rendered = await evaluate(`(() => ({
+        activePath: document.querySelector('.note-tab[data-active="true"] .note-tab-activate')?.dataset.notePath ?? null,
+        toolbarLabel: document.querySelector("#note-path")?.textContent ?? null,
+      }))()`);
+      return rendered.activePath === expected && rendered.toolbarLabel === expected ? true : null;
+    },
+    `The note toolbar did not retain ${JSON.stringify(expected)} after the available-note render`,
+  );
+}
+
 async function setTheme(theme) {
   const current = await evaluate("document.documentElement.dataset.theme");
   if (current !== theme) {
@@ -464,6 +477,9 @@ try {
     { path: "Linked Note.md", pinned: false },
     { path: "Welcome.md", pinned: false },
   ]);
+  phase = "available-note toolbar render ordering";
+  await waitForNoteToolbarLabel("Welcome.md");
+  phase = "pointer tab opening and pinning";
   await clickSelector('#file-list [data-note-path="Third Note.md"]');
   await waitForTabs([
     { path: "Linked Note.md", pinned: false },
@@ -609,7 +625,7 @@ try {
   await closeApplication();
 
   console.log(
-    "Verified isolated X11 pinned tabs with real per-tab pointer input, keyboard command palette input, a remappable target, visible close refusal, private compatible persistence, restart recovery, and dark, light, minimum-width screenshots.",
+    "Verified isolated X11 pinned tabs with real per-tab pointer input, available-note toolbar retention, keyboard command palette input, a remappable target, visible close refusal, private compatible persistence, restart recovery, and dark, light, minimum-width screenshots.",
   );
   console.log("VISUAL_POSITIVE_CONTROL=pinned-tabs-positive-control");
 } catch (error) {

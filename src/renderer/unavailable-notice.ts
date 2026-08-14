@@ -34,3 +34,11 @@ export function unavailableNoticeText(
     toolbarLabel: `Waiting for ${entry.path}`,
   };
 }
+
+export function renderUnavailableNoticeToolbarLabel(
+  notePath: { textContent: string | null },
+  entry: WorkspaceUnavailableEntry | null | undefined,
+  text = unavailableNoticeText(entry),
+): void {
+  if (entry) notePath.textContent = text.toolbarLabel;
+}
