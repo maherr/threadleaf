@@ -165,14 +165,15 @@
     "kernelFailure": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "message", "code", "signal", "timedOut", "stderrTail"],
+      "required": ["status", "message", "code", "signal", "timedOut", "stderrTail", "memorySafety"],
       "properties": {
         "status": { "const": "aborted" },
         "message": { "type": "string" },
         "code": { "type": ["string", "number", "null"] },
         "signal": { "type": ["string", "null"] },
         "timedOut": { "type": "boolean" },
-        "stderrTail": { "type": "string" }
+        "stderrTail": { "type": "string" },
+        "memorySafety": { "type": "object" }
       }
     },
     "runLegSuccess": {

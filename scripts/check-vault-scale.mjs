@@ -451,8 +451,10 @@ async function verifyCorpus(variant, checkedIn) {
 }
 
 async function runKernel(variant, vaultPath, stateRoot) {
+  let child;
+  const memoryGuard = startMemoryGuard(() => child?.kill("SIGTERM"));
   try {
-    const { stdout } = await execFileAsync(
+    const promise = execFileAsync(
       process.execPath,
       [kernelRunnerPath, "--variant", variant, "--vault", vaultPath, "--state-root", stateRoot],
       {
@@ -462,7 +464,18 @@ async function runKernel(variant, vaultPath, stateRoot) {
         timeout: maxWaitMs,
       },
     );
-    return JSON.parse(stdout);
+    child = promise.child;
+    const { stdout } = await withMemoryGuard(promise, memoryGuard);
+    const result = JSON.parse(stdout);
+    const memorySafety = memoryGuard.snapshot();
+    return {
+      ...result,
+      memory: {
+        ...result.memory,
+        minimumAvailableBytes: memorySafety.minimumAvailableBytes,
+        safetyThresholdBytes: memorySafety.thresholdBytes,
+      },
+    };
   } catch (error) {
     error.kernelFailure = {
       status: "aborted",
@@ -471,8 +484,11 @@ async function runKernel(variant, vaultPath, stateRoot) {
       signal: error.signal ?? null,
       timedOut: error.code === "ETIMEDOUT",
       stderrTail: String(error.stderr ?? "").slice(-4_000),
+      memorySafety: memoryGuard.snapshot(),
     };
     throw error;
+  } finally {
+    memoryGuard.stop();
   }
 }
 
