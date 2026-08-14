@@ -38,9 +38,12 @@ function stepContaining(steps, text, label) {
 }
 
 function stepWithExactRun(steps, command, label) {
-  const step = steps.find((candidate) => candidate.run === command);
-  assert(step, `${label} is missing an exact run step for ${JSON.stringify(command)}.`);
-  return step;
+  const matches = steps.filter((candidate) => candidate.run === command);
+  assert(
+    matches.length === 1,
+    `${label} must have exactly one step with run ${JSON.stringify(command)}, found ${matches.length}.`,
+  );
+  return matches[0];
 }
 
 function verifyToolchainSteps(document, label) {
@@ -161,12 +164,21 @@ assert(
   "macOS lifecycle verifier must retry and force-detach its DMG.",
 );
 assert(
+  lifecycleScriptText.includes("windowsShortcutPath") &&
+    lifecycleScriptText.includes("Windows uninstaller left the desktop shortcut behind"),
+  "Native lifecycle verifier lost its measured Windows desktop-shortcut check.",
+);
+assert(
   !lifecycleScriptText.includes("fs.rm(target") &&
     !lifecycleScriptText.includes("--user-data-dir") &&
-    lifecycleScriptText.includes('"/no-desktop-shortcut"') &&
     lifecycleScriptText.includes("inPlaceReplacementChecks") &&
     lifecycleScriptText.includes('mode: "platform-default"'),
-  "Installer lifecycle must preserve the target, use platform-default app data, and avoid real Desktop mutation.",
+  "Installer lifecycle must preserve the target and use platform-default app data.",
+);
+assert(
+  lifecycleScriptText.includes('path.join(userDataPath, "settings.json")') &&
+    !lifecycleScriptText.includes("did not create its platform-default private app-data directory"),
+  "Installer lifecycle must measure app-written app-data contents, not just directory presence.",
 );
 assert(
   !lifecycleScriptText.includes("bytes: 0") &&
@@ -306,18 +318,36 @@ assert(
   "Signed release does not require signed package verification.",
 );
 const releaseJobs = record(release.jobs, "release jobs");
+const releasePreflight = record(releaseJobs.preflight, "release preflight job");
+const releaseLinux = record(releaseJobs.linux, "Linux release candidate job");
 const releaseMac = record(releaseJobs.macos, "signed macOS release job");
 const releaseWindows = record(releaseJobs.windows, "signed Windows release job");
 for (const [job, label] of [
+  [releasePreflight, "release preflight job"],
+  [releaseLinux, "Linux release candidate job"],
   [releaseMac, "signed macOS release job"],
   [releaseWindows, "signed Windows release job"],
 ]) {
   assert(job.if === undefined, `${label} cannot be conditionally skipped.`);
   assert(
     !JSON.stringify(job).includes("continue-on-error"),
-    `${label} cannot turn a failed signing gate into success.`,
+    `${label} cannot turn a failed release gate into success.`,
   );
 }
+const releaseLinuxSteps = stepsFor(releaseLinux, "Linux release candidate job");
+const releaseLinuxVerify = stepWithExactRun(
+  releaseLinuxSteps,
+  "pnpm run release:linux",
+  "Linux release build and verify",
+);
+assert(
+  releaseLinuxVerify.if === undefined,
+  "Linux release build and verify cannot be conditionally skipped.",
+);
+assert(
+  releaseLinuxVerify["continue-on-error"] === undefined,
+  "Linux release build and verify cannot turn a failed release gate into success.",
+);
 const releaseMacSteps = stepsFor(releaseMac, "signed macOS release job");
 const releaseWindowsSteps = stepsFor(releaseWindows, "signed Windows release job");
 const releaseMacVerify = stepWithExactRun(
@@ -331,6 +361,14 @@ const releaseWindowsVerify = stepWithExactRun(
   "signed Windows verification",
 );
 assert(
+  releaseMacVerify.if === undefined,
+  "Signed macOS verification cannot be conditionally skipped.",
+);
+assert(
+  releaseWindowsVerify.if === undefined,
+  "Signed Windows verification cannot be conditionally skipped.",
+);
+assert(
   envValue(releaseMacVerify, "THREADLEAF_REQUIRE_SIGNED", "signed macOS verification") === "1",
   "Signed macOS verification must require signing.",
 );
@@ -341,12 +379,16 @@ assert(
 );
 const publication = record(releaseJobs["publish-draft"], "publication job");
 assert(
-  publication.if === `\${{ inputs.publish }}` && !String(publication.if).includes("always()"),
+  publication.if === `\${{ inputs.publish }}`,
   "Publication must remain manual and fail closed when a required gate fails.",
 );
+const releaseCandidateJobs = ["preflight", "linux", "macos", "windows"];
+assert(Array.isArray(publication.needs), "Publication needs must be a list of jobs.");
 assert(
-  JSON.stringify(publication.needs) === JSON.stringify(["preflight", "linux", "macos", "windows"]),
-  "Publication must require every release candidate job.",
+  publication.needs.length === releaseCandidateJobs.length &&
+    new Set(publication.needs).size === releaseCandidateJobs.length &&
+    releaseCandidateJobs.every((job) => publication.needs.includes(job)),
+  "Publication must require exactly every release candidate job, no more and no fewer.",
 );
 for (const secret of [...fixture.signedRelease.windows, ...fixture.signedRelease.macos]) {
   assert(releaseText.includes(`secrets.${secret}`), `Signed release is missing ${secret}.`);

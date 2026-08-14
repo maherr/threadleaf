@@ -278,18 +278,28 @@ save remain the same main-process write boundary used by the desktop. No user va
 application path is used.
 
 The verifier isolates `HOME`, `APPDATA`, `LOCALAPPDATA`, and `USERPROFILE` (or just `HOME` on
-macOS) to a scratch root for every install, restart, upgrade, rollback, and uninstall step, and the
-NSIS installer runs with `/no-desktop-shortcut` so it never creates a Desktop shortcut on the
-runner's real profile. The packaged app resolves its own private app-data path from those isolated
-variables rather than an explicit `--user-data-dir` override, so its settings and workspace state
-land inside the scratch root at the same platform-default location a real install would use. Every
-packaged launch carries a unique marker argument, and forced shutdown walks the live process table
-for that marker's descendants, not just the direct child handle, before asserting none remain; a
-macOS DMG mount left busy by a lingering handle gets a force-detach retry under the same walk. The
-CI steps that run this gate, and the signed release's macOS and Windows package verification, are
-matched by exact `run:` command text, so a differently named or decoy step cannot satisfy the check,
-and the signed release jobs cannot mark themselves conditional or `continue-on-error` around a
-failed gate.
+macOS) to a scratch root for every install, restart, upgrade, rollback, and uninstall step. The
+packaged app resolves its own private app-data path from those isolated variables rather than an
+explicit `--user-data-dir` override, so its settings and workspace state land inside the scratch
+root at the same platform-default location a real install would use; the gate proves this by
+requiring the app to have actually written its own `settings.json` there, not merely that the
+directory exists. The Windows installer still creates a real Desktop shortcut on the runner's real
+profile: `electron-builder.yml` bakes `createDesktopShortcut: true` in at build time, and no
+documented runtime installer flag suppresses it, so the verifier detects that shortcut by its real
+path instead and requires the uninstaller to remove it.
+
+Every packaged launch carries a unique marker argument, and forced shutdown walks the live process
+table for that marker's descendants, not just the direct child handle, before asserting none remain;
+a macOS DMG mount left busy by a lingering handle gets a force-detach retry under the same walk. The
+CI steps that run this gate, and the signed release's macOS, Windows, and Linux verification, are
+matched by exact `run:` command text with a uniqueness check, so neither a differently named step
+nor a second, differently configured step sharing the same command can satisfy the check; none of
+the signed release jobs, including tag preflight and the Linux build, can mark themselves
+conditional or `continue-on-error` around a failed gate, and the draft-publication job is still
+required to depend on every one of them. The lexical checks the gate runs against the lifecycle
+script's own source text (the isolation markers, the shortcut check, the ban on `fs.rm(target` and
+`--user-data-dir`) are best-effort string matches, not a semantic guarantee: they catch an
+accidental regression but not a determined rewrite that renames its way past the literal string.
 
 Run it only on a native x64 Windows or Intel macOS runner after the matching package command:
 

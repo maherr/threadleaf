@@ -43,6 +43,7 @@ let launchMarkerObserved = false;
 let inPlaceReplacementChecks = 0;
 let activeProbe = null;
 let evidenceWritten = false;
+let windowsShortcutPath = null;
 const lifecycleEnvironment =
   platform === "win32"
     ? {
@@ -702,7 +703,7 @@ async function installWindows(installer, target) {
       "Windows replacement target is missing the baseline executable.",
     );
   }
-  await run(installer, ["/S", "/no-desktop-shortcut", `/D=${target}`], {
+  await run(installer, ["/S", `/D=${target}`], {
     env: lifecycleEnvironment,
     timeout: 180_000,
   });
@@ -718,6 +719,18 @@ async function installWindows(installer, target) {
     await exists(path.join(target, "Uninstall Threadleaf.exe")),
     "Windows installer did not create an uninstaller.",
   );
+  const profile = process.env.USERPROFILE;
+  if (profile) {
+    for (const candidate of [
+      path.join(profile, "Desktop", "Threadleaf.lnk"),
+      path.join(profile, "OneDrive", "Desktop", "Threadleaf.lnk"),
+    ]) {
+      if (await exists(candidate)) {
+        windowsShortcutPath = candidate;
+        break;
+      }
+    }
+  }
 }
 
 async function mountMacDmg(dmgPath, target) {
@@ -838,10 +851,6 @@ async function launchPackage(executablePath, expectedVersion, stage) {
   assert(
     state.updateDisabledReason === "unsigned-package",
     "Unsigned package did not fail closed for updates.",
-  );
-  assert(
-    await exists(userDataPath),
-    "Packaged application did not create its platform-default private app-data directory.",
   );
   await captureScreenshot(probe, stage);
   activeProbe = probe;
@@ -1014,6 +1023,12 @@ async function uninstallPackage() {
       "Windows uninstaller left installation residue",
       30_000,
     );
+    if (windowsShortcutPath) {
+      assert(
+        !(await exists(windowsShortcutPath)),
+        "Windows uninstaller left the desktop shortcut behind.",
+      );
+    }
   } else {
     await fs.rm(installPath, { recursive: true, force: true });
     assert(!(await exists(installPath)), "macOS package removal left application residue.");
@@ -1094,6 +1109,10 @@ async function runLifecycle() {
     initialLifecycleContent,
     baselineEdit,
     `${initialLifecycleContent}${baselineEdit}`,
+  );
+  assert(
+    await exists(path.join(userDataPath, "settings.json")),
+    "Packaged application did not persist settings into its isolated platform-default app-data directory.",
   );
   await stopPackage(baseline.probe, true);
 
@@ -1188,7 +1207,7 @@ async function runLifecycle() {
       outsideVault: true,
     },
     vaultBytesPreserved: true,
-    desktopShortcut: "disabled-for-lifecycle",
+    shortcut: windowsShortcutPath ? "created-and-removed" : "not-created-by-installer",
     descendantCleanup: "launch-marker",
     launchMarkerObserved,
     macDmgDetach: platform === "darwin" ? "verified-unmounted" : "not-applicable",
