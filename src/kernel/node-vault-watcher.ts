@@ -10,6 +10,7 @@ import {
 import type { VaultTextSnapshot } from "./ports";
 import {
   type RescanRequest,
+  type TransientAbsenceRegistry,
   type VaultChange,
   type VaultChangeBatch,
   WatchBatchSequencer,
@@ -126,6 +127,35 @@ async function readWatchedState(
   previous: WatchedPathState | undefined,
 ): Promise<WatchedPathState | null> {
   return (await readWatchedFile(policy, relativePath, previous, false))?.state ?? null;
+}
+
+/**
+ * Whether a watched path is a file inside the vault right now.
+ *
+ * A snapshot diff reports what was true when the scan listed the directory. This
+ * re-reads a single path so a caller can tell a completed removal apart from the
+ * gap in the middle of an atomic replace, without paying for the file's bytes.
+ */
+export async function watchedPathExists(
+  policy: VaultPathPolicy,
+  relativePath: string,
+): Promise<boolean> {
+  try {
+    const canonicalPath = await fs.realpath(policy.resolveLexical(relativePath));
+    if (!isPathInside(policy.rootPath, canonicalPath)) {
+      return false;
+    }
+    return (await fs.stat(canonicalPath)).isFile();
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function captureVaultBootstrap(policy: VaultPathPolicy): Promise<VaultBootstrapScan> {
@@ -261,12 +291,14 @@ export interface NodeVaultWatcherOptions {
   clock?: () => Date;
   streamId?: string;
   onError?: (error: unknown) => void;
+  /** Paths a write transaction is holding aside; see {@link TransientAbsenceRegistry}. */
+  transientAbsences?: TransientAbsenceRegistry;
 }
 
 export class NodeVaultWatcher {
   readonly policy: VaultPathPolicy;
   readonly #sequencer: WatchBatchSequencer;
-  readonly #ledger = new WatchOperationLedger();
+  readonly #ledger: WatchOperationLedger;
   readonly #debounceMs: number;
   readonly #onError: (error: unknown) => void;
   #snapshot: VaultSnapshot;
@@ -286,6 +318,9 @@ export class NodeVaultWatcher {
     this.#snapshot = snapshot;
     this.#debounceMs = options.debounceMs ?? 80;
     this.#onError = options.onError ?? (() => undefined);
+    this.#ledger = new WatchOperationLedger(
+      options.transientAbsences ? { transientAbsences: options.transientAbsences } : {},
+    );
     this.#sequencer = new WatchBatchSequencer({
       streamId: options.streamId ?? randomUUID(),
       ...(options.clock ? { clock: options.clock } : {}),
@@ -383,6 +418,23 @@ export class NodeVaultWatcher {
       changes: this.#ledger.annotate(diff.changes),
       ...(diff.rescan ? { rescan: diff.rescan } : {}),
     });
+  }
+
+  /**
+   * Ask for one more scan cycle without waiting for a filesystem event.
+   *
+   * An atomic replace can be observed as a deletion, and the rename that brings
+   * the file back may be the last event of the burst the watcher already
+   * drained. A consumer that has to tell those apart needs a later look at the
+   * vault, so it requests one here: the request rides the normal debounce, and
+   * it emits a batch even when the scan itself finds nothing.
+   */
+  requestFollowUpScan(): void {
+    if (this.#closed || !this.#listener) {
+      return;
+    }
+    this.#activitySinceScan = true;
+    this.scheduleScan();
   }
 
   async reportOverflow(): Promise<VaultChangeBatch> {
