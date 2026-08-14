@@ -2140,9 +2140,16 @@ export class WorkspaceRuntime {
       ...this.indexReactor.index.snapshot().documents.map((document) => document.path),
       ...visible.files.filter(isCanvasPath),
     ]);
+    // Traversing history reconciles this pane against the vault listing and
+    // writes the result back, which makes it a sink like the projection: an
+    // entry pruned here is gone for good. It asks the same authority what may
+    // still be held, so pressing Back while a file is briefly not there neither
+    // destroys its entry nor refuses to navigate to it. A confirmed deletion
+    // still scrubs its entries, from removeOpenPath, where that decision is made.
+    const { retainedPaths } = this.retainTrackedPaths(availablePaths, this.trackedWorkspacePaths());
     const reconciledHistory = navigationHistoryForPaths(
       pane.navigationHistory,
-      availablePaths,
+      retainedPaths,
       pane.activePath,
     );
     const history = reconciledHistory ?? { back: [], forward: [] };

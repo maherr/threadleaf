@@ -3615,6 +3615,42 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(back.workspace?.activeNote?.path).toBe("Welcome.md");
   });
 
+  it("keeps a history entry for a briefly missing path when Back is pressed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await fs.writeFile(path.join(vaultPath, "Third.md"), "# Third\n", "utf8");
+    await workspace.reconcileNow();
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Third.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory?.back).toEqual([
+      "Linked Note.md",
+      "Welcome.md",
+    ]);
+
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    // Back does not step onto the missing path here - it steps onto the entry in
+    // front of it - so nothing about this navigation is about that file. It was
+    // pruned all the same, because traversal reconciled the whole history
+    // against the listing and persisted the result.
+    const back = await workspace.goBack(workspace.vaultId);
+    expect(back.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: ["Welcome.md"],
+      forward: ["Third.md"],
+    });
+
+    await fs.rename(asidePath, target);
+    await workspace.reconcileNow();
+    const returned = await workspace.goBack(workspace.vaultId);
+    expect(returned.workspace?.activeNote?.path).toBe("Welcome.md");
+  });
+
   it("keeps an unattributed replace for as many passes as its settle window lasts", async () => {
     const store = new MemoryWorkspaceStateStore();
     const clock = manualClock();
