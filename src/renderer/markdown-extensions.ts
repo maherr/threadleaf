@@ -1,3 +1,11 @@
+import {
+  type FrontmatterScan,
+  maxFrontmatterScanLines,
+  scanFrontmatter,
+} from "../kernel/markdown-frontmatter";
+
+export { type FrontmatterScan, maxFrontmatterScanLines, scanFrontmatter };
+
 /**
  * Small, deliberately conservative Markdown extensions used by Reading and
  * Live Preview.
@@ -21,13 +29,6 @@ export interface FootnoteCollection {
   ids: ReadonlySet<string>;
   definitionLines: ReadonlySet<number>;
 }
-
-/**
- * Frontmatter is source-only in both renderer paths.  The bounded scan is
- * deliberate: an unterminated opening marker must not turn an arbitrarily
- * large note into a renderer/parser workload.
- */
-export const maxFrontmatterScanLines = 256;
 
 export interface SourceLine {
   text: string;
@@ -551,40 +552,6 @@ export function joinSourceLines(source: string, lines: readonly string[]): strin
         `${line}${bytes(originalLines[index]?.ending ?? (index < lines.length - 1 ? "lf" : ""))}`,
     )
     .join("");
-}
-
-export interface FrontmatterScan {
-  status: "none" | "resolved" | "unresolved";
-  openingLine: number | null;
-  closingLine: number | null;
-}
-
-export function scanFrontmatter(source: string): FrontmatterScan {
-  const firstBreak = source.search(/[\r\n]/u);
-  const first = source
-    .slice(0, firstBreak < 0 ? source.length : firstBreak)
-    .replace(/^\uFEFF/u, "")
-    .trim();
-  if (first !== "---") {
-    return { status: "none", openingLine: null, closingLine: null };
-  }
-  let lineNumber = 1;
-  let offset = firstBreak < 0 ? source.length : firstBreak;
-  if (source[offset] === "\r" && source[offset + 1] === "\n") offset += 2;
-  else if (offset < source.length) offset += 1;
-  while (lineNumber < maxFrontmatterScanLines && offset <= source.length) {
-    const breakOffset = source.slice(offset).search(/[\r\n]/u);
-    const lineEnd = breakOffset < 0 ? source.length : offset + breakOffset;
-    const line = source.slice(offset, lineEnd).trim();
-    if (line === "---" || line === "...") {
-      return { status: "resolved", openingLine: 1, closingLine: lineNumber + 1 };
-    }
-    if (breakOffset < 0) break;
-    offset = lineEnd + 1;
-    if (source[lineEnd] === "\r" && source[lineEnd + 1] === "\n") offset += 1;
-    lineNumber += 1;
-  }
-  return { status: "unresolved", openingLine: 1, closingLine: null };
 }
 
 interface CandidateFootnote extends FootnoteDefinition {

@@ -2946,4 +2946,376 @@ describe("attachment move planning", () => {
       loadVaultAttachment(kernel, "Notes/Grammar.md", rawTarget, kernel.vaultId),
     ).resolves.toMatchObject({ status: "ready", attachment: { path: targetPath } });
   });
+
+  it("rewrites every renderer-live wrapped-label definition exactly once", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const forms = [
+      { name: "ordinary-full", usage: "[visible][asset]" },
+      { name: "ordinary-collapsed", usage: "[asset][]" },
+      { name: "ordinary-shortcut", usage: "[asset]" },
+      { name: "image-full", usage: "![visible][asset]" },
+      { name: "image-collapsed", usage: "![asset][]" },
+      { name: "image-shortcut", usage: "![asset]" },
+    ];
+    const contexts = [
+      {
+        name: "top",
+        lines: (usage: string, target: string) => [
+          usage,
+          "",
+          "[asset",
+          `]: ${target} "keep title"`,
+        ],
+      },
+      {
+        name: "blockquote",
+        lines: (usage: string, target: string) => [
+          `> ${usage}`,
+          ">",
+          "> [asset",
+          `> ]: ${target} "keep title"`,
+        ],
+      },
+      {
+        name: "nested-list-blockquote",
+        lines: (usage: string, target: string) => [
+          `- > ${usage}`,
+          "  >",
+          "  > [asset",
+          `  > ]: ${target} "keep title"`,
+        ],
+      },
+    ];
+    const target = "../Assets/report.pdf";
+    const replacement = "../Archive/wrapped-labels.pdf";
+    const notes: Array<{ path: string; before: string; after: string }> = [];
+
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const context of contexts) {
+        for (const form of forms) {
+          const name = `${context.name}-${form.name}-${
+            ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr"
+          }`;
+          const before = context.lines(form.usage, target).join(ending);
+          const after = context.lines(form.usage, replacement).join(ending);
+          const note = { path: `Notes/Wrapped ${name}.md`, before, after };
+          notes.push(note);
+          await fs.writeFile(path.join(vaultPath, note.path), before, "utf8");
+        }
+      }
+    }
+
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected wrapped-label source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/wrapped-labels.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected wrapped-label publication plan.");
+    expect(plan.rewrites).toHaveLength(54);
+    expect(plan.writes).toHaveLength(54);
+    for (const note of notes) {
+      expect(plan.writes).toContainEqual({
+        path: note.path,
+        expectedRevision: expect.any(String),
+        content: note.after,
+      });
+    }
+
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/wrapped-labels.pdf",
+        source.snapshot.revision,
+        {
+          plan,
+          acceptCurrentRewrites: true,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    for (const note of notes) {
+      await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(note.after);
+    }
+  });
+
+  it("rewrites renderer title continuations exactly once across containers and endings", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const contexts = [
+      {
+        name: "top",
+        lines: (target: string) => ["[visible][asset]", "", `[asset]: ${target}`, '  "keep title"'],
+      },
+      {
+        name: "blockquote",
+        lines: (target: string) => [
+          "> [visible][asset]",
+          ">",
+          `> [asset]: ${target}`,
+          '>   "keep title"',
+        ],
+      },
+      {
+        name: "nested-list-blockquote",
+        lines: (target: string) => [
+          "- > [visible][asset]",
+          "  >",
+          `  > [asset]: ${target}`,
+          '  >   "keep title"',
+        ],
+      },
+    ];
+    const target = "../Assets/report.pdf";
+    const replacement = "../Archive/title-continuations.pdf";
+    const notes: Array<{ path: string; before: string; after: string }> = [];
+
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const context of contexts) {
+        const suffix = ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr";
+        const before = context.lines(target).join(ending);
+        const after = context.lines(replacement).join(ending);
+        const note = {
+          path: `Notes/Title continuation ${context.name}-${suffix}.md`,
+          before,
+          after,
+        };
+        notes.push(note);
+        await fs.writeFile(path.join(vaultPath, note.path), before, "utf8");
+      }
+    }
+
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected title-continuation source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/title-continuations.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected title-continuation publication plan.");
+    expect(plan.rewrites).toHaveLength(9);
+    expect(plan.writes).toHaveLength(9);
+    for (const note of notes) {
+      expect(plan.writes).toContainEqual({
+        path: note.path,
+        expectedRevision: expect.any(String),
+        content: note.after,
+      });
+    }
+
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/title-continuations.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    for (const note of notes) {
+      await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(note.after);
+    }
+  });
+
+  it("blocks renderer destination continuations across containers and endings", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const contexts = [
+      {
+        name: "top",
+        lines: (target: string) => ["[visible][asset]", "", "[asset]:", `  ${target}`],
+      },
+      {
+        name: "blockquote",
+        lines: (target: string) => ["> [visible][asset]", ">", "> [asset]:", `>   ${target}`],
+      },
+      {
+        name: "nested-list-blockquote",
+        lines: (target: string) => [
+          "- > [visible][asset]",
+          "  >",
+          "  > [asset]:",
+          `  >   ${target}`,
+        ],
+      },
+    ];
+    const target = "../Assets/report.pdf";
+    const notes: Array<{ path: string; content: string }> = [];
+
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const context of contexts) {
+        const suffix = ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr";
+        const content = context.lines(target).join(ending);
+        const note = {
+          path: `Notes/Destination continuation ${context.name}-${suffix}.md`,
+          content,
+        };
+        notes.push(note);
+        await fs.writeFile(path.join(vaultPath, note.path), content, "utf8");
+      }
+    }
+
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") {
+      throw new Error("Expected destination-continuation source fixture.");
+    }
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/destination-continuations.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned" });
+    if (plan.status !== "planned") {
+      throw new Error("Expected destination-continuation publication plan.");
+    }
+    expect(plan.blockers).toHaveLength(9);
+    expect(plan.blockers).toEqual(
+      expect.arrayContaining(
+        notes.map((note) =>
+          expect.objectContaining({ documentPath: note.path, reason: "unsupported" }),
+        ),
+      ),
+    );
+    expect(plan.writes).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/destination-continuations.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "blocked" });
+    for (const note of notes) {
+      await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(
+        note.content,
+      );
+    }
+  });
+
+  it("keeps a renderer-live wrapped external definition dormant", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = "Notes/Wrapped external definition.md";
+    const content = [
+      "[visible][asset]",
+      "",
+      "[asset",
+      ']: https://example.test/report.pdf "external"',
+    ].join("\n");
+    await fs.writeFile(path.join(vaultPath, notePath), content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected wrapped-external source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/wrapped-external.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [], rewrites: [], writes: [] });
+    await expect(fs.readFile(path.join(vaultPath, notePath), "utf8")).resolves.toBe(content);
+  });
+
+  it("exposes direct attachment links after renderer-recognized trimmed frontmatter closers", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const target = "../Assets/report.pdf";
+    const replacement = "../Archive/frontmatter-closers.pdf";
+    const notes: Array<{ path: string; before: string; after: string }> = [];
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const closer of ["\t...\t", "    ---"]) {
+        const name = `${closer.includes(".") ? "dots" : "spaces"}-${
+          ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr"
+        }`;
+        const before = ["---", "title: 😀", closer, `[visible](${target})`].join(ending);
+        const after = ["---", "title: 😀", closer, `[visible](${replacement})`].join(ending);
+        const note = { path: `Notes/Trimmed frontmatter ${name}.md`, before, after };
+        notes.push(note);
+        await fs.writeFile(path.join(vaultPath, note.path), before, "utf8");
+      }
+    }
+
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected frontmatter source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/frontmatter-closers.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned")
+      throw new Error("Expected trimmed-frontmatter publication plan.");
+    expect(plan.rewrites).toHaveLength(6);
+    expect(plan.writes).toHaveLength(6);
+    for (const note of notes) {
+      expect(plan.writes).toContainEqual({
+        path: note.path,
+        expectedRevision: expect.any(String),
+        content: note.after,
+      });
+    }
+  });
+
+  it("blocks source-only attachment definitions inside renderer-recognized trimmed frontmatter", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notes: Array<{ path: string; content: string }> = [];
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const [opener, closer] of [
+        ["\uFEFF \t--- \t", "\t...\t"],
+        ["---", "    ---"],
+      ] as const) {
+        const name = `${closer.includes(".") ? "dots" : "spaces"}-${
+          ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr"
+        }`;
+        const content = [opener, "[asset]: ../Assets/report.pdf", closer, "[visible][asset]"].join(
+          ending,
+        );
+        const note = { path: `Notes/Source-only frontmatter ${name}.md`, content };
+        notes.push(note);
+        await fs.writeFile(path.join(vaultPath, note.path), content, "utf8");
+      }
+    }
+
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source-only frontmatter fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/source-only-frontmatter.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned" });
+    if (plan.status !== "planned") throw new Error("Expected source-only frontmatter plan.");
+    expect(plan.blockers).toHaveLength(6);
+    expect(plan.writes).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/source-only-frontmatter.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "blocked" });
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(
+      pdfBytes,
+    );
+    await expect(
+      fs.stat(path.join(vaultPath, "Archive", "source-only-frontmatter.pdf")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    for (const note of notes) {
+      await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(
+        note.content,
+      );
+    }
+  });
 });

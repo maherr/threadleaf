@@ -1,4 +1,5 @@
 import MarkdownIt, { type Env, type StateBlock } from "markdown-it";
+import { scanFrontmatter } from "./markdown-frontmatter";
 
 export interface ParsedMarkdownLink {
   target: string;
@@ -455,36 +456,30 @@ function maskParsedLinkRanges(
 }
 
 function parseReferenceDefinition(
-  sourceLine: string,
-  searchableLine: string,
-  lineStart: number,
-  lineNumber: number,
+  definition: ParsedMarkdownReferenceDefinitionCandidate,
+  end: number,
 ): ParsedMarkdownLink | null {
-  const leading = searchableLine.match(/^ {0,3}/u)?.[0].length ?? 0;
-  const cursor = leading;
-  if (searchableLine[cursor] !== "[") return null;
-  const close = findClosingReferenceLabel(searchableLine, cursor + 1);
-  if (close === -1 || searchableLine[close + 1] !== ":") return null;
-  const destination = scanDefinitionDestination(searchableLine, close + 2);
-  if (!destination) return null;
-  const rawDestination = sourceLine.slice(destination.targetStart, destination.targetEnd);
-  const subpathAt = subpathOffset(rawDestination);
-  const rawTargetOnly = subpathAt === -1 ? rawDestination : rawDestination.slice(0, subpathAt);
-  const targetRange = trimmedRange(rawTargetOnly);
-  const normalizedTarget = normalizeLinkTarget(rawTargetOnly).trim();
-  if ((!normalizedTarget && subpathAt === -1) || isExternalLink(normalizedTarget)) return null;
-  const position = lineStart + leading;
+  if (
+    !definition.valid ||
+    definition.external ||
+    !definition.target ||
+    definition.targetStart === null ||
+    definition.targetEnd === null
+  ) {
+    return null;
+  }
+  const subpathAt = subpathOffset(definition.rawTarget);
   return {
-    target: normalizedTarget,
-    subpath: normalizeSubpath(subpathAt === -1 ? "" : rawDestination.slice(subpathAt)),
+    target: definition.target,
+    subpath: normalizeSubpath(subpathAt === -1 ? "" : definition.rawTarget.slice(subpathAt)),
     alias: null,
     embed: false,
     syntax: "markdown",
-    position,
-    end: lineStart + destination.end,
-    targetStart: lineStart + destination.targetStart + targetRange.start,
-    targetEnd: lineStart + destination.targetStart + targetRange.end,
-    line: lineNumber,
+    position: definition.position,
+    end,
+    targetStart: definition.targetStart,
+    targetEnd: definition.targetEnd,
+    line: definition.line,
   };
 }
 
@@ -628,7 +623,9 @@ function applyMaskRanges(content: string, ranges: readonly MaskRange[]): string 
   let cursor = 0;
   for (const range of merged) {
     chunks.push(content.slice(cursor, range.start));
-    chunks.push(content.slice(range.start, range.end).replace(/[^\r\n]/gu, " "));
+    // Source offsets are UTF-16 offsets. Do not use the Unicode flag here:
+    // an astral code point occupies two source code units and must become two spaces.
+    chunks.push(content.slice(range.start, range.end).replace(/[^\r\n]/g, " "));
     cursor = range.end;
   }
   chunks.push(content.slice(cursor));
@@ -636,27 +633,17 @@ function applyMaskRanges(content: string, ranges: readonly MaskRange[]): string 
 }
 
 function yamlFrontmatterRanges(content: string): MaskRange[] {
-  const bom = content.startsWith("\uFEFF") ? 1 : 0;
-  const firstBreak = content.slice(bom).search(/\r\n|\r|\n/u);
-  const firstLineEnd = firstBreak === -1 ? content.length : bom + firstBreak;
-  const firstLine = content.slice(bom, firstLineEnd).replace(/\r$/u, "");
-  if (!/^ {0,3}---$/u.test(firstLine)) return [];
+  const scan = scanFrontmatter(content);
+  if (scan.status === "none") return [];
+  if (scan.status === "unresolved") return [{ start: 0, end: content.length }];
   const ranges: MaskRange[] = [];
-  let offset = bom;
-  const lines = content.slice(bom).match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
-  let closed = false;
-  for (const full of lines) {
-    if (full.length === 0) break;
-    const line = full.replace(/\r\n$|[\r\n]$/u, "");
-    const trimmed = line.replace(/^ {0,3}/u, "");
+  const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
+  let offset = 0;
+  for (let index = 0; index < (scan.closingLine ?? 0); index += 1) {
+    const full = lines[index] ?? "";
     ranges.push({ start: offset, end: offset + full.length });
     offset += full.length;
-    if (ranges.length > 1 && /^(?:---|\.\.\.)$/u.test(trimmed)) {
-      closed = true;
-      break;
-    }
   }
-  if (!closed && ranges.length > 0) return [{ start: bom, end: content.length }];
   return ranges;
 }
 
@@ -1024,41 +1011,121 @@ function opaqueRendererReferenceDefinitionCandidate(
   };
 }
 
+interface LogicalReferenceDefinitionSegment extends MaskRange {
+  logicalStart: number;
+  logicalEnd: number;
+}
+
+interface LogicalReferenceDefinitionSource {
+  content: string;
+  segments: LogicalReferenceDefinitionSegment[];
+}
+
+/**
+ * MarkdownIt reports one source segment for each physical line it consumed,
+ * after stripping block container prefixes. Rejoin those semantic segments
+ * with normalized line breaks, then map only ranges wholly owned by a source
+ * segment back to UTF-16 source offsets.
+ */
+function logicalRendererReferenceDefinitionSource(
+  source: string,
+  context: RendererReferenceDefinitionContext,
+): LogicalReferenceDefinitionSource {
+  let content = "";
+  const segments: LogicalReferenceDefinitionSegment[] = [];
+  for (const [index, segment] of context.segments.entries()) {
+    if (index > 0) content += "\n";
+    const logicalStart = content.length;
+    content += source.slice(segment.start, segment.end);
+    segments.push({ ...segment, logicalStart, logicalEnd: content.length });
+  }
+  return { content, segments };
+}
+
+function sourceSegmentForLogicalRange(
+  segments: readonly LogicalReferenceDefinitionSegment[],
+  start: number,
+  end: number,
+): LogicalReferenceDefinitionSegment | null {
+  return (
+    segments.find((segment) => start >= segment.logicalStart && end <= segment.logicalEnd) ?? null
+  );
+}
+
+function originalOffsetForLogicalOffset(
+  segment: LogicalReferenceDefinitionSegment,
+  offset: number,
+): number {
+  return segment.start + offset - segment.logicalStart;
+}
+
 function rendererDefinitionCandidate(
   content: string,
   context: RendererReferenceDefinitionContext,
 ): ParsedMarkdownReferenceDefinitionCandidate | null {
-  const sourceLine = content.slice(context.start, context.end);
+  const logical = logicalRendererReferenceDefinitionSource(content, context);
+  const leading = logical.content.match(/^ {0,3}/u)?.[0].length ?? 0;
+  const close =
+    logical.content[leading] === "[" ? findClosingReferenceLabel(logical.content, leading + 1) : -1;
   let candidate = parseMarkdownReferenceDefinitionCandidate(
-    sourceLine,
-    sourceLine,
-    context.start,
+    logical.content,
+    logical.content,
+    0,
     context.line,
     false,
   );
-  // MarkdownIt accepted the definition, but this deliberately narrower
-  // one-line target parser could not preserve an exact mutable destination.
-  // Retain it as opaque source evidence rather than allowing a stale rewrite.
-  candidate ??= opaqueRendererReferenceDefinitionCandidate(sourceLine, context.start, context.line);
+  candidate ??= opaqueRendererReferenceDefinitionCandidate(logical.content, 0, context.line);
+  if (!candidate) return null;
+
+  const markerSegment = sourceSegmentForLogicalRange(
+    logical.segments,
+    candidate.position,
+    candidate.position + 1,
+  );
+  const position = markerSegment
+    ? originalOffsetForLogicalOffset(markerSegment, candidate.position)
+    : context.start;
+  const multiline = context.segments.length > 1;
   if (
-    candidate &&
-    !candidate.valid &&
-    candidate.rawTarget.trim() === "" &&
-    context.segments.length > 1
+    !candidate.valid ||
+    candidate.targetStart === null ||
+    candidate.targetEnd === null ||
+    close === -1
   ) {
-    const continuation = context.segments
-      .slice(1)
-      .map((segment) => content.slice(segment.start, segment.end))
-      .join("\n");
-    if (continuation) {
-      candidate = {
-        ...candidate,
-        rawTarget: `${candidate.rawTarget}\n${continuation}`,
-        multilineContinuation: true,
-      };
-    }
+    return {
+      ...candidate,
+      position,
+      ...(multiline ? { multilineContinuation: true } : {}),
+    };
   }
-  return candidate;
+
+  const colonSegment = sourceSegmentForLogicalRange(logical.segments, close + 1, close + 2);
+  const targetSegment = sourceSegmentForLogicalRange(
+    logical.segments,
+    candidate.targetStart,
+    candidate.targetEnd,
+  );
+  // A title may continue across renderer segments after a same-segment
+  // destination. If the destination itself starts in a later segment, keep
+  // the entire post-colon source opaque instead of publishing a partial write.
+  if (!colonSegment || !targetSegment || colonSegment !== targetSegment) {
+    return {
+      ...candidate,
+      valid: false,
+      target: null,
+      targetStart: null,
+      targetEnd: null,
+      position,
+      rawTarget: logical.content.slice(close + 2),
+      ...(multiline ? { multilineContinuation: true } : {}),
+    };
+  }
+  return {
+    ...candidate,
+    position,
+    targetStart: originalOffsetForLogicalOffset(targetSegment, candidate.targetStart),
+    targetEnd: originalOffsetForLogicalOffset(targetSegment, candidate.targetEnd),
+  };
 }
 
 /**
@@ -1319,13 +1386,10 @@ export function parseMarkdownLinks(
     const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
     const context = referenceContextByLine.get(index + 1);
     if (context) {
-      const definitionLine = content.slice(context.start, context.end);
-      const definition = parseReferenceDefinition(
-        definitionLine,
-        definitionLine,
-        context.start,
-        context.line,
-      );
+      const candidate = rendererDefinitionCandidate(content, context);
+      const definition = candidate
+        ? parseReferenceDefinition(candidate, context.segments.at(-1)?.end ?? context.end)
+        : null;
       if (definition) links.push(definition);
     } else if (!opaqueReferenceLines.has(index + 1)) {
       links.push(...parseLine(sourceLine, searchableLine, offset, index + 1));
