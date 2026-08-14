@@ -1346,11 +1346,11 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
     anchor.classList.add(external ? "external-link" : "internal-link");
     anchor.dataset.threadleafLink = external ? "external" : "markdown";
     anchor.dataset.threadleafRawLink = "true";
-    if (external) {
-      anchor.dataset.threadleafExternalUrl = destination;
-    } else {
-      anchor.dataset.threadleafTarget = destination;
-    }
+    // Raw HTML links remain inert. Their destination is useful only for the
+    // classification above; retaining it in a privileged-looking data
+    // attribute would let author HTML masquerade as a generated link.
+    anchor.removeAttribute("data-threadleaf-external-url");
+    anchor.removeAttribute("data-threadleaf-target");
     anchor.setAttribute("href", "#");
   }
   return fragment;
