@@ -22,8 +22,11 @@ Human display or reason changes that do not alter authority do not count as grow
 
 Grants are private application state. `FileNativeExtensionGrantStore` writes one versioned document
 outside all vaults with an atomic replacement and mode `0600`; it never writes `.obsidian/` or a
-vault-owned settings file. The application must supply its OS application-data path. The in-memory
-store is intended for tests and disposable hosts.
+vault-owned settings file. The application must supply its OS application-data path. File writes
+take a cross-process lock, reread the latest document while holding it, and preserve an existing
+revocation when a stale save races with revoke. The in-memory store is intended for tests and
+disposable hosts. An explicit host `grant` is a reviewed replacement and clears the prior
+revocation marker. Grants remain separate for every `(vaultId, extensionId)` pair.
 
 ## Enforced ports
 
@@ -53,6 +56,30 @@ choice and are delegated to the host's recoverable writer.
 
 ## Lifecycle and trust
 
+Signed distribution metadata uses Ed25519 and binds the exact bundle bytes, authority digest, and
+the complete installed package-tree digest. A package-tree field is optional only for old records;
+those records use the bundle digest as a bundle-only compatibility identity. Publisher rotation is
+accepted only from an offline trusted predecessor. If that anchor is revoked, a rotation issued
+after revocation or with an effective time backdated before revocation is rejected.
+
+`NativeExtensionMarketplaceCatalog` is the signed catalog index. The catalog root signs its
+`generatedAt`, `expiresAt`, revision, entry-set digest, complete signed entries, lifecycle state,
+and successor paths. The host applies a fixed 31-day local max-age and an explicit verification
+clock, so forged freshness fields, offline expiry, and a future catalog fail closed. Unsigned
+`NativeExtensionMarketplaceIndex` values remain parseable only for migration diagnostics and never
+authorize installation. Every selected entry still requires exact local bundle bytes and is
+reverified under the catalog publisher anchors. Rollback, replay, generated-time freeze,
+unexplained omission, missing bytes, invalid signatures, and expired catalogs are hard failures.
+
+Each accepted `(extensionId, version)` records metadata, bundle, authority, and package-tree
+identity evidence. A package version cannot be rebound to different bytes, authority, metadata, or
+tree identity. An omitted entry with explicit lifecycle state becomes an irreversible tombstone
+carrying the same evidence, and a later catalog cannot re-add that key. Catalog state is durable,
+monotonic, mode `0600`, cross-process locked, and compare-and-swap protected. Catalog-backed
+verification reports `marketplaceIndex: "signed-catalog"` and retains catalog revision, root,
+metadata, and installed-tree provenance. It never downgrades that evidence to `not-applicable`
+because a catalog path was used. A standalone signed record is the only `not-applicable` case.
+
 `grant`, `revoke`, `setSafeMode`, `inspect`, `execute`, `stop`, and `close` are host operations.
 Revocation and safe mode preserve the saved grant while preventing execution. A running invocation
 receives an abort signal and teardown callbacks. The host enforces an invocation deadline and a
@@ -81,31 +108,22 @@ permission model.
 
 ## Minimal SDK workflow
 
-The checked-in portable fixture at
-`fixtures/native-extensions/portable-summary/` reads one note and writes a generated summary using
-only the public vault port:
+The checked-in portable fixture at `fixtures/native-extensions/portable-summary/` is a byte-only
+production bundle. Production SDK construction does not accept a caller-injected function:
 
 ```ts
 import { definePortableExtension } from "threadleaf/native-extension/sdk";
 
-export default definePortableExtension({
+const bundle = definePortableExtension({
   manifest,
   bundleBytes,
-  entrypoint: async (context, input: { path: string; outputPath: string }) => {
-    const note = await context.vault.readText({
-      vaultId: context.vaultId,
-      relativePath: input.path,
-    });
-    return context.vault.writeText({
-      vaultId: context.vaultId,
-      relativePath: input.outputPath,
-      content: `# Summary\n\n${note.content}\n`,
-      expectedRevision: null,
-    });
-  },
 });
 ```
 
+The source-only test-support module supplies callable fixture entrypoints for conformance tests.
+The production host verifies bytes and fails closed until a future runtime evaluator is present.
+
 The conformance tests exercise this fixture plus malicious undeclared, stale-bundle, authority-
-growth, unavailable-port, cross-vault, safe-mode, revocation, teardown, timeout, and trusted-
-desktop cases. The tests use fake public ports and never touch a real vault.
+growth, unavailable-port, cross-vault, safe-mode, revocation, teardown, timeout, trusted-desktop,
+catalog freshness, key rotation, package rebind, tombstone re-add, catalog compare-and-swap, and
+grant revoke/save interleaving cases. The tests use fake public ports and never touch a real vault.

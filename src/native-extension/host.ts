@@ -15,6 +15,19 @@ import {
   parseNativeExtensionId,
   parseNativeExtensionManifest,
 } from "./manifest";
+import {
+  canonicalizeNativeExtensionTrustMetadata,
+  type NativeExtensionMarketplaceCatalog,
+  type NativeExtensionMarketplaceCatalogStateStore,
+  type NativeExtensionTrustedPublisherKey,
+  type NativeExtensionTrustOptions,
+  type NativeExtensionTrustProvenance,
+  type NativeExtensionVerification,
+  nativeExtensionSignedManifestSha256,
+  parseNativeExtensionMarketplaceCatalog,
+  verifyNativeExtensionBundle,
+  verifyNativeExtensionMarketplaceCatalog,
+} from "./marketplace-trust";
 import type {
   NativeClipboardPort,
   NativeDynamicCodePort,
@@ -34,11 +47,12 @@ import type {
   NativeVaultWriteResult,
   NativeWorkspacePort,
 } from "./ports";
-import type {
-  NativeExtensionBundle,
-  NativeExtensionContext,
-  NativeExtensionEntrypoint,
-} from "./sdk";
+import type { NativeExtensionBundle, NativeExtensionContext } from "./sdk";
+
+type NativeExtensionEntrypoint = (
+  context: NativeExtensionContext,
+  input: unknown,
+) => unknown | Promise<unknown>;
 
 export type NativeExtensionRegistrationState =
   | "installed"
@@ -57,10 +71,14 @@ export interface NativeExtensionReview {
   extensionId: string;
   manifest: NativeExtensionManifest;
   bundleSha256: string;
+  packageTreeSha256: string;
   authorityDigest: string;
   capabilities: NativeExtensionCapabilityId[];
   authorityChange: NativeExtensionAuthorityChange;
   requiresReReview: boolean;
+  distributionTrust: "trusted-distribution" | "unsigned-development";
+  publisherFingerprint: string | null;
+  trustProvenance: NativeExtensionTrustProvenance;
   boundaries: Readonly<Record<NativeExtensionCapabilityId, NativeExtensionBoundary>>;
 }
 
@@ -74,7 +92,16 @@ export interface NativeExtensionInspection {
   declaredCapabilities: NativeExtensionCapabilityId[];
   grantedCapabilities: NativeExtensionCapabilityId[];
   bundleSha256: string;
+  packageTreeSha256: string;
   authorityDigest: string;
+  metadataSha256: string | null;
+  publisherId: string | null;
+  publisherKeyId: string | null;
+  metadataExpiresAt: string | null;
+  metadataRevokedAt: string | null;
+  metadataDelistedAt: string | null;
+  distributionTrust: "trusted-distribution" | "unsigned-development";
+  trustProvenance: NativeExtensionTrustProvenance;
   safeMode: boolean;
   revoked: boolean;
   active: boolean;
@@ -102,11 +129,29 @@ export interface NativeExtensionHostOptions {
   now?: () => string;
 }
 
+export type NativeExtensionInstallMode = "trusted-distribution";
+
+export interface NativeExtensionInstallOptions {
+  mode: NativeExtensionInstallMode;
+  metadata?: unknown;
+  trustedPublishers?: NativeExtensionTrustOptions["trustedPublishers"];
+  /** A signed catalog envelope that must contain and authorize `metadata`. */
+  marketplaceCatalog?: unknown;
+  trustedCatalogRoots?: NativeExtensionTrustOptions["trustedCatalogRoots"];
+  catalogStateStore?: NativeExtensionMarketplaceCatalogStateStore;
+}
+
 interface Registration {
   bundle: NativeExtensionBundle;
+  entrypoint?: NativeExtensionEntrypoint;
   bundleSha256: string;
+  packageTreeSha256: string;
   authorityDigest: string;
   review: NativeExtensionReview;
+  verification: NativeExtensionVerification | null;
+  marketplaceCatalog: NativeExtensionMarketplaceCatalog | null;
+  catalogStateStore: NativeExtensionMarketplaceCatalogStateStore | null;
+  trustedCatalogRoots: NativeExtensionTrustedPublisherKey[];
 }
 
 interface ActiveInvocation {
@@ -129,12 +174,46 @@ function cloneReview(review: NativeExtensionReview): NativeExtensionReview {
     ...review,
     manifest: cloneManifest(review.manifest),
     capabilities: [...review.capabilities],
+    publisherFingerprint: review.publisherFingerprint,
+    trustProvenance: { ...review.trustProvenance },
     boundaries: { ...review.boundaries },
   };
 }
 
 function capabilitySet(capabilities: readonly NativeExtensionCapabilityId[]): Set<string> {
   return new Set(capabilities);
+}
+
+function grantMatchesRegistration(
+  grant: NativeExtensionGrant | undefined,
+  registration: Registration,
+  verification: NativeExtensionVerification | null,
+): boolean {
+  if (!grant) {
+    return false;
+  }
+  return (
+    grant.bundleSha256 === registration.bundleSha256 &&
+    grant.packageTreeSha256 ===
+      (verification?.packageTreeSha256 ??
+        registration.bundle.packageTreeSha256 ??
+        registration.bundleSha256) &&
+    grant.authorityDigest === registration.authorityDigest &&
+    grant.distributionTrust === registration.review.distributionTrust &&
+    grant.metadataSha256 === (verification?.metadataSha256 ?? null) &&
+    grant.publisherId === (verification?.publisherId ?? null) &&
+    grant.publisherKeyId === (verification?.publisherKeyId ?? null) &&
+    grant.publisherFingerprint === (verification?.publisherFingerprint ?? null) &&
+    grant.metadataIssuedAt === (verification?.metadataIssuedAt ?? null) &&
+    grant.metadataExpiresAt === (verification?.metadataExpiresAt ?? null) &&
+    grant.metadataRevokedAt === (verification?.metadataRevokedAt ?? null) &&
+    grant.metadataDelistedAt === (verification?.metadataDelistedAt ?? null) &&
+    (grant.marketplaceCatalogRevision ?? null) ===
+      (verification?.marketplaceCatalogRevision ?? null) &&
+    (grant.marketplaceCatalogSha256 ?? null) === (verification?.marketplaceCatalogSha256 ?? null) &&
+    (grant.marketplaceCatalogRootFingerprint ?? null) ===
+      (verification?.marketplaceCatalogRootFingerprint ?? null)
+  );
 }
 
 function authorityChange(
@@ -151,8 +230,24 @@ function authorityChange(
   return grew ? "grew" : narrowed ? "narrowed" : "none";
 }
 
-function defaultNow(): string {
+function hostNow(): string {
   return new Date().toISOString();
+}
+
+function catalogRootsFromInstallOptions(
+  options: Pick<NativeExtensionInstallOptions, "trustedPublishers" | "trustedCatalogRoots">,
+): NativeExtensionTrustedPublisherKey[] {
+  if (options.trustedCatalogRoots !== undefined) {
+    return [...options.trustedCatalogRoots];
+  }
+  const anchors = options.trustedPublishers;
+  if (typeof anchors === "object" && anchors !== null && "catalogRoots" in anchors) {
+    const catalogRoots = (anchors as { catalogRoots?: unknown }).catalogRoots;
+    if (Array.isArray(catalogRoots)) {
+      return [...catalogRoots] as NativeExtensionTrustedPublisherKey[];
+    }
+  }
+  return [];
 }
 
 function positiveTimeout(value: number | undefined, fallback: number): number {
@@ -240,31 +335,173 @@ export class NativeExtensionHost {
     this.#grants = options.grantStore ?? new InMemoryNativeExtensionGrantStore();
     this.#invocationTimeoutMs = positiveTimeout(options.invocationTimeoutMs, 10_000);
     this.#teardownTimeoutMs = positiveTimeout(options.teardownTimeoutMs, 1_000);
-    this.#now = options.now ?? defaultNow;
+    this.#now = options.now ?? hostNow;
   }
 
-  /** Register bytes and entrypoint for review. Registration never grants authority. */
-  register<Input = unknown, Output = unknown>(
-    bundle: NativeExtensionBundle<Input, Output>,
+  /** Callable registration is deliberately unavailable on production hosts. */
+  register(_bundle: NativeExtensionBundle): NativeExtensionReview {
+    throw new NativeExtensionError(
+      "distribution-untrusted",
+      "Callable native extension registration is unavailable on production hosts.",
+    );
+  }
+
+  /**
+   * Install is a trust gate and never creates a grant. Unsigned development must be explicit;
+   * trusted distribution requires a signed record, exact bundle bytes, and offline anchors.
+   */
+  install(
+    bundle: NativeExtensionBundle,
+    options?: NativeExtensionInstallOptions,
   ): NativeExtensionReview {
     this.assertHostOpen();
-    let manifest: NativeExtensionManifest;
-    try {
-      manifest = parseNativeExtensionManifest(bundle.manifest);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Native extension manifest is invalid.";
-      throw new NativeExtensionError("invalid-manifest", message);
-    }
-    if (typeof bundle.entrypoint !== "function") {
+    if (!options) {
       throw new NativeExtensionError(
-        "invalid-manifest",
-        "Native extension entrypoint is not callable.",
+        "distribution-untrusted",
+        "Native extension install requires an explicit trust mode.",
       );
     }
-    parseNativeExtensionId(manifest.id);
+    if (options.mode !== "trusted-distribution" || options.metadata === undefined) {
+      throw new NativeExtensionError(
+        "distribution-untrusted",
+        "Trusted distribution install requires signed metadata.",
+      );
+    }
+    return this.reviewDistribution(bundle, options);
+  }
+
+  /** Review a signed distribution without granting any per-vault capabilities. */
+  reviewDistribution(
+    bundle: NativeExtensionBundle,
+    options: Pick<
+      NativeExtensionInstallOptions,
+      | "metadata"
+      | "trustedPublishers"
+      | "marketplaceCatalog"
+      | "trustedCatalogRoots"
+      | "catalogStateStore"
+    >,
+  ): NativeExtensionReview {
+    this.assertHostOpen();
+    if (options.metadata === undefined) {
+      throw new NativeExtensionError(
+        "distribution-untrusted",
+        "Trusted distribution review requires signed metadata.",
+      );
+    }
+    let verification: ReturnType<typeof verifyNativeExtensionBundle>;
+    let marketplaceCatalog: NativeExtensionMarketplaceCatalog | null = null;
+    const catalogStateStore = options.catalogStateStore ?? null;
+    const trustedCatalogRoots = catalogRootsFromInstallOptions(options);
+    try {
+      if (options.marketplaceCatalog !== undefined) {
+        if (catalogStateStore === null) {
+          throw new Error(
+            "Signed marketplace catalog install requires a persistent catalog state store.",
+          );
+        }
+        marketplaceCatalog = parseNativeExtensionMarketplaceCatalog(options.marketplaceCatalog);
+        const key = `${bundle.manifest.id}\u0000${bundle.manifest.version}`;
+        const verifications = verifyNativeExtensionMarketplaceCatalog(options.marketplaceCatalog, {
+          trustedPublishers: options.trustedPublishers ?? [],
+          bundleBytesByEntry: new Map([[key, bundle.bundleBytes]]),
+          ...(bundle.packageTreeSha256 === undefined
+            ? {}
+            : { packageTreeSha256ByEntry: new Map([[key, bundle.packageTreeSha256]]) }),
+          selectedEntryKey: key,
+          ...(options.trustedCatalogRoots === undefined
+            ? {}
+            : { trustedCatalogRoots: options.trustedCatalogRoots }),
+          ...(options.trustedCatalogRoots === undefined && trustedCatalogRoots.length > 0
+            ? { trustedCatalogRoots }
+            : {}),
+          now: this.#now(),
+          ...(catalogStateStore === null ? {} : { stateStore: catalogStateStore }),
+        });
+        const metadataSha256 = nativeExtensionSignedManifestSha256(options.metadata);
+        const selected = verifications.find(
+          (candidate) =>
+            candidate.metadataSha256 === metadataSha256 &&
+            candidate.metadata.manifest.id === bundle.manifest.id,
+        );
+        if (!selected) {
+          throw new Error("Signed metadata is not the catalog entry selected for this bundle.");
+        }
+        const normalizedBundleManifest = parseNativeExtensionManifest(bundle.manifest);
+        if (
+          canonicalizeNativeExtensionTrustMetadata(normalizedBundleManifest) !==
+          canonicalizeNativeExtensionTrustMetadata(selected.metadata.manifest)
+        ) {
+          throw new Error("Signed metadata manifest does not match the supplied bundle manifest.");
+        }
+        verification = selected;
+      } else {
+        verification = verifyNativeExtensionBundle(options.metadata, bundle, {
+          trustedPublishers: options.trustedPublishers ?? [],
+          now: this.#now(),
+        });
+      }
+    } catch (error) {
+      throw new NativeExtensionError(
+        "distribution-untrusted",
+        error instanceof Error ? error.message : "Native extension distribution is untrusted.",
+        { cause: error },
+      );
+    }
+    return this.replaceRegistration(
+      {
+        manifest: cloneManifest(bundle.manifest),
+        bundleBytes: new Uint8Array(bundle.bundleBytes),
+        ...(bundle.packageTreeSha256 === undefined
+          ? {}
+          : { packageTreeSha256: bundle.packageTreeSha256 }),
+      },
+      undefined,
+      verification,
+      {
+        distributionTrust: "trusted-distribution",
+        publisherFingerprint: verification.publisherFingerprint,
+        trustProvenance: {
+          distributionTrust: "trusted-distribution",
+          metadataSha256: verification.metadataSha256,
+          publisherId: verification.publisherId,
+          publisherKeyId: verification.publisherKeyId,
+          publisherFingerprint: verification.publisherFingerprint,
+          keyTrust: verification.keyTrust,
+          marketplaceIndex: verification.marketplaceIndexTrust,
+          marketplaceCatalogRevision: verification.marketplaceCatalogRevision,
+          marketplaceCatalogSha256: verification.marketplaceCatalogSha256,
+          marketplaceCatalogRootFingerprint: verification.marketplaceCatalogRootFingerprint,
+          packageTreeSha256: verification.packageTreeSha256,
+          installedTreeEvidence:
+            verification.metadata.packageTreeSha256 === undefined
+              ? "bundle-only"
+              : "signed-package-tree",
+        },
+      },
+      marketplaceCatalog,
+      catalogStateStore,
+      trustedCatalogRoots,
+    );
+  }
+
+  private replaceRegistration(
+    bundle: NativeExtensionBundle,
+    entrypoint: NativeExtensionEntrypoint | undefined,
+    verification: NativeExtensionVerification | null,
+    trust: {
+      distributionTrust: NativeExtensionReview["distributionTrust"];
+      publisherFingerprint: string | null;
+      trustProvenance: NativeExtensionTrustProvenance;
+    },
+    marketplaceCatalog: NativeExtensionMarketplaceCatalog | null = null,
+    catalogStateStore: NativeExtensionMarketplaceCatalogStateStore | null = null,
+    trustedCatalogRoots: readonly NativeExtensionTrustedPublisherKey[] = [],
+  ): NativeExtensionReview {
+    const manifest = parseNativeExtensionManifest(bundle.manifest);
     const bundleBytes = new Uint8Array(bundle.bundleBytes);
     const bundleSha256 = nativeExtensionBundleSha256(bundleBytes);
+    const packageTreeSha256 = bundle.packageTreeSha256 ?? bundleSha256;
     const authorityDigest = nativeExtensionAuthorityDigest(manifest);
     const previous = this.#registrations.get(manifest.id);
     if (previous) {
@@ -286,10 +523,14 @@ export class NativeExtensionHost {
       extensionId: manifest.id,
       manifest: cloneManifest(manifest),
       bundleSha256,
+      packageTreeSha256,
       authorityDigest,
       capabilities: [...capabilities],
       authorityChange: change,
       requiresReReview: previous !== undefined && change === "grew",
+      distributionTrust: trust.distributionTrust,
+      publisherFingerprint: trust.publisherFingerprint,
+      trustProvenance: { ...trust.trustProvenance },
       boundaries: Object.fromEntries(
         capabilities.map((capability) => [
           capability,
@@ -301,22 +542,23 @@ export class NativeExtensionHost {
       bundle: {
         manifest: cloneManifest(manifest),
         bundleBytes,
-        entrypoint: bundle.entrypoint as NativeExtensionEntrypoint,
+        ...(bundle.packageTreeSha256 === undefined
+          ? {}
+          : { packageTreeSha256: bundle.packageTreeSha256 }),
       },
+      ...(entrypoint === undefined ? {} : { entrypoint }),
       bundleSha256,
+      packageTreeSha256,
       authorityDigest,
       review,
+      verification,
+      marketplaceCatalog,
+      catalogStateStore,
+      trustedCatalogRoots: [...trustedCatalogRoots],
     };
     this.#registrations.set(manifest.id, registration);
     this.#diagnostics.delete(manifest.id);
     return cloneReview(review);
-  }
-
-  /** Install is intentionally an alias for review-only registration. It never creates a grant. */
-  install<Input = unknown, Output = unknown>(
-    bundle: NativeExtensionBundle<Input, Output>,
-  ): NativeExtensionReview {
-    return this.register(bundle);
   }
 
   unregister(extensionId: string): void {
@@ -333,6 +575,7 @@ export class NativeExtensionHost {
   review(extensionId: string): NativeExtensionReview {
     this.assertHostOpen();
     const registration = this.registration(extensionId);
+    this.assertCurrentDistribution(registration);
     return cloneReview(registration.review);
   }
 
@@ -344,6 +587,7 @@ export class NativeExtensionHost {
     this.assertHostOpen();
     const registration = this.registration(extensionId);
     this.assertRuntimeAvailable(registration.bundle.manifest);
+    const verification = this.assertCurrentDistribution(registration);
     const requested =
       capabilities === undefined ? registration.review.capabilities : [...capabilities];
     if (new Set(requested).size !== requested.length) {
@@ -365,15 +609,32 @@ export class NativeExtensionHost {
       }
     }
     const grant: NativeExtensionGrant = {
-      grantVersion: 1,
+      grantVersion: 2,
       vaultId,
       extensionId: registration.bundle.manifest.id,
       bundleSha256: registration.bundleSha256,
+      packageTreeSha256: verification?.packageTreeSha256 ?? registration.packageTreeSha256,
       authorityDigest: registration.authorityDigest,
+      distributionTrust: registration.review.distributionTrust,
+      metadataSha256: verification?.metadataSha256 ?? null,
+      publisherId: verification?.publisherId ?? null,
+      publisherKeyId: verification?.publisherKeyId ?? null,
+      publisherFingerprint: verification?.publisherFingerprint ?? null,
+      metadataIssuedAt: verification?.metadataIssuedAt ?? null,
+      metadataExpiresAt: verification?.metadataExpiresAt ?? null,
+      metadataRevokedAt: verification?.metadataRevokedAt ?? null,
+      metadataDelistedAt: verification?.metadataDelistedAt ?? null,
+      marketplaceCatalogRevision: verification?.marketplaceCatalogRevision ?? null,
+      marketplaceCatalogSha256: verification?.marketplaceCatalogSha256 ?? null,
+      marketplaceCatalogRootFingerprint: verification?.marketplaceCatalogRootFingerprint ?? null,
       capabilities: [...requested],
       grantedAt: this.#now(),
     };
-    await this.#grants.put(grant);
+    if (this.#grants.replace) {
+      await this.#grants.replace(grant);
+    } else {
+      await this.#grants.put(grant);
+    }
     return this.inspect(vaultId, extensionId);
   }
 
@@ -381,17 +642,44 @@ export class NativeExtensionHost {
     this.assertHostOpen();
     const registration = this.registration(extensionId);
     const current = await this.#grants.get(vaultId, registration.bundle.manifest.id);
+    const verification = registration.verification;
     const grant: NativeExtensionGrant = {
-      grantVersion: 1,
+      grantVersion: 2,
       vaultId,
       extensionId: registration.bundle.manifest.id,
       bundleSha256: current?.bundleSha256 ?? registration.bundleSha256,
+      packageTreeSha256:
+        current?.packageTreeSha256 ??
+        verification?.packageTreeSha256 ??
+        registration.packageTreeSha256,
       authorityDigest: current?.authorityDigest ?? registration.authorityDigest,
+      distributionTrust: current?.distributionTrust ?? registration.review.distributionTrust,
+      metadataSha256: current?.metadataSha256 ?? verification?.metadataSha256 ?? null,
+      publisherId: current?.publisherId ?? verification?.publisherId ?? null,
+      publisherKeyId: current?.publisherKeyId ?? verification?.publisherKeyId ?? null,
+      publisherFingerprint:
+        current?.publisherFingerprint ?? verification?.publisherFingerprint ?? null,
+      metadataIssuedAt: current?.metadataIssuedAt ?? verification?.metadataIssuedAt ?? null,
+      metadataExpiresAt: current?.metadataExpiresAt ?? verification?.metadataExpiresAt ?? null,
+      metadataRevokedAt: current?.metadataRevokedAt ?? verification?.metadataRevokedAt ?? null,
+      metadataDelistedAt: current?.metadataDelistedAt ?? verification?.metadataDelistedAt ?? null,
+      marketplaceCatalogRevision:
+        current?.marketplaceCatalogRevision ?? verification?.marketplaceCatalogRevision ?? null,
+      marketplaceCatalogSha256:
+        current?.marketplaceCatalogSha256 ?? verification?.marketplaceCatalogSha256 ?? null,
+      marketplaceCatalogRootFingerprint:
+        current?.marketplaceCatalogRootFingerprint ??
+        verification?.marketplaceCatalogRootFingerprint ??
+        null,
       capabilities: current?.capabilities ?? [],
       grantedAt: current?.grantedAt ?? this.#now(),
       revokedAt: this.#now(),
     };
-    await this.#grants.put(grant);
+    if (this.#grants.revoke) {
+      await this.#grants.revoke(grant);
+    } else {
+      await this.#grants.put(grant);
+    }
     const key = this.invocationKey(vaultId, registration.bundle.manifest.id);
     const active = this.#active.get(key);
     if (active) {
@@ -431,6 +719,7 @@ export class NativeExtensionHost {
     this.assertHostOpen();
     const registration = this.registration(extensionId);
     const manifest = registration.bundle.manifest;
+    const verification = this.assertCurrentDistribution(registration);
     const grant = await this.#grants.get(vaultId, manifest.id);
     const safeMode = this.#safeModes.has(vaultId);
     const revoked = grant?.revokedAt !== undefined;
@@ -442,10 +731,7 @@ export class NativeExtensionHost {
       state = "revoked";
     } else if (!grant) {
       state = "grant-required";
-    } else if (
-      grant.bundleSha256 !== registration.bundleSha256 ||
-      grant.authorityDigest !== registration.authorityDigest
-    ) {
+    } else if (!grantMatchesRegistration(grant, registration, verification)) {
       state = "stale";
     } else if (!this.runtimeAvailable(manifest)) {
       state = "runtime-unavailable";
@@ -470,7 +756,16 @@ export class NativeExtensionHost {
       declaredCapabilities: manifest.capabilities.map(({ id }) => id),
       grantedCapabilities: grant?.capabilities ? [...grant.capabilities] : [],
       bundleSha256: registration.bundleSha256,
+      packageTreeSha256: registration.packageTreeSha256,
       authorityDigest: registration.authorityDigest,
+      metadataSha256: verification?.metadataSha256 ?? null,
+      publisherId: verification?.publisherId ?? null,
+      publisherKeyId: verification?.publisherKeyId ?? null,
+      metadataExpiresAt: verification?.metadataExpiresAt ?? null,
+      metadataRevokedAt: verification?.metadataRevokedAt ?? null,
+      metadataDelistedAt: verification?.metadataDelistedAt ?? null,
+      distributionTrust: registration.review.distributionTrust,
+      trustProvenance: { ...registration.review.trustProvenance },
       safeMode,
       revoked,
       active,
@@ -487,6 +782,14 @@ export class NativeExtensionHost {
     const registration = this.registration(extensionId);
     const manifest = registration.bundle.manifest;
     await this.assertExecutable(vaultId, registration);
+    const entrypoint = registration.entrypoint;
+    if (!entrypoint) {
+      throw new NativeExtensionError(
+        "runtime-unavailable",
+        "Verified native extension bytes have no production evaluator; execution is fail-closed.",
+        { vaultId, operation: "execute" },
+      );
+    }
     const key = this.invocationKey(vaultId, manifest.id);
     if (this.#active.has(key)) {
       throw new NativeExtensionError(
@@ -563,9 +866,7 @@ export class NativeExtensionHost {
       teardownCallbacks,
       () => terminated,
     );
-    const extensionResult = Promise.resolve().then(() =>
-      registration.bundle.entrypoint(context, input),
-    );
+    const extensionResult = Promise.resolve().then(() => entrypoint(context, input));
     const outcome = await new Promise<{ ok: true; value: Output } | { ok: false; error: unknown }>(
       (resolve) => {
         resolveOutcome = resolve;
@@ -664,6 +965,64 @@ export class NativeExtensionHost {
     this.#active.clear();
   }
 
+  private assertCurrentDistribution(
+    registration: Registration,
+  ): NativeExtensionVerification | null {
+    if (!registration.verification) {
+      return null;
+    }
+    try {
+      const current = registration.marketplaceCatalog
+        ? (() => {
+            const key = `${registration.bundle.manifest.id}\u0000${registration.bundle.manifest.version}`;
+            const currentCatalog = verifyNativeExtensionMarketplaceCatalog(
+              registration.marketplaceCatalog,
+              {
+                trustedPublishers: registration.verification?.trustedPublishers ?? [],
+                trustedCatalogRoots: registration.trustedCatalogRoots,
+                bundleBytesByEntry: new Map([[key, registration.bundle.bundleBytes]]),
+                selectedEntryKey: key,
+                now: this.#now(),
+                packageTreeSha256ByEntry: new Map([[key, registration.packageTreeSha256]]),
+                ...(registration.catalogStateStore === null
+                  ? {}
+                  : { stateStore: registration.catalogStateStore }),
+              },
+            );
+            const selected = currentCatalog[0];
+            if (!selected) {
+              throw new Error("Installed extension is not present in its marketplace catalog.");
+            }
+            return selected;
+          })()
+        : verifyNativeExtensionBundle(registration.verification.metadata, registration.bundle, {
+            trustedPublishers: registration.verification.trustedPublishers,
+            now: this.#now(),
+          });
+      if (
+        current.metadataSha256 !== registration.review.trustProvenance.metadataSha256 ||
+        current.bundleSha256 !== registration.bundleSha256 ||
+        current.packageTreeSha256 !== registration.packageTreeSha256 ||
+        current.authorityDigest !== registration.authorityDigest ||
+        current.marketplaceCatalogRevision !==
+          registration.review.trustProvenance.marketplaceCatalogRevision ||
+        current.marketplaceCatalogSha256 !==
+          registration.review.trustProvenance.marketplaceCatalogSha256 ||
+        current.marketplaceCatalogRootFingerprint !==
+          registration.review.trustProvenance.marketplaceCatalogRootFingerprint
+      ) {
+        throw new Error("Verified native extension distribution changed after registration.");
+      }
+      return current;
+    } catch (error) {
+      throw new NativeExtensionError(
+        "distribution-untrusted",
+        error instanceof Error ? error.message : "Native extension distribution is untrusted.",
+        { cause: error },
+      );
+    }
+  }
+
   private async assertExecutable(vaultId: string, registration: Registration): Promise<void> {
     const manifest = registration.bundle.manifest;
     if (this.#safeModes.has(vaultId)) {
@@ -672,6 +1031,7 @@ export class NativeExtensionHost {
       });
     }
     this.assertRuntimeAvailable(manifest);
+    const verification = this.assertCurrentDistribution(registration);
     const grant = await this.#grants.get(vaultId, manifest.id);
     if (!grant) {
       throw new NativeExtensionError(
@@ -687,10 +1047,7 @@ export class NativeExtensionHost {
         vaultId,
       });
     }
-    if (
-      grant.bundleSha256 !== registration.bundleSha256 ||
-      grant.authorityDigest !== registration.authorityDigest
-    ) {
+    if (!grantMatchesRegistration(grant, registration, verification)) {
       throw new NativeExtensionError(
         "stale-grant",
         "Native extension grant is stale for the installed bundle or authority declaration.",
@@ -740,6 +1097,7 @@ export class NativeExtensionHost {
           { capability, operation, vaultId },
         );
       }
+      const verification = this.assertCurrentDistribution(registration);
       const grant = await this.#grants.get(vaultId, manifest.id);
       if (!grant || grant.revokedAt !== undefined) {
         throw new NativeExtensionError(
@@ -750,10 +1108,7 @@ export class NativeExtensionHost {
           { capability, operation, vaultId },
         );
       }
-      if (
-        grant.bundleSha256 !== registration.bundleSha256 ||
-        grant.authorityDigest !== registration.authorityDigest
-      ) {
+      if (!grantMatchesRegistration(grant, registration, verification)) {
         throw new NativeExtensionError(
           "stale-grant",
           "Native extension capability grant is stale.",

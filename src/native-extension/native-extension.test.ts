@@ -13,10 +13,15 @@ import { portableSummaryFixture } from "../../fixtures/native-extensions/portabl
 import type { VaultMutationPort } from "../kernel/ports";
 import type { NativeExtensionError } from "./errors";
 import { FileNativeExtensionGrantStore, InMemoryNativeExtensionGrantStore } from "./grants";
-import { NativeExtensionHost } from "./host";
+import type { NativeExtensionHost } from "./host";
 import { nativeExtensionCapabilityDefinitions, parseNativeExtensionManifest } from "./manifest";
 import { bindNativeVaultPort, type NativeVaultPort } from "./ports";
-import { defineNativeExtension, type NativeExtensionBundle } from "./sdk";
+import {
+  createNativeExtensionTestHost,
+  defineNativeExtensionForTest,
+  type NativeExtensionTestBundle,
+  type NativeExtensionTestEntrypoint,
+} from "./test-support";
 
 const vaultId = "vault-a";
 const otherVaultId = "vault-b";
@@ -69,17 +74,17 @@ function hostWith(
   port: NativeVaultPort,
   options: Partial<ConstructorParameters<typeof NativeExtensionHost>[0]> = {},
 ): NativeExtensionHost {
-  return new NativeExtensionHost({ ports: { vault: port }, ...options });
+  return createNativeExtensionTestHost({ ports: { vault: port }, ...options });
 }
 
 function bundle<Input = unknown, Output = unknown>(
   id: string,
   capabilities: string[],
-  entrypoint: NativeExtensionBundle<Input, Output>["entrypoint"],
+  entrypoint: NativeExtensionTestEntrypoint<Input, Output>,
   target: "portable" | "desktop" = "portable",
   bytes = `bundle:${id}:1`,
-): NativeExtensionBundle<Input, Output> {
-  return defineNativeExtension({
+): NativeExtensionTestBundle<Input, Output> {
+  return defineNativeExtensionForTest({
     manifest: manifest(id, capabilities, target),
     bundleBytes: new TextEncoder().encode(bytes),
     entrypoint,
@@ -151,6 +156,8 @@ describe("native extension manifest and capability host", () => {
     host.register(changedBytes);
     expect(await host.inspect(vaultId, "upgrade")).toMatchObject({ state: "stale" });
     await expectCode(host.execute(vaultId, "upgrade", undefined), "stale-grant");
+    await host.grant(vaultId, "upgrade");
+    expect(await host.inspect(vaultId, "upgrade")).toMatchObject({ state: "granted" });
 
     const authorityGrowth = bundle(
       "upgrade",
@@ -217,6 +224,8 @@ describe("native extension manifest and capability host", () => {
     await expectCode(host.execute(vaultId, "lifecycle", undefined), "revoked");
     const stored = await store.get(vaultId, "lifecycle");
     expect(stored?.revokedAt).toEqual(expect.any(String));
+    await host.grant(vaultId, "lifecycle");
+    expect((await host.inspect(vaultId, "lifecycle")).state).toBe("granted");
     await host.close();
   });
 
@@ -371,11 +380,21 @@ describe("native extension manifest and capability host", () => {
       const filePath = path.join(root, "application", "native-grants.v1.json");
       const store = new FileNativeExtensionGrantStore(filePath);
       const grant = {
-        grantVersion: 1 as const,
+        grantVersion: 2 as const,
         vaultId,
         extensionId: "portable",
         bundleSha256: "a".repeat(64),
+        packageTreeSha256: "a".repeat(64),
         authorityDigest: "b".repeat(64),
+        distributionTrust: "unsigned-development" as const,
+        metadataSha256: null,
+        publisherId: null,
+        publisherKeyId: null,
+        publisherFingerprint: null,
+        metadataIssuedAt: null,
+        metadataExpiresAt: null,
+        metadataRevokedAt: null,
+        metadataDelistedAt: null,
         capabilities: ["vault.read" as const],
         grantedAt: "2026-08-12T00:00:00.000Z",
       };

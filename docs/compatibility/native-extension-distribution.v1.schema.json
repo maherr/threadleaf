@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://threadleaf.org/schemas/native-extension-distribution.v1.json",
+  "title": "Threadleaf native extension signed distribution metadata and catalog v1",
+  "oneOf": [{ "$ref": "#/$defs/signedManifest" }, { "$ref": "#/$defs/catalog" }],
+  "$defs": {
+    "publisherKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publisherId", "keyId", "algorithm", "publicKey", "fingerprint"],
+      "properties": {
+        "publisherId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "algorithm": { "const": "ed25519" },
+        "publicKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "minLength": 59,
+          "maxLength": 59,
+          "description": "Exactly 44 bytes of canonical Ed25519 DER SubjectPublicKeyInfo, unpadded base64url."
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "trustAnchorSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "publishers"],
+      "properties": {
+        "version": { "const": 1 },
+        "publishers": {
+          "type": "array",
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/trustAnchorPublisherKey" }
+        },
+        "catalogRoots": {
+          "type": "array",
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/trustAnchorPublisherKey" }
+        }
+      }
+    },
+    "trustAnchorPublisherKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publisherId", "keyId", "algorithm", "publicKey", "fingerprint"],
+      "properties": {
+        "publisherId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "algorithm": { "const": "ed25519" },
+        "publicKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "minLength": 59,
+          "maxLength": 59
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "revokedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "rotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rotationVersion", "previous", "effectiveAt", "signature"],
+      "properties": {
+        "rotationVersion": { "const": 1 },
+        "previous": { "$ref": "#/$defs/publisherKey" },
+        "effectiveAt": { "$ref": "#/$defs/timestamp" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "minLength": 86,
+      "maxLength": 86,
+      "description": "Exactly 64 bytes of Ed25519 signature, unpadded base64url."
+    },
+    "manifest": {
+      "$ref": "./native-extension-manifest.v1.schema.json"
+    },
+    "signedManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distributionVersion",
+        "manifest",
+        "bundleSha256",
+        "authorityDigest",
+        "publisher",
+        "issuedAt",
+        "expiresAt",
+        "signature"
+      ],
+      "properties": {
+        "distributionVersion": { "const": 1 },
+        "manifest": { "$ref": "#/$defs/manifest" },
+        "bundleSha256": { "$ref": "#/$defs/digest" },
+        "packageTreeSha256": {
+          "$ref": "#/$defs/digest",
+          "description": "Digest of the complete installed package tree, including package metadata."
+        },
+        "authorityDigest": { "$ref": "#/$defs/digest" },
+        "publisher": { "$ref": "#/$defs/publisherKey" },
+        "issuedAt": { "$ref": "#/$defs/timestamp" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" },
+        "revokedAt": { "$ref": "#/$defs/timestamp" },
+        "delistedAt": { "$ref": "#/$defs/timestamp" },
+        "keyRotation": { "$ref": "#/$defs/rotation" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    },
+    "catalogEntryState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extensionId", "version", "at"],
+      "properties": {
+        "extensionId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "bundleSha256": { "$ref": "#/$defs/digest" },
+        "authorityDigest": { "$ref": "#/$defs/digest" },
+        "packageTreeSha256": { "$ref": "#/$defs/digest" },
+        "metadataSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "tombstone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extensionId",
+        "version",
+        "at",
+        "bundleSha256",
+        "authorityDigest",
+        "packageTreeSha256",
+        "metadataSha256",
+        "tombstonedAt"
+      ],
+      "properties": {
+        "extensionId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "bundleSha256": { "$ref": "#/$defs/digest" },
+        "authorityDigest": { "$ref": "#/$defs/digest" },
+        "packageTreeSha256": { "$ref": "#/$defs/digest" },
+        "metadataSha256": { "$ref": "#/$defs/digest" },
+        "tombstonedAt": { "$ref": "#/$defs/timestamp" },
+        "reason": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "successor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["successorVersion", "previous", "next", "issuedAt", "effectiveAt", "signature"],
+      "properties": {
+        "successorVersion": { "const": 1 },
+        "previous": { "$ref": "#/$defs/publisherKey" },
+        "next": { "$ref": "#/$defs/publisherKey" },
+        "issuedAt": { "$ref": "#/$defs/timestamp" },
+        "effectiveAt": { "$ref": "#/$defs/timestamp" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogVersion",
+        "revision",
+        "generatedAt",
+        "expiresAt",
+        "catalogRoot",
+        "entriesSha256",
+        "entries",
+        "revocations",
+        "delistings",
+        "successorPath",
+        "publisherSuccessors",
+        "signature"
+      ],
+      "properties": {
+        "catalogVersion": { "const": 1 },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "generatedAt": { "$ref": "#/$defs/timestamp" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" },
+        "catalogRoot": { "$ref": "#/$defs/publisherKey" },
+        "entriesSha256": { "$ref": "#/$defs/digest" },
+        "entries": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/signedManifest" }
+        },
+        "revocations": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/catalogEntryState" }
+        },
+        "delistings": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/catalogEntryState" }
+        },
+        "tombstones": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/tombstone" }
+        },
+        "successorPath": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/successor" }
+        },
+        "publisherSuccessors": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/successor" }
+        },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    }
+  }
+}

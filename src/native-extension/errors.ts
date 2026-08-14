@@ -17,6 +17,7 @@ export const nativeExtensionErrorCodes = [
   "teardown",
   "extension-failed",
   "host-closed",
+  "distribution-untrusted",
 ] as const;
 
 export type NativeExtensionErrorCode = (typeof nativeExtensionErrorCodes)[number];

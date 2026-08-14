@@ -35,40 +35,49 @@ export interface NativeExtensionContext {
   onTeardown(callback: () => void | Promise<void>): () => void;
 }
 
-export type NativeExtensionEntrypoint<Input = unknown, Output = unknown> = (
+/** Type-only compatibility alias for fixture entrypoints. Production bundles remain byte-only. */
+export type NativeExtensionEntrypoint = (
   context: NativeExtensionContext,
-  input: Input,
-) => Output | Promise<Output>;
+  input: unknown,
+) => unknown | Promise<unknown>;
 
-export interface NativeExtensionBundle<Input = unknown, Output = unknown> {
+/**
+ * A production bundle is bytes plus its manifest. It deliberately has no callable entrypoint:
+ * the production host must either evaluate verified bytes through a future runtime adapter or
+ * fail closed. Function-injected fixtures live in the private test-support module.
+ */
+export interface NativeExtensionBundle {
   manifest: NativeExtensionManifest;
   bundleBytes: Uint8Array;
-  entrypoint: NativeExtensionEntrypoint<Input, Output>;
+  /** Optional digest of the complete installed package tree, including metadata. */
+  packageTreeSha256?: string;
 }
 
-export interface NativeExtensionDefinitionOptions<Input = unknown, Output = unknown> {
+export interface NativeExtensionDefinitionOptions {
   manifest: NativeExtensionManifest | unknown;
   bundleBytes: Uint8Array;
-  entrypoint: NativeExtensionEntrypoint<Input, Output>;
+  packageTreeSha256?: string;
 }
 
-/** Construct the portable SDK bundle consumed by the capability host. */
-export function defineNativeExtension<Input = unknown, Output = unknown>(
-  options: NativeExtensionDefinitionOptions<Input, Output>,
-): NativeExtensionBundle<Input, Output> {
+/** Construct the byte-only production bundle consumed by the capability host. */
+export function defineNativeExtension(
+  options: NativeExtensionDefinitionOptions,
+): NativeExtensionBundle {
   return {
     manifest: parseNativeExtensionManifest(options.manifest),
     bundleBytes: new Uint8Array(options.bundleBytes),
-    entrypoint: options.entrypoint,
+    ...(options.packageTreeSha256 === undefined
+      ? {}
+      : { packageTreeSha256: options.packageTreeSha256 }),
   };
 }
 
 /** Restrict a definition at the type boundary for first-party portable workflows. */
-export function definePortableExtension<Input = unknown, Output = unknown>(
-  options: NativeExtensionDefinitionOptions<Input, Output> & {
+export function definePortableExtension(
+  options: NativeExtensionDefinitionOptions & {
     manifest: NativeExtensionManifest;
   },
-): NativeExtensionBundle<Input, Output> {
+): NativeExtensionBundle {
   const bundle = defineNativeExtension(options);
   if (!bundle.manifest.portable || bundle.manifest.desktopOnly) {
     throw new Error(
