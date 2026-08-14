@@ -3436,6 +3436,183 @@ describe("attachment move planning", () => {
     expect(plan.writes.some((write) => write.path === unrelatedPath)).toBe(false);
   });
 
+  it("keeps source-like unmappable labels dormant when every definition is definitely non-source", async () => {
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes),
+      fs.writeFile(path.join(vaultPath, "Assets", "other.pdf"), pdfBytes),
+    ]);
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const notes: Array<{ path: string; content: string; target: string }> = [];
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const [name, usage] of [
+        ["one-backslash", "\\[[report]]"],
+        ["wrapped", ["[[report", "]"].join(ending)],
+      ] as const) {
+        for (const [definition, target] of [
+          ["[report]: https://example.test/report.pdf", "https://example.test/report.pdf"],
+          ["[report]: ../Assets/other.pdf", "../Assets/other.pdf"],
+        ] as const) {
+          const suffix = ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr";
+          const targetName = target.startsWith("http") ? "external" : "unrelated";
+          const content = [usage, "", definition].join(ending);
+          const note = {
+            path: `Notes/Source-like dormant ${name}-${targetName}-${suffix}.md`,
+            content,
+            target,
+          };
+          notes.push(note);
+          await fs.writeFile(path.join(vaultPath, note.path), content, "utf8");
+          expect(renderer.render(content), note.path).toContain(`href="${target}"`);
+          expect(
+            parseMarkdownReferenceUsages(content).filter((usage) => usage.sourceMappable === false),
+            note.path,
+          ).toEqual([expect.objectContaining({ label: "report", embed: false, line: 1 })]);
+        }
+      }
+    }
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source-like dormant fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/source-like-dormant.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [], rewrites: [], writes: [] });
+    if (plan.status !== "planned") throw new Error("Expected source-like dormant plan.");
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/source-like-dormant.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(
+      pdfBytes,
+    );
+    await expect(
+      fs.readFile(path.join(vaultPath, "Archive", "source-like-dormant.pdf")),
+    ).resolves.toEqual(pdfBytes);
+    for (const note of notes) {
+      await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(
+        note.content,
+      );
+    }
+  });
+
+  it("rewrites an independent source definition beside an unmatched unrelated renderer event", async () => {
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes),
+      fs.writeFile(path.join(vaultPath, "Assets", "other.pdf"), pdfBytes),
+    ]);
+    const notePath = "Notes/Event-isolated reference.md";
+    const before = [
+      "[[other",
+      "] [visible][asset]",
+      "",
+      "[other]: ../Assets/other.pdf",
+      "[asset]: ../Assets/report.pdf",
+    ].join("\n");
+    const after = before.replace("../Assets/report.pdf", "../Archive/event-isolated.pdf");
+    await fs.writeFile(path.join(vaultPath, notePath), before, "utf8");
+    expect(parseMarkdownReferenceUsages(before)).toEqual([
+      expect.objectContaining({ label: "other", sourceMappable: false, line: 1 }),
+      expect.objectContaining({ label: "asset", line: 2 }),
+    ]);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected event-isolated source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/event-isolated.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected event-isolated plan.");
+    expect(plan.rewrites).toEqual([
+      expect.objectContaining({
+        documentPath: notePath,
+        syntax: "markdown",
+        embed: false,
+        beforeTarget: "../Assets/report.pdf",
+        afterTarget: "../Archive/event-isolated.pdf",
+      }),
+    ]);
+    expect(plan.writes).toEqual([expect.objectContaining({ path: notePath, content: after })]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/event-isolated.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(path.join(vaultPath, notePath), "utf8")).resolves.toBe(after);
+  });
+
+  it("does not authorize a source definition shared with unmatched same-label evidence", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = "Notes/Same-label unmatched reference.md";
+    const before = ["[good][asset]", "[[asset", "]", "", "[asset]: ../Assets/report.pdf"].join(
+      "\n",
+    );
+    await fs.writeFile(path.join(vaultPath, notePath), before, "utf8");
+    const opaqueUsages = parseMarkdownReferenceUsages(before).filter(
+      (usage) => usage.sourceMappable === false,
+    );
+    expect(opaqueUsages).toHaveLength(2);
+    expect(opaqueUsages.every((usage) => usage.label === "asset")).toBe(true);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected same-label evidence fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/same-label-unmatched.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({
+      status: "planned",
+      rewrites: [],
+      writes: [],
+    });
+    if (plan.status !== "planned") throw new Error("Expected same-label evidence plan.");
+    expect(plan.blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ documentPath: notePath, reason: "unsupported" }),
+      ]),
+    );
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/same-label-unmatched.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "blocked" });
+    await expect(fs.readFile(path.join(vaultPath, notePath), "utf8")).resolves.toBe(before);
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(
+      pdfBytes,
+    );
+    await expect(
+      fs.access(path.join(vaultPath, "Archive", "same-label-unmatched.pdf")),
+    ).rejects.toThrow();
+  });
+
   it("blocks renderer-visible unmatched wiki-prefix source evidence without scheduling unsafe writes", async () => {
     await Promise.all([
       fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes),

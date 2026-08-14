@@ -1008,6 +1008,55 @@ describe("Markdown link source parser", () => {
     ]);
   });
 
+  it("isolates an unmatched renderer wiki-prefix event from an independent reference", () => {
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const source = [
+      "[[other",
+      "] [visible][asset]",
+      "",
+      "[other]: ../Assets/other.pdf",
+      "[asset]: ../Assets/report.pdf",
+    ].join("\n");
+
+    expect(renderer.render(source)).toContain('href="../Assets/other.pdf"');
+    expect(renderer.render(source)).toContain('href="../Assets/report.pdf"');
+    const usages = parseMarkdownReferenceUsages(source);
+    expect(usages).toEqual([
+      expect.objectContaining({ label: "other", embed: false, sourceMappable: false, line: 1 }),
+      expect.objectContaining({ label: "asset", embed: false, line: 2 }),
+    ]);
+    expect(usages.find((usage) => usage.label === "asset")?.sourceMappable).not.toBe(false);
+  });
+
+  it("keeps odd escaped wiki-prefix evidence distinct from complete even escapes", () => {
+    const target = "../Assets/report.pdf";
+    for (const { name, slashCount, unmappable } of [
+      { name: "one backslash", slashCount: 1, unmappable: true },
+      { name: "two backslashes", slashCount: 2, unmappable: false },
+      { name: "three backslashes", slashCount: 3, unmappable: true },
+    ]) {
+      const source = [`${"\\".repeat(slashCount)}[[asset]]`, "", `[asset]: ${target}`].join("\n");
+      const opaque = parseMarkdownReferenceUsages(source).filter(
+        (usage) => usage.sourceMappable === false,
+      );
+      expect(opaque, name).toHaveLength(unmappable ? 1 : 0);
+      if (unmappable) {
+        expect(opaque[0], name).toEqual(
+          expect.objectContaining({ label: "asset", embed: false, line: 1 }),
+        );
+      } else {
+        expect(parseMarkdownLinks(source), name).toEqual(
+          expect.arrayContaining([expect.objectContaining({ sourceKind: "wiki" })]),
+        );
+      }
+    }
+  });
+
   it("keeps renderer-visible unmatched wiki-prefix references as unmappable evidence", () => {
     const renderer = new MarkdownIt({
       breaks: false,

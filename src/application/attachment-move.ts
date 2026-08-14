@@ -417,6 +417,9 @@ function referenceDefinitionSafety(
       }
       return false;
     });
+    if (relevantDefinitions.length > 0 && definitionsAreDefinitelyUnrelated) {
+      return { blocker: null, rewriteDefinition: null };
+    }
     if (
       referenceLabelMayIdentifySource(usage.label, sourcePath) ||
       evidence.length > 0 ||
@@ -784,26 +787,37 @@ export async function planBinaryAttachmentMove(
       ),
     );
     const safeReferenceDefinitionTargetRanges = new Set<string>();
-    for (const usage of referenceUsages) {
-      const safety = referenceDefinitionSafety(
+    const referenceSafety = referenceUsages.map((usage) => ({
+      usage,
+      safety: referenceDefinitionSafety(
         documentPath,
         usage,
         referenceDefinitions,
         sourcePath,
         resolver,
         visibleFiles,
-      );
+      ),
+    }));
+    const blockedReferenceLabels = new Set<string>();
+    for (const { usage, safety } of referenceSafety) {
       if (safety.blocker) {
         unresolvedBlockers.push(safety.blocker);
-      } else if (
-        safety.rewriteDefinition &&
-        safety.rewriteDefinition.targetStart !== null &&
-        safety.rewriteDefinition.targetEnd !== null
-      ) {
-        safeReferenceDefinitionTargetRanges.add(
-          `${safety.rewriteDefinition.targetStart}:${safety.rewriteDefinition.targetEnd}`,
-        );
+        blockedReferenceLabels.add(usage.label);
       }
+    }
+    for (const { usage, safety } of referenceSafety) {
+      const rewriteDefinition = safety.rewriteDefinition;
+      if (
+        blockedReferenceLabels.has(usage.label) ||
+        !rewriteDefinition ||
+        rewriteDefinition.targetStart === null ||
+        rewriteDefinition.targetEnd === null
+      ) {
+        continue;
+      }
+      safeReferenceDefinitionTargetRanges.add(
+        `${rewriteDefinition.targetStart}:${rewriteDefinition.targetEnd}`,
+      );
     }
     const candidates: PlannedCandidate[] = [];
     for (const link of parseMarkdownLinks(snapshot.content, maskedContent)) {

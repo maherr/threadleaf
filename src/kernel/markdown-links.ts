@@ -1394,6 +1394,66 @@ function hasUnrecognizedWikiPrefix(source: string, maskedSource: string): boolea
   });
 }
 
+function referenceUsageSignature(
+  usage: RendererReferenceUsageToken | ReferenceUsageCandidate,
+): string {
+  return `${usage.label}\u0000${usage.embed ? "embed" : "link"}`;
+}
+
+/**
+ * Pairs only signatures whose renderer and source totals agree. This prevents
+ * an unmatched lookalike from borrowing a later candidate, while still
+ * letting an independent renderer event retain its physical scanner range.
+ */
+function matchedRendererReferenceUsageCandidates(
+  rendererUsages: readonly RendererReferenceUsageToken[],
+  sourceCandidates: readonly ReferenceUsageCandidate[],
+): Map<number, ReferenceUsageCandidate> {
+  const rendererIndexesBySignature = new Map<string, number[]>();
+  for (const [index, usage] of rendererUsages.entries()) {
+    const signature = referenceUsageSignature(usage);
+    const indexes = rendererIndexesBySignature.get(signature) ?? [];
+    indexes.push(index);
+    rendererIndexesBySignature.set(signature, indexes);
+  }
+  const sourceIndexesBySignature = new Map<string, number[]>();
+  for (const [index, candidate] of sourceCandidates.entries()) {
+    const signature = referenceUsageSignature(candidate);
+    const indexes = sourceIndexesBySignature.get(signature) ?? [];
+    indexes.push(index);
+    sourceIndexesBySignature.set(signature, indexes);
+  }
+
+  const matches: Array<{ rendererIndex: number; sourceIndex: number }> = [];
+  for (const [signature, rendererIndexes] of rendererIndexesBySignature) {
+    const sourceIndexes = sourceIndexesBySignature.get(signature) ?? [];
+    if (rendererIndexes.length !== sourceIndexes.length) continue;
+    for (const [occurrence, rendererIndex] of rendererIndexes.entries()) {
+      const sourceIndex = sourceIndexes[occurrence];
+      if (sourceIndex !== undefined) matches.push({ rendererIndex, sourceIndex });
+    }
+  }
+  matches.sort((left, right) => left.rendererIndex - right.rendererIndex);
+
+  const crossedRendererIndexes = new Set<number>();
+  for (let left = 0; left < matches.length; left += 1) {
+    for (let right = left + 1; right < matches.length; right += 1) {
+      if ((matches[left]?.sourceIndex ?? -1) > (matches[right]?.sourceIndex ?? -1)) {
+        crossedRendererIndexes.add(matches[left]?.rendererIndex ?? -1);
+        crossedRendererIndexes.add(matches[right]?.rendererIndex ?? -1);
+      }
+    }
+  }
+
+  const candidatesByRendererIndex = new Map<number, ReferenceUsageCandidate>();
+  for (const match of matches) {
+    if (crossedRendererIndexes.has(match.rendererIndex)) continue;
+    const candidate = sourceCandidates[match.sourceIndex];
+    if (candidate) candidatesByRendererIndex.set(match.rendererIndex, candidate);
+  }
+  return candidatesByRendererIndex;
+}
+
 function rendererMappedReferenceUsages(
   content: string,
   maskedContent: string,
@@ -1408,39 +1468,28 @@ function rendererMappedReferenceUsages(
         ? parseReferenceUsageCandidates(logical.content, logicalMasked.content)
         : [];
     const tokenContentMatches = logicalMasked.content === context.content;
-    const exactRendererSequence =
-      tokenContentMatches &&
-      logicalUsages.length === context.usages.length &&
-      logicalUsages.every(
-        (usage, index) =>
-          usage.label === context.usages[index]?.label &&
-          usage.embed === context.usages[index]?.embed,
-      );
-    if (!exactRendererSequence) {
-      // Do not let a same-label lookalike steal a later renderer token. A
-      // complete wiki span has already been masked, so a remaining wiki-like
-      // opener makes every unmatched renderer token opaque evidence. This
-      // covers physical hard wraps and one-line escaped or incomplete openers
-      // without changing ordinary independent reference candidates.
-      const hasUnrecognizedPrefix = hasUnrecognizedWikiPrefix(
-        logical.content,
-        logicalMasked.content,
-      );
-      if (hasUnrecognizedPrefix) {
-        usages.push(
-          ...context.usages.map((expected) => ({
+    const hasUnrecognizedPrefix = hasUnrecognizedWikiPrefix(logical.content, logicalMasked.content);
+    const candidatesByRendererIndex = tokenContentMatches
+      ? matchedRendererReferenceUsageCandidates(context.usages, logicalUsages)
+      : new Map<number, ReferenceUsageCandidate>();
+    if (candidatesByRendererIndex.size !== context.usages.length && !hasUnrecognizedPrefix) {
+      continue;
+    }
+    for (const [rendererIndex, expected] of context.usages.entries()) {
+      const usage = candidatesByRendererIndex.get(rendererIndex);
+      if (!usage) {
+        if (hasUnrecognizedPrefix) {
+          usages.push({
             label: expected.label,
             embed: expected.embed,
             position: context.start,
             end: context.end,
             line: context.line,
             sourceMappable: false,
-          })),
-        );
+          });
+        }
+        continue;
       }
-      continue;
-    }
-    for (const usage of logicalUsages) {
       if (!logicalRangeSpansRendererSegments(logical.segments, usage.position, usage.end)) {
         // Existing physical-line scanning owns ordinary source ranges. This
         // path is deliberately only the renderer-derived multiline extension.
