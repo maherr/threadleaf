@@ -1,6 +1,6 @@
 # Community theme visual matrix v1
 
-**Last updated:** 2026-08-14T10:31:39-04:00
+**Last updated:** 2026-08-14T11:33:08-04:00
 
 This is a contained-loader compatibility fixture, not a theme store. The matrix uses three
 permissively licensed, open community themes that exercise different CSS shapes, plus a fourth,
@@ -175,8 +175,10 @@ distinct issues, not one:
 
 **Fix.** Two changes in `src/renderer/styles.css`:
 
-1. Map `--interactive` honestly to the same real accent Threadleaf already uses everywhere else:
-   `--interactive: var(--accent)`.
+1. Map `--interactive` honestly to the same real accent Threadleaf already uses everywhere else.
+   At `:root` that is `--interactive: var(--interactive-accent)`; the body-level re-declaration
+   (item 2 below) instead reads `var(--accent)`, for the reason given under
+   [Body-level compat re-anchoring](#body-level-compat-re-anchoring-and-its-two-exclusions).
 2. Add a `body { }` token block re-declaring `--icon-color`, `--canvas`, `--surface*`, `--ink*`,
    `--line*`, `--accent-soft`, `--interactive`, `--signal*`, and `--mono` with the identical
    formulas already used at `:root`, so each is re-evaluated at `body` -- where a theme's own
@@ -204,7 +206,7 @@ below for the full mechanism):
 **Verified live, post-fix.** The originally-recorded 0.00 case now measures real Sanctum colours
 (`rgb(22,22,22)` vs `rgb(197,65,40)`) at dE=39.26. Sanctum's thin-state active/inactive pair --
 also silently broken by the same html-vs-body mechanism via `--accent-soft`, though never
-previously called out as its own finding -- now measures dE=13.12, clearing >= 11 outright. See
+previously called out as its own finding -- now measures dE=12.96, clearing >= 11 outright. See
 [Live verification status](#live-verification-status) for the full, current receipt table across
 all four subjects.
 
@@ -224,9 +226,11 @@ on `body` (even without `!important`) always wins there regardless of what `:roo
 direct declaration on an element always beats whatever it would otherwise have inherited from a
 parent, `!important` or not:
 
-- **`--accent`, `--accent-strong`** (and `--accent-soft`'s and `--interactive`'s own accent half,
-  which read `var(--accent)` rather than `var(--interactive-accent)` for exactly this reason): the
-  accessibility "Accent" preference pins these with `!important` on `:root[data-threadleaf-accessibility="true"]`.
+- **`--accent`, `--accent-strong`** (and `--accent-soft`'s own accent half, which reads
+  `var(--accent)` rather than `var(--interactive-accent)` at both `:root` and `body` for exactly
+  this reason; the `body`-level `--interactive` does too, though `:root`'s own `--interactive`
+  stays `var(--interactive-accent)`, unchanged): the accessibility "Accent" preference pins these
+  with `!important` on `:root[data-threadleaf-accessibility="true"]`.
   A theme that sets `--interactive-accent` directly on `body.theme-light`/`body.theme-dark`
   (Minimal does; Sanctum and Wikipedia do not) would otherwise silently override the user's chosen
   accessibility accent the moment these are re-evaluated at `body`.
@@ -301,10 +305,11 @@ Every subject measures identical `dark-high-contrast`/`light-high-contrast` figu
 accessibility high-contrast override is genuinely theme-independent now that the `body { }` compat
 layer correctly stands down for it (see
 [Body-level compat re-anchoring](#body-level-compat-re-anchoring-and-its-two-exclusions) above).
-`wikipedia`/`default` and `minimal`/`sanctum` pairing up on non-high-contrast light figures is
-coincidental convergence of this run's specific colours, not a structural guarantee; dark-laptop's
-`thinState` genuinely differs per subject (12.90 to 14.97), reflecting each theme's own
-`--surface-sunken` now correctly flowing through where it did not before this lane.
+`wikipedia`/`default` pairing up exactly on non-high-contrast light figures (40.86/12.38 for both)
+is coincidental convergence of this run's specific colours, not a structural guarantee -- minimal
+(40.38/12.46) and sanctum (39.26/12.96) each measure their own distinct figures instead, and
+dark-laptop's `thinState` genuinely differs per subject (12.90 to 14.97), reflecting each theme's
+own `--surface-sunken` now correctly flowing through where it did not before this lane.
 
 Stability evidence: `community-theme:update` (writes fresh baselines; the figures above), then a
 real, non-update `community-theme:check` comparing an independent fresh capture against those

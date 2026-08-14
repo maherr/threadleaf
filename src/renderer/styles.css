@@ -105,10 +105,11 @@
  * --accent-soft and --interactive have the identical exposure through their own
  * var(--interactive-accent): both stay re-declared here (--accent-soft's
  * --background-primary half genuinely needs to be theme-aware, which is the entire
- * Sanctum fix below, and --interactive is this file's own compat mapping), but both
- * read var(--accent) instead of var(--interactive-accent) so their accent half
- * inherits the same pinned value --accent itself would, rather than re-opening the
- * same leak one property over.
+ * Sanctum fix below, and --interactive is this file's own compat mapping), and this
+ * body-level pair reads var(--accent) instead of var(--interactive-accent) so their
+ * accent half inherits the same pinned value --accent itself would, rather than
+ * re-opening the same leak one property over. This swap is body-only: --interactive's
+ * own :root declaration above is untouched and stays var(--interactive-accent).
  *
  * The same shape of conflict applies to the accessibility "High contrast" preference,
  * which pins this same set of canvas, surface, ink, line, and signal tokens with
