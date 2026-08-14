@@ -72,12 +72,17 @@ after an earlier scan.
 ## 3. CI green
 
 - [ ] Confirm `.github/workflows/ci.yml` ("Native package CI") runs on the pushed branch and every
-      job passes: `integrity` (installer lifecycle integrity fixture, `actionlint`, and package
-      contract validation), `linux`, `macos` (both `arm64` and `x64`), and `windows`.
+      job passes: `integrity` (`pnpm run test:installer-lifecycle-config`, validating the lifecycle
+      workflow files and the package contract), `linux`, `macos` (both `arm64` and `x64`), and
+      `windows`.
 - [ ] Confirm the Linux job's committed visual regression matrix step passes, not only the package
       build.
-- [ ] Confirm the macOS and Windows jobs' installer lifecycle evidence uploads (logs, screenshots,
-      manifests) are present even if a lifecycle step failed, and read them if so.
+- [ ] Confirm the Windows job's and the Intel-macOS matrix leg's installer lifecycle evidence
+      uploads (logs, screenshots, manifests) are present even if a lifecycle step failed, and read
+      them if so. The ARM64 macOS leg does not run this lifecycle gate.
+- [ ] Separately, run `actionlint` locally against both workflow files; `docs/releases.md` notes
+      Threadleaf was checked against actionlint 1.7.12 this way, and it is not currently a step
+      inside the CI job itself.
 - [ ] Do not proceed to tagging or release while any required job is red.
 
 ## 4. Tag
@@ -159,8 +164,10 @@ after an earlier scan.
 - [ ] Before posting anywhere, re-run `docs/launch/comparison.md`'s "Checking this yourself"
       commands against the tagged commit and confirm they still pass.
 - [ ] After posting, watch the issue tracker and discussions (once enabled) for the first real user
-      reports. `docs/roadmap.md` Phase 6 depends on exactly this feedback loop for its own exit
-      criteria; a launch is the start of that phase, not the end of the checklist.
+      reports. `docs/roadmap.md` Phase 6, "Ecosystem and public launch," is the roadmap phase this
+      launch begins; its own exit gate is that public releases are safe to recommend without
+      maintainer caveats, which this checklist alone does not establish. A launch is the start of
+      that phase, not the end of this checklist.
 
 ## Final gate
 

@@ -30,7 +30,9 @@ Every write to a user's vault goes through a durable, no-clobber writer with a c
 journal, and an external edit becomes an explicit, labeled conflict copy instead of a silent
 overwrite. This is a stated project invariant, not an incidental property: see
 [`AGENTS.md`](../../AGENTS.md) ("User-vault mutations must be explicit, atomic, recoverable, and
-tested under interruption") and the [project charter](../charter.md) invariants 2, 3, and 6. The
+tested under interruption"), the [project charter](../charter.md)'s invariant 6 ("Every write path
+is tested under interruption before it reaches user vaults"), and its "what better means" list,
+which names "atomic writes, recovery, snapshots, and explicit conflict handling" outright. The
 [roadmap's Phase 1 exit gate](../roadmap.md) records "58 automated tests cover the interruption
 matrix, external races, single and multi-file recovery, live watcher delivery and fallbacks,
 operation attribution, and index equivalence through the real writer-to-watcher seam." The same
@@ -74,8 +76,8 @@ requirement" under "what better means" and "offline operation remains complete" 
 background network check; checking, downloading, and installing an update are three separate,
 explicit user actions, and unsigned or development builds never initialize the update provider at
 all (see [`docs/releases.md`](../releases.md), "Manual signed updates"). The privacy-safe support
-bundle described in [`docs/beta-feedback.md`](../beta-feedback.md) is saved locally and "never
-uploads anything."
+bundle described in [`docs/beta-feedback.md`](../beta-feedback.md) is saved locally, and "nothing is
+uploaded."
 
 ### Two smaller things worth knowing about
 
@@ -148,8 +150,9 @@ Threadleaf's own charter lists what the project is deliberately not trying to do
 The compatibility evidence itself has a stated boundary too. Per the
 [compatibility contract](../compatibility/contract.md), "proprietary application code, copied
 assets, and decompiled bundled resources are out of scope" for how Threadleaf builds its
-compatibility evidence; only public API documentation, open formats, open-source plugin code,
-independently written fixtures, and reduced user reports count.
+compatibility evidence. Only public API documentation and permissively licensed type definitions,
+open file-format specifications, open-source plugin code, independently written fixtures, and
+user-submitted failure reports that have been reduced to reproducible fixtures count as evidence.
 
 ## Checking this yourself
 
