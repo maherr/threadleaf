@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import type { LivePreviewMappingScanStats } from "./live-preview";
 import {
   buildLivePreviewMapping,
   measureLivePreviewMapping,
@@ -7,7 +8,6 @@ import {
   resolveInlineTransclusions,
   subtractSourceRanges,
 } from "./live-preview";
-import type { LivePreviewMappingScanStats } from "./live-preview";
 import { markdownHtmlRanges } from "./markdown-extensions";
 
 interface FixtureToken {

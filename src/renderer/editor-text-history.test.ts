@@ -4,8 +4,8 @@ import {
   applyEditorTextHistoryEntry,
   boundedEditorTextHistory,
   captureEditorTextHistoryEntry,
-  maxEditorTextHistoryEntries,
   type EditorTextHistoryChange,
+  maxEditorTextHistoryEntries,
 } from "./editor-text-history";
 
 describe("external editor-text history deltas", () => {

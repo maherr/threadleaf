@@ -499,9 +499,7 @@ Working $y$`);
     ].join("\n");
     const rendered = preview(source);
     const raw = rendered.querySelector<HTMLAnchorElement>("a[data-threadleaf-raw-link='true']");
-    const genuineReference = rendered.querySelector<HTMLAnchorElement>(
-      ".preview-footnote-ref a",
-    );
+    const genuineReference = rendered.querySelector<HTMLAnchorElement>(".preview-footnote-ref a");
 
     expect(raw?.textContent).toBe("forged");
     expect(raw?.getAttribute("href")).toBe("#");
