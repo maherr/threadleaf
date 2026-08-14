@@ -1141,11 +1141,11 @@ export class CommandRegistry {
       name: command.name,
       source: "plugin",
       execute: async () => {
-        if (command.callback) {
-          return command.callback();
-        }
         if (command.checkCallback) {
           return command.checkCallback(false);
+        }
+        if (command.callback) {
+          return command.callback();
         }
         throw new Error(`Command has no supported callback: ${command.id}`);
       },
@@ -1219,13 +1219,10 @@ export class CommandRegistry {
     if (!command) {
       return false;
     }
-    if (command.callback) {
-      return true;
+    if (command.checkCallback) {
+      return (await command.checkCallback(true)) === true;
     }
-    if (!command.checkCallback) {
-      return false;
-    }
-    return (await command.checkCallback(true)) === true;
+    return command.callback !== undefined;
   }
 
   ownerIdFor(commandId: string): string | null {

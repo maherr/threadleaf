@@ -75,6 +75,32 @@ describe("Obsidian command registry compatibility", () => {
     expect(calls).toEqual([true, true, false]);
   });
 
+  it("gives checkCallback precedence over callback for availability and execution", async () => {
+    const registry = new CommandRegistry();
+    const callback = vi.fn();
+    const calls: boolean[] = [];
+    let enabled = false;
+    registry.register("fixture", {
+      id: "fixture:both-callbacks",
+      name: "Both callbacks",
+      callback,
+      checkCallback: (checking) => {
+        calls.push(checking);
+        return enabled;
+      },
+    });
+
+    expect(registry.executeCommandById("fixture:both-callbacks")).toBe(false);
+    expect(await registry.canRun("fixture:both-callbacks")).toBe(false);
+    expect(calls).toEqual([true, true]);
+    expect(callback).not.toHaveBeenCalled();
+
+    enabled = true;
+    expect(registry.executeCommandById("fixture:both-callbacks")).toBe(true);
+    expect(calls).toEqual([true, true, true, false]);
+    expect(callback).not.toHaveBeenCalled();
+  });
+
   it("keeps same-owner replacements current and rejects a duplicate ID from another owner", () => {
     const registry = new CommandRegistry();
     const first = vi.fn();
