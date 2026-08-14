@@ -31,6 +31,7 @@ import {
   AbstractInputSuggest,
   AbstractTextComponent,
   BaseComponent,
+  Keymap as BaseKeymap,
   ButtonComponent,
   ColorComponent,
   DropdownComponent,
@@ -40,7 +41,6 @@ import {
   FileView,
   FuzzySuggestModal,
   ItemView,
-  Keymap,
   MarkdownView,
   Modal,
   MomentFormatComponent,
@@ -1122,7 +1122,7 @@ export class MetadataCache {
 }
 
 export class CommandRegistry {
-  private readonly commands = new Map<string, RegisteredCommand>();
+  private readonly registeredCommands = new Map<string, RegisteredCommand>();
   readonly actions: ActionRegistry;
 
   constructor(actions = new ActionRegistry()) {
@@ -1130,7 +1130,7 @@ export class CommandRegistry {
   }
 
   register(ownerId: string, command: Command): () => void {
-    const previous = this.commands.get(command.id);
+    const previous = this.registeredCommands.get(command.id);
     if (previous && previous.ownerId !== ownerId) {
       throw new Error(`Command already registered: ${command.id}`);
     }
@@ -1151,23 +1151,61 @@ export class CommandRegistry {
       },
     });
     const registered = { ...command, ownerId, releaseAction };
-    this.commands.set(command.id, registered);
+    this.registeredCommands.set(command.id, registered);
     return () => {
-      if (this.commands.get(command.id) === registered) {
-        this.commands.delete(command.id);
+      if (this.registeredCommands.get(command.id) === registered) {
+        this.registeredCommands.delete(command.id);
         releaseAction();
       }
     };
   }
 
+  get commands(): Record<string, Command> {
+    return Object.fromEntries(
+      [...this.registeredCommands.entries()].map(([id, registered]) => {
+        const command = { ...registered };
+        Reflect.deleteProperty(command, "ownerId");
+        Reflect.deleteProperty(command, "releaseAction");
+        return [id, command];
+      }),
+    );
+  }
+
+  removeCommand(commandId: string): void {
+    const command = this.registeredCommands.get(commandId);
+    if (!command) {
+      return;
+    }
+    this.registeredCommands.delete(commandId);
+    command.releaseAction();
+  }
+
+  executeCommandById(commandId: string): boolean {
+    const command = this.registeredCommands.get(commandId);
+    if (!command) {
+      return false;
+    }
+    if (command.checkCallback) {
+      const available = command.checkCallback(true);
+      if (available instanceof Promise || available !== true) {
+        return false;
+      }
+    } else if (!command.callback) {
+      return false;
+    }
+
+    void this.actions.dispatch(commandId);
+    return true;
+  }
+
   list(): CommandSummary[] {
-    return [...this.commands.values()]
+    return [...this.registeredCommands.values()]
       .map(({ id, name, ownerId }) => ({ id, name, ownerId }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
   async run(commandId: string): Promise<boolean> {
-    const command = this.commands.get(commandId);
+    const command = this.registeredCommands.get(commandId);
     if (!command || !(await this.canRun(commandId))) {
       return false;
     }
@@ -1177,7 +1215,7 @@ export class CommandRegistry {
   }
 
   async canRun(commandId: string): Promise<boolean> {
-    const command = this.commands.get(commandId);
+    const command = this.registeredCommands.get(commandId);
     if (!command) {
       return false;
     }
@@ -1191,7 +1229,24 @@ export class CommandRegistry {
   }
 
   ownerIdFor(commandId: string): string | null {
-    return this.commands.get(commandId)?.ownerId ?? null;
+    return this.registeredCommands.get(commandId)?.ownerId ?? null;
+  }
+}
+
+export class Keymap extends BaseKeymap {
+  // This preserves plugin scope lifecycle and activation order only. Keyboard event delivery
+  // remains owned by Threadleaf's renderer and is not synthesized by this compatibility surface.
+  private readonly scopeStack: Scope[] = [];
+
+  pushScope(scope: Scope): void {
+    this.scopeStack.push(scope);
+  }
+
+  popScope(scope: Scope): void {
+    const index = this.scopeStack.lastIndexOf(scope);
+    if (index >= 0) {
+      this.scopeStack.splice(index, 1);
+    }
   }
 }
 
