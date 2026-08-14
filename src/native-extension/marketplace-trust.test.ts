@@ -12,6 +12,8 @@ import {
   createNativeExtensionMarketplaceIndex,
   FileNativeExtensionMarketplaceCatalogStateStore,
   InMemoryNativeExtensionMarketplaceCatalogStateStore,
+  type NativeExtensionAcceptedMarketplaceCatalog,
+  type NativeExtensionMarketplaceCatalogStateStore,
   type NativeExtensionPublisherKey,
   nativeExtensionMarketplaceCatalogSha256,
   nativeExtensionPublisherKeyFromKeyObject,
@@ -936,6 +938,93 @@ describe("native extension offline distribution trust", () => {
       () => verifyNativeExtensionMarketplaceCatalog(future, options),
       "catalog-expired",
     );
+  });
+
+  it("refuses a catalog state store that cannot compare-and-swap", async () => {
+    const publisherPair = keyPair();
+    const rootPair = keyPair();
+    const publisherKey = publisher(publisherPair.privateKey, "publisher-1");
+    const rootKey = nativeExtensionPublisherKeyFromKeyObject({
+      publisherId: "threadleaf.catalog",
+      keyId: "root-1",
+      key: rootPair.privateKey,
+    });
+    const metadata = signed(publisherPair.privateKey, publisherKey);
+    const catalog = createNativeExtensionMarketplaceCatalog(
+      {
+        revision: 1,
+        generatedAt: "2026-06-01T00:00:00.000Z",
+        expiresAt: "2026-06-30T00:00:00.000Z",
+        catalogRoot: rootKey,
+        entries: [metadata],
+        revocations: [],
+        delistings: [],
+        successorPath: [],
+        publisherSuccessors: [],
+      },
+      rootPair.privateKey,
+    );
+    const trustAnchors = {
+      version: 1 as const,
+      publishers: [publisherKey],
+      catalogRoots: [rootKey],
+    };
+    // Exactly what an optional interface member used to admit: a store with get and put only.
+    const backing = new InMemoryNativeExtensionMarketplaceCatalogStateStore();
+    const putOnlyStore = {
+      get: () => backing.get(),
+      put: (state: NativeExtensionAcceptedMarketplaceCatalog) => backing.put(state),
+    } as unknown as NativeExtensionMarketplaceCatalogStateStore;
+
+    expect(() =>
+      verifyNativeExtensionMarketplaceCatalog(catalog, {
+        trustedPublishers: [publisherKey],
+        trustedCatalogRoots: [rootKey],
+        bundleBytesByEntry: new Map([
+          [
+            `${metadata.manifest.id}\u0000${metadata.manifest.version}`,
+            signedDistributionBundle.bundleBytes,
+          ],
+        ]),
+        stateStore: putOnlyStore,
+      }),
+    ).toThrow("Native extension marketplace catalog state store must implement compareAndSwap.");
+    // The refusal happens before any state is written, so a degraded store leaves no trace.
+    expect(backing.get()).toBeUndefined();
+
+    const host = new NativeExtensionHost({ ports: { vault: vaultPort } });
+    expect(() =>
+      host.install(signedDistributionBundle, {
+        mode: "trusted-distribution",
+        metadata,
+        trustedPublishers: trustAnchors,
+        marketplaceCatalog: catalog,
+        catalogStateStore: putOnlyStore,
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "distribution-untrusted",
+        message:
+          "Signed marketplace catalog install requires a catalog state store that implements compareAndSwap.",
+      }),
+    );
+
+    // Control: the same install with a compare-and-swap store succeeds and really routes the
+    // accepted state through compareAndSwap.
+    const store = new InMemoryNativeExtensionMarketplaceCatalogStateStore();
+    const compareAndSwap = vi.spyOn(store, "compareAndSwap");
+    expect(
+      host.install(signedDistributionBundle, {
+        mode: "trusted-distribution",
+        metadata,
+        trustedPublishers: trustAnchors,
+        marketplaceCatalog: catalog,
+        catalogStateStore: store,
+      }).distributionTrust,
+    ).toBe("trusted-distribution");
+    expect(compareAndSwap).toHaveBeenCalledTimes(1);
+    expect(compareAndSwap.mock.calls[0]?.[0]).toBeNull();
+    await host.close();
   });
 
   it("retains signed-catalog provenance through host review and revalidation", async () => {

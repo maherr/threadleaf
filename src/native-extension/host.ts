@@ -400,6 +400,14 @@ export class NativeExtensionHost {
             "Signed marketplace catalog install requires a persistent catalog state store.",
           );
         }
+        // Catalog state is documented as unconditionally compare-and-swap protected. A store that
+        // cannot do it loses tombstones under interleaving, so refuse it here rather than let the
+        // verifier fall back to a plain write.
+        if (typeof catalogStateStore.compareAndSwap !== "function") {
+          throw new Error(
+            "Signed marketplace catalog install requires a catalog state store that implements compareAndSwap.",
+          );
+        }
         marketplaceCatalog = parseNativeExtensionMarketplaceCatalog(options.marketplaceCatalog);
         const key = `${bundle.manifest.id}\u0000${bundle.manifest.version}`;
         const verifications = verifyNativeExtensionMarketplaceCatalog(options.marketplaceCatalog, {

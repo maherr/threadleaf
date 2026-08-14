@@ -94,7 +94,9 @@ Each accepted `(extensionId, version)` records metadata, bundle, authority, and 
 identity evidence. A package version cannot be rebound to different bytes, authority, metadata, or
 tree identity. An omitted entry with explicit lifecycle state becomes an irreversible tombstone
 carrying the same evidence, and a later catalog cannot re-add that key. Catalog state is durable,
-monotonic, mode `0600`, cross-process locked, and compare-and-swap protected. Catalog-backed
+monotonic, mode `0600`, cross-process locked, and compare-and-swap protected. Compare-and-swap is
+a required part of the state-store contract: a store that does not implement it is refused at the
+install boundary, never degraded to a plain write. Catalog-backed
 verification reports `marketplaceIndex: "signed-catalog"` and retains catalog revision, root,
 metadata, and installed-tree provenance. It never downgrades that evidence to `not-applicable`
 because a catalog path was used. A standalone signed record is the only `not-applicable` case.

@@ -167,11 +167,30 @@ export interface NativeExtensionAcceptedMarketplaceCatalog {
 export interface NativeExtensionMarketplaceCatalogStateStore {
   get(): NativeExtensionAcceptedMarketplaceCatalog | undefined;
   put(state: NativeExtensionAcceptedMarketplaceCatalog): void;
-  /** Optional atomic compare-and-swap for callers coordinating independent readers. */
-  compareAndSwap?(
+  /**
+   * Required atomic compare-and-swap. Catalog acceptance always goes through this call, never
+   * through `put`, so an interleaved writer cannot silently drop a tombstone. A store that does
+   * not implement it is refused at the boundary rather than degraded.
+   */
+  compareAndSwap(
     expectedCatalogSha256: string | null,
     state: NativeExtensionAcceptedMarketplaceCatalog,
   ): void;
+}
+
+/**
+ * The interface member is required, so this only catches a JavaScript caller that ignores the
+ * type. It runs before any catalog work and outside the interleaving handler, so the failure says
+ * what is actually wrong instead of reporting a lost update.
+ */
+function assertCompareAndSwapStore(
+  store: NativeExtensionMarketplaceCatalogStateStore | undefined,
+): void {
+  if (store !== undefined && typeof store.compareAndSwap !== "function") {
+    throw new Error(
+      "Native extension marketplace catalog state store must implement compareAndSwap.",
+    );
+  }
 }
 
 export class InMemoryNativeExtensionMarketplaceCatalogStateStore
@@ -2344,6 +2363,7 @@ export function verifyNativeExtensionMarketplaceCatalog(
   value: unknown,
   options: NativeExtensionMarketplaceCatalogTrustOptions,
 ): NativeExtensionVerification[] {
+  assertCompareAndSwapStore(options.stateStore);
   const catalog = parseNativeExtensionMarketplaceCatalog(value);
   const now = options.now === undefined ? currentHostTime() : parseTimestamp(options.now, "now");
   assertMarketplaceIndexFreshness(
@@ -2559,11 +2579,7 @@ export function verifyNativeExtensionMarketplaceCatalog(
       ].filter((hash, index, hashes) => hashes.indexOf(hash) === index),
     } satisfies NativeExtensionAcceptedMarketplaceCatalog;
     try {
-      if (options.stateStore?.compareAndSwap) {
-        options.stateStore.compareAndSwap(previous?.catalogSha256 ?? null, state);
-      } else {
-        options.stateStore?.put(state);
-      }
+      options.stateStore?.compareAndSwap(previous?.catalogSha256 ?? null, state);
     } catch (error) {
       trustFailure(
         "catalog-interleaving",
@@ -2590,11 +2606,7 @@ export function verifyNativeExtensionMarketplaceCatalog(
       ].filter((hash, index, hashes) => hashes.indexOf(hash) === index),
     } satisfies NativeExtensionAcceptedMarketplaceCatalog;
     try {
-      if (options.stateStore?.compareAndSwap) {
-        options.stateStore.compareAndSwap(null, state);
-      } else {
-        options.stateStore?.put(state);
-      }
+      options.stateStore?.compareAndSwap(null, state);
     } catch (error) {
       trustFailure(
         "catalog-interleaving",
