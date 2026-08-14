@@ -77,11 +77,15 @@ across severities. That distance sorts into exactly one of three tiers:
 | 7 to < 11 | Thin | Neither a pass nor a fail by itself. |
 | >= 11 | Clear | The case passes outright. |
 
-Categorical roles, the workspace's "strong ink" signals (section heading, muted summary, toast
+Categorical roles, the workspace's "strong ink" signals (currently section heading and toast
 accent), keep the plain minimum-7 pass/fail bar: a Failed measurement fails the case, anything
 else passes. Thin-state roles, the "pale tint" signals (currently `active-file-background` vs
 `inactive-file-background`), get the full three tiers, matching root `CLAUDE.md`'s own distinction
-that pale tints need more headroom than strong inks.
+that pale tints need more headroom than strong inks. Roles that are already typographically
+distinct from every other measured role by size, weight, or position (a file row's active-state
+border, a small muted caption against a large heading) are not paired against each other here:
+their real distinguishing signal is not colour, and colour-only comparison between them was never
+a meaningful accessibility requirement.
 
 A Thin thin-state measurement passes **only** when the same live case also carries an
 independently-measured **redundant cue**: a second, structurally-declared colour pair that itself

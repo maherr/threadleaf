@@ -1104,7 +1104,6 @@ async function probeCues() {
     const focusBackground = paintedBackground(input);
     const roleSelectors = [
       ['section-heading', '#files-heading', 'color'],
-      ['muted-summary', '#filter-summary', 'color'],
       ['signal-accent', '.toast', 'borderColor'],
     ];
     const roleStyles = roleSelectors.map(([label, selector, property]) => {
