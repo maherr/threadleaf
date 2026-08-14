@@ -37,6 +37,7 @@ import {
 import {
   canonicalizePotentialPath,
   isPathInside,
+  normalizedVaultPathIdentity,
   normalizeVaultPath,
   VaultPathPolicy,
   type VisibleVaultPaths,
@@ -177,6 +178,11 @@ interface InternalWriteConflict {
 }
 
 type InternalWriteResult = InternalWriteCommitted | InternalWriteConflict;
+
+type StrictAttachmentTargetCheck =
+  | { status: "ready"; targetAbsolute: string }
+  | { status: "attachment-publish-unavailable" }
+  | { status: "target-normalized-exists" };
 
 interface MoveWithWritesBlobs {
   before: Buffer;
@@ -603,9 +609,15 @@ export class VaultKernel implements VaultMutationPort {
     }
 
     const sourceAbsolute = await this.paths.resolveForWrite(source);
-    const targetAbsolute = await this.paths.resolveForWrite(target, true);
+    let targetAbsolute: string;
     if (strictContainment) {
-      await this.assertAttachmentPublishAvailable(targetAbsolute);
+      const targetCheck = await this.checkStrictAttachmentTarget(target);
+      if (targetCheck.status !== "ready") {
+        return { status: "conflict", from: source, to: target, reason: targetCheck.status };
+      }
+      targetAbsolute = targetCheck.targetAbsolute;
+    } else {
+      targetAbsolute = await this.paths.resolveForWrite(target, true);
     }
     const [sourceSnapshot, targetSnapshot] = await Promise.all([
       this.readMutationFile(sourceAbsolute, strictContainment),
@@ -702,7 +714,15 @@ export class VaultKernel implements VaultMutationPort {
     }
 
     await this.inject("rename:before-install");
-    if (strictContainment) await this.inject("rename:before-publish");
+    if (strictContainment) {
+      await this.inject("rename:before-publish");
+      const targetCheck = await this.checkStrictAttachmentTarget(target);
+      if (targetCheck.status !== "ready") {
+        await this.archiveJournal(journal, "manual-conflict");
+        return { status: "conflict", from: source, to: target, reason: targetCheck.status };
+      }
+      targetAbsolute = targetCheck.targetAbsolute;
+    }
     if (!(await this.installPreparedFile(stagedPath, targetAbsolute, strictContainment))) {
       await this.archiveJournal(journal, "manual-conflict");
       return { status: "conflict", from: source, to: target, reason: "target-created" };
@@ -733,6 +753,12 @@ export class VaultKernel implements VaultMutationPort {
     await this.inject("rename:after-link");
 
     if (strictContainment) {
+      const targetCheck = await this.checkStrictAttachmentTarget(target);
+      if (targetCheck.status !== "ready") {
+        await this.archiveJournal(journal, "manual-conflict");
+        return { status: "conflict", from: source, to: target, reason: targetCheck.status };
+      }
+      targetAbsolute = targetCheck.targetAbsolute;
       // Attachment publication is deliberately not a rename: the source is
       // user-owned evidence and remains at its original name. Both names are
       // independently verified before the durable terminal record is written.
@@ -762,6 +788,12 @@ export class VaultKernel implements VaultMutationPort {
       journal.phase = "published";
       await this.writeJournal(journal);
       await this.inject("rename:after-publish");
+      const finalTargetCheck = await this.checkStrictAttachmentTarget(target);
+      if (finalTargetCheck.status !== "ready") {
+        await this.archiveJournal(journal, "manual-conflict");
+        return { status: "conflict", from: source, to: target, reason: finalTargetCheck.status };
+      }
+      targetAbsolute = finalTargetCheck.targetAbsolute;
       const retainedSource = await this.readMutationFile(sourceAbsolute, true);
       const publishedTarget = await this.readMutationFile(targetAbsolute, true);
       if (
@@ -1152,20 +1184,42 @@ export class VaultKernel implements VaultMutationPort {
     }
 
     const sourceAbsolute = await this.paths.resolveForWrite(sourcePath);
-    const targetAbsolute = await this.paths.resolveForWrite(targetPath, true);
+    let targetAbsolute: string;
     if (request.strictContainment === true) {
-      await this.assertAttachmentPublishAvailable(targetAbsolute);
-      await assertContainedPublishCapability(
-        this.attachmentPublishCapability,
-        this.rollbackClaimsDirectory,
-      );
-      for (const item of prepared) {
-        const writeAbsolute = await this.paths.resolveForWrite(item.targetPath);
+      const targetCheck = await this.checkStrictAttachmentTarget(targetPath);
+      if (targetCheck.status !== "ready") {
+        return {
+          status: "conflict",
+          from: sourcePath,
+          to: targetPath,
+          reason: targetCheck.status,
+          conflictPaths: [],
+        };
+      }
+      targetAbsolute = targetCheck.targetAbsolute;
+      try {
         await assertContainedPublishCapability(
           this.attachmentPublishCapability,
-          path.dirname(writeAbsolute),
+          this.rollbackClaimsDirectory,
         );
+        for (const item of prepared) {
+          const writeAbsolute = await this.paths.resolveForWrite(item.targetPath);
+          await assertContainedPublishCapability(
+            this.attachmentPublishCapability,
+            path.dirname(writeAbsolute),
+          );
+        }
+      } catch {
+        return {
+          status: "conflict",
+          from: sourcePath,
+          to: targetPath,
+          reason: "attachment-publish-unavailable",
+          conflictPaths: [],
+        };
       }
+    } else {
+      targetAbsolute = await this.paths.resolveForWrite(targetPath, true);
     }
     const [source, target] = await Promise.all([
       this.readMutationFile(sourceAbsolute, request.strictContainment === true),
@@ -1192,7 +1246,10 @@ export class VaultKernel implements VaultMutationPort {
 
     const currentByPath = new Map<string, FileSnapshot>();
     for (const item of prepared) {
-      const absolutePath = await this.paths.resolveForWrite(item.targetPath, true);
+      const absolutePath = await this.paths.resolveForWrite(
+        item.targetPath,
+        request.strictContainment !== true,
+      );
       const current = await this.readMutationFile(absolutePath, request.strictContainment === true);
       if (!current || current.revision !== item.expectedRevision) {
         return {
@@ -1286,6 +1343,15 @@ export class VaultKernel implements VaultMutationPort {
     blobs: Map<number, MoveWithWritesBlobs>,
   ): Promise<MoveWithWritesResult> {
     if (journal.phase === "committed") {
+      if (journal.sourceRetained === true) {
+        const published = await this.ensurePublishedAttachment(journal);
+        if (!published) {
+          return this.archivePublishedAttachmentConflict(
+            journal,
+            journal.reason ?? "publish-state-diverged",
+          );
+        }
+      }
       const result = this.committedMoveWithWritesResult(journal);
       await this.archiveJournal(
         journal,
@@ -1306,7 +1372,10 @@ export class VaultKernel implements VaultMutationPort {
     if (journal.sourceRetained === true) {
       const published = await this.ensurePublishedAttachment(journal);
       if (!published) {
-        return this.archivePublishedAttachmentConflict(journal, "publish-state-diverged");
+        return this.archivePublishedAttachmentConflict(
+          journal,
+          journal.reason ?? "publish-state-diverged",
+        );
       }
     }
 
@@ -1452,7 +1521,11 @@ export class VaultKernel implements VaultMutationPort {
       // successful publication.
       await this.inject("move-with-writes:before-rename");
       const sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
-      const targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+      const targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+      if (targetCheck.status !== "ready") {
+        return this.beginMoveWithWritesRollback(journal, blobs, targetCheck.status);
+      }
+      const targetAbsolute = targetCheck.targetAbsolute;
       const [source, target] = await Promise.all([
         this.readMutationFile(sourceAbsolute, true),
         this.readMutationFile(targetAbsolute, true),
@@ -1500,14 +1573,17 @@ export class VaultKernel implements VaultMutationPort {
    */
   private async ensurePublishedAttachment(journal: MoveWithWritesJournal): Promise<boolean> {
     let sourceAbsolute: string;
-    let targetAbsolute: string;
     try {
       sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
-      targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
-      await this.assertAttachmentPublishAvailable(targetAbsolute);
     } catch {
       return false;
     }
+    let targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+    if (targetCheck.status !== "ready") {
+      journal.reason = targetCheck.status;
+      return false;
+    }
+    let targetAbsolute = targetCheck.targetAbsolute;
 
     const source = await this.readMutationFile(sourceAbsolute, true);
     if (!source || source.revision !== journal.expectedSourceRevision) return false;
@@ -1519,6 +1595,10 @@ export class VaultKernel implements VaultMutationPort {
     if (target && journal.phase === "publishing") return false;
 
     if (!target) {
+      // A durable committed receipt is not permission to reconstruct a
+      // vanished target. Reopen must verify the exact retained publication,
+      // not convert an external deletion into a fresh success.
+      if (journal.phase === "committed") return false;
       const stagedPath = this.getRenameBlobPath(journal.id);
       const evidencePath = this.getRecoveryPath(journal.id);
       const staged = await this.readMutationFile(stagedPath, true);
@@ -1526,6 +1606,12 @@ export class VaultKernel implements VaultMutationPort {
       const candidate = staged ?? evidence;
       if (!candidate || candidate.revision !== journal.expectedSourceRevision) return false;
       await this.inject("move-with-writes:before-publish");
+      targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+      if (targetCheck.status !== "ready") {
+        journal.reason = targetCheck.status;
+        return false;
+      }
+      targetAbsolute = targetCheck.targetAbsolute;
       let installed: boolean;
       try {
         installed = await this.installPreparedFile(
@@ -1563,6 +1649,13 @@ export class VaultKernel implements VaultMutationPort {
       await this.inject("rename:after-link");
     }
 
+    targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+    if (targetCheck.status !== "ready") {
+      journal.reason = targetCheck.status;
+      return false;
+    }
+    targetAbsolute = targetCheck.targetAbsolute;
+
     target = await this.readMutationFile(targetAbsolute, true);
     const retained = await this.readMutationFile(sourceAbsolute, true);
     if (
@@ -1594,7 +1687,10 @@ export class VaultKernel implements VaultMutationPort {
     let targetAbsolute: string;
     try {
       sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
-      targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+      targetAbsolute = await this.paths.resolveForWrite(
+        journal.targetPath,
+        journal.strictContainment !== true,
+      );
     } catch {
       return this.archiveMoveWithWritesManualConflict(journal, "rename-path-replaced", [
         journal.sourcePath,
@@ -1910,7 +2006,7 @@ export class VaultKernel implements VaultMutationPort {
     targetPath: string,
     strictContainment = false,
   ): Promise<FileSnapshot | null> {
-    const absolutePath = await this.paths.resolveForWrite(targetPath, true);
+    const absolutePath = await this.paths.resolveForWrite(targetPath, !strictContainment);
     return this.readMutationFile(absolutePath, strictContainment);
   }
 
@@ -2122,7 +2218,7 @@ export class VaultKernel implements VaultMutationPort {
     expectedRevision: string | null,
     strictContainment = false,
   ): Promise<InternalWriteResult> {
-    const targetAbsolute = await this.paths.resolveForWrite(targetPath, true);
+    const targetAbsolute = await this.paths.resolveForWrite(targetPath, !strictContainment);
     const initial = await this.readMutationFile(targetAbsolute, strictContainment);
     if (!revisionsMatch(initial, expectedRevision)) {
       const conflictPath = await this.createConflictCopy(targetPath, bytes, strictContainment);
@@ -2514,7 +2610,10 @@ export class VaultKernel implements VaultMutationPort {
     let targetAbsolute: string;
     try {
       sourceAbsolute = await this.paths.resolveForWrite(journal.sourcePath);
-      targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+      targetAbsolute = await this.paths.resolveForWrite(
+        journal.targetPath,
+        journal.strictContainment !== true,
+      );
     } catch {
       return this.archiveRenameConflict(journal);
     }
@@ -2567,7 +2666,10 @@ export class VaultKernel implements VaultMutationPort {
       await this.writeJournal(journal);
       try {
         await this.paths.resolveForWrite(journal.sourcePath);
-        targetAbsolute = await this.paths.resolveForWrite(journal.targetPath, true);
+        targetAbsolute = await this.paths.resolveForWrite(
+          journal.targetPath,
+          journal.strictContainment !== true,
+        );
         if (
           !(await this.installPreparedFile(
             stagedPath,
@@ -2654,17 +2756,23 @@ export class VaultKernel implements VaultMutationPort {
     sourceAbsolute: string,
     targetAbsolute: string,
   ): Promise<RecoveryAction> {
-    try {
-      await this.assertAttachmentPublishAvailable(targetAbsolute);
-    } catch {
+    let targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+    if (targetCheck.status !== "ready") {
       return this.archiveRenameConflict(journal);
     }
+    targetAbsolute = targetCheck.targetAbsolute;
     const source = await this.readMutationFile(sourceAbsolute, true);
     let target = await this.readMutationFile(targetAbsolute, true);
     if (
       (source && source.revision !== journal.expectedRevision) ||
       (target && target.revision !== journal.expectedRevision)
     ) {
+      return this.archiveRenameConflict(journal);
+    }
+    if (journal.phase === "committed" && !target) {
+      // A committed source-retained publication is receipt verification only.
+      // Do not turn a later external deletion into a fresh success by
+      // reconstructing the destination from our staged or recovery bytes.
       return this.archiveRenameConflict(journal);
     }
     if (target && journal.phase !== "published" && journal.phase !== "committed") {
@@ -2686,6 +2794,11 @@ export class VaultKernel implements VaultMutationPort {
       if (!candidate || candidate.revision !== journal.expectedRevision) {
         return this.archiveRenameConflict(journal);
       }
+      targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+      if (targetCheck.status !== "ready") {
+        return this.archiveRenameConflict(journal);
+      }
+      targetAbsolute = targetCheck.targetAbsolute;
       try {
         if (
           !(await this.installPreparedFile(
@@ -2703,6 +2816,11 @@ export class VaultKernel implements VaultMutationPort {
         return this.archiveRenameConflict(journal);
       }
     }
+    targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+    if (targetCheck.status !== "ready") {
+      return this.archiveRenameConflict(journal);
+    }
+    targetAbsolute = targetCheck.targetAbsolute;
     target = await this.readMutationFile(targetAbsolute, true);
     const retainedSource = await this.readMutationFile(sourceAbsolute, true);
     if (
@@ -2784,6 +2902,8 @@ export class VaultKernel implements VaultMutationPort {
       result.reason.startsWith("rollback-conflict:") ||
       result.reason === "rename-state-diverged" ||
       result.reason === "publish-state-diverged" ||
+      result.reason === "attachment-publish-unavailable" ||
+      result.reason === "target-normalized-exists" ||
       result.reason === "source-missing";
     return {
       transactionId: journal.id,
@@ -2873,6 +2993,47 @@ export class VaultKernel implements VaultMutationPort {
     if (this.readOnly) {
       throw new Error("Vault kernel is open in read-only mode.");
     }
+  }
+
+  /**
+   * Strict attachment publication needs a real, contained parent before any
+   * transaction state is created. The namespace scan detects names Linux's
+   * exact-basename no-clobber primitive cannot reserve (case/NFC variants).
+   */
+  private async checkStrictAttachmentTarget(
+    targetPath: string,
+  ): Promise<StrictAttachmentTargetCheck> {
+    try {
+      const target = normalizeVaultPath(targetPath);
+      const targetKey = normalizedVaultPathIdentity(target);
+      const claimants = await this.paths.listNamespaceClaimants();
+      const aliasClaimant = claimants.some(
+        (candidate) => candidate !== target && normalizedVaultPathIdentity(candidate) === targetKey,
+      );
+      if (aliasClaimant) {
+        return { status: "target-normalized-exists" };
+      }
+      const exactTarget = await fs
+        .lstat(this.paths.resolveLexical(target))
+        .catch((error: unknown) => {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+          throw error;
+        });
+      if (exactTarget && !exactTarget.isFile() && !exactTarget.isSymbolicLink()) {
+        return { status: "target-normalized-exists" };
+      }
+    } catch {
+      return { status: "attachment-publish-unavailable" };
+    }
+
+    let targetAbsolute: string;
+    try {
+      targetAbsolute = await this.paths.resolveForWrite(targetPath);
+      await this.assertAttachmentPublishAvailable(targetAbsolute);
+    } catch {
+      return { status: "attachment-publish-unavailable" };
+    }
+    return { status: "ready", targetAbsolute };
   }
 
   private async assertAttachmentPublishAvailable(targetAbsolute: string): Promise<void> {

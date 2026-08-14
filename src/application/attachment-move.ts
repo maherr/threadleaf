@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import {
+  maskMarkdownCodeAndComments,
   type ParsedMarkdownLink,
   type ParsedMarkdownReferenceDefinitionCandidate,
   parseMarkdownDestinationTarget,
@@ -10,7 +11,11 @@ import {
 } from "../kernel/markdown-links";
 import { VaultLinkResolver } from "../kernel/metadata-index";
 import type { VisibleVaultPaths } from "../kernel/path-policy";
-import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
+import {
+  hasPrivateVaultSegment,
+  normalizedVaultPathIdentity,
+  normalizeVaultPath,
+} from "../kernel/path-policy";
 import type {
   VaultMarkdownCorpus,
   VaultMutationPort,
@@ -138,7 +143,7 @@ interface PlannedCandidate {
   rewrite: AttachmentLinkRewrite;
 }
 
-function normalizedKey(value: string): string {
+function normalizedTextKey(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase("en-US");
 }
 
@@ -228,31 +233,39 @@ function mayReferenceSource(
   rejectionReason?: LinkResolution["rejectionReason"],
 ): boolean {
   if (!parsed) return false;
+  let sameFullPath = false;
+  try {
+    sameFullPath =
+      normalizedVaultPathIdentity(parsed.path) === normalizedVaultPathIdentity(sourcePath);
+  } catch {
+    // A rejected outside-vault/private token is not full-path-equal. Keep the
+    // conservative basename evidence fallback below for source-like names.
+  }
   return (
-    normalizedKey(parsed.path) === normalizedKey(sourcePath) ||
+    sameFullPath ||
     ((parsed.bareName || rejectionReason === "private" || rejectionReason === "outside-vault") &&
-      normalizedKey(path.posix.basename(parsed.path)) ===
-        normalizedKey(path.posix.basename(sourcePath)))
+      normalizedTextKey(path.posix.basename(parsed.path)) ===
+        normalizedTextKey(path.posix.basename(sourcePath)))
   );
 }
 
 function sourceCandidatePaths(visibleFiles: readonly string[], sourcePath: string): string[] {
   return visibleFiles.filter(
     (candidate) =>
-      normalizedKey(path.posix.basename(candidate)) ===
-      normalizedKey(path.posix.basename(sourcePath)),
+      normalizedTextKey(path.posix.basename(candidate)) ===
+      normalizedTextKey(path.posix.basename(sourcePath)),
   );
 }
 
 function referenceLabelMayIdentifySource(label: string, sourcePath: string): boolean {
-  const normalizedLabel = normalizedKey(label);
+  const normalizedLabel = normalizedTextKey(label);
   const basename = path.posix.basename(sourcePath);
   const extension = path.posix.extname(basename);
   const stem = extension ? basename.slice(0, -extension.length) : basename;
-  const exactKeys = new Set([sourcePath, basename, stem].map(normalizedKey));
+  const exactKeys = new Set([sourcePath, basename, stem].map(normalizedTextKey));
   if (exactKeys.has(normalizedLabel)) return true;
 
-  const sourceTokens = normalizedKey(stem)
+  const sourceTokens = normalizedTextKey(stem)
     .split(/[^\p{L}\p{N}]+/u)
     .filter((token) => token.length >= 3);
   if (sourceTokens.length === 0) return false;
@@ -329,14 +342,15 @@ function referenceDefinitionEvidence(
   if (
     resolution.status === "resolved" &&
     resolution.path !== undefined &&
-    normalizedKey(resolution.path) === normalizedKey(sourcePath)
+    normalizedVaultPathIdentity(resolution.path) === normalizedVaultPathIdentity(sourcePath)
   ) {
     return "resolved";
   }
   if (
     resolution.status === "ambiguous" &&
     resolution.candidates?.some(
-      (candidate) => normalizedKey(candidate) === normalizedKey(sourcePath),
+      (candidate) =>
+        normalizedVaultPathIdentity(candidate) === normalizedVaultPathIdentity(sourcePath),
     )
   ) {
     return "ambiguous";
@@ -357,67 +371,124 @@ function referenceDefinitionCandidateId(
   return `${documentPath}:${definition.line}:${definition.position}`;
 }
 
-function referenceDefinitionBlocker(
+interface ReferenceDefinitionSafety {
+  blocker: AttachmentMoveBlocker | null;
+  rewriteDefinition: ParsedMarkdownReferenceDefinitionCandidate | null;
+}
+
+function referenceUsageTarget(
+  usage: ReturnType<typeof parseMarkdownReferenceUsages>[number],
+): string {
+  return `${usage.embed ? "!" : ""}[${usage.label}][]`;
+}
+
+function referenceDefinitionSafety(
   documentPath: string,
   usage: ReturnType<typeof parseMarkdownReferenceUsages>[number],
   definitions: readonly ParsedMarkdownReferenceDefinitionCandidate[],
   sourcePath: string,
   resolver: VaultLinkResolver,
   visibleFiles: readonly string[],
-): AttachmentMoveBlocker | null {
+): ReferenceDefinitionSafety {
   const relevantDefinitions = definitions.filter((definition) => definition.label === usage.label);
   if (relevantDefinitions.length === 0) {
-    if (!referenceLabelMayIdentifySource(usage.label, sourcePath)) return null;
+    if (!referenceLabelMayIdentifySource(usage.label, sourcePath)) {
+      return { blocker: null, rewriteDefinition: null };
+    }
     return {
-      documentPath,
-      line: usage.line,
-      target: `![${usage.label}][]`,
-      syntax: "markdown",
-      reason: "unsupported",
-      candidates: sourceCandidatePaths(visibleFiles, sourcePath),
+      blocker: {
+        documentPath,
+        line: usage.line,
+        target: referenceUsageTarget(usage),
+        syntax: "markdown",
+        reason: "unsupported",
+        candidates: sourceCandidatePaths(visibleFiles, sourcePath),
+      },
+      rewriteDefinition: null,
     };
   }
   const evidence = relevantDefinitions.flatMap((definition) => {
     const result = referenceDefinitionEvidence(documentPath, definition, sourcePath, resolver);
     return result ? [{ definition, result }] : [];
   });
-  if (evidence.length === 0) return null;
+  if (evidence.length === 0) return { blocker: null, rewriteDefinition: null };
   const candidates = evidence.map(({ definition }) =>
     referenceDefinitionCandidateId(documentPath, definition),
   );
-  if (relevantDefinitions.length > 1 || evidence.some(({ result }) => result === "ambiguous")) {
+  // CommonMark deterministically selects the first definition. Threadleaf
+  // deliberately applies its stricter source-evidence policy instead: once a
+  // visible label has multiple definitions and any one may name this source,
+  // preserve every definition byte-for-byte and require manual resolution.
+  if (relevantDefinitions.length > 1) {
     return {
-      documentPath,
-      line: usage.line,
-      target: `![${usage.label}][]`,
-      syntax: "markdown",
-      reason: "ambiguous",
-      candidates,
+      blocker: {
+        documentPath,
+        line: usage.line,
+        target: referenceUsageTarget(usage),
+        syntax: "markdown",
+        reason: "ambiguous",
+        candidates,
+      },
+      rewriteDefinition: null,
     };
   }
-  const only = evidence[0];
-  if (!only) return null;
-  if (only.definition.sourceOnly || only.result === "opaque") {
+  const sourceOnly = evidence.some(({ definition }) => definition.sourceOnly);
+  const opaque = evidence.some(({ result }) => result === "opaque");
+  if (sourceOnly || opaque) {
     return {
-      documentPath,
-      line: usage.line,
-      target: `![${usage.label}][]`,
-      syntax: "markdown",
-      reason: "unsupported",
-      candidates,
+      blocker: {
+        documentPath,
+        line: usage.line,
+        target: referenceUsageTarget(usage),
+        syntax: "markdown",
+        reason: "unsupported",
+        candidates,
+      },
+      rewriteDefinition: null,
     };
   }
-  if (only.result === "unresolved") {
+  if (evidence.some(({ result }) => result === "ambiguous")) {
     return {
-      documentPath,
-      line: usage.line,
-      target: `![${usage.label}][]`,
-      syntax: "markdown",
-      reason: "unresolved",
-      candidates: sourceCandidatePaths(visibleFiles, sourcePath),
+      blocker: {
+        documentPath,
+        line: usage.line,
+        target: referenceUsageTarget(usage),
+        syntax: "markdown",
+        reason: "ambiguous",
+        candidates,
+      },
+      rewriteDefinition: null,
     };
   }
-  return null;
+  if (evidence.some(({ result }) => result === "unresolved")) {
+    return {
+      blocker: {
+        documentPath,
+        line: usage.line,
+        target: referenceUsageTarget(usage),
+        syntax: "markdown",
+        reason: "unresolved",
+        candidates: sourceCandidatePaths(visibleFiles, sourcePath),
+      },
+      rewriteDefinition: null,
+    };
+  }
+  // A single visible source definition is safe to rewrite once. Definitions
+  // without source evidence above remain dormant and byte-for-byte untouched.
+  const effective = relevantDefinitions.find(
+    (definition) => !definition.sourceOnly && definition.valid,
+  );
+  if (!effective) return { blocker: null, rewriteDefinition: null };
+  const effectiveEvidence = referenceDefinitionEvidence(
+    documentPath,
+    effective,
+    sourcePath,
+    resolver,
+  );
+  if (effectiveEvidence !== "resolved") {
+    return { blocker: null, rewriteDefinition: null };
+  }
+  return { blocker: null, rewriteDefinition: effective };
 }
 
 function rewriteContent(content: string, candidates: readonly PlannedCandidate[]): string {
@@ -596,7 +667,8 @@ export async function planBinaryAttachmentMove(
   const generation = context.generation ?? context.currentGeneration?.() ?? null;
   const visibleFiles = await collectVisibleFiles(vault);
   const sourceMatches = visibleFiles.filter(
-    (candidate) => normalizedKey(candidate) === normalizedKey(sourcePath),
+    (candidate) =>
+      normalizedVaultPathIdentity(candidate) === normalizedVaultPathIdentity(sourcePath),
   );
   if (sourceMatches.length === 0) {
     throw new Error(`Attachment is not present in the visible vault: ${sourcePath}`);
@@ -610,7 +682,12 @@ export async function planBinaryAttachmentMove(
   // paths case-insensitively and by NFC, as the metadata index does. An exact
   // lexical spelling is useful only after the normalized identity is unique.
   sourcePath = sourceMatches[0] as string;
-  if (visibleFiles.some((candidate) => normalizedKey(candidate) === normalizedKey(targetPath))) {
+  if (
+    visibleFiles.some(
+      (candidate) =>
+        normalizedVaultPathIdentity(candidate) === normalizedVaultPathIdentity(targetPath),
+    )
+  ) {
     return { status: "conflict", from: sourcePath, to: targetPath, reason: "target-exists" };
   }
   const sourceResult = await vault.readBinary(sourcePath, MAX_ATTACHMENT_MOVE_BYTES);
@@ -644,22 +721,25 @@ export async function planBinaryAttachmentMove(
       };
     }
     markdownRevisions.push({ path: documentPath, revision: snapshot.revision });
-    const referenceDefinitions = parseMarkdownReferenceDefinitionCandidates(snapshot.content);
-    const referenceUsages = parseMarkdownReferenceUsages(snapshot.content);
-    const referencedLabels = new Set(referenceUsages.map((usage) => usage.label));
+    const maskedContent = maskMarkdownCodeAndComments(snapshot.content);
+    const referenceDefinitions = parseMarkdownReferenceDefinitionCandidates(
+      snapshot.content,
+      maskedContent,
+    );
+    const referenceUsages = parseMarkdownReferenceUsages(snapshot.content, maskedContent);
     const referenceDefinitionTargetRanges = new Set(
       referenceDefinitions.flatMap((definition) =>
         !definition.sourceOnly &&
         definition.valid &&
         definition.targetStart !== null &&
-        definition.targetEnd !== null &&
-        referencedLabels.has(definition.label)
+        definition.targetEnd !== null
           ? [`${definition.targetStart}:${definition.targetEnd}`]
           : [],
       ),
     );
+    const safeReferenceDefinitionTargetRanges = new Set<string>();
     for (const usage of referenceUsages) {
-      const blocker = referenceDefinitionBlocker(
+      const safety = referenceDefinitionSafety(
         documentPath,
         usage,
         referenceDefinitions,
@@ -667,24 +747,37 @@ export async function planBinaryAttachmentMove(
         resolver,
         visibleFiles,
       );
-      if (blocker) unresolvedBlockers.push(blocker);
+      if (safety.blocker) {
+        unresolvedBlockers.push(safety.blocker);
+      } else if (
+        safety.rewriteDefinition &&
+        safety.rewriteDefinition.targetStart !== null &&
+        safety.rewriteDefinition.targetEnd !== null
+      ) {
+        safeReferenceDefinitionTargetRanges.add(
+          `${safety.rewriteDefinition.targetStart}:${safety.rewriteDefinition.targetEnd}`,
+        );
+      }
     }
     const candidates: PlannedCandidate[] = [];
-    for (const link of parseMarkdownLinks(snapshot.content)) {
+    for (const link of parseMarkdownLinks(snapshot.content, maskedContent)) {
       const rawTarget = snapshot.content.slice(link.targetStart, link.targetEnd);
       const resolution = resolveAttachmentLink(documentPath, rawTarget, resolver);
       const isReferencedDefinition =
         link.syntax === "markdown" &&
         referenceDefinitionTargetRanges.has(`${link.targetStart}:${link.targetEnd}`);
+      const isSafeReferencedDefinition =
+        isReferencedDefinition &&
+        safeReferenceDefinitionTargetRanges.has(`${link.targetStart}:${link.targetEnd}`);
+      if (isReferencedDefinition && !isSafeReferencedDefinition) continue;
       if (resolution.status !== "resolved" || resolution.path !== sourcePath) {
-        // The reference-usage gate above owns non-resolved definitions tied to
-        // visible image usages. Exact target ranges prevent an inline link on
-        // the same line from inheriting a malformed definition's uncertainty.
-        if (isReferencedDefinition) continue;
+        // Exact target ranges prevent an inline link on the same line from
+        // inheriting a reference definition's uncertainty.
         if (
           resolution.status === "ambiguous" &&
           resolution.candidates?.some(
-            (candidate) => normalizedKey(candidate) === normalizedKey(sourcePath),
+            (candidate) =>
+              normalizedVaultPathIdentity(candidate) === normalizedVaultPathIdentity(sourcePath),
           )
         ) {
           rewrites.push({
@@ -709,8 +802,8 @@ export async function planBinaryAttachmentMove(
             reason: "unresolved",
             candidates: visibleFiles.filter(
               (candidate) =>
-                normalizedKey(path.posix.basename(candidate)) ===
-                normalizedKey(path.posix.basename(sourcePath)),
+                normalizedTextKey(path.posix.basename(candidate)) ===
+                normalizedTextKey(path.posix.basename(sourcePath)),
             ),
           });
         }
@@ -789,8 +882,8 @@ export async function planBinaryAttachmentMove(
       reason: "ambiguous" as const,
       candidates: visibleFiles.filter(
         (candidate) =>
-          normalizedKey(path.posix.basename(candidate)) ===
-          normalizedKey(path.posix.basename(sourcePath)),
+          normalizedTextKey(path.posix.basename(candidate)) ===
+          normalizedTextKey(path.posix.basename(sourcePath)),
       ),
     }));
   const blockers = [...unresolvedBlockers, ...ambiguousBlockers];

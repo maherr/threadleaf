@@ -575,6 +575,16 @@ and never silently retiring a pending transaction. Attachment publications inten
 note tabs or bookmarks, because those state entries identify Markdown notes rather than attachment
 references. Open and Reveal remain inert until a reviewed native capability is available.
 
+Reference-style ordinary links and images share one source-evidence gate. A visible, single
+definition that resolves to the source may be rewritten once. A source-only, opaque, unresolved,
+ambiguous, or duplicate same-label definition with source evidence blocks publication instead.
+CommonMark defines deterministic first-definition precedence, but Threadleaf deliberately keeps this
+stricter safety policy rather than choosing a source-related duplicate. Dormant, unrelated, and
+external definitions retain their exact bytes.
+Definition destinations are intentionally parsed on one physical source line. A source-related
+multiline destination remains opaque evidence and blocks publication rather than receiving a partial
+rewrite; definitely unrelated continuations remain byte-identical and do not block a publication.
+
 All three services receive the source note, raw target, and expected vault identity. The main
 process resolves note-relative and vault-rooted paths, follows symlinks only within the vault,
 excludes `.obsidian/`, `.git/`, and transaction artifacts, rechecks the active runtime after
@@ -709,15 +719,18 @@ reads full bytes only for the source and documents whose indexed link meaning wo
 parsed wiki and Markdown link must retain the same resolved, unresolved, or ambiguous meaning after
 remapping the moved note's identity.
 
-The shared link parser retains exact source and target ranges while excluding fenced code, inline
-code, and HTML comments. When a currently resolved link would change meaning, the move planner
-replaces only its target slice: wiki links receive an escaped vault path without `.md`, while
-Markdown links receive an escaped path relative to the linking note's projected location. Anchors,
-aliases, labels, titles, surrounding whitespace, BOM, line endings, and all unrelated bytes remain
-untouched. Replacements are applied from the end of each affected file. The projected resolver then
-validates every indexed occurrence against its expected logical target. A proposal is valid only
-when every occurrence preserves its meaning after remapping the moved note's identity. Unresolved
-or ambiguous links are never guessed.
+The shared link parser retains exact source and target ranges. Offset-preserving masks keep fenced
+and indented code, inline code, HTML comments and blocks, valid autolinks and tags, and the
+renderer-recognized bounded math blocks out of generic link scanning. Complete wiki spans and valid
+reference-definition lines are parsed once, then made opaque to generic inline and reference scans;
+frontmatter definitions remain source-only safety evidence. When a currently resolved link would
+change meaning, the move planner replaces only its target slice: wiki links receive an escaped vault
+path without `.md`, while Markdown links receive an escaped path relative to the linking note's
+projected location. Anchors, aliases, labels, titles, surrounding whitespace, BOM, line endings, and
+all unrelated bytes remain untouched. Replacements are applied from the end of each affected file.
+The projected resolver then validates every indexed occurrence against its expected logical target.
+A proposal is valid only when every occurrence preserves its meaning after remapping the moved
+note's identity. Unresolved or ambiguous links are never guessed.
 
 When rewrites are safe and necessary, the service hashes the source and destination, source
 revision, exact rewrite preview, affected file revisions, and proposed content revisions into a
@@ -800,12 +813,28 @@ directory is then fsynced and the published bytes are verified. No target-side s
 exists for another process to replace before publication.
 
 Vault open/create performs a non-mutating host-binding, descriptor-containment, and
-filesystem-device preflight. The destination parent is checked against that receipt before each
-publication, while the anonymous-inode create and final link on the exact target filesystem remain
-the authoritative capability and no-overwrite checks before any Markdown mutation. For a
+filesystem-device preflight. A strict destination parent must already exist, remain contained, and
+pass that receipt before Threadleaf creates a transaction journal, evidence blob, target, or Markdown
+change; strict attachment publication never creates a missing parent. The anonymous-inode create and
+final link on the exact target filesystem remain the authoritative capability and no-overwrite checks
+before any Markdown mutation. For a
 publication that rewrites links, every rewritten note parent and the receipt-gated private
 rollback-claim directory must be on that same device; a cross-device layout is rejected before the
 destination copy is published.
+
+Strict publication also scans the complete non-hidden, non-private lexical vault namespace by NFC-
+and case-folded full path. It records regular files, directories, symlinks without following them,
+and special entry names; only an exact existing regular-file target is deferred to the ordinary
+exact-target receipt. The scan runs at the final controlled pre-publication point, after exact
+publication but before any Markdown write, and during source-retained recovery before a success
+receipt is archived. A final scan after Markdown writes and before commit routes a newly observed
+claimant through receipt-bound Markdown rollback while preserving the attachment names. An observed
+equivalent claimant is a manual conflict: Threadleaf leaves the claimant and exact published target
+in place and does not proceed with Markdown mutation. This is a detection barrier, not an atomic
+normalized-name reservation. A same-UID process can race a pathname during or after a scan, while
+descriptor-contained reads and writes still prevent that pathname race from redirecting a mutation.
+Linux's native no-clobber link protects only the exact basename; that residual normalized-name race
+remains outside the strict transaction guarantee.
 
 There is no exclusive-copy fallback because a crash could expose a partial final target. Missing
 `O_TMPFILE` or `linkat` support, `EXDEV`, durability failure, Windows sharing behavior, and

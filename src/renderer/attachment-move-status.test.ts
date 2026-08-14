@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { attachmentMoveCommitNotice, attachmentPublicationReceipt } from "./attachment-move-status";
+import {
+  attachmentMoveCommitNotice,
+  attachmentPublicationConflictMessage,
+  attachmentPublicationReceipt,
+} from "./attachment-move-status";
 
 describe("attachment move commit status", () => {
   it("names the previous vault without exposing its path after a replacement", () => {
@@ -63,5 +67,15 @@ describe("attachment move commit status", () => {
         rewrites: [],
       }),
     ).toBeNull();
+  });
+
+  it("explains typed strict-publication conflicts without the generic failure fallback", () => {
+    expect(attachmentPublicationConflictMessage("attachment-publish-unavailable")).toBe(
+      "Threadleaf could not verify strict no-overwrite publication at that destination. Use an existing contained folder on this vault filesystem that supports attachment publication. Review both attachment paths; Markdown references were not updated.",
+    );
+    expect(attachmentPublicationConflictMessage("target-normalized-exists")).toBe(
+      "Threadleaf found a case- or Unicode-equivalent destination name. Choose a path with a distinct normalized name. Threadleaf did not overwrite it or update Markdown references.",
+    );
+    expect(attachmentPublicationConflictMessage("target-exists")).toBeNull();
   });
 });

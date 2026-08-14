@@ -139,11 +139,25 @@ publication receipt, and success is reported as `published-source-retained`. A c
 replacement, containment failure, unsupported sharing primitive, crash, or recovery mismatch keeps
 external bytes and retained evidence and returns a conflict or recovery result instead of claiming a
 rename.
+Ordinary and image reference-style usages share a source-evidence safety policy. A visible single
+source definition rewrites once; source-only, opaque, unresolved, ambiguous, or source-related
+duplicate definitions block publication. CommonMark's deterministic first-definition precedence does
+not relax this local safety boundary. Dormant, unrelated, and external definition bytes remain
+unchanged.
+Generic attachment-link scans are offset-preserving. Renderer-recognized code, HTML, autolink, tag,
+and bounded math regions stay opaque, while complete wiki spans and valid reference-definition lines
+are parsed once before they are masked from generic rescans.
+Definition destinations are supported only on one physical source line. A source-related multiline
+destination is retained as opaque evidence and blocks publication rather than receiving a partial
+rewrite; a definitely unrelated continuation remains byte-identical and nonblocking.
 The strict publish gate is `FILE-PUBLISH-CAP-02`: vault open/create performs a non-mutating native
 binding, descriptor-containment, and destination-device preflight. The exact target filesystem is
 then gated by an unnamed `O_TMPFILE` inode and an atomic absent-name `linkat` publication before any
 Markdown mutation. No target-side staging pathname is exposed, and an existing claimant is never
 replaced.
+Strict publication requires an already-existing contained destination parent. A missing or unsafe
+parent, unavailable publication capability, or cross-device layout fails as a typed conflict before
+Threadleaf creates a journal, evidence, target, or Markdown change.
 When link rewrites are required, every rewritten note parent and the receipt-gated private rollback
 claim directory must be on that device too. A cross-device layout fails before publication.
 There is no exclusive-copy fallback because a crash could expose a partial final target. ReFS-like
@@ -159,8 +173,16 @@ crash. An uncertain claim has no automatic pathname GC.
 The whole-corpus receipt is a conservative preflight and post-mutation check, not an atomic lock
 against arbitrary external writers: a change observed after the final preflight drives exact
 journaled rollback or a manual conflict, preserving surviving bytes and never silently retiring a
-pending transaction. Note tabs and bookmarks are not remapped: those are Markdown note identities, not
-attachment references. The packaged attachment fixture exercises metadata cards
+pending transaction. Strict attachment publication additionally scans the full non-hidden,
+non-private lexical namespace by NFC- and case-folded complete path. Files, directories, symlinks
+without descent, and special entry names participate. The scan runs at final pre-publication, after
+exact publication before Markdown writes, after Markdown writes before commit, and before
+source-retained recovery success. The post-write barrier rolls revision-matched Markdown back. It
+treats an observed equivalent claimant as a manual conflict and preserves both external and
+published bytes. The scan is a detection barrier, not an atomic normalized-name reservation: a
+same-UID process can race a pathname during or after it, while descriptor-contained mutation still
+prevents redirection and `linkat` protects only the exact basename. Note tabs and bookmarks are not remapped: those are Markdown note
+identities, not attachment references. The packaged attachment fixture exercises metadata cards
 for a PDF-signature file, an MP3-signature file, and unknown bytes; its move byte-preservation path
 uses the PDF-signature fixture only. It makes no broader attachment format support claim. Its gate
 requires explicit X11 Xvfb, a dedicated profile and vault, real CDP pointer and keyboard input,

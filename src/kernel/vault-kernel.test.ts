@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -37,6 +38,64 @@ async function openKernel(
     ...(faultInjector ? { faultInjector } : {}),
   };
   return VaultKernel.open(options);
+}
+
+function injectAttachmentPublishCapability(
+  kernel: VaultKernel,
+  capability: VaultKernel["attachmentPublishCapability"],
+): void {
+  Object.defineProperty(kernel, "attachmentPublishCapability", { value: capability });
+}
+
+async function expectNoAttachmentPublicationArtifacts(kernel: VaultKernel): Promise<void> {
+  await expect(fs.readdir(path.join(kernel.stateRoot, "journal"))).resolves.toEqual([]);
+  await expect(fs.readdir(path.join(kernel.stateRoot, "history"))).resolves.toEqual([]);
+  await expect(fs.readdir(path.join(kernel.stateRoot, "transactions"))).resolves.toEqual([]);
+  await expect(
+    fs.readdir(path.join(kernel.stateRoot, "recovery", "rollback-claims")),
+  ).resolves.toEqual([]);
+}
+
+type NamespaceClaimantKind = "contained-directory-symlink" | "dangling-symlink" | "outside-symlink";
+
+async function createNamespaceClaimant(
+  claimantPath: string,
+  kind: NamespaceClaimantKind,
+  fixtureName: string,
+): Promise<void> {
+  await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+  if (kind === "contained-directory-symlink") {
+    const containedDirectory = path.join(vaultPath, `Contained claimant ${fixtureName}`);
+    await fs.mkdir(containedDirectory, { recursive: true });
+    await fs.symlink(containedDirectory, claimantPath, "dir");
+    return;
+  }
+  if (kind === "dangling-symlink") {
+    await fs.symlink(path.join(vaultPath, `Missing claimant ${fixtureName}`), claimantPath);
+    return;
+  }
+  const outsidePath = path.join(sandboxPath, `outside claimant ${fixtureName}.bin`);
+  await fs.writeFile(outsidePath, `outside:${fixtureName}`, "utf8");
+  await fs.symlink(outsidePath, claimantPath);
+}
+
+async function createNamespaceSocket(socketPath: string): Promise<Server> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen(socketPath, () => {
+      server.off("error", onError);
+      resolve();
+    });
+  });
+  return server;
+}
+
+async function closeNamespaceSocket(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
 }
 
 function replaceFromSeparateProcess(filePath: string, bytes: Uint8Array): Promise<void> {
@@ -85,6 +144,60 @@ describe("VaultKernel path policy", () => {
     await expect(fs.readFile(path.join(vaultPath, "inside.md"), "utf8")).resolves.toBe("inside");
     await expect(fs.readFile(outsidePath, "utf8")).resolves.toBe("outside");
   });
+
+  it.runIf(process.platform === "linux")(
+    "enumerates lexical namespace claimants without exposing or descending through symlink directories",
+    async () => {
+      await fs.mkdir(path.join(vaultPath, "Real directory"));
+      await fs.writeFile(path.join(vaultPath, "Real directory", "inside.bin"), "inside", "utf8");
+      await fs.writeFile(path.join(vaultPath, "Regular.bin"), "regular", "utf8");
+      await fs.mkdir(path.join(vaultPath, ".obsidian", "private"), { recursive: true });
+      await fs.writeFile(
+        path.join(vaultPath, ".obsidian", "private", "Hidden.bin"),
+        "hidden",
+        "utf8",
+      );
+      await createNamespaceClaimant(
+        path.join(vaultPath, "Contained directory link"),
+        "contained-directory-symlink",
+        "enumerator",
+      );
+      await createNamespaceClaimant(
+        path.join(vaultPath, "Dangling link"),
+        "dangling-symlink",
+        "enumerator",
+      );
+      await createNamespaceClaimant(
+        path.join(vaultPath, "Outside link"),
+        "outside-symlink",
+        "enumerator",
+      );
+      const socketPath = path.join(vaultPath, "Namespace socket");
+      const socket = await createNamespaceSocket(socketPath);
+      try {
+        const kernel = await openKernel();
+        const claimants = await kernel.paths.listNamespaceClaimants();
+
+        expect(claimants).toEqual(
+          expect.arrayContaining([
+            "Contained directory link",
+            "Dangling link",
+            "Namespace socket",
+            "Outside link",
+            "Real directory",
+            "Real directory/inside.bin",
+            "Regular.bin",
+          ]),
+        );
+        expect((await fs.lstat(socketPath)).isSocket()).toBe(true);
+        expect(claimants).not.toContain("Contained directory link/inside.bin");
+        expect(claimants).not.toContain(".obsidian");
+        expect(claimants).not.toContain(".obsidian/private/Hidden.bin");
+      } finally {
+        await closeNamespaceSocket(socket);
+      }
+    },
+  );
 
   it("keeps Threadleaf state outside the vault", async () => {
     await expect(
@@ -753,6 +866,80 @@ describe("VaultKernel renames", () => {
   );
 
   it.runIf(process.platform === "linux")(
+    "refuses a strict attachment target whose parent is absent before creating transaction state",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.bin");
+      const targetPath = path.join(vaultPath, "Archive", "After.bin");
+      const bytes = Buffer.from("strict source");
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel();
+      const source = await kernel.readBinary("Before.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        kernel.renameFile("Before.bin", "Archive/After.bin", source.snapshot.revision, undefined, {
+          strictContainment: true,
+        }),
+      ).resolves.toMatchObject({ status: "conflict", reason: "attachment-publish-unavailable" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.stat(path.join(vaultPath, "Archive"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expectNoAttachmentPublicationArtifacts(kernel);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "returns typed strict publication conflicts before any direct-rename mutation when capability checks fail",
+    async () => {
+      const cases = [
+        {
+          name: "anonymous publication is unsupported",
+          capability: {
+            status: "unsupported" as const,
+            code: "anonymous-publication-unsupported" as const,
+            contract: "FILE-PUBLISH-CAP-02" as const,
+            detail: "injected unsupported capability",
+          },
+        },
+        {
+          name: "the destination device differs",
+          capability: {
+            status: "supported" as const,
+            contract: "FILE-PUBLISH-CAP-02" as const,
+            device: "injected-other-device",
+          },
+        },
+      ];
+
+      for (const testCase of cases) {
+        const sourcePath = path.join(vaultPath, `${testCase.name}.bin`);
+        const targetPath = path.join(vaultPath, `${testCase.name}-copy.bin`);
+        const bytes = Buffer.from(testCase.name, "utf8");
+        await fs.writeFile(sourcePath, bytes);
+        const kernel = await openKernel();
+        injectAttachmentPublishCapability(kernel, testCase.capability);
+        const source = await kernel.readBinary(path.basename(sourcePath), 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(
+            path.basename(sourcePath),
+            path.basename(targetPath),
+            source.snapshot.revision,
+            undefined,
+            { strictContainment: true },
+          ),
+        ).resolves.toMatchObject({ status: "conflict", reason: "attachment-publish-unavailable" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        await expectNoAttachmentPublicationArtifacts(kernel);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
     "recovers a strict publication interrupted after the publish barrier",
     async () => {
       const sourcePath = path.join(vaultPath, "Before.bin");
@@ -785,6 +972,114 @@ describe("VaultKernel renames", () => {
   );
 
   it.runIf(process.platform === "linux")(
+    "treats a committed strict publication as receipt-only recovery",
+    async () => {
+      const cases = [
+        {
+          name: "an altered exact target",
+          mutate: async (targetPath: string, _claimantPath: string, _claimantBytes: Buffer) => {
+            await fs.writeFile(targetPath, "external target", "utf8");
+          },
+          expectedTarget: "external target",
+        },
+        {
+          name: "a missing exact target",
+          mutate: async (targetPath: string, _claimantPath: string, _claimantBytes: Buffer) => {
+            await fs.unlink(targetPath);
+          },
+          expectedTarget: null,
+        },
+        {
+          name: "an equivalent claimant",
+          mutate: async (_targetPath: string, claimantPath: string, claimantBytes: Buffer) => {
+            await fs.writeFile(claimantPath, claimantBytes);
+          },
+          expectedTarget: "source bytes",
+          expectsClaimant: true,
+        },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourcePath = path.join(vaultPath, `Committed direct ${index}.bin`);
+        const targetPath = path.join(vaultPath, "Archive", `Committed direct ${index}.bin`);
+        const claimantPath = path.join(vaultPath, "archive", `committed direct ${index}.BIN`);
+        const sourceBytes = Buffer.from("source bytes", "utf8");
+        const claimantBytes = Buffer.from(`claimant:${testCase.name}`, "utf8");
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.writeFile(sourcePath, sourceBytes);
+        const interrupted = await openKernel(async (point) => {
+          if (point !== "rename:after-commit") return;
+          await testCase.mutate(targetPath, claimantPath, claimantBytes);
+          throw new Error(`interrupted after committed ${testCase.name}`);
+        });
+        const source = await interrupted.readBinary(path.basename(sourcePath), 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          interrupted.renameFile(
+            path.basename(sourcePath),
+            `Archive/${path.basename(targetPath)}`,
+            source.snapshot.revision,
+            undefined,
+            { strictContainment: true },
+          ),
+        ).rejects.toThrow(`interrupted after committed ${testCase.name}`);
+
+        const recovered = await openKernel();
+        expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+          kind: "rename",
+          outcome: "manual-conflict",
+          path: `Archive/${path.basename(targetPath)}`,
+        });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        if (testCase.expectedTarget === null) {
+          await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        } else {
+          await expect(fs.readFile(targetPath, "utf8")).resolves.toBe(testCase.expectedTarget);
+        }
+        if (testCase.expectsClaimant) {
+          await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+        }
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps an equivalent claimant and the exact target after a strict publication crash",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Before.bin");
+      const targetPath = path.join(vaultPath, "After.bin");
+      const claimantPath = path.join(vaultPath, "after.BIN");
+      const bytes = Buffer.from("strict recovery source", "utf8");
+      const claimantBytes = Buffer.from("external normalized claimant", "utf8");
+      await fs.writeFile(sourcePath, bytes);
+      const interrupted = await openKernel(async (point) => {
+        if (point !== "rename:after-publish") return;
+        await fs.writeFile(claimantPath, claimantBytes);
+        throw new Error("interrupted after strict publish claimant");
+      });
+      const source = await interrupted.readBinary("Before.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        interrupted.renameFile("Before.bin", "After.bin", source.snapshot.revision, undefined, {
+          strictContainment: true,
+        }),
+      ).rejects.toThrow("interrupted after strict publish claimant");
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+        kind: "rename",
+        outcome: "manual-conflict",
+        path: "After.bin",
+      });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(targetPath)).resolves.toEqual(bytes);
+      await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
     "rejects a strict target claimant at the publish barrier",
     async () => {
       const sourcePath = path.join(vaultPath, "Before.bin");
@@ -809,6 +1104,334 @@ describe("VaultKernel renames", () => {
       expect(result).toMatchObject({ status: "conflict", reason: "target-created" });
       await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
       await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("external target");
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects every lexical symlink alias at the final strict direct-publication barrier",
+    async () => {
+      const cases: Array<{ kind: NamespaceClaimantKind; name: string }> = [
+        { kind: "contained-directory-symlink", name: "contained directory" },
+        { kind: "dangling-symlink", name: "dangling" },
+        { kind: "outside-symlink", name: "outside" },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourceName = `Direct namespace source ${index}.bin`;
+        const targetName = `Direct namespace target ${index}.bin`;
+        const claimantName = `direct namespace TARGET ${index}.BIN`;
+        const sourcePath = path.join(vaultPath, sourceName);
+        const targetPath = path.join(vaultPath, targetName);
+        const claimantPath = path.join(vaultPath, claimantName);
+        const sourceBytes = Buffer.from(`direct source:${testCase.name}`, "utf8");
+        await fs.writeFile(sourcePath, sourceBytes);
+        const kernel = await openKernel(async (point) => {
+          if (point !== "rename:before-publish") return;
+          await createNamespaceClaimant(claimantPath, testCase.kind, `direct-prepublish-${index}`);
+        });
+        const source = await kernel.readBinary(sourceName, 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(sourceName, targetName, source.snapshot.revision, undefined, {
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        expect((await fs.lstat(claimantPath)).isSymbolicLink()).toBe(true);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "preserves direct attachment evidence and lexical aliases through post-publication crash recovery",
+    async () => {
+      const cases: Array<{ kind: NamespaceClaimantKind; name: string }> = [
+        { kind: "contained-directory-symlink", name: "contained directory" },
+        { kind: "dangling-symlink", name: "dangling" },
+        { kind: "outside-symlink", name: "outside" },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourceName = `Direct recovery source ${index}.bin`;
+        const targetName = `Direct recovery target ${index}.bin`;
+        const claimantName = `direct recovery TARGET ${index}.BIN`;
+        const sourcePath = path.join(vaultPath, sourceName);
+        const targetPath = path.join(vaultPath, targetName);
+        const claimantPath = path.join(vaultPath, claimantName);
+        const sourceBytes = Buffer.from(`direct recovery:${testCase.name}`, "utf8");
+        await fs.writeFile(sourcePath, sourceBytes);
+        const interrupted = await openKernel(async (point) => {
+          if (point !== "rename:after-publish") return;
+          await createNamespaceClaimant(claimantPath, testCase.kind, `direct-recovery-${index}`);
+          throw new Error(`interrupted direct namespace ${testCase.name}`);
+        });
+        const source = await interrupted.readBinary(sourceName, 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          interrupted.renameFile(sourceName, targetName, source.snapshot.revision, undefined, {
+            strictContainment: true,
+          }),
+        ).rejects.toThrow(`interrupted direct namespace ${testCase.name}`);
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+        expect((await fs.lstat(claimantPath)).isSymbolicLink()).toBe(true);
+
+        const recovered = await openKernel();
+        expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+          kind: "rename",
+          outcome: "manual-conflict",
+          path: targetName,
+        });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+        expect((await fs.lstat(claimantPath)).isSymbolicLink()).toBe(true);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps an exact regular target on the ordinary strict target-exists path",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Exact regular source.bin");
+      const targetPath = path.join(vaultPath, "Exact regular target.bin");
+      const sourceBytes = Buffer.from("source", "utf8");
+      const targetBytes = Buffer.from("target", "utf8");
+      await fs.writeFile(sourcePath, sourceBytes);
+      await fs.writeFile(targetPath, targetBytes);
+      const kernel = await openKernel();
+      const source = await kernel.readBinary("Exact regular source.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        kernel.renameFile(
+          "Exact regular source.bin",
+          "Exact regular target.bin",
+          source.snapshot.revision,
+          undefined,
+          { strictContainment: true },
+        ),
+      ).resolves.toMatchObject({ status: "conflict", reason: "target-exists" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+      await expect(fs.readFile(targetPath)).resolves.toEqual(targetBytes);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects a socket case alias at the final strict direct-publication barrier",
+    async () => {
+      const sourceName = "Socket alias source.bin";
+      const targetName = "Socket alias target.bin";
+      const claimantName = "SOCKET ALIAS TARGET.BIN";
+      const sourcePath = path.join(vaultPath, sourceName);
+      const targetPath = path.join(vaultPath, targetName);
+      const claimantPath = path.join(vaultPath, claimantName);
+      const sourceBytes = Buffer.from("socket alias source", "utf8");
+      await fs.writeFile(sourcePath, sourceBytes);
+      let socket: Server | undefined;
+      const kernel = await openKernel(async (point) => {
+        if (point !== "rename:before-publish") return;
+        socket = await createNamespaceSocket(claimantPath);
+      });
+      try {
+        const source = await kernel.readBinary(sourceName, 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(sourceName, targetName, source.snapshot.revision, undefined, {
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        expect((await fs.lstat(claimantPath)).isSocket()).toBe(true);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        if (socket) await closeNamespaceSocket(socket);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects an exact socket strict target before reading or journaling",
+    async () => {
+      const sourceName = "Exact socket source.bin";
+      const targetName = "Exact socket target.bin";
+      const sourcePath = path.join(vaultPath, sourceName);
+      const targetPath = path.join(vaultPath, targetName);
+      const sourceBytes = Buffer.from("exact socket source", "utf8");
+      await fs.writeFile(sourcePath, sourceBytes);
+      const socket = await createNamespaceSocket(targetPath);
+      try {
+        const kernel = await openKernel();
+        const source = await kernel.readBinary(sourceName, 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(sourceName, targetName, source.snapshot.revision, undefined, {
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        expect((await fs.lstat(targetPath)).isSocket()).toBe(true);
+        await expectNoAttachmentPublicationArtifacts(kernel);
+      } finally {
+        await closeNamespaceSocket(socket);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps an exact symlink target on the strict containment-unavailable path",
+    async () => {
+      const cases: Array<{ kind: NamespaceClaimantKind; name: string }> = [
+        { kind: "contained-directory-symlink", name: "contained directory" },
+        { kind: "dangling-symlink", name: "dangling" },
+        { kind: "outside-symlink", name: "outside" },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourceName = `Exact symlink source ${index}.bin`;
+        const targetName = `Exact symlink target ${index}.bin`;
+        const sourcePath = path.join(vaultPath, sourceName);
+        const targetPath = path.join(vaultPath, targetName);
+        const sourceBytes = Buffer.from(`exact symlink:${testCase.name}`, "utf8");
+        await fs.writeFile(sourcePath, sourceBytes);
+        await createNamespaceClaimant(targetPath, testCase.kind, `exact-symlink-${index}`);
+        const kernel = await openKernel();
+        const source = await kernel.readBinary(sourceName, 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(sourceName, targetName, source.snapshot.revision, undefined, {
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "attachment-publish-unavailable" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        expect((await fs.lstat(targetPath)).isSymbolicLink()).toBe(true);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "treats exact, case, and NFC-equivalent target folders as strict direct-publication claimants",
+    async () => {
+      const cases = [
+        { target: "Archive/Exact folder.bin", claimant: "Archive/Exact folder.bin" },
+        { target: "Archive/Case folder.bin", claimant: "archive/case FOLDER.BIN" },
+        { target: "Archive/Caf\u00e9 folder.bin", claimant: "Archive/Cafe\u0301 folder.bin" },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourcePath = path.join(vaultPath, `Folder source ${index}.bin`);
+        const targetPath = path.join(vaultPath, testCase.target);
+        const claimantPath = path.join(vaultPath, testCase.claimant);
+        const sourceBytes = Buffer.from(`source:${testCase.target}`, "utf8");
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.mkdir(claimantPath);
+        await fs.writeFile(sourcePath, sourceBytes);
+        const kernel = await openKernel();
+        const source = await kernel.readBinary(path.basename(sourcePath), 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(
+            path.basename(sourcePath),
+            testCase.target,
+            source.snapshot.revision,
+            undefined,
+            {
+              strictContainment: true,
+            },
+          ),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        expect((await fs.stat(claimantPath)).isDirectory()).toBe(true);
+        if (testCase.claimant !== testCase.target) {
+          await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        }
+        await expectNoAttachmentPublicationArtifacts(kernel);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects case and NFC-equivalent strict target claimants at the final pre-publication barrier",
+    async () => {
+      const cases = [
+        { source: "Case source.bin", target: "Report copy.bin", claimant: "REPORT COPY.BIN" },
+        { source: "Nfc source.bin", target: "Caf\u00e9 copy.bin", claimant: "Cafe\u0301 copy.bin" },
+        {
+          source: "Ancestor source.bin",
+          target: "Archive/Report copy.bin",
+          claimant: "archive/report COPY.BIN",
+        },
+      ];
+      for (const testCase of cases) {
+        const sourcePath = path.join(vaultPath, testCase.source);
+        const targetPath = path.join(vaultPath, testCase.target);
+        const claimantPath = path.join(vaultPath, testCase.claimant);
+        const sourceBytes = Buffer.from(`source:${testCase.source}`, "utf8");
+        const claimantBytes = Buffer.from(`claimant:${testCase.claimant}`, "utf8");
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.writeFile(sourcePath, sourceBytes);
+        const kernel = await openKernel(async (point) => {
+          if (point === "rename:before-publish") await fs.writeFile(claimantPath, claimantBytes);
+        });
+        const source = await kernel.readBinary(testCase.source, 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(testCase.source, testCase.target, source.snapshot.revision, undefined, {
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "does not complete a strict publication when a case or NFC claimant arrives after linking",
+    async () => {
+      const cases = [
+        { source: "Late case source.bin", target: "Late Report.bin", claimant: "late report.BIN" },
+        {
+          source: "Late nfc source.bin",
+          target: "Th\u00e9orie.bin",
+          claimant: "The\u0301orie.bin",
+        },
+        {
+          source: "Late ancestor source.bin",
+          target: "Archive/Late Report.bin",
+          claimant: "archive/late report.BIN",
+        },
+      ];
+      for (const testCase of cases) {
+        const sourcePath = path.join(vaultPath, testCase.source);
+        const targetPath = path.join(vaultPath, testCase.target);
+        const claimantPath = path.join(vaultPath, testCase.claimant);
+        const sourceBytes = Buffer.from(`source:${testCase.source}`, "utf8");
+        const claimantBytes = Buffer.from(`claimant:${testCase.claimant}`, "utf8");
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.writeFile(sourcePath, sourceBytes);
+        const kernel = await openKernel(async (point) => {
+          if (point === "rename:after-link") await fs.writeFile(claimantPath, claimantBytes);
+        });
+        const source = await kernel.readBinary(testCase.source, 1024);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.renameFile(testCase.source, testCase.target, source.snapshot.revision, undefined, {
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+      }
     },
   );
 
@@ -1053,7 +1676,7 @@ describe("VaultKernel renames", () => {
         kernel.renameFile("Before.md", "Archive/Nested/After.md", source.revision, undefined, {
           strictContainment: true,
         }),
-      ).rejects.toThrow();
+      ).resolves.toMatchObject({ status: "conflict", reason: "attachment-publish-unavailable" });
       await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
       await expect(
         fs.stat(path.join(outsideDirectory, "Nested", "After.md")),
@@ -1087,7 +1710,10 @@ describe("VaultKernel renames", () => {
         { strictContainment: true },
       );
 
-      expect(result).toMatchObject({ status: "conflict", reason: "target-created" });
+      expect(result).toMatchObject({
+        status: "conflict",
+        reason: "attachment-publish-unavailable",
+      });
       await expect(fs.readFile(sourcePath, "utf8")).resolves.toBe("source");
       await expect(fs.readFile(outsidePath, "utf8")).resolves.toBe("outside");
     },
@@ -1554,6 +2180,617 @@ describe("VaultKernel compound move transactions", () => {
   );
 
   it.runIf(process.platform === "linux")(
+    "refuses a rewrite-bearing strict publication with an absent target parent before journaling",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Source.bin");
+      const notePath = path.join(vaultPath, "Note.md");
+      const targetPath = path.join(vaultPath, "Archive", "Source copy.bin");
+      const sourceBytes = Buffer.from("source bytes");
+      const noteBytes = "[source](./Source.bin)\n";
+      await fs.writeFile(sourcePath, sourceBytes);
+      await fs.writeFile(notePath, noteBytes, "utf8");
+      const kernel = await openKernel();
+      const [source, note] = await Promise.all([
+        kernel.readBinary("Source.bin", 1024),
+        kernel.readText("Note.md"),
+      ]);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        kernel.moveWithWrites({
+          sourcePath: "Source.bin",
+          targetPath: "Archive/Source copy.bin",
+          expectedSourceRevision: source.snapshot.revision,
+          writes: [
+            {
+              path: "Note.md",
+              content: "[source](./Archive/Source%20copy.bin)\n",
+              expectedRevision: note.revision,
+            },
+          ],
+          strictContainment: true,
+        }),
+      ).resolves.toMatchObject({ status: "conflict", reason: "attachment-publish-unavailable" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+      await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+      await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.stat(path.join(vaultPath, "Archive"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expectNoAttachmentPublicationArtifacts(kernel);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "returns typed rewrite-bearing publication conflicts before any mutation when capabilities fail",
+    async () => {
+      const cases = [
+        {
+          name: "unsupported anonymous publication",
+          capability: {
+            status: "unsupported" as const,
+            code: "anonymous-publication-unsupported" as const,
+            contract: "FILE-PUBLISH-CAP-02" as const,
+            detail: "injected unsupported capability",
+          },
+        },
+        {
+          name: "different destination device",
+          capability: {
+            status: "supported" as const,
+            contract: "FILE-PUBLISH-CAP-02" as const,
+            device: "injected-other-device",
+          },
+        },
+      ];
+      for (const testCase of cases) {
+        const sourcePath = path.join(vaultPath, `${testCase.name}.bin`);
+        const notePath = path.join(vaultPath, `${testCase.name}.md`);
+        const targetPath = path.join(vaultPath, `${testCase.name} copy.bin`);
+        const sourceBytes = Buffer.from(`source:${testCase.name}`, "utf8");
+        const noteBytes = `[source](./${testCase.name}.bin)\n`;
+        await fs.writeFile(sourcePath, sourceBytes);
+        await fs.writeFile(notePath, noteBytes, "utf8");
+        const kernel = await openKernel();
+        injectAttachmentPublishCapability(kernel, testCase.capability);
+        const [source, note] = await Promise.all([
+          kernel.readBinary(path.basename(sourcePath), 1024),
+          kernel.readText(path.basename(notePath)),
+        ]);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.moveWithWrites({
+            sourcePath: path.basename(sourcePath),
+            targetPath: path.basename(targetPath),
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [
+              {
+                path: path.basename(notePath),
+                content: `[source](./${path.basename(targetPath)})\n`,
+                expectedRevision: note.revision,
+              },
+            ],
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({
+          status: "conflict",
+          reason: "attachment-publish-unavailable",
+          conflictPaths: [],
+        });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        await expectNoAttachmentPublicationArtifacts(kernel);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "returns a typed rewrite-bearing strict publication conflict before mutations when capabilities fail",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Source.bin");
+      const notePath = path.join(vaultPath, "Note.md");
+      const targetPath = path.join(vaultPath, "Source copy.bin");
+      const sourceBytes = Buffer.from("source bytes");
+      const noteBytes = "[source](./Source.bin)\n";
+      await fs.writeFile(sourcePath, sourceBytes);
+      await fs.writeFile(notePath, noteBytes, "utf8");
+      const kernel = await openKernel();
+      injectAttachmentPublishCapability(kernel, {
+        status: "supported",
+        contract: "FILE-PUBLISH-CAP-02",
+        device: "injected-other-device",
+      });
+      const [source, note] = await Promise.all([
+        kernel.readBinary("Source.bin", 1024),
+        kernel.readText("Note.md"),
+      ]);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        kernel.moveWithWrites({
+          sourcePath: "Source.bin",
+          targetPath: "Source copy.bin",
+          expectedSourceRevision: source.snapshot.revision,
+          writes: [
+            {
+              path: "Note.md",
+              content: "[source](./Source%20copy.bin)\n",
+              expectedRevision: note.revision,
+            },
+          ],
+          strictContainment: true,
+        }),
+      ).resolves.toMatchObject({ status: "conflict", reason: "attachment-publish-unavailable" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+      await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+      await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      await expectNoAttachmentPublicationArtifacts(kernel);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects case and NFC-equivalent claimants at the rewrite-bearing pre-publication barrier",
+    async () => {
+      const cases = [
+        { target: "Archive/Report copy.bin", claimant: "Archive/REPORT COPY.BIN" },
+        { target: "Archive/Caf\u00e9 copy.bin", claimant: "Archive/Cafe\u0301 copy.bin" },
+        { target: "Archive/Ancestor.bin", claimant: "archive/ancestor.BIN" },
+      ];
+      for (const testCase of cases) {
+        const sourcePath = path.join(vaultPath, "Source.bin");
+        const notePath = path.join(vaultPath, "Note.md");
+        const targetPath = path.join(vaultPath, testCase.target);
+        const claimantPath = path.join(vaultPath, testCase.claimant);
+        const sourceBytes = Buffer.from(`source:${testCase.target}`, "utf8");
+        const noteBytes = "[source](./Source.bin)\n";
+        const claimantBytes = Buffer.from(`claimant:${testCase.claimant}`, "utf8");
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.writeFile(sourcePath, sourceBytes);
+        await fs.writeFile(notePath, noteBytes, "utf8");
+        const kernel = await openKernel(async (point) => {
+          if (point === "move-with-writes:before-publish") {
+            await fs.writeFile(claimantPath, claimantBytes);
+          }
+        });
+        const [source, note] = await Promise.all([
+          kernel.readBinary("Source.bin", 1024),
+          kernel.readText("Note.md"),
+        ]);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.moveWithWrites({
+            sourcePath: "Source.bin",
+            targetPath: testCase.target,
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [
+              {
+                path: "Note.md",
+                content: "[source](./Archive/replaced.bin)\n",
+                expectedRevision: note.revision,
+              },
+            ],
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "treats exact and NFC-equivalent target folders as strict rewrite-publication claimants",
+    async () => {
+      const cases = [
+        {
+          target: "Archive/Exact rewrite folder.bin",
+          claimant: "Archive/Exact rewrite folder.bin",
+        },
+        {
+          target: "Archive/Caf\u00e9 rewrite folder.bin",
+          claimant: "Archive/Cafe\u0301 rewrite folder.bin",
+        },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourcePath = path.join(vaultPath, `Folder rewrite source ${index}.bin`);
+        const notePath = path.join(vaultPath, `Folder rewrite note ${index}.md`);
+        const targetPath = path.join(vaultPath, testCase.target);
+        const claimantPath = path.join(vaultPath, testCase.claimant);
+        const sourceBytes = Buffer.from(`source:${testCase.target}`, "utf8");
+        const noteBytes = `[source](./${path.basename(sourcePath)})\n`;
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.mkdir(claimantPath);
+        await fs.writeFile(sourcePath, sourceBytes);
+        await fs.writeFile(notePath, noteBytes, "utf8");
+        const kernel = await openKernel();
+        const [source, note] = await Promise.all([
+          kernel.readBinary(path.basename(sourcePath), 1024),
+          kernel.readText(path.basename(notePath)),
+        ]);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.moveWithWrites({
+            sourcePath: path.basename(sourcePath),
+            targetPath: testCase.target,
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [
+              {
+                path: path.basename(notePath),
+                content: "[source](./rewritten.bin)\n",
+                expectedRevision: note.revision,
+              },
+            ],
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        expect((await fs.stat(claimantPath)).isDirectory()).toBe(true);
+        if (testCase.claimant !== testCase.target) {
+          await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        }
+        await expectNoAttachmentPublicationArtifacts(kernel);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "does not rewrite Markdown when a case or NFC claimant arrives after rewrite-bearing publication",
+    async () => {
+      const cases = [
+        { target: "Archive/Late Report.bin", claimant: "Archive/late report.BIN" },
+        { target: "Archive/Th\u00e9orie.bin", claimant: "Archive/The\u0301orie.bin" },
+        { target: "Archive/Late Ancestor.bin", claimant: "archive/late ancestor.BIN" },
+      ];
+      for (const testCase of cases) {
+        const sourcePath = path.join(vaultPath, "Source.bin");
+        const notePath = path.join(vaultPath, "Note.md");
+        const targetPath = path.join(vaultPath, testCase.target);
+        const claimantPath = path.join(vaultPath, testCase.claimant);
+        const sourceBytes = Buffer.from(`source:${testCase.target}`, "utf8");
+        const noteBytes = "[source](./Source.bin)\n";
+        const claimantBytes = Buffer.from(`claimant:${testCase.claimant}`, "utf8");
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.writeFile(sourcePath, sourceBytes);
+        await fs.writeFile(notePath, noteBytes, "utf8");
+        const kernel = await openKernel(async (point) => {
+          if (point === "rename:after-link") await fs.writeFile(claimantPath, claimantBytes);
+        });
+        const [source, note] = await Promise.all([
+          kernel.readBinary("Source.bin", 1024),
+          kernel.readText("Note.md"),
+        ]);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.moveWithWrites({
+            sourcePath: "Source.bin",
+            targetPath: testCase.target,
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [
+              {
+                path: "Note.md",
+                content: "[source](./Archive/replaced.bin)\n",
+                expectedRevision: note.revision,
+              },
+            ],
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rejects every lexical symlink alias before rewrite-bearing strict publication can mutate Markdown",
+    async () => {
+      const cases: Array<{ kind: NamespaceClaimantKind; name: string }> = [
+        { kind: "contained-directory-symlink", name: "contained directory" },
+        { kind: "dangling-symlink", name: "dangling" },
+        { kind: "outside-symlink", name: "outside" },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourceName = `RewriteSource${index}.bin`;
+        const targetName = `RewriteTarget${index}.bin`;
+        const claimantName = `rewritetarget${index}.BIN`;
+        const noteName = `RewriteNote${index}.md`;
+        const sourcePath = path.join(vaultPath, sourceName);
+        const targetPath = path.join(vaultPath, targetName);
+        const claimantPath = path.join(vaultPath, claimantName);
+        const notePath = path.join(vaultPath, noteName);
+        const sourceBytes = Buffer.from(`rewrite source:${testCase.name}`, "utf8");
+        const noteBytes = `[attachment](./${sourceName})\n`;
+        const rewrittenNote = `[attachment](./${targetName})\n`;
+        await fs.writeFile(sourcePath, sourceBytes);
+        await fs.writeFile(notePath, noteBytes, "utf8");
+        const kernel = await openKernel(async (point) => {
+          if (point !== "move-with-writes:before-publish") return;
+          await createNamespaceClaimant(claimantPath, testCase.kind, `rewrite-prepublish-${index}`);
+        });
+        const [source, note] = await Promise.all([
+          kernel.readBinary(sourceName, 1024),
+          kernel.readText(noteName),
+        ]);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          kernel.moveWithWrites({
+            sourcePath: sourceName,
+            targetPath: targetName,
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [{ path: noteName, content: rewrittenNote, expectedRevision: note.revision }],
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        expect((await fs.lstat(claimantPath)).isSymbolicLink()).toBe(true);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "preserves attachment, lexical alias, target, and Markdown through rewrite-bearing post-publication recovery",
+    async () => {
+      const cases: Array<{ kind: NamespaceClaimantKind; name: string }> = [
+        { kind: "contained-directory-symlink", name: "contained directory" },
+        { kind: "dangling-symlink", name: "dangling" },
+        { kind: "outside-symlink", name: "outside" },
+      ];
+      for (const [index, testCase] of cases.entries()) {
+        const sourceName = `RewriteRecoverySource${index}.bin`;
+        const targetName = `RewriteRecoveryTarget${index}.bin`;
+        const claimantName = `rewriterecoverytarget${index}.BIN`;
+        const noteName = `RewriteRecoveryNote${index}.md`;
+        const sourcePath = path.join(vaultPath, sourceName);
+        const targetPath = path.join(vaultPath, targetName);
+        const claimantPath = path.join(vaultPath, claimantName);
+        const notePath = path.join(vaultPath, noteName);
+        const sourceBytes = Buffer.from(`rewrite recovery:${testCase.name}`, "utf8");
+        const noteBytes = `[attachment](./${sourceName})\n`;
+        const rewrittenNote = `[attachment](./${targetName})\n`;
+        await fs.writeFile(sourcePath, sourceBytes);
+        await fs.writeFile(notePath, noteBytes, "utf8");
+        const interrupted = await openKernel(async (point) => {
+          if (point !== "move-with-writes:after-publish") return;
+          await createNamespaceClaimant(claimantPath, testCase.kind, `rewrite-recovery-${index}`);
+          throw new Error(`interrupted rewrite namespace ${testCase.name}`);
+        });
+        const [source, note] = await Promise.all([
+          interrupted.readBinary(sourceName, 1024),
+          interrupted.readText(noteName),
+        ]);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          interrupted.moveWithWrites({
+            sourcePath: sourceName,
+            targetPath: targetName,
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [{ path: noteName, content: rewrittenNote, expectedRevision: note.revision }],
+            strictContainment: true,
+          }),
+        ).rejects.toThrow(`interrupted rewrite namespace ${testCase.name}`);
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        expect((await fs.lstat(claimantPath)).isSymbolicLink()).toBe(true);
+
+        const recovered = await openKernel();
+        expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+          kind: "move-with-writes",
+          outcome: "manual-conflict",
+          path: sourceName,
+        });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        expect((await fs.lstat(claimantPath)).isSymbolicLink()).toBe(true);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "rolls Markdown back when an equivalent claimant arrives after rewrite-bearing publication",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Source.bin");
+      const notePath = path.join(vaultPath, "Note.md");
+      const targetPath = path.join(vaultPath, "Archive", "After Markdown.bin");
+      const claimantPath = path.join(vaultPath, "archive", "after markdown.BIN");
+      const sourceBytes = Buffer.from("source bytes", "utf8");
+      const claimantBytes = Buffer.from("external normalized claimant", "utf8");
+      const noteBytes = "[source](./Source.bin)\n";
+      const rewrittenNote = "[source](./Archive/After%20Markdown.bin)\n";
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+      await fs.writeFile(sourcePath, sourceBytes);
+      await fs.writeFile(notePath, noteBytes, "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point === "move-with-writes:before-rename") {
+          await fs.writeFile(claimantPath, claimantBytes);
+        }
+      });
+      const [source, note] = await Promise.all([
+        kernel.readBinary("Source.bin", 1024),
+        kernel.readText("Note.md"),
+      ]);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        kernel.moveWithWrites({
+          sourcePath: "Source.bin",
+          targetPath: "Archive/After Markdown.bin",
+          expectedSourceRevision: source.snapshot.revision,
+          writes: [
+            {
+              path: "Note.md",
+              content: rewrittenNote,
+              expectedRevision: note.revision,
+            },
+          ],
+          strictContainment: true,
+        }),
+      ).resolves.toMatchObject({ status: "conflict", reason: "target-normalized-exists" });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+      await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+      await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+      await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps attachment evidence and untouched Markdown after a post-publication crash",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Source.bin");
+      const notePath = path.join(vaultPath, "Note.md");
+      const targetPath = path.join(vaultPath, "Archive", "Published.bin");
+      const claimantPath = path.join(vaultPath, "archive", "published.BIN");
+      const sourceBytes = Buffer.from("source bytes", "utf8");
+      const claimantBytes = Buffer.from("external normalized claimant", "utf8");
+      const noteBytes = "[source](./Source.bin)\n";
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+      await fs.writeFile(sourcePath, sourceBytes);
+      await fs.writeFile(notePath, noteBytes, "utf8");
+      const interrupted = await openKernel(async (point) => {
+        if (point !== "move-with-writes:after-publish") return;
+        await fs.writeFile(claimantPath, claimantBytes);
+        throw new Error("interrupted after rewrite-bearing publish");
+      });
+      const [source, note] = await Promise.all([
+        interrupted.readBinary("Source.bin", 1024),
+        interrupted.readText("Note.md"),
+      ]);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+      await expect(
+        interrupted.moveWithWrites({
+          sourcePath: "Source.bin",
+          targetPath: "Archive/Published.bin",
+          expectedSourceRevision: source.snapshot.revision,
+          writes: [
+            {
+              path: "Note.md",
+              content: "[source](./Archive/Published.bin)\n",
+              expectedRevision: note.revision,
+            },
+          ],
+          strictContainment: true,
+        }),
+      ).rejects.toThrow("interrupted after rewrite-bearing publish");
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+        kind: "move-with-writes",
+        outcome: "manual-conflict",
+        path: "Source.bin",
+      });
+      await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+      await expect(fs.readFile(targetPath)).resolves.toEqual(sourceBytes);
+      await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+      await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "does not archive a committed source-retained move as success after attachment identity changes",
+    async () => {
+      const cases = [
+        {
+          name: "an altered exact target",
+          mutate: async (targetPath: string, _claimantPath: string, _claimantBytes: Buffer) => {
+            await fs.writeFile(targetPath, "external target", "utf8");
+          },
+          expectedTarget: "external target",
+        },
+        {
+          name: "a missing exact target",
+          mutate: async (targetPath: string, _claimantPath: string, _claimantBytes: Buffer) => {
+            await fs.unlink(targetPath);
+          },
+          expectedTarget: null,
+        },
+        {
+          name: "an equivalent claimant",
+          mutate: async (_targetPath: string, claimantPath: string, claimantBytes: Buffer) => {
+            await fs.writeFile(claimantPath, claimantBytes);
+          },
+          expectedTarget: "source bytes",
+        },
+      ];
+      for (const testCase of cases) {
+        const sourcePath = path.join(vaultPath, "Source.bin");
+        const notePath = path.join(vaultPath, "Note.md");
+        const targetPath = path.join(vaultPath, "Archive", "Committed.bin");
+        const claimantPath = path.join(vaultPath, "archive", "committed.BIN");
+        const sourceBytes = Buffer.from("source bytes", "utf8");
+        const claimantBytes = Buffer.from(`claimant:${testCase.name}`, "utf8");
+        const noteBytes = "[source](./Source.bin)\n";
+        const rewrittenNote = "[source](./Archive/Committed.bin)\n";
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.mkdir(path.dirname(claimantPath), { recursive: true });
+        await fs.writeFile(sourcePath, sourceBytes);
+        await fs.writeFile(notePath, noteBytes, "utf8");
+        const interrupted = await openKernel(async (point) => {
+          if (point !== "move-with-writes:after-commit") return;
+          await testCase.mutate(targetPath, claimantPath, claimantBytes);
+          throw new Error(`interrupted after committed ${testCase.name}`);
+        });
+        const [source, note] = await Promise.all([
+          interrupted.readBinary("Source.bin", 1024),
+          interrupted.readText("Note.md"),
+        ]);
+        if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+        await expect(
+          interrupted.moveWithWrites({
+            sourcePath: "Source.bin",
+            targetPath: "Archive/Committed.bin",
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [{ path: "Note.md", content: rewrittenNote, expectedRevision: note.revision }],
+            strictContainment: true,
+          }),
+        ).rejects.toThrow(`interrupted after committed ${testCase.name}`);
+
+        const recovered = await openKernel();
+        expect(recovered.startupRecoveryActions.at(-1)).toMatchObject({
+          kind: "move-with-writes",
+          outcome: "manual-conflict",
+          path: "Source.bin",
+        });
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(rewrittenNote);
+        if (testCase.expectedTarget === null) {
+          await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        } else {
+          await expect(fs.readFile(targetPath, "utf8")).resolves.toBe(testCase.expectedTarget);
+        }
+        if (testCase.name === "an equivalent claimant") {
+          await expect(fs.readFile(claimantPath)).resolves.toEqual(claimantBytes);
+        }
+        await fs.rm(path.join(vaultPath, "Archive"), { recursive: true, force: true });
+        await fs.rm(path.join(vaultPath, "archive"), { recursive: true, force: true });
+        await fs.unlink(sourcePath);
+        await fs.unlink(notePath);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
     "rejects cross-device rollback retention before publishing an attachment",
     async () => {
       const crossDeviceState = await fs.mkdtemp(path.join("/dev/shm", "threadleaf-state-"));
@@ -1570,9 +2807,10 @@ describe("VaultKernel compound move transactions", () => {
         });
         const request = { ...(await prepareFixture(kernel)), strictContainment: true };
 
-        await expect(kernel.moveWithWrites(request)).rejects.toMatchObject({
-          name: "AttachmentPublishCapabilityError",
-          code: "cross-device",
+        await expect(kernel.moveWithWrites(request)).resolves.toMatchObject({
+          status: "conflict",
+          reason: "attachment-publish-unavailable",
+          conflictPaths: [],
         });
         await expect(fs.readFile(path.join(vaultPath, "Source.md"), "utf8")).resolves.toBe(
           "# Source",
@@ -1586,6 +2824,7 @@ describe("VaultKernel compound move transactions", () => {
             .readdir(vaultPath)
             .then((entries) => entries.filter((entry) => entry.startsWith(".threadleaf-"))),
         ).resolves.toEqual([]);
+        await expectNoAttachmentPublicationArtifacts(kernel);
       } finally {
         await fs.rm(crossDeviceState, { recursive: true, force: true });
       }

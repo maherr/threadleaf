@@ -31,6 +31,8 @@ const originalNote = [
   "",
   "The body is a fixture and must remain byte-identical.",
 ].join("\n");
+const attachmentPublishUnavailableMessage =
+  "Threadleaf could not verify strict no-overwrite publication at that destination. Use an existing contained folder on this vault filesystem that supports attachment publication. Review both attachment paths; Markdown references were not updated.";
 let child;
 let cdp;
 let exited;
@@ -491,11 +493,143 @@ async function capture(name) {
   return destination;
 }
 
+async function openAttachmentMoveWorkbench() {
+  await clickPointer(
+    '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="move"]',
+  );
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")) break;
+    await delay(40);
+  }
+  assert(
+    await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"),
+    "The packaged attachment card did not reach the publication workbench.",
+  );
+}
+
+async function previewAttachmentPublication(targetPath) {
+  await replaceInput("#attachment-move-target", targetPath);
+  await clickPointer("#attachment-move-submit");
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const state = await evaluate(`(() => ({
+      open: document.querySelector('#attachment-move-dialog')?.open === true,
+      message: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
+      refs: document.querySelectorAll('#attachment-move-blocker-list li').length,
+    }))()`);
+    if (state.open && state.message.length > 0 && state.refs > 0) break;
+    await delay(50);
+  }
+  const state = await evaluate(`(() => ({
+    open: document.querySelector('#attachment-move-dialog')?.open === true,
+    message: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
+    list: document.querySelector('#attachment-move-blocker-list')?.textContent ?? '',
+  }))()`);
+  assert(
+    state.open && state.message.length > 0,
+    `The attachment publication preview did not render for ${targetPath}.`,
+  );
+  assert(
+    state.list.includes("Attachment Desk.md") && state.list.includes(targetPath),
+    `The attachment publication preview omitted its exact local reference update for ${targetPath}.`,
+  );
+  return state;
+}
+
+async function confirmAttachmentPublishUnavailable() {
+  await clickPointer("#attachment-move-submit");
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const state = await evaluate(`(() => {
+      const error = document.querySelector('#attachment-move-error');
+      if (!(error instanceof HTMLElement)) return null;
+      const rect = error.getBoundingClientRect();
+      const style = getComputedStyle(error);
+      return {
+        open: document.querySelector('#attachment-move-dialog')?.open === true,
+        text: error.textContent ?? '',
+        role: error.getAttribute('role') ?? '',
+        visible:
+          !error.hidden &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          rect.width > 0 &&
+          rect.height > 0,
+        region: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      };
+    })()`);
+    if (
+      state?.open &&
+      state.text === attachmentPublishUnavailableMessage &&
+      state.role === "alert" &&
+      state.visible
+    ) {
+      return state;
+    }
+    await delay(60);
+  }
+  const state = await evaluate(`(() => {
+    const error = document.querySelector('#attachment-move-error');
+    if (!(error instanceof HTMLElement)) return null;
+    const rect = error.getBoundingClientRect();
+    const style = getComputedStyle(error);
+    return {
+      open: document.querySelector('#attachment-move-dialog')?.open === true,
+      text: error.textContent ?? '',
+      role: error.getAttribute('role') ?? '',
+      visible:
+        !error.hidden &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        rect.width > 0 &&
+        rect.height > 0,
+      region: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+    };
+  })()`);
+  assert(
+    state?.open &&
+      state.text === attachmentPublishUnavailableMessage &&
+      state.role === "alert" &&
+      state.visible,
+    `The strict attachment publication failure was not visibly rendered: ${JSON.stringify(state)}`,
+  );
+  return state;
+}
+
+async function assertMissingPublicationAttemptDidNotMutateFixture() {
+  assert(
+    (await fs.readFile(notePath, "utf8")) === originalNote,
+    "The missing-parent attachment attempt changed Markdown bytes.",
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).equals(
+      Buffer.from("%PDF-1.7\nfixture\0", "binary"),
+    ),
+    "The missing-parent attachment attempt changed source bytes.",
+  );
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, "Missing"))
+      .then(() => true)
+      .catch(() => false)),
+    "The missing-parent attachment attempt created Missing/.",
+  );
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, "Missing", "report.pdf"))
+      .then(() => true)
+      .catch(() => false)),
+    "The missing-parent attachment attempt created its destination.",
+  );
+}
+
 try {
   assert(process.platform === "linux", "The packaged attachment check currently requires Linux.");
   await fs.access(executablePath);
   await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+  await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
   await fs.mkdir(userDataPath, { recursive: true });
   await fs.writeFile(notePath, originalNote, "utf8");
   await fs.writeFile(
@@ -619,18 +753,7 @@ try {
   screenshots.push(await capture("packaged-attachment-cards-light.png"));
   await setTheme("dark");
 
-  await clickPointer(
-    '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="move"]',
-  );
-  const dialogDeadline = Date.now() + 5_000;
-  while (Date.now() < dialogDeadline) {
-    if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")) break;
-    await delay(40);
-  }
-  assert(
-    await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"),
-    "The packaged attachment card did not reach the publication workbench.",
-  );
+  await openAttachmentMoveWorkbench();
   const workbenchDom = await evaluate(`(() => {
     const html = document.querySelector('#attachment-move-dialog')?.outerHTML ?? '';
     const needle = ${JSON.stringify(vaultPath)};
@@ -641,32 +764,70 @@ try {
     workbenchDom?.index < 0,
     `The attachment workbench leaked the absolute vault path into the renderer DOM: ${JSON.stringify(workbenchDom)}`,
   );
-  await replaceInput("#attachment-move-target", "Archive/report-renamed.pdf");
-  await clickPointer("#attachment-move-submit");
-  const previewDeadline = Date.now() + 8_000;
-  while (Date.now() < previewDeadline) {
-    const state = await evaluate(`(() => ({
-      open: document.querySelector('#attachment-move-dialog')?.open === true,
-      preview: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
-      refs: document.querySelectorAll('#attachment-move-blocker-list li').length,
-    }))()`);
-    if (state.open && state.preview.length > 0 && state.refs > 0) break;
-    await delay(50);
+  await previewAttachmentPublication("Missing/report.pdf");
+  await assertMissingPublicationAttemptDidNotMutateFixture();
+  const unavailableDarkState = await confirmAttachmentPublishUnavailable();
+  await assertMissingPublicationAttemptDidNotMutateFixture();
+  const unavailableDarkPath = await capture("packaged-attachment-unavailable-dark.png");
+  screenshots.push(unavailableDarkPath);
+  const unavailablePositive = await evaluate(`(() => {
+    const error = document.querySelector('#attachment-move-error');
+    if (!(error instanceof HTMLElement)) return false;
+    error.style.outline = '12px solid rgb(255, 0, 255)';
+    error.style.outlineOffset = '-12px';
+    return getComputedStyle(error).outlineColor === 'rgb(255, 0, 255)';
+  })()`);
+  assert(
+    unavailablePositive,
+    "The unavailable-publication visual positive control did not reach the visible error.",
+  );
+  const unavailablePositivePath = await capture(
+    "packaged-attachment-unavailable-positive-control.png",
+  );
+  screenshots.push(unavailablePositivePath);
+  const changedPixels = changedPixelsInRegion(
+    decodePng(await fs.readFile(unavailableDarkPath)),
+    decodePng(await fs.readFile(unavailablePositivePath)),
+    unavailableDarkState.region,
+  );
+  assert(
+    changedPixels > 0,
+    "The unavailable-publication visual positive control changed no error pixels.",
+  );
+  const positiveImage = decodePng(await fs.readFile(unavailablePositivePath));
+  const outlinePixels = countPerimeterColorPixels(positiveImage, unavailableDarkState.region, {
+    r: 255,
+    g: 0,
+    b: 255,
+    a: 255,
+  });
+  assert(
+    Object.values(outlinePixels).every((count) => count > 0),
+    `The decoded PNG did not contain the expected magenta outline on every unavailable-publication error side: ${JSON.stringify(outlinePixels)}`,
+  );
+  await evaluate(
+    "document.querySelector('#attachment-move-error')?.style.removeProperty('outline'); document.querySelector('#attachment-move-error')?.style.removeProperty('outline-offset'); true",
+  );
+  await clickPointer("#attachment-move-cancel");
+  const unavailableCloseDeadline = Date.now() + 5_000;
+  while (Date.now() < unavailableCloseDeadline) {
+    if (!(await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")))
+      break;
+    await delay(40);
   }
-  const previewState = await evaluate(`(() => ({
-    open: document.querySelector('#attachment-move-dialog')?.open === true,
-    message: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
-    list: document.querySelector('#attachment-move-blocker-list')?.textContent ?? '',
-  }))()`);
   assert(
-    previewState.open && previewState.message.length > 0,
-    "The attachment publication preview did not render.",
+    !(await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")),
+    "The unavailable-publication workbench did not close before the light-theme retry.",
   );
-  assert(
-    previewState.list.includes("Attachment Desk.md") &&
-      previewState.list.includes("Archive/report-renamed.pdf"),
-    "The attachment publication preview omitted its exact local reference update.",
-  );
+  await setTheme("light");
+  await openAttachmentMoveWorkbench();
+  await previewAttachmentPublication("Missing/report.pdf");
+  await assertMissingPublicationAttemptDidNotMutateFixture();
+  await confirmAttachmentPublishUnavailable();
+  await assertMissingPublicationAttemptDidNotMutateFixture();
+  screenshots.push(await capture("packaged-attachment-unavailable-light.png"));
+
+  await previewAttachmentPublication("Archive/report-renamed.pdf");
   assert(
     !(await evaluate(
       `(document.querySelector('#attachment-move-dialog')?.outerHTML ?? '').includes(${JSON.stringify(vaultPath)})`,
@@ -691,53 +852,8 @@ try {
     "The attachment preview created its destination before confirmation.",
   );
 
-  await evaluate(
-    "document.querySelector('.preview-attachment-card')?.scrollIntoView({ block: 'center' }); true",
-  );
-  await delay(120);
   await setTheme("dark");
-  const darkBaselinePath = await capture("packaged-attachments-dark.png");
-  screenshots.push(darkBaselinePath);
-  const dialogRegion = await evaluate(`(() => {
-    const dialog = document.querySelector('#attachment-move-dialog');
-    if (!(dialog instanceof HTMLElement)) return null;
-    const rect = dialog.getBoundingClientRect();
-    return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
-  })()`);
-  assert(
-    dialogRegion && dialogRegion.width > 0 && dialogRegion.height > 0,
-    "The attachment dialog did not expose a positive-control region.",
-  );
-  const positive = await evaluate(`(() => {
-    const dialog = document.querySelector('#attachment-move-dialog');
-    if (!(dialog instanceof HTMLElement) || !dialog.matches(':modal')) return false;
-    dialog.style.outline = '12px solid rgb(255, 0, 255)';
-    dialog.style.outlineOffset = '-12px';
-    return getComputedStyle(dialog).outlineColor === 'rgb(255, 0, 255)';
-  })()`);
-  assert(positive, "The attachment visual positive control did not reach the visible workbench.");
-  const positivePath = await capture("packaged-attachments-positive-control.png");
-  screenshots.push(positivePath);
-  const changedPixels = changedPixelsInRegion(
-    decodePng(await fs.readFile(darkBaselinePath)),
-    decodePng(await fs.readFile(positivePath)),
-    dialogRegion,
-  );
-  assert(changedPixels > 0, "The attachment visual positive control changed no dialog pixels.");
-  const positiveImage = decodePng(await fs.readFile(positivePath));
-  const outlinePixels = countPerimeterColorPixels(positiveImage, dialogRegion, {
-    r: 255,
-    g: 0,
-    b: 255,
-    a: 255,
-  });
-  assert(
-    Object.values(outlinePixels).every((count) => count > 0),
-    `The decoded PNG did not contain the expected magenta outline on every dialog side: ${JSON.stringify(outlinePixels)}`,
-  );
-  await evaluate(
-    "document.querySelector('#attachment-move-dialog')?.style.removeProperty('outline'); document.querySelector('#attachment-move-dialog')?.style.removeProperty('outline-offset'); true",
-  );
+  screenshots.push(await capture("packaged-attachments-dark.png"));
   await setTheme("light");
   screenshots.push(await capture("packaged-attachments-light.png"));
 

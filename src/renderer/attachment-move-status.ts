@@ -18,6 +18,17 @@ export interface VerifiedAttachmentPublicationReceipt {
   rewriteCount: number;
 }
 
+/** Explains strict-publication conflicts without pretending they are generic failures. */
+export function attachmentPublicationConflictMessage(reason: unknown): string | null {
+  if (reason === "attachment-publish-unavailable") {
+    return "Threadleaf could not verify strict no-overwrite publication at that destination. Use an existing contained folder on this vault filesystem that supports attachment publication. Review both attachment paths; Markdown references were not updated.";
+  }
+  if (reason === "target-normalized-exists") {
+    return "Threadleaf found a case- or Unicode-equivalent destination name. Choose a path with a distinct normalized name. Threadleaf did not overwrite it or update Markdown references.";
+  }
+  return null;
+}
+
 function displaySafeVaultName(value: string | undefined): string {
   const basenameSafe = (value ?? "").replaceAll("\\", "/").split("/").at(-1) ?? "";
   const cleaned = [...basenameSafe]

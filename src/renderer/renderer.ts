@@ -103,7 +103,11 @@ import {
   type VaultWorkspaceSettings,
 } from "../shared/workspace-settings";
 import { applyAppearanceCss } from "./appearance-renderer";
-import { attachmentMoveCommitNotice, attachmentPublicationReceipt } from "./attachment-move-status";
+import {
+  attachmentMoveCommitNotice,
+  attachmentPublicationConflictMessage,
+  attachmentPublicationReceipt,
+} from "./attachment-move-status";
 import { CanvasViewController } from "./canvas-view";
 import {
   filterPaletteCommands,
@@ -4254,6 +4258,10 @@ async function moveCurrentAttachment(): Promise<void> {
       submittedConfirmationId ?? undefined,
     );
     render(response.snapshot);
+    const attachmentConflictMessage =
+      response.outcome.status === "conflict"
+        ? attachmentPublicationConflictMessage(response.outcome.reason)
+        : null;
     if (response.outcome.status === "published-source-retained") {
       const receipt = attachmentPublicationReceipt(response.outcome);
       if (receipt) {
@@ -4285,6 +4293,11 @@ async function moveCurrentAttachment(): Promise<void> {
       attachmentMoveBlockers = response.outcome.blockers;
       elements.attachmentMovePreviewMessage.textContent = "";
       elements.attachmentMoveError.textContent = `Publication blocked: ${response.outcome.blockers.length} internal link resolution${response.outcome.blockers.length === 1 ? " cannot" : "s cannot"} be rewritten safely. No files were changed.`;
+    } else if (attachmentConflictMessage) {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent = attachmentConflictMessage;
     } else if (
       response.outcome.status === "conflict" &&
       response.outcome.reason === "target-exists"

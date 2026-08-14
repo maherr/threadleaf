@@ -20,6 +20,7 @@ beforeEach(async () => {
   statePath = path.join(sandboxPath, "state");
   await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, "Assets", "Other"), { recursive: true });
+  await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
   await fs.writeFile(path.join(vaultPath, "Assets", "Report PDF.bin"), pdfBytes);
   await fs.writeFile(
     path.join(vaultPath, "Notes", "Index.md"),
@@ -279,7 +280,7 @@ describe("attachment move planning", () => {
       definitionPath,
       [
         "---",
-        "[asset]: Hidden.pdf",
+        "[hidden]: Hidden.pdf",
         "---",
         "",
         "See [report][asset].",
@@ -300,7 +301,7 @@ describe("attachment move planning", () => {
     await expect(fs.readFile(definitionPath, "utf8")).resolves.toBe(
       [
         "---",
-        "[asset]: Hidden.pdf",
+        "[hidden]: Hidden.pdf",
         "---",
         "",
         "See [report][asset].",
@@ -471,7 +472,7 @@ describe("attachment move planning", () => {
     expect(plan).toMatchObject({ status: "planned", blockers: [], rewrites: [] });
   });
 
-  it("blocks an opaque source definition and keeps duplicate source definitions ambiguous", async () => {
+  it("blocks opaque and duplicate source evidence even when a peer is external", async () => {
     await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
     const opaquePath = path.join(vaultPath, "Notes", "Opaque source definition.md");
     const opaqueDuplicatePath = path.join(vaultPath, "Notes", "Opaque duplicate definition.md");
@@ -493,6 +494,10 @@ describe("attachment move planning", () => {
     expect(opaquePlan).toMatchObject({
       status: "planned",
       blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Opaque source definition.md",
+          reason: "unsupported",
+        }),
         expect.objectContaining({
           documentPath: "Notes/Opaque source definition.md",
           reason: "unsupported",
@@ -523,11 +528,15 @@ describe("attachment move planning", () => {
           documentPath: "Notes/Opaque duplicate definition.md",
           reason: "ambiguous",
         }),
+        expect.objectContaining({
+          documentPath: "Notes/Opaque duplicate definition.md",
+          reason: "ambiguous",
+        }),
       ],
     });
     if (opaqueDuplicatePlan.status !== "planned")
       throw new Error("Expected a planned publication.");
-    expect(opaqueDuplicatePlan.blockers).toHaveLength(1);
+    expect(opaqueDuplicatePlan.blockers).toHaveLength(2);
 
     await fs.unlink(opaqueDuplicatePath);
     await fs.writeFile(
@@ -555,7 +564,1088 @@ describe("attachment move planning", () => {
       ],
     });
     if (duplicatePlan.status !== "planned") throw new Error("Expected a planned publication.");
-    expect(duplicatePlan.blockers).toHaveLength(1);
+    expect(duplicatePlan.writes).toEqual([]);
+    await expect(fs.readFile(duplicatePath, "utf8")).resolves.toBe(
+      [
+        "![report image][report-asset]",
+        "[report-asset]: ../Assets/report.pdf",
+        "[report-asset]: https://example.test/report.pdf",
+      ].join("\n"),
+    );
+  });
+
+  it("applies reference-definition evidence uniformly to ordinary full, collapsed, and shortcut links", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const forms = [
+      { name: "Full", usage: "[visible report][report-asset]" },
+      { name: "Collapsed", usage: "[report-asset][]" },
+      { name: "Shortcut", usage: "[report-asset]" },
+    ];
+    for (const form of forms) {
+      await fs.writeFile(
+        path.join(vaultPath, "Notes", `${form.name} ordinary reference.md`),
+        [form.usage, "[report-asset]: ../Assets/report.pdf"].join("\n"),
+        "utf8",
+      );
+    }
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    for (const form of forms) {
+      expect(plan.writes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: `Notes/${form.name} ordinary reference.md`,
+            content: [form.usage, "[report-asset]: ../Archive/report.pdf"].join("\n"),
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("keeps dormant source definitions inert inside ordinary inline link titles and nested labels", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const titleDefinitionPath = path.join(vaultPath, "Notes", "Inline title dormant.md");
+    const nestedDefinitionPath = path.join(vaultPath, "Notes", "Nested label dormant.md");
+    const externalDefinitionTitlePath = path.join(
+      vaultPath,
+      "Notes",
+      "External definition title dormant.md",
+    );
+    const localDefinitionTitlePath = path.join(
+      vaultPath,
+      "Notes",
+      "Local definition title dormant.md",
+    );
+    const malformedInlineUnrelatedPath = path.join(
+      vaultPath,
+      "Notes",
+      "Malformed inline unrelated dormant.md",
+    );
+    const externalDefinitionInlineTitlePath = path.join(
+      vaultPath,
+      "Notes",
+      "External definition inline title dormant.md",
+    );
+    const autolinkTitlePath = path.join(vaultPath, "Notes", "Autolink dormant.md");
+    const rawHtmlTitlePath = path.join(vaultPath, "Notes", "Raw HTML dormant.md");
+    const indentedCodePath = path.join(vaultPath, "Notes", "Indented code dormant.md");
+    const rawHtmlBlockPath = path.join(vaultPath, "Notes", "Raw HTML block dormant.md");
+    const rawTextHtmlBlocksPath = path.join(vaultPath, "Notes", "Raw text HTML blocks dormant.md");
+    const wikiBodyDefinitionPath = path.join(vaultPath, "Notes", "Wiki body definition dormant.md");
+    const titleWithoutDefinitionPath = path.join(
+      vaultPath,
+      "Notes",
+      "Inline title no definition.md",
+    );
+    const realSourcePath = path.join(vaultPath, "Notes", "Real source link.md");
+    const titleDefinition = [
+      '[external](https://example.test "literal [report] title")',
+      "[report]: ../Assets/report.pdf",
+    ].join("\r\n");
+    const nestedDefinition = [
+      "[other [report]](https://example.test)",
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    const externalDefinitionTitle = [
+      '[external]: https://example.test "literal [report] title"',
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    const localDefinitionTitle = [
+      '[local]: ../Assets/Other/local.pdf "literal [report] title"',
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    const malformedInlineUnrelated = [
+      '[external](https://example.test "unclosed [unrelated]"',
+      "[unrelated]: ../Assets/Other/unrelated.pdf",
+    ].join("\n");
+    const externalDefinitionInlineTitle =
+      '[external]: https://example.test "literal [report](../Assets/report.pdf) and ![[../Assets/report.pdf]]"';
+    const autolinkTitle = [
+      "<https://example.test/[report](../Assets/report.pdf)>",
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    const rawHtmlTitle = [
+      '<span data-x="[report](../Assets/report.pdf)">x</span>',
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    const indentedCode = [
+      "    [direct](../Assets/report.pdf)",
+      "    [report]",
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    const rawHtmlBlock = [
+      "<div>",
+      "[direct](../Assets/report.pdf)",
+      "[report]",
+      "</div>",
+      "[still raw](../Assets/report.pdf)",
+      "",
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    const rawTextHtmlBlocks = ["script", "style", "pre", "textarea"]
+      .flatMap((tag) => [
+        `<${tag.toLocaleUpperCase("en-US")}>`,
+        `[${tag} raw](../Assets/report.pdf)`,
+        `</${tag}>`,
+        "",
+      ])
+      .join("\r\n");
+    const wikiBodyDefinition = ["[[Target|alias[report]]]", "[report]: ../Assets/report.pdf"].join(
+      "\n",
+    );
+    const titleWithoutDefinition = '[external](https://example.test "literal [report] title")\n';
+    const realSource = "[real source](../Assets/report.pdf)\n";
+    await Promise.all([
+      fs.writeFile(titleDefinitionPath, titleDefinition, "utf8"),
+      fs.writeFile(nestedDefinitionPath, nestedDefinition, "utf8"),
+      fs.writeFile(externalDefinitionTitlePath, externalDefinitionTitle, "utf8"),
+      fs.writeFile(localDefinitionTitlePath, localDefinitionTitle, "utf8"),
+      fs.writeFile(malformedInlineUnrelatedPath, malformedInlineUnrelated, "utf8"),
+      fs.writeFile(externalDefinitionInlineTitlePath, externalDefinitionInlineTitle, "utf8"),
+      fs.writeFile(autolinkTitlePath, autolinkTitle, "utf8"),
+      fs.writeFile(rawHtmlTitlePath, rawHtmlTitle, "utf8"),
+      fs.writeFile(indentedCodePath, indentedCode, "utf8"),
+      fs.writeFile(rawHtmlBlockPath, rawHtmlBlock, "utf8"),
+      fs.writeFile(rawTextHtmlBlocksPath, rawTextHtmlBlocks, "utf8"),
+      fs.writeFile(wikiBodyDefinitionPath, wikiBodyDefinition, "utf8"),
+      fs.writeFile(titleWithoutDefinitionPath, titleWithoutDefinition, "utf8"),
+      fs.writeFile(realSourcePath, realSource, "utf8"),
+    ]);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-final.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([
+      expect.objectContaining({
+        path: "Notes/Real source link.md",
+        content: "[real source](../Archive/report-final.pdf)\n",
+      }),
+    ]);
+    expect(plan.rewrites).toEqual([
+      expect.objectContaining({
+        documentPath: "Notes/Real source link.md",
+        beforeTarget: "../Assets/report.pdf",
+        afterTarget: "../Archive/report-final.pdf",
+      }),
+    ]);
+
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-final.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(titleDefinitionPath, "utf8")).resolves.toBe(titleDefinition);
+    await expect(fs.readFile(nestedDefinitionPath, "utf8")).resolves.toBe(nestedDefinition);
+    await expect(fs.readFile(externalDefinitionTitlePath, "utf8")).resolves.toBe(
+      externalDefinitionTitle,
+    );
+    await expect(fs.readFile(localDefinitionTitlePath, "utf8")).resolves.toBe(localDefinitionTitle);
+    await expect(fs.readFile(malformedInlineUnrelatedPath, "utf8")).resolves.toBe(
+      malformedInlineUnrelated,
+    );
+    await expect(fs.readFile(externalDefinitionInlineTitlePath, "utf8")).resolves.toBe(
+      externalDefinitionInlineTitle,
+    );
+    await expect(fs.readFile(autolinkTitlePath, "utf8")).resolves.toBe(autolinkTitle);
+    await expect(fs.readFile(rawHtmlTitlePath, "utf8")).resolves.toBe(rawHtmlTitle);
+    await expect(fs.readFile(indentedCodePath, "utf8")).resolves.toBe(indentedCode);
+    await expect(fs.readFile(rawHtmlBlockPath, "utf8")).resolves.toBe(rawHtmlBlock);
+    await expect(fs.readFile(rawTextHtmlBlocksPath, "utf8")).resolves.toBe(rawTextHtmlBlocks);
+    await expect(fs.readFile(wikiBodyDefinitionPath, "utf8")).resolves.toBe(wikiBodyDefinition);
+    await expect(fs.readFile(titleWithoutDefinitionPath, "utf8")).resolves.toBe(
+      titleWithoutDefinition,
+    );
+    await expect(fs.readFile(realSourcePath, "utf8")).resolves.toBe(
+      "[real source](../Archive/report-final.pdf)\n",
+    );
+  });
+
+  it("keeps raw-single-bracket wiki bodies from activating dormant source definitions", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Raw wiki bracket dormant.md");
+    const before = [
+      "[[../Assets/report]draft.pdf#section|alias [report] title]]",
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    await fs.writeFile(notePath, before, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/raw-wiki-bracket.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [], writes: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.rewrites).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/raw-wiki-bracket.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(before);
+  });
+
+  it("keeps recognized math-block attachment syntax byte-identical and dormant", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Math block dormant.md");
+    const before = [
+      "  $$ ",
+      "[direct](../Assets/report.pdf)",
+      "![[../Assets/report.pdf]]",
+      "[report]",
+      "$$",
+      " \\[ ",
+      "[second](../Assets/report.pdf)",
+      "![[../Assets/report.pdf]]",
+      "[report]",
+      "\\] ",
+      "[report]: ../Assets/report.pdf",
+    ].join("\r\n");
+    await fs.writeFile(notePath, before, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/math-block-dormant.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [], writes: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.rewrites).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/math-block-dormant.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(before);
+  });
+
+  it("keeps renderer-recognized quoted math blocks byte-identical and dormant", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Quoted math block dormant.md");
+    const before = [
+      "> $$",
+      "> [direct](../Assets/report.pdf)",
+      "> ![[../Assets/report.pdf]]",
+      "> [report]",
+      "> $$",
+      "",
+      "- > $$",
+      "  > [second](../Assets/report.pdf)",
+      "  > ![[../Assets/report.pdf]]",
+      "  > [report]",
+      "  > $$",
+      "",
+      "[report]: ../Assets/report.pdf",
+    ].join("\r\n");
+    await fs.writeFile(notePath, before, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/quoted-math-block-dormant.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [], writes: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.rewrites).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/quoted-math-block-dormant.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(before);
+  });
+
+  it("rewrites only a referenced source definition destination when its title contains an inline-looking source link", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Reference definition title positive.md");
+    const content = [
+      "[doc][asset]",
+      '[asset]: ../Assets/report.pdf "see [report](../Assets/report.pdf) and ![[../Assets/report.pdf]]"',
+    ].join("\n");
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-definition.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([
+      {
+        path: "Notes/Reference definition title positive.md",
+        expectedRevision: expect.any(String),
+        content: [
+          "[doc][asset]",
+          '[asset]: ../Archive/report-definition.pdf "see [report](../Assets/report.pdf) and ![[../Assets/report.pdf]]"',
+        ].join("\n"),
+      },
+    ]);
+    expect(plan.rewrites).toHaveLength(1);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-definition.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(
+      [
+        "[doc][asset]",
+        '[asset]: ../Archive/report-definition.pdf "see [report](../Assets/report.pdf) and ![[../Assets/report.pdf]]"',
+      ].join("\n"),
+    );
+  });
+
+  it("rewrites one source definition for a mid-prose colon shortcut reference", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Mid-prose reference colon.md");
+    const content = ["Text [report]: later", "", "[report]: ../Assets/report.pdf"].join("\n");
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-prose.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([
+      {
+        path: "Notes/Mid-prose reference colon.md",
+        expectedRevision: expect.any(String),
+        content: ["Text [report]: later", "", "[report]: ../Archive/report-prose.pdf"].join("\n"),
+      },
+    ]);
+    expect(plan.rewrites).toHaveLength(1);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-prose.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(
+      ["Text [report]: later", "", "[report]: ../Archive/report-prose.pdf"].join("\n"),
+    );
+  });
+
+  it("rewrites one source definition from a malformed inline title label under line-local evidence", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Malformed inline source evidence.md");
+    const content = [
+      '[external](https://example.test "unclosed [report]"',
+      "[report]: ../Assets/report.pdf",
+    ].join("\n");
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-malformed-inline.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([
+      {
+        path: "Notes/Malformed inline source evidence.md",
+        expectedRevision: expect.any(String),
+        content: [
+          '[external](https://example.test "unclosed [report]"',
+          "[report]: ../Archive/report-malformed-inline.pdf",
+        ].join("\n"),
+      },
+    ]);
+    expect(plan.rewrites).toHaveLength(1);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-malformed-inline.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(
+      [
+        '[external](https://example.test "unclosed [report]"',
+        "[report]: ../Archive/report-malformed-inline.pdf",
+      ].join("\n"),
+    );
+  });
+
+  it("rewrites source definitions for whitespace-separated shortcut references", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Whitespace reference delimiters.md");
+    const content = [
+      "[report] (../Assets/other.pdf)",
+      "[visible] [asset]",
+      "",
+      "[report]: ../Assets/report.pdf",
+      "[asset]: ../Assets/report.pdf",
+    ].join("\n");
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-whitespace.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([
+      {
+        path: "Notes/Whitespace reference delimiters.md",
+        expectedRevision: expect.any(String),
+        content: [
+          "[report] (../Assets/other.pdf)",
+          "[visible] [asset]",
+          "",
+          "[report]: ../Archive/report-whitespace.pdf",
+          "[asset]: ../Archive/report-whitespace.pdf",
+        ].join("\n"),
+      },
+    ]);
+    expect(plan.rewrites).toHaveLength(2);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-whitespace.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(
+      [
+        "[report] (../Assets/other.pdf)",
+        "[visible] [asset]",
+        "",
+        "[report]: ../Archive/report-whitespace.pdf",
+        "[asset]: ../Archive/report-whitespace.pdf",
+      ].join("\n"),
+    );
+  });
+
+  it("rewrites one source definition for an image shortcut followed by a colon", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Image shortcut colon.md");
+    const content = ["![report]: ../Assets/other.pdf", "", "[report]: ../Assets/report.pdf"].join(
+      "\n",
+    );
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-image-colon.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([
+      {
+        path: "Notes/Image shortcut colon.md",
+        expectedRevision: expect.any(String),
+        content: [
+          "![report]: ../Assets/other.pdf",
+          "",
+          "[report]: ../Archive/report-image-colon.pdf",
+        ].join("\n"),
+      },
+    ]);
+    expect(plan.rewrites).toHaveLength(1);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-image-colon.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(
+      ["![report]: ../Assets/other.pdf", "", "[report]: ../Archive/report-image-colon.pdf"].join(
+        "\n",
+      ),
+    );
+  });
+
+  it("blocks an unsupported multiline source definition continuation without publishing", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Multiline source definition.md");
+    const content = ["[x][asset]", "", "[asset]:", "  ../Assets/report.pdf"].join("\n");
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-multiline.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Multiline source definition.md",
+          reason: "unsupported",
+        }),
+      ],
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.blockers).toHaveLength(1);
+    expect(plan.writes).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-multiline.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "blocked" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(content);
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(
+      pdfBytes,
+    );
+    await expect(
+      fs.stat(path.join(vaultPath, "Archive", "report-multiline.pdf")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("keeps an unrelated multiline definition continuation dormant", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Multiline unrelated definition.md");
+    const content = ["[x][asset]", "", "[asset]:", "  ../Assets/Other/other.pdf"].join("\n");
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-multiline-unrelated.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-multiline-unrelated.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(content);
+  });
+
+  it("keeps escaped attachment openers literal while retaining even-escaped links", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "escaped.pdf"), pdfBytes);
+    await fs.writeFile(path.join(vaultPath, "Assets", "even.pdf"), pdfBytes);
+    const escapedPath = path.join(vaultPath, "Notes", "Escaped attachment openers.md");
+    const escapedBangPath = path.join(vaultPath, "Notes", "Escaped wiki embed marker.md");
+    const evenPath = path.join(vaultPath, "Notes", "Even escaped attachment openers.md");
+    const escaped = ["\\[ordinary](../Assets/escaped.pdf)", "\\[[../Assets/escaped.pdf]]"].join(
+      "\n",
+    );
+    const escapedBang = "\\![[../Assets/escaped.pdf]]";
+    const even = [
+      "\\\\[ordinary](../Assets/even.pdf)",
+      "\\\\[[../Assets/even.pdf]]",
+      "\\\\![[../Assets/even.pdf]]",
+    ].join("\n");
+    await Promise.all([
+      fs.writeFile(escapedPath, escaped, "utf8"),
+      fs.writeFile(escapedBangPath, escapedBang, "utf8"),
+      fs.writeFile(evenPath, even, "utf8"),
+    ]);
+    const escapedSource = await kernel.readBinary("Assets/escaped.pdf", Number.MAX_SAFE_INTEGER);
+    if (escapedSource.status !== "ready") throw new Error("Expected escaped source fixture.");
+    const escapedPlan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/escaped.pdf",
+      "Archive/escaped-published.pdf",
+      escapedSource.snapshot.revision,
+    );
+
+    expect(escapedPlan).toMatchObject({ status: "planned", blockers: [] });
+    if (escapedPlan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(escapedPlan.writes).toEqual([
+      {
+        path: "Notes/Escaped wiki embed marker.md",
+        expectedRevision: expect.any(String),
+        content: "\\![[../Archive/escaped-published.pdf]]",
+      },
+    ]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/escaped.pdf",
+        "Archive/escaped-published.pdf",
+        escapedSource.snapshot.revision,
+        { plan: escapedPlan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(escapedPath, "utf8")).resolves.toBe(escaped);
+    await expect(fs.readFile(escapedBangPath, "utf8")).resolves.toBe(
+      "\\![[../Archive/escaped-published.pdf]]",
+    );
+
+    const evenSource = await kernel.readBinary("Assets/even.pdf", Number.MAX_SAFE_INTEGER);
+    if (evenSource.status !== "ready") throw new Error("Expected even source fixture.");
+    const evenPlan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/even.pdf",
+      "Archive/even-published.pdf",
+      evenSource.snapshot.revision,
+    );
+
+    expect(evenPlan).toMatchObject({ status: "planned", blockers: [] });
+    if (evenPlan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(evenPlan.writes).toEqual([
+      {
+        path: "Notes/Even escaped attachment openers.md",
+        expectedRevision: expect.any(String),
+        content: [
+          "\\\\[ordinary](../Archive/even-published.pdf)",
+          "\\\\[[../Archive/even-published.pdf]]",
+          "\\\\![[../Archive/even-published.pdf]]",
+        ].join("\n"),
+      },
+    ]);
+    expect(evenPlan.rewrites).toHaveLength(3);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/even.pdf",
+        "Archive/even-published.pdf",
+        evenSource.snapshot.revision,
+        { plan: evenPlan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(evenPath, "utf8")).resolves.toBe(
+      [
+        "\\\\[ordinary](../Archive/even-published.pdf)",
+        "\\\\[[../Archive/even-published.pdf]]",
+        "\\\\![[../Archive/even-published.pdf]]",
+      ].join("\n"),
+    );
+  });
+
+  it("treats an escaped image marker as an ordinary source reference", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Escaped image marker.md");
+    const content = ["\\![report]", "[report]: ../Assets/report.pdf"].join("\n");
+    await fs.writeFile(notePath, content, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report-escaped-image.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([
+      {
+        path: "Notes/Escaped image marker.md",
+        expectedRevision: expect.any(String),
+        content: ["\\![report]", "[report]: ../Archive/report-escaped-image.pdf"].join("\n"),
+      },
+    ]);
+    expect(plan.rewrites).toHaveLength(1);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report-escaped-image.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(
+      ["\\![report]", "[report]: ../Archive/report-escaped-image.pdf"].join("\n"),
+    );
+  });
+
+  it("ignores unrelated rejected outside-vault inline and opaque reference destinations", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const inlinePath = path.join(vaultPath, "Notes", "Outside inline unrelated.md");
+    const opaquePath = path.join(vaultPath, "Notes", "Outside opaque unrelated.md");
+    const inline = "[x](../../unrelated.pdf)\n";
+    const opaque = ["[x][bad]", "[bad]: <../../unrelated.pdf"].join("\n");
+    await Promise.all([
+      fs.writeFile(inlinePath, inline, "utf8"),
+      fs.writeFile(opaquePath, opaque, "utf8"),
+    ]);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/unrelated-outside.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/unrelated-outside.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(inlinePath, "utf8")).resolves.toBe(inline);
+    await expect(fs.readFile(opaquePath, "utf8")).resolves.toBe(opaque);
+  });
+
+  it("keeps rejected outside-vault source basenames conservative across case, encoding, and NFC", async () => {
+    const fixtures = [
+      {
+        sourcePath: "Assets/report.pdf",
+        targetPath: "Archive/blocked-case.pdf",
+        rawTarget: "../../REPORT.PDF",
+        documentPath: "Notes/Outside case source.md",
+        content: "[x](../../REPORT.PDF)\n",
+        bytes: pdfBytes,
+      },
+      {
+        sourcePath: "Assets/Caf\u00e9.pdf",
+        targetPath: "Archive/blocked-unicode.pdf",
+        rawTarget: "../../CAFE%CC%81.PDF",
+        documentPath: "Notes/Outside encoded Unicode source.md",
+        content: "[x](../../CAFE%CC%81.PDF)\n",
+        bytes: Buffer.from("%PDF-1.7\ncaf\u00e9", "utf8"),
+      },
+    ];
+    for (const fixture of fixtures) {
+      await fs.writeFile(path.join(vaultPath, fixture.sourcePath), fixture.bytes);
+      await fs.writeFile(path.join(vaultPath, fixture.documentPath), fixture.content, "utf8");
+    }
+
+    for (const fixture of fixtures) {
+      const source = await kernel.readBinary(fixture.sourcePath, Number.MAX_SAFE_INTEGER);
+      if (source.status !== "ready") throw new Error("Expected source fixture.");
+      const plan = await planBinaryAttachmentMove(
+        kernel,
+        fixture.sourcePath,
+        fixture.targetPath,
+        source.snapshot.revision,
+      );
+
+      expect(plan).toMatchObject({
+        status: "planned",
+        blockers: [
+          expect.objectContaining({
+            documentPath: fixture.documentPath,
+            reason: "unresolved",
+          }),
+        ],
+      });
+      if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+      expect(plan.blockers).toHaveLength(1);
+      expect(plan.writes).toEqual([]);
+      const result = await moveBinaryAttachment(
+        kernel,
+        fixture.sourcePath,
+        fixture.targetPath,
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      );
+      expect(result.status).toBe("blocked");
+      await expect(fs.readFile(path.join(vaultPath, fixture.sourcePath))).resolves.toEqual(
+        fixture.bytes,
+      );
+      await expect(fs.stat(path.join(vaultPath, fixture.targetPath))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(fs.readFile(path.join(vaultPath, fixture.documentPath), "utf8")).resolves.toBe(
+        fixture.content,
+      );
+    }
+  });
+
+  it("acknowledges first-definition precedence while conservatively blocking source-related duplicates", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const firstSource = path.join(vaultPath, "Notes", "First source later external.md");
+    const firstOther = path.join(vaultPath, "Notes", "First external later source.md");
+    const duplicateSource = path.join(vaultPath, "Notes", "Ordinary duplicate source.md");
+    await fs.writeFile(
+      firstSource,
+      [
+        "[report][asset]",
+        "[asset]: ../Assets/report.pdf",
+        "[asset]: https://example.test/report.pdf",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      firstOther,
+      [
+        "[report][asset]",
+        "[asset]: https://example.test/report.pdf",
+        "[asset]: ../Assets/report.pdf",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      duplicateSource,
+      ["[report][asset]", "[asset]: ../Assets/report.pdf", "[asset]: ../Assets/report.pdf"].join(
+        "\n",
+      ),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: expect.arrayContaining([
+        expect.objectContaining({
+          documentPath: "Notes/First source later external.md",
+          reason: "ambiguous",
+        }),
+        expect.objectContaining({
+          documentPath: "Notes/First external later source.md",
+          reason: "ambiguous",
+        }),
+        expect.objectContaining({
+          documentPath: "Notes/Ordinary duplicate source.md",
+          reason: "ambiguous",
+        }),
+      ]),
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).toEqual([]);
+    const result = await moveBinaryAttachment(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+      { plan, acceptCurrentRewrites: true },
+    );
+    expect(result.status).toBe("blocked");
+    await expect(fs.stat(path.join(vaultPath, "Archive", "report.pdf"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.readFile(firstSource, "utf8")).resolves.toBe(
+      [
+        "[report][asset]",
+        "[asset]: ../Assets/report.pdf",
+        "[asset]: https://example.test/report.pdf",
+      ].join("\n"),
+    );
+    await expect(fs.readFile(firstOther, "utf8")).resolves.toBe(
+      [
+        "[report][asset]",
+        "[asset]: https://example.test/report.pdf",
+        "[asset]: ../Assets/report.pdf",
+      ].join("\n"),
+    );
+    await expect(fs.readFile(duplicateSource, "utf8")).resolves.toBe(
+      ["[report][asset]", "[asset]: ../Assets/report.pdf", "[asset]: ../Assets/report.pdf"].join(
+        "\n",
+      ),
+    );
+  });
+
+  it("blocks ordinary missing, opaque, and source-only definitions before publication without rewriting their bytes", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const missingPath = path.join(vaultPath, "Notes", "Ordinary missing definition.md");
+    const opaquePath = path.join(vaultPath, "Notes", "Ordinary opaque definition.md");
+    const frontmatterPath = path.join(vaultPath, "Notes", "Ordinary frontmatter definition.md");
+    const adversarialPath = path.join(vaultPath, "Notes", "Ordinary same line adversarial.md");
+    const missing = "[report.pdf]\n";
+    const opaque = ["[report][asset]", "[asset]: <../Assets/report.pdf"].join("\n");
+    const frontmatter = ["---", "[asset]: ../Assets/report.pdf", "---", "[report][asset]"].join(
+      "\n",
+    );
+    const adversarial = [
+      "[report][asset]",
+      "[asset]: <../Assets/report.pdf [inline](../Assets/report.pdf)",
+    ].join("\n");
+    await Promise.all([
+      fs.writeFile(missingPath, missing, "utf8"),
+      fs.writeFile(opaquePath, opaque, "utf8"),
+      fs.writeFile(frontmatterPath, frontmatter, "utf8"),
+      fs.writeFile(adversarialPath, adversarial, "utf8"),
+    ]);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: expect.arrayContaining([
+        expect.objectContaining({
+          documentPath: "Notes/Ordinary missing definition.md",
+          reason: "unsupported",
+        }),
+        expect.objectContaining({
+          documentPath: "Notes/Ordinary opaque definition.md",
+          reason: "unsupported",
+        }),
+        expect.objectContaining({
+          documentPath: "Notes/Ordinary frontmatter definition.md",
+          reason: "unsupported",
+        }),
+        expect.objectContaining({
+          documentPath: "Notes/Ordinary same line adversarial.md",
+          reason: "unsupported",
+        }),
+      ]),
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    const result = await moveBinaryAttachment(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+      { plan, acceptCurrentRewrites: true },
+    );
+    expect(result.status).toBe("blocked");
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(
+      pdfBytes,
+    );
+    await expect(fs.stat(path.join(vaultPath, "Archive", "report.pdf"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.readFile(missingPath, "utf8")).resolves.toBe(missing);
+    await expect(fs.readFile(opaquePath, "utf8")).resolves.toBe(opaque);
+    await expect(fs.readFile(frontmatterPath, "utf8")).resolves.toBe(frontmatter);
+    await expect(fs.readFile(adversarialPath, "utf8")).resolves.toBe(adversarial);
+  });
+
+  it("preserves dormant, unrelated, and external ordinary definitions byte-for-byte", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Dormant ordinary definitions.md");
+    const note = [
+      "[unrelated]",
+      "[unrelated]: ../Assets/Other/other.bin",
+      "[external]: https://example.test/report.pdf",
+      "[dormant-source]: ../Assets/report.pdf",
+    ].join("\n");
+    await fs.writeFile(notePath, note, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.writes).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "Notes/Dormant ordinary definitions.md" }),
+      ]),
+    );
+    const result = await moveBinaryAttachment(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+      { plan, acceptCurrentRewrites: true },
+    );
+    expect(result.status).toBe("published-source-retained");
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(note);
   });
 
   it("emits one blocker for a referenced definition that is unresolved by path policy", async () => {
@@ -612,10 +1702,14 @@ describe("attachment move planning", () => {
           documentPath: "Notes/CR-only source definition.md",
           reason: "unsupported",
         }),
+        expect.objectContaining({
+          documentPath: "Notes/CR-only source definition.md",
+          reason: "unsupported",
+        }),
       ],
     });
     if (plan.status !== "planned") throw new Error("Expected a planned publication.");
-    expect(plan.blockers).toHaveLength(1);
+    expect(plan.blockers).toHaveLength(2);
   });
 
   it("keeps source-only frontmatter definition evidence blocked", async () => {
@@ -1460,6 +2554,154 @@ describe("attachment move planning", () => {
     await expect(fs.readFile(path.join(vaultPath, "Notes", "Index.md"), "utf8")).resolves.toBe(
       "![[Report PDF.bin]]\n[download](../Assets/Report%20PDF.bin)\n",
     );
+  });
+
+  it("does not publish or apply a safe rewrite when another source reference blocks the plan", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const safePath = path.join(vaultPath, "Notes", "Mixed safe source.md");
+    const blockedPath = path.join(vaultPath, "Notes", "Mixed missing source label.md");
+    const safeContent = "[safe](../Assets/report.pdf)\n";
+    const blockedContent = "[missing][report]\n";
+    await Promise.all([
+      fs.writeFile(safePath, safeContent, "utf8"),
+      fs.writeFile(blockedPath, blockedContent, "utf8"),
+    ]);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/mixed-blocked.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Mixed missing source label.md",
+          reason: "unsupported",
+        }),
+      ],
+      writes: [
+        expect.objectContaining({
+          path: "Notes/Mixed safe source.md",
+          content: "[safe](../Archive/mixed-blocked.pdf)\n",
+        }),
+      ],
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/mixed-blocked.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "blocked" });
+    await expect(fs.readFile(safePath, "utf8")).resolves.toBe(safeContent);
+    await expect(fs.readFile(blockedPath, "utf8")).resolves.toBe(blockedContent);
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(
+      pdfBytes,
+    );
+    await expect(fs.access(path.join(vaultPath, "Archive", "mixed-blocked.pdf"))).rejects.toThrow();
+  });
+
+  it("rewrites a visible collapsed image reference definition exactly once", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = path.join(vaultPath, "Notes", "Collapsed image reference.md");
+    const before = ["![report-asset][]", "[report-asset]: ../Assets/report.pdf"].join("\n");
+    const after = ["![report-asset][]", "[report-asset]: ../Archive/collapsed-image.pdf"].join(
+      "\n",
+    );
+    await fs.writeFile(notePath, before, "utf8");
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/collapsed-image.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.rewrites).toHaveLength(1);
+    expect(plan.writes).toEqual([
+      {
+        path: "Notes/Collapsed image reference.md",
+        expectedRevision: expect.any(String),
+        content: after,
+      },
+    ]);
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/collapsed-image.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "published-source-retained" });
+    await expect(fs.readFile(notePath, "utf8")).resolves.toBe(after);
+  });
+
+  it("changes only valid definition destination bytes across CRLF and CR-only source", async () => {
+    for (const [name, ending] of [
+      ["CRLF", "\r\n"],
+      ["CR-only", "\r"],
+    ] as const) {
+      await fs.writeFile(path.join(vaultPath, "Assets", `${name}.pdf`), pdfBytes);
+      const notePath = path.join(vaultPath, "Notes", `${name} definition bytes.md`);
+      const destination = `Archive/${name}-rewritten.pdf`;
+      const beforeTarget = `../Assets/${name}.pdf`;
+      const afterTarget = `../Archive/${name}-rewritten.pdf`;
+      const before = [
+        "# Keep",
+        "[doc][asset]",
+        `[asset]: ${beforeTarget} "literal title"`,
+        "after definition",
+      ].join(ending);
+      const after = before.replace(beforeTarget, afterTarget);
+      await fs.writeFile(notePath, before, "utf8");
+      const source = await kernel.readBinary(`Assets/${name}.pdf`, Number.MAX_SAFE_INTEGER);
+      if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+      const plan = await planBinaryAttachmentMove(
+        kernel,
+        `Assets/${name}.pdf`,
+        destination,
+        source.snapshot.revision,
+      );
+
+      expect(plan).toMatchObject({ status: "planned", blockers: [] });
+      if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+      expect(plan.rewrites).toHaveLength(1);
+      expect(plan.writes).toEqual([
+        {
+          path: `Notes/${name} definition bytes.md`,
+          expectedRevision: expect.any(String),
+          content: after,
+        },
+      ]);
+      await expect(
+        moveBinaryAttachment(kernel, `Assets/${name}.pdf`, destination, source.snapshot.revision, {
+          plan,
+          acceptCurrentRewrites: true,
+        }),
+      ).resolves.toMatchObject({ status: "published-source-retained" });
+      const actual = await fs.readFile(notePath, "utf8");
+      const targetStart = before.indexOf(beforeTarget);
+      expect(actual).toBe(after);
+      expect(actual.slice(0, targetStart)).toBe(before.slice(0, targetStart));
+      expect(actual.slice(targetStart + afterTarget.length)).toBe(
+        before.slice(targetStart + beforeTarget.length),
+      );
+    }
   });
 
   it("preserves BOM, CRLF, masked links, and unrelated Markdown bytes", async () => {

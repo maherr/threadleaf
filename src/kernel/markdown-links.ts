@@ -1,3 +1,5 @@
+import MarkdownIt, { type StateBlock } from "markdown-it";
+
 export interface ParsedMarkdownLink {
   target: string;
   subpath: string | null;
@@ -23,10 +25,10 @@ export interface SplitMarkdownDestinationTarget {
   subpath: string | null;
 }
 
-/** A visible reference-style image usage, without resolving its definition. */
+/** A visible reference-style link or image usage, without resolving its definition. */
 export interface ParsedMarkdownReferenceUsage {
   label: string;
-  embed: true;
+  embed: boolean;
   position: number;
   end: number;
   line: number;
@@ -57,6 +59,8 @@ export interface ParsedMarkdownReferenceDefinitionCandidate
   position: number;
   /** True only for a definition inside YAML frontmatter. */
   sourceOnly: boolean;
+  /** True for a one-line definition head with an unsupported destination continuation. */
+  multilineContinuation?: boolean;
 }
 
 const markdownEscapes = "\\!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
@@ -331,7 +335,31 @@ function scanDefinitionDestination(value: string, start: number): ScannedDestina
   return end === value.length ? { targetStart, targetEnd: cursor, end } : null;
 }
 
-function findClosingBracket(value: string, start: number): number {
+/** Finds a nested bracket close for inline link text or alt text. */
+function findClosingInlineBracket(value: string, start: number): number {
+  let escaped = false;
+  let nested = 0;
+  for (let cursor = start; cursor < value.length; cursor += 1) {
+    const character = value[cursor];
+    if (escaped) {
+      escaped = false;
+    } else if (character === "\\") {
+      escaped = true;
+    } else if (character === "[") {
+      nested += 1;
+    } else if (character === "]") {
+      if (nested === 0) return cursor;
+      nested -= 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Reference labels are flat. A raw nested opener is not a valid label, even
+ * though inline link text may contain nested brackets.
+ */
+function findClosingReferenceLabel(value: string, start: number): number {
   let escaped = false;
   for (let cursor = start; cursor < value.length; cursor += 1) {
     const character = value[cursor];
@@ -339,11 +367,21 @@ function findClosingBracket(value: string, start: number): number {
       escaped = false;
     } else if (character === "\\") {
       escaped = true;
+    } else if (character === "[") {
+      return -1;
     } else if (character === "]") {
       return cursor;
     }
   }
   return -1;
+}
+
+function hasOddBackslashEscape(value: string, index: number): boolean {
+  let count = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    count += 1;
+  }
+  return count % 2 === 1;
 }
 
 function parseWikiLinks(
@@ -353,19 +391,38 @@ function parseWikiLinks(
   lineNumber: number,
 ): ParsedMarkdownLink[] {
   const links: ParsedMarkdownLink[] = [];
-  const pattern = /(!)?\[\[([^\]\n]+)\]\]/gu;
-  for (const match of searchableLine.matchAll(pattern)) {
-    const localStart = match.index ?? 0;
-    const full = sourceLine.slice(localStart, localStart + match[0].length);
-    const embed = match[1] === "!";
-    const inner = full.slice(embed ? 3 : 2, -2);
+  let cursor = 0;
+  while (cursor < searchableLine.length) {
+    const markerStart = searchableLine.indexOf("[[", cursor);
+    if (markerStart === -1) break;
+    if (hasOddBackslashEscape(searchableLine, markerStart)) {
+      cursor = markerStart + 2;
+      continue;
+    }
+    const close = sourceLine.indexOf("]]", markerStart + 2);
+    if (close === -1) break;
+
+    const escapedEmbedMarker =
+      markerStart > 0 &&
+      searchableLine[markerStart - 1] === "!" &&
+      hasOddBackslashEscape(searchableLine, markerStart - 1);
+    const embed = markerStart > 0 && searchableLine[markerStart - 1] === "!" && !escapedEmbedMarker;
+    const localStart = embed ? markerStart - 1 : markerStart;
+    // The preview rule takes the first `]]` on the source line. A raw single
+    // `]` is therefore body text, not a reason to reject an otherwise visible
+    // wiki link.
+    const inner = sourceLine.slice(markerStart + 2, close);
+    if (!inner.trim()) {
+      cursor = close + 2;
+      continue;
+    }
     const aliasAt = inner.indexOf("|");
     const rawTarget = aliasAt === -1 ? inner : inner.slice(0, aliasAt);
     const subpathAt = subpathOffset(rawTarget);
     const rawTargetOnly = subpathAt === -1 ? rawTarget : rawTarget.slice(0, subpathAt);
     const targetRange = trimmedRange(rawTargetOnly);
     const position = lineStart + localStart;
-    const innerStart = position + (embed ? 3 : 2);
+    const innerStart = lineStart + markerStart + 2;
     links.push({
       target: normalizeLinkTarget(rawTargetOnly).trim(),
       subpath: normalizeSubpath(subpathAt === -1 ? "" : rawTarget.slice(subpathAt)),
@@ -373,13 +430,28 @@ function parseWikiLinks(
       embed,
       syntax: "wiki",
       position,
-      end: position + full.length,
+      end: lineStart + close + 2,
       targetStart: innerStart + targetRange.start,
       targetEnd: innerStart + targetRange.end,
       line: lineNumber,
     });
+    cursor = close + 2;
   }
   return links;
+}
+
+function maskParsedLinkRanges(
+  value: string,
+  links: readonly Pick<ParsedMarkdownLink, "position" | "end">[],
+  lineStart: number,
+): string {
+  return applyMaskRanges(
+    value,
+    links.map((link) => ({
+      start: link.position - lineStart,
+      end: link.end - lineStart,
+    })),
+  );
 }
 
 function parseReferenceDefinition(
@@ -389,11 +461,9 @@ function parseReferenceDefinition(
   lineNumber: number,
 ): ParsedMarkdownLink | null {
   const leading = searchableLine.match(/^ {0,3}/u)?.[0].length ?? 0;
-  let cursor = leading;
-  const embed = searchableLine[cursor] === "!";
-  if (embed) cursor += 1;
+  const cursor = leading;
   if (searchableLine[cursor] !== "[") return null;
-  const close = findClosingBracket(searchableLine, cursor + 1);
+  const close = findClosingReferenceLabel(searchableLine, cursor + 1);
   if (close === -1 || searchableLine[close + 1] !== ":") return null;
   const destination = scanDefinitionDestination(searchableLine, close + 2);
   if (!destination) return null;
@@ -408,7 +478,7 @@ function parseReferenceDefinition(
     target: normalizedTarget,
     subpath: normalizeSubpath(subpathAt === -1 ? "" : rawDestination.slice(subpathAt)),
     alias: null,
-    embed,
+    embed: false,
     syntax: "markdown",
     position,
     end: lineStart + destination.end,
@@ -429,9 +499,16 @@ function parseInlineLinks(
   while (cursor < searchableLine.length) {
     const marker = searchableLine.indexOf("[", cursor);
     if (marker === -1) break;
-    const embed = marker > 0 && searchableLine[marker - 1] === "!";
+    const embed =
+      marker > 0 &&
+      searchableLine[marker - 1] === "!" &&
+      !hasOddBackslashEscape(searchableLine, marker - 1);
     const position = embed ? marker - 1 : marker;
-    const closeBracket = findClosingBracket(searchableLine, marker + 1);
+    if (hasOddBackslashEscape(searchableLine, position)) {
+      cursor = marker + 1;
+      continue;
+    }
+    const closeBracket = findClosingInlineBracket(searchableLine, marker + 1);
     if (closeBracket === -1 || searchableLine[closeBracket + 1] !== "(") {
       cursor = marker + 1;
       continue;
@@ -467,17 +544,77 @@ function parseInlineLinks(
   return links;
 }
 
+function angleTokenEnd(value: string, start: number): number {
+  let quote: '"' | "'" | null = null;
+  for (let cursor = start + 1; cursor < value.length; cursor += 1) {
+    const character = value[cursor];
+    if (quote) {
+      if (character === "\\") {
+        cursor += 1;
+      } else if (character === quote) {
+        quote = null;
+      }
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      return cursor + 1;
+    } else if (character === "\r" || character === "\n") {
+      break;
+    }
+  }
+  return -1;
+}
+
+function isInlineAngleToken(value: string): boolean {
+  const body = value.slice(1, -1);
+  const autolink = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*$/u;
+  const emailAutolink = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u;
+  const htmlTag = /^\/?[A-Za-z][A-Za-z0-9-]*(?:\s+[^<>]*)?\/?$/u;
+  return autolink.test(body) || emailAutolink.test(body) || htmlTag.test(body);
+}
+
+/** Masks inline autolinks and raw HTML tags without masking their text content. */
+function maskInlineAngleTokens(value: string): string {
+  const ranges: MaskRange[] = [];
+  let cursor = 0;
+  while (cursor < value.length) {
+    const start = value.indexOf("<", cursor);
+    if (start === -1) break;
+    const end = angleTokenEnd(value, start);
+    if (end === -1) {
+      cursor = start + 1;
+      continue;
+    }
+    if (isInlineAngleToken(value.slice(start, end))) ranges.push({ start, end });
+    cursor = end;
+  }
+  return applyMaskRanges(value, ranges);
+}
+
 function parseLine(
   sourceLine: string,
   searchableLine: string,
   lineStart: number,
   lineNumber: number,
 ): ParsedMarkdownLink[] {
+  const candidate = parseMarkdownReferenceDefinitionCandidate(
+    sourceLine,
+    searchableLine,
+    lineStart,
+    lineNumber,
+    false,
+  );
   const definition = parseReferenceDefinition(sourceLine, searchableLine, lineStart, lineNumber);
+  // A syntactically valid definition consumes its whole source line. Its
+  // destination is the only mutable link; title bytes are inert Markdown.
+  if (candidate?.valid) return definition ? [definition] : [];
+  const inlineSearchable = maskInlineAngleTokens(searchableLine);
+  const wikiLinks = parseWikiLinks(sourceLine, inlineSearchable, lineStart, lineNumber);
+  const nonWikiSearchable = maskParsedLinkRanges(inlineSearchable, wikiLinks, lineStart);
   return [
-    ...parseWikiLinks(sourceLine, searchableLine, lineStart, lineNumber),
+    ...wikiLinks,
     ...(definition ? [definition] : []),
-    ...parseInlineLinks(sourceLine, searchableLine, lineStart, lineNumber),
+    ...parseInlineLinks(sourceLine, nonWikiSearchable, lineStart, lineNumber),
   ];
 }
 
@@ -538,32 +675,102 @@ function yamlFrontmatterRanges(content: string): MaskRange[] {
   return ranges;
 }
 
-function fencedCodeRanges(content: string): MaskRange[] {
+const markdownBlockClassifier = new MarkdownIt({
+  breaks: false,
+  html: true,
+  linkify: false,
+  typographer: false,
+});
+
+const opaqueMarkdownBlockTypes = new Set(["code_block", "fence", "html_block"]);
+
+/** Uses the preview engine's block grammar while retaining original byte offsets. */
+function rendererOpaqueBlockRanges(content: string): MaskRange[] {
+  const lineStarts = [0];
+  for (const match of content.matchAll(/\r\n|\r|\n/gu)) {
+    lineStarts.push((match.index ?? 0) + match[0].length);
+  }
+  if (lineStarts.at(-1) !== content.length) lineStarts.push(content.length);
+
   const ranges: MaskRange[] = [];
-  const lines = content.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g);
-  let offset = 0;
-  let fence: { character: "`" | "~"; length: number } | null = null;
-  for (const match of lines) {
-    const full = match[0];
-    if (full.length === 0) {
+  for (const token of markdownBlockClassifier.parse(content, {})) {
+    if (!opaqueMarkdownBlockTypes.has(token.type) || !token.map) continue;
+    const start = lineStarts[token.map[0]];
+    const end = lineStarts[token.map[1]] ?? content.length;
+    if (start !== undefined) ranges.push({ start, end });
+  }
+  return ranges;
+}
+
+function classifyThreadleafMathBlock(
+  state: StateBlock,
+  startLine: number,
+  endLine: number,
+  silent: boolean,
+): boolean {
+  const beginning = state.bMarks[startLine] ?? 0;
+  const end = state.eMarks[startLine] ?? beginning;
+  const marker = state.src.slice(beginning, end).trim();
+  const closing = marker === "$$" ? "$$" : marker === "\\[" ? "\\]" : null;
+  if (!closing) return false;
+
+  let closingLine = -1;
+  for (
+    let nextLine = startLine + 1;
+    nextLine < endLine && nextLine - startLine <= 256;
+    nextLine += 1
+  ) {
+    const nextStart = state.bMarks[nextLine] ?? 0;
+    const nextEnd = state.eMarks[nextLine] ?? nextStart;
+    if (state.src.slice(nextStart, nextEnd).trim() === closing) {
+      closingLine = nextLine;
       break;
     }
-    const line = full.replace(/\r\n$|[\r\n]$/u, "");
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-    if (fence || marker) {
-      ranges.push({ start: offset, end: offset + full.length });
-    }
-    if (!fence && marker) {
-      fence = { character: marker[0] as "`" | "~", length: marker.length };
-    } else if (
-      fence &&
-      marker?.[0] === fence.character &&
-      marker.length >= fence.length &&
-      line.slice(line.indexOf(marker) + marker.length).trim() === ""
-    ) {
-      fence = null;
-    }
-    offset += full.length;
+  }
+  if (closingLine < 0) return false;
+  if (silent) return true;
+
+  const token = state.push("threadleaf_math_block", "div", 0);
+  token.block = true;
+  token.map = [startLine, closingLine + 1];
+  state.line = closingLine + 1;
+  return true;
+}
+
+const markdownMathBlockClassifier = new MarkdownIt({
+  breaks: false,
+  html: true,
+  linkify: false,
+  typographer: false,
+});
+
+markdownMathBlockClassifier.block.ruler.before(
+  "fence",
+  "threadleaf_math_block",
+  classifyThreadleafMathBlock,
+);
+
+/**
+ * Uses the preview's block-state math grammar so container prefixes do not
+ * change the source ranges protected from link planning.
+ */
+function threadleafMathBlockRanges(
+  content: string,
+  frontmatterRanges: readonly MaskRange[],
+): MaskRange[] {
+  const frontmatterMasked = applyMaskRanges(content, frontmatterRanges);
+  const lineStarts = [0];
+  for (const match of content.matchAll(/\r\n|\r|\n/gu)) {
+    lineStarts.push((match.index ?? 0) + match[0].length);
+  }
+  if (lineStarts.at(-1) !== content.length) lineStarts.push(content.length);
+
+  const ranges: MaskRange[] = [];
+  for (const token of markdownMathBlockClassifier.parse(frontmatterMasked, {})) {
+    if (token.type !== "threadleaf_math_block" || !token.map) continue;
+    const start = lineStarts[token.map[0]];
+    const end = lineStarts[token.map[1]] ?? content.length;
+    if (start !== undefined) ranges.push({ start, end });
   }
   return ranges;
 }
@@ -605,12 +812,14 @@ function inlineCodeRanges(searchable: string): MaskRange[] {
 
 export function maskMarkdownCodeAndComments(content: string): string {
   const frontmatterRanges = yamlFrontmatterRanges(content);
-  const fencedRanges = fencedCodeRanges(content);
-  const fencedMask = applyMaskRanges(content, [...frontmatterRanges, ...fencedRanges]);
+  const rendererBlockRanges = rendererOpaqueBlockRanges(content);
+  const mathBlockRanges = threadleafMathBlockRanges(content, frontmatterRanges);
+  const blockRanges = [...rendererBlockRanges, ...mathBlockRanges];
+  const blockMask = applyMaskRanges(content, [...frontmatterRanges, ...blockRanges]);
   const structuralRanges = mergeMaskRanges([
     ...frontmatterRanges,
-    ...fencedRanges,
-    ...htmlCommentRanges(fencedMask),
+    ...blockRanges,
+    ...htmlCommentRanges(blockMask),
   ]);
   const structuralMask = applyMaskRanges(content, structuralRanges);
   return applyMaskRanges(content, [...structuralRanges, ...inlineCodeRanges(structuralMask)]);
@@ -627,10 +836,9 @@ function parseMarkdownReferenceDefinitionCandidate(
   // inspectable by a mutation planner even though normal link parsing masks it.
   const definitionLine = sourceOnly ? sourceLine : searchableLine;
   const leading = definitionLine.match(/^ {0,3}/u)?.[0].length ?? 0;
-  let cursor = leading;
-  if (definitionLine[cursor] === "!") cursor += 1;
+  const cursor = leading;
   if (definitionLine[cursor] !== "[") return null;
-  const close = findClosingBracket(definitionLine, cursor + 1);
+  const close = findClosingReferenceLabel(definitionLine, cursor + 1);
   if (close === -1 || definitionLine[close + 1] !== ":") return null;
   const label = normalizeMarkdownReferenceLabel(sourceLine.slice(cursor + 1, close));
   if (!label) return null;
@@ -704,13 +912,41 @@ export function parseMarkdownReferenceDefinitionCandidates(
     const sourceLine = full.replace(/\r\n$|[\r\n]$/u, "");
     const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
     const sourceOnly = frontmatter.some((range) => offset >= range.start && offset < range.end);
-    const candidate = parseMarkdownReferenceDefinitionCandidate(
+    let candidate = parseMarkdownReferenceDefinitionCandidate(
       sourceLine,
       searchableLine,
       offset,
       index + 1,
       sourceOnly,
     );
+    // Multi-line definition destinations are intentionally not rewritten in
+    // this one-line parser. Preserve their exact raw source so the planner can
+    // block source-related evidence instead of silently publishing stale links.
+    if (
+      candidate &&
+      !candidate.sourceOnly &&
+      !candidate.valid &&
+      candidate.rawTarget.trim() === ""
+    ) {
+      let continuation = full.slice(sourceLine.length);
+      let next = index + 1;
+      let found = false;
+      while (next < lines.length) {
+        const nextFull = lines[next] ?? "";
+        const nextLine = nextFull.replace(/\r\n$|[\r\n]$/u, "");
+        if (!/^(?: {1,3}|\t)/u.test(nextLine)) break;
+        continuation += nextFull;
+        found = true;
+        next += 1;
+      }
+      if (found) {
+        candidate = {
+          ...candidate,
+          rawTarget: `${candidate.rawTarget}${continuation}`,
+          multilineContinuation: true,
+        };
+      }
+    }
     if (candidate) definitions.push(candidate);
     offset += full.length;
   }
@@ -730,11 +966,7 @@ export function parseMarkdownReferenceDefinitions(
     .map(({ label, valid, external, line }) => ({ label, valid, external, line }));
 }
 
-/**
- * Finds visible full/collapsed reference-style image usages. This deliberately
- * does not return ordinary reference links: only image syntax needs the
- * attachment move's explicit definition safety gate.
- */
+/** Finds visible full, collapsed, and shortcut reference-style usages. */
 export function parseMarkdownReferenceUsages(
   content: string,
   maskedContent = maskMarkdownCodeAndComments(content),
@@ -744,47 +976,75 @@ export function parseMarkdownReferenceUsages(
   }
   const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
+  const opaqueDefinitionLines = new Set(
+    parseMarkdownReferenceDefinitionCandidates(content, maskedContent)
+      .filter(
+        (definition) =>
+          !definition.sourceOnly && (definition.valid || definition.multilineContinuation),
+      )
+      .map((definition) => definition.line),
+  );
   const usages: ParsedMarkdownReferenceUsage[] = [];
   let offset = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const full = lines[index] ?? "";
     if (!full && index === lines.length - 1) break;
-    const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
+    if (opaqueDefinitionLines.has(index + 1)) {
+      offset += full.length;
+      continue;
+    }
+    const sourceLine = full.replace(/\r\n$|[\r\n]$/u, "");
+    const angleMaskedLine = maskInlineAngleTokens(
+      (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, ""),
+    );
+    const wikiLinks = parseWikiLinks(sourceLine, angleMaskedLine, offset, index + 1);
+    const searchableLine = maskParsedLinkRanges(angleMaskedLine, wikiLinks, offset);
     let cursor = 0;
     while (cursor < searchableLine.length) {
-      const marker = searchableLine.indexOf("!", cursor);
-      if (marker === -1) break;
-      let backslashes = 0;
-      for (let before = marker - 1; before >= 0 && searchableLine[before] === "\\"; before -= 1) {
-        backslashes += 1;
-      }
-      if (backslashes % 2 !== 0 || searchableLine[marker + 1] !== "[") {
-        cursor = marker + 1;
+      const bracket = searchableLine.indexOf("[", cursor);
+      if (bracket === -1) break;
+      const beforeBracket = bracket - 1;
+      const possibleImage =
+        searchableLine[beforeBracket] === "!" &&
+        !hasOddBackslashEscape(searchableLine, beforeBracket);
+      const marker = possibleImage ? beforeBracket : bracket;
+      if (hasOddBackslashEscape(searchableLine, marker)) {
+        const escapedWikiEnd =
+          searchableLine[bracket + 1] === "[" ? searchableLine.indexOf("]]", bracket + 2) : -1;
+        cursor = escapedWikiEnd === -1 ? bracket + 1 : escapedWikiEnd + 2;
         continue;
       }
-      // Obsidian wiki embeds start with `![[`; they are parsed by the wiki
-      // scanner, not as a Markdown reference image whose alt text happens to
-      // begin with `[`.
-      if (searchableLine[marker + 2] === "[") {
-        cursor = marker + 3;
+      const embed = possibleImage;
+      // Obsidian wiki links and embeds begin with `[[` / `![[`; they are
+      // parsed by the wiki scanner rather than as Markdown reference usages.
+      if (searchableLine[bracket + 1] === "[") {
+        cursor = bracket + 2;
         continue;
       }
-      const close = findClosingBracket(searchableLine, marker + 2);
-      if (close === -1) {
-        cursor = marker + 2;
+      const inlineClose = findClosingInlineBracket(searchableLine, bracket + 1);
+      if (inlineClose === -1) {
+        cursor = bracket + 1;
         continue;
       }
-      const afterLabel = skipWhitespace(searchableLine, close + 1);
-      if (searchableLine[afterLabel] === "(" || searchableLine[afterLabel] === ":") {
-        cursor = close + 1;
+      if (searchableLine[inlineClose + 1] === "(") {
+        const destination = scanInlineDestination(searchableLine, inlineClose + 1);
+        // Threadleaf's evidence grammar remains conservative for malformed
+        // inline syntax: a failed outer parse does not hide an inner visible
+        // source-related reference label.
+        cursor = destination ? destination.end : bracket + 1;
         continue;
       }
-      if (searchableLine[afterLabel] !== "[") {
-        const label = normalizeMarkdownReferenceLabel(full.slice(marker + 2, close));
+      if (searchableLine[inlineClose + 1] !== "[") {
+        const close = findClosingReferenceLabel(searchableLine, bracket + 1);
+        if (close === -1) {
+          cursor = bracket + 1;
+          continue;
+        }
+        const label = normalizeMarkdownReferenceLabel(sourceLine.slice(bracket + 1, close));
         if (label) {
           usages.push({
             label,
-            embed: true,
+            embed,
             position: offset + marker,
             end: offset + close + 1,
             line: index + 1,
@@ -793,18 +1053,23 @@ export function parseMarkdownReferenceUsages(
         cursor = close + 1;
         continue;
       }
-      const referenceClose = findClosingBracket(searchableLine, afterLabel + 1);
+      const referenceClose = findClosingReferenceLabel(searchableLine, inlineClose + 2);
       if (referenceClose === -1) {
-        cursor = afterLabel + 1;
+        cursor = bracket + 1;
         continue;
       }
-      const alt = full.slice(marker + 2, close);
-      const explicit = full.slice(afterLabel + 1, referenceClose);
+      const explicit = sourceLine.slice(inlineClose + 2, referenceClose);
+      const flatOuterClose = findClosingReferenceLabel(searchableLine, bracket + 1);
+      if (!explicit && flatOuterClose !== inlineClose) {
+        cursor = bracket + 1;
+        continue;
+      }
+      const alt = sourceLine.slice(bracket + 1, inlineClose);
       const label = normalizeMarkdownReferenceLabel(explicit || alt);
       if (label) {
         usages.push({
           label,
-          embed: true,
+          embed,
           position: offset + marker,
           end: offset + referenceClose + 1,
           line: index + 1,

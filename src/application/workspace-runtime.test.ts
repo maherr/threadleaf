@@ -1434,6 +1434,7 @@ describe("WorkspaceRuntime", () => {
   it("moves attachment bytes with reference preview while preserving note tabs and index convergence", async () => {
     const bytes = Buffer.from("%PDF-1.7\nopaque attachment bytes\n", "ascii");
     await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
     await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), bytes);
     await fs.writeFile(
       path.join(vaultPath, "Attachment Desk.md"),

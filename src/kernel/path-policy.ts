@@ -70,6 +70,11 @@ export function normalizeVaultPath(input: string): string {
   return normalized;
 }
 
+/** Case- and NFC-folded identity used for visible-vault path occupancy checks. */
+export function normalizedVaultPathIdentity(input: string): string {
+  return normalizeVaultPath(input).normalize("NFC").toLocaleLowerCase("en-US");
+}
+
 export function normalizeVaultDirectoryPath(input: string): string {
   if (input === "" || input === ".") {
     return "";
@@ -326,6 +331,18 @@ export class VaultPathPolicy {
     };
   }
 
+  /**
+   * Internal mutation-only namespace occupancy scan. Unlike visible-path
+   * discovery, this deliberately records every safe lexical entry name so a
+   * case/NFC alias cannot be hidden behind a dangling, outside, directory, or
+   * special-file symlink. It never follows a symlink while descending.
+   */
+  async listNamespaceClaimants(): Promise<string[]> {
+    const claimants: string[] = [];
+    await this.collectNamespaceClaimants(this.rootPath, "", claimants);
+    return claimants.sort((left, right) => left.localeCompare(right));
+  }
+
   private async collectMarkdownPaths(
     directory: string,
     relativeDirectory: string,
@@ -374,6 +391,33 @@ export class VaultPathPolicy {
       if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
         files.push(relativePath);
       }
+    }
+  }
+
+  private async collectNamespaceClaimants(
+    directory: string,
+    relativeDirectory: string,
+    claimants: string[],
+  ): Promise<void> {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+
+    for (const entry of entries) {
+      if (isPrivateVaultEntry(entry.name) || isHiddenVaultEntry(entry.name)) {
+        continue;
+      }
+      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+      claimants.push(relativePath);
+      if (!entry.isDirectory() || entry.isSymbolicLink()) {
+        continue;
+      }
+
+      const absolutePath = path.join(directory, entry.name);
+      const current = await lstatOrNull(absolutePath);
+      if (!current || current.isSymbolicLink() || !current.isDirectory()) {
+        continue;
+      }
+      await this.collectNamespaceClaimants(absolutePath, relativePath, claimants);
     }
   }
 
