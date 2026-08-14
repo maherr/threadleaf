@@ -11,8 +11,8 @@
     },
     {
       "path": ".obsidian/community-plugins.json",
-      "bytes": 18,
-      "sha256": "9e19a7892a2f8b955dd6e1b59e511c760fa894dfe7f432d9587b447c11c79276",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
       "mode": 384
     },
     {
@@ -65,8 +65,8 @@
     },
     {
       "path": "00 Overview.md",
-      "bytes": 444,
-      "sha256": "b02e1b5bf785f2223fdd6ffd6ecb34b594089651e75d1892d3dfe953d2e2719a",
+      "bytes": 500,
+      "sha256": "2385eebb8cbef3428c1573a686b16223bbd32c6a1ae03727cacaac69d4d67661",
       "mode": 384
     },
     {
@@ -130,5 +130,5 @@
       "mode": 384
     }
   ],
-  "treeSha256": "e4428f30312f68ccf53ca3b321b73bd309a997dc7269355b613dae4855ecbd23"
+  "treeSha256": "fbaefb1895deadfdfe342aa437aef10781130ff00a9e40cfb6bc61fc5c10b353"
 }

@@ -13,6 +13,13 @@ const fixtureVault = path.join(fixtureRoot, "vault");
 const pluginId = "obsidian-excalidraw-plugin";
 const pluginVersion = "2.25.3";
 const repository = "zsviczian/obsidian-excalidraw-plugin";
+const pinnedPlugin = {
+  id: pluginId,
+  version: pluginVersion,
+  manifestSha256: "43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e",
+  mainSha256: "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6",
+  mainBytes: 4_898_048,
+};
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const screenshotDirectoryOverride = process.env.THREADLEAF_EXCALIDRAW_SCREENSHOT_DIR;
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-excalidraw-e2e-"));
@@ -200,12 +207,18 @@ async function fetchPublicPlugin() {
   const supplied = process.env.THREADLEAF_EXCALIDRAW_PLUGIN_PATH?.trim();
   if (supplied) {
     const base = path.resolve(supplied);
-    const manifest = await fs.readFile(path.join(base, "manifest.json"), "utf8");
+    const manifestBytes = await fs.readFile(path.join(base, "manifest.json"));
     const main = await fs.readFile(path.join(base, "main.js"));
     const styles = (await exists(path.join(base, "styles.css")))
       ? await fs.readFile(path.join(base, "styles.css"))
       : null;
-    return { manifest: JSON.parse(manifest), main, styles, source: `local:${base}` };
+    return {
+      manifest: JSON.parse(manifestBytes.toString("utf8")),
+      manifestBytes,
+      main,
+      styles,
+      source: `local:${base}`,
+    };
   }
   const releaseRoot = `https://github.com/${repository}/releases/download/${pluginVersion}`;
   async function get(filename, optional = false) {
@@ -243,24 +256,42 @@ async function fetchPublicPlugin() {
   const styles = await get("styles.css", true);
   return {
     manifest: JSON.parse(manifestBytes.toString("utf8")),
+    manifestBytes,
     main,
     styles,
     source: `${releaseRoot}/manifest.json,main.js,styles.css`,
   };
 }
 
+function assertPinnedPlugin(plugin) {
+  assert(
+    plugin.manifest.id === pinnedPlugin.id,
+    `Expected ${pinnedPlugin.id}, got ${plugin.manifest.id}.`,
+  );
+  assert(
+    plugin.manifest.version === pinnedPlugin.version,
+    `Expected Excalidraw ${pinnedPlugin.version}, got ${plugin.manifest.version}.`,
+  );
+  assert(
+    Buffer.isBuffer(plugin.manifestBytes) &&
+      sha256(plugin.manifestBytes) === pinnedPlugin.manifestSha256,
+    `Excalidraw manifest bytes did not match pinned SHA-256 ${pinnedPlugin.manifestSha256}.`,
+  );
+  assert(
+    Buffer.isBuffer(plugin.main) && plugin.main.length === pinnedPlugin.mainBytes,
+    `Excalidraw main.js size did not match pinned ${pinnedPlugin.mainBytes} bytes.`,
+  );
+  assert(
+    sha256(plugin.main) === pinnedPlugin.mainSha256,
+    `Excalidraw main.js bytes did not match pinned SHA-256 ${pinnedPlugin.mainSha256}.`,
+  );
+}
+
 async function writePluginFixture() {
   const plugin = await fetchPublicPlugin();
-  assert(plugin.manifest.id === pluginId, `Expected ${pluginId}, got ${plugin.manifest.id}.`);
-  assert(
-    plugin.manifest.version === pluginVersion,
-    `Expected Excalidraw ${pluginVersion}, got ${plugin.manifest.version}.`,
-  );
+  assertPinnedPlugin(plugin);
   await fs.mkdir(pluginPath, { recursive: true });
-  await fs.writeFile(
-    path.join(pluginPath, "manifest.json"),
-    JSON.stringify(plugin.manifest, null, 2),
-  );
+  await fs.writeFile(path.join(pluginPath, "manifest.json"), plugin.manifestBytes);
   await fs.writeFile(path.join(pluginPath, "main.js"), plugin.main);
   if (plugin.styles) await fs.writeFile(path.join(pluginPath, "styles.css"), plugin.styles);
   await fs.writeFile(
@@ -276,7 +307,13 @@ async function writePluginFixture() {
       showReleaseNotes: false,
     }),
   );
-  return { ...plugin, mainSha256: sha256(plugin.main) };
+  return {
+    ...plugin,
+    manifestSha256: sha256(plugin.manifestBytes),
+    mainSha256: sha256(plugin.main),
+    mainBytes: plugin.main.length,
+    stylesSha256: plugin.styles ? sha256(plugin.styles) : null,
+  };
 }
 
 async function canonicalManifest() {
@@ -746,7 +783,10 @@ async function run() {
           id: pluginId,
           version: pluginVersion,
           source: pluginState.source,
+          manifestSha256: pluginState.manifestSha256,
           mainSha256: pluginState.mainSha256,
+          mainBytes: pluginState.mainBytes,
+          stylesSha256: pluginState.stylesSha256,
         },
         workflows: [
           "create",

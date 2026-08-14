@@ -168,7 +168,7 @@ export function assertRendererX11(processes, label = "renderer") {
   );
 }
 
-export function assertFlatpakContainmentArgs(args) {
+export function assertFlatpakContainmentArgs(args, { runRoot } = {}) {
   const required = [
     "run",
     "--sandbox",
@@ -194,6 +194,28 @@ export function assertFlatpakContainmentArgs(args) {
   assert(
     !args.includes("--parent-share-pids") && !args.includes("--parent-expose-pids"),
     "Flatpak launch shares host PID visibility; containment must be proved inside the sandbox.",
+  );
+  const filesystemGrants = args.filter((flag) => flag.startsWith("--filesystem="));
+  assert(filesystemGrants.length === 1, "Flatpak launch must have exactly one filesystem grant.");
+  if (runRoot) {
+    assert(
+      filesystemGrants[0] === `--filesystem=${path.resolve(runRoot)}:rw`,
+      `Flatpak launch filesystem grant is not the dedicated run root: ${filesystemGrants[0]}`,
+    );
+  }
+  assert(
+    args.filter((flag) => flag.startsWith("--socket=")).every((flag) => flag === "--socket=x11"),
+    "Flatpak launch grants an unexpected host socket.",
+  );
+  assert(
+    args
+      .filter((flag) => flag.startsWith("--nosocket="))
+      .every((flag) => flag === "--nosocket=wayland"),
+    "Flatpak launch changes the explicit Wayland socket denylist.",
+  );
+  assert(
+    !args.some((flag) => flag === "--filesystem=home" || flag === "--filesystem=/"),
+    "Flatpak launch grants a broad host filesystem path.",
   );
   return true;
 }
@@ -246,10 +268,14 @@ export function assertReferenceReceipt(
     referenceRuntime,
     referenceCommit,
     hostNetworkNamespace,
+    vaultAfterTreeSha256,
+    expectedViewport = { width: 800, height: 650, deviceScaleFactor: 1, pageScaleFactor: 1 },
+    expectedUserAgentToken = "obsidian/1.13.7",
   },
 ) {
   assert(receipt?.status === "observed", "Reference receipt is not observed.");
   const app = receipt.appProcess;
+  const targetPort = receipt.target?.port;
   assert(
     path.relative(path.resolve(runRoot), path.resolve(profilePath)) !== "" &&
       !path.relative(path.resolve(runRoot), path.resolve(profilePath)).startsWith("..") &&
@@ -264,10 +290,44 @@ export function assertReferenceReceipt(
   );
   assert(app.executable === "/app/obsidian", `Unexpected app executable: ${app.executable}`);
   assert(
-    app.commandLine.includes("--ozone-platform=x11") &&
-      app.commandLine.includes("--remote-debugging-port=") &&
-      app.commandLine.includes("--user-data-dir="),
-    "App command line did not bind the explicit X11/CDP/profile launch.",
+    app.parentPid === receipt.supervisorPid,
+    "Reference app process was not the direct child of the in-sandbox supervisor.",
+  );
+  assert(
+    app.networkNamespace === receipt.network?.namespace,
+    "Reference app process escaped the isolated network namespace.",
+  );
+  assert(Array.isArray(app.argv) && app.argv[0] === "/app/obsidian", "App argv was not captured.");
+  assert(
+    app.argv.includes("--ozone-platform=x11") &&
+      !app.argv.includes("--ozone-platform=wayland") &&
+      app.argv.includes("--disable-gpu") &&
+      app.argv.includes("--no-first-run") &&
+      app.argv.includes(`--window-size=${expectedViewport.width},${expectedViewport.height}`) &&
+      app.argv.includes(`--remote-debugging-port=${targetPort}`) &&
+      app.argv.includes("--remote-debugging-address=127.0.0.1") &&
+      app.argv.includes(`--remote-allow-origins=http://127.0.0.1:${targetPort}`) &&
+      app.argv.includes(`--user-data-dir=${profilePath}`) &&
+      app.argv.includes(vaultPath) &&
+      app.argv.includes(
+        `obsidian://open?path=${encodeURIComponent(`${vaultPath}/00 Overview.md`)}`,
+      ),
+    "App argv did not bind the exact X11/CDP/profile/vault/fixture launch.",
+  );
+  const uriDispatch = receipt.uriDispatch;
+  assert(
+    uriDispatch?.parentPid === receipt.supervisorPid &&
+      uriDispatch.private === true &&
+      uriDispatch.accepted === true &&
+      uriDispatch.source === "in-sandbox initial app argv" &&
+      Array.isArray(uriDispatch.argv) &&
+      uriDispatch.argv[0] === "/app/obsidian" &&
+      uriDispatch.argv.includes(vaultPath) &&
+      uriDispatch.argv.includes(`--user-data-dir=${profilePath}`) &&
+      uriDispatch.argv.includes(
+        `obsidian://open?path=${encodeURIComponent(`${vaultPath}/00 Overview.md`)}`,
+      ),
+    "Fixture URI was not dispatched wholly inside the isolated Flatpak supervisor.",
   );
   assert(
     receipt.reference?.flatpakId === "md.obsidian.Obsidian" &&
@@ -275,10 +335,6 @@ export function assertReferenceReceipt(
       receipt.reference?.runtime === referenceRuntime &&
       receipt.reference?.commit === referenceCommit,
     "Reference receipt did not bind the exact installed Flatpak app/runtime version.",
-  );
-  assert(
-    receipt.appProcess.markerPresent === true,
-    "Reference app process did not inherit the run marker.",
   );
   assert(
     receipt.paths?.profile?.realpath === path.resolve(profilePath) &&
@@ -291,7 +347,7 @@ export function assertReferenceReceipt(
       receipt.paths?.profile?.treeSha256 === profileBeforeTreeSha256 &&
       receipt.pathsAfterCleanup?.profile?.treeSha256 === profileAfterTreeSha256 &&
       receipt.paths?.vault?.treeSha256 === vaultTreeSha256 &&
-      receipt.pathsAfterCleanup?.vault?.treeSha256 === vaultTreeSha256,
+      receipt.pathsAfterCleanup?.vault?.treeSha256 === vaultAfterTreeSha256,
     "Reference receipt does not bind before/after profile and vault hashes.",
   );
   const network = receipt.network;
@@ -322,7 +378,18 @@ export function assertReferenceReceipt(
       renderer.commandLine.includes("--type=renderer"),
       "Renderer argv omitted --type=renderer.",
     );
-    assert(renderer.markerPresent === true, "Renderer did not inherit the run marker.");
+    assert(
+      renderer.parentPid === app.pid,
+      "Renderer was not a direct child of the captured app process.",
+    );
+    assert(
+      Array.isArray(renderer.argv) &&
+        renderer.argv[0] === "/app/obsidian" &&
+        renderer.argv.includes("--type=renderer") &&
+        renderer.argv.includes(`--user-data-dir=${profilePath}`) &&
+        renderer.argv.includes(`--remote-debugging-port=${targetPort}`),
+      "Renderer argv did not bind the exact app profile/CDP launch.",
+    );
     assert(renderer.commandLine.includes("--ozone-platform=x11"), "Renderer argv omitted X11.");
     assert(
       !renderer.commandLine.includes("--ozone-platform=wayland"),
@@ -336,9 +403,32 @@ export function assertReferenceReceipt(
   assert(
     receipt.target?.type === "page" &&
       receipt.target.address === "127.0.0.1" &&
+      receipt.target.port === targetPort &&
       Number.isInteger(receipt.target.port) &&
-      receipt.target.port > 0,
+      receipt.target.port > 0 &&
+      typeof receipt.target.webSocketDebuggerUrl === "string" &&
+      receipt.target.webSocketDebuggerUrl.startsWith(`ws://127.0.0.1:${targetPort}/`),
     "Reference receipt did not bind a loopback CDP page target.",
+  );
+  assert(
+    typeof receipt.cdp?.browserVersion?.product === "string" &&
+      receipt.cdp.browserVersion.product.includes("Chrome/") &&
+      typeof receipt.cdp.browserVersion.userAgent === "string" &&
+      receipt.cdp.browserVersion.userAgent.toLowerCase().includes(expectedUserAgentToken),
+    "Reference receipt did not bind the expected Obsidian browser user agent.",
+  );
+  assert(
+    receipt.visible?.viewport?.width === expectedViewport.width &&
+      receipt.visible?.viewport?.height === expectedViewport.height &&
+      receipt.visible?.viewport?.deviceScaleFactor === expectedViewport.deviceScaleFactor &&
+      receipt.visible?.viewport?.pageScale === expectedViewport.pageScaleFactor,
+    `Reference receipt did not prove the measured ${expectedViewport.width}x${expectedViewport.height} viewport.`,
+  );
+  assert(
+    receipt.roundtrip?.status === "observed" &&
+      receipt.roundtrip.exact === true &&
+      receipt.roundtrip.reopenedSha256 === receipt.roundtrip.mutatedSha256,
+    "Reference receipt did not prove an exact edit/save/exit/reopen roundtrip.",
   );
   const screenshot = receipt.screenshot;
   assert(
@@ -349,13 +439,28 @@ export function assertReferenceReceipt(
       screenshot.bytes > 1024 &&
       /^[a-f0-9]{64}$/u.test(screenshot.sha256 ?? "") &&
       Number.isInteger(screenshot.pngWidth) &&
-      Number.isInteger(screenshot.pngHeight),
+      Number.isInteger(screenshot.pngHeight) &&
+      screenshot.pngWidth === expectedViewport.width &&
+      screenshot.pngHeight === expectedViewport.height,
     "Reference receipt rejected no truncated/partial surface capture.",
   );
   assert(
     receipt.cleanup?.clean === true &&
       Array.isArray(receipt.processesAfterCleanup) &&
-      receipt.processesAfterCleanup.length === 0,
+      receipt.processesAfterCleanup.length === 0 &&
+      Array.isArray(receipt.appProcessesAfterCleanup) &&
+      receipt.appProcessesAfterCleanup.length === 0 &&
+      Array.isArray(receipt.referenceProcessesAfterCleanup) &&
+      receipt.referenceProcessesAfterCleanup.length === 0 &&
+      Array.isArray(receipt.hostCleanup?.markerBefore) &&
+      receipt.hostCleanup.markerBefore.length === 0 &&
+      Array.isArray(receipt.hostCleanup?.finalMarked) &&
+      receipt.hostCleanup.finalMarked.length === 0 &&
+      !receipt.hostCleanup?.flatpakBefore?.error &&
+      !receipt.hostCleanup?.flatpakAfter?.error &&
+      receipt.hostCleanup?.flatpakBefore?.entries?.length === 0 &&
+      receipt.hostCleanup?.flatpakAfter?.entries?.length === 0 &&
+      receipt.hostCleanup?.clean === true,
     "Reference receipt did not prove complete cleanup.",
   );
   return true;

@@ -1,7 +1,7 @@
 # Obsidian behavior lab
 
 The behavior lab is a clean-room, Linux-only observer harness for the declared Obsidian Flatpak
-release `md.obsidian.Obsidian` version `1.13.6`. Each run records the installed Flatpak commit and
+release `md.obsidian.Obsidian` version `1.13.7`. Each run records the installed Flatpak commit and
 runtime reference (`org.freedesktop.Platform/x86_64/25.08` at the current baseline) and refuses to
 observe a different app version or an unresolved runtime. It is a benchmark and compatibility
 input, not a claim that Threadleaf reproduces private implementation details.
@@ -9,7 +9,7 @@ input, not a claim that Threadleaf reproduces private implementation details.
 ## Run contract
 
 The harness creates a fresh mode `0700` run root under
-`/home/maher/.cache/threadleaf-agent-tmp/obsidian-lab`, generates the independently authored
+`/tmp/threadleaf-obsidian-lab`, generates the independently authored
 `obsidian-lab-vault-v1` fixture, and passes only run-root paths to the reference launch. The fixture
 manifest is `compatibility/obsidian-lab-fixture.v1.json`; generation and verification live in
 `scripts/obsidian-behavior-lab/fixture.mjs`.
@@ -19,11 +19,15 @@ The reference launch is accepted only when all of these controls are present:
 - Flatpak `--sandbox`, `--nofilesystem=home`, and a run-root-only filesystem grant;
 - Flatpak `--unshare=network`, with a distinct network namespace proved through `/proc`;
 - an in-sandbox supervisor (host PID sharing is prohibited) that binds the installed Flatpak
-  version, commit, app PID/start/cmdline, renderer argv, and profile/vault realpaths and hashes;
-- `xvfb-run` with a `1440x840x24` X11 display and explicit `--ozone-platform=x11`;
-- an inherited run marker, a quiet post-exit scan, and marker-based descendant cleanup;
-- a fresh `--user-data-dir` under the run root and an exact synthetic-vault manifest;
-- a unique loopback CDP port and a surface-only screenshot (`fromSurface: true`,
+  version, runtime, commit, app PID/start/argv, and the supervisor -> `/app/obsidian` -> renderer
+  lineage, plus exact profile/vault realpaths and hashes;
+- `xvfb-run` with a `1440x840x24` X11 display, explicit `--ozone-platform=x11`, and a measured
+  `800x650` renderer viewport;
+- a bounded probe-quiescence wait and the conjunction of zero marker and zero Obsidian Flatpak
+  instances before and after the reference run; the marker is cleanup aid, not process identity;
+- a fresh randomized `--user-data-dir`, fixture-vault path, exact CDP arguments, and direct
+  `obsidian://open` fixture-note argument inside Flatpak, without a host URI handler;
+- a unique private loopback CDP port reused across edit/reopen and a surface-only screenshot (`fromSurface: true`,
   `captureBeyondViewport: false`).
 
 The launcher runs `free -k` immediately before each Flatpak, Xvfb, or Electron launch and records
@@ -40,16 +44,21 @@ under the temporary run root and are never copied into the repository.
 
 ## Cells in the first tranche
 
-`HARNESS-00` proves fixture integrity, Xvfb, marker cleanup, and the process supervisor. `FILE-01`
-records exact before and after synthetic-vault bytes plus the bounded fresh-profile allowlist.
-`UI-01` records a bounded visible-state projection, normalized accessibility nodes, viewport
-surface geometry, and one private screenshot when CDP is reachable. `CLI-01` records the explicit
-access gap without guessing a command grammar.
+`HARNESS-00` proves fixture integrity, Xvfb, marker cleanup, probe quiescence, and the process
+supervisor. `FILE-01` opens the fixture-specific note predicate, performs a synthetic edit/save,
+exits, reopens, and requires an exact-byte round trip while allowing only that one note delta plus
+the bounded fresh-profile allowlist. Obsidian's first-run app state may also create or rewrite only
+`.obsidian/app.json`, `.obsidian/appearance.json`, `.obsidian/core-plugins.json`, and
+`.obsidian/workspace.json`, each under a bounded size and mode policy. `UI-01` records the measured visible-state projection,
+normalized accessibility nodes, viewport surface geometry, and one private screenshot after reopen.
+`CLI-01` records the explicit access gap without guessing a command grammar. Every run also emits
+the candidate Git SHA/tree when available, a deterministic source tree hash, and exact hashes for
+the runner, all lab modules, fixture manifest, and package script.
 
 The observer never reads bundled application code, source maps, private modules or assets; dumps
 unbounded DOM or framework state; enumerates globals; accesses a real vault/profile; or permits
-external egress. The fixture probe package is present for later public-plugin cells but is not
-executed by this tranche.
+external egress. The fixture probe package is present but disabled in this tranche; it is not an
+authority or an executed cell.
 
 ## Checks
 

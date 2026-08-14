@@ -20,7 +20,6 @@ import subprocess
 import sys
 import time
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +29,13 @@ MAX_TREE_FILE_BYTES = 64 * 1024 * 1024
 MAX_PROCESSES = 512
 MAX_AX_NODES = 256
 MAX_VISIBLE_TEXT = 2400
+MAX_CDP_FRAME_BYTES = 512 * 1024
+MAX_CDP_HTTP_BYTES = 128 * 1024
+MAX_CDP_EXPRESSION_BYTES = 16 * 1024
+FIXTURE_PREDICATE = "THREADLEAF_OBSIDIAN_LAB_FIXTURE_V1"
+FIXTURE_NOTE = "00 Overview.md"
+SYNTHETIC_EDIT = "THREADLEAF_SYNTHETIC_EDIT_V1"
+RESTRICTED_MODE_LABEL = "Browse vault in Restricted Mode"
 
 
 def fail(message: str) -> None:
@@ -158,9 +164,18 @@ def process_start_time(pid: int) -> dict[str, Any]:
 def process_record(pid: int, marker: str) -> dict[str, Any] | None:
     try:
         status = read_text(f"/proc/{pid}/status")
-        command_line = read_bytes(f"/proc/{pid}/cmdline").rstrip(b"\0").replace(b"\0", b" ")
-        if not command_line:
+        raw_cmdline = read_bytes(f"/proc/{pid}/cmdline").rstrip(b"\0")
+        if not raw_cmdline:
             return None
+        if b"\0" in raw_cmdline:
+            raw_argv = raw_cmdline.split(b"\0")
+            argv = [entry.decode("utf-8", errors="replace")[:MAX_READ_BYTES] for entry in raw_argv]
+            command_line = b" ".join(raw_argv)
+            argv_encoding = "nul"
+        else:
+            command_line = raw_cmdline
+            argv = command_line.decode("utf-8", errors="replace").split()
+            argv_encoding = "space-delimited-proc"
         parent = -1
         for line in status.splitlines():
             if line.startswith("PPid:"):
@@ -184,6 +199,8 @@ def process_record(pid: int, marker: str) -> dict[str, Any] | None:
         return {
             "pid": pid,
             "parentPid": parent,
+            "argv": argv,
+            "argvEncoding": argv_encoding,
             "commandLine": command_line.decode("utf-8", errors="replace")[:MAX_READ_BYTES],
             "executable": executable,
             "networkNamespace": network_namespace,
@@ -195,21 +212,41 @@ def process_record(pid: int, marker: str) -> dict[str, Any] | None:
         return None
 
 
+def numeric_pids() -> list[int]:
+    try:
+        return sorted(int(name) for name in os.listdir("/proc") if name.isdigit())
+    except OSError:
+        return []
+
+
 def process_snapshot(marker: str) -> list[dict[str, Any]]:
     processes: list[dict[str, Any]] = []
     try:
-        pids = sorted(int(name) for name in os.listdir("/proc") if name.isdigit())
+        pids = numeric_pids()
     except OSError:
         return processes
-    for pid in pids[:MAX_PROCESSES]:
+    for pid in pids:
         record = process_record(pid, marker)
         if record is not None:
             processes.append(record)
     return processes
 
 
-def process_tree_snapshot(root_pid: int, marker: str) -> list[dict[str, Any]]:
-    snapshot = process_snapshot(marker)
+def all_process_snapshot() -> list[dict[str, Any]]:
+    processes: list[dict[str, Any]] = []
+    try:
+        pids = numeric_pids()
+    except OSError:
+        return processes
+    for pid in pids:
+        record = process_record(pid, "__never_present_marker__")
+        if record is not None:
+            processes.append(record)
+    return processes
+
+
+def process_tree_snapshot(root_pid: int, _marker: str | None = None) -> list[dict[str, Any]]:
+    snapshot = all_process_snapshot()
     records = {record["pid"]: record for record in snapshot}
     descendants = {root_pid}
     changed = True
@@ -219,11 +256,60 @@ def process_tree_snapshot(root_pid: int, marker: str) -> list[dict[str, Any]]:
             if record["parentPid"] in descendants and record["pid"] not in descendants:
                 descendants.add(record["pid"])
                 changed = True
-    return [
+    selected = [
         record
         for pid, record in records.items()
-        if pid != os.getpid() and (pid in descendants or record["markerPresent"])
+        if pid != os.getpid() and pid in descendants
     ]
+    if len(selected) > MAX_PROCESSES:
+        fail(f"process tree exceeded the bounded retained-record count: {len(selected)}")
+    return selected
+
+
+def app_process_snapshot(profile: str, cdp_port: int) -> list[dict[str, Any]]:
+    profile_arg = f"--user-data-dir={profile}"
+    port_arg = f"--remote-debugging-port={cdp_port}"
+    matches = [
+        record
+        for record in all_process_snapshot()
+        if record.get("executable") == "/app/obsidian"
+        and profile_arg in record.get("commandLine", "")
+        and port_arg in record.get("commandLine", "")
+    ]
+    if len(matches) > MAX_PROCESSES:
+        fail(f"matching app processes exceeded the bounded retained-record count: {len(matches)}")
+    return matches
+
+
+def reference_process_snapshot(profile: str, cdp_port: int) -> list[dict[str, Any]]:
+    profile_arg = f"--user-data-dir={profile}"
+    port_arg = f"--remote-debugging-port={cdp_port}"
+    matches = [
+        record
+        for record in all_process_snapshot()
+        if profile_arg in record.get("commandLine", "")
+        and port_arg in record.get("commandLine", "")
+    ]
+    if len(matches) > MAX_PROCESSES:
+        fail(
+            f"matching reference processes exceeded the bounded retained-record count: {len(matches)}"
+        )
+    return matches
+
+
+def process_lineage(records: list[dict[str, Any]], pid: int) -> list[int]:
+    by_pid = {int(record["pid"]): record for record in records}
+    lineage: list[int] = []
+    current = pid
+    seen: set[int] = set()
+    while current > 0 and current not in seen:
+        seen.add(current)
+        lineage.append(current)
+        record = by_pid.get(current)
+        if record is None:
+            break
+        current = int(record.get("parentPid", -1))
+    return lineage
 
 
 def write_json(path: str, value: Any) -> None:
@@ -265,6 +351,11 @@ def route_snapshot() -> dict[str, Any]:
     }
 
 
+def tcp_listener_snapshot(port: int) -> list[str]:
+    token = f":{port:04X}"
+    return [line.strip()[:256] for line in read_text("/proc/net/tcp", 64 * 1024).splitlines() if token in line]
+
+
 def png_dimensions(data: bytes) -> tuple[int, int]:
     if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
         fail("CDP screenshot is not a PNG with an IHDR chunk")
@@ -303,6 +394,8 @@ class CdpSocket:
         return data
 
     def _send_frame(self, payload: bytes, opcode: int = 1) -> None:
+        if len(payload) > MAX_CDP_FRAME_BYTES:
+            fail(f"CDP payload exceeds bounded frame size: {len(payload)}")
         mask = os.urandom(4)
         length = len(payload)
         if length < 126:
@@ -325,6 +418,8 @@ class CdpSocket:
             length = int.from_bytes(self.sock.recv(2), "big")
         elif length == 127:
             length = int.from_bytes(self.sock.recv(8), "big")
+        if length > MAX_CDP_FRAME_BYTES:
+            fail(f"CDP frame exceeds bounded size: {length}")
         masked = second & 0x80
         mask = self.sock.recv(4) if masked else b""
         data = b""
@@ -367,21 +462,69 @@ class CdpSocket:
 
 
 def cdp_target(port: int) -> dict[str, Any]:
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as response:
-        targets = json.load(response)
+    client = socket.create_connection(("127.0.0.1", port), timeout=2)
+    client.settimeout(1)
+    try:
+        client.sendall(
+            (
+                f"GET /json/list HTTP/1.1\r\n"
+                f"Host: localhost:{port}\r\n"
+                "User-Agent: threadleaf-obsidian-lab/1\r\n"
+                f"Origin: http://127.0.0.1:{port}\r\n"
+                "Accept: application/json\r\n\r\n"
+            ).encode("ascii")
+        )
+        response = b""
+        while len(response) <= MAX_CDP_HTTP_BYTES:
+            try:
+                chunk = client.recv(4096)
+            except TimeoutError:
+                break
+            if not chunk:
+                break
+            response += chunk
+            if b"\r\n\r\n" in response:
+                _, _, candidate_body = response.partition(b"\r\n\r\n")
+                try:
+                    json.loads(candidate_body.decode("utf-8"))
+                    break
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    pass
+        _, _, body = response.partition(b"\r\n\r\n")
+        if not body:
+            fail(f"CDP target list returned no body: {response[:256]!r}")
+    finally:
+        client.close()
+    if len(body) > MAX_CDP_HTTP_BYTES:
+        fail("CDP target list exceeded the bounded HTTP payload")
+    targets = json.loads(body.decode("utf-8"))
+    if not isinstance(targets, list) or len(targets) > 16:
+        fail("CDP target list exceeded the bounded target count")
     for target in targets:
         if target.get("type") == "page" and isinstance(target.get("webSocketDebuggerUrl"), str):
+            websocket_url = urllib.parse.urlparse(target["webSocketDebuggerUrl"])
+            if (
+                websocket_url.scheme != "ws"
+                or websocket_url.hostname not in {"127.0.0.1", "localhost"}
+                or websocket_url.port != port
+            ):
+                fail(f"CDP target websocket is not the private loopback target: {target['webSocketDebuggerUrl']}")
             return {
                 "id": str(target.get("id", ""))[:128],
                 "type": "page",
                 "title": str(target.get("title", ""))[:256],
                 "url": str(target.get("url", ""))[:256],
-                "webSocketDebuggerUrl": target["webSocketDebuggerUrl"],
+                "webSocketDebuggerUrl": (
+                    f"ws://127.0.0.1:{port}{websocket_url.path or '/'}"
+                    f"{('?' + websocket_url.query) if websocket_url.query else ''}"
+                )[:256],
             }
     fail("CDP list had no bounded page target")
 
 
 def runtime_eval(cdp: CdpSocket, expression: str) -> Any:
+    if len(expression.encode("utf-8")) > MAX_CDP_EXPRESSION_BYTES:
+        fail("CDP expression exceeded the bounded payload size")
     result = cdp.send(
         "Runtime.evaluate",
         {"expression": expression, "awaitPromise": True, "returnByValue": True},
@@ -439,6 +582,8 @@ def normalized_ax(cdp: CdpSocket) -> dict[str, Any]:
     nodes = response.get("nodes", [])
     if not isinstance(nodes, list):
         fail("CDP accessibility result was not a node list")
+    if len(nodes) > MAX_AX_NODES * 8:
+        fail(f"CDP accessibility result exceeded the bounded node payload: {len(nodes)}")
     normalized = []
     for node in nodes[:MAX_AX_NODES]:
         if not isinstance(node, dict):
@@ -492,6 +637,220 @@ def capture_surface(cdp: CdpSocket, path: str) -> dict[str, Any]:
     }
 
 
+def wait_process_exit(process: subprocess.Popen[bytes], timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return process.poll() is not None
+
+
+def close_cdp(cdp: CdpSocket | None) -> None:
+    if cdp is None:
+        return
+    try:
+        cdp.send("Browser.close")
+    except Exception:  # noqa: BLE001 - cleanup is bounded and best effort
+        try:
+            runtime_eval(cdp, "window.close(); true")
+        except Exception:
+            pass
+    cdp.close()
+
+
+def cdp_key(cdp: CdpSocket, key: str, code: str, key_code: int, modifiers: int = 0) -> None:
+    common = {
+        "key": key,
+        "code": code,
+        "windowsVirtualKeyCode": key_code,
+        "nativeVirtualKeyCode": key_code,
+        "modifiers": modifiers,
+    }
+    cdp.send("Input.dispatchKeyEvent", {"type": "keyDown", **common})
+    cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", **common})
+
+
+def fixture_predicate(cdp: CdpSocket, require_edit: bool = False) -> dict[str, Any]:
+    state = wait_visible(cdp)
+    visible_text = str(state.get("visibleText", ""))
+    if FIXTURE_PREDICATE not in visible_text or "Overview" not in visible_text:
+        fail(
+            "fixture-specific visible predicate did not prove the synthetic vault was open: "
+            f"visible={visible_text[:MAX_VISIBLE_TEXT]!r}"
+        )
+    if require_edit and SYNTHETIC_EDIT not in visible_text:
+        fail(
+            "fixture-specific visible predicate did not prove the synthetic edit: "
+            f"visible={visible_text[:MAX_VISIBLE_TEXT]!r}"
+        )
+    return state
+
+
+def dismiss_restricted_mode_prompt(cdp: CdpSocket) -> dict[str, Any]:
+    wait_visible(cdp)
+    button = runtime_eval(
+        cdp,
+        f"""(() => {{
+          const label = {json.dumps(RESTRICTED_MODE_LABEL)};
+          const roots = [];
+          const seenRoots = new Set();
+          const collectRoot = (root) => {{
+            if (!root || seenRoots.has(root)) return;
+            seenRoots.add(root);
+            roots.push(root);
+            for (const candidate of root.querySelectorAll?.('*') ?? []) {{
+              if (candidate.shadowRoot) collectRoot(candidate.shadowRoot);
+            }}
+          }};
+          collectRoot(document);
+          const elements = roots.flatMap((root) => [...root.querySelectorAll('*')]);
+          const normalize = (value) => String(value ?? '').replace(/\\s+/gu, ' ').trim();
+          const match = elements.slice().reverse().find((candidate) => {{
+            const rect = candidate.getBoundingClientRect();
+            const style = getComputedStyle(candidate);
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' &&
+              style.visibility !== 'hidden' &&
+              normalize(candidate.innerText ?? candidate.textContent) === label;
+          }});
+          if (!match) {{
+            const candidates = elements
+              .map((candidate) => {{
+                const text = normalize(candidate.innerText ?? candidate.textContent);
+                const rect = candidate.getBoundingClientRect();
+                return {{ candidate, text, rect }};
+              }})
+              .filter((entry) => entry.text.includes(label) && entry.text.length <= 200)
+              .slice(-8)
+              .map((entry) => ({{
+                tag: entry.candidate.tagName,
+                id: entry.candidate.id,
+                className: String(entry.candidate.className ?? '').slice(0, 160),
+                role: entry.candidate.getAttribute('role'),
+                ariaLabel: entry.candidate.getAttribute('aria-label'),
+                text: entry.text,
+                x: entry.rect.left,
+                y: entry.rect.top,
+                width: entry.rect.width,
+                height: entry.rect.height,
+              }}));
+            return {{
+              found: false,
+              candidates,
+              rootCount: roots.length,
+              elementCount: elements.length,
+              bodyText: normalize(document.body?.innerText).slice(0, 2400),
+            }};
+          }}
+          const node = match.closest('button, [role="button"], a') ?? match;
+          const rect = node.getBoundingClientRect();
+          return {{
+            found: true,
+            label,
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          }};
+        }})()""",
+    )
+    if not isinstance(button, dict) or button.get("found") is not True:
+        return {"status": "absent", "label": RESTRICTED_MODE_LABEL, "probe": button}
+    x = float(button.get("x", 0))
+    y = float(button.get("y", 0))
+    if not (0 < x < 800 and 0 < y < 650):
+        fail(f"restricted-mode button was outside the measured viewport: {button!r}")
+    cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+    cdp.send(
+        "Input.dispatchMouseEvent",
+        {"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1},
+    )
+    cdp.send(
+        "Input.dispatchMouseEvent",
+        {"type": "mouseReleased", "x": x, "y": y, "button": "left", "buttons": 0, "clickCount": 1},
+    )
+    deadline = time.monotonic() + 10.0
+    visible_expression = f"""(() => {{
+      const label = {json.dumps(RESTRICTED_MODE_LABEL)};
+      const roots = [];
+      const seenRoots = new Set();
+      const collectRoot = (root) => {{
+        if (!root || seenRoots.has(root)) return;
+        seenRoots.add(root);
+        roots.push(root);
+        for (const candidate of root.querySelectorAll?.('*') ?? []) {{
+          if (candidate.shadowRoot) collectRoot(candidate.shadowRoot);
+        }}
+      }};
+      collectRoot(document);
+      const normalize = (value) => String(value ?? '').replace(/\\s+/gu, ' ').trim();
+      return roots.some((root) => [...root.querySelectorAll('*')].some((candidate) => {{
+        const rect = candidate.getBoundingClientRect();
+        const style = getComputedStyle(candidate);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          normalize(candidate.innerText ?? candidate.textContent) === label;
+      }}));
+    }})()"""
+    while time.monotonic() < deadline:
+        if runtime_eval(cdp, visible_expression) is not True:
+            return {"status": "observed", "label": RESTRICTED_MODE_LABEL, "input": "CDP pointer"}
+        time.sleep(0.1)
+    fail("restricted-mode prompt did not close after the bounded CDP pointer click")
+
+
+def focus_fixture_editor(cdp: CdpSocket) -> None:
+    result = runtime_eval(
+        cdp,
+        """(() => {
+          const nodes = [
+            ...document.querySelectorAll(
+              '.markdown-source-view.mod-cm6 .cm-content[contenteditable="true"]',
+            ),
+          ];
+          const node = nodes.find((candidate) => candidate.offsetParent !== null);
+          if (!node) return { found: false, count: nodes.length, selector: 'CodeMirror 6' };
+          node.focus();
+          return {
+            found: true,
+            focused: document.activeElement === node,
+            count: nodes.length,
+            selector: 'CodeMirror 6',
+          };
+        })()""",
+    )
+    if (
+        not isinstance(result, dict)
+        or result.get("found") is not True
+        or result.get("focused") is not True
+        or result.get("selector") != "CodeMirror 6"
+    ):
+        fail(f"fixture editor was not reachable through the bounded UI predicate: {result!r}")
+
+
+def wait_for_exact_bytes(path: str, expected: bytes, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with open(path, "rb") as handle:
+                actual = handle.read(MAX_TREE_FILE_BYTES + 1)
+            if actual == expected:
+                return
+        except OSError:
+            pass
+        time.sleep(0.1)
+    fail(f"synthetic edit was not persisted as the expected exact bytes: {path}")
+
+
+def file_digest(path: str) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    counted = 0
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            counted += len(chunk)
+            digest.update(chunk)
+    return counted, digest.hexdigest()
+
+
 def terminate_process(process: subprocess.Popen[bytes] | None) -> dict[str, Any]:
     if process is None:
         return {"attempted": False, "clean": True}
@@ -513,6 +872,54 @@ def terminate_process(process: subprocess.Popen[bytes] | None) -> dict[str, Any]
     return {"attempted": attempted, "clean": process.poll() is not None, "returncode": process.returncode}
 
 
+def terminate_process_tree(process: subprocess.Popen[bytes] | None) -> dict[str, Any]:
+    if process is None:
+        return {"attempted": False, "clean": True}
+    root_pid = process.pid
+    attempted: list[dict[str, Any]] = []
+    for signal_name, signal_number, timeout in (("SIGTERM", 15, 4.0), ("SIGKILL", 9, 1.0)):
+        records = all_process_snapshot()
+        by_pid = {int(record["pid"]): record for record in records}
+        descendants = {
+            pid
+            for pid in by_pid
+            if pid != os.getpid() and pid != root_pid and root_pid in process_lineage(records, pid)
+        }
+        if len(descendants) > MAX_PROCESSES:
+            fail(f"cleanup process tree exceeded the bounded candidate count: {len(descendants)}")
+        targets = sorted([*descendants, root_pid], reverse=True)
+        if process.poll() is None or descendants:
+            for pid in targets:
+                try:
+                    os.kill(pid, signal_number)
+                    attempted.append({"pid": pid, "signal": signal_name})
+                except OSError:
+                    pass
+        if wait_process_exit(process, timeout):
+            lingering = [
+                record
+                for record in all_process_snapshot()
+                if int(record["pid"]) in descendants or int(record["pid"]) == root_pid
+            ]
+            if not lingering:
+                return {
+                    "attempted": attempted,
+                    "clean": True,
+                    "returncode": process.returncode,
+                }
+    lingering = [
+        record
+        for record in all_process_snapshot()
+        if int(record["pid"]) == root_pid or root_pid in process_lineage(all_process_snapshot(), int(record["pid"]))
+    ]
+    return {
+        "attempted": attempted,
+        "clean": not lingering,
+        "returncode": process.returncode,
+        "lingering": lingering,
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     root = os.path.realpath(args.run_root)
     profile = os.path.realpath(args.profile)
@@ -526,6 +933,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if not network["noEgressEvidence"]:
         fail(f"sandbox network still has a route or non-loopback device: {network}")
 
+    if not (os.environ.get("DISPLAY") or "").startswith(":"):
+        fail(f"isolated supervisor did not receive an Xvfb DISPLAY: {os.environ.get('DISPLAY')!r}")
+    if os.environ.get("WAYLAND_DISPLAY"):
+        fail("isolated X11 supervisor inherited WAYLAND_DISPLAY")
+    fixture_uri = "obsidian://open?path=" + urllib.parse.quote(
+        os.path.join(vault, FIXTURE_NOTE), safe=""
+    )
     command = [
         "/usr/bin/env",
         f"{args.marker}=1",
@@ -533,11 +947,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "--ozone-platform=x11",
         "--disable-gpu",
         "--no-first-run",
+        "--window-size=800,650",
         f"--remote-debugging-port={args.cdp_port}",
         "--remote-debugging-address=127.0.0.1",
         f"--remote-allow-origins=http://127.0.0.1:{args.cdp_port}",
         f"--user-data-dir={profile}",
         vault,
+        fixture_uri,
     ]
     environment = os.environ.copy()
     environment[args.marker] = "1"
@@ -547,7 +963,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     environment["XDG_DATA_HOME"] = os.path.join(root, "xdg-data")
     profile_before = tree_snapshot(profile)
     vault_before = tree_snapshot(vault)
-    process = subprocess.Popen(command, env=environment)
     result: dict[str, Any] = {
         "schemaVersion": 1,
         "status": "blocked",
@@ -562,54 +977,89 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "value": os.environ.get("DISPLAY"),
             "wayland": os.environ.get("WAYLAND_DISPLAY"),
             "x11Required": True,
+            "screen": "1440x840x24",
         },
         "network": {**network, "hostNamespace": args.host_network_namespace},
         "paths": {"runRoot": root, "profile": profile_before, "vault": vault_before},
         "command": command,
-        "appPid": process.pid,
+        "uriDispatch": None,
+        "appPid": None,
         "supervisorPid": os.getpid(),
         "startedEpochSeconds": time.time(),
         "target": None,
+        "reopenTarget": None,
+        "cdp": None,
         "visible": None,
+        "visibleBeforeEdit": None,
         "ax": None,
         "screenshot": None,
+        "roundtrip": None,
         "processes": [],
         "rendererProcesses": [],
+        "reopenProcesses": [],
+        "lineage": None,
+        "reopenLineage": None,
         "cleanup": None,
+        "appProcessesAfterCleanup": [],
+        "referenceProcessesAfterCleanup": [],
     }
+    process: subprocess.Popen[bytes] | None = None
+    reopen_process: subprocess.Popen[bytes] | None = None
     cdp: CdpSocket | None = None
-    try:
+    reopen_cdp: CdpSocket | None = None
+    cdps: list[CdpSocket] = []
+
+    def start_app() -> subprocess.Popen[bytes]:
+        return subprocess.Popen(command, env=environment)
+
+    def connect_app(app_process: subprocess.Popen[bytes]) -> tuple[dict[str, Any], CdpSocket]:
         deadline = time.monotonic() + 20.0
         last_error: str | None = None
         target: dict[str, Any] | None = None
         while time.monotonic() < deadline:
-            if process.poll() is not None:
-                fail(f"Obsidian launcher exited before CDP: {process.returncode}")
+            if app_process.poll() is not None:
+                fail(f"Obsidian launcher exited before CDP: {app_process.returncode}")
             try:
                 target = cdp_target(args.cdp_port)
                 break
             except Exception as error:  # noqa: BLE001 - bounded launch retry
-                last_error = str(error)
+                last_error = f"{error}; tcp={tcp_listener_snapshot(args.cdp_port)}"
                 time.sleep(0.1)
         if target is None:
             fail(f"CDP target unavailable: {last_error}")
-        result["target"] = {key: value for key, value in target.items() if key != "webSocketDebuggerUrl"}
+        socket_ = CdpSocket(target["webSocketDebuggerUrl"])
+        cdps.append(socket_)
+        socket_.send("Runtime.enable")
+        socket_.send("Page.enable")
+        socket_.send("Accessibility.enable")
+        return target, socket_
+
+    try:
+        process = start_app()
+        target, cdp = connect_app(process)
+        result["target"] = dict(target)
         result["target"]["port"] = args.cdp_port
         result["target"]["address"] = "127.0.0.1"
-        cdp = CdpSocket(target["webSocketDebuggerUrl"])
-        cdp.send("Runtime.enable")
-        cdp.send("Page.enable")
-        cdp.send("Accessibility.enable")
-        result["visible"] = wait_visible(cdp)
-        result["ax"] = normalized_ax(cdp)
-        result["screenshot"] = capture_surface(cdp, args.screenshot)
+        browser_version = cdp.send("Browser.getVersion")
+        user_agent = str(browser_version.get("userAgent", ""))[:256]
+        if "obsidian/1.13.7" not in user_agent.lower():
+            fail(f"Browser user agent did not identify Obsidian 1.13.7: {user_agent!r}")
+        result["cdp"] = {
+            "browserVersion": {
+                key: str(browser_version.get(key, ""))[:256]
+                for key in ("product", "revision", "userAgent", "jsVersion")
+            }
+        }
         result["processes"] = process_tree_snapshot(process.pid, args.marker)
         result["rendererProcesses"] = [
             record for record in result["processes"] if "--type=renderer" in record["commandLine"]
         ]
         if not result["rendererProcesses"]:
             fail("no renderer process was observable inside the isolated namespace")
-        if any("--ozone-platform=x11" not in record["commandLine"] for record in result["rendererProcesses"]):
+        if any(
+            "--ozone-platform=x11" not in record["commandLine"]
+            for record in result["rendererProcesses"]
+        ):
             fail(f"renderer omitted explicit X11 argv: {result['rendererProcesses']}")
         if any("--ozone-platform=wayland" in record["commandLine"] for record in result["rendererProcesses"]):
             fail(f"renderer selected Wayland: {result['rendererProcesses']}")
@@ -621,23 +1071,169 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         if not result["appProcess"]:
             fail("the launched app process was not present in the in-sandbox process receipt")
+        result["appPid"] = result["appProcess"]["pid"]
         result["reference"]["executable"] = result["appProcess"].get("executable")
-        if result["display"]["wayland"]:
-            fail("WAYLAND_DISPLAY was present in the isolated X11 launch")
+        if result["appProcess"].get("parentPid") != result["supervisorPid"]:
+            fail("the captured app was not a direct child of the in-sandbox supervisor")
+        if result["appProcess"].get("networkNamespace") != network["namespace"]:
+            fail("the captured app escaped the isolated network namespace")
+        app_argv = result["appProcess"].get("argv", [])
+        expected_app_args = {
+            "--ozone-platform=x11",
+            "--disable-gpu",
+            "--no-first-run",
+            "--window-size=800,650",
+            f"--remote-debugging-port={args.cdp_port}",
+            "--remote-debugging-address=127.0.0.1",
+            f"--remote-allow-origins=http://127.0.0.1:{args.cdp_port}",
+            f"--user-data-dir={profile}",
+        }
+        if (
+            not app_argv
+            or app_argv[0] != "/app/obsidian"
+            or not expected_app_args.issubset(set(app_argv))
+            or vault not in app_argv
+            or fixture_uri not in app_argv
+        ):
+            fail(f"app argv did not retain the exact isolated launch: {app_argv!r}")
+        result["lineage"] = {
+            "supervisorPid": result["supervisorPid"],
+            "appPid": result["appProcess"]["pid"],
+            "app": process_lineage(result["processes"], result["appProcess"]["pid"]),
+            "renderers": {
+                str(record["pid"]): process_lineage(result["processes"], record["pid"])
+                for record in result["rendererProcesses"]
+            },
+        }
+        result["uriDispatch"] = {
+            "argv": app_argv,
+            "parentPid": os.getpid(),
+            "accepted": True,
+            "source": "in-sandbox initial app argv",
+            "private": True,
+        }
+        result["restrictedMode"] = dismiss_restricted_mode_prompt(cdp)
+        result["visibleBeforeEdit"] = fixture_predicate(cdp)
+        note_path = os.path.join(vault, FIXTURE_NOTE)
+        with open(note_path, "rb") as handle:
+            before_bytes = handle.read(MAX_TREE_FILE_BYTES + 1)
+        if len(before_bytes) > MAX_TREE_FILE_BYTES:
+            fail("fixture note exceeded the bounded edit input")
+        focus_fixture_editor(cdp)
+        cdp_key(cdp, "End", "End", 35, modifiers=2)
+        edit_bytes = f"{SYNTHETIC_EDIT}\n".encode("utf-8")
+        cdp.send("Input.insertText", {"text": edit_bytes.decode("utf-8")})
+        fixture_predicate(cdp, require_edit=True)
+        cdp_key(cdp, "s", "KeyS", 83, modifiers=2)
+        expected_bytes = before_bytes + edit_bytes
+        wait_for_exact_bytes(note_path, expected_bytes)
+        before_size, before_sha = len(before_bytes), sha256_bytes(before_bytes)
+        mutated_size, mutated_sha = file_digest(note_path)
+        if mutated_size != len(expected_bytes) or mutated_sha != sha256_bytes(expected_bytes):
+            fail("saved fixture note hash did not match the exact synthetic edit")
+        result["roundtrip"] = {
+            "status": "editing",
+            "fixtureNote": FIXTURE_NOTE,
+            "edit": SYNTHETIC_EDIT,
+            "beforeBytes": before_size,
+            "beforeSha256": before_sha,
+            "mutatedBytes": mutated_size,
+            "mutatedSha256": mutated_sha,
+            "expectedMutatedSha256": sha256_bytes(expected_bytes),
+            "exactSave": True,
+        }
+        close_cdp(cdp)
+        cdps.remove(cdp)
+        cdp = None
+        first_cleanup = terminate_process_tree(process)
+        if not first_cleanup["clean"]:
+            fail(f"first app process did not exit cleanly: {first_cleanup}")
+        reopen_process = start_app()
+        reopen_target, reopen_cdp = connect_app(reopen_process)
+        result["reopenTarget"] = dict(reopen_target)
+        result["reopenTarget"]["port"] = args.cdp_port
+        result["reopenTarget"]["address"] = "127.0.0.1"
+        if (
+            result["reopenTarget"].get("port") != result["target"].get("port")
+            or not str(result["reopenTarget"].get("webSocketDebuggerUrl", "")).startswith(
+                f"ws://127.0.0.1:{args.cdp_port}/"
+            )
+        ):
+            fail("reopen CDP target did not remain on the same private loopback port")
+        result["reopenRestrictedMode"] = dismiss_restricted_mode_prompt(reopen_cdp)
+        reopened_state = fixture_predicate(reopen_cdp, require_edit=True)
+        result["visible"] = reopened_state
+        with open(note_path, "rb") as handle:
+            reopened_bytes = handle.read(MAX_TREE_FILE_BYTES + 1)
+        reopened_size, reopened_sha = file_digest(note_path)
+        result["roundtrip"].update(
+            {
+                "status": "observed",
+                "reopenedBytes": reopened_size,
+                "reopenedSha256": reopened_sha,
+                "exact": reopened_bytes == expected_bytes and reopened_sha == mutated_sha,
+            }
+        )
+        if not result["roundtrip"]["exact"]:
+            fail("reopened fixture note did not retain the exact saved bytes")
+        result["ax"] = normalized_ax(reopen_cdp)
+        result["screenshot"] = capture_surface(reopen_cdp, args.screenshot)
+        result["reopenProcesses"] = process_tree_snapshot(reopen_process.pid, args.marker)
+        reopen_app = next(
+            (record for record in result["reopenProcesses"] if record["pid"] == reopen_process.pid),
+            None,
+        )
+        if not reopen_app:
+            fail("the reopened app process was not present in the in-sandbox process receipt")
+        if (
+            reopen_app.get("executable") != "/app/obsidian"
+            or reopen_app.get("parentPid") != result["supervisorPid"]
+            or reopen_app.get("networkNamespace") != network["namespace"]
+            or reopen_app.get("argv") != result["appProcess"].get("argv")
+        ):
+            fail("reopen app argv/lineage did not match the randomized first launch")
+        result["reopenLineage"] = {
+            "appPid": reopen_process.pid,
+            "app": process_lineage(result["reopenProcesses"], reopen_process.pid),
+            "renderers": {
+                str(record["pid"]): process_lineage(result["reopenProcesses"], record["pid"])
+                for record in result["reopenProcesses"]
+                if "--type=renderer" in record.get("commandLine", "")
+            },
+        }
         result["status"] = "observed"
-        try:
-            cdp.send("Browser.close")
-        except Exception:  # noqa: BLE001 - process cleanup remains authoritative
-            try:
-                runtime_eval(cdp, "window.close(); true")
-            except Exception:
-                pass
+        close_cdp(reopen_cdp)
+        cdps.remove(reopen_cdp)
+        reopen_cdp = None
+    except Exception as error:  # noqa: BLE001 - preserve bounded failure evidence
+        result["status"] = "blocked"
+        result["reason"] = str(error)
     finally:
-        if cdp is not None:
-            cdp.close()
-        result["cleanup"] = terminate_process(process)
-        result["processesAfterCleanup"] = process_tree_snapshot(process.pid, args.marker)
-        if result["processesAfterCleanup"]:
+        for socket_ in list(cdps):
+            try:
+                close_cdp(socket_)
+            except Exception:
+                socket_.close()
+            cdps.remove(socket_)
+        cleanup_results = []
+        if process is not None:
+            cleanup_results.append({"phase": "initial", **terminate_process_tree(process)})
+        if reopen_process is not None:
+            cleanup_results.append({"phase": "reopen", **terminate_process_tree(reopen_process)})
+        result["cleanup"] = {
+            "phases": cleanup_results,
+            "clean": all(item.get("clean") for item in cleanup_results),
+        }
+        result["processesAfterCleanup"] = process_tree_snapshot(
+            process.pid if process is not None else -1, args.marker
+        )
+        result["appProcessesAfterCleanup"] = app_process_snapshot(profile, args.cdp_port)
+        result["referenceProcessesAfterCleanup"] = reference_process_snapshot(profile, args.cdp_port)
+        if (
+            result["processesAfterCleanup"]
+            or result["appProcessesAfterCleanup"]
+            or result["referenceProcessesAfterCleanup"]
+        ):
             result["status"] = "blocked"
             result["cleanup"]["clean"] = False
         result["finishedEpochSeconds"] = time.time()

@@ -6,6 +6,7 @@ import { deflateSync } from "node:zlib";
 export const FIXTURE_ID = "obsidian-lab-vault-v1";
 export const FIXTURE_SCHEMA_VERSION = 1;
 export const FIXTURE_GENERATOR = "threadleaf-obsidian-behavior-lab-v1";
+export const FIXTURE_PREDICATE = "THREADLEAF_OBSIDIAN_LAB_FIXTURE_V1";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -103,6 +104,8 @@ const fileDefinitions = [
         "---",
         "# Overview",
         "",
+        `Fixture predicate: ${FIXTURE_PREDICATE}.`,
+        "",
         "Resolved: [[Notes/Unicode|Unicode note]].",
         "Unresolved: [[Notes/Not Present]].",
         "Task: - [ ] Preserve the source bytes.",
@@ -188,7 +191,7 @@ const fileDefinitions = [
   { path: "Attachments/pixel.png", bytes: fixturePng() },
   {
     path: ".obsidian/community-plugins.json",
-    bytes: stableJson(["lab-probe"]),
+    bytes: stableJson([]),
   },
   {
     path: ".obsidian/appearance.json",

@@ -1,15 +1,16 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FIXTURE_ID,
+  FIXTURE_PREDICATE,
   generateFixture,
   verifyFixtureManifest,
 } from "./obsidian-behavior-lab/fixture.mjs";
 import {
-  assertExactManifest,
   snapshotAllowlistedProfile,
   snapshotTree,
   writeManifest,
@@ -36,9 +37,22 @@ import {
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const flatpakId = "md.obsidian.Obsidian";
-const declaredReferenceVersion = "1.13.6";
-const viewport = { width: 1180, height: 820, deviceScaleFactor: 1, pageScaleFactor: 1 };
-const labScratchRoot = "/home/maher/.cache/threadleaf-agent-tmp/obsidian-lab";
+const declaredReferenceVersion = "1.13.7";
+const viewport = { width: 800, height: 650, deviceScaleFactor: 1, pageScaleFactor: 1 };
+const labScratchRoot = path.join(os.tmpdir(), "threadleaf-obsidian-lab");
+const sourceEvidencePaths = [
+  "scripts/check-obsidian-behavior-lab.mjs",
+  "scripts/obsidian-behavior-lab/cdp.mjs",
+  "scripts/obsidian-behavior-lab/fixture.mjs",
+  "scripts/obsidian-behavior-lab/lab.test.mjs",
+  "scripts/obsidian-behavior-lab/manifest.mjs",
+  "scripts/obsidian-behavior-lab/process.mjs",
+  "scripts/obsidian-behavior-lab/receipts.mjs",
+  "scripts/obsidian-behavior-lab/sandbox-supervisor.py",
+  "scripts/obsidian-behavior-lab/sandbox-supervisor.test.py",
+  "compatibility/obsidian-lab-fixture.v1.json",
+  "package.json",
+];
 const args = new Set(process.argv.slice(2));
 const redControl = args.has("--red-control");
 const keepRun = !args.has("--cleanup");
@@ -77,7 +91,7 @@ function commandResult(
       });
     };
     child.once("error", (error) => finish({ code: null, signal: null, error: String(error) }));
-    child.once("exit", (code, signal) => finish({ code, signal }));
+    child.once("close", (code, signal) => finish({ code, signal }));
     setTimeout(() => {
       if (!finished) {
         child.kill("SIGTERM");
@@ -131,6 +145,40 @@ async function flatpakInstances() {
   }
 }
 
+async function waitForFlatpakQuiescence(label, timeoutMs = 5_000) {
+  const started = Date.now();
+  const samples = [];
+  let latest = await flatpakInstances();
+  while (Date.now() - started <= timeoutMs) {
+    samples.push({
+      elapsedMs: Date.now() - started,
+      entries: latest.entries,
+      error: latest.error ?? null,
+    });
+    if (latest.error || latest.entries.length === 0) {
+      return {
+        status: latest.error ? "blocked" : "observed",
+        label,
+        timeoutMs,
+        elapsedMs: Date.now() - started,
+        samples: samples.slice(-16),
+        latest,
+      };
+    }
+    await delay(100);
+    latest = await flatpakInstances();
+  }
+  return {
+    status: "blocked",
+    label,
+    timeoutMs,
+    elapsedMs: Date.now() - started,
+    samples: samples.slice(-16),
+    latest,
+    reason: "Flatpak app instances did not quiesce before the bounded probe deadline.",
+  };
+}
+
 async function memorySnapshot() {
   const result = await commandResult("free", ["-k"], { timeoutMs: 1_000 });
   const line = result.stdout
@@ -150,6 +198,33 @@ async function memorySnapshot() {
     availableBytes,
     minimumKiB: 8 * 1024 * 1024,
     sufficient: parsed && availableBytes >= 8 * 1024 * 1024 * 1024,
+  };
+}
+
+async function sourceEvidence() {
+  const entries = [];
+  for (const relativePath of sourceEvidencePaths) {
+    const bytes = await fs.readFile(path.join(appRoot, relativePath));
+    entries.push({
+      path: relativePath,
+      bytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+  }
+  const sourceTreeSha256 = createHash("sha256")
+    .update(entries.map((entry) => `${entry.path}\0${entry.bytes}\0${entry.sha256}\n`).join(""))
+    .digest("hex");
+  const [head, tree] = await Promise.all(
+    ["HEAD", "HEAD^{tree}"].map(async (revision) => {
+      const result = await commandResult("git", ["rev-parse", revision], { cwd: appRoot });
+      return result.code === 0 ? result.stdout.toString("utf8").trim() : null;
+    }),
+  );
+  return {
+    schemaVersion: 1,
+    candidate: { gitHead: head, gitTree: tree },
+    sourceTreeSha256,
+    files: entries,
   };
 }
 
@@ -185,6 +260,7 @@ async function runContainmentProbe(runRoot) {
     env: { ...process.env, TMPDIR: labScratchRoot },
   });
   const isolatedObservation = parseContainmentProbe(isolated.stdout.toString("utf8"));
+  const isolatedQuiescence = await waitForFlatpakQuiescence("isolated containment probe");
   const parentArgs = [
     "run",
     "--sandbox",
@@ -202,6 +278,7 @@ async function runContainmentProbe(runRoot) {
   const parentProbe = await commandResult("flatpak", parentArgs, {
     env: { ...process.env, TMPDIR: labScratchRoot },
   });
+  const parentQuiescence = await waitForFlatpakQuiescence("parent-PID rejection probe");
   const result = {
     schemaVersion: 1,
     hostNetworkNamespace,
@@ -228,6 +305,14 @@ async function runContainmentProbe(runRoot) {
       status: parentProbe.code === 0 ? "unexpectedly-observed" : "blocked-as-expected",
       expected: "host PID sharing is unavailable in this Flatpak/bwrap environment",
     },
+    probeQuiescence: {
+      isolated: isolatedQuiescence,
+      parentPidSharing: parentQuiescence,
+      status:
+        isolatedQuiescence.status === "observed" && parentQuiescence.status === "observed"
+          ? "observed"
+          : "blocked",
+    },
   };
   await writeManifest(path.join(runRoot, "harness", "containment-probe.v1.json"), result);
   return result;
@@ -237,6 +322,54 @@ function relativeArtifacts(runRoot, paths) {
   return paths
     .filter(Boolean)
     .map((filePath) => path.relative(runRoot, filePath).split(path.sep).join("/"));
+}
+
+function singleFileRoundtrip(before, after, targetPath, expectedBeforeSha256, expectedAfterSha256) {
+  const allowedReferenceVaultPaths = new Map([
+    [".obsidian/app.json", 4 * 1024],
+    [".obsidian/appearance.json", 4 * 1024],
+    [".obsidian/core-plugins.json", 64 * 1024],
+    [".obsidian/workspace.json", 256 * 1024],
+  ]);
+  const beforeByPath = new Map(before.entries.map((entry) => [entry.path, entry]));
+  const afterByPath = new Map(after.entries.map((entry) => [entry.path, entry]));
+  const paths = [...new Set([...beforeByPath.keys(), ...afterByPath.keys()])].sort();
+  const changedPaths = paths.filter(
+    (entryPath) =>
+      JSON.stringify(beforeByPath.get(entryPath)) !== JSON.stringify(afterByPath.get(entryPath)),
+  );
+  const targetBefore = beforeByPath.get(targetPath);
+  const targetAfter = afterByPath.get(targetPath);
+  const allowedMetadataPaths = changedPaths.filter((entryPath) => {
+    const entry = afterByPath.get(entryPath);
+    const maxBytes = allowedReferenceVaultPaths.get(entryPath);
+    return (
+      maxBytes !== undefined &&
+      entry?.kind === "file" &&
+      entry.bytes <= maxBytes &&
+      (entry.mode === 0o600 || entry.mode === 0o644)
+    );
+  });
+  const unexpectedPaths = changedPaths.filter(
+    (entryPath) => entryPath !== targetPath && !allowedMetadataPaths.includes(entryPath),
+  );
+  const equal =
+    unexpectedPaths.length === 0 &&
+    targetBefore?.sha256 === expectedBeforeSha256 &&
+    targetAfter?.sha256 === expectedAfterSha256 &&
+    targetAfter?.mode === targetBefore?.mode &&
+    targetAfter?.bytes > targetBefore?.bytes;
+  return {
+    equal,
+    targetPath,
+    changedPaths,
+    allowedMetadataPaths,
+    unexpectedPaths,
+    beforeSha256: targetBefore?.sha256 ?? null,
+    afterSha256: targetAfter?.sha256 ?? null,
+    expectedBeforeSha256,
+    expectedAfterSha256,
+  };
 }
 
 async function artifactInventory(current, relative = "") {
@@ -249,6 +382,19 @@ async function artifactInventory(current, relative = "") {
     const normalized = childRelative.split(path.sep).join("/");
     if (child.isDirectory()) {
       entries.push(...(await artifactInventory(childPath, normalized)));
+      continue;
+    }
+    if (child.isSymbolicLink()) {
+      const target = await fs.readlink(childPath);
+      const targetBytes = Buffer.from(target, "utf8");
+      entries.push({
+        path: normalized,
+        kind: "symlink",
+        bytes: targetBytes.length,
+        sha256: createHash("sha256").update(targetBytes).digest("hex"),
+        target: target.slice(0, 1024),
+        mode: (await fs.lstat(childPath)).mode & 0o777,
+      });
       continue;
     }
     if (!child.isFile())
@@ -367,6 +513,7 @@ function flatpakArgs(
 
 async function launchReference(runRoot, profilePath, vaultPath, marker, referenceMetadata) {
   const preInstances = await flatpakInstances();
+  const preMarked = await markedProcesses(marker);
   assert(
     !preInstances.error,
     `Could not establish a safe Flatpak instance baseline: ${preInstances.error}`,
@@ -374,6 +521,10 @@ async function launchReference(runRoot, profilePath, vaultPath, marker, referenc
   assert(
     preInstances.entries.length === 0,
     `An installed Obsidian Flatpak instance is already running; refusing to touch it: ${JSON.stringify(preInstances.entries)}`,
+  );
+  assert(
+    preMarked.length === 0,
+    `A reference marker instance is already running; refusing to touch it: ${JSON.stringify(preMarked)}`,
   );
   const cdpPort = await reservePort();
   const hostNetworkNamespace = await fs.readlink("/proc/self/ns/net");
@@ -386,7 +537,7 @@ async function launchReference(runRoot, profilePath, vaultPath, marker, referenc
     referenceRuntime: referenceMetadata?.runtime ?? "unknown",
     referenceCommit: referenceMetadata?.commit ?? "unknown",
   });
-  assertFlatpakContainmentArgs(launchArgs);
+  assertFlatpakContainmentArgs(launchArgs, { runRoot });
   const launchConfigPath = path.join(runRoot, "harness", "flatpak-argv.json");
   const launcherPath = path.join(runRoot, "harness", "flatpak-launcher.mjs");
   const supervisorSource = path.join(
@@ -500,6 +651,7 @@ try {
     stderrPath,
     flushOutput,
     preInstances,
+    preMarked,
     hostNetworkNamespace,
     referenceVersion: referenceMetadata?.version ?? "unknown",
     referenceCommit: referenceMetadata?.commit ?? "unknown",
@@ -529,6 +681,7 @@ async function captureReference(runRoot, launch, marker, expected) {
   }
   const hostCleanup = {
     marker: cleanup,
+    markerBefore: launch.preMarked,
     finalMarked,
     flatpakBefore: launch.preInstances,
     flatpakAfter,
@@ -549,25 +702,27 @@ async function captureReference(runRoot, launch, marker, expected) {
         .slice(0, 2048),
     };
   }
+  const observed = { ...supervisor, hostCleanup };
   if (supervisor.status !== "observed") {
     return {
       status: "blocked",
       reason: supervisor.reason ?? "In-sandbox supervisor blocked the reference observation.",
-      observed: supervisor,
+      observed,
       exit,
       hostCleanup,
     };
   }
   try {
-    assertReferenceReceipt(supervisor, {
+    assertReferenceReceipt(observed, {
       ...expected,
       profileAfterTreeSha256: supervisor.pathsAfterCleanup?.profile?.treeSha256,
+      vaultAfterTreeSha256: supervisor.pathsAfterCleanup?.vault?.treeSha256,
     });
   } catch (error) {
     return {
       status: "blocked",
       reason: String(error),
-      observed: supervisor,
+      observed,
       exit,
       hostCleanup,
     };
@@ -576,14 +731,14 @@ async function captureReference(runRoot, launch, marker, expected) {
     return {
       status: "blocked",
       reason: "In-sandbox observation completed, but host-side launcher cleanup was not complete.",
-      observed: supervisor,
+      observed,
       exit,
       hostCleanup,
     };
   }
   return {
     status: "observed",
-    observed: supervisor,
+    observed,
     exit,
     hostCleanup,
   };
@@ -632,6 +787,18 @@ async function run() {
     "Observer run",
   );
   const generated = await generateFixture(vaultPath, { manifestPath: fixtureManifestPath });
+  const source = await sourceEvidence();
+  const vaultId = createHash("sha256").update(vaultPath).digest("hex").slice(0, 16);
+  await fs.writeFile(
+    path.join(profilePath, "obsidian.json"),
+    `${JSON.stringify({ vaults: { [vaultId]: { path: vaultPath, ts: Date.now(), open: true } } }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  await fs.writeFile(
+    path.join(profilePath, `${vaultId}.json`),
+    `${JSON.stringify({ x: 0, y: 0, width: viewport.width, height: viewport.height, isMaximized: false, devTools: false, zoom: 0 }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
   const generatedManifest = JSON.parse(await fs.readFile(fixtureManifestPath, "utf8"));
   const fixtureManifest = JSON.parse(await fs.readFile(committedFixtureManifestPath, "utf8"));
   assert(
@@ -642,7 +809,10 @@ async function run() {
   await assertMarkerAbsent(marker, "reference run marker");
   const vaultBefore = await snapshotTree(vaultPath, { label: "FILE-01 before" });
   const profileBeforeTree = await snapshotTree(profilePath, { label: "profile tree before" });
-  const profileBefore = await snapshotAllowlistedProfile(profilePath, { label: "profile before" });
+  const profileBefore = await snapshotAllowlistedProfile(profilePath, {
+    label: "profile before",
+    extraCapturedFiles: [`${vaultId}.json`],
+  });
   await writeManifest(path.join(runRoot, "vault", "before.manifest.json"), vaultBefore);
   await writeManifest(
     path.join(runRoot, "profile", "before.tree.manifest.json"),
@@ -696,6 +866,7 @@ async function run() {
     profile: path.relative(runRoot, profilePath).split(path.sep).join("/"),
   });
   const receipts = [];
+  base.environment.fixturePredicate = FIXTURE_PREDICATE;
   let containmentProbe;
   const containmentMemory = await memorySnapshot();
   memoryGates.push({ launch: "flatpak containment probe", ...containmentMemory });
@@ -788,6 +959,12 @@ async function run() {
         "Installed Flatpak runtime could not be resolved; exact app/runtime binding is required.",
       details: { flatpakId, runtime: referenceRuntime },
     };
+  } else if (!referenceMetadata.commit) {
+    referenceReceipt = {
+      status: "blocked",
+      reason: "Installed Flatpak commit could not be resolved; exact app provenance is required.",
+      details: { flatpakId, commit: referenceMetadata.commit },
+    };
   } else {
     const referenceMemory = await memorySnapshot();
     memoryGates.push({ launch: "Obsidian Flatpak reference", ...referenceMemory });
@@ -800,7 +977,8 @@ async function run() {
       };
     } else if (
       containmentProbe.noParent?.status !== "observed" ||
-      containmentProbe.parentPidSharing?.status !== "blocked-as-expected"
+      containmentProbe.parentPidSharing?.status !== "blocked-as-expected" ||
+      containmentProbe.probeQuiescence?.status !== "observed"
     ) {
       referenceReceipt = {
         status: "blocked",
@@ -863,7 +1041,10 @@ async function run() {
 
   const vaultAfter = await snapshotTree(vaultPath, { label: "FILE-01 after" });
   const profileAfterTree = await snapshotTree(profilePath, { label: "profile tree after" });
-  const profileAfter = await snapshotAllowlistedProfile(profilePath, { label: "profile after" });
+  const profileAfter = await snapshotAllowlistedProfile(profilePath, {
+    label: "profile after",
+    extraCapturedFiles: [`${vaultId}.json`],
+  });
   if (
     referenceReceipt?.status === "observed" &&
     referenceReceipt.observed?.pathsAfterCleanup?.profile?.treeSha256 !==
@@ -878,6 +1059,19 @@ async function run() {
     harnessReceipt.provenance = "blocked";
     harnessReceipt.reason = referenceReceipt.reason;
   }
+  if (
+    referenceReceipt?.status === "observed" &&
+    referenceReceipt.observed?.pathsAfterCleanup?.vault?.treeSha256 !== vaultAfter.treeSha256
+  ) {
+    referenceReceipt = {
+      ...referenceReceipt,
+      status: "blocked",
+      reason: "Host vault after-tree hash disagreed with the in-sandbox exact-save receipt.",
+    };
+    harnessReceipt.status = "blocked";
+    harnessReceipt.provenance = "blocked";
+    harnessReceipt.reason = referenceReceipt.reason;
+  }
   await writeManifest(path.join(runRoot, "vault", "after.manifest.json"), vaultAfter);
   await writeManifest(path.join(runRoot, "vault", "byte-diff.json"), {
     schemaVersion: 1,
@@ -887,34 +1081,40 @@ async function run() {
   });
   await writeManifest(path.join(runRoot, "profile", "after.tree.manifest.json"), profileAfterTree);
   await writeManifest(profileAfterPath, profileAfter);
-  const vaultDiff = (() => {
-    try {
-      return assertExactManifest(vaultBefore, vaultAfter, "FILE-01 vault");
-    } catch (error) {
-      return { equal: false, error: String(error) };
-    }
-  })();
+  const roundtrip = referenceReceipt?.observed?.roundtrip;
+  const vaultRoundtrip = singleFileRoundtrip(
+    vaultBefore,
+    vaultAfter,
+    "00 Overview.md",
+    roundtrip?.beforeSha256,
+    roundtrip?.mutatedSha256,
+  );
   const profileSafe = profileAfter.safe;
   const fileReceipt = receiptFor(
     "FILE-01",
-    referenceReceipt?.status === "observed" && profileSafe && vaultDiff.equal
+    referenceReceipt?.status === "observed" && profileSafe && vaultRoundtrip.equal
       ? "observed"
       : "blocked",
     {
       reason:
-        referenceReceipt?.status === "observed" && profileSafe && vaultDiff.equal
+        referenceReceipt?.status === "observed" && profileSafe && vaultRoundtrip.equal
           ? undefined
-          : !vaultDiff.equal
-            ? "Synthetic vault bytes changed during FILE-01."
+          : !vaultRoundtrip.equal
+            ? "Synthetic vault did not show the exact single-note edit/save/exit/reopen delta."
             : (referenceReceipt?.reason ??
               (!profileSafe
                 ? "Fresh profile produced a path outside the explicit profile allowlist."
                 : "Reference launch did not satisfy containment/CDP preconditions.")),
-      input: { fixtureId: FIXTURE_ID, action: "open, wait for ready, close; no editor input" },
+      input: {
+        fixtureId: FIXTURE_ID,
+        predicate: FIXTURE_PREDICATE,
+        action: "open fixture note, synthetic edit/save, exit, reopen; no host URI handler",
+      },
       output: {
         vaultBefore: vaultBefore.treeSha256,
         vaultAfter: vaultAfter.treeSha256,
-        vaultEqual: vaultDiff.equal,
+        vaultEqual: vaultBefore.treeSha256 === vaultAfter.treeSha256,
+        vaultRoundtrip,
         profileSafe,
         profileUnexpected: profileAfter.unexpected,
         profileBeforeTree: profileBeforeTree.treeSha256,
@@ -931,7 +1131,8 @@ async function run() {
         path.join(runRoot, "profile", "after.tree.manifest.json"),
       ]),
       tolerance: {
-        vault: "exact path/bytes/mode",
+        vault:
+          "exact path/bytes/mode except the one synthetic note edit and bounded reference app-state files under .obsidian",
         profile: "captured allowlist exact; ephemeral metadata-only",
       },
       redControl: {
@@ -959,9 +1160,10 @@ async function run() {
           "CDP surface was not reached."),
     input: {
       fixtureId: FIXTURE_ID,
+      predicate: FIXTURE_PREDICATE,
       viewport,
       themes: ["system/default"],
-      action: "startup shell only",
+      action: "fixture note after synthetic edit/save/exit/reopen",
     },
     output: referenceReceipt?.observed ?? {},
     artifacts: relativeArtifacts(runRoot, uiArtifacts),
@@ -982,6 +1184,7 @@ async function run() {
   }
   base.cells = receipts;
   base.environment.memoryGates = memoryGates;
+  base.sourceEvidence = source;
   const inventory = await artifactInventory(runRoot);
   base.artifacts = {
     fixtureManifest: "fixture-manifest.v1.json",
@@ -1001,6 +1204,9 @@ async function run() {
         runRoot,
         statuses: Object.fromEntries(receipts.map((receipt) => [receipt.cellId, receipt.status])),
         fixtureTreeSha256: generated.manifest.treeSha256,
+        candidate: source.candidate,
+        sourceTreeSha256: source.sourceTreeSha256,
+        sourceFileHashes: source.files,
         artifactInventorySha256: inventorySha256,
         manifestSha256,
       },

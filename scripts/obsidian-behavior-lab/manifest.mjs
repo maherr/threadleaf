@@ -122,6 +122,7 @@ export function diffManifests(before, after) {
 }
 
 const capturedProfileFiles = new Set([
+  "obsidian.json",
   "Local State",
   "Preferences",
   "Default/Preferences",
@@ -171,19 +172,20 @@ function isEphemeralProfilePath(entryPath) {
   });
 }
 
-function isKnownProfileDirectory(entryPath) {
+function isKnownProfileDirectory(entryPath, capturedFiles = capturedProfileFiles) {
   if (!entryPath) return true;
   const prefixes = [
-    ...[...capturedProfileFiles].map((filePath) => filePath.split("/")),
+    ...[...capturedFiles].map((filePath) => filePath.split("/")),
     ...ephemeralProfilePrefixes.map((prefix) => prefix.replace(/\/$/u, "").split("/")),
   ];
   return prefixes.some((parts) => parts.join("/").startsWith(`${entryPath}/`));
 }
 
-function profilePolicy(pathValue, kind = "file") {
-  if (capturedProfileFiles.has(pathValue)) return "captured";
+function profilePolicy(pathValue, kind = "file", capturedFiles = capturedProfileFiles) {
+  if (capturedFiles.has(pathValue)) return "captured";
   if (isEphemeralProfilePath(pathValue)) return "ephemeral";
-  if (kind === "directory" && isKnownProfileDirectory(pathValue)) return "structural";
+  if (kind === "directory" && isKnownProfileDirectory(pathValue, capturedFiles))
+    return "structural";
   return "unexpected";
 }
 
@@ -194,15 +196,19 @@ export const PROFILE_ALLOWLIST = {
   rationale: "Fresh profile settings are hashed; cache and singleton paths are metadata-only.",
 };
 
-export async function snapshotAllowlistedProfile(rootPath, { label = "profile" } = {}) {
+export async function snapshotAllowlistedProfile(
+  rootPath,
+  { label = "profile", extraCapturedFiles = [] } = {},
+) {
+  const capturedFiles = new Set([...capturedProfileFiles, ...extraCapturedFiles]);
   const entries = await collectPaths(rootPath, {
-    captureFile: (entryPath) => profilePolicy(entryPath, "file") === "captured",
+    captureFile: (entryPath) => profilePolicy(entryPath, "file", capturedFiles) === "captured",
   });
   const captured = [];
   const ephemeral = [];
   const unexpected = [];
   for (const entry of entries) {
-    const policy = profilePolicy(entry.path, entry.kind);
+    const policy = profilePolicy(entry.path, entry.kind, capturedFiles);
     if (policy === "captured") {
       captured.push(entry);
     } else if (policy === "ephemeral" || policy === "structural") {
@@ -225,7 +231,7 @@ export async function snapshotAllowlistedProfile(rootPath, { label = "profile" }
     schemaVersion: 1,
     label,
     root: path.basename(rootPath),
-    allowlist: PROFILE_ALLOWLIST,
+    allowlist: { ...PROFILE_ALLOWLIST, capturedFiles: [...capturedFiles].sort(compareNames) },
     captured,
     ephemeral,
     unexpected,

@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 
+const MAX_CDP_FRAME_BYTES = 512 * 1024;
+const MAX_CDP_HTTP_BYTES = 128 * 1024;
+const MAX_CDP_EXPRESSION_BYTES = 16 * 1024;
+const MAX_AX_PAYLOAD_NODES = 2_048;
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -14,7 +19,23 @@ export async function cdpTargets(port) {
     signal: AbortSignal.timeout(500),
   });
   if (!response.ok) throw new Error(`CDP target list returned HTTP ${response.status}.`);
-  return response.json();
+  const body = await response.text();
+  assert(
+    Buffer.byteLength(body, "utf8") <= MAX_CDP_HTTP_BYTES,
+    "CDP target list exceeded the bounded HTTP payload.",
+  );
+  const targets = JSON.parse(body);
+  assert(
+    Array.isArray(targets) && targets.length <= 16,
+    "CDP target list exceeded the bounded target count.",
+  );
+  return targets.map((target) => ({
+    ...target,
+    webSocketDebuggerUrl:
+      typeof target.webSocketDebuggerUrl === "string"
+        ? target.webSocketDebuggerUrl.slice(0, 256)
+        : target.webSocketDebuggerUrl,
+  }));
 }
 
 export async function waitForCdpTarget(port, timeoutMs = 15_000) {
@@ -48,7 +69,12 @@ export function connectCdp(webSocketUrl) {
     });
   });
   socket.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data));
+    const payload = String(event.data);
+    assert(
+      Buffer.byteLength(payload, "utf8") <= MAX_CDP_FRAME_BYTES,
+      "CDP message exceeded the bounded frame size.",
+    );
+    const message = JSON.parse(payload);
     const request = pending.get(message.id);
     if (!request) return;
     pending.delete(message.id);
@@ -64,7 +90,12 @@ export function connectCdp(webSocketUrl) {
       await opened;
       const id = ++sequence;
       const response = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
-      socket.send(JSON.stringify({ id, method, params }));
+      const payload = JSON.stringify({ id, method, params });
+      assert(
+        Buffer.byteLength(payload, "utf8") <= MAX_CDP_FRAME_BYTES,
+        "CDP request exceeded the bounded frame size.",
+      );
+      socket.send(payload);
       return response;
     },
     close() {
@@ -74,6 +105,10 @@ export function connectCdp(webSocketUrl) {
 }
 
 export async function evaluate(cdp, expression) {
+  assert(
+    Buffer.byteLength(expression, "utf8") <= MAX_CDP_EXPRESSION_BYTES,
+    "CDP evaluator expression exceeded the bounded payload size.",
+  );
   assert(
     !/outerHTML|outerText|innerHTML|globalThis|window\.__|sourceMappingURL|document\.scripts/iu.test(
       expression,
@@ -161,6 +196,10 @@ function truncateText(value, maximum = 256) {
 
 export async function normalizedAxTree(cdp, { maxNodes = 256 } = {}) {
   const response = await cdp.send("Accessibility.getFullAXTree");
+  assert(
+    Array.isArray(response?.nodes) && response.nodes.length <= MAX_AX_PAYLOAD_NODES,
+    "CDP accessibility result exceeded the bounded node payload.",
+  );
   const nodes = Array.isArray(response?.nodes) ? response.nodes.slice(0, maxNodes) : [];
   return {
     schemaVersion: 1,
@@ -191,6 +230,7 @@ export async function captureSurface(cdp, destination) {
   });
   assert(typeof result?.data === "string", "CDP returned no surface screenshot.");
   const bytes = Buffer.from(result.data, "base64");
+  assert(bytes.length <= MAX_CDP_FRAME_BYTES, "CDP screenshot exceeded the bounded payload size.");
   assert(bytes.length > 1_024, "Surface screenshot is unexpectedly small.");
   await fs.writeFile(destination, bytes, { mode: 0o600 });
   await fs.chmod(destination, 0o600);
