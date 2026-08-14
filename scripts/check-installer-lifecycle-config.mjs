@@ -37,6 +37,12 @@ function stepContaining(steps, text, label) {
   return step;
 }
 
+function stepWithExactRun(steps, command, label) {
+  const step = steps.find((candidate) => candidate.run === command);
+  assert(step, `${label} is missing an exact run step for ${JSON.stringify(command)}.`);
+  return step;
+}
+
 function verifyToolchainSteps(document, label) {
   const jobs = record(document.jobs, `${label} jobs`);
   const packageManager = String(packageData.packageManager ?? "");
@@ -91,14 +97,15 @@ function workflowOn(document) {
   return document.on ?? document[true];
 }
 
-const [fixtureText, packageText, builderText, ciText, releaseText] = await Promise.all([
-  fs.readFile(fixturePath, "utf8"),
-  fs.readFile(packagePath, "utf8"),
-  fs.readFile(builderPath, "utf8"),
-  fs.readFile(ciPath, "utf8"),
-  fs.readFile(releasePath, "utf8"),
-  fs.access(lifecycleScriptPath),
-]);
+const [fixtureText, packageText, builderText, ciText, releaseText, lifecycleScriptText] =
+  await Promise.all([
+    fs.readFile(fixturePath, "utf8"),
+    fs.readFile(packagePath, "utf8"),
+    fs.readFile(builderPath, "utf8"),
+    fs.readFile(ciPath, "utf8"),
+    fs.readFile(releasePath, "utf8"),
+    fs.readFile(lifecycleScriptPath, "utf8"),
+  ]);
 const fixture = record(JSON.parse(fixtureText), "installer lifecycle fixture");
 const packageData = record(JSON.parse(packageText), "package.json");
 const builder = record(parse(builderText), "electron-builder.yml");
@@ -132,6 +139,40 @@ assert(builder.productName === "Threadleaf", "Electron product name changed.");
 assert(
   builder.nsis?.deleteAppDataOnUninstall === false,
   "Windows uninstall contract must preserve app data.",
+);
+assert(
+  lifecycleScriptText.includes('platform === "win32" || platform === "darwin"'),
+  "Native lifecycle verifier lost its explicit Windows/macOS gate.",
+);
+assert(
+  lifecycleScriptText.includes("processMarkerArgument") &&
+    lifecycleScriptText.includes("observeLaunchMarker") &&
+    lifecycleScriptText.includes("cleanupMarkedProcesses"),
+  "Native lifecycle verifier must clean marked descendant processes.",
+);
+assert(
+  lifecycleScriptText.includes("THREADLEAF_LIFECYCLE_RUN") &&
+    lifecycleScriptText.includes("THREADLEAF_LIFECYCLE_ARTIFACT_DIR"),
+  "Native lifecycle verifier lost its isolated marker/evidence contract.",
+);
+assert(
+  lifecycleScriptText.includes("async function detachMacDmg") &&
+    lifecycleScriptText.includes('["detach", mountPath, "-force", "-quiet"]'),
+  "macOS lifecycle verifier must retry and force-detach its DMG.",
+);
+assert(
+  !lifecycleScriptText.includes("fs.rm(target") &&
+    !lifecycleScriptText.includes("--user-data-dir") &&
+    lifecycleScriptText.includes('"/no-desktop-shortcut"') &&
+    lifecycleScriptText.includes("inPlaceReplacementChecks") &&
+    lifecycleScriptText.includes('mode: "platform-default"'),
+  "Installer lifecycle must preserve the target, use platform-default app data, and avoid real Desktop mutation.",
+);
+assert(
+  !lifecycleScriptText.includes("bytes: 0") &&
+    lifecycleScriptText.includes("verifyWindowsZip") &&
+    lifecycleScriptText.includes("metadata.files?.length === 1"),
+  "Lifecycle package evidence must measure app bytes and verify the Windows ZIP/update split.",
 );
 
 const ciOn = record(workflowOn(ci), "CI triggers");
@@ -170,10 +211,14 @@ assert(
   envValue(windowsBuild, "CSC_IDENTITY_AUTO_DISCOVERY", "Windows package build") === "false",
   "Windows CI must make unsigned status explicit.",
 );
-const windowsLifecycle = stepContaining(
+const windowsLifecycle = stepWithExactRun(
   windowsSteps,
-  "test:installer-lifecycle",
+  "pnpm run test:installer-lifecycle",
   "Windows lifecycle gate",
+);
+assert(
+  windowsLifecycle.if === undefined,
+  "Windows lifecycle gate cannot be conditionally skipped.",
 );
 assert(
   envValue(windowsLifecycle, "THREADLEAF_PACKAGE_ARCH", "Windows lifecycle gate") === "x64",
@@ -214,7 +259,11 @@ assert(
   envValue(macBuild, "CSC_IDENTITY_AUTO_DISCOVERY", "macOS package build") === "false",
   "macOS CI must make unsigned status explicit.",
 );
-const macLifecycle = stepContaining(macSteps, "test:installer-lifecycle", "macOS lifecycle gate");
+const macLifecycle = stepWithExactRun(
+  macSteps,
+  "pnpm run test:installer-lifecycle",
+  "macOS lifecycle gate",
+);
 assert(
   String(macLifecycle.if).includes("matrix.arch") && String(macLifecycle.if).includes("x64"),
   "macOS lifecycle gate must be limited to Intel x64.",
@@ -255,6 +304,49 @@ assert(
 assert(
   releaseTextEncoded.includes("THREADLEAF_REQUIRE_SIGNED"),
   "Signed release does not require signed package verification.",
+);
+const releaseJobs = record(release.jobs, "release jobs");
+const releaseMac = record(releaseJobs.macos, "signed macOS release job");
+const releaseWindows = record(releaseJobs.windows, "signed Windows release job");
+for (const [job, label] of [
+  [releaseMac, "signed macOS release job"],
+  [releaseWindows, "signed Windows release job"],
+]) {
+  assert(job.if === undefined, `${label} cannot be conditionally skipped.`);
+  assert(
+    !JSON.stringify(job).includes("continue-on-error"),
+    `${label} cannot turn a failed signing gate into success.`,
+  );
+}
+const releaseMacSteps = stepsFor(releaseMac, "signed macOS release job");
+const releaseWindowsSteps = stepsFor(releaseWindows, "signed Windows release job");
+const releaseMacVerify = stepWithExactRun(
+  releaseMacSteps,
+  "pnpm run test:macos-package",
+  "signed macOS verification",
+);
+const releaseWindowsVerify = stepWithExactRun(
+  releaseWindowsSteps,
+  "pnpm run test:windows-package",
+  "signed Windows verification",
+);
+assert(
+  envValue(releaseMacVerify, "THREADLEAF_REQUIRE_SIGNED", "signed macOS verification") === "1",
+  "Signed macOS verification must require signing.",
+);
+assert(
+  envValue(releaseWindowsVerify, "THREADLEAF_REQUIRE_SIGNED", "signed Windows verification") ===
+    "1",
+  "Signed Windows verification must require signing.",
+);
+const publication = record(releaseJobs["publish-draft"], "publication job");
+assert(
+  publication.if === `\${{ inputs.publish }}` && !String(publication.if).includes("always()"),
+  "Publication must remain manual and fail closed when a required gate fails.",
+);
+assert(
+  JSON.stringify(publication.needs) === JSON.stringify(["preflight", "linux", "macos", "windows"]),
+  "Publication must require every release candidate job.",
 );
 for (const secret of [...fixture.signedRelease.windows, ...fixture.signedRelease.macos]) {
   assert(releaseText.includes(`secrets.${secret}`), `Signed release is missing ${secret}.`);

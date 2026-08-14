@@ -54,6 +54,22 @@ function allJobs(document: WorkflowObject): WorkflowObject[] {
   return Object.values(object(document.jobs, "jobs")).map((job) => object(job, "job"));
 }
 
+function steps(job: WorkflowObject, label: string): WorkflowObject[] {
+  const value = job.steps;
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} has no steps.`);
+  }
+  return value.map((step) => object(step, `${label} step`));
+}
+
+function exactRun(job: WorkflowObject, command: string, label: string): WorkflowObject {
+  const step = steps(job, label).find((candidate) => candidate.run === command);
+  if (!step) {
+    throw new Error(`${label} is missing ${command}.`);
+  }
+  return step;
+}
+
 describe("release workflows", () => {
   it("gates the Linux release on the packaged attachment workflow", async () => {
     const packageDocument = JSON.parse(await readFile(path.resolve("package.json"), "utf8")) as {
@@ -140,5 +156,21 @@ describe("release workflows", () => {
     expect(encoded).toContain("--json isDraft");
     expect(encoded).toContain("--draft");
     expect(encoded).toContain("--verify-tag");
+
+    const macos = object(jobs.macos, "signed macOS job");
+    const windows = object(jobs.windows, "signed Windows job");
+    expect(macos.if).toBeUndefined();
+    expect(windows.if).toBeUndefined();
+    expect(JSON.stringify(macos)).not.toContain("continue-on-error");
+    expect(JSON.stringify(windows)).not.toContain("continue-on-error");
+    expect(exactRun(macos, "pnpm run test:macos-package", "signed macOS job").env).toMatchObject({
+      THREADLEAF_REQUIRE_SIGNED: "1",
+    });
+    expect(
+      exactRun(windows, "pnpm run test:windows-package", "signed Windows job").env,
+    ).toMatchObject({ THREADLEAF_REQUIRE_SIGNED: "1" });
+    expect(publication.needs).toEqual(["preflight", "linux", "macos", "windows"]);
+    expect(JSON.stringify(publication)).not.toContain("continue-on-error");
+    expect(JSON.stringify(publication)).not.toContain("always()");
   });
 });

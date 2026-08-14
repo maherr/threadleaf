@@ -277,6 +277,20 @@ verifier calls only the packaged preload contract through a real renderer CDP ta
 save remain the same main-process write boundary used by the desktop. No user vault or installed
 application path is used.
 
+The verifier isolates `HOME`, `APPDATA`, `LOCALAPPDATA`, and `USERPROFILE` (or just `HOME` on
+macOS) to a scratch root for every install, restart, upgrade, rollback, and uninstall step, and the
+NSIS installer runs with `/no-desktop-shortcut` so it never creates a Desktop shortcut on the
+runner's real profile. The packaged app resolves its own private app-data path from those isolated
+variables rather than an explicit `--user-data-dir` override, so its settings and workspace state
+land inside the scratch root at the same platform-default location a real install would use. Every
+packaged launch carries a unique marker argument, and forced shutdown walks the live process table
+for that marker's descendants, not just the direct child handle, before asserting none remain; a
+macOS DMG mount left busy by a lingering handle gets a force-detach retry under the same walk. The
+CI steps that run this gate, and the signed release's macOS and Windows package verification, are
+matched by exact `run:` command text, so a differently named or decoy step cannot satisfy the check,
+and the signed release jobs cannot mark themselves conditional or `continue-on-error` around a
+failed gate.
+
 Run it only on a native x64 Windows or Intel macOS runner after the matching package command:
 
 ```sh

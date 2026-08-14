@@ -19,8 +19,15 @@ const scratchPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-installe
 const baselineReleasePath = path.join(scratchPath, "baseline-release");
 const installPath = path.join(scratchPath, "installed");
 const vaultPath = path.join(scratchPath, "vault");
-const userDataPath = path.join(scratchPath, "user-data");
+const isolatedHomePath = path.join(scratchPath, "home");
+const isolatedAppDataPath =
+  platform === "win32"
+    ? path.join(scratchPath, "appdata", "roaming")
+    : path.join(isolatedHomePath, "Library", "Application Support");
+const isolatedLocalAppDataPath = path.join(scratchPath, "appdata", "local");
+const userDataPath = path.join(isolatedAppDataPath, "Threadleaf");
 const processMarker = randomUUID();
+const processMarkerArgument = `--threadleaf-lifecycle-marker=${processMarker}`;
 const candidateVersion = packageData.version;
 const baselineVersion = process.env.THREADLEAF_LIFECYCLE_BASELINE_VERSION ?? "0.1.0-alpha.0";
 const lifecycleNotePath = "Lifecycle.md";
@@ -32,9 +39,22 @@ const rollbackEdit = "Rollback edit remains writable.\n";
 const linkedContent = "# Linked\n\nThis note must remain byte-for-byte unchanged.\n";
 const commandLog = [];
 const launchedProcesses = new Set();
+let launchMarkerObserved = false;
+let inPlaceReplacementChecks = 0;
 let activeProbe = null;
 let evidenceWritten = false;
-let windowsShortcutPath = null;
+const lifecycleEnvironment =
+  platform === "win32"
+    ? {
+        APPDATA: isolatedAppDataPath,
+        HOMEDRIVE: "C:",
+        HOMEPATH: isolatedHomePath,
+        LOCALAPPDATA: isolatedLocalAppDataPath,
+        USERPROFILE: isolatedHomePath,
+      }
+    : {
+        HOME: isolatedHomePath,
+      };
 
 function assert(condition, message) {
   if (!condition) {
@@ -71,7 +91,7 @@ function commandName(command) {
 async function run(command, args, options = {}) {
   const output = [];
   commandLog.push(`${commandName(command)} ${args.map((value) => sanitize(value)).join(" ")}`);
-  await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd ?? appRoot,
       env: { ...process.env, ...options.env },
@@ -138,6 +158,7 @@ async function digest(filePath, algorithm, encoding) {
 
 async function treeDigest(rootPath) {
   const digest = createHash("sha256");
+  let bytes = 0;
   async function visit(currentPath, relativePath) {
     const entries = await fs.readdir(currentPath, { withFileTypes: true });
     entries.sort((left, right) => left.name.localeCompare(right.name));
@@ -149,7 +170,9 @@ async function treeDigest(rootPath) {
         await visit(childPath, childRelativePath);
       } else if (entry.isFile()) {
         digest.update(`file\0${childRelativePath}\0`);
-        digest.update(await fs.readFile(childPath));
+        const contents = await fs.readFile(childPath);
+        bytes += contents.byteLength;
+        digest.update(contents);
       } else if (entry.isSymbolicLink()) {
         digest.update(`link\0${childRelativePath}\0${await fs.readlink(childPath)}\0`);
       } else {
@@ -158,7 +181,7 @@ async function treeDigest(rootPath) {
     }
   }
   await visit(rootPath, "");
-  return digest.digest("hex");
+  return { sha256: digest.digest("hex"), bytes };
 }
 
 async function availablePort() {
@@ -197,6 +220,109 @@ async function waitForMainTarget(port, deadline) {
     await delay(100);
   }
   throw new Error("The packaged renderer did not expose a CDP target.");
+}
+
+async function processRows() {
+  if (platform === "win32") {
+    const powershell =
+      "$ErrorActionPreference = 'Stop'; " +
+      "Get-CimInstance Win32_Process | " +
+      "Select-Object ProcessId, ParentProcessId, CommandLine | " +
+      "ConvertTo-Json -Compress";
+    const output = await run(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", powershell],
+      { timeout: 30_000 },
+    );
+    const parsed = JSON.parse(output);
+    return (Array.isArray(parsed) ? parsed : [parsed])
+      .filter((row) => Number.isInteger(row?.ProcessId))
+      .map((row) => ({
+        pid: row.ProcessId,
+        ppid: Number.isInteger(row.ParentProcessId) ? row.ParentProcessId : null,
+        command: String(row.CommandLine ?? ""),
+      }));
+  }
+
+  const output = await run("ps", ["-eww", "-A", "-o", "pid=,ppid=,command="], {
+    timeout: 30_000,
+  });
+  return output
+    .split("\n")
+    .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/u))
+    .filter((match) => match !== null)
+    .map((match) => ({ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] }));
+}
+
+function descendantPids(rows, roots) {
+  const descendants = new Set(roots.filter((pid) => Number.isInteger(pid)));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const row of rows) {
+      if (row.ppid !== null && descendants.has(row.ppid) && !descendants.has(row.pid)) {
+        descendants.add(row.pid);
+        changed = true;
+      }
+    }
+  }
+  return [...descendants];
+}
+
+async function cleanupMarkedProcesses() {
+  const knownRoots = () =>
+    [...launchedProcesses]
+      .filter((child) => child.exitCode === null && child.signalCode === null)
+      .map((child) => child.pid)
+      .filter(Boolean);
+  let markerObserved = false;
+  const killed = new Set();
+  for (const signal of ["SIGTERM", "SIGKILL"]) {
+    const rows = await processRows();
+    const markerRoots = rows
+      .filter(
+        (row) => row.command.includes(processMarkerArgument) || row.command.includes(processMarker),
+      )
+      .map((row) => row.pid);
+    markerObserved ||= markerRoots.length > 0;
+    launchMarkerObserved ||= markerObserved;
+    const pids = descendantPids(rows, [...new Set([...knownRoots(), ...markerRoots])]);
+    if (pids.length === 0) {
+      return { markerObserved, killed: [...killed] };
+    }
+    for (const pid of pids.sort((left, right) => right - left)) {
+      if (pid === process.pid) {
+        continue;
+      }
+      if (platform === "win32") {
+        await run("taskkill", ["/PID", String(pid), "/T", "/F"], { timeout: 30_000 }).catch(
+          () => undefined,
+        );
+      } else {
+        try {
+          process.kill(pid, signal);
+        } catch {
+          // The process exited between the process table read and the signal.
+        }
+      }
+      killed.add(pid);
+    }
+    await delay(signal === "SIGTERM" ? 250 : 100);
+  }
+  const remaining = (await processRows()).filter(
+    (row) => row.command.includes(processMarkerArgument) || row.command.includes(processMarker),
+  );
+  assert(remaining.length === 0, `Lifecycle launch marker left ${remaining.length} process(es).`);
+  return { markerObserved, killed: [...killed] };
+}
+
+async function observeLaunchMarker() {
+  const rows = await processRows();
+  const observed = rows.some(
+    (row) => row.command.includes(processMarkerArgument) || row.command.includes(processMarker),
+  );
+  assert(observed, "Packaged process did not expose its lifecycle launch marker.");
+  launchMarkerObserved = true;
 }
 
 function connectCdp(webSocketUrl) {
@@ -422,6 +548,69 @@ async function buildBaseline() {
   return paths;
 }
 
+async function verifyWindowsZip(zipPath, version) {
+  const expandedPath = path.join(scratchPath, `zip-${version}`);
+  const powershellLiteral = (value) => `'${value.replaceAll("'", "''")}'`;
+  await run(
+    "powershell.exe",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `Expand-Archive -LiteralPath ${powershellLiteral(zipPath)} -DestinationPath ${powershellLiteral(expandedPath)} -Force`,
+    ],
+    { timeout: 180_000 },
+  );
+  const executablePath = path.join(expandedPath, "Threadleaf.exe");
+  const requiredPaths = [
+    executablePath,
+    path.join(expandedPath, "resources", "app.asar"),
+    path.join(expandedPath, "resources", "app-update.yml"),
+    path.join(expandedPath, "resources", "LICENSE.threadleaf.txt"),
+    path.join(expandedPath, "resources", "bundled-vault", "Welcome.md"),
+    path.join(
+      expandedPath,
+      "resources",
+      "bundled-vault",
+      ".obsidian",
+      "plugins",
+      "threadleaf-fixture",
+      "manifest.json",
+    ),
+  ];
+  for (const requiredPath of requiredPaths) {
+    assert(
+      await exists(requiredPath),
+      `${version} Windows ZIP is missing ${path.basename(requiredPath)}.`,
+    );
+  }
+  const versionResult = await run(executablePath, ["--version"], {
+    env: lifecycleEnvironment,
+    timeout: 30_000,
+  });
+  assert(
+    versionResult === `${version}\n`,
+    `${version} Windows ZIP executable reports the wrong version.`,
+  );
+  const update = parseYaml(
+    await fs.readFile(path.join(expandedPath, "resources", "app-update.yml"), "utf8"),
+  );
+  assert(update.provider === "github", `${version} Windows ZIP update provider is not GitHub.`);
+  assert(update.owner === "maherr", `${version} Windows ZIP update owner is not maherr.`);
+  assert(
+    update.repo === "threadleaf",
+    `${version} Windows ZIP update repository is not threadleaf.`,
+  );
+  const app = await treeDigest(expandedPath);
+  return {
+    filename: path.basename(zipPath),
+    bytes: (await fs.stat(zipPath)).size,
+    sha256: await sha256(zipPath),
+    extractedApp: app,
+  };
+}
+
 async function verifyArtifactSet(paths, version, rootPath) {
   const required = platform === "win32" ? [paths.installer, paths.zip] : [paths.dmg, paths.zip];
   for (const requiredPath of required) {
@@ -455,10 +644,21 @@ async function verifyArtifactSet(paths, version, rootPath) {
       `${version} update metadata has the wrong digest for ${filename}.`,
     );
   }
+  if (platform === "win32") {
+    assert(
+      metadata.path === path.basename(paths.installer),
+      `${version} Windows update metadata must point to the NSIS installer.`,
+    );
+    assert(
+      metadata.files?.length === 1 && metadata.files[0]?.url === path.basename(paths.installer),
+      `${version} Windows update metadata contains an unexpected artifact list.`,
+    );
+  }
+  const app = await treeDigest(paths.app);
   const appInfo = {
     filename: path.relative(rootPath, paths.app).replaceAll(path.sep, "/"),
-    bytes: 0,
-    sha256: await treeDigest(paths.app),
+    bytes: app.bytes,
+    sha256: app.sha256,
   };
   const checksumFiles = [...required, metadataPath];
   const checksumEntries = [];
@@ -490,12 +690,26 @@ async function verifyArtifactSet(paths, version, rootPath) {
       sha256: await sha256(checksumPath),
     },
     app: appInfo,
+    ...(platform === "win32" ? { zip: await verifyWindowsZip(paths.zip, version) } : {}),
   };
 }
 
 async function installWindows(installer, target) {
-  await fs.rm(target, { recursive: true, force: true });
-  await run(installer, ["/S", `/D=${target}`], { timeout: 180_000 });
+  const replacing = await exists(target);
+  if (replacing) {
+    assert(
+      await exists(path.join(target, "Threadleaf.exe")),
+      "Windows replacement target is missing the baseline executable.",
+    );
+  }
+  await run(installer, ["/S", "/no-desktop-shortcut", `/D=${target}`], {
+    env: lifecycleEnvironment,
+    timeout: 180_000,
+  });
+  assert(
+    await exists(target),
+    `${replacing ? "Windows in-place replacement" : "Windows installer"} removed its target directory.`,
+  );
   assert(
     await exists(path.join(target, "Threadleaf.exe")),
     "Windows installer did not create Threadleaf.exe.",
@@ -504,18 +718,6 @@ async function installWindows(installer, target) {
     await exists(path.join(target, "Uninstall Threadleaf.exe")),
     "Windows installer did not create an uninstaller.",
   );
-  const profile = process.env.USERPROFILE;
-  if (profile) {
-    for (const candidate of [
-      path.join(profile, "Desktop", "Threadleaf.lnk"),
-      path.join(profile, "OneDrive", "Desktop", "Threadleaf.lnk"),
-    ]) {
-      if (await exists(candidate)) {
-        windowsShortcutPath = candidate;
-        break;
-      }
-    }
-  }
 }
 
 async function mountMacDmg(dmgPath, target) {
@@ -529,16 +731,43 @@ async function mountMacDmg(dmgPath, target) {
   return path.join(target, appEntry.name);
 }
 
+async function detachMacDmg(mountPath) {
+  let lastError = null;
+  for (const args of [
+    ["detach", mountPath, "-quiet"],
+    ["detach", mountPath, "-force", "-quiet"],
+  ]) {
+    try {
+      await run("hdiutil", args, { timeout: 60_000 });
+      lastError = null;
+    } catch (error) {
+      lastError = error;
+    }
+    const info = await run("hdiutil", ["info"], { timeout: 30_000 });
+    if (!info.includes(mountPath)) {
+      return;
+    }
+    await delay(250);
+  }
+  throw new Error(`macOS DMG remained mounted at ${mountPath}: ${lastError ?? "unknown error"}`);
+}
+
 async function installMac(dmgPath, target) {
   const mountPath = path.join(scratchPath, `mount-${randomUUID()}`);
-  const mountedApp = await mountMacDmg(dmgPath, mountPath);
+  let mountedApp;
   try {
-    await fs.rm(target, { recursive: true, force: true });
+    const replacing = await exists(target);
+    if (replacing) {
+      assert(
+        await exists(executableFor(target)),
+        "macOS replacement target is missing the baseline executable.",
+      );
+    }
+    mountedApp = await mountMacDmg(dmgPath, mountPath);
     await run("ditto", ["--rsrc", "--extattr", "--qtn", mountedApp, target], { timeout: 180_000 });
+    assert(await exists(target), "macOS in-place replacement removed its application target.");
   } finally {
-    await run("hdiutil", ["detach", mountPath, "-quiet"], { timeout: 60_000 }).catch(
-      () => undefined,
-    );
+    await detachMacDmg(mountPath);
   }
   assert(
     await exists(executableFor(target)),
@@ -546,11 +775,26 @@ async function installMac(dmgPath, target) {
   );
 }
 
-async function installPackage(paths, target) {
+async function installPackage(paths, target, replacementExpected) {
+  assert(
+    (await exists(target)) === replacementExpected,
+    `Installer replacement precondition mismatch: expected target ${replacementExpected ? "to exist" : "to be absent"}.`,
+  );
+  const before = replacementExpected ? await fs.stat(target) : null;
   if (platform === "win32") {
     await installWindows(paths.installer, target);
   } else {
     await installMac(paths.dmg, target);
+  }
+  if (before) {
+    const after = await fs.stat(target);
+    if (before.ino > 0 && after.ino > 0) {
+      assert(
+        before.dev === after.dev && before.ino === after.ino,
+        "Installer replacement recreated the target directory instead of updating in place.",
+      );
+      inPlaceReplacementChecks += 1;
+    }
   }
 }
 
@@ -558,17 +802,12 @@ async function launchPackage(executablePath, expectedVersion, stage) {
   const port = await availablePort();
   const child = spawn(
     executablePath,
-    [
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${userDataPath}`,
-      "--disable-gpu",
-      "--password-store=basic",
-      "--safe-plugins",
-    ],
+    [`--remote-debugging-port=${port}`, processMarkerArgument, "--disable-gpu", "--password-store=basic", "--safe-plugins"],
     {
       cwd: scratchPath,
       env: {
         ...process.env,
+        ...lifecycleEnvironment,
         THREADLEAF_LIFECYCLE_RUN: processMarker,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -584,6 +823,7 @@ async function launchPackage(executablePath, expectedVersion, stage) {
     child.once("exit", (code, signal) => resolve({ code, signal })),
   );
   const target = await waitForMainTarget(port, Date.now() + 45_000);
+  await observeLaunchMarker();
   const probe = { cdp: connectCdp(target.webSocketDebuggerUrl), child, exited, output, stage };
   await probe.cdp.send("Page.enable");
   await waitFor(async () => {
@@ -598,6 +838,10 @@ async function launchPackage(executablePath, expectedVersion, stage) {
   assert(
     state.updateDisabledReason === "unsigned-package",
     "Unsigned package did not fail closed for updates.",
+  );
+  assert(
+    await exists(userDataPath),
+    "Packaged application did not create its platform-default private app-data directory.",
   );
   await captureScreenshot(probe, stage);
   activeProbe = probe;
@@ -614,6 +858,14 @@ async function stopPackage(probe, force = false) {
     } catch {
       // A renderer that is already closing does not need another close request.
     }
+  }
+  if (force) {
+    const wasRunning = probe.child.exitCode === null && probe.child.signalCode === null;
+    const cleanup = await cleanupMarkedProcesses();
+    assert(
+      !wasRunning || cleanup.markerObserved,
+      "Forced lifecycle cleanup did not observe its launch marker.",
+    );
   }
   probe.cdp.close();
   try {
@@ -632,6 +884,7 @@ async function stopPackage(probe, force = false) {
       // The process already exited.
     }
   }
+  await cleanupMarkedProcesses();
   launchedProcesses.delete(probe.child);
   if (activeProbe === probe) {
     activeProbe = null;
@@ -755,18 +1008,12 @@ async function uninstallPackage() {
   if (platform === "win32") {
     const uninstaller = path.join(installPath, "Uninstall Threadleaf.exe");
     assert(await exists(uninstaller), "Installed Windows package has no uninstaller.");
-    await run(uninstaller, ["/S"], { timeout: 180_000 });
+    await run(uninstaller, ["/S"], { env: lifecycleEnvironment, timeout: 180_000 });
     await waitFor(
       async () => (!(await exists(installPath)) ? true : null),
       "Windows uninstaller left installation residue",
       30_000,
     );
-    if (windowsShortcutPath) {
-      assert(
-        !(await exists(windowsShortcutPath)),
-        "Windows uninstaller left the desktop shortcut behind.",
-      );
-    }
   } else {
     await fs.rm(installPath, { recursive: true, force: true });
     assert(!(await exists(installPath)), "macOS package removal left application residue.");
@@ -799,6 +1046,10 @@ async function runLifecycle() {
     "Installer lifecycle requires native Windows or macOS.",
   );
   assert(architecture === "x64", `Installer lifecycle requires x64, observed ${architecture}.`);
+  assert(
+    path.relative(vaultPath, userDataPath).startsWith(".."),
+    "The isolated private app-data root must remain outside the vault.",
+  );
   assert(
     candidateVersion !== baselineVersion,
     "Baseline and candidate package versions must differ.",
@@ -835,7 +1086,7 @@ async function runLifecycle() {
     "Baseline and candidate installer artifacts are byte-identical.",
   );
 
-  await installPackage(baselinePaths, installPath);
+  await installPackage(baselinePaths, installPath, false);
   const baselineExecutable = executableFor(installPath);
   const baseline = await launchPackage(baselineExecutable, baselineVersion, "baseline");
   await createAndEdit(
@@ -856,7 +1107,7 @@ async function runLifecycle() {
   assert(restartState.appearance === "dark", "Restart lost private appearance state.");
   await stopPackage(restartedBaseline.probe);
 
-  await installPackage(candidatePaths, installPath);
+  await installPackage(candidatePaths, installPath, true);
   const candidateExecutable = executableFor(installPath);
   const candidate = await launchPackage(candidateExecutable, candidateVersion, "candidate");
   assert(
@@ -870,7 +1121,11 @@ async function runLifecycle() {
   );
   await stopPackage(candidate.probe);
 
-  await installPackage(baselinePaths, installPath);
+  await installPackage(baselinePaths, installPath, true);
+  assert(
+    inPlaceReplacementChecks === 2,
+    "Native installer replacement did not provide stable target identity for both upgrade and rollback.",
+  );
   const rollback = await launchPackage(baselineExecutable, baselineVersion, "rollback");
   assert(
     rollback.state.activePath === lifecycleNotePath,
@@ -923,10 +1178,20 @@ async function runLifecycle() {
     forcedProcessRecovery: true,
     upgrade: true,
     rollback: true,
+    inPlaceReplacementChecks,
     uninstall: platform === "win32" ? "nsis-silent" : "manual-app-removal",
     stateRootPreserved: true,
+    appData: {
+      mode: "platform-default",
+      root: path.relative(scratchPath, userDataPath).replaceAll(path.sep, "/"),
+      isolated: true,
+      outsideVault: true,
+    },
     vaultBytesPreserved: true,
-    shortcut: windowsShortcutPath ? "created-and-removed" : "not-created-by-installer",
+    desktopShortcut: "disabled-for-lifecycle",
+    descendantCleanup: "launch-marker",
+    launchMarkerObserved,
+    macDmgDetach: platform === "darwin" ? "verified-unmounted" : "not-applicable",
     candidate: candidateManifest,
     baseline: baselineManifest,
   });
@@ -959,5 +1224,6 @@ try {
       // The process already exited.
     }
   }
+  await cleanupMarkedProcesses();
   await fs.rm(scratchPath, { recursive: true, force: true });
 }
