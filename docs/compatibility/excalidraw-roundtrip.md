@@ -56,7 +56,17 @@ The gate uses a unique temporary fixture vault, Electron user-data directory, ex
 `--ozone-platform=x11`, an isolated Xvfb display, and an isolated CDP port. It downloads only the
 exact public Excalidraw 2.25.3 release at runtime, unless
 `THREADLEAF_EXCALIDRAW_PLUGIN_PATH` points to an already supplied copy. Nothing from that download
-is checked in. The copied fixture configures the plugin to retain uncompressed deterministic scene
+is checked in.
+
+A supplied copy must be the exact public 2.25.3 release bytes, not an Obsidian-installed copy of
+the plugin. The gate pins and rejects any mismatch: `manifest.json` must hash to SHA-256
+`43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e`, and `main.js` must be exactly
+4,898,048 bytes with SHA-256 `684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6`.
+A copy taken from an installed Obsidian vault carries an installer-appended 18-byte
+`/* nosourcemap */` suffix on `main.js` (4,898,066 bytes), so it fails the pinned byte count and
+SHA-256 and is rejected rather than silently accepted.
+
+The copied fixture configures the plugin to retain uncompressed deterministic scene
 text, follow the host theme, and skip release notes already acknowledged at 2.25.3. The gate derives
 the authority grant from Threadleaf's own catalog, then exercises:
 
