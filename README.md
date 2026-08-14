@@ -339,6 +339,7 @@ both directions before an artifact is handed off.
 - [FOSS alternatives landscape review](docs/research/alternatives-landscape.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
+- [Governance](docs/governance/governance.md)
 - [Beta feedback guide](docs/beta-feedback.md)
 
 ## Development

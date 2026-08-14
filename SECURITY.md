@@ -1,10 +1,13 @@
 # Security policy
 
-Threadleaf is pre-alpha and must not be trusted with important vaults yet.
+Threadleaf is an early-stage beta. Keep an ordinary external backup of any vault you use with it, and
+do not rely on it as your only copy of important notes yet.
 
 When the public repository enables private vulnerability reporting, report security issues through
 that channel instead of a public issue. Until then, do not publish an exploit or private vault data
-in an issue, discussion, test fixture, or pull request.
+in an issue, discussion, test fixture, or pull request. See
+[`docs/governance/security-response.md`](docs/governance/security-response.md) for the full reporting
+channel, response targets, and disclosure policy.
 
 Existing community plugins will run in a trusted compatibility mode because many expect desktop
 filesystem, Node.js, and DOM access. Installing such a plugin is equivalent to running local code.
