@@ -426,6 +426,33 @@
       "status": "implemented",
       "source": "src/cli/schema.ts#CliCommandId",
       "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "port.inspect",
+      "syntax": [],
+      "output": "See the CLI contract for the native projection.",
+      "authority": "Native CLI contract",
+      "status": "implemented",
+      "source": "src/cli/schema.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "port.ci",
+      "syntax": [],
+      "output": "See the CLI contract for the native projection.",
+      "authority": "Native CLI contract",
+      "status": "implemented",
+      "source": "src/cli/schema.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
+    },
+    {
+      "id": "port.scaffold",
+      "syntax": [],
+      "output": "See the CLI contract for the native projection.",
+      "authority": "Native CLI contract",
+      "status": "implemented",
+      "source": "src/cli/schema.ts#CliCommandId",
+      "documentation": "docs/cli.md#current-commands"
     }
   ],
   "shellRuntime": {
