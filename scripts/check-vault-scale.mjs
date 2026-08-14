@@ -253,6 +253,7 @@ async function processSnapshot(port) {
 
 function startProcessSampler(port) {
   const samples = [];
+  const sampleIntervalMs = 250;
   let pending = false;
   const sample = async () => {
     if (pending) return;
@@ -265,7 +266,7 @@ function startProcessSampler(port) {
       pending = false;
     }
   };
-  const timer = setInterval(() => void sample(), 50);
+  const timer = setInterval(() => void sample(), sampleIntervalMs);
   void sample();
   return {
     async stop() {
@@ -533,51 +534,66 @@ async function closeElectron(cdp, exited) {
 
 async function waitForStartup(cdp, vaultPath, expectedMarkdownCount, startedAt) {
   const deadline = startedAt + maxWaitMs;
-  const state = await waitFor(
-    "the renderer shell",
-    () => readSurface(cdp),
-    (value) => value.bodyVisible && value.shellReady,
-    Math.max(1, deadline - Date.now()),
-  );
-  const shellReadyMs =
-    state.shellMark === null ? null : state.shellTimeOrigin + state.shellMark - startedAt;
+  let state = null;
+  let shellReadyMs = null;
   let openingSurfaceMs = null;
   let openingObserved = false;
   let readyMs = null;
   let summary = null;
-  while (Date.now() < deadline) {
-    const current = await readSurface(cdp);
-    const targetVisible = current.targetPath === vaultPath;
-    if (targetVisible && openingSurfaceMs === null) openingSurfaceMs = Date.now() - startedAt;
-    if (targetVisible && current.runtimeState === "Opening") openingObserved = true;
-    if (targetVisible && current.runtimeState === "Ready") {
-      readyMs ??= Date.now() - startedAt;
-      summary = await readReadySummary(cdp);
-      if (
-        summary.vaultPath === vaultPath &&
-        summary.vaultState === "ready" &&
-        summary.indexedMarkdownCount === expectedMarkdownCount &&
-        summary.watcherError === null
-      ) {
-        break;
+  try {
+    state = await waitFor(
+      "the renderer shell",
+      () => readSurface(cdp),
+      (value) => value.bodyVisible && value.shellReady,
+      Math.max(1, deadline - Date.now()),
+    );
+    shellReadyMs =
+      state.shellMark === null ? null : state.shellTimeOrigin + state.shellMark - startedAt;
+    while (Date.now() < deadline) {
+      const current = await readSurface(cdp);
+      const targetVisible = current.targetPath === vaultPath;
+      if (targetVisible && openingSurfaceMs === null) openingSurfaceMs = Date.now() - startedAt;
+      if (targetVisible && current.runtimeState === "Opening") openingObserved = true;
+      if (targetVisible && current.runtimeState === "Ready") {
+        readyMs ??= Date.now() - startedAt;
+        summary = await readReadySummary(cdp);
+        if (
+          summary.vaultPath === vaultPath &&
+          summary.vaultState === "ready" &&
+          summary.indexedMarkdownCount === expectedMarkdownCount &&
+          summary.watcherError === null
+        ) {
+          break;
+        }
       }
+      await delay(25);
     }
-    await delay(25);
+    if (readyMs === null || !summary) {
+      throw new Error(`Threadleaf did not reach full readiness within ${maxWaitMs} ms.`);
+    }
+    const usableShellMs = shellReadyMs ?? openingSurfaceMs ?? readyMs;
+    return {
+      shellReadyMs,
+      openingSurfaceMs,
+      usableShellMs,
+      readyMs,
+      indexingWindowMs: Math.max(0, readyMs - usableShellMs),
+      openingObserved,
+      summary,
+      surface: state,
+    };
+  } catch (error) {
+    error.partial = {
+      shellReadyMs,
+      openingSurfaceMs,
+      usableShellMs: shellReadyMs ?? openingSurfaceMs ?? null,
+      readyMs,
+      openingObserved,
+      summary,
+      surface: state,
+    };
+    throw error;
   }
-  if (readyMs === null || !summary) {
-    throw new Error(`Threadleaf did not reach full readiness within ${maxWaitMs} ms.`);
-  }
-  const usableShellMs = shellReadyMs ?? openingSurfaceMs ?? readyMs;
-  return {
-    shellReadyMs,
-    openingSurfaceMs,
-    usableShellMs,
-    readyMs,
-    indexingWindowMs: Math.max(0, readyMs - usableShellMs),
-    openingObserved,
-    summary,
-    surface: state,
-  };
 }
 
 async function waitForSearch(cdp, marker, predicate) {
@@ -792,6 +808,7 @@ async function runElectron({
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    if (error?.partial) partial = { ...partial, startup: error.partial };
     partial = {
       ...partial,
       memorySafety: memoryGuard?.snapshot() ?? null,
@@ -999,25 +1016,53 @@ async function runVariant(variant, checkedIn, runtime, environment) {
       const userDataPath = path.join(runRoot, "user-data");
       const stateRoot = path.join(runRoot, "kernel-state");
       await fs.mkdir(runRoot, { recursive: true, mode: 0o700 });
-      const cold = await runElectron({
-        variant,
-        vaultPath: corpus.vaultPath,
-        expectedMarkdownCount: corpus.expected.markdownFileCount,
-        userDataPath,
-        runIndex,
-        mode: "cold",
-        measureEdits: false,
-      });
-      const warm = await runElectron({
-        variant,
-        vaultPath: corpus.vaultPath,
-        expectedMarkdownCount: corpus.expected.markdownFileCount,
-        userDataPath,
-        runIndex,
-        mode: "warm",
-        measureEdits: true,
-      });
-      const kernel = await runKernel(variant, corpus.vaultPath, stateRoot);
+      let cold = null;
+      let warm = null;
+      let kernel = null;
+      let measurementError = null;
+      try {
+        cold = await runElectron({
+          variant,
+          vaultPath: corpus.vaultPath,
+          expectedMarkdownCount: corpus.expected.markdownFileCount,
+          userDataPath,
+          runIndex,
+          mode: "cold",
+          measureEdits: false,
+        });
+        warm = await runElectron({
+          variant,
+          vaultPath: corpus.vaultPath,
+          expectedMarkdownCount: corpus.expected.markdownFileCount,
+          userDataPath,
+          runIndex,
+          mode: "warm",
+          measureEdits: true,
+        });
+      } catch (error) {
+        measurementError = error;
+      }
+      try {
+        kernel = await runKernel(variant, corpus.vaultPath, stateRoot);
+      } catch (error) {
+        measurementError ??= error;
+        if (measurementError !== error) measurementError.kernelError = error;
+      }
+      if (measurementError) {
+        runs.push({
+          runIndex,
+          kernel,
+          cold: cold ?? {
+            status: "aborted",
+            mode: "cold",
+            runIndex,
+            error: measurementError.message ?? String(measurementError),
+            partial: measurementError.partial ?? null,
+          },
+          warm,
+        });
+        throw measurementError;
+      }
       runs.push({ runIndex, kernel, cold, warm });
     }
   } catch (error) {
@@ -1123,6 +1168,7 @@ async function main() {
     memoryTotalBytes: await memoryTotalBytes(),
   };
   await fs.mkdir(outputDirectory, { recursive: true, mode: 0o700 });
+  let abortedVariants = 0;
   for (const variant of ["full", "notes-only"]) {
     try {
       await writeResult(await runVariant(variant, manifestCache, runtime, environment));
@@ -1150,8 +1196,11 @@ async function main() {
         },
       );
       await writeResult(aborted);
-      throw error;
+      abortedVariants += 1;
     }
+  }
+  if (abortedVariants > 0) {
+    throw new Error(`${abortedVariants} vault-scale variant(s) aborted; see the JSON results.`);
   }
 }
 
