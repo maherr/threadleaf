@@ -229,16 +229,21 @@ describe("native extension offline distribution trust", () => {
         }),
       "key-rotation-invalid",
     );
+    // An effectively revoked predecessor is refused by the revocation predicate before the
+    // rotation window clauses are consulted at all.
     expectTrustCode(
       () =>
         verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
           trustedPublishers: [{ ...oldPublisher, revokedAt: "2026-04-01T00:00:00.000Z" }],
         }),
-      "key-rotation-invalid",
+      "key-revoked",
     );
   });
 
-  it("accepts a rotation authorized before predecessor revocation without allowing backdating", () => {
+  it("refuses a rotation whose predecessor revocation is already effective, at the exact instant", () => {
+    // This case previously asserted an accept. `issuedAt = effectiveAt = revokedAt` is the single
+    // point where the two rotation window clauses do not overlap into a rejection, and revokedAt
+    // is public, so a stolen revoked key could mint a permanently trusted successor identity.
     const oldPair = keyPair();
     const newPair = keyPair();
     const oldPublisher = publisher(oldPair.privateKey, "key-1");
@@ -255,11 +260,13 @@ describe("native extension offline distribution trust", () => {
       issuedAt: "2026-05-01T00:00:00.000Z",
       keyRotation: rotation,
     });
-    expect(
-      verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
-        trustedPublishers: [{ ...oldPublisher, revokedAt: "2026-05-01T00:00:00.000Z" }],
-      }).keyTrust,
-    ).toBe("rotated");
+    expectTrustCode(
+      () =>
+        verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
+          trustedPublishers: [{ ...oldPublisher, revokedAt: "2026-05-01T00:00:00.000Z" }],
+        }),
+      "key-revoked",
+    );
     expectTrustCode(
       () =>
         verifyNativeExtensionDistribution(
@@ -270,8 +277,171 @@ describe("native extension offline distribution trust", () => {
           signedDistributionBundle.bundleBytes,
           { trustedPublishers: [{ ...oldPublisher, revokedAt: "2026-05-01T00:00:00.000Z" }] },
         ),
+      "key-revoked",
+    );
+    // The rotation path stays open for a predecessor that carries no revocation at all.
+    expect(
+      verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
+        trustedPublishers: [oldPublisher],
+      }).keyTrust,
+    ).toBe("rotated");
+  });
+
+  it("rejects every rotation on the predecessor revocation boundary", () => {
+    // The whole neighbourhood of revokedAt, not just one side of it. A table assertion names the
+    // exact cell that regressed instead of failing on the first throw.
+    const revokedAt = "2026-05-01T00:00:00.000Z";
+    const boundary = [
+      ["T-1ms", "2026-04-30T23:59:59.999Z"],
+      ["T", revokedAt],
+      ["T+1ms", "2026-05-01T00:00:00.001Z"],
+    ] as const;
+    const oldPair = keyPair();
+    const newPair = keyPair();
+    const oldPublisher = publisher(oldPair.privateKey, "key-1");
+    const newPublisher = publisher(newPair.privateKey, "key-2");
+    const observed: string[] = [];
+    for (const [effectiveLabel, effectiveAt] of boundary) {
+      for (const [issuedLabel, issuedAt] of boundary) {
+        const rotation = signNativeExtensionKeyRotation(
+          { previous: oldPublisher, next: newPublisher, effectiveAt },
+          oldPair.privateKey,
+        );
+        const metadata = signed(newPair.privateKey, newPublisher, {
+          issuedAt,
+          keyRotation: rotation,
+        });
+        let outcome = "ACCEPTED";
+        try {
+          verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
+            trustedPublishers: [{ ...oldPublisher, revokedAt }],
+          });
+        } catch (error) {
+          outcome = (error as { code?: string }).code ?? "unknown-error";
+        }
+        observed.push(`effectiveAt=${effectiveLabel} issuedAt=${issuedLabel} -> ${outcome}`);
+      }
+    }
+    expect(observed).toEqual([
+      "effectiveAt=T-1ms issuedAt=T-1ms -> key-revoked",
+      "effectiveAt=T-1ms issuedAt=T -> key-revoked",
+      "effectiveAt=T-1ms issuedAt=T+1ms -> key-revoked",
+      "effectiveAt=T issuedAt=T-1ms -> key-revoked",
+      "effectiveAt=T issuedAt=T -> key-revoked",
+      "effectiveAt=T issuedAt=T+1ms -> key-revoked",
+      "effectiveAt=T+1ms issuedAt=T-1ms -> key-revoked",
+      "effectiveAt=T+1ms issuedAt=T -> key-revoked",
+      "effectiveAt=T+1ms issuedAt=T+1ms -> key-revoked",
+    ]);
+  });
+
+  it("keeps both rotation window clauses live beside the revocation predicate", () => {
+    const oldPair = keyPair();
+    const newPair = keyPair();
+    const oldPublisher = publisher(oldPair.privateKey, "key-1");
+    const newPublisher = publisher(newPair.privateKey, "key-2");
+    const rotate = (effectiveAt: string) =>
+      signNativeExtensionKeyRotation(
+        { previous: oldPublisher, next: newPublisher, effectiveAt },
+        oldPair.privateKey,
+      );
+
+    // Revocation scheduled after `now`: the revoked-predecessor predicate deliberately holds its
+    // fire, so the first window clause is the check that rejects here.
+    expectTrustCode(
+      () =>
+        verifyNativeExtensionDistribution(
+          signed(newPair.privateKey, newPublisher, {
+            issuedAt: "2026-05-02T00:00:00.000Z",
+            keyRotation: rotate("2026-05-01T00:00:00.000Z"),
+          }),
+          signedDistributionBundle.bundleBytes,
+          { trustedPublishers: [{ ...oldPublisher, revokedAt: "2026-07-01T00:00:00.000Z" }] },
+        ),
       "key-rotation-invalid",
     );
+
+    // No revocation at all: the second window clause still rejects a rotation that is not yet
+    // effective, and one that predates its own effectiveAt.
+    expectTrustCode(
+      () =>
+        verifyNativeExtensionDistribution(
+          signed(newPair.privateKey, newPublisher, {
+            issuedAt: "2026-07-02T00:00:00.000Z",
+            keyRotation: rotate("2026-07-01T00:00:00.000Z"),
+          }),
+          signedDistributionBundle.bundleBytes,
+          { trustedPublishers: [oldPublisher] },
+        ),
+      "key-rotation-invalid",
+    );
+    expectTrustCode(
+      () =>
+        verifyNativeExtensionDistribution(
+          signed(newPair.privateKey, newPublisher, {
+            issuedAt: "2026-04-01T00:00:00.000Z",
+            keyRotation: rotate("2026-05-01T00:00:00.000Z"),
+          }),
+          signedDistributionBundle.bundleBytes,
+          { trustedPublishers: [oldPublisher] },
+        ),
+      "key-rotation-invalid",
+    );
+  });
+
+  it("refuses to install a forged successor minted from a revoked anchor", async () => {
+    const revokedAt = "2026-05-01T00:00:00.000Z";
+    const stolenPair = keyPair();
+    const forgedPair = keyPair();
+    const stolenPublisher = publisher(stolenPair.privateKey, "key-1");
+    const forgedPublisher = publisher(forgedPair.privateKey, "key-2");
+    // Everything an attacker holding the revoked key needs: the key itself and the public
+    // revokedAt value. Both timestamps are pinned to it.
+    const forgedRotation = signNativeExtensionKeyRotation(
+      { previous: stolenPublisher, next: forgedPublisher, effectiveAt: revokedAt },
+      stolenPair.privateKey,
+    );
+    const forgedMetadata = signed(forgedPair.privateKey, forgedPublisher, {
+      issuedAt: revokedAt,
+      keyRotation: forgedRotation,
+    });
+    const revokedAnchors = [{ ...stolenPublisher, revokedAt }];
+
+    expectTrustCode(
+      () =>
+        verifyNativeExtensionDistribution(forgedMetadata, signedDistributionBundle.bundleBytes, {
+          trustedPublishers: revokedAnchors,
+        }),
+      "key-revoked",
+    );
+
+    const host = new NativeExtensionHost({ ports: { vault: vaultPort } });
+    expect(() =>
+      host.install(signedDistributionBundle, {
+        mode: "trusted-distribution",
+        metadata: forgedMetadata,
+        trustedPublishers: revokedAnchors,
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "distribution-untrusted",
+        message: "Publisher key is revoked.",
+      }),
+    );
+    // Nothing was registered by the refused install.
+    expect(() => host.review(forgedMetadata.manifest.id)).toThrow(
+      expect.objectContaining({ code: "not-installed" }),
+    );
+    // Control: the identical record installs against the same anchor without the revocation, so
+    // the refusal above is the revocation check and not a signature, freshness, or bytes failure.
+    expect(
+      host.install(signedDistributionBundle, {
+        mode: "trusted-distribution",
+        metadata: forgedMetadata,
+        trustedPublishers: [stolenPublisher],
+      }).distributionTrust,
+    ).toBe("trusted-distribution");
+    await host.close();
   });
 
   it("verifies a deterministic mirror index and requires exact bundle bytes", () => {
@@ -536,12 +706,14 @@ describe("native extension offline distribution trust", () => {
       issuedAt: "2026-06-01T00:00:00.000Z",
       keyRotation: rotation,
     });
+    // Backdating is still refused here, now by the stronger revoked-predecessor predicate. The
+    // backdating clause itself is covered against an unrevoked anchor in the window-clause case.
     expectTrustCode(
       () =>
         verifyNativeExtensionDistribution(metadata, signedDistributionBundle.bundleBytes, {
           trustedPublishers: [{ ...oldPublisher, revokedAt: "2026-05-01T00:00:00.000Z" }],
         }),
-      "key-rotation-invalid",
+      "key-revoked",
     );
   });
 

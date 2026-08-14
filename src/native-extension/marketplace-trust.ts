@@ -1203,6 +1203,16 @@ function verifyKeyTrust(
           metadata.publisher.fingerprint,
         );
       }
+      // Authoritative predicate: an effectively revoked key can never be a rotation source. The
+      // two window clauses below intersect on exactly one point, issuedAt = effectiveAt =
+      // revokedAt, so on their own they accept a rotation minted from a stolen revoked key using
+      // only the public revokedAt value.
+      if (previous.revokedAt !== undefined && previous.revokedAt <= now) {
+        trustFailure("key-revoked", "Publisher key is revoked.", metadata.publisher.fingerprint);
+      }
+      // Defence in depth, not redundant: this still rejects every rotation whose predecessor
+      // carries a revocation scheduled in the future, which the predicate above deliberately
+      // leaves alone until that revocation is effective.
       if (
         previous.revokedAt !== undefined &&
         (metadata.issuedAt > previous.revokedAt ||
@@ -1214,6 +1224,8 @@ function verifyKeyTrust(
           metadata.publisher.fingerprint,
         );
       }
+      // Independent of revocation entirely: every rotation must already be effective and must not
+      // predate its own effectiveAt. This clause governs the far more common unrevoked case.
       if (
         metadata.keyRotation.effectiveAt > now ||
         metadata.issuedAt < metadata.keyRotation.effectiveAt
@@ -1250,6 +1262,17 @@ function verifyKeyTrust(
       metadata.publisher.fingerprint,
     );
   }
+  // Authoritative predicate. This is the only path that can mint trust for a publisher key that
+  // is not itself an anchor, so a revoked predecessor must never serve as its rotation source.
+  // The two window clauses below intersect on exactly one point, issuedAt = effectiveAt =
+  // revokedAt, and revokedAt is public: without this check a stolen revoked key yields a
+  // permanent forged trusted identity.
+  if (previous.revokedAt !== undefined && previous.revokedAt <= now) {
+    trustFailure("key-revoked", "Publisher key is revoked.", metadata.publisher.fingerprint);
+  }
+  // Defence in depth, not redundant: this still rejects every rotation whose predecessor carries
+  // a revocation scheduled in the future, which the predicate above deliberately leaves alone
+  // until that revocation is effective.
   if (
     previous.revokedAt !== undefined &&
     (metadata.issuedAt > previous.revokedAt || rotation.effectiveAt < previous.revokedAt)
@@ -1260,6 +1283,8 @@ function verifyKeyTrust(
       metadata.publisher.fingerprint,
     );
   }
+  // Independent of revocation entirely: every rotation must already be effective and must not
+  // predate its own effectiveAt. This clause governs the far more common unrevoked case.
   if (rotation.effectiveAt > now || metadata.issuedAt < rotation.effectiveAt) {
     trustFailure(
       "key-rotation-invalid",
