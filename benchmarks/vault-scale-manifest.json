@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": "1.0.0",
+  "seed": 1414025796,
+  "variants": {
+    "full": {
+      "schemaVersion": 1,
+      "generatorVersion": "1.0.0",
+      "seed": 1414025796,
+      "variant": "full",
+      "fileCount": 207726,
+      "visibleFileCount": 206702,
+      "hiddenFileCount": 1024,
+      "markdownFileCount": 21145,
+      "ballastFileCount": 186581,
+      "totalBytes": 897160700,
+      "extensionCounts": {
+        ".md": 21145,
+        ".js": 68000,
+        ".ts": 34000,
+        ".map": 28000,
+        ".json": 23000,
+        "[none]": 11000,
+        ".mdx": 9600,
+        ".mjs": 4500,
+        ".png": 4300,
+        ".css": 1200,
+        ".svg": 900,
+        ".canvas": 900,
+        ".html": 700,
+        ".bin": 481
+      },
+      "depthProfile": {
+        "minimum": 3,
+        "maximum": 10,
+        "p50": 10,
+        "p90": 10,
+        "atLeast10": 206702
+      },
+      "noteSizeDistribution": {
+        "p50Bytes": 10240,
+        "p90Bytes": 37888,
+        "p99Bytes": 156672,
+        "maximumBytes": 1228800,
+        "buckets": [
+          {
+            "label": "p50",
+            "count": 11200,
+            "minimumBytes": 10240,
+            "maximumBytes": 10240
+          },
+          {
+            "label": "p90",
+            "count": 7900,
+            "minimumBytes": 37888,
+            "maximumBytes": 37888
+          },
+          {
+            "label": "p99",
+            "count": 1834,
+            "minimumBytes": 156672,
+            "maximumBytes": 156672
+          },
+          {
+            "label": "tail",
+            "count": 210,
+            "minimumBytes": 174080,
+            "maximumBytes": 1224998
+          },
+          {
+            "label": "max",
+            "count": 1,
+            "minimumBytes": 1228800,
+            "maximumBytes": 1228800
+          }
+        ]
+      },
+      "sampleHash": "31855970c3df040247890f6eec1feeb3df6606adb2ccefa8afb004149632e32f"
+    },
+    "notes-only": {
+      "schemaVersion": 1,
+      "generatorVersion": "1.0.0",
+      "seed": 1414025796,
+      "variant": "notes-only",
+      "fileCount": 21145,
+      "visibleFileCount": 21145,
+      "hiddenFileCount": 0,
+      "markdownFileCount": 21145,
+      "ballastFileCount": 0,
+      "totalBytes": 849343388,
+      "extensionCounts": {
+        ".md": 21145
+      },
+      "depthProfile": {
+        "minimum": 10,
+        "maximum": 10,
+        "p50": 10,
+        "p90": 10,
+        "atLeast10": 21145
+      },
+      "noteSizeDistribution": {
+        "p50Bytes": 10240,
+        "p90Bytes": 37888,
+        "p99Bytes": 156672,
+        "maximumBytes": 1228800,
+        "buckets": [
+          {
+            "label": "p50",
+            "count": 11200,
+            "minimumBytes": 10240,
+            "maximumBytes": 10240
+          },
+          {
+            "label": "p90",
+            "count": 7900,
+            "minimumBytes": 37888,
+            "maximumBytes": 37888
+          },
+          {
+            "label": "p99",
+            "count": 1834,
+            "minimumBytes": 156672,
+            "maximumBytes": 156672
+          },
+          {
+            "label": "tail",
+            "count": 210,
+            "minimumBytes": 174080,
+            "maximumBytes": 1224998
+          },
+          {
+            "label": "max",
+            "count": 1,
+            "minimumBytes": 1228800,
+            "maximumBytes": 1228800
+          }
+        ]
+      },
+      "sampleHash": "25c3266e8c70ca23322cee67b29ef122c7015b214578d984154db99ba585830d"
+    }
+  }
+}

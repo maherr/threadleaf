@@ -125,6 +125,58 @@ memory probes remain unsupported until equivalent non-X11 seams exist. The edito
 physical keyboard, OS input stack, and display scanout; first paint is not a compositor swap or a
 human-perceived paint timestamp; GPU-disabled Xvfb is not a normal desktop rendering profile.
 
+## Synthetic 208k-file startup benchmark
+
+The opt-in large-vault lane measures a deterministic synthetic corpus only. It never opens or
+scans the real daily-driver vault. The checked-in [`benchmarks/vault-scale-manifest.json`](../benchmarks/vault-scale-manifest.json)
+uses seed `1414025796` and records two variants from the same generator:
+
+| Variant | Files | Markdown notes | Ballast files | Corpus bytes | Purpose |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `full` | 207,726 | 21,145 | 186,581 | 897,160,700 | Mixed workspace shape, including hidden trees |
+| `notes-only` | 21,145 | 21,145 | 0 | 849,343,388 | Ballast control |
+
+The full variant includes the requested JavaScript, TypeScript, source-map, JSON, extensionless,
+MDX, MJS, PNG, and miscellaneous ballast families. Both variants use the same Markdown size
+distribution, ten-level note paths, deterministic frontmatter, links, tags, and 100 mutation
+paths. The generator writes to real disk, not `/tmp`; the generated corpus is ignored by Git.
+
+Generate once and reuse it:
+
+```sh
+pnpm benchmark:vault-scale:generate -- \
+  --variant full \
+  --output /home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1/full
+pnpm benchmark:vault-scale:generate -- \
+  --variant notes-only \
+  --output /home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1/notes-only
+```
+
+Before each app matrix, verify available memory and take the shared heavy lock. The app lane
+builds an Electron/Xvfb result for each variant and runs two consecutive cold and warm pairs. It
+also records a headless kernel pass, a one-file edit, a 100-file sync-style burst, shell-ready
+time, target-opening time, full index completion, main and renderer resident memory, and renderer
+event-loop pauses. Results conform to
+[`benchmarks/vault-scale-result-schema.json`](../benchmarks/vault-scale-result-schema.json) and
+land in `benchmarks/results/threadleaf-vault-scale-{full,notes-only}.json`.
+
+```sh
+grep MemAvailable /proc/meminfo
+flock -w 21600 /tmp/threadleaf-heavy-gate.lock -c \
+  'pnpm benchmark:vault-scale -- \
+    --corpus-root /home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1 \
+    --output-dir benchmarks/results \
+    --runs 2'
+```
+
+The cold definition is a fresh Electron user-data root, not a flushed Linux page cache. Warm
+restart reuses that root and therefore observes workspace state and filesystem/runtime caches;
+this base revision has no persisted metadata-index cache. The headless record isolates the kernel
+scan and index seams but is not a substitute for the rendered app path. Obsidian's owner-supplied
+startup observation, 14,081 ms total for 207,726 files with 11,966 ms in the vault stage, is
+included beside the Threadleaf numbers in the JSON and reviewed report as context only, not as a
+pass/fail gate.
+
 ## Large mixed-workspace cold-start observation
 
 The original production-path probe on 2026-08-12 pointed Threadleaf at a 54 GB mixed-content

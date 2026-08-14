@@ -1,7 +1,11 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: { runner: "benchmarks/runner.ts" },
+  entry: {
+    runner: "benchmarks/runner.ts",
+    "vault-scale-corpus": "benchmarks/vault-scale-corpus.ts",
+    "vault-scale-kernel": "benchmarks/vault-scale-kernel.ts",
+  },
   outDir: ".bench-dist",
   format: ["cjs"],
   platform: "node",
