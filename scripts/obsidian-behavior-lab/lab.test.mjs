@@ -588,5 +588,9 @@ describe("Threadleaf external-oracle candidate", () => {
     const failedCandidate = structuredClone(valid);
     failedCandidate.status = "blocked";
     assert.throws(() => threadleafBehaviorMatch(reference, failedCandidate), /not observed/u);
+
+    const divergentReference = structuredClone(reference);
+    divergentReference.observed.roundtrip.reopenedSha256 = "different-observation";
+    assert.throws(() => threadleafBehaviorMatch(divergentReference, valid), /reopened bytes/u);
   });
 });

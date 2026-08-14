@@ -732,6 +732,10 @@ export function threadleafBehaviorMatch(reference, candidate) {
     referenceRoundtrip?.status === "observed" && referenceRoundtrip.exact === true,
     "Obsidian external-oracle FILE-01 did not retain its exact edit through reopen.",
   );
+  assert(
+    referenceRoundtrip.reopenedSha256 === referenceRoundtrip.mutatedSha256,
+    "Obsidian external-oracle FILE-01 reopened bytes did not equal the saved bytes.",
+  );
   assertThreadleafReceipt(candidate, {
     runRoot: candidate?.paths?.runRoot,
     vaultPath: candidate?.paths?.vault,
