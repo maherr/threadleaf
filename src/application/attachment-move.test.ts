@@ -775,7 +775,7 @@ describe("attachment move planning", () => {
     }
   });
 
-  it("keeps dormant source definitions inert inside ordinary inline link titles and nested labels", async () => {
+  it("keeps dormant source definitions inert inside inline titles while blocking a nested renderer-only event", async () => {
     await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
     const titleDefinitionPath = path.join(vaultPath, "Notes", "Inline title dormant.md");
     const nestedDefinitionPath = path.join(vaultPath, "Notes", "Nested label dormant.md");
@@ -900,7 +900,16 @@ describe("attachment move planning", () => {
       source.snapshot.revision,
     );
 
-    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Nested label dormant.md",
+          reason: "unsupported",
+          target: "[report][]",
+        }),
+      ],
+    });
     if (plan.status !== "planned") throw new Error("Expected a planned publication.");
     expect(plan.writes).toEqual([
       expect.objectContaining({
@@ -915,6 +924,10 @@ describe("attachment move planning", () => {
         afterTarget: "../Archive/report-final.pdf",
       }),
     ]);
+    expect(plan.writes.some((write) => write.path === "Notes/Nested label dormant.md")).toBe(false);
+    expect(
+      plan.rewrites.some((rewrite) => rewrite.documentPath === "Notes/Nested label dormant.md"),
+    ).toBe(false);
 
     await expect(
       moveBinaryAttachment(
@@ -924,7 +937,7 @@ describe("attachment move planning", () => {
         source.snapshot.revision,
         { plan, acceptCurrentRewrites: true },
       ),
-    ).resolves.toMatchObject({ status: "published-source-retained" });
+    ).resolves.toMatchObject({ status: "blocked" });
     await expect(fs.readFile(titleDefinitionPath, "utf8")).resolves.toBe(titleDefinition);
     await expect(fs.readFile(nestedDefinitionPath, "utf8")).resolves.toBe(nestedDefinition);
     await expect(fs.readFile(externalDefinitionTitlePath, "utf8")).resolves.toBe(
@@ -946,9 +959,15 @@ describe("attachment move planning", () => {
     await expect(fs.readFile(titleWithoutDefinitionPath, "utf8")).resolves.toBe(
       titleWithoutDefinition,
     );
-    await expect(fs.readFile(realSourcePath, "utf8")).resolves.toBe(
-      "[real source](../Archive/report-final.pdf)\n",
+    await expect(fs.readFile(realSourcePath, "utf8")).resolves.toBe(realSource);
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "report.pdf"))).resolves.toEqual(
+      pdfBytes,
     );
+    await expect(
+      fs.stat(path.join(vaultPath, "Archive", "report-final.pdf")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("keeps raw-single-bracket wiki bodies from activating dormant source definitions", async () => {
@@ -3389,6 +3408,194 @@ describe("attachment move planning", () => {
       expect(renderer.render(note.after), note.label).toContain(
         `${targetAttribute}="${replacementTarget}"`,
       );
+    }
+  });
+
+  it("blocks nested renderer-only source references before mutation while preserving outer rewrites", async () => {
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, "Assets", "a.pdf"), pdfBytes),
+      fs.writeFile(path.join(vaultPath, "Assets", "b.pdf"), pdfBytes),
+      fs.writeFile(path.join(vaultPath, "Assets", "other.pdf"), pdfBytes),
+    ]);
+    const forms = [
+      { name: "image-full", usage: "[x ![y][b]][a]", embed: true },
+      { name: "image-collapsed", usage: "[x ![b][]][a]", embed: true },
+      { name: "image-shortcut", usage: "[x ![b]][a]", embed: true },
+      { name: "ordinary-full", usage: "[x [y][b]][a]", embed: false },
+    ];
+
+    for (const form of forms) {
+      const notePath = `Notes/Nested renderer ${form.name}.md`;
+      const sourceDefinition = [
+        form.usage,
+        "",
+        "[a]: ../Assets/a.pdf",
+        "[b]: ../Assets/b.pdf",
+      ].join("\n");
+      await fs.writeFile(path.join(vaultPath, notePath), sourceDefinition, "utf8");
+      expect(
+        parseMarkdownReferenceUsages(sourceDefinition).filter(
+          (usage) => usage.sourceMappable === false,
+        ),
+        form.name,
+      ).toEqual([expect.objectContaining({ label: "b", embed: form.embed, line: 1 })]);
+
+      const sourceB = await kernel.readBinary("Assets/b.pdf", Number.MAX_SAFE_INTEGER);
+      if (sourceB.status !== "ready") throw new Error("Expected nested b attachment fixture.");
+      const targetB = `Archive/nested-${form.name}-b.pdf`;
+      const blockedPlan = await planBinaryAttachmentMove(
+        kernel,
+        "Assets/b.pdf",
+        targetB,
+        sourceB.snapshot.revision,
+      );
+
+      expect(blockedPlan).toMatchObject({ status: "planned" });
+      if (blockedPlan.status !== "planned") throw new Error("Expected nested b publication plan.");
+      expect(blockedPlan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentPath: notePath,
+            target: form.embed ? "![b][]" : "[b][]",
+            reason: "unsupported",
+          }),
+        ]),
+      );
+      expect(blockedPlan.rewrites.some((rewrite) => rewrite.documentPath === notePath)).toBe(false);
+      expect(blockedPlan.writes.some((write) => write.path === notePath)).toBe(false);
+      await expect(
+        moveBinaryAttachment(kernel, "Assets/b.pdf", targetB, sourceB.snapshot.revision, {
+          plan: blockedPlan,
+          acceptCurrentRewrites: true,
+        }),
+      ).resolves.toMatchObject({ status: "blocked" });
+      await expect(fs.readFile(path.join(vaultPath, notePath), "utf8")).resolves.toBe(
+        sourceDefinition,
+      );
+      await expect(fs.readFile(path.join(vaultPath, "Assets", "b.pdf"))).resolves.toEqual(pdfBytes);
+      await expect(fs.stat(path.join(vaultPath, targetB))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      const unrelatedNested = sourceDefinition.replace("../Assets/b.pdf", "../Assets/other.pdf");
+      const expectedOuterRewrite = unrelatedNested.replace(
+        "../Assets/a.pdf",
+        "../Archive/outer-a.pdf",
+      );
+      await fs.writeFile(path.join(vaultPath, notePath), unrelatedNested, "utf8");
+      const sourceA = await kernel.readBinary("Assets/a.pdf", Number.MAX_SAFE_INTEGER);
+      if (sourceA.status !== "ready") throw new Error("Expected nested a attachment fixture.");
+      const outerPlan = await planBinaryAttachmentMove(
+        kernel,
+        "Assets/a.pdf",
+        "Archive/outer-a.pdf",
+        sourceA.snapshot.revision,
+      );
+
+      expect(outerPlan).toMatchObject({ status: "planned", blockers: [] });
+      if (outerPlan.status !== "planned")
+        throw new Error("Expected nested outer publication plan.");
+      expect(outerPlan.rewrites).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentPath: notePath,
+            beforeTarget: "../Assets/a.pdf",
+            afterTarget: "../Archive/outer-a.pdf",
+          }),
+        ]),
+      );
+      expect(outerPlan.writes).toContainEqual(
+        expect.objectContaining({ path: notePath, content: expectedOuterRewrite }),
+      );
+      await fs.rm(path.join(vaultPath, notePath));
+    }
+  });
+
+  it("scopes nested renderer-only b evidence to source-related definitions", async () => {
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, "Assets", "b.pdf"), pdfBytes),
+      fs.writeFile(path.join(vaultPath, "Assets", "other.pdf"), pdfBytes),
+    ]);
+    const variants = [
+      {
+        name: "source",
+        definitions: ["[a]: https://example.test/a.pdf", "[b]: ../Assets/b.pdf"],
+        blocked: true,
+      },
+      {
+        name: "opaque source",
+        definitions: [
+          "[a]: https://example.test/a.pdf",
+          "[b]: https://example.test/b.pdf",
+          "[b]: <../Assets/b.pdf",
+        ],
+        blocked: true,
+      },
+      {
+        name: "source-only",
+        definitions: [
+          "---",
+          "[b]: ../Assets/b.pdf",
+          "---",
+          "[a]: https://example.test/a.pdf",
+          "[b]: https://example.test/b.pdf",
+        ],
+        blocked: true,
+      },
+      {
+        name: "duplicate",
+        definitions: [
+          "[a]: https://example.test/a.pdf",
+          "[b]: ../Assets/b.pdf",
+          "[b]: https://example.test/b.pdf",
+        ],
+        blocked: true,
+      },
+      {
+        name: "external",
+        definitions: ["[a]: https://example.test/a.pdf", "[b]: https://example.test/b.pdf"],
+        blocked: false,
+      },
+      {
+        name: "unrelated",
+        definitions: ["[a]: https://example.test/a.pdf", "[b]: ../Assets/other.pdf"],
+        blocked: false,
+      },
+    ];
+
+    for (const variant of variants) {
+      const notePath = `Notes/Nested renderer b ${variant.name}.md`;
+      const content = ["[x ![y][b]][a]", "", ...variant.definitions].join("\n");
+      await fs.writeFile(path.join(vaultPath, notePath), content, "utf8");
+      expect(
+        parseMarkdownReferenceUsages(content).filter((usage) => usage.sourceMappable === false),
+        variant.name,
+      ).toEqual([expect.objectContaining({ label: "b", embed: true, line: 1 })]);
+
+      const source = await kernel.readBinary("Assets/b.pdf", Number.MAX_SAFE_INTEGER);
+      if (source.status !== "ready") throw new Error("Expected nested policy attachment fixture.");
+      const plan = await planBinaryAttachmentMove(
+        kernel,
+        "Assets/b.pdf",
+        `Archive/nested-policy-${variant.name}.pdf`,
+        source.snapshot.revision,
+      );
+
+      expect(plan).toMatchObject({ status: "planned" });
+      if (plan.status !== "planned") throw new Error("Expected nested policy publication plan.");
+      expect(
+        plan.blockers.some((blocker) => blocker.documentPath === notePath),
+        variant.name,
+      ).toBe(variant.blocked);
+      expect(
+        plan.rewrites.some((rewrite) => rewrite.documentPath === notePath),
+        variant.name,
+      ).toBe(false);
+      expect(
+        plan.writes.some((write) => write.path === notePath),
+        variant.name,
+      ).toBe(false);
+      await fs.rm(path.join(vaultPath, notePath));
     }
   });
 

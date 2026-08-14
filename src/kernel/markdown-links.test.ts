@@ -497,7 +497,7 @@ describe("Markdown link source parser", () => {
     ]);
   });
 
-  it("does not scan reference labels inside inline destinations, titles, or nested inline labels", () => {
+  it("keeps inline destinations and titles quiet while retaining a nested renderer-only event as opaque", () => {
     const content = [
       '[external](https://example.test "literal [report] title")',
       "[other [report]](https://example.test)",
@@ -507,7 +507,14 @@ describe("Markdown link source parser", () => {
       "[report]: ../Assets/report.pdf",
     ].join("\r\n");
 
-    expect(parseMarkdownReferenceUsages(content)).toEqual([]);
+    expect(parseMarkdownReferenceUsages(content)).toEqual([
+      expect.objectContaining({
+        label: "report",
+        embed: false,
+        line: 1,
+        sourceMappable: false,
+      }),
+    ]);
   });
 
   it("retains source-like labels in malformed inline text while retaining a separate later reference", () => {
@@ -1006,6 +1013,51 @@ describe("Markdown link source parser", () => {
       expect.objectContaining({ label: "asset", embed: false, sourceMappable: false, line: 1 }),
       expect.objectContaining({ label: "asset", embed: false, sourceMappable: false, line: 1 }),
     ]);
+  });
+
+  it("keeps outer reference mappings while retaining every nested renderer-only event as opaque", () => {
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const forms = [
+      { name: "nested image full", source: "[x ![y][b]][a]", embed: true, attribute: "src" },
+      { name: "nested image collapsed", source: "[x ![b][]][a]", embed: true, attribute: "src" },
+      { name: "nested image shortcut", source: "[x ![b]][a]", embed: true, attribute: "src" },
+      { name: "nested ordinary full", source: "[x [y][b]][a]", embed: false, attribute: "href" },
+    ];
+
+    for (const form of forms) {
+      const source = [form.source, "", "[a]: ../Assets/a.pdf", "[b]: ../Assets/b.pdf"].join("\n");
+      expect(renderer.render(source), form.name).toContain('href="../Assets/a.pdf"');
+      expect(renderer.render(source), form.name).toContain(`${form.attribute}="../Assets/b.pdf"`);
+
+      const usages = parseMarkdownReferenceUsages(source);
+      const outer = usages.find((usage) => usage.label === "a");
+      expect(outer, form.name).toEqual(expect.objectContaining({ embed: false, line: 1 }));
+      expect(outer?.sourceMappable, form.name).not.toBe(false);
+      expect(
+        usages.filter((usage) => usage.sourceMappable === false),
+        form.name,
+      ).toEqual([expect.objectContaining({ label: "b", embed: form.embed, line: 1 })]);
+    }
+
+    const adjacent = [
+      "[x ![y][b]][a] [z][c]",
+      "",
+      "[a]: ../Assets/a.pdf",
+      "[b]: ../Assets/b.pdf",
+      "[c]: ../Assets/c.pdf",
+    ].join("\n");
+    const adjacentUsages = parseMarkdownReferenceUsages(adjacent);
+    expect(adjacentUsages.filter((usage) => usage.sourceMappable === false)).toEqual([
+      expect.objectContaining({ label: "b", embed: true, line: 1 }),
+    ]);
+    for (const label of ["a", "c"]) {
+      expect(adjacentUsages.find((usage) => usage.label === label)?.sourceMappable).not.toBe(false);
+    }
   });
 
   it("isolates an unmatched renderer wiki-prefix event from an independent reference", () => {

@@ -1375,25 +1375,6 @@ function parseReferenceUsageCandidates(
   return usages;
 }
 
-/**
- * A complete single-line wiki span has already been masked before generic
- * reference scanning. If one remains, Threadleaf declined it as a wiki span
- * (for example because its opener is escaped or incomplete), while MarkdownIt
- * can still surface an inner reference token. Keep that renderer-only token
- * as opaque evidence instead of assigning it a guessed source range.
- */
-function hasUnrecognizedWikiPrefix(source: string, maskedSource: string): boolean {
-  const sourceLines = source.split(/\r\n|\r|\n/u);
-  const maskedLines = maskedSource.split(/\r\n|\r|\n/u);
-  if (sourceLines.length !== maskedLines.length) return false;
-  return sourceLines.some((sourceLine, index) => {
-    const angleMasked = maskInlineAngleTokens(maskedLines[index] ?? "");
-    const wikiLinks = parseWikiLinks(sourceLine, angleMasked, 0, index + 1);
-    const searchable = maskParsedLinkRanges(angleMasked, wikiLinks, 0);
-    return searchable.includes("[[");
-  });
-}
-
 function referenceUsageSignature(
   usage: RendererReferenceUsageToken | ReferenceUsageCandidate,
 ): string {
@@ -1468,26 +1449,23 @@ function rendererMappedReferenceUsages(
         ? parseReferenceUsageCandidates(logical.content, logicalMasked.content)
         : [];
     const tokenContentMatches = logicalMasked.content === context.content;
-    const hasUnrecognizedPrefix = hasUnrecognizedWikiPrefix(logical.content, logicalMasked.content);
     const candidatesByRendererIndex = tokenContentMatches
       ? matchedRendererReferenceUsageCandidates(context.usages, logicalUsages)
       : new Map<number, ReferenceUsageCandidate>();
-    if (candidatesByRendererIndex.size !== context.usages.length && !hasUnrecognizedPrefix) {
-      continue;
-    }
     for (const [rendererIndex, expected] of context.usages.entries()) {
       const usage = candidatesByRendererIndex.get(rendererIndex);
       if (!usage) {
-        if (hasUnrecognizedPrefix) {
-          usages.push({
-            label: expected.label,
-            embed: expected.embed,
-            position: context.start,
-            end: context.end,
-            line: context.line,
-            sourceMappable: false,
-          });
-        }
+        // A renderer event without one proven source candidate cannot borrow
+        // another candidate's range. Keep it as opaque planner evidence,
+        // including complete renderer/source token mismatches.
+        usages.push({
+          label: expected.label,
+          embed: expected.embed,
+          position: context.start,
+          end: context.end,
+          line: context.line,
+          sourceMappable: false,
+        });
         continue;
       }
       if (!logicalRangeSpansRendererSegments(logical.segments, usage.position, usage.end)) {
