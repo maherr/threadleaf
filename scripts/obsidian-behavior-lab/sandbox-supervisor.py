@@ -958,6 +958,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     environment = os.environ.copy()
     environment[args.marker] = "1"
     environment["ELECTRON_OZONE_PLATFORM_HINT"] = "x11"
+    environment["HOME"] = root
     environment["XDG_CONFIG_HOME"] = os.path.join(root, "xdg-config")
     environment["XDG_CACHE_HOME"] = os.path.join(root, "xdg-cache")
     environment["XDG_DATA_HOME"] = os.path.join(root, "xdg-data")
@@ -980,6 +981,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "screen": "1440x840x24",
         },
         "network": {**network, "hostNamespace": args.host_network_namespace},
+        "environment": {
+            "home": environment["HOME"],
+            "xdgConfigHome": environment["XDG_CONFIG_HOME"],
+            "xdgCacheHome": environment["XDG_CACHE_HOME"],
+            "xdgDataHome": environment["XDG_DATA_HOME"],
+        },
         "paths": {"runRoot": root, "profile": profile_before, "vault": vault_before},
         "command": command,
         "uriDispatch": None,

@@ -17,6 +17,7 @@ manifest is `compatibility/obsidian-lab-fixture.v1.json`; generation and verific
 The reference launch is accepted only when all of these controls are present:
 
 - Flatpak `--sandbox`, `--nofilesystem=home`, and a run-root-only filesystem grant;
+- per-invocation `HOME` and XDG config/cache/data directories rooted in that randomized run root;
 - Flatpak `--unshare=network`, with a distinct network namespace proved through `/proc`;
 - an in-sandbox supervisor (host PID sharing is prohibited) that binds the installed Flatpak
   version, runtime, commit, app PID/start/argv, and the supervisor -> `/app/obsidian` -> renderer
