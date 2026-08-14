@@ -360,6 +360,31 @@ Receipts and inventory stay private, while an installed theme or snippet remains
 `.obsidian/` file or directory. Package lifecycle never changes the private selected theme or
 snippet order.
 
+### Vault-scoped accessibility preference overrides
+
+Threadleaf's accessibility document (high contrast, accent, UI/text font scale, editor font size
+and line height, reduced motion, reduced transparency) is global application state, versioned and
+persisted independently of `AppSettings` so a future migration of either document can never touch
+the other. A vault may additionally record its own override of that document. The override map is a
+third, separate private file, keyed by the same lowercase SHA-256 vault identity every other private
+per-vault document uses, so neither the global document nor `AppSettings` has to move version to add
+per-vault accessibility.
+
+Resolution is pure and read-only: a stored override always wins; a vault with no stored override
+reads the live global snapshot and is reported as being in the "global" scope, without ever writing
+an entry for it. Looking up a vault therefore can never materialize a preference for it, and a
+global preference change is immediately visible to every vault that has no override, with no extra
+propagation step. Switching the active vault is just the next resolution naming a different vault
+identity; there is no separate "current vault" state to fall out of sync. Deleting or renaming a
+vault (which changes its SHA-256 identity, since the hash is over the vault's root path) requires an
+explicit prune of its override so a reused identity can never resurrect a stale preference; pruning
+one vault's entry never touches another vault's.
+
+The vault-bound mutation seam re-checks the active vault's identity and kernel-backed mode around
+every await, so a request that crosses a vault switch mid-flight resolves `stale-vault` instead of
+being presented as a successful update for the vault it named, and a synthetic/read-only vault
+(Threadleaf Demo) rejects before any persistence is attempted.
+
 ### Community plugin lifecycle boundary
 
 Threadleaf treats `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` as
