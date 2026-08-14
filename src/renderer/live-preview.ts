@@ -107,6 +107,7 @@ export interface LivePreviewMappingScanStats {
   protectedRangeChecks: number;
   rawTextSteps: number;
   rangeSubtractionComparisons?: number;
+  nestedDestinationSteps?: number;
 }
 
 export type InlineTransclusionStatus =
@@ -331,11 +332,78 @@ function parseMarkdownLink(
   };
 }
 
+interface MarkdownDestinationScan {
+  closingByStart: Int32Array;
+  literalOpenPrefix: Int32Array;
+  steps: number;
+}
+
+/**
+ * Find the first unescaped closing parenthesis for every possible Markdown
+ * destination start. A destination's own opener is already part of the
+ * prefix balance, so the matching close is the first later balance drop.
+ * Next-lower lookup makes the whole line scan monotonic even when every
+ * destination contains another destination opener.
+ */
+function scanMarkdownDestinations(text: string): MarkdownDestinationScan {
+  const prefix = new Int32Array(text.length + 1);
+  const literalOpenPrefix = new Int32Array(text.length + 1);
+  let balance = 0;
+  let literalOpens = 0;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    prefix[index] = balance;
+    literalOpenPrefix[index] = literalOpens;
+    const character = text[index] ?? "";
+    if (escaped) {
+      if (character === "(") literalOpens += 1;
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+    } else if (character === "(") {
+      balance += 1;
+      literalOpens += 1;
+    } else if (character === ")") {
+      balance -= 1;
+    }
+  }
+  prefix[text.length] = balance;
+  literalOpenPrefix[text.length] = literalOpens;
+
+  const nextLower = new Int32Array(prefix.length);
+  nextLower.fill(-1);
+  const stack: number[] = [];
+  for (let index = prefix.length - 1; index >= 0; index -= 1) {
+    while (
+      stack.length > 0 &&
+      (prefix[stack[stack.length - 1] ?? 0] ?? 0) >= (prefix[index] ?? 0)
+    ) {
+      stack.pop();
+    }
+    nextLower[index] = stack[stack.length - 1] ?? -1;
+    stack.push(index);
+  }
+
+  const closingByStart = new Int32Array(text.length + 1);
+  closingByStart.fill(-1);
+  for (let start = 0; start < text.length; start += 1) {
+    const lower = nextLower[start] ?? -1;
+    if (lower > start) closingByStart[start] = lower - 1;
+  }
+  return {
+    closingByStart,
+    literalOpenPrefix,
+    steps: text.length + prefix.length + stack.length,
+  };
+}
+
 export function parseLivePreviewLine(
   text: string,
   lineFrom: number,
   protectedRanges: readonly SourceRange[] = [],
-  options: { footnoteIds?: ReadonlySet<string> } = {},
+  options: { footnoteIds?: ReadonlySet<string>; stats?: LivePreviewMappingScanStats } = {},
 ): ParsedInlineToken[] {
   const tokens: ParsedInlineToken[] = [];
   const occupied: SourceRange[] = [];
@@ -406,6 +474,11 @@ export function parseLivePreviewLine(
     });
   }
 
+  const destinationScan = text.includes("](") ? scanMarkdownDestinations(text) : null;
+  if (destinationScan && options.stats) {
+    options.stats.nestedDestinationSteps =
+      (options.stats.nestedDestinationSteps ?? 0) + destinationScan.steps;
+  }
   for (const match of text.matchAll(/(!?)\[([^\]\n]*)\]\(/gu)) {
     if (match.index === undefined) {
       continue;
@@ -414,37 +487,30 @@ export function parseLivePreviewLine(
     const open = match.index + (embed ? 1 : 0);
     const labelEnd = match.index + match[0].length - 2;
     const destinationFrom = match.index + match[0].length;
-    let depth = 0;
-    let destinationTo = -1;
-    for (let cursor = destinationFrom; cursor < text.length; cursor += 1) {
-      const character = text[cursor];
-      if (character === "\\") {
-        cursor += 1;
-        continue;
-      }
-      if (character === "\n") {
-        break;
-      }
-      if (character === "(") {
-        depth += 1;
-      } else if (character === ")") {
-        if (depth === 0) {
-          destinationTo = cursor;
-          break;
-        }
-        depth -= 1;
-      }
-    }
+    const destinationTo = destinationScan?.closingByStart[destinationFrom] ?? -1;
     const fallbackTo = destinationTo >= 0 ? destinationTo + 1 : text.length;
     const label = match[2] ?? text.slice(open + 1, labelEnd);
-    const rawTarget = text.slice(destinationFrom, destinationTo >= 0 ? destinationTo : text.length);
+    const rawTargetTo = destinationTo >= 0 ? destinationTo : text.length;
+    const hasLiteralOpen =
+      (destinationScan?.literalOpenPrefix[rawTargetTo] ?? 0) >
+      (destinationScan?.literalOpenPrefix[destinationFrom] ?? 0);
+    const candidate = {
+      from: lineFrom + (embed ? match.index : open),
+      to: lineFrom + fallbackTo,
+    };
+    // Once an outer fallback owns the complete nested construct, the inner
+    // candidates cannot produce a different widget. Skip them before slicing
+    // or parsing their increasingly large destination strings.
+    if (intersectsAny(candidate, protectedRanges) || intersectsAny(candidate, occupied)) {
+      continue;
+    }
+    const rawTarget = text.slice(destinationFrom, rawTargetTo);
     const link = parseMarkdownLink(rawTarget, label, embed);
-    if (!link && !rawTarget.includes("(") && depth === 0) {
+    if (!link && !hasLiteralOpen) {
       continue;
     }
     add({
-      from: lineFrom + (embed ? match.index : open),
-      to: lineFrom + fallbackTo,
+      ...candidate,
       kind: link
         ? embed
           ? rasterImagePattern.test(link.target)
@@ -455,7 +521,7 @@ export function parseLivePreviewLine(
       ...(link ? { link } : {}),
       label: link?.label ?? label.trim(),
     });
-    if (destinationTo < 0 && (rawTarget.includes("(") || depth > 0)) {
+    if (destinationTo < 0 && hasLiteralOpen) {
       // This fallback owns the rest of the line; scanning later candidates
       // could only rediscover ranges that are already source-visible.
       break;
@@ -1085,6 +1151,7 @@ export function buildLivePreviewMapping(
     options.stats.protectedRangeChecks = 0;
     options.stats.rawTextSteps = 0;
     options.stats.rangeSubtractionComparisons = 0;
+    options.stats.nestedDestinationSteps = 0;
   }
   const frontmatter = scanFrontmatter(source);
   if (frontmatter.status === "unresolved") {
@@ -1160,6 +1227,7 @@ export function buildLivePreviewMapping(
       parsed.push(
         ...parseLivePreviewLine(line, lineFrom, localProtectedRanges, {
           footnoteIds: footnotes.ids,
+          stats: options.stats,
         }),
       );
     }
