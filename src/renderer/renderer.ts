@@ -127,6 +127,7 @@ import {
 import {
   applyEditorTextHistoryEntry,
   boundedEditorTextHistory,
+  boundedEditorTextRedoHistory,
   captureEditorTextHistoryEntry,
   type EditorTextHistoryChange,
   type EditorTextHistoryEntry,
@@ -1194,7 +1195,7 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
   loadedVaultId = session.loadedVaultId;
   loadedTextRepresentation = session.loadedTextRepresentation;
   editorTextUndoHistory = boundedEditorTextHistory(session.editorTextUndoHistory);
-  editorTextRedoHistory = boundedEditorTextHistory(session.editorTextRedoHistory);
+  editorTextRedoHistory = boundedEditorTextRedoHistory(session.editorTextRedoHistory);
   pendingDiskNote = session.pendingDiskNote;
   diskChanged = session.diskChanged;
   editNoticeState = session.editNoticeState;
@@ -1363,7 +1364,7 @@ function updateEditorTextRepresentation(update: ViewUpdate): void {
             );
           }
         }
-        editorTextRedoHistory = boundedEditorTextHistory([...moved, ...editorTextRedoHistory]);
+        editorTextRedoHistory = boundedEditorTextRedoHistory([...moved, ...editorTextRedoHistory]);
       } else {
         const moved = sourceHistory.splice(0, targetIndex + 1);
         for (const entry of moved) {

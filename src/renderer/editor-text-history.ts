@@ -23,10 +23,32 @@ export interface EditorTextHistoryEntry {
 /** Keep metadata bounded even if CodeMirror's own history depth is extended. */
 export const maxEditorTextHistoryEntries = 256;
 
+/**
+ * Bound the undo stack. It is chronological (oldest entry at index 0,
+ * most recently captured edit at the end -- `editorHistoryTarget`'s "undo"
+ * direction walks backward from the end), so the far end of its
+ * consumption order is the front: evict there and keep the tail.
+ */
 export function boundedEditorTextHistory(
   history: readonly EditorTextHistoryEntry[],
 ): EditorTextHistoryEntry[] {
   return history.slice(-maxEditorTextHistoryEntries);
+}
+
+/**
+ * Bound the redo stack. Its consumption order runs the opposite direction
+ * from the undo stack: each undo prepends the newly-undone batch to the
+ * front, and `editorHistoryTarget`'s "redo" direction walks forward from
+ * index 0, so index 0 is always the entry closest to being redone next.
+ * The far end of ITS consumption order is therefore the tail -- evict
+ * there and keep the front, or growing past the cap silently discards the
+ * entries a redo would reach first instead of the ones it would reach
+ * last.
+ */
+export function boundedEditorTextRedoHistory(
+  history: readonly EditorTextHistoryEntry[],
+): EditorTextHistoryEntry[] {
+  return history.slice(0, maxEditorTextHistoryEntries);
 }
 
 function newlineCount(source: string): number {
