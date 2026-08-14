@@ -838,6 +838,13 @@ try {
     "The isolated surface did not switch to light mode",
   );
   await captureScreenshot("live-preview-light-split");
+  await evaluate(`(() => {
+    const scroller = document.querySelector('[data-pane-id="primary"] .cm-scroller');
+    if (scroller instanceof HTMLElement) scroller.scrollTop = scroller.scrollHeight;
+    return true;
+  })()`);
+  await delay(100);
+  await captureScreenshot("live-preview-light-lower");
 
   phase = "explicit persisted Source preference";
   // At the intentionally narrow split width the primary toolbar can be
