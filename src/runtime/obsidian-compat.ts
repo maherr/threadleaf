@@ -1041,7 +1041,7 @@ function normalizeFrontmatterTag(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
-  const normalized = value.trim().replace(/^#+/u, "");
+  const normalized = value.trim().replace(/^#+/u, "").replace(/\/+$/u, "");
   return isValidTagBody(normalized) ? `#${normalized}` : null;
 }
 
@@ -1097,7 +1097,7 @@ function inlineTagCaches(content: string): TagCache[] {
   const searchable = maskMarkdownCodeAndComments(content);
   const tags: TagCache[] = [];
   for (const match of searchable.matchAll(/(?:^|[\s(])#([\p{L}\p{M}\p{N}\p{S}_/-]+)/gu)) {
-    const tag = match[1];
+    const tag = match[1]?.replace(/\/+$/u, "");
     if (match.index === undefined || !tag || !isValidTagBody(tag)) {
       continue;
     }
@@ -1192,7 +1192,7 @@ export class MetadataCache {
         const parts = normalized.slice(1).split("/");
         for (let length = 1; length <= parts.length; length += 1) {
           const parent = `#${parts.slice(0, length).join("/")}`;
-          if (parent !== "#") {
+          if (parent !== "#" && !/^#\d+$/u.test(parent)) {
             counts.set(parent, (counts.get(parent) ?? 0) + 1);
           }
         }

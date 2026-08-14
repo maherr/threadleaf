@@ -74,32 +74,22 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
 
   it("aggregates hierarchical tags, strips a final slash, and consolidates case", async () => {
     // Public API shape: https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
+    // Real-parser fixtures: host-verified against Obsidian 1.13.7 — a terminal
+    // slash is stripped then participates in hierarchy counting, and numeric-only
+    // ancestors are never synthesized (#2024/notes is kept, #2024 is not).
     const { vault } = await createTemporaryVault({
       "First.md": "#Home/Child\n",
       "Second.md": "#home/child #home/child #home\n",
       "Third.md": "#trail/child/\n",
+      "Numeric.md": "#2024/notes\n",
     });
     const metadataCache = new MetadataCache(vault);
-    const getFileCache = metadataCache.getFileCache.bind(metadataCache);
-    metadataCache.getFileCache = (file) =>
-      file?.path === "Third.md"
-        ? {
-            tags: [
-              {
-                tag: "#trail/child/",
-                position: {
-                  start: { line: 0, col: 0, offset: 0 },
-                  end: { line: 0, col: 13, offset: 13 },
-                },
-              },
-            ],
-          }
-        : getFileCache(file);
     expect(metadataCache.getTags()).toEqual({
       "#home": 4,
       "#home/child": 3,
       "#trail": 1,
       "#trail/child": 1,
+      "#2024/notes": 1,
     });
   });
 
