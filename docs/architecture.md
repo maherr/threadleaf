@@ -385,6 +385,12 @@ every await, so a request that crosses a vault switch mid-flight resolves `stale
 being presented as a successful update for the vault it named, and a synthetic/read-only vault
 (Threadleaf Demo) rejects before any persistence is attempted.
 
+This subsystem is a foundation, not yet a user-facing feature: the mutation seam has no `main.ts`
+IPC registration and no renderer consumer, and nothing calls the prune primitive from a real vault
+lifecycle event yet. The adjacent `LatestPluginSurfacePropagation` helper is likewise fully tested
+but unconsumed; its intended consumer is the propagation of resolved preferences into isolated
+plugin renderer surfaces when that wiring lands.
+
 ### Community plugin lifecycle boundary
 
 Threadleaf treats `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` as
