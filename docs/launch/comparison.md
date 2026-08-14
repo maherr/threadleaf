@@ -10,7 +10,7 @@ about Obsidian describe widely known, stable facts about its product; Obsidian's
 public, so those statements are general knowledge rather than citations into a repository, and are
 kept intentionally general rather than pinned to specific numbers that could go stale.
 
-This is written against Threadleaf 0.1.0-beta.3, commit `8a9eddb34f4c69067c497719c3d77a3169c90635`.
+This is written against Threadleaf 0.1.0-beta.3, commit `e460e83695b7fc970de89edf6004c8dcb3d675d4`.
 Threadleaf is a young beta. Read this alongside the [project charter](../charter.md) and
 [roadmap](../roadmap.md), which are more current than any snapshot comparison can stay.
 
@@ -21,14 +21,15 @@ Threadleaf is a young beta. Read this alongside the [project charter](../charter
 Threadleaf's application core is licensed `AGPL-3.0-or-later` (see [`LICENSE`](../../LICENSE) and
 the `license` field in [`package.json`](../../package.json)). The full source, including the vault
 kernel, the compatibility host, and the release tooling, is in this repository. Obsidian's
-application is closed source: it is free to use and has a plugin API, but its own core is not
-published, and organizational use requires a paid commercial license.
+application is closed source: it is free to use, including for commercial use, and has a plugin
+API, but its own core is not published.
 
-### Interruption-proof, recoverable vault writes
+### Interruption-tested, recoverable vault writes
 
-Every write to a user's vault goes through a durable, no-clobber writer with a crash-recovery
-journal, and an external edit becomes an explicit, labeled conflict copy instead of a silent
-overwrite. This is a stated project invariant, not an incidental property: see
+Every write to a user's notes and attachments goes through a durable, no-clobber writer with a
+crash-recovery journal (plugin-package installs are a separate, staged-rename path and are out of
+scope for this claim). An external edit becomes an explicit, labeled conflict copy instead of a
+silent overwrite. This is a stated project invariant, not an incidental property: see
 [`AGENTS.md`](../../AGENTS.md) ("User-vault mutations must be explicit, atomic, recoverable, and
 tested under interruption"), the [project charter](../charter.md)'s invariant 6 ("Every write path
 is tested under interruption before it reaches user vaults"), and its "what better means" list,
@@ -36,10 +37,12 @@ which names "atomic writes, recovery, snapshots, and explicit conflict handling"
 [roadmap's Phase 1 exit gate](../roadmap.md) records "58 automated tests cover the interruption
 matrix, external races, single and multi-file recovery, live watcher delivery and fallbacks,
 operation attribution, and index equivalence through the real writer-to-watcher seam." The same
-behavior is reachable from the CLI: `move`, `rename`, `delete`, `append`, `prepend`, `create`,
+behavior is reachable from the CLI, though not uniformly: `create`, `append`, `prepend`,
 `property:set`, and `task` all return a `CONFLICT` exit code and preserve the losing write as a
-conflict copy when an external edit wins a revision race, documented in
-[`docs/cli.md`](../cli.md).
+conflict copy when an external edit wins a revision race; `move` and `rename` do the same
+specifically when link rewrites are part of the transaction; `delete` returns `CONFLICT` and
+changes nothing rather than writing a second copy, because a prior trash entry at that path simply
+blocks the operation instead of racing one. See [`docs/cli.md`](../cli.md).
 
 ### Measured, per-plugin, per-exact-version compatibility
 
@@ -70,7 +73,7 @@ build work.
 
 ### No account, no network requirement
 
-Threadleaf's core promise is that it works fully offline. The charter lists "no account or network
+Working fully offline is a core commitment for Threadleaf. The charter lists "no account or network
 requirement" under "what better means" and "offline operation remains complete" as invariant 9 (see
 [`docs/charter.md`](../charter.md)). The Settings "About and updates" page performs no startup or
 background network check; checking, downloading, and installing an update are three separate,
@@ -79,7 +82,7 @@ all (see [`docs/releases.md`](../releases.md), "Manual signed updates"). The pri
 bundle described in [`docs/beta-feedback.md`](../beta-feedback.md) is saved locally, and "nothing is
 uploaded."
 
-### Two smaller things worth knowing about
+### Three smaller things worth knowing about
 
 - **An executable, implementation-neutral same-vault behavior corpus.** The fixture at
   [`fixtures/corpus/same-vault-v1/`](../../fixtures/corpus/same-vault-v1/) is a deterministic,
@@ -93,6 +96,22 @@ uploaded."
   `pnpm public-spec:check` verifies the generated output has not drifted from that evidence. See
   [`public-spec/README.md`](../../public-spec/README.md) and
   [`public-spec/SPECIFICATION.md`](../../public-spec/SPECIFICATION.md).
+- **An executable deuteranomaly compatibility gate.**
+  [`scripts/check-community-theme-matrix.mjs`](../../scripts/check-community-theme-matrix.mjs)
+  simulates Machado 2009 deutan color vision at both 0.6 (moderate) and 0.8 (stress) severity and
+  compares every measured color pair by CIEDE2000, sorting each into one of three tiers: failed
+  below 7, a thin band from 7 up to 11 that only passes when the same case also carries an
+  independently measured, actually painted redundant cue that itself clears 11, and a clear pass at
+  11 or above. Four adversarial red controls, one per failure tier the gate can produce plus a
+  check that an unpainted redundant cue cannot rescue a thin pair, prove the gate can actually
+  fail. The offline check, `pnpm run community-theme:integrity`, runs inside `pnpm check` and
+  inside all six CI and release jobs that build a package; the live capture, `pnpm run
+  community-theme:check`, renders three real, permissively licensed community themes under Xvfb and
+  compares the result against committed baselines. Read honestly: as of this writing it reports two
+  open findings against Threadleaf's own default styling, not against the third-party themes; only
+  the Minimal theme is fully live-verified, and Wikipedia and Sanctum remain pending because their
+  measured separations land under the gate's own hard-fail floor. See
+  [`docs/compatibility/community-themes-v1.md`](../compatibility/community-themes-v1.md).
 
 ## Where Obsidian is ahead today
 
@@ -103,7 +122,7 @@ workflows: task managers, spaced repetition, citation tools, calendars, database
 more. Threadleaf's generated registry currently lists exactly two evidence-backed entries (see
 [`docs/compatibility/registry.md`](../compatibility/registry.md)), by design: a plugin is added
 only after a named workflow passes against a real fixture, not merely because it is discovered in a
-vault. That discipline is why the number is small today, but it is small today.
+vault. That discipline, not a lack of effort, is why the number is small today.
 
 ### Mobile
 
@@ -120,10 +139,9 @@ workflow refinement. Threadleaf is an early-stage beta. Its own roadmap lists op
 math, diagrams, and large-document editing in Live Preview beyond current partial support, JSON
 Canvas editing, high-contrast and localization support, and accessibility audits across every
 reachable control (see [`docs/roadmap.md`](../roadmap.md), Phase 5). Its
-[security policy](../../SECURITY.md) states this directly: "Threadleaf is pre-alpha and must not be
-trusted with important vaults yet." That line predates the beta status declared elsewhere in this
-repository and both should be read as: young software, not yet a safe daily driver for anyone but a
-maintainer keeping an external backup.
+[security policy](../../SECURITY.md) says it plainly: "Threadleaf is an early-stage beta. Keep an
+ordinary external backup of any vault you use with it, and do not rely on it as your only copy of
+important notes yet."
 
 ### A working hosted sync service
 
@@ -165,6 +183,15 @@ pnpm run corpus:check
 pnpm run compatibility:check
 pnpm run test:package-reproducible
 pnpm public-spec:check
+pnpm run community-theme:integrity
 ```
 
 These are the same commands this document cites, not a separate marketing demo.
+
+The repository also ships a small, original demo vault for exactly this kind of hands-on check;
+open it with the same CLI cited throughout this document instead of taking any of its behavior on
+faith:
+
+```sh
+pnpm run build:main && node dist/main/cli.cjs --vault fixtures/vaults/demo vault info
+```
