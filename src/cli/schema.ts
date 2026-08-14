@@ -1369,6 +1369,30 @@ function allOptionIds(): readonly CliGlobalOptionId[] {
   return cliGlobalOptions.map((option) => option.id);
 }
 
+/** Whether a command spelling remains parser-eligible after root options were consumed. */
+export function commandAllowsConsumedOptions(
+  spec: CliCommandSpec,
+  consumedOptionIds: readonly CliGlobalOptionId[],
+): boolean {
+  const allowedOptionIds = spec.id === "help" ? allOptionIds() : spec.globalOptions;
+  return consumedOptionIds.every((optionId) => allowedOptionIds.includes(optionId));
+}
+
+function disallowedRootOptionIds(spec: CliCommandSpec): CliGlobalOptionId[] {
+  return allOptionIds().filter((optionId) => !commandAllowsConsumedOptions(spec, [optionId]));
+}
+
+function bashCommandAllowedCondition(spec: CliCommandSpec): string {
+  const disallowed = disallowedRootOptionIds(spec);
+  return disallowed.length === 0
+    ? "true"
+    : disallowed.map((optionId) => `(( ! ${shellOptionVariable(optionId)}_seen ))`).join(" && ");
+}
+
+function zshCommandAllowedCondition(spec: CliCommandSpec): string {
+  return bashCommandAllowedCondition(spec);
+}
+
 function shellOptionVariable(id: CliGlobalOptionId): string {
   return id.replaceAll("-", "_");
 }
@@ -1781,6 +1805,28 @@ function zshRootOptionCandidates(): string {
     .join("\n");
 }
 
+function bashRootCommandCandidates(): string {
+  return cliCommandSpecs
+    .flatMap((spec) =>
+      spec.names.map(
+        (name) =>
+          `    if ${bashCommandAllowedCondition(spec)}; then candidates+=(${bashQuote(name)}); fi`,
+      ),
+    )
+    .join("\n");
+}
+
+function zshRootCommandCandidates(): string {
+  return cliCommandSpecs
+    .flatMap((spec) =>
+      spec.names.map(
+        (name) =>
+          `    if ${zshCommandAllowedCondition(spec)}; then candidates+=(${zshQuote(name)}); fi`,
+      ),
+    )
+    .join("\n");
+}
+
 function bashStaticCandidatesCases(): string {
   return cliCommandSpecs
     .flatMap((spec) =>
@@ -2087,6 +2133,22 @@ function fishOptionConflictCases(): string {
     .join("\n");
 }
 
+function fishCommandAllowedCases(): string {
+  return cliCommandSpecs
+    .map((spec) => {
+      const disallowed = disallowedRootOptionIds(spec);
+      return [
+        `    case ${spec.names.map(fishQuote).join(" ")}`,
+        ...disallowed.map(
+          (optionId) =>
+            `      if __threadleaf_fish_option_consumed ${fishQuote(optionId)}; return 1; end`,
+        ),
+        "      return 0",
+      ].join("\n");
+    })
+    .join("\n");
+}
+
 function powershellArgumentKey(spec: CliCommandSpec, group: string): string {
   return spec.id + ":" + group;
 }
@@ -2127,6 +2189,27 @@ function powershellValueValidationFunctions(): string[] {
     "    'plugin-id' { return $Value -cmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' }",
     "    'property-name' { return $Value -cmatch '^[A-Za-z0-9_-]+$' }",
     "    'tag-name' { $normalized = $Value -creplace '^#', ''; return $normalized -cmatch '^[\\p{L}\\p{N}_/-]+$' }",
+    "  }",
+    "  return $false",
+    "}",
+  ];
+}
+
+function powershellCommandAllowedFunction(): string[] {
+  return [
+    "function Test-ThreadleafCommandAllowsConsumedOptions {",
+    "  param([string]$Command, [string[]]$Consumed)",
+    "  switch -CaseSensitive ($Command) {",
+    ...cliCommandSpecs.flatMap((spec) => {
+      const disallowed = disallowedRootOptionIds(spec);
+      const condition =
+        disallowed.length === 0
+          ? "$true"
+          : disallowed
+              .map((optionId) => "$Consumed -notcontains " + powershellQuote(optionId))
+              .join(" -and ");
+      return spec.names.map((name) => `    ${powershellQuote(name)} { return ${condition} }`);
+    }),
     "  }",
     "  return $false",
     "}",
@@ -2327,7 +2410,6 @@ function powershellOptionCandidatesCases(): string {
 }
 
 function bashScript(): string {
-  const commandNames = allCommandNames();
   return [
     "# bash completion for Threadleaf (generated from the CLI schema)",
     ...shellValueValidationFunctions(),
@@ -2391,7 +2473,7 @@ function bashScript(): string {
     "      esac",
     "    fi",
     '  elif [[ -z "$command" ]]; then',
-    `    candidates=(${commandNames.map(bashQuote).join(" ")})`,
+    bashRootCommandCandidates(),
     "  else",
     '    case "$command" in',
     bashStaticCandidatesCases(),
@@ -2424,7 +2506,6 @@ function bashScript(): string {
 }
 
 function zshScript(): string {
-  const commandNames = allCommandNames();
   return [
     "#compdef threadleaf",
     "# zsh completion for Threadleaf (generated from the CLI schema)",
@@ -2487,7 +2568,7 @@ function zshScript(): string {
     "      esac",
     "    fi",
     '  elif [[ -z "$command" ]]; then',
-    `    candidates=(${commandNames.map(zshQuote).join(" ")})`,
+    zshRootCommandCandidates(),
     "  else",
     '    case "$command" in',
     zshStaticCandidatesCases(),
@@ -2806,11 +2887,17 @@ function fishScript(): string {
     "end",
     "",
     "function __threadleaf_fish_can_offer_command",
+    '  set -l wanted "$argv[1]"',
     "  if __threadleaf_fish_state pending; return 1; end",
     "  if __threadleaf_fish_state invalid; return 1; end",
     "  if __threadleaf_fish_state terminator; return 1; end",
     "  set -l command (__threadleaf_fish_state command)",
-    '  test -z "$command"',
+    '  test -z "$command"; or return 1',
+    '  switch "$wanted"',
+    fishCommandAllowedCases(),
+    "    case '*'",
+    "      return 1",
+    "  end",
     "end",
     "",
     "function __threadleaf_fish_command_is",
@@ -2822,7 +2909,7 @@ function fishScript(): string {
     "",
     ...commandNames.map(
       (name) =>
-        `complete -c threadleaf -f -n '__threadleaf_fish_can_offer_command' -a ${fishQuote(name)}`,
+        `complete -c threadleaf -f -n ${fishCondition(`__threadleaf_fish_can_offer_command ${name}`)} -a ${fishQuote(name)}`,
     ),
   ];
   for (const option of cliGlobalOptions) {
@@ -2883,6 +2970,7 @@ function powershellScript(): string {
   return [
     "# PowerShell completion for Threadleaf (generated from the CLI schema)",
     ...powershellValueValidationFunctions(),
+    ...powershellCommandAllowedFunction(),
     "function Test-ThreadleafCompletionOptionValue {",
     "  param([string]$OptionId, [string]$Value)",
     "  switch -CaseSensitive ($OptionId) {",
@@ -2974,7 +3062,10 @@ function powershellScript(): string {
     "  if ($afterTerminator) { return }",
     "  $wordToComplete = ConvertTo-ThreadleafCompletionText $wordToComplete",
     "  if ($wordToComplete -eq '--') { return }",
-    "  $candidates = $allCommands",
+    "  $candidates = @()",
+    "  foreach ($candidate in $allCommands) {",
+    "    if (Test-ThreadleafCommandAllowsConsumedOptions $candidate $consumed) { $candidates += $candidate }",
+    "  }",
     "  if ($wordToComplete.StartsWith('-')) {",
     ...cliGlobalOptions
       .filter((option) => option.takesValue)

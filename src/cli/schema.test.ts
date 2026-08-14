@@ -10,6 +10,7 @@ import {
   cliHelpTopics,
   cliShells,
   cliUsageLines,
+  commandAllowsConsumedOptions,
   completionStaticWordsForCommand,
   completionWordsForCommand,
   generateCliCompletion,
@@ -104,26 +105,6 @@ function completionCandidateToken(word: string): string {
     value: "fixture",
   };
   return word + (values[key] ?? "fixture");
-}
-
-function completionOptionArgs(token: string): string[] {
-  const option = parseCliOptionToken(token);
-  if (
-    !option ||
-    option.inlineValue !== null ||
-    !cliGlobalOptions.find((item) => item.id === option.id)?.takesValue
-  ) {
-    return [token];
-  }
-  const values: Record<string, string> = {
-    vault: "/vault",
-    directory: "Notes",
-    limit: "5",
-    content: "fixture content",
-    to: "Archive/Note.md",
-    name: "Renamed",
-  };
-  return [token, values[option.id] ?? "fixture"];
 }
 
 function completionCommandPrefix(
@@ -287,6 +268,24 @@ function completionCandidateArgs(
   }
 }
 
+function parserValidSuffixForCommand(
+  spec: (typeof cliCommandSpecs)[number],
+  spelling: string,
+): string[] {
+  const prefix = completionCommandPrefix(spec, spelling);
+  const parserCandidates = [
+    prefix,
+    ...completionStaticWordsForCommand(spelling).map((word) =>
+      completionCandidateArgs(spec, spelling, word),
+    ),
+  ];
+  const accepted = parserCandidates.find(parserAccepts);
+  if (!accepted) {
+    throw new Error(`No parser-valid completion suffix for ${spelling}`);
+  }
+  return accepted.slice(prefix.length);
+}
+
 interface CompletionState {
   args: string[];
   label: string;
@@ -337,10 +336,30 @@ function completionInvocationWords(state: CompletionState, current: string): str
   return ["threadleaf", ...state.args, current];
 }
 
+function rootStateHasOption(state: CompletionState, optionId: string): boolean {
+  return state.args.some((token) => parseCliOptionToken(token)?.id === optionId);
+}
+
 function completionCandidateArgsForState(state: CompletionState, candidate: string): string[] {
-  return candidate.startsWith("-")
-    ? [...state.args, ...completionOptionArgs(candidate)]
-    : [...state.args, completionCandidateToken(candidate)];
+  if (state.label.startsWith("root") && !candidate.startsWith("-")) {
+    const spec = cliCommandSpecs.find((item) => item.names.includes(candidate));
+    if (spec) {
+      const vault =
+        spec.requiresVault && !rootStateHasOption(state, "vault") ? ["--vault", "/vault"] : [];
+      return [...state.args, candidate, ...vault, ...parserValidSuffixForCommand(spec, candidate)];
+    }
+  }
+  return [...state.args, candidate];
+}
+
+function completionCandidateIsParserPrefix(candidate: string): boolean {
+  if (candidate.endsWith("=")) return true;
+  const option = parseCliOptionToken(candidate);
+  return (
+    option !== null &&
+    option.inlineValue === null &&
+    (cliGlobalOptions.find((item) => item.id === option.id)?.takesValue ?? false)
+  );
 }
 
 async function shellOutputByState(
@@ -1423,12 +1442,11 @@ describe("CLI schema and generated completion", () => {
           for (const current of ["empty", "-"]) {
             const candidates = output.get(`${current}:${index}`) ?? [];
             for (const candidate of candidates) {
-              // Root command names are intentionally incomplete until their
-              // required command arguments are supplied. Root options and
-              // every candidate after a parser-accepted command state must
-              // still be accepted by the real parser.
-              if (state.label.startsWith("root") && !candidate.startsWith("-")) continue;
               const args = completionCandidateArgsForState(state, candidate);
+              if (completionCandidateIsParserPrefix(candidate)) {
+                expect(args.at(-1), `${shell} ${state.label} ${candidate}`).toBe(candidate);
+                continue;
+              }
               expect(
                 () => parseCliArguments(args),
                 `${shell} ${state.label} ${candidate}`,
@@ -1457,6 +1475,149 @@ describe("CLI schema and generated completion", () => {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it("keeps root eligibility and literal parser-oracle candidates visible", async () => {
+    const completionSpec = cliCommandSpecs.find((spec) => spec.id === "completion");
+    const helpSpec = cliCommandSpecs.find((spec) => spec.id === "help");
+    const searchSpec = cliCommandSpecs.find((spec) => spec.id === "search");
+    if (!completionSpec || !helpSpec || !searchSpec) {
+      throw new Error("CLI completion regression fixtures are missing their command specs");
+    }
+    expect(commandAllowsConsumedOptions(completionSpec, ["vault"])).toBe(false);
+    expect(commandAllowsConsumedOptions(helpSpec, ["vault"])).toBe(true);
+    expect(commandAllowsConsumedOptions(searchSpec, ["directory", "limit"])).toBe(true);
+    expect(commandAllowsConsumedOptions(searchSpec, ["content"])).toBe(false);
+
+    const temporaryRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-cli-root-eligibility-"),
+    );
+    const bashPath = path.join(temporaryRoot, "threadleaf.bash");
+    const fishPath = path.join(temporaryRoot, "threadleaf.fish");
+    const rootCases: Array<{ args: string[]; present: string[]; absent: string[] }> = [
+      {
+        args: ["--vault", "/v"],
+        present: ["help", "vault"],
+        absent: ["completion"],
+      },
+      {
+        args: ["--directory", "Notes"],
+        present: ["help", "files", "search", "search:context"],
+        absent: ["completion", "vault"],
+      },
+      {
+        args: ["--limit", "5"],
+        present: ["help", "search", "search:context"],
+        absent: ["completion", "vault"],
+      },
+      {
+        args: ["--content="],
+        present: ["help", "create", "append", "prepend", "daily:append", "daily:prepend"],
+        absent: ["completion", "search"],
+      },
+    ];
+    try {
+      await fs.writeFile(bashPath, generateCliCompletion("bash"), "utf8");
+      await fs.writeFile(fishPath, generateCliCompletion("fish"), "utf8");
+      for (const { args, present, absent } of rootCases) {
+        const bash = runShell(
+          "bash",
+          bashPath,
+          bashCompletionCommand(["threadleaf", ...args, ""]),
+          temporaryRoot,
+        );
+        const fish = runShell(
+          "fish",
+          fishPath,
+          fishCompletionCommand(["threadleaf", ...args, ""].join(" ")),
+          temporaryRoot,
+        );
+        for (const candidate of present) {
+          expect(bash, `bash ${args.join(" ")}`).toContain(candidate);
+          expect(fish, `fish ${args.join(" ")}`).toContain(candidate);
+        }
+        for (const candidate of absent) {
+          expect(bash, `bash ${args.join(" ")}`).not.toContain(candidate);
+          expect(fish, `fish ${args.join(" ")}`).not.toContain(candidate);
+        }
+      }
+
+      const searchState: CompletionState = {
+        args: ["--vault", "/v", "search", "query=needle"],
+        label: "search query=needle",
+      };
+      expect(completionCandidateArgsForState(searchState, "format=json")).toEqual([
+        ...searchState.args,
+        "format=json",
+      ]);
+      expect(completionCandidateArgsForState(searchState, "format=")).toEqual([
+        ...searchState.args,
+        "format=",
+      ]);
+      expect(completionCandidateArgsForState(searchState, "--limit")).toEqual([
+        ...searchState.args,
+        "--limit",
+      ]);
+
+      const rootCompletion = completionCandidateArgsForState(
+        { args: [], label: "root" },
+        "completion",
+      );
+      expect(rootCompletion).toEqual(["completion", "bash"]);
+      const rootSearch = completionCandidateArgsForState({ args: [], label: "root" }, "search");
+      expect(rootSearch[0]).toBe("search");
+      expect(parserAccepts(rootSearch)).toBe(true);
+
+      const literalParserCases: Array<{ args: string[]; accepted: boolean; label: string }> = [
+        {
+          args: ["--vault", "/v", "search", "query=needle", "--limit"],
+          accepted: false,
+          label: "missing option value",
+        },
+        {
+          args: ["--vault", "/v", "search", "query="],
+          accepted: false,
+          label: "empty query",
+        },
+        {
+          args: ["--vault", "/v", "files", "folder="],
+          accepted: false,
+          label: "empty static value",
+        },
+        {
+          args: ["--vault", "/v", "search", "query=needle", "path=Notes", "--directory", "Notes"],
+          accepted: false,
+          label: "static/global conflict",
+        },
+        {
+          args: ["--vault", "/v", "search", "query=needle", "--limit=1", "--limit=2"],
+          accepted: false,
+          label: "duplicate option",
+        },
+        { args: ["--vault", "/v", "SEARCH"], accepted: false, label: "case-sensitive command" },
+        { args: ["completion", "BASH"], accepted: false, label: "case-sensitive completion" },
+        {
+          args: ["completion", "bash", "extra"],
+          accepted: false,
+          label: "completion terminal state",
+        },
+        {
+          args: ["--help", "search"],
+          accepted: true,
+          label: "help terminal state",
+        },
+        {
+          args: ["--vault", "/v", "create", "Note", "--content="],
+          accepted: true,
+          label: "empty content allowed by schema",
+        },
+      ];
+      for (const testCase of literalParserCases) {
+        expect(parserAccepts(testCase.args), testCase.label).toBe(testCase.accepted);
+      }
+    } finally {
+      await fs.rm(temporaryRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("uses TabExpansion2 when PowerShell exists and keeps a deterministic fallback otherwise", async () => {
     const powershell = executable("pwsh") ?? executable("powershell");
