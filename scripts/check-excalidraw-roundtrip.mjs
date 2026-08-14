@@ -291,7 +291,10 @@ async function writePluginFixture() {
   const plugin = await fetchPublicPlugin();
   assertPinnedPlugin(plugin);
   await fs.mkdir(pluginPath, { recursive: true });
-  await fs.writeFile(path.join(pluginPath, "manifest.json"), plugin.manifestBytes);
+  await fs.writeFile(
+    path.join(pluginPath, "manifest.json"),
+    JSON.stringify(plugin.manifest, null, 2),
+  );
   await fs.writeFile(path.join(pluginPath, "main.js"), plugin.main);
   if (plugin.styles) await fs.writeFile(path.join(pluginPath, "styles.css"), plugin.styles);
   await fs.writeFile(
