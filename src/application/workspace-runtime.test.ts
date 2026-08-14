@@ -3528,6 +3528,46 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
   }, 30000);
 
+  it("gives an absence its scan budget back once the filesystem answers again", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    const target = path.join(vaultPath, "Welcome.md");
+    await fs.rename(target, path.join(sandboxPath, "Welcome.md.aside"));
+    await workspace.reconcileNow();
+
+    const realpath = fs.realpath;
+    let unreadable = true;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (unreadable && typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
+        error.code = "EIO";
+        throw error;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+    for (let pass = 0; pass < 20; pass += 1) {
+      await workspace.reconcileNow();
+    }
+
+    const followUps = vi.spyOn(workspace.watcher, "requestFollowUpScan");
+    await workspace.reconcileNow();
+    expect(followUps.mock.calls).toHaveLength(0);
+
+    // The budget is spent on reads that answered nothing. Once the filesystem is
+    // answering again the absence has somewhere to get to, and an absence left
+    // stranded on a budget it burned while blind is one no later scan reaches.
+    unreadable = false;
+    await workspace.reconcileNow();
+    expect(followUps.mock.calls.length).toBeGreaterThan(0);
+    expect(tabPaths(await workspace.getSnapshot())).toContain("Welcome.md");
+  }, 30000);
+
   it("restores a deferred tab when the workspace is reopened mid-window", async () => {
     const store = new MemoryWorkspaceStateStore();
     const workspace = await openPinnedPair(store);
@@ -3782,6 +3822,12 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(during.workspace?.tabs).toContainEqual(
       expect.objectContaining({ path: "Boards/Overview.canvas", pinned: true, active: true }),
     );
+    // Republished exactly as it was, not emptied to a waiting state. A canvas
+    // view is a live surface with its own view state, and rebuilding it for a
+    // gap nobody caused throws away everything the pane was showing - which is
+    // the same reason an active note is republished rather than re-read.
+    expect(during.workspace?.panes[0]?.activeUnavailable ?? null).toBeNull();
+    expect(during.workspace?.panes[0]?.activeCanvas?.path).toBe("Boards/Overview.canvas");
 
     await fs.rename(asidePath, target);
     const settled = await workspace.reconcileNow();

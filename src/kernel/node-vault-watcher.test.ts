@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { revisionOf } from "./durability";
 import {
   captureVaultBootstrap,
@@ -628,6 +628,66 @@ describe("transient absence attribution timing", () => {
 
     expect(annotated[0]?.operationId).toBeUndefined();
     expect(ledger.size).toBe(1);
+  });
+
+  /**
+   * Drive one scan whose walk both takes and releases a claim on `Held.md`,
+   * which is the window the scan's own mark exists to cover. Only a scan that
+   * took its mark before walking, and asked what was held since then, can still
+   * attribute the deletion it is about to report.
+   */
+  async function scanAcrossAReleasedClaim(
+    scan: (watcher: NodeVaultWatcher) => Promise<VaultChangeBatch | null>,
+  ): Promise<{ batch: VaultChangeBatch | null; absences: VaultTransientAbsences }> {
+    await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Notes", "Held.md"), "# Held\n", "utf8");
+    const absences = new VaultTransientAbsences();
+    const watcher = await NodeVaultWatcher.open(vaultPath, { transientAbsences: absences });
+    const handle = absences.reserve("Notes/Held.md");
+    const listMarkdownPaths = watcher.policy.listMarkdownPaths.bind(watcher.policy);
+    let walks = 0;
+    const spy = vi
+      .spyOn(watcher.policy, "listMarkdownPaths")
+      .mockImplementation(async (relativeDirectory?: string) => {
+        walks += 1;
+        if (walks > 1) {
+          return listMarkdownPaths(relativeDirectory);
+        }
+        handle.hold("write-held");
+        await fs.rename(
+          path.join(vaultPath, "Notes", "Held.md"),
+          path.join(sandboxPath, "Held.md.aside"),
+        );
+        const paths = await listMarkdownPaths(relativeDirectory);
+        handle.release();
+        return paths;
+      });
+    try {
+      const batch = await scan(watcher);
+      return { batch, absences };
+    } finally {
+      spy.mockRestore();
+      await watcher.close();
+    }
+  }
+
+  it("marks a full scan before walking, so a claim released inside it still attributes", async () => {
+    const { batch, absences } = await scanAcrossAReleasedClaim((watcher) => watcher.scanNow());
+
+    // Nothing holds the path by the time the diff is annotated, which is the
+    // ordinary case on any vault whose walk outlasts the transaction.
+    expect(absences.operationFor("Notes/Held.md")).toBeUndefined();
+    expect(batch?.changes).toEqual([
+      { kind: "delete", path: "Notes/Held.md", transientOperationId: "write-held" },
+    ]);
+  });
+
+  it("marks a subtree scan before walking too", async () => {
+    const { batch } = await scanAcrossAReleasedClaim((watcher) => watcher.scanSubtree("Notes"));
+
+    expect(batch?.changes).toEqual([
+      { kind: "delete", path: "Notes/Held.md", transientOperationId: "write-held" },
+    ]);
   });
 
   it("refuses to settle a rewritten move source with a transient deletion", () => {

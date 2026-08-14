@@ -1969,6 +1969,15 @@ export class WorkspaceRuntime {
     return this.publishSnapshot(await this.pluginHost.unloadAllPlugins());
   }
 
+  /**
+   * Reconcile against the vault once, without waiting for the watcher.
+   *
+   * A test seam. Nothing in the application calls it, and nothing has to: a
+   * running workspace is driven by watcher batches, by the follow-up scans an
+   * unconfirmed absence asks for, and by the wake set for the end of its settle
+   * window. An absence that could only be resolved from here would be one no
+   * user could ever resolve.
+   */
   async reconcileNow(): Promise<RuntimeSnapshot> {
     const batch = await this.watcher.scanNow();
     if (batch) {
@@ -3004,11 +3013,6 @@ export class WorkspaceRuntime {
     }
     this.#lastWatchSequence = batch.sequence;
     this.#lastRescanReason = result.mode === "rebuild" ? (result.reason ?? "unknown") : null;
-    if (result.mode === "incremental") {
-      // A scan that read the vault cleanly is what ends a degraded state. Without
-      // this one transient filesystem error would report degraded forever.
-      this.#watcherError = null;
-    }
     if (publish) {
       await this.publishSnapshot();
     }
