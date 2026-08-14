@@ -1441,6 +1441,17 @@ export class MetadataCache {
           return file;
         }
       }
+      // Host-observed: a case-variant full path still wins over any basename
+      // fallback, so retry each candidate case-insensitively before giving up.
+      for (const resolvedPath of candidates) {
+        const folded = resolvedPath.toLocaleLowerCase("en-US");
+        const insensitive = this.vault
+          .getFiles()
+          .find((file) => file.path.toLocaleLowerCase("en-US") === folded);
+        if (insensitive) {
+          return insensitive;
+        }
+      }
       return null;
     };
 

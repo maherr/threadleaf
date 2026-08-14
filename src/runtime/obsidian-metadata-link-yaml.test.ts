@@ -247,6 +247,8 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     // This precedence matrix was observed in an isolated Obsidian 1.13.7 host oracle.
     const { vault } = await createTemporaryVault({
       "A/Duplicate.md": "first global duplicate\n",
+      "A/Exact.md": "shorter case collision decoy\n",
+      "Case/Exact.md": "case-variant exact target\n",
       "Elsewhere/Duplicate.md": "other global duplicate\n",
       "Folder/Exact.md": "vault-root exact target\n",
       "Lengthier/Path/Duplicate.md": "long global duplicate\n",
@@ -265,6 +267,11 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     expect(metadataCache.getFirstLinkpathDest("Root.md", sourcePath)?.path).toBe("Root.md");
     expect(metadataCache.getFirstLinkpathDest("Folder/Exact", sourcePath)?.path).toBe(
       "Folder/Exact.md",
+    );
+    // Host-observed: a case-variant full path keeps exact-path precedence over
+    // a shorter basename collision (case/Exact -> Case/Exact.md, not A/Exact.md).
+    expect(metadataCache.getFirstLinkpathDest("case/Exact", sourcePath)?.path).toBe(
+      "Case/Exact.md",
     );
     expect(metadataCache.getFirstLinkpathDest("./Folder/Exact", sourcePath)?.path).toBe(
       "Notes/Sub/Folder/Exact.md",
