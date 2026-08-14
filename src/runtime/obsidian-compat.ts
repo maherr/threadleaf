@@ -1363,13 +1363,10 @@ function createInternalPlugins() {
   const canvasViews = {
     canvas: () => ({ canvas }),
   };
-  const canvasInstance = {
-    views: canvasViews,
-  };
   const canvasPlugin = {
-    enabled: true,
+    // This direct view adapter is not a backed CanvasPluginInstance.
+    enabled: false,
     _loaded: true,
-    instance: canvasInstance,
     load: async () => undefined,
     views: canvasViews,
   };
@@ -1381,7 +1378,6 @@ function createInternalPlugins() {
     canvas: canvasPlugin,
     "daily-notes": dailyNotes,
     bookmarks,
-    starred: bookmarks,
     "file-explorer": fileExplorer,
     outline,
   };
