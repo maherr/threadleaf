@@ -71,6 +71,17 @@ describe("Obsidian workspace compatibility wedge", () => {
       expect(() => unsupportedWorkspace.getRightLeaf(true)).toThrow(
         "requires an installed compatibility leaf factory",
       );
+      const wrongShapeWorkspace = new Workspace();
+      wrongShapeWorkspace.setLeafFactory(
+        (containerEl) =>
+          ({
+            containerEl,
+            getViewState: () => ({ state: {}, type: "empty" }),
+            id: "duck-typed-leaf",
+            openFile: async () => undefined,
+          }) as unknown as WorkspaceLeaf,
+      );
+      expect(() => wrongShapeWorkspace.getLeaf(false)).toThrow("actual WorkspaceLeaf");
 
       const vault = await createVault();
       const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
