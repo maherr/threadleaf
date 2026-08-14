@@ -172,10 +172,12 @@ function parseGrant(value: unknown): NativeExtensionGrant {
     (value.marketplaceCatalogSha256 as string | null | undefined) ?? null;
   const marketplaceCatalogRootFingerprint =
     (value.marketplaceCatalogRootFingerprint as string | null | undefined) ?? null;
+  // `value` comes from the grant file, so read own keys only. `in` walks the prototype chain,
+  // which the rest of this module already avoids.
   const hasCatalogFields =
-    "marketplaceCatalogRevision" in value ||
-    "marketplaceCatalogSha256" in value ||
-    "marketplaceCatalogRootFingerprint" in value;
+    Object.hasOwn(value, "marketplaceCatalogRevision") ||
+    Object.hasOwn(value, "marketplaceCatalogSha256") ||
+    Object.hasOwn(value, "marketplaceCatalogRootFingerprint");
   const catalogFields = [
     marketplaceCatalogRevision,
     marketplaceCatalogSha256,

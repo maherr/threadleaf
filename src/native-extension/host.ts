@@ -242,7 +242,9 @@ function catalogRootsFromInstallOptions(
     return [...options.trustedCatalogRoots];
   }
   const anchors = options.trustedPublishers;
-  if (typeof anchors === "object" && anchors !== null && "catalogRoots" in anchors) {
+  // A trust anchor set is routinely parsed from JSON, so read an own key rather than walking the
+  // prototype chain for the field that decides which roots may sign a catalog.
+  if (typeof anchors === "object" && anchors !== null && Object.hasOwn(anchors, "catalogRoots")) {
     const catalogRoots = (anchors as { catalogRoots?: unknown }).catalogRoots;
     if (Array.isArray(catalogRoots)) {
       return [...catalogRoots] as NativeExtensionTrustedPublisherKey[];

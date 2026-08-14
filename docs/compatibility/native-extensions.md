@@ -96,7 +96,11 @@ tree identity. An omitted entry with explicit lifecycle state becomes an irrever
 carrying the same evidence, and a later catalog cannot re-add that key. Catalog state is durable,
 monotonic, mode `0600`, cross-process locked, and compare-and-swap protected. Compare-and-swap is
 a required part of the state-store contract: a store that does not implement it is refused at the
-install boundary, never degraded to a plain write. Catalog-backed
+install boundary, never degraded to a plain write. The cross-process lock is never broken
+automatically, because breaking a lock a live owner still holds would lose the very update the
+lock protects, so an abnormal termination such as `SIGKILL` leaves the lock file in place and
+later catalog writes fail until an operator removes it. The failure names the lock path and the
+owner recorded in it. Catalog-backed
 verification reports `marketplaceIndex: "signed-catalog"` and retains catalog revision, root,
 metadata, and installed-tree provenance. It never downgrades that evidence to `not-applicable`
 because a catalog path was used. A standalone signed record is the only `not-applicable` case.

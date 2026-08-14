@@ -10,6 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { hostname } from "node:os";
 import path from "node:path";
 import { nativeExtensionAuthorityDigest, nativeExtensionBundleSha256 } from "./digest";
 import { type NativeExtensionManifest, parseNativeExtensionManifest } from "./manifest";
@@ -444,6 +445,17 @@ function assertMonotonicCatalogState(
   }
 }
 
+/**
+ * A cross-process lock for catalog state.
+ *
+ * There is deliberately no automatic stale-lock break. This lock guards the compare-and-swap that
+ * makes catalog acceptance safe against interleaving, and every cheap recovery rule is unsound
+ * here: a recorded pid can be reused by an unrelated process, an age threshold cannot tell a
+ * crashed owner from a slow one, and breaking a live owner's lock is precisely the lost update the
+ * lock exists to prevent. So an abnormal termination such as SIGKILL leaves the lock file behind
+ * and every later catalog write fails until an operator removes it. The failure names the path and
+ * the recorded owner so that removal is an obvious, checkable step rather than a mystery.
+ */
 function withSynchronousFileLock<T>(filePath: string, action: () => T): T {
   mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const lockPath = `${filePath}.lock`;
@@ -459,9 +471,18 @@ function withSynchronousFileLock<T>(filePath: string, action: () => T): T {
     }
   }
   if (descriptor === undefined) {
-    throw new Error("Native extension marketplace catalog state lock timed out.");
+    throw new Error(
+      `Native extension marketplace catalog state lock timed out. ${describeLockOwner(lockPath)} If that process is gone, this lock is stale and must be removed by hand; it is never broken automatically, because breaking a live owner's lock would lose the update the lock protects.`,
+    );
   }
   try {
+    // Recorded for the operator who has to decide whether the owner is still alive. It is
+    // diagnostic only and is never read back as an authority.
+    writeFileSync(
+      descriptor,
+      `${JSON.stringify({ pid: process.pid, hostname: hostname(), at: new Date().toISOString() })}\n`,
+      "utf8",
+    );
     return action();
   } finally {
     closeSync(descriptor);
@@ -471,6 +492,19 @@ function withSynchronousFileLock<T>(filePath: string, action: () => T): T {
       // The lock is advisory. The state write already completed; a later caller can retry.
     }
   }
+}
+
+function describeLockOwner(lockPath: string): string {
+  let owner = "";
+  try {
+    owner = readFileSync(lockPath, "utf8").trim();
+  } catch {
+    // The holder released the lock while this caller was giving up; the retry will succeed.
+    return `Lock file ${lockPath} was released while waiting, so this call can simply be retried.`;
+  }
+  return owner.length === 0
+    ? `Lock file ${lockPath} records no owner.`
+    : `Lock file ${lockPath} is held by ${owner}.`;
 }
 
 export interface NativeExtensionTrustOptions {

@@ -1431,6 +1431,45 @@ describe("native extension offline distribution trust", () => {
     );
   });
 
+  it("names the lock owner instead of failing anonymously on a stale lock", () => {
+    // An abnormal termination leaves the lock file behind and every later catalog write fails.
+    // That denial is deliberate, because breaking a lock that a live owner still holds would lose
+    // the update the lock exists to protect. It has to be diagnosable, so the failure carries the
+    // path to remove and whatever owner the holder recorded.
+    const directory = mkdtempSync(path.join(os.tmpdir(), "threadleaf-catalog-lock-"));
+    try {
+      const filePath = path.join(directory, "catalog-state.json");
+      const lockPath = `${filePath}.lock`;
+      writeFileSync(lockPath, `${JSON.stringify({ pid: 999999, hostname: "gone", at: now })}\n`);
+      const store = new FileNativeExtensionMarketplaceCatalogStateStore(filePath);
+      const state = {
+        stateVersion: 1 as const,
+        revision: 1,
+        catalogSha256: "a".repeat(64),
+        generatedAt: "2026-06-01T00:00:00.000Z",
+        expiresAt: "2026-06-30T00:00:00.000Z",
+        entryKeys: [],
+        successorHashes: [],
+      };
+      let message = "";
+      try {
+        store.put(state);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toContain("lock timed out");
+      expect(message).toContain(lockPath);
+      expect(message).toContain("999999");
+      expect(message).toContain("removed by hand");
+      // Removing the stale lock restores service without any other repair.
+      rmSync(lockPath);
+      store.put(state);
+      expect(store.get()).toMatchObject({ revision: 1 });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("uses file-state compare-and-swap to reject catalog revision interleaving", () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "threadleaf-catalog-cas-"));
     try {

@@ -7,7 +7,7 @@ import { nativeExtensionHostInternals } from "./internal-registry";
 import { type NativeExtensionManifest, parseNativeExtensionManifest } from "./manifest";
 import type { NativeExtensionContext } from "./sdk";
 import { defineNativeExtension, type NativeExtensionBundle } from "./sdk";
-import type { NativeExtensionTestBundle } from "./test-access";
+import { type NativeExtensionTestBundle, nativeExtensionTestAccess } from "./test-access";
 
 export type { NativeExtensionTestBundle, NativeExtensionTestEntrypoint } from "./test-access";
 
@@ -48,6 +48,9 @@ export function definePortableExtensionForTest<Input = unknown, Output = unknown
 }
 
 class NativeExtensionConformanceHost extends NativeExtensionHost {
+  /** Diagnostic brand, not an authority check. The boundary is module reach; see `./test-access`. */
+  readonly [nativeExtensionTestAccess] = true;
+
   override register<Input = unknown, Output = unknown>(
     bundle: NativeExtensionTestBundle<Input, Output>,
   ): NativeExtensionReview {
