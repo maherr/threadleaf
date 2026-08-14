@@ -66,12 +66,12 @@
     },
     "minimal:light-high-contrast": {
       "path": "minimal-light-high-contrast.png",
-      "sha256": "4f44fe8b5c5fe78922805718ae75ceb33a9cc45d8f3b0fe547134ccc5b048213",
+      "sha256": "0919d40dc362d3f5dde5965446c36158c334ca628142ebed66148e59365d8c66",
       "dimensions": [1180, 820]
     },
     "wikipedia:dark-laptop": {
       "path": "wikipedia-dark-laptop.png",
-      "sha256": "3dcda62552072ea3e7c74b5721f903a6d2850dc683f8005d45307abe0a98d7e7",
+      "sha256": "4ac107fe7b73bd7f450754e5148eb5b8aa840c6da0283281a16a040d7661460f",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-laptop": {
@@ -86,7 +86,7 @@
     },
     "wikipedia:dark-high-contrast": {
       "path": "wikipedia-dark-high-contrast.png",
-      "sha256": "1dd54328fafad1630c1f759c94daf18dff9b8c9a9e72658f0a8a0fbd6f4a9cec",
+      "sha256": "4c4ec68fffd9ef99304e16a5bc31d9a707ad743ed6b216cc98748aaac3594ea5",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-high-contrast": {
@@ -121,7 +121,7 @@
     },
     "default:dark-laptop": {
       "path": "default-dark-laptop.png",
-      "sha256": "dcaec69ce904f500de822e91561ab9e3c963b6102764f2ac8b9f2c4dbe1311da",
+      "sha256": "371b8dc84f53d8342fd52258b1b249787ac9a9a8b99c4df0074c04343c0777f4",
       "dimensions": [1180, 820]
     },
     "default:light-laptop": {
@@ -136,12 +136,12 @@
     },
     "default:dark-high-contrast": {
       "path": "default-dark-high-contrast.png",
-      "sha256": "c311a7879e1c18dba50c556bfc0c04f149b0f20e437fd5756b13beb8cbab169d",
+      "sha256": "9e9676a06d262c8e27e86fe58166602ac0f1e9ef9ba3eb09410d2ec872aa9971",
       "dimensions": [1180, 820]
     },
     "default:light-high-contrast": {
       "path": "default-light-high-contrast.png",
-      "sha256": "f6d18f535ff9c1cbd954971d3d1cfc66ad7d267c3baed5a292fed01bda1b693f",
+      "sha256": "2dfa588da8f345381f80b1d698c626c2135ddf43eb93a9d0db34f843ac6a79f7",
       "dimensions": [1180, 820]
     }
   },

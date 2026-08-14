@@ -606,6 +606,13 @@ function pairwiseDeutanDistance(left, right) {
 const CIEDE_FAIL_THRESHOLD = 7;
 const CIEDE_PASS_THRESHOLD = 11;
 
+// WCAG 2.x Success Criterion 1.4.3 (AA): normal-weight body text needs a contrast ratio of at
+// least 4.5:1 against its painted background. Reading-view body copy is real prose, not a UI
+// chrome accent, so it gets the plain WCAG floor rather than the deuteranomaly-simulated
+// CIEDE2000 doctrine above, which targets distinguishing one colour from a sibling colour, not
+// legibility of ink against its own background.
+const WCAG_AA_BODY_TEXT_CONTRAST = 4.5;
+
 function iteratePairs(pairs, category) {
   assert(
     Array.isArray(pairs) && pairs.length >= 2,
@@ -759,6 +766,22 @@ function assertDeuteranomalyCue(probe) {
     "Active file state has no non-color distinction from an inactive row.",
   );
   return { stressRatios: ratios, focusColor: focus, backgroundColor: background, colourPairs };
+}
+
+function assertBodyTextContrast(probe) {
+  const { color, backgroundColor } = probe.bodyText;
+  assert(
+    color && backgroundColor,
+    `Reading-view body copy colors were not parseable: ${JSON.stringify(probe.bodyText)}`,
+  );
+  const ratio = contrastRatio(color, backgroundColor);
+  assert(
+    ratio >= WCAG_AA_BODY_TEXT_CONTRAST,
+    `Reading-view body copy contrast is below WCAG AA: ${ratio.toFixed(2)}:1 ` +
+      `(needs >= ${WCAG_AA_BODY_TEXT_CONTRAST}:1; color=${JSON.stringify(color)} ` +
+      `background=${JSON.stringify(backgroundColor)}).`,
+  );
+  return { ratio: Number(ratio.toFixed(2)) };
 }
 
 function verifiedCacheBytes(verification, themeId, relativePath) {
@@ -1120,7 +1143,13 @@ async function probeCues() {
     const active = document.querySelector('#file-list [aria-current="page"]');
     const inactive = [...document.querySelectorAll('#file-list .file-item')].find((candidate) => candidate !== active);
     const input = document.querySelector('#file-search');
-    if (!(active instanceof HTMLElement) || !(inactive instanceof HTMLElement) || !(input instanceof HTMLElement)) return null;
+    const notePreview = document.querySelector('.note-preview');
+    if (
+      !(active instanceof HTMLElement) ||
+      !(inactive instanceof HTMLElement) ||
+      !(input instanceof HTMLElement) ||
+      !(notePreview instanceof HTMLElement)
+    ) return null;
     const focusStyle = getComputedStyle(input);
     const focusBackground = paintedBackground(input);
     const roleSelectors = [
@@ -1150,9 +1179,11 @@ async function probeCues() {
       if (content) return content;
       return element.getAttribute('title')?.trim() ?? '';
     };
+    const notePreviewStyle = style(notePreview);
     return {
       active: { ...activeStyle, ariaCurrent: active.getAttribute('aria-current'), glyph: active.querySelector('.file-glyph')?.textContent ?? '' },
       inactive: { ...inactiveStyle, ariaCurrent: inactive.getAttribute('aria-current') },
+      bodyText: { color: notePreviewStyle.color, backgroundColor: notePreviewStyle.backgroundColor },
       focus: {
         color: over(parse(focusStyle.outlineColor), focusBackground),
         backgroundColor: focusBackground,
@@ -1181,11 +1212,16 @@ async function probeCues() {
     };
   })()`);
   assert(probe, "Could not locate the file navigation and focus probe controls.");
+  assert(probe.bodyText, "Could not locate the reading-view body copy probe container.");
   assert(
     probe.accessibleNames.length === 0,
     `Community theme fixture has unnamed interactive controls: ${JSON.stringify(probe.accessibleNames)}`,
   );
-  return { probe, audit: assertDeuteranomalyCue(probe) };
+  return {
+    probe,
+    audit: assertDeuteranomalyCue(probe),
+    bodyTextContrast: assertBodyTextContrast(probe),
+  };
 }
 
 async function probeViewportGeometry(viewport) {
@@ -1383,8 +1419,17 @@ async function runTheme(theme, verification, baselineManifest) {
             `redundantDe=${thinPass.redundantCue.measuredDe}\n`,
         );
       }
+      process.stdout.write(
+        `COMMUNITY_THEME_BODY_TEXT_CONTRAST ${theme.id} ${testCase.id} ` +
+          `ratio=${audit.bodyTextContrast.ratio}\n`,
+      );
       const geometry = await probeViewportGeometry(viewport);
-      audits.push({ case: testCase.id, ...audit.audit, geometry });
+      audits.push({
+        case: testCase.id,
+        ...audit.audit,
+        geometry,
+        bodyTextContrast: audit.bodyTextContrast,
+      });
       const outputName = `${theme.id}-${testCase.id}.png`;
       captures.push(await capture(theme, testCase.id, outputName));
     }

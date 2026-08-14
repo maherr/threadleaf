@@ -2564,7 +2564,7 @@ h2 {
   min-height: 0;
   padding: 22px 28px 72px 14px;
   overflow: auto;
-  color: var(--ink-soft);
+  color: var(--ink);
   font-family: Georgia, "Times New Roman", serif;
   font-size: 16px;
   line-height: 1.72;

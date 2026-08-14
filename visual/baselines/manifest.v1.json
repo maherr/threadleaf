@@ -16,12 +16,12 @@
     },
     "workspace-source-light": {
       "path": "workspace-source-light.png",
-      "sha256": "1aeae50111b17f090bbdf1a15281c3b159d806cb942204e8b84aaf271d6737a3",
+      "sha256": "9a0c5f69d286e3fd15714b4f88d47f11cebb1256bd8023a4ebc76e1e65a00a23",
       "dimensions": [1180, 820]
     },
     "workspace-reading-light": {
       "path": "workspace-reading-light.png",
-      "sha256": "b51c6ef44cd30b28ef3a9ba135a7784bb3a2686654787e9e34076eb3abbdb1a8",
+      "sha256": "d90d0976591c20a6561e77408fd274632a7303b08b31f8672d83f897030b6958",
       "dimensions": [1180, 820]
     },
     "settings-appearance-dark": {
@@ -41,22 +41,22 @@
     },
     "command-palette-light": {
       "path": "command-palette-light.png",
-      "sha256": "b65e99fd9c2a26f1488299d1598e9ecf859c0701613481118a3ad42100b1617a",
+      "sha256": "1aebcdd98f81e15c144123b37f485bd1f8c7d9aae55cb88dd5936f8cdd4fb270",
       "dimensions": [1180, 820]
     },
     "split-pinned-dark": {
       "path": "split-pinned-dark.png",
-      "sha256": "dc58163bea339a9da492af707e2744d57c278d329b48e7f35b9c76cb6f43d313",
+      "sha256": "2f0d7cf649b437a797ee4ad8a41c48fdafd18d449588b7a17b3be7980378f850",
       "dimensions": [1180, 820]
     },
     "graph-dark": {
       "path": "graph-dark.png",
-      "sha256": "5c8257528318e2424e9f253f94a4e39372ef6a07eb2ce9c5546cdab8b548d0e7",
+      "sha256": "e2316758efea1b566f32dc2dae840de64a098d6e745a2ce16539fc5dcd61c3a8",
       "dimensions": [1180, 820]
     },
     "recovery-light": {
       "path": "recovery-light.png",
-      "sha256": "06f50cc28da7e0d6acd10abe5c77a554013ea9a7f9dfd4f177c19b7144ac8230",
+      "sha256": "3b02731ea84bb4c65e4c79d007e9f703ff3b55a5c61494c6f91b909d7522c648",
       "dimensions": [1180, 820]
     },
     "empty-note-light": {
@@ -66,27 +66,27 @@
     },
     "missing-link-dark": {
       "path": "missing-link-dark.png",
-      "sha256": "b5af46053305d7c73de5fa3d89b1cd14b8d60de68706af59f7b668b96eca8e0a",
+      "sha256": "53d694e16d13fe7e0e869e61c2ad7b7107eca54b1a7d50f78784a78ac6835847",
       "dimensions": [1180, 820]
     },
     "long-text-dark": {
       "path": "long-text-dark.png",
-      "sha256": "150b8721f132f4e9c0b640ac88cc0861877330f095a0ee4af843e05f8377dc30",
+      "sha256": "19b6238c06c60f3a9ec2b8a78ea680bbed5456327605d3e241f0e7f22c1c7476",
       "dimensions": [1180, 820]
     },
     "minimum-light": {
       "path": "minimum-light.png",
-      "sha256": "0ed5fd99b41be9c9183053848f860973338d739ea8c20347f4f59823e5701cc9",
+      "sha256": "2f2fde27d8f4906d496d5a063a1cc066a7cfedc110d22dc4ea00e822107ba362",
       "dimensions": [860, 640]
     },
     "high-dpi-dark": {
       "path": "high-dpi-dark.png",
-      "sha256": "a1cf26abc9c77c1d928a4480beb83f5503d709b61336edb7d9bdc77c08baaf82",
+      "sha256": "1ffec22dea1da72226df16250181f531dae243b86ca0a0c663ce201e3c598512",
       "dimensions": [2360, 1640]
     },
     "zoom-125-light": {
       "path": "zoom-125-light.png",
-      "sha256": "5c637b292809db764949de39910ee0065956c7477c2d696d289b92d7af91baf1",
+      "sha256": "f4dcd6787100bff6f288dc4dc6563396ff82137150e405c3fd170a2437dcbeb4",
       "dimensions": [1180, 820]
     }
   }
