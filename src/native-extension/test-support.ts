@@ -3,8 +3,8 @@ import {
   type NativeExtensionHostOptions,
   type NativeExtensionReview,
 } from "./host";
+import { nativeExtensionHostInternals } from "./internal-registry";
 import { type NativeExtensionManifest, parseNativeExtensionManifest } from "./manifest";
-import type { NativeExtensionTrustProvenance } from "./marketplace-trust";
 import type { NativeExtensionContext } from "./sdk";
 import { defineNativeExtension, type NativeExtensionBundle } from "./sdk";
 import type { NativeExtensionTestBundle } from "./test-access";
@@ -55,19 +55,11 @@ class NativeExtensionConformanceHost extends NativeExtensionHost {
     if (typeof bundle.entrypoint !== "function") {
       throw new Error("Native extension test entrypoint is not callable.");
     }
-    const testOnlyHost = this as unknown as {
-      replaceRegistration: (
-        bundle: NativeExtensionBundle,
-        entrypoint: (context: NativeExtensionContext, input: unknown) => unknown | Promise<unknown>,
-        verification: null,
-        trust: {
-          distributionTrust: "unsigned-development";
-          publisherFingerprint: null;
-          trustProvenance: NativeExtensionTrustProvenance;
-        },
-      ) => NativeExtensionReview;
-    };
-    return testOnlyHost.replaceRegistration(
+    const internals = nativeExtensionHostInternals.get(this);
+    if (!internals) {
+      throw new Error("Native extension host internals are unavailable to the conformance host.");
+    }
+    return internals.replaceRegistration(
       {
         manifest,
         bundleBytes: new Uint8Array(bundle.bundleBytes),

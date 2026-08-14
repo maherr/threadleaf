@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -141,17 +141,34 @@ describe("native extension test-only boundary", () => {
     "nativeExtensionTestAccess",
   ];
 
+  const productionSources = [
+    "src/native-extension/digest.ts",
+    "src/native-extension/errors.ts",
+    "src/native-extension/grants.ts",
+    "src/native-extension/host.ts",
+    "src/native-extension/index.ts",
+    "src/native-extension/internal-registry.ts",
+    "src/native-extension/manifest.ts",
+    "src/native-extension/marketplace-trust.ts",
+    "src/native-extension/ports.ts",
+    "src/native-extension/sdk.ts",
+  ];
+
+  it("scans every production source in the directory", () => {
+    // A hand-written list silently stops covering a file that is added later, which is how
+    // grants.ts sat outside this scan. Check the list against the directory itself.
+    const testOnlySources = new Set(["test-access.ts", "test-support.ts"]);
+    const discovered = readdirSync(path.join(appRoot, "src", "native-extension"))
+      .filter(
+        (name) => name.endsWith(".ts") && !name.endsWith(".test.ts") && !testOnlySources.has(name),
+      )
+      .map((name) => `src/native-extension/${name}`)
+      .sort();
+    expect([...productionSources].sort()).toEqual(discovered);
+  });
+
   it("keeps test-only material out of every production source file", () => {
-    for (const productionSourcePath of [
-      "src/native-extension/digest.ts",
-      "src/native-extension/errors.ts",
-      "src/native-extension/host.ts",
-      "src/native-extension/index.ts",
-      "src/native-extension/manifest.ts",
-      "src/native-extension/marketplace-trust.ts",
-      "src/native-extension/ports.ts",
-      "src/native-extension/sdk.ts",
-    ]) {
+    for (const productionSourcePath of productionSources) {
       const source = readSource(productionSourcePath);
       for (const marker of testOnlyMarkers) {
         expect(`${productionSourcePath}:${source.includes(marker)}`).toBe(
@@ -159,6 +176,21 @@ describe("native extension test-only boundary", () => {
         );
       }
     }
+  });
+
+  it("keeps the registration seam off the erased-visibility surface", () => {
+    // TypeScript `private` disappears at runtime, so a `private replaceRegistration` shipped a
+    // callable prototype method that reached unsigned-development registration from any JavaScript
+    // consumer of the package export.
+    const host = readSource("src/native-extension/host.ts");
+    expect(host.includes("private replaceRegistration(")).toBe(false);
+    expect(host.includes("#replaceRegistration(")).toBe(true);
+    // The seam lives in a module the public index does not re-export.
+    const index = readSource("src/native-extension/index.ts");
+    expect(index.includes("internal-registry")).toBe(false);
+    expect(readSource("src/native-extension/internal-registry.ts")).toContain(
+      "nativeExtensionHostInternals",
+    );
   });
 
   it("keeps test-only source out of the build entries and package exports", () => {

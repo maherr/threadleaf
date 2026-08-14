@@ -5,6 +5,7 @@ import {
   type NativeExtensionGrant,
   type NativeExtensionGrantStore,
 } from "./grants";
+import { nativeExtensionHostInternals } from "./internal-registry";
 import {
   type NativeExtensionBoundary,
   type NativeExtensionCapabilityId,
@@ -336,6 +337,12 @@ export class NativeExtensionHost {
     this.#invocationTimeoutMs = positiveTimeout(options.invocationTimeoutMs, 10_000);
     this.#teardownTimeoutMs = positiveTimeout(options.teardownTimeoutMs, 1_000);
     this.#now = options.now ?? hostNow;
+    // The only route to the registration seam. It is reachable from `./internal-registry`, which
+    // no package export and no build entry exposes, so this does not widen the public surface.
+    nativeExtensionHostInternals.set(this, {
+      replaceRegistration: (bundle, entrypoint, verification, trust) =>
+        this.#replaceRegistration(bundle, entrypoint, verification, trust),
+    });
   }
 
   /** Callable registration is deliberately unavailable on production hosts. */
@@ -456,7 +463,7 @@ export class NativeExtensionHost {
         { cause: error },
       );
     }
-    return this.replaceRegistration(
+    return this.#replaceRegistration(
       {
         manifest: cloneManifest(bundle.manifest),
         bundleBytes: new Uint8Array(bundle.bundleBytes),
@@ -493,7 +500,13 @@ export class NativeExtensionHost {
     );
   }
 
-  private replaceRegistration(
+  /**
+   * A true private method, not a TypeScript `private` one. TypeScript visibility is erased, so the
+   * old form survived into `dist` as a callable prototype method that any JavaScript consumer of
+   * the `./native-extension` export could invoke with `distributionTrust: "unsigned-development"`,
+   * walking straight past the `install()` mode gate and the `register()` throw.
+   */
+  #replaceRegistration(
     bundle: NativeExtensionBundle,
     entrypoint: NativeExtensionEntrypoint | undefined,
     verification: NativeExtensionVerification | null,
