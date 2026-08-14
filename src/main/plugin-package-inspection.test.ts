@@ -224,32 +224,34 @@ function withManifest(
 }
 
 /**
- * Spies on `fs.mkdtemp` to capture the exact per-run temporary root that
+ * Spies on `fs.mkdtemp` to capture every per-run temporary root that
  * `inspectPluginPackage` materializes for the given call, instead of scanning the shared
  * `os.tmpdir()` namespace for `threadleaf-plugin-inspection-*` entries. A namespace scan cannot
- * tell this run's own directory apart from a same-prefixed directory belonging to a genuinely
+ * tell this run's own directories apart from a same-prefixed directory belonging to a genuinely
  * parallel, unrelated run sharing the same host temp directory, so it can misattribute that
- * sibling as this run's leaked residue. Capturing the exact created path keeps residue
- * accounting scoped only to what this specific call created.
+ * sibling as this run's leaked residue. Capturing the exact created paths keeps residue
+ * accounting scoped only to what this specific call created -- all of it. Keeping only the most
+ * recently captured root would let a second, separately leaked root hide behind a properly
+ * cleaned-up last one; every caller must check every entry in `rootPaths`, not just one.
  */
 async function withCapturedMaterializedRoot<T>(
   action: () => Promise<T>,
-): Promise<{ outcome: T; rootPath: string }> {
+): Promise<{ outcome: T; rootPaths: string[] }> {
   const realMkdtemp = fs.mkdtemp.bind(fs);
-  let capturedRoot: string | undefined;
+  const capturedRoots: string[] = [];
   const mkdtempSpy = vi
     .spyOn(fs, "mkdtemp")
     .mockImplementation(async (prefix: string, options?: unknown) => {
       const created = await realMkdtemp(prefix, options as Parameters<typeof fs.mkdtemp>[1]);
-      capturedRoot = created;
+      capturedRoots.push(created);
       return created;
     });
   try {
     const outcome = await action();
-    if (!capturedRoot) {
+    if (capturedRoots.length === 0) {
       throw new Error("expected inspectPluginPackage to materialize a temporary root");
     }
-    return { outcome, rootPath: capturedRoot };
+    return { outcome, rootPaths: capturedRoots };
   } finally {
     mkdtempSpy.mockRestore();
   }
@@ -551,23 +553,31 @@ describe("exact plugin package inspection", () => {
 
   it("does not leave the materialized disposable package on disk", async () => {
     const input = await fixtureInput("inspection-safe");
-    const { outcome: report, rootPath } = await withCapturedMaterializedRoot(() =>
+    const { outcome: report, rootPaths } = await withCapturedMaterializedRoot(() =>
       inspectPluginPackage(input),
     );
     expect(report.overall).toBe("pass");
-    expect(await pathExists(rootPath)).toBe(false);
+    // A single inspection run must materialize exactly one temporary root. Asserting the
+    // count, not just the survival of whichever root was captured last, is what stops a
+    // second, separately leaked root from hiding behind a properly cleaned-up final one.
+    expect(rootPaths).toHaveLength(1);
+    for (const rootPath of rootPaths) {
+      expect(await pathExists(rootPath)).toBe(false);
+    }
   });
 
   it("does not misattribute a foreign sibling inspection directory created during a run", async () => {
     const input = await fixtureInput("inspection-safe");
     const realMkdtemp = fs.mkdtemp.bind(fs);
     let foreignSibling = "";
-    const { outcome: report, rootPath } = await withCapturedMaterializedRoot(async () => {
+    const { outcome: report, rootPaths } = await withCapturedMaterializedRoot(async () => {
       const inspectionPromise = inspectPluginPackage(input);
       // Simulate a genuinely parallel, unrelated run whose own uniquely mkdtemp'd root lands in
       // the same shared `threadleaf-plugin-inspection-*` namespace while this run is in flight.
       // A namespace scan taken before and after this call would see this directory appear in
-      // between and mistake it for this run's own leaked residue.
+      // between and mistake it for this run's own leaked residue. Using the unspied
+      // `realMkdtemp` keeps it out of `rootPaths`, exactly like a foreign process's own call
+      // would be.
       foreignSibling = await realMkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-inspection-"));
       await fs.writeFile(
         path.join(foreignSibling, "unrelated-run.marker"),
@@ -578,9 +588,12 @@ describe("exact plugin package inspection", () => {
     });
     try {
       expect(report.overall).toBe("pass");
-      expect(rootPath).not.toBe(foreignSibling);
+      expect(rootPaths).toHaveLength(1);
+      expect(rootPaths).not.toContain(foreignSibling);
       // This run's own materialized root was still cleaned up normally...
-      expect(await pathExists(rootPath)).toBe(false);
+      for (const rootPath of rootPaths) {
+        expect(await pathExists(rootPath)).toBe(false);
+      }
       // ...while the foreign sibling was never touched, swept, or blamed on this run.
       expect(await pathExists(foreignSibling)).toBe(true);
       expect(await fs.readdir(foreignSibling)).toEqual(["unrelated-run.marker"]);
@@ -622,6 +635,37 @@ describe("exact plugin package inspection", () => {
       if (capturedRoot) {
         await fs.rm(capturedRoot, { recursive: true, force: true });
       }
+    }
+  });
+
+  it("still detects a leaked second temporary root even when a later, unrelated root is cleaned up normally", async () => {
+    // Reproduces the planted-second-mkdtemp finding directly: with only the LAST captured
+    // root retained, a root leaked before the run's own (properly cleaned up) root would
+    // never be checked, so a residue assertion would false-pass while it sat on disk.
+    const input = await fixtureInput("inspection-safe");
+    let plantedLeak = "";
+    const { outcome: report, rootPaths } = await withCapturedMaterializedRoot(async () => {
+      // Plant an extra mkdtemp call through the SAME spied `fs.mkdtemp` entry point that
+      // `inspectPluginPackage` uses, before its own call, and never clean it up here -- this
+      // stands in for a second, genuinely leaked temporary root.
+      plantedLeak = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-inspection-"));
+      return inspectPluginPackage(input);
+    });
+    try {
+      expect(report.overall).toBe("pass");
+      // Both mkdtemp calls were captured, in creation order: the planted leak first, then
+      // inspectPluginPackage's own root.
+      expect(rootPaths).toHaveLength(2);
+      expect(rootPaths[0]).toBe(plantedLeak);
+
+      const stillExisting = await Promise.all(rootPaths.map((root) => pathExists(root)));
+      // inspectPluginPackage's own root (the one a single-slot helper would have kept) was
+      // cleaned up normally, while the planted first root -- the one a single-slot helper
+      // would have silently discarded from tracking -- is still on disk. Checking every
+      // captured root, not just the last one, is what makes that residue observable.
+      expect(stillExisting).toEqual([true, false]);
+    } finally {
+      await fs.rm(plantedLeak, { recursive: true, force: true });
     }
   });
 });
