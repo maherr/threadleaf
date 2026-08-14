@@ -310,6 +310,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   traversal; deterministic layout; pointer and keyboard pan and zoom; focusable note nodes; an
   equivalent visible-note list; persisted private view preferences; stale-vault guards; and
   isolated X11 virtual-input verification in light, dark, and simulated deuteranomaly views.
+- A published `--interactive` compat variable for community themes that read a bare accent source
+  (e.g. Sanctum), and an unthemed `default` subject added to the community-theme visual matrix so
+  Threadleaf's own baseline is measured against the same accessibility standard as every theme.
 
 ### Fixed
 
@@ -322,3 +325,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   lifecycles, and still unload resources and detach their containers when close hooks fail.
 - Plugin-surface CSS handoff now retains the stable Electron `WebContents` object, so replacing a
   crashed compatibility view cannot dereference Electron's invalidated view getter.
+- Community-theme body-level design tokens (`--canvas`, `--surface*`, `--ink*`, `--line*`,
+  `--accent-soft`, `--interactive`, `--signal*`, `--mono`) are now re-declared at `body`, where a
+  community theme's own supporting constants actually reach, instead of staying inherited-only
+  from `:root`; fixes Sanctum's categorical colours collapsing to black. `--accent-soft`'s accent
+  mix widened from 14% to 25% and re-anchored to `--accent`, clearing a below-floor deuteranomaly
+  contrast in Threadleaf's own default light scheme and staying pinned under the accessibility
+  "Accent" preference. Reading-view body copy (`.note-preview`) now paints with `--ink` instead of
+  `--ink-soft`, raising Minimal light's contrast from 4.23:1 to 17.58:1 and clearing the WCAG AA
+  4.5:1 floor for normal text.
