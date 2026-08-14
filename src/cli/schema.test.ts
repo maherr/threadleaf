@@ -1596,7 +1596,10 @@ describe("CLI schema and generated completion", () => {
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
-  }, 150_000);
+    // This invokes every generated Bash and Fish candidate against the real
+    // parser. Under the concurrent repository gate it has measured just under
+    // five minutes, despite completing well inside this budget in isolation.
+  }, 360_000);
 
   it("keeps root eligibility and literal parser-oracle candidates visible", async () => {
     const completionSpec = cliCommandSpecs.find((spec) => spec.id === "completion");
