@@ -98,13 +98,17 @@ interface IndexedSearchDocument {
    * derived from here at query time, for matched documents only.
    */
   content: string;
-  /**
-   * The one whole-note comparable key kept at rest. The case-preserving
-   * companion is derived on demand instead of stored, because for a note that
-   * is already NFC it is a V8 alias of `content` and for a note carrying Latin
-   * diacritics it is a second full copy.
-   */
+  /** The case-folded whole-note key. Always a second copy: a note almost always contains a capital. */
   normalizedContent: string;
+  /**
+   * The case-preserving whole-note key, kept only when folding gave back a
+   * string equal to `content`, which is the common case: `foldSearchText`
+   * only rewrites text carrying Latin diacritics or a non-NFC sequence. When
+   * it did rewrite, this is null and the key is rebuilt per case-sensitive
+   * query, so a note that needs a genuinely different key costs a fold on the
+   * rare `caseSensitive` path instead of a permanent duplicate of the note.
+   */
+  canonicalContent: string | null;
   contentSimple: boolean;
   headings: IndexedHeading[];
   tags: Array<{
@@ -139,15 +143,12 @@ function lineFeedContent(content: string): string {
   return content.replaceAll("\r\n", "\n");
 }
 
-/**
- * The whole-note comparable key for one query. The case-folded key is stored;
- * the case-preserving key is recomputed here because storing it would either
- * pin the raw note through a V8 alias or duplicate it outright.
- */
+/** The whole-note comparable key for one query, rebuilt only when it is not held. */
 function comparableContent(document: IndexedSearchDocument, caseSensitive: boolean): string {
-  return caseSensitive
-    ? foldSearchText(lineFeedContent(document.content), true)
-    : document.normalizedContent;
+  if (!caseSensitive) {
+    return document.normalizedContent;
+  }
+  return document.canonicalContent ?? foldSearchText(lineFeedContent(document.content), true);
 }
 
 /**
@@ -254,6 +255,9 @@ function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument 
     titleSimple,
     content: document.content,
     normalizedContent,
+    // Equal by value means the retained source already *is* the key, so
+    // pointing at it costs nothing whether or not V8 aliased the fold.
+    canonicalContent: canonicalContent === document.content ? document.content : null,
     contentSimple,
     headings: document.headings.map((heading) => {
       const canonical = foldSearchText(heading.text, true);

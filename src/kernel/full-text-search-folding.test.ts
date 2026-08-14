@@ -6,6 +6,7 @@ import {
   searchTextMatchCount,
   searchTextStartsWith,
 } from "../shared/search-text";
+import { type FullTextSearchDocument, FullTextSearchIndex } from "./full-text-search";
 
 /**
  * Two properties the index relies on to stop storing per-line data.
@@ -161,5 +162,55 @@ describe("the simple fast path never changes an answer", () => {
     }
     // Positive control: the assertions above are vacuous if nothing is simple.
     expect(simpleHaystacks).toBeGreaterThan(50);
+  });
+});
+
+/**
+ * The case-preserving whole-note key is stored only when folding returned a
+ * string equal to the source, and rebuilt per query otherwise. Both branches
+ * must answer identically, so each assertion below is paired: one document
+ * that keeps the key and one that cannot.
+ */
+describe("case-sensitive matching across both whole-note key branches", () => {
+  function note(path: string, content: string): FullTextSearchDocument {
+    return { path, content, headings: [], tags: [], properties: {} };
+  }
+
+  const pairs: Array<{ label: string; kept: string; rebuilt: string; term: string }> = [
+    { label: "latin diacritic", kept: "Cafe here", rebuilt: "Café here", term: "Cafe" },
+    { label: "decomposed source", kept: "Resume here", rebuilt: "Résumé here", term: "Resume" },
+    { label: "crlf endings", kept: "Alpha\nBeta", rebuilt: "Alpha\r\nBeta", term: "Beta" },
+    { label: "vietnamese", kept: "ac body", rebuilt: "ấc body", term: "ac" },
+  ];
+
+  for (const pair of pairs) {
+    it(`answers the same for a kept and a rebuilt key (${pair.label})`, () => {
+      const kept = new FullTextSearchIndex();
+      kept.replace([note("Kept.md", pair.kept)]);
+      const rebuilt = new FullTextSearchIndex();
+      rebuilt.replace([note("Rebuilt.md", pair.rebuilt)]);
+
+      for (const caseSensitive of [false, true]) {
+        const keptPage = kept.search(pair.term, 50, { caseSensitive, maxContexts: 100 });
+        const rebuiltPage = rebuilt.search(pair.term, 50, { caseSensitive, maxContexts: 100 });
+        expect(keptPage.total, `kept ${pair.label} caseSensitive=${caseSensitive}`).toBe(1);
+        expect(rebuiltPage.total, `rebuilt ${pair.label} caseSensitive=${caseSensitive}`).toBe(1);
+        expect(rebuiltPage.results[0]?.score).toBe(keptPage.results[0]?.score);
+        expect(rebuiltPage.results[0]?.matchCount).toBe(keptPage.results[0]?.matchCount);
+      }
+
+      // A shouted term must still miss on both branches: the rebuilt key is a
+      // real case-preserving key, not a case-folded one wearing its name.
+      expect(kept.search(pair.term.toUpperCase(), 50, { caseSensitive: true }).total).toBe(0);
+      expect(rebuilt.search(pair.term.toUpperCase(), 50, { caseSensitive: true }).total).toBe(0);
+    });
+  }
+
+  it("keeps contexts byte-exact on the rebuilt branch", () => {
+    const index = new FullTextSearchIndex();
+    index.replace([note("Mixed.md", "before\r\n    const café = true;   \r\nafter")]);
+    expect(
+      index.search("café", 50, { caseSensitive: true, exactContext: true }).results[0]?.contexts[0],
+    ).toEqual({ kind: "content", line: 2, text: "    const café = true;   " });
   });
 });
