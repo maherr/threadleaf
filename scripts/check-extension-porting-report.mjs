@@ -274,7 +274,9 @@ function validateAgainstSchema(root, schema, value, location, errors) {
   }
   if (schema.enum) {
     if (!schema.enum.includes(value)) {
-      errors.push(`${location}: ${JSON.stringify(value)} is not one of ${JSON.stringify(schema.enum)}`);
+      errors.push(
+        `${location}: ${JSON.stringify(value)} is not one of ${JSON.stringify(schema.enum)}`,
+      );
     }
     return;
   }
@@ -320,9 +322,9 @@ function validateAgainstSchema(root, schema, value, location, errors) {
       }
     }
     if (schema.items) {
-      value.forEach((item, index) =>
-        validateAgainstSchema(root, schema.items, item, `${location}[${index}]`, errors),
-      );
+      value.forEach((item, index) => {
+        validateAgainstSchema(root, schema.items, item, `${location}[${index}]`, errors);
+      });
     }
     return;
   }

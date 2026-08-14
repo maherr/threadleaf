@@ -2,7 +2,11 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { type ExtensionPortingError, inspectUnpackedPlugin, scaffoldPortingTemplate } from "./porting-toolkit";
+import {
+  type ExtensionPortingError,
+  inspectUnpackedPlugin,
+  scaffoldPortingTemplate,
+} from "./porting-toolkit";
 
 const fixtureRoot = path.resolve("fixtures/extension-porting");
 const temporaryDirectories: string[] = [];
@@ -133,9 +137,15 @@ function validateAgainstSchema(
       }
     }
     if (isJsonRecord(schema.items)) {
-      value.forEach((item, index) =>
-        validateAgainstSchema(root, schema.items as JsonSchema, item, `${location}[${index}]`, errors),
-      );
+      value.forEach((item, index) => {
+        validateAgainstSchema(
+          root,
+          schema.items as JsonSchema,
+          item,
+          `${location}[${index}]`,
+          errors,
+        );
+      });
     }
     return;
   }
@@ -157,7 +167,13 @@ function validateAgainstSchema(
     }
     for (const [key, propertySchema] of Object.entries(properties)) {
       if (Object.hasOwn(value, key)) {
-        validateAgainstSchema(root, propertySchema as JsonSchema, value[key], `${location}.${key}`, errors);
+        validateAgainstSchema(
+          root,
+          propertySchema as JsonSchema,
+          value[key],
+          `${location}.${key}`,
+          errors,
+        );
       }
     }
   }
@@ -211,8 +227,7 @@ describe("extension porting toolkit", () => {
       "blocked",
     );
     expect(
-      report.packageInspection.stages.find((stage) => stage.id === "registration-snapshot")
-        ?.status,
+      report.packageInspection.stages.find((stage) => stage.id === "registration-snapshot")?.status,
     ).toBe("blocked");
     expect(report.packageInspection.staticAuthority).toMatchObject({ staticOnly: true });
     expect(report.packageInspection.limitations).toContain(
@@ -291,15 +306,15 @@ describe("extension porting toolkit", () => {
     // Package-shape validation then rejects the unexpected symlink entry as a diagnostic.
     const report = await inspectUnpackedPlugin(plugin);
     expect(report.packageInspection.overall).toBe("fail");
-    expect(report.packageInspection.stages.find((stage) => stage.id === "package-shape")).toMatchObject(
-      {
-        status: "fail",
-        diagnostics: expect.arrayContaining([
-          expect.objectContaining({ code: "non-file-package-entry" }),
-          expect.objectContaining({ code: "unexpected-package-entry" }),
-        ]),
-      },
-    );
+    expect(
+      report.packageInspection.stages.find((stage) => stage.id === "package-shape"),
+    ).toMatchObject({
+      status: "fail",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "non-file-package-entry" }),
+        expect.objectContaining({ code: "unexpected-package-entry" }),
+      ]),
+    });
     expect(report.packageInspection.unexpectedEntries).toContain("outside.js");
     expect(JSON.stringify(report)).not.toContain("SECRET-OUTSIDE-CONTENT");
   });
@@ -316,8 +331,12 @@ describe("extension porting toolkit", () => {
       JSON.stringify({ id: "escape", name: "Escape", version: "0.1.0" }),
     );
 
-    const error: ExtensionPortingError = await inspectUnpackedPlugin(plugin).catch((caught) => caught);
-    expect(error).toMatchObject({ name: "ExtensionPortingError" } satisfies Partial<ExtensionPortingError>);
+    const error: ExtensionPortingError = await inspectUnpackedPlugin(plugin).catch(
+      (caught) => caught,
+    );
+    expect(error).toMatchObject({
+      name: "ExtensionPortingError",
+    } satisfies Partial<ExtensionPortingError>);
     expect(["input", "containment"]).toContain(error.code);
     expect(error.message).not.toContain("SECRET-OUTSIDE-MAIN");
   });

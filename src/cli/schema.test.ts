@@ -438,12 +438,12 @@ async function shellOutputByState(
           const words = completionInvocationWords(state, current);
           if (shell === "bash") {
             commandLines.push(
-              `COMP_WORDS=(${words.map(shellQuote).join(" ")}); COMP_CWORD=$((${words.length} - 1)); _threadleaf_completion; for candidate in "\${COMPREPLY[@]}"; do printf '%s\\t%s\\t%s\\n' ${shellQuote(current || "empty")} ${index} "\$candidate"; done`,
+              `COMP_WORDS=(${words.map(shellQuote).join(" ")}); COMP_CWORD=$((${words.length} - 1)); _threadleaf_completion; for candidate in "\${COMPREPLY[@]}"; do printf '%s\\t%s\\t%s\\n' ${shellQuote(current || "empty")} ${index} "$candidate"; done`,
             );
           } else {
             const line = words.map(shellQuote).join(" ");
             commandLines.push(
-              `for candidate in (complete -C ${shellQuote(line)}); printf '%s\\t%s\\t%s\\n' ${shellQuote(current || "empty")} ${index} \$candidate; end`,
+              `for candidate in (complete -C ${shellQuote(line)}); printf '%s\\t%s\\t%s\\n' ${shellQuote(current || "empty")} ${index} $candidate; end`,
             );
           }
         }

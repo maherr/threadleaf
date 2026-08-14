@@ -377,13 +377,16 @@ describe("exact plugin package inspection", () => {
     expect(report.overall).toBe("blocked");
     expect(
       report.stages.filter((stage) =>
-        ["package-shape", "manifest-schema", "dependency-model", "minimum-app-platform", "static-authority", "banned-private-primitives"].includes(
-          stage.id,
-        ),
+        [
+          "package-shape",
+          "manifest-schema",
+          "dependency-model",
+          "minimum-app-platform",
+          "static-authority",
+          "banned-private-primitives",
+        ].includes(stage.id),
       ),
-    ).toEqual(
-      expect.arrayContaining([expect.objectContaining({ status: "pass" })]),
-    );
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ status: "pass" })]));
     expect(report.stages.find((stage) => stage.id === "activation")?.status).toBe("blocked");
     expect(report.stages.find((stage) => stage.id === "registration-snapshot")?.status).toBe(
       "blocked",

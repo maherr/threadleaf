@@ -94,9 +94,9 @@ describe("porting CLI commands", () => {
     expect(() => parseCliArguments(["port", "scaffold", "native", fixtureDirectory])).toThrow(
       /--output/,
     );
-    expect(() => parseCliArguments(["port", "scaffold", "sideways", fixtureDirectory, "--output", "/tmp/x"])).toThrow(
-      /native or compatibility/,
-    );
+    expect(() =>
+      parseCliArguments(["port", "scaffold", "sideways", fixtureDirectory, "--output", "/tmp/x"]),
+    ).toThrow(/native or compatibility/);
     expect(() => parseCliArguments(["--receipt", "/tmp/r.json", "read", "Note"])).toThrow(
       /--receipt is available only/,
     );
