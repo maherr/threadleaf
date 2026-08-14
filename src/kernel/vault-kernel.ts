@@ -3,6 +3,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
   type AttachmentPublishCapability,
+  AttachmentPublishCapabilityError,
+  assertContainedAnonymousPublishCapability,
   assertContainedPublishCapability,
   atomicWriteFile,
   type ContainedRemovalHooks,
@@ -723,7 +725,26 @@ export class VaultKernel implements VaultMutationPort {
       }
       targetAbsolute = targetCheck.targetAbsolute;
     }
-    if (!(await this.installPreparedFile(stagedPath, targetAbsolute, strictContainment))) {
+    let installed: boolean;
+    try {
+      installed = await this.installPreparedFile(stagedPath, targetAbsolute, strictContainment);
+    } catch (error) {
+      if (strictContainment && error instanceof AttachmentPublishCapabilityError) {
+        // A final native publication failure happens after durable intent and
+        // source evidence exist. Preserve that private state for manual
+        // recovery and report the same typed conflict as target preflight;
+        // Markdown has not been touched on this direct publication path.
+        await this.archiveJournal(journal, "manual-conflict");
+        return {
+          status: "conflict",
+          from: source,
+          to: target,
+          reason: "attachment-publish-unavailable",
+        };
+      }
+      throw error;
+    }
+    if (!installed) {
       await this.archiveJournal(journal, "manual-conflict");
       return { status: "conflict", from: source, to: target, reason: "target-created" };
     }
@@ -1619,7 +1640,10 @@ export class VaultKernel implements VaultMutationPort {
           targetAbsolute,
           true,
         );
-      } catch {
+      } catch (error) {
+        if (error instanceof AttachmentPublishCapabilityError) {
+          journal.reason = "attachment-publish-unavailable";
+        }
         return false;
       }
       if (!installed) {
@@ -3037,7 +3061,7 @@ export class VaultKernel implements VaultMutationPort {
   }
 
   private async assertAttachmentPublishAvailable(targetAbsolute: string): Promise<void> {
-    await assertContainedPublishCapability(
+    await assertContainedAnonymousPublishCapability(
       this.attachmentPublishCapability,
       path.dirname(targetAbsolute),
     );

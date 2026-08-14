@@ -53,7 +53,7 @@ const probeSource = (await readFile(probePath, "utf8"))
   )
   .replace(
     'if (typeof addon.renameNoReplace !== "function") throw new Error("native addon lacks no-clobber rename");',
-    'if (typeof addon.renameNoReplace !== "function") throw new Error("native addon lacks no-clobber rename");\nif (typeof addon.publishBufferNoReplace !== "function") throw new Error("native addon lacks anonymous no-clobber publication");',
+    'if (typeof addon.renameNoReplace !== "function") throw new Error("native addon lacks no-clobber rename");\nif (typeof addon.probeAnonymousPublishNoName !== "function") throw new Error("native addon lacks no-name anonymous publication probe");\nif (typeof addon.publishBufferNoReplace !== "function") throw new Error("native addon lacks anonymous no-clobber publication");',
   )
   .replace(
     'process.stdout.write(JSON.stringify({ loaded: true, acquired: true, asserted: true, released: true, napiVersion: addon.napiVersion(), hostNapiVersion, noClobberRename, collisionPreserved }) + "\\n");',
@@ -61,7 +61,19 @@ const probeSource = (await readFile(probePath, "utf8"))
 let anonymousExactBytes = false;
 let anonymousCollisionPreserved = false;
 let anonymousNoStage = false;
+let anonymousProbe = "unsupported";
+let anonymousProbeNoName = false;
 if (targetPlatform === "linux") {
+  const entriesBeforeProbe = fs.readdirSync(root);
+  const probeDirectoryFd = fs.openSync(root, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
+  try {
+    addon.probeAnonymousPublishNoName(probeDirectoryFd);
+  } finally {
+    fs.closeSync(probeDirectoryFd);
+  }
+  anonymousProbeNoName = JSON.stringify(fs.readdirSync(root)) === JSON.stringify(entriesBeforeProbe);
+  if (!anonymousProbeNoName) throw new Error("anonymous publication probe created a vault pathname");
+  anonymousProbe = "otmpfile-no-name";
   const publishBytes = Buffer.from([0, 1, 2, 255, 10]);
   const publishName = "anonymous-published.bin";
   const publishPath = path.join(root, publishName);
@@ -80,13 +92,17 @@ if (targetPlatform === "linux") {
   anonymousPublish = "otmpfile-linkat";
 } else {
   let unsupportedCode = null;
+  try { addon.probeAnonymousPublishNoName(0); } catch (error) { unsupportedCode = error && error.code; }
+  if (unsupportedCode !== "unsupported") throw new Error("non-Linux anonymous publication probe did not fail closed");
+  unsupportedCode = null;
   try { addon.publishBufferNoReplace(0, "anonymous-published.bin", Buffer.alloc(0)); } catch (error) { unsupportedCode = error && error.code; }
   if (unsupportedCode !== "unsupported") throw new Error("non-Linux anonymous publication did not fail closed");
   anonymousExactBytes = true;
   anonymousCollisionPreserved = true;
   anonymousNoStage = true;
+  anonymousProbeNoName = true;
 }
-process.stdout.write(JSON.stringify({ loaded: true, acquired: true, asserted: true, released: true, napiVersion: addon.napiVersion(), hostNapiVersion, noClobberRename, collisionPreserved, anonymousPublish, anonymousExactBytes, anonymousCollisionPreserved, anonymousNoStage }) + "\\n");`,
+process.stdout.write(JSON.stringify({ loaded: true, acquired: true, asserted: true, released: true, napiVersion: addon.napiVersion(), hostNapiVersion, noClobberRename, collisionPreserved, anonymousProbe, anonymousProbeNoName, anonymousPublish, anonymousExactBytes, anonymousCollisionPreserved, anonymousNoStage }) + "\\n");`,
   );
 await writeFile(probePath, `${probeSource}process.exit(0);\n`, "utf8");
 
@@ -129,6 +145,7 @@ try {
       receipt.released &&
       receipt.hostNapiVersion >= 10 &&
       receipt.collisionPreserved &&
+      receipt.anonymousProbeNoName &&
       receipt.anonymousExactBytes &&
       receipt.anonymousCollisionPreserved &&
       receipt.anonymousNoStage,
@@ -143,6 +160,7 @@ try {
       hostNapiVersion: receipt.hostNapiVersion,
       lifecycle: "import-acquire-assert-release",
       noClobberRename: receipt.noClobberRename,
+      anonymousProbe: receipt.anonymousProbe,
       anonymousPublish: receipt.anonymousPublish,
     }),
   );

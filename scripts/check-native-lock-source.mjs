@@ -103,6 +103,7 @@ for (const required of [
   "AT_EMPTY_PATH",
   "AT_SYMLINK_FOLLOW",
   "linkat(",
+  '"probeAnonymousPublishNoName"',
   '"publishBufferNoReplace"',
   '"exists"',
   '"cross-device"',
@@ -112,6 +113,18 @@ for (const required of [
     `Anonymous no-clobber publication invariant is missing: ${required}`,
   );
 }
+const anonymousProbeStart = source.indexOf("threadleaf_probe_anonymous_publish_no_name");
+const anonymousProbeEnd = source.indexOf("threadleaf_publish_buffer_no_replace");
+assert(
+  anonymousProbeStart >= 0 &&
+    anonymousProbeEnd > anonymousProbeStart &&
+    source.slice(anonymousProbeStart, anonymousProbeEnd).includes("write(") &&
+    source.slice(anonymousProbeStart, anonymousProbeEnd).includes("fchmod(") &&
+    source.slice(anonymousProbeStart, anonymousProbeEnd).includes("fsync(") &&
+    source.slice(anonymousProbeStart, anonymousProbeEnd).includes("close(") &&
+    !source.slice(anonymousProbeStart, anonymousProbeEnd).includes("linkat("),
+  "The exact-target anonymous publication probe must prepare an unnamed inode without linking a name.",
+);
 assert(
   source.includes("#error") && !source.includes("#define O_NOFOLLOW 0"),
   "POSIX builds must fail closed when O_NOFOLLOW is unavailable.",
@@ -186,6 +199,8 @@ assert(
     electronTargetSource.includes('"10"') &&
     electronTargetSource.includes("renameNoReplace") &&
     electronTargetSource.includes("collisionPreserved") &&
+    electronTargetSource.includes("probeAnonymousPublishNoName") &&
+    electronTargetSource.includes("anonymousProbeNoName") &&
     electronTargetSource.includes("publishBufferNoReplace") &&
     electronTargetSource.includes("anonymousExactBytes") &&
     electronTargetSource.includes("anonymousCollisionPreserved") &&

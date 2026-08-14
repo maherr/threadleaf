@@ -262,6 +262,37 @@ async function main() {
       typeof nativeAddon.publishBufferNoReplace === "function",
       "Native addon lacks anonymous no-clobber publication.",
     );
+    assert(
+      typeof nativeAddon.probeAnonymousPublishNoName === "function",
+      "Native addon lacks the no-name anonymous publication probe.",
+    );
+    let anonymousProbe = "unsupported";
+    let anonymousProbeNoName = false;
+    if (process.platform === "linux") {
+      const entriesBeforeProbe = await readdir(root);
+      const probeDirectory = await open(root, constants.O_RDONLY | constants.O_DIRECTORY);
+      try {
+        nativeAddon.probeAnonymousPublishNoName(probeDirectory.fd);
+      } finally {
+        await probeDirectory.close();
+      }
+      anonymousProbeNoName =
+        JSON.stringify(await readdir(root)) === JSON.stringify(entriesBeforeProbe);
+      assert(anonymousProbeNoName, "Anonymous publication probe created a vault pathname.");
+      anonymousProbe = "otmpfile-no-name";
+    } else {
+      let unsupportedCode;
+      try {
+        nativeAddon.probeAnonymousPublishNoName(0);
+      } catch (error) {
+        unsupportedCode = error?.code;
+      }
+      assert(
+        unsupportedCode === "unsupported",
+        "Non-Linux anonymous publication probe did not fail closed.",
+      );
+      anonymousProbeNoName = true;
+    }
     let anonymousPublish = "unsupported";
     let anonymousExactBytes = false;
     let anonymousCollisionPreserved = false;
@@ -323,6 +354,8 @@ async function main() {
         legacyDirectory: "migration-required/quiescent",
         noClobberRename,
         collisionPreserved,
+        anonymousProbe,
+        anonymousProbeNoName,
         anonymousPublish,
         anonymousExactBytes,
         anonymousCollisionPreserved,

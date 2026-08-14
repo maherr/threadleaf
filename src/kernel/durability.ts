@@ -2,11 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 
-import {
-  assertAnonymousPublishAvailable,
-  publishBufferNoReplace,
-  renameNoReplace,
-} from "../native-filesystem/index.js";
+import * as nativeFilesystem from "../native-filesystem/index.js";
 
 // Linux is the only platform whose descriptor-relative path behavior is
 // exercised by this repository. Do not infer that Darwin's /dev/fd spelling
@@ -200,7 +196,7 @@ async function renameContainedAt(
   targetName: string,
 ): Promise<void> {
   const root = requireDescriptorContainment("Contained file claim");
-  renameNoReplace(
+  nativeFilesystem.renameNoReplace(
     descriptorEntry(root, directory.fd, sourceName),
     descriptorEntry(root, directory.fd, targetName),
   );
@@ -229,7 +225,7 @@ export async function probeContainedPublishCapability(
     "attachment publication preflight did not complete",
   );
   try {
-    assertAnonymousPublishAvailable();
+    nativeFilesystem.assertAnonymousPublishAvailable();
     directory = await openContainedDirectory(vaultRoot);
     const device = (await directory.stat({ bigint: true })).dev.toString();
     result = { status: "supported", device, contract: FILE_PUBLISH_CAPABILITY };
@@ -272,6 +268,45 @@ export async function assertContainedPublishCapability(
 }
 
 /**
+ * Prove anonymous-inode create/write/durability on the exact held attachment
+ * target parent without linking or creating a vault name. This is intentionally
+ * narrower than the device-only receipt used for rewrite parents and private
+ * rollback evidence: final linkat at the requested basename remains the
+ * authoritative no-clobber publication check.
+ */
+export async function assertContainedAnonymousPublishCapability(
+  capability: AttachmentPublishCapability,
+  targetDirectory: string,
+): Promise<void> {
+  let directory: ContainedDirectory | undefined;
+  let operationFailed = false;
+  let operationError: unknown;
+  try {
+    await assertContainedPublishCapability(capability, targetDirectory);
+    directory = await openContainedDirectory(targetDirectory);
+    nativeFilesystem.probeAnonymousPublishNoName(directory.fd);
+  } catch (error) {
+    operationFailed = true;
+    operationError = error;
+  }
+  let closeError: unknown;
+  if (directory) {
+    try {
+      await directory.close();
+    } catch (error) {
+      closeError = error;
+    }
+  }
+  if (operationFailed) {
+    if (operationError instanceof AttachmentPublishCapabilityError) throw operationError;
+    throw new AttachmentPublishCapabilityError(classifyPublishCapabilityFailure(operationError));
+  }
+  if (closeError !== undefined) {
+    throw new AttachmentPublishCapabilityError(classifyPublishCapabilityFailure(closeError));
+  }
+}
+
+/**
  * Preserve a strict claim without replacing a retention claimant. A
  * same-filesystem no-clobber rename consumes the claim and is verified at its
  * new name. Cross-device retention copies and verifies the evidence but leaves
@@ -291,7 +326,7 @@ async function retainContainedClaim(
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const retainedName = `.threadleaf-retained-${randomUUID()}.bin`;
       try {
-        renameNoReplace(
+        nativeFilesystem.renameNoReplace(
           descriptorEntry(root, sourceDirectory.fd, claimName),
           descriptorEntry(root, destinationDirectory.fd, retainedName),
         );
@@ -726,7 +761,11 @@ export async function installContainedStagedFile(
     const staged = await readContainedFileAt(stagedDirectory, path.basename(stagedPath));
     if (!staged) throw new Error(`Staged file does not exist: ${stagedPath}`);
     try {
-      publishBufferNoReplace(targetDirectory.fd, path.basename(targetPath), staged.bytes);
+      nativeFilesystem.publishBufferNoReplace(
+        targetDirectory.fd,
+        path.basename(targetPath),
+        staged.bytes,
+      );
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "exists") return false;
       throw new AttachmentPublishCapabilityError(classifyPublishCapabilityFailure(error));

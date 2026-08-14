@@ -4,7 +4,8 @@ import { promises as fs } from "node:fs";
 import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as nativeFilesystem from "../native-filesystem/index.js";
 import { VaultPathError } from "./path-policy";
 import { FixedStateRoot } from "./ports";
 import {
@@ -13,6 +14,12 @@ import {
   type VaultKernelOptions,
   VaultRecoveryError,
 } from "./vault-kernel";
+
+type NativeFilesystemPublishTestSeam = typeof nativeFilesystem & {
+  probeAnonymousPublishNoName(targetDirectoryFd: number): void;
+};
+
+const nativeFilesystemPublishTestSeam = nativeFilesystem as NativeFilesystemPublishTestSeam;
 
 let sandboxPath: string;
 let vaultPath: string;
@@ -887,6 +894,113 @@ describe("VaultKernel renames", () => {
         code: "ENOENT",
       });
       await expectNoAttachmentPublicationArtifacts(kernel);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "fails an exact target-directory anonymous publication probe before direct transaction evidence",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Probe source.bin");
+      const targetPath = path.join(vaultPath, "Probe target.bin");
+      const bytes = Buffer.from("direct target probe source");
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel();
+      expect(kernel.attachmentPublishCapability).toMatchObject({ status: "supported" });
+      const source = await kernel.readBinary("Probe source.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+      const probe = vi
+        .spyOn(nativeFilesystemPublishTestSeam, "probeAnonymousPublishNoName")
+        .mockImplementation(() => {
+          throw new nativeFilesystem.NativeFilesystemError(
+            "unsupported",
+            "injected exact target anonymous probe failure",
+          );
+        });
+      const publish = vi.spyOn(nativeFilesystem, "publishBufferNoReplace");
+      try {
+        await expect(
+          kernel.renameFile(
+            "Probe source.bin",
+            "Probe target.bin",
+            source.snapshot.revision,
+            undefined,
+            {
+              strictContainment: true,
+            },
+          ),
+        ).resolves.toMatchObject({
+          status: "conflict",
+          reason: "attachment-publish-unavailable",
+        });
+        expect(probe).toHaveBeenCalled();
+        expect(publish).not.toHaveBeenCalled();
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        await expectNoAttachmentPublicationArtifacts(kernel);
+      } finally {
+        publish.mockRestore();
+        probe.mockRestore();
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "returns a typed direct conflict and retains private evidence when the final native publish call fails",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Late source.bin");
+      const targetPath = path.join(vaultPath, "Late target.bin");
+      const bytes = Buffer.from("direct late native publish source");
+      await fs.writeFile(sourcePath, bytes);
+      const kernel = await openKernel();
+      expect(kernel.attachmentPublishCapability).toMatchObject({ status: "supported" });
+      const source = await kernel.readBinary("Late source.bin", 1024);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+      const publish = vi
+        .spyOn(nativeFilesystem, "publishBufferNoReplace")
+        .mockImplementation(() => {
+          throw new nativeFilesystem.NativeFilesystemError(
+            "unsupported",
+            "injected final native publish failure",
+          );
+        });
+      try {
+        await expect(
+          kernel.renameFile(
+            "Late source.bin",
+            "Late target.bin",
+            source.snapshot.revision,
+            undefined,
+            {
+              strictContainment: true,
+            },
+          ),
+        ).resolves.toMatchObject({
+          status: "conflict",
+          reason: "attachment-publish-unavailable",
+        });
+        expect(publish).toHaveBeenCalled();
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(bytes);
+        // This controlled replacement throws before native linkat, so its target is absent.
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        const histories = await fs.readdir(path.join(kernel.stateRoot, "history"));
+        expect(histories).toHaveLength(1);
+        const historyName = histories[0];
+        if (!historyName) throw new Error("late direct publication history is missing");
+        await expect(
+          fs
+            .readFile(path.join(kernel.stateRoot, "history", historyName), "utf8")
+            .then((contents) => JSON.parse(contents)),
+        ).resolves.toMatchObject({ kind: "rename", outcome: "manual-conflict" });
+        const transactionId = path.basename(historyName, ".json");
+        await expect(
+          fs.readFile(path.join(kernel.stateRoot, "transactions", transactionId, "rename-source")),
+        ).resolves.toEqual(bytes);
+        await expect(
+          fs.readFile(path.join(kernel.stateRoot, "recovery", `${transactionId}.before`)),
+        ).resolves.toEqual(bytes);
+      } finally {
+        publish.mockRestore();
+      }
     },
   );
 
@@ -2218,6 +2332,139 @@ describe("VaultKernel compound move transactions", () => {
         code: "ENOENT",
       });
       await expectNoAttachmentPublicationArtifacts(kernel);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "fails an exact target-directory anonymous publication probe before rewrite-bearing transaction evidence",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Probe source.bin");
+      const notePath = path.join(vaultPath, "Probe note.md");
+      const targetPath = path.join(vaultPath, "Probe target.bin");
+      const sourceBytes = Buffer.from("rewrite-bearing target probe source");
+      const noteBytes = "[source](./Probe%20source.bin)\n";
+      await fs.writeFile(sourcePath, sourceBytes);
+      await fs.writeFile(notePath, noteBytes, "utf8");
+      const kernel = await openKernel();
+      expect(kernel.attachmentPublishCapability).toMatchObject({ status: "supported" });
+      const [source, note] = await Promise.all([
+        kernel.readBinary("Probe source.bin", 1024),
+        kernel.readText("Probe note.md"),
+      ]);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+      const probe = vi
+        .spyOn(nativeFilesystemPublishTestSeam, "probeAnonymousPublishNoName")
+        .mockImplementation(() => {
+          throw new nativeFilesystem.NativeFilesystemError(
+            "unsupported",
+            "injected rewrite-bearing target anonymous probe failure",
+          );
+        });
+      const publish = vi.spyOn(nativeFilesystem, "publishBufferNoReplace");
+      try {
+        await expect(
+          kernel.moveWithWrites({
+            sourcePath: "Probe source.bin",
+            targetPath: "Probe target.bin",
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [
+              {
+                path: "Probe note.md",
+                content: "[source](./Probe%20target.bin)\n",
+                expectedRevision: note.revision,
+              },
+            ],
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({
+          status: "conflict",
+          reason: "attachment-publish-unavailable",
+        });
+        expect(probe).toHaveBeenCalled();
+        expect(publish).not.toHaveBeenCalled();
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        await expectNoAttachmentPublicationArtifacts(kernel);
+      } finally {
+        publish.mockRestore();
+        probe.mockRestore();
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps Markdown untouched and reports a typed conflict when the final rewrite-bearing native publish call fails",
+    async () => {
+      const sourcePath = path.join(vaultPath, "Late source.bin");
+      const notePath = path.join(vaultPath, "Late note.md");
+      const targetPath = path.join(vaultPath, "Late target.bin");
+      const sourceBytes = Buffer.from("rewrite-bearing late native publish source");
+      const noteBytes = "[source](./Late%20source.bin)\n";
+      await fs.writeFile(sourcePath, sourceBytes);
+      await fs.writeFile(notePath, noteBytes, "utf8");
+      const kernel = await openKernel();
+      expect(kernel.attachmentPublishCapability).toMatchObject({ status: "supported" });
+      const [source, note] = await Promise.all([
+        kernel.readBinary("Late source.bin", 1024),
+        kernel.readText("Late note.md"),
+      ]);
+      if (source.status !== "ready") throw new Error("Expected binary fixture.");
+      const publish = vi
+        .spyOn(nativeFilesystem, "publishBufferNoReplace")
+        .mockImplementation(() => {
+          throw new nativeFilesystem.NativeFilesystemError(
+            "unsupported",
+            "injected final rewrite-bearing native publish failure",
+          );
+        });
+      try {
+        await expect(
+          kernel.moveWithWrites({
+            sourcePath: "Late source.bin",
+            targetPath: "Late target.bin",
+            expectedSourceRevision: source.snapshot.revision,
+            writes: [
+              {
+                path: "Late note.md",
+                content: "[source](./Late%20target.bin)\n",
+                expectedRevision: note.revision,
+              },
+            ],
+            strictContainment: true,
+          }),
+        ).resolves.toMatchObject({
+          status: "conflict",
+          reason: "attachment-publish-unavailable",
+        });
+        expect(publish).toHaveBeenCalled();
+        await expect(fs.readFile(sourcePath)).resolves.toEqual(sourceBytes);
+        await expect(fs.readFile(notePath, "utf8")).resolves.toBe(noteBytes);
+        // This controlled replacement throws before native linkat, so its target is absent.
+        await expect(fs.stat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+        const histories = await fs.readdir(path.join(kernel.stateRoot, "history"));
+        expect(histories).toHaveLength(1);
+        const historyName = histories[0];
+        if (!historyName) throw new Error("late compound publication history is missing");
+        await expect(
+          fs
+            .readFile(path.join(kernel.stateRoot, "history", historyName), "utf8")
+            .then((contents) => JSON.parse(contents)),
+        ).resolves.toMatchObject({
+          kind: "move-with-writes",
+          outcome: "manual-conflict",
+          reason: "attachment-publish-unavailable",
+        });
+        const transactionId = path.basename(historyName, ".json");
+        await expect(
+          fs.readFile(path.join(kernel.stateRoot, "transactions", transactionId, "rename-source")),
+        ).resolves.toEqual(sourceBytes);
+        await expect(
+          fs.readFile(path.join(kernel.stateRoot, "recovery", `${transactionId}.before`)),
+        ).resolves.toEqual(sourceBytes);
+      } finally {
+        publish.mockRestore();
+      }
     },
   );
 

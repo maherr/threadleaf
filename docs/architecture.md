@@ -813,14 +813,18 @@ directory is then fsynced and the published bytes are verified. No target-side s
 exists for another process to replace before publication.
 
 Vault open/create performs a non-mutating host-binding, descriptor-containment, and
-filesystem-device preflight. A strict destination parent must already exist, remain contained, and
-pass that receipt before Threadleaf creates a transaction journal, evidence blob, target, or Markdown
-change; strict attachment publication never creates a missing parent. The anonymous-inode create and
-final link on the exact target filesystem remain the authoritative capability and no-overwrite checks
-before any Markdown mutation. For a
-publication that rewrites links, every rewritten note parent and the receipt-gated private
-rollback-claim directory must be on that same device; a cross-device layout is rejected before the
-destination copy is published.
+filesystem-device preflight only. A strict destination parent must already exist and remain
+contained. Before Threadleaf creates a transaction journal, evidence blob, target, or Markdown
+change, it opens that exact target parent through a held descriptor and performs a no-name probe: it
+creates an unnamed `O_TMPFILE` inode, writes one bounded byte, applies mode 0600, fsyncs the inode
+and directory, and closes it. The probe establishes anonymous-inode create, write, and durability on
+that exact target filesystem and directory while creating no vault pathname. It cannot prove `linkat`
+at the requested basename without creating a visible name, so the final exact-basename `linkat` and
+directory sync remain the authoritative no-overwrite publication checks before Markdown mutation.
+For a publication that rewrites links, every rewritten note parent and the receipt-gated private
+rollback-claim directory need the descriptor and same-device receipt, not the no-name probe, because
+they do not publish the attachment. A cross-device layout is rejected before the destination copy is
+published.
 
 Strict publication also scans the complete non-hidden, non-private lexical vault namespace by NFC-
 and case-folded full path. It records regular files, directories, symlinks without following them,
@@ -839,10 +843,12 @@ remains outside the strict transaction guarantee.
 There is no exclusive-copy fallback because a crash could expose a partial final target. Missing
 `O_TMPFILE` or `linkat` support, `EXDEV`, durability failure, Windows sharing behavior, and
 unsupported descriptor or reparse primitives are typed capability conflicts before Markdown
-mutation. Failure before the final link closes the unnamed inode without creating a vault name.
-Failure after the link may leave the exact destination in place, so the retained source, private
-evidence, and pending journal remain available for recovery or explicit manual review instead of
-deleting a mutable target. The original source name is retained. Markdown rewrites begin only after
+mutation. Failure before the final link closes the unnamed inode without creating a vault name. A
+late native publication capability failure after durable intent returns
+`attachment-publish-unavailable`, leaves the source and Markdown unchanged, and retains the private
+journal and evidence for recovery or explicit manual review. It does not infer that the target is
+absent: failure after `linkat` or its directory sync may leave the exact destination in place, so no
+mutable target is deleted. The original source name is retained. Markdown rewrites begin only after
 the target publication is verified, and the terminal result is `published-source-retained`, not a
 rename. A destination claim, source replacement, parent symlink or reparse change, crash, sharing
 error, or recovery mismatch preserves external bytes and private evidence and reports a conflict.

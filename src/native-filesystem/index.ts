@@ -82,6 +82,32 @@ export function assertAnonymousPublishAvailable(): void {
   nativeFilesystemBinding();
 }
 
+/**
+ * Probes anonymous-inode create/write/durability on one held target
+ * directory without linking or creating any pathname.
+ */
+export function probeAnonymousPublishNoName(targetDirectoryFd: number): void {
+  if (
+    !Number.isSafeInteger(targetDirectoryFd) ||
+    targetDirectoryFd < 0 ||
+    targetDirectoryFd > 0x7fffffff
+  ) {
+    throw new NativeFilesystemError(
+      "invalid",
+      "Anonymous publication probing requires an open directory descriptor.",
+    );
+  }
+  assertAnonymousPublishAvailable();
+  try {
+    nativeFilesystemBinding().probeAnonymousPublishNoName(targetDirectoryFd);
+  } catch (error) {
+    if (error instanceof NativeFilesystemError) throw error;
+    const message =
+      error instanceof Error ? error.message : "Anonymous publication probe did not complete.";
+    throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
+  }
+}
+
 /** Atomically move source to an absent target without replacing a claimant. */
 export function renameNoReplace(sourcePath: string, targetPath: string): void {
   assertPathInput(sourcePath);

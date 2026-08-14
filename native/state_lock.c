@@ -995,6 +995,113 @@ static napi_value threadleaf_rename_no_replace(napi_env env, napi_callback_info 
 }
 
 /*
+ * Prove that an already-open target directory can create and durably prepare
+ * an anonymous publication inode without materializing any vault pathname.
+ * This deliberately does not call linkat: final-basename publication remains
+ * the authoritative no-clobber check because a probe name would either be
+ * visible or need unsafe pathname cleanup.
+ */
+static napi_value threadleaf_probe_anonymous_publish_no_name(
+    napi_env env,
+    napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 1) {
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous publication probe requires an open directory descriptor.");
+  }
+
+  int32_t directory_fd = -1;
+  if (napi_get_value_int32(env, argv[0], &directory_fd) != napi_ok || directory_fd < 0) {
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous publication probe requires an open directory descriptor.");
+  }
+
+#if defined(__linux__) && defined(O_TMPFILE)
+  struct stat directory_stat;
+  if (fstat(directory_fd, &directory_stat) != 0 || !S_ISDIR(directory_stat.st_mode)) {
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "Anonymous publication probe descriptor is not an open directory.");
+  }
+
+  int temporary_fd = openat(
+      directory_fd,
+      ".",
+      O_TMPFILE | O_RDWR | O_CLOEXEC,
+      S_IRUSR | S_IWUSR);
+  if (temporary_fd < 0) {
+    int open_error = errno;
+    if (open_error == EOPNOTSUPP || open_error == ENOTSUP || open_error == EINVAL ||
+        open_error == EISDIR || open_error == ENOENT || open_error == EACCES ||
+        open_error == EPERM) {
+      return threadleaf_filesystem_error(
+          env,
+          "unsupported",
+          "The target filesystem does not support anonymous temporary files.");
+    }
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "Could not create the anonymous attachment publication probe inode.");
+  }
+
+  const unsigned char probe_byte = 0;
+  size_t offset = 0;
+  int operation_error = 0;
+  while (offset < sizeof(probe_byte)) {
+    ssize_t written = write(
+        temporary_fd,
+        ((const char*)&probe_byte) + offset,
+        sizeof(probe_byte) - offset);
+    if (written < 0 && errno == EINTR) {
+      continue;
+    }
+    if (written <= 0) {
+      operation_error = written == 0 ? EIO : errno;
+      break;
+    }
+    offset += (size_t)written;
+  }
+  if (
+      operation_error == 0 &&
+      (fchmod(temporary_fd, S_IRUSR | S_IWUSR) != 0 || fsync(temporary_fd) != 0 ||
+       fsync(directory_fd) != 0)) {
+    operation_error = errno;
+  }
+  int close_result = close(temporary_fd);
+  if (operation_error != 0) {
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "Could not durably prepare the anonymous attachment publication probe inode.");
+  }
+  if (close_result != 0) {
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "The anonymous attachment publication probe descriptor did not close cleanly.");
+  }
+#else
+  return threadleaf_filesystem_error(
+      env,
+      "unsupported",
+      "Anonymous publication probing is currently available only on Linux.");
+#endif
+
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) {
+    return NULL;
+  }
+  return undefined;
+}
+
+/*
  * Materialize bytes into an unnamed inode on an already-open target
  * directory, then atomically link that inode at an absent basename. No
  * staging pathname exists for another process to replace before publication.
@@ -1224,12 +1331,13 @@ napi_value napi_register_module_v1(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"acquire", NULL, threadleaf_acquire, NULL, NULL, NULL, napi_default, NULL},
       {"renameNoReplace", NULL, threadleaf_rename_no_replace, NULL, NULL, NULL, napi_default, NULL},
+      {"probeAnonymousPublishNoName", NULL, threadleaf_probe_anonymous_publish_no_name, NULL, NULL, NULL, napi_default, NULL},
       {"publishBufferNoReplace", NULL, threadleaf_publish_buffer_no_replace, NULL, NULL, NULL, napi_default, NULL},
       {"platform", NULL, threadleaf_platform, NULL, NULL, NULL, napi_default, NULL},
       {"mechanism", NULL, threadleaf_mechanism, NULL, NULL, NULL, napi_default, NULL},
       {"napiVersion", NULL, threadleaf_napi_version, NULL, NULL, NULL, napi_default, NULL},
   };
-  if (napi_define_properties(env, exports, 6, properties) != napi_ok) {
+  if (napi_define_properties(env, exports, 7, properties) != napi_ok) {
     return NULL;
   }
   return exports;

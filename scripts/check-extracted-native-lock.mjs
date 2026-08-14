@@ -88,6 +88,10 @@ assert(
   typeof addon.publishBufferNoReplace === "function",
   "Extracted native addon lacks anonymous no-clobber publication.",
 );
+assert(
+  typeof addon.probeAnonymousPublishNoName === "function",
+  "Extracted native addon lacks the no-name anonymous publication probe.",
+);
 const addonPlatform = addon.platform();
 const addonMechanism = addon.mechanism();
 assert(
@@ -261,7 +265,20 @@ try {
   let anonymousExactBytes = false;
   let anonymousCollisionPreserved = false;
   let anonymousNoStage = false;
+  let anonymousProbe = "unsupported";
+  let anonymousProbeNoName = false;
   if (expectedPlatform === "linux") {
+    const entriesBeforeProbe = readdirSync(parent);
+    const probeDirectoryFd = openSync(parent, constants.O_RDONLY | constants.O_DIRECTORY);
+    try {
+      addon.probeAnonymousPublishNoName(probeDirectoryFd);
+    } finally {
+      closeSync(probeDirectoryFd);
+    }
+    anonymousProbeNoName =
+      JSON.stringify(readdirSync(parent)) === JSON.stringify(entriesBeforeProbe);
+    assert(anonymousProbeNoName, "Extracted anonymous publication probe created a vault pathname.");
+    anonymousProbe = "otmpfile-no-name";
     const publishBytes = Buffer.from([0, 1, 2, 255, 10]);
     const publishName = "anonymous-published.bin";
     const directoryFd = openSync(parent, constants.O_RDONLY | constants.O_DIRECTORY);
@@ -291,6 +308,16 @@ try {
   } else {
     let unsupportedCode = null;
     try {
+      addon.probeAnonymousPublishNoName(0);
+    } catch (error) {
+      unsupportedCode = error?.code;
+    }
+    assert(
+      unsupportedCode === "unsupported",
+      "Non-Linux extracted anonymous publication probe did not fail closed.",
+    );
+    unsupportedCode = null;
+    try {
       addon.publishBufferNoReplace(0, "anonymous-published.bin", Buffer.alloc(0));
     } catch (error) {
       unsupportedCode = error?.code;
@@ -302,6 +329,7 @@ try {
     anonymousExactBytes = true;
     anonymousCollisionPreserved = true;
     anonymousNoStage = true;
+    anonymousProbeNoName = true;
   }
   console.log(
     JSON.stringify({
@@ -318,6 +346,8 @@ try {
       cliLock01: "independent-process contention, killed-holder release, persistent pathname",
       noClobberRename,
       collisionPreserved,
+      anonymousProbe,
+      anonymousProbeNoName,
       anonymousPublish,
       anonymousExactBytes,
       anonymousCollisionPreserved,

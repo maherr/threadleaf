@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type NativeFilesystemError, publishBufferNoReplace, renameNoReplace } from "./index.js";
+import {
+  type NativeFilesystemError,
+  probeAnonymousPublishNoName,
+  publishBufferNoReplace,
+  renameNoReplace,
+} from "./index.js";
 
 const temporaryRoots: string[] = [];
 
@@ -65,6 +70,21 @@ describe("native filesystem", () => {
   );
 
   it.runIf(process.platform === "linux")(
+    "probes anonymous publication through a held directory descriptor without creating a name",
+    async () => {
+      const root = await temporaryRoot();
+      const before = await fs.readdir(root);
+      const directory = await fs.open(root, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY);
+      try {
+        probeAnonymousPublishNoName(directory.fd);
+      } finally {
+        await directory.close();
+      }
+      await expect(fs.readdir(root)).resolves.toEqual(before);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
     "publishes Buffer bytes from an anonymous inode without exposing a stage name",
     async () => {
       const root = await temporaryRoot();
@@ -91,6 +111,9 @@ describe("native filesystem", () => {
       expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
     );
     expect(() => publishBufferNoReplace(-1, "target", Buffer.alloc(0))).toThrowError(
+      expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
+    );
+    expect(() => probeAnonymousPublishNoName(-1)).toThrowError(
       expect.objectContaining<Partial<NativeFilesystemError>>({ code: "invalid" }),
     );
     expect(() => publishBufferNoReplace(0x80000000, "target", Buffer.alloc(0))).toThrowError(

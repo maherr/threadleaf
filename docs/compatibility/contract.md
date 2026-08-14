@@ -151,19 +151,28 @@ Definition destinations are supported only on one physical source line. A source
 destination is retained as opaque evidence and blocks publication rather than receiving a partial
 rewrite; a definitely unrelated continuation remains byte-identical and nonblocking.
 The strict publish gate is `FILE-PUBLISH-CAP-02`: vault open/create performs a non-mutating native
-binding, descriptor-containment, and destination-device preflight. The exact target filesystem is
-then gated by an unnamed `O_TMPFILE` inode and an atomic absent-name `linkat` publication before any
-Markdown mutation. No target-side staging pathname is exposed, and an existing claimant is never
-replaced.
+binding, descriptor-containment, and destination-device preflight only. For an already-existing,
+contained exact destination parent, Threadleaf then uses its held directory descriptor to create an
+unnamed `O_TMPFILE` inode, write one bounded byte, apply mode 0600, fsync the inode and directory,
+and close it before it creates a journal, evidence, target, or Markdown change. This no-name probe
+proves anonymous-inode create, write, and durability on the exact target filesystem and directory
+without exposing a vault pathname. It cannot prove `linkat` at the actual basename without creating
+a visible name. The final absent-name `linkat` and directory sync therefore remain the authoritative
+publication and no-overwrite receipt before Markdown mutation. No target-side staging pathname is
+exposed, and an existing claimant is never replaced.
 Strict publication requires an already-existing contained destination parent. A missing or unsafe
 parent, unavailable publication capability, or cross-device layout fails as a typed conflict before
-Threadleaf creates a journal, evidence, target, or Markdown change.
-When link rewrites are required, every rewritten note parent and the receipt-gated private rollback
-claim directory must be on that device too. A cross-device layout fails before publication.
+Threadleaf creates a journal, evidence, target, or Markdown change. When link rewrites are required,
+every rewritten note parent and the receipt-gated private rollback claim directory need the
+descriptor and same-device receipt, not the no-name probe, because they do not publish the
+attachment. A cross-device layout fails before publication.
 There is no exclusive-copy fallback because a crash could expose a partial final target. ReFS-like
 unsupported anonymous-inode or link behavior, `EXDEV`, durability failure, unsupported
 descriptor/reparse behavior, and Windows sharing violations are typed unsupported capability states
-before Markdown mutation.
+before Markdown mutation. A final native capability failure after durable intent returns
+`attachment-publish-unavailable`, leaves source and Markdown bytes unchanged, and retains the
+private journal and evidence for recovery. It does not claim that the exact target is absent, because
+`linkat` may have succeeded before a later durability failure.
 Strict attachment claims are moved through no-clobber retention or left as recoverable evidence;
 they are never unlinked through a mutable pathname. Portable private stages use bounded
 high-entropy claims and clean only after exact verification under the documented ordinary-editor
