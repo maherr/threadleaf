@@ -370,6 +370,32 @@ describe("exact plugin package inspection", () => {
     expect(JSON.stringify(report)).not.toContain("/tmp/");
   });
 
+  it("never activates the exact package when the caller requests static-only inspection", async () => {
+    const input = await fixtureInput("inspection-safe");
+    const report = await inspectPluginPackage(input, { timeoutMs: 1_000, runActivation: false });
+
+    expect(report.overall).toBe("blocked");
+    expect(
+      report.stages.filter((stage) =>
+        ["package-shape", "manifest-schema", "dependency-model", "minimum-app-platform", "static-authority", "banned-private-primitives"].includes(
+          stage.id,
+        ),
+      ),
+    ).toEqual(
+      expect.arrayContaining([expect.objectContaining({ status: "pass" })]),
+    );
+    expect(report.stages.find((stage) => stage.id === "activation")?.status).toBe("blocked");
+    expect(report.stages.find((stage) => stage.id === "registration-snapshot")?.status).toBe(
+      "blocked",
+    );
+    expect(report.staticAuthority).toMatchObject({ staticOnly: true });
+    expect(report.registrations).toBeNull();
+    expect(report.candidate).toBeNull();
+
+    const activated = await inspectPluginPackage(input, { timeoutMs: 1_000 });
+    expect(activated.stages.find((stage) => stage.id === "activation")?.status).toBe("pass");
+  });
+
   it("binds every result to exact bytes and refuses floating or tampered inputs", async () => {
     const input = await fixtureInput("inspection-safe");
     const tampered: ExactPluginPackageInput = {

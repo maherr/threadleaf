@@ -113,6 +113,14 @@ export interface PluginPackageInspectionOptions {
   runtimeFactory?: PluginInspectionRuntimeFactory;
   /** A stable logical evidence root, never an absolute filesystem path. */
   evidenceRoot?: string;
+  /**
+   * Defaults to true, preserving every existing caller's behavior. A caller that sets this to
+   * false receives a static-only inspection: no package bytes are materialized to a disposable
+   * vault and trusted compatibility activation never runs, regardless of static authority or
+   * network mode. Set this only for a caller that must never execute, eval, or require() the
+   * inspected code, such as the public extension-porting toolkit.
+   */
+  runActivation?: boolean;
 }
 
 export interface PluginInspectionRuntimeContext {
@@ -1312,6 +1320,7 @@ export async function inspectPluginPackage(
         : defaultInspectionTimeoutMs,
     networkMode: configuredOptions.networkMode ?? "denied",
     runtimeFactory: configuredOptions.runtimeFactory,
+    runActivation: configuredOptions.runActivation ?? true,
   } as const;
   const stages: PluginPackageInspectionStage[] = [];
   const safeInputProvenance = safeProvenance(input.provenance);
@@ -1397,6 +1406,7 @@ export async function inspectPluginPackage(
   const hasDeterministicNetworkRuntime =
     options.networkMode === "deterministic-fixture" && options.runtimeFactory !== undefined;
   const activationAllowed =
+    options.runActivation &&
     !prerequisiteFailure &&
     staticAuthority !== null &&
     (!hasNetworkAuthority || hasDeterministicNetworkRuntime);
@@ -1480,13 +1490,15 @@ export async function inspectPluginPackage(
       }
     }
   } else {
-    const reason = hasNetworkAuthority
-      ? hasDeterministicNetworkRuntime
-        ? "Static prerequisites did not pass."
-        : options.networkMode === "denied"
-          ? "Network-capable packages are blocked when network access is denied."
-          : "A caller-supplied deterministic fixture runtime is required for network-capable packages."
-      : "Static prerequisites did not pass.";
+    const reason = !options.runActivation
+      ? "Activation was disabled by the caller; only static inspection was requested."
+      : hasNetworkAuthority
+        ? hasDeterministicNetworkRuntime
+          ? "Static prerequisites did not pass."
+          : options.networkMode === "denied"
+            ? "Network-capable packages are blocked when network access is denied."
+            : "A caller-supplied deterministic fixture runtime is required for network-capable packages."
+        : "Static prerequisites did not pass.";
     stages.push(unavailableStage("activation", reason));
     stages.push(unavailableStage("registration-snapshot", "Activation did not run."));
   }
