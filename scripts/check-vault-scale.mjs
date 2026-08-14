@@ -451,12 +451,29 @@ async function verifyCorpus(variant, checkedIn) {
 }
 
 async function runKernel(variant, vaultPath, stateRoot) {
-  const { stdout } = await execFileAsync(
-    process.execPath,
-    [kernelRunnerPath, "--variant", variant, "--vault", vaultPath, "--state-root", stateRoot],
-    { cwd: appRoot, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
-  );
-  return JSON.parse(stdout);
+  try {
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [kernelRunnerPath, "--variant", variant, "--vault", vaultPath, "--state-root", stateRoot],
+      {
+        cwd: appRoot,
+        encoding: "utf8",
+        maxBuffer: 4 * 1024 * 1024,
+        timeout: maxWaitMs,
+      },
+    );
+    return JSON.parse(stdout);
+  } catch (error) {
+    error.kernelFailure = {
+      status: "aborted",
+      message: error.message ?? String(error),
+      code: error.code ?? null,
+      signal: error.signal ?? null,
+      timedOut: error.code === "ETIMEDOUT",
+      stderrTail: String(error.stderr ?? "").slice(-4_000),
+    };
+    throw error;
+  }
 }
 
 async function readSurface(cdp) {
@@ -856,6 +873,15 @@ function metricAgreement(name, unit, values, bound) {
 }
 
 function agreementFor(runs) {
+  const bounds = {
+    timingRelativeSpread: 0.25,
+    incrementalTimingRelativeSpread: 0.35,
+    memoryRelativeSpread: 0.2,
+    responsivenessRelativeSpread: 0.5,
+  };
+  if (runs.length < 2) {
+    return { runs: runs.length, bounds, status: "insufficient-runs", metrics: [] };
+  }
   const metrics = [
     [
       "cold.usableShellMs",
@@ -925,15 +951,13 @@ function agreementFor(runs) {
     .map(([name, unit, values, bound]) => metricAgreement(name, unit, values, bound));
   return {
     runs: runs.length,
-    bounds: {
-      timingRelativeSpread: 0.25,
-      incrementalTimingRelativeSpread: 0.35,
-      memoryRelativeSpread: 0.2,
-      responsivenessRelativeSpread: 0.5,
-    },
-    status: checks.every((check) => check.status === "within-bound")
-      ? "within-bounds"
-      : "outside-bounds",
+    bounds,
+    status:
+      checks.length === 0
+        ? "insufficient-data"
+        : checks.every((check) => check.status === "within-bound")
+          ? "within-bounds"
+          : "outside-bounds",
     metrics: checks,
   };
 }
@@ -1045,11 +1069,13 @@ async function runVariant(variant, checkedIn, runtime, environment) {
       try {
         kernel = await runKernel(variant, corpus.vaultPath, stateRoot);
       } catch (error) {
+        kernel = error.kernelFailure ?? null;
         measurementError ??= error;
-        if (measurementError !== error) measurementError.kernelError = error;
+        if (measurementError !== error) measurementError.kernelError = error.kernelFailure;
       }
       if (measurementError) {
         runs.push({
+          status: "aborted",
           runIndex,
           kernel,
           cold: cold ?? {
@@ -1063,7 +1089,7 @@ async function runVariant(variant, checkedIn, runtime, environment) {
         });
         throw measurementError;
       }
-      runs.push({ runIndex, kernel, cold, warm });
+      runs.push({ status: "complete", runIndex, kernel, cold, warm });
     }
   } catch (error) {
     error.corpus = corpus;
@@ -1191,7 +1217,9 @@ async function main() {
         "aborted",
         {
           message: detail,
-          completedRuns: error.runs?.length ?? 0,
+          completedRuns: error.runs?.filter((run) => run.status === "complete").length ?? 0,
+          observedRuns: error.runs?.length ?? 0,
+          kernelError: error.kernelError ?? error.kernelFailure ?? null,
           partial: error.partial ?? null,
         },
       );
