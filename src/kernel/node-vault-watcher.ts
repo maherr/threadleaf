@@ -299,6 +299,7 @@ export class NodeVaultWatcher {
   readonly policy: VaultPathPolicy;
   readonly #sequencer: WatchBatchSequencer;
   readonly #ledger: WatchOperationLedger;
+  readonly #transientAbsences: TransientAbsenceRegistry | undefined;
   readonly #debounceMs: number;
   readonly #onError: (error: unknown) => void;
   #snapshot: VaultSnapshot;
@@ -318,6 +319,7 @@ export class NodeVaultWatcher {
     this.#snapshot = snapshot;
     this.#debounceMs = options.debounceMs ?? 80;
     this.#onError = options.onError ?? (() => undefined);
+    this.#transientAbsences = options.transientAbsences;
     this.#ledger = new WatchOperationLedger(
       options.transientAbsences ? { transientAbsences: options.transientAbsences } : {},
     );
@@ -374,6 +376,10 @@ export class NodeVaultWatcher {
   }
 
   async scanNow(): Promise<VaultChangeBatch | null> {
+    // Taken before the walk: a file this scan reads as missing was missing at
+    // some point inside the walk, and the transaction responsible may well have
+    // finished and released its claim before the diff is annotated below.
+    const since = this.#transientAbsences?.mark();
     const next = await captureVaultSnapshot(this.policy, this.#snapshot);
     const diff = diffVaultSnapshots(this.#snapshot, next);
     this.#snapshot = next;
@@ -384,12 +390,13 @@ export class NodeVaultWatcher {
       this.#ledger.clear();
     }
     return this.#sequencer.next({
-      changes: this.#ledger.annotate(diff.changes),
+      changes: this.#ledger.annotate(diff.changes, since),
       ...(diff.rescan ? { rescan: diff.rescan } : {}),
     });
   }
 
   async scanSubtree(relativeDirectory: string): Promise<VaultChangeBatch | null> {
+    const since = this.#transientAbsences?.mark();
     const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
     const prefix = normalizedDirectory ? `${normalizedDirectory}/` : "";
     const nextSubtree = await captureVaultSnapshot(
@@ -415,7 +422,7 @@ export class NodeVaultWatcher {
       this.#ledger.clear();
     }
     return this.#sequencer.next({
-      changes: this.#ledger.annotate(diff.changes),
+      changes: this.#ledger.annotate(diff.changes, since),
       ...(diff.rescan ? { rescan: diff.rescan } : {}),
     });
   }

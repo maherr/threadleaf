@@ -151,6 +151,18 @@ export type ExpectedVaultOperation =
 export interface TransientAbsenceRegistry {
   /** The transaction holding `path` aside right now, when one holds it. */
   operationFor(path: string): string | undefined;
+  /**
+   * A marker for the current instant. A scan takes one before it starts reading
+   * the vault so it can ask about the window it just walked rather than about
+   * the moment it finished, which is a different and later instant.
+   */
+  mark(): number;
+  /**
+   * The transaction holding `path` aside now, or the last one to have released
+   * it since `mark`. A claim taken and released entirely inside a scan is still
+   * the reason that scan saw the file missing.
+   */
+  operationSince(path: string, mark: number): string | undefined;
 }
 
 /** One transaction's claim on one path, released on every transaction exit. */
@@ -159,9 +171,18 @@ export interface TransientAbsenceHandle {
   release(): void;
 }
 
+/**
+ * How many recently released claims stay answerable. A scan only ever asks
+ * about the window it just walked, so this bounds memory without bounding
+ * correctness for any realistic scan.
+ */
+const rememberedReleaseCount = 512;
+
 /** Write side of {@link TransientAbsenceRegistry}; owned by the vault kernel. */
 export class VaultTransientAbsences implements TransientAbsenceRegistry {
   readonly #held = new Map<string, string[]>();
+  readonly #released = new Map<string, { operationId: string; at: number }>();
+  #clock = 0;
 
   /**
    * Reserve a claim without taking it. The caller takes the claim once the file
@@ -176,6 +197,8 @@ export class VaultTransientAbsences implements TransientAbsenceRegistry {
           return;
         }
         operationId = id;
+        this.#clock += 1;
+        this.#released.delete(path);
         const stack = this.#held.get(path);
         if (stack) {
           stack.push(id);
@@ -189,16 +212,28 @@ export class VaultTransientAbsences implements TransientAbsenceRegistry {
           return;
         }
         operationId = undefined;
+        this.#clock += 1;
         const stack = this.#held.get(path);
-        if (!stack) {
+        if (stack) {
+          const index = stack.lastIndexOf(held);
+          if (index !== -1) {
+            stack.splice(index, 1);
+          }
+          if (stack.length === 0) {
+            this.#held.delete(path);
+          }
+        }
+        if (this.#held.has(path)) {
           return;
         }
-        const index = stack.lastIndexOf(held);
-        if (index !== -1) {
-          stack.splice(index, 1);
-        }
-        if (stack.length === 0) {
-          this.#held.delete(path);
+        this.#released.delete(path);
+        this.#released.set(path, { operationId: held, at: this.#clock });
+        while (this.#released.size > rememberedReleaseCount) {
+          const oldest = this.#released.keys().next().value;
+          if (oldest === undefined) {
+            break;
+          }
+          this.#released.delete(oldest);
         }
       },
     };
@@ -206,6 +241,19 @@ export class VaultTransientAbsences implements TransientAbsenceRegistry {
 
   operationFor(path: string): string | undefined {
     return this.#held.get(path)?.at(-1);
+  }
+
+  mark(): number {
+    return this.#clock;
+  }
+
+  operationSince(path: string, mark: number): string | undefined {
+    const held = this.#held.get(path)?.at(-1);
+    if (held !== undefined) {
+      return held;
+    }
+    const released = this.#released.get(path);
+    return released && released.at > mark ? released.operationId : undefined;
   }
 }
 
@@ -232,8 +280,14 @@ export class WatchOperationLedger {
     this.#operations.set(operation.id, operation);
   }
 
-  annotate(changes: readonly VaultChange[]): VaultChange[] {
-    const annotated = changes.map((change) => this.attributeTransientAbsence({ ...change }));
+  /**
+   * `since` is the marker the caller took before it began reading the vault.
+   * Attribution has to answer for that window, not for the instant annotation
+   * happens: a write that finished while the scan was still walking has already
+   * released its claim by the time the changes reach here.
+   */
+  annotate(changes: readonly VaultChange[], since?: number): VaultChange[] {
+    const annotated = changes.map((change) => this.attributeTransientAbsence({ ...change }, since));
     for (const operation of this.#operations.values()) {
       this.normalizeMaterializedMove(operation, annotated);
       const indexes = this.match(operation, annotated);
@@ -261,11 +315,18 @@ export class WatchOperationLedger {
     this.#recentUnattributed = [];
   }
 
-  private attributeTransientAbsence(change: VaultChange): VaultChange {
+  private attributeTransientAbsence(change: VaultChange, since?: number): VaultChange {
     if (change.kind !== "delete") {
       return change;
     }
-    const operationId = this.#transientAbsences?.operationFor(change.path);
+    const registry = this.#transientAbsences;
+    if (!registry) {
+      return change;
+    }
+    const operationId =
+      since === undefined
+        ? registry.operationFor(change.path)
+        : registry.operationSince(change.path, since);
     return operationId === undefined ? change : { ...change, transientOperationId: operationId };
   }
 
