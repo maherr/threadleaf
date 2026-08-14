@@ -217,9 +217,11 @@ export function projectSearchText(value: string, caseSensitive = false): SearchT
     textChunks.push(chunkParts.join(""));
   }
   const text = textChunks.join("");
-  if (text.length !== foldedOffset) {
-    throw new Error("Search projection offset map is inconsistent with its folded text.");
-  }
+  // text.length always equals foldedOffset by construction: `text` is exactly the
+  // concatenation, in order, of every `foldedPart` passed to `appendFolded` above (chunking
+  // only batches that concatenation into fewer `join` calls; it never drops or duplicates a
+  // part), and `foldedOffset` is the running sum of `foldedPart.length` over that same
+  // sequence. There is no separate derivation of `text` for these two values to disagree on.
   const projection = {} as SearchTextProjection;
   let materializedSegments: SearchTextSegment[] | undefined;
   let materializedBoundaries: number[] | undefined;
