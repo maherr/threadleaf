@@ -1227,9 +1227,7 @@ export function buildLivePreviewMapping(
       const parseOptions = options.stats
         ? { footnoteIds: footnotes.ids, stats: options.stats }
         : { footnoteIds: footnotes.ids };
-      parsed.push(
-        ...parseLivePreviewLine(line, lineFrom, localProtectedRanges, parseOptions),
-      );
+      parsed.push(...parseLivePreviewLine(line, lineFrom, localProtectedRanges, parseOptions));
     }
     if (isFrontmatter) {
       parsed.push({
