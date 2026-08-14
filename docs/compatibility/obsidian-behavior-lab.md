@@ -101,8 +101,16 @@ The command builds Threadleaf first, then prints the private temporary `runRoot`
 Use `--red-control` to prove that a seeded fixture-byte mutation is rejected. Use
 `--threadleaf-red-control` to remove the live disposable production CodeMirror editor after the
 fixture has rendered. The real focus/input path must then block `THREADLEAF-01`, block
-`MATCH-01`, and make the command exit nonzero. A following unmodified run must restore both cells
-to `observed`. The mutation changes no source or persisted test fixture.
+`MATCH-01`, and make the command exit nonzero. That is a passing red control only when its receipt
+names `mutation-caught`: the editor remained absent and the production focus/input boundary itself
+blocked. If the production edit, save, exit, and reopen path completes after the mutation,
+`THREADLEAF-01` and `MATCH-01` are `failed`, with the reason `mutation unexpectedly completed the
+production path`; that is a failed control, never an expected-looking red. The
+`--threadleaf-red-control-reinsert-editor` variant deliberately removes and then reinserts the
+disposable editor before focus/input to exercise that failed-control outcome. A following
+unmodified run must restore both cells to `observed`. CLI-01 remains the documented exempt
+`blocked` cell and is never silently counted as a pass. These mutations change no source or
+persisted test fixture.
 
 By default the run root is retained after sealing, for independent verification. `--cleanup` prints
 the sealed manifest (all cell receipts) to stdout and then removes this run's root; it never touches

@@ -15,6 +15,11 @@ import {
 
 export const THREADLEAF_CELL_ID = "THREADLEAF-01";
 export const THREADLEAF_EDIT = "THREADLEAF_OBSIDIAN_LAB_CANDIDATE_EDIT_V1";
+export const THREADLEAF_MUTATION = Object.freeze({
+  REMOVE_EDITOR: "remove-editor",
+  REMOVE_THEN_REINSERT_EDITOR: "remove-then-reinsert-editor",
+});
+export const THREADLEAF_EDITOR_UNAVAILABLE = "Threadleaf CodeMirror editor is unavailable.";
 
 const fixtureNote = "00 Overview.md";
 const viewport = { width: 800, height: 650, deviceScaleFactor: 1, pageScale: 1 };
@@ -92,7 +97,27 @@ export function assertThreadleafLaunchArgs(args, { runRoot, electronPath, userDa
     strictDescendant(runRoot, userDataPath),
     "Threadleaf profile escaped the dedicated run root.",
   );
-  const expected = threadleafLaunchArgs({ electronPath, userDataPath, cdpPort });
+  // Keep this oracle independently written from threadleafLaunchArgs(). If the
+  // generator and this assertion shared one value, a weakened launch policy
+  // could make both drift together and still pass its own check.
+  const expected = [
+    "-a",
+    "-s",
+    "-screen 0 1440x840x24 -nolisten tcp",
+    electronPath,
+    "--ozone-platform=x11",
+    "--disable-gpu",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--no-first-run",
+    `--window-size=${viewport.width},${viewport.height}`,
+    `--remote-debugging-port=${cdpPort}`,
+    "--remote-debugging-address=127.0.0.1",
+    `--remote-allow-origins=http://127.0.0.1:${cdpPort}`,
+    `--user-data-dir=${userDataPath}`,
+    "--password-store=basic",
+    ".",
+  ];
   assert(
     args.length === expected.length,
     `Threadleaf launch argument count changed: expected ${expected.length}, got ${args.length}.`,
@@ -264,7 +289,7 @@ async function focusEditor(cdp) {
       cdp,
       `(() => {
         const editor = document.querySelector('[data-pane-id="primary"] .cm-content[contenteditable="true"]');
-        if (!(editor instanceof HTMLElement)) throw new Error('Threadleaf CodeMirror editor is unavailable.');
+        if (!(editor instanceof HTMLElement)) throw new Error(${JSON.stringify(THREADLEAF_EDITOR_UNAVAILABLE)});
         editor.focus();
         return document.activeElement === editor;
       })()`,
@@ -418,13 +443,58 @@ export function assertThreadleafReceipt(receipt, { runRoot, vaultPath }) {
   return true;
 }
 
+function normalizeThreadleafMutation(mutation) {
+  if (mutation == null || mutation === false) return null;
+  if (mutation === true) return THREADLEAF_MUTATION.REMOVE_EDITOR;
+  assert(
+    Object.values(THREADLEAF_MUTATION).includes(mutation),
+    `Unknown Threadleaf behavior mutation: ${JSON.stringify(mutation)}.`,
+  );
+  return mutation;
+}
+
+export function classifyThreadleafMutation({ mutation, evidence, failure, failureStage }) {
+  if (!mutation) return null;
+  const failureText = failure ? String(failure) : null;
+  const caughtAtFocusBoundary =
+    failureText?.includes(THREADLEAF_EDITOR_UNAVAILABLE) &&
+    failureStage === "focus-editor" &&
+    evidence?.removed === true &&
+    evidence?.editorPresentBeforeFocus === false;
+  if (caughtAtFocusBoundary) {
+    return {
+      status: "blocked",
+      outcome: "mutation-caught",
+      control: "passed",
+      reason:
+        "RC-THREADLEAF-01 mutation caught: the production focus/input boundary was blocked because the editor remained unavailable.",
+    };
+  }
+  if (!failure) {
+    return {
+      status: "failed",
+      outcome: "mutation-not-caught",
+      control: "failed",
+      reason:
+        "RC-THREADLEAF-01 mutation not caught: mutation unexpectedly completed the production path.",
+    };
+  }
+  return {
+    status: "blocked",
+    outcome: "mutation-indeterminate",
+    control: "inconclusive",
+    reason: `RC-THREADLEAF-01 could not prove the mutation was caught at the production focus/input boundary (failed at ${failureStage ?? "unknown stage"}: ${failureText}).`,
+  };
+}
+
 export async function runThreadleafRoundtrip({
   appRoot,
   runRoot,
   vaultPath,
   marker,
-  mutation = false,
+  mutation = null,
 }) {
+  const mutationMode = normalizeThreadleafMutation(mutation);
   const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
   const userDataPath = path.join(runRoot, "threadleaf-profile");
   const homePath = path.join(runRoot, "threadleaf-home");
@@ -447,6 +517,7 @@ export async function runThreadleafRoundtrip({
   let screenshot = null;
   let mutationEvidence = null;
   let failure = null;
+  let failureStage = "setup";
   let receipt = null;
   let temporaryCleanup = null;
 
@@ -554,19 +625,34 @@ export async function runThreadleafRoundtrip({
       "Threadleaf candidate fixture did not contain the required external-oracle predicate.",
     );
 
+    failureStage = "initial-launch";
     const initial = await start("initial");
+    failureStage = "initial-visible-state";
     await waitForCandidate(initial.cdp, { requireNote: false });
     await openFixtureNote(initial.cdp);
     initialVisible = await waitForCandidate(initial.cdp);
-    if (mutation) {
+    if (mutationMode) {
+      const reinsertEditor = mutationMode === THREADLEAF_MUTATION.REMOVE_THEN_REINSERT_EDITOR;
+      failureStage = "apply-mutation";
       mutationEvidence = await bounded(
         evaluate(
           initial.cdp,
           `(() => {
             const editor = document.querySelector('[data-pane-id="primary"] .cm-content[contenteditable="true"]');
             if (!(editor instanceof HTMLElement)) return { removed: false, reason: 'editor-missing' };
+            const parent = editor.parentElement;
+            const nextSibling = editor.nextSibling;
             editor.remove();
-            return { removed: document.querySelector('[data-pane-id="primary"] .cm-content[contenteditable="true"]') === null };
+            const removed = document.querySelector('[data-pane-id="primary"] .cm-content[contenteditable="true"]') === null;
+            const reinsertRequested = ${reinsertEditor};
+            if (reinsertRequested && parent) parent.insertBefore(editor, nextSibling);
+            const current = document.querySelector('[data-pane-id="primary"] .cm-content[contenteditable="true"]');
+            return {
+              removed,
+              reinsertRequested,
+              reinserted: reinsertRequested && current === editor && editor.isConnected,
+              editorPresentBeforeFocus: current instanceof HTMLElement,
+            };
           })()`,
         ),
         "Threadleaf behavior mutation",
@@ -575,26 +661,44 @@ export async function runThreadleafRoundtrip({
         mutationEvidence?.removed === true,
         "Threadleaf behavior mutation did not remove the production editor.",
       );
+      if (reinsertEditor) {
+        assert(
+          mutationEvidence?.reinserted === true &&
+            mutationEvidence.editorPresentBeforeFocus === true,
+          "Threadleaf behavior mutation did not reinsert the production editor before focus/input.",
+        );
+      }
     }
+    failureStage = "focus-editor";
     await focusEditor(initial.cdp);
+    failureStage = "position-editor";
     await sendKey(initial.cdp, "End", "End", 35, 2);
     expectedBytes = Buffer.concat([initialBytes, Buffer.from(`${THREADLEAF_EDIT}\n`, "utf8")]);
+    failureStage = "insert-text";
     await bounded(
       initial.cdp.send("Input.insertText", { text: `${THREADLEAF_EDIT}\n` }),
       "Threadleaf candidate edit input",
     );
+    failureStage = "verify-visible-edit";
     await waitForCandidate(initial.cdp, { requireEdit: true });
+    failureStage = "save-edit";
     await sendKey(initial.cdp, "s", "KeyS", 83, 2);
+    failureStage = "verify-saved-bytes";
     await waitForExactBytes(notePath, expectedBytes);
+    failureStage = "close-initial";
     await closeThreadleaf(initial);
 
+    failureStage = "reopen-launch";
     const reopened = await start("reopen");
+    failureStage = "verify-reopened-visible-state";
     reopenedVisible = await waitForCandidate(reopened.cdp, { requireEdit: true });
+    failureStage = "verify-reopened-bytes";
     reopenedBytes = await fs.readFile(notePath);
     assert(
       reopenedBytes.equals(expectedBytes),
       "Threadleaf reopened note bytes differed from the saved candidate bytes.",
     );
+    failureStage = "capture-surface";
     const surface = await bounded(
       captureSurface(reopened.cdp, screenshotPath),
       "Threadleaf surface capture",
@@ -609,7 +713,9 @@ export async function runThreadleafRoundtrip({
       pngHeight: dimensions.height,
       path: path.relative(runRoot, screenshotPath).split(path.sep).join("/"),
     };
+    failureStage = "close-reopened";
     await closeThreadleaf(reopened);
+    failureStage = "complete";
   } catch (error) {
     failure = error;
   } finally {
@@ -641,10 +747,16 @@ export async function runThreadleafRoundtrip({
     profile = await snapshotTree(userDataPath, { label: "THREADLEAF-01 private profile" }).catch(
       () => null,
     );
+    const mutationResult = classifyThreadleafMutation({
+      mutation: mutationMode,
+      evidence: mutationEvidence,
+      failure,
+      failureStage,
+    });
     receipt = {
       schemaVersion: 1,
-      status: "blocked",
-      reason: failure ? String(failure) : null,
+      status: mutationResult?.status ?? "blocked",
+      reason: mutationResult?.reason ?? (failure ? String(failure) : null),
       paths,
       launches: instances.map((instance) => ({
         phase: instance.phase,
@@ -688,12 +800,18 @@ export async function runThreadleafRoundtrip({
           : null,
       visible: { initial: initialVisible, reopened: reopenedVisible },
       screenshot,
-      mutation: mutation
+      mutation: mutationMode
         ? {
             id: "RC-THREADLEAF-01",
-            action: "removed the live production CodeMirror editor before input",
+            action:
+              mutationMode === THREADLEAF_MUTATION.REMOVE_THEN_REINSERT_EDITOR
+                ? "removed then reinserted the live production CodeMirror editor before focus/input"
+                : "removed the live production CodeMirror editor before focus/input",
             applied: mutationEvidence,
-            outcome: failure ? "blocked" : "unexpectedly-observed",
+            outcome: mutationResult.outcome,
+            control: mutationResult.control,
+            failureStage,
+            failure: failure ? String(failure) : null,
           }
         : null,
       profile: profile
@@ -709,7 +827,7 @@ export async function runThreadleafRoundtrip({
         clean: cleanup.clean && finalMarked.length === 0 && temporaryCleanup?.removed === true,
       },
     };
-    if (!failure && !mutation) {
+    if (!failure && !mutationMode) {
       try {
         receipt.status = "observed";
         assertThreadleafReceipt(receipt, { runRoot, vaultPath });
@@ -717,9 +835,6 @@ export async function runThreadleafRoundtrip({
         receipt.status = "blocked";
         receipt.reason = String(error);
       }
-    }
-    if (mutation && !failure) {
-      receipt.reason = "Threadleaf mutation proof unexpectedly completed the production edit path.";
     }
   }
   return receipt;

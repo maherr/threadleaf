@@ -25,6 +25,9 @@ import {
 import {
   assertThreadleafLaunchArgs,
   assertThreadleafReceipt,
+  classifyThreadleafMutation,
+  THREADLEAF_EDITOR_UNAVAILABLE,
+  THREADLEAF_MUTATION,
   threadleafBehaviorMatch,
   threadleafLaunchArgs,
 } from "./threadleaf.mjs";
@@ -494,7 +497,32 @@ describe("Threadleaf external-oracle candidate", () => {
     const electronPath = "/repo/node_modules/.bin/electron";
     const userDataPath = path.join(runRoot, "threadleaf-profile");
     const cdpPort = 43117;
-    const safe = threadleafLaunchArgs({ electronPath, userDataPath, cdpPort });
+    // This is intentionally independent from both threadleafLaunchArgs() and
+    // assertThreadleafLaunchArgs(). A shared expectation would allow the
+    // generator and its assertion to weaken together.
+    const safe = [
+      "-a",
+      "-s",
+      "-screen 0 1440x840x24 -nolisten tcp",
+      electronPath,
+      "--ozone-platform=x11",
+      "--disable-gpu",
+      "--disable-background-networking",
+      "--disable-component-update",
+      "--no-first-run",
+      "--window-size=800,650",
+      `--remote-debugging-port=${cdpPort}`,
+      "--remote-debugging-address=127.0.0.1",
+      `--remote-allow-origins=http://127.0.0.1:${cdpPort}`,
+      `--user-data-dir=${userDataPath}`,
+      "--password-store=basic",
+      ".",
+    ];
+    assert.deepEqual(
+      threadleafLaunchArgs({ electronPath, userDataPath, cdpPort }),
+      safe,
+      "Threadleaf launch generator drifted from the independently declared launch policy.",
+    );
     assert.equal(
       assertThreadleafLaunchArgs(safe, { runRoot, electronPath, userDataPath, cdpPort }),
       true,
@@ -542,6 +570,54 @@ describe("Threadleaf external-oracle candidate", () => {
     );
   });
 
+  it("distinguishes a caught editor mutation from a mutation that completed the production path", () => {
+    const caught = classifyThreadleafMutation({
+      mutation: THREADLEAF_MUTATION.REMOVE_EDITOR,
+      evidence: { removed: true, editorPresentBeforeFocus: false },
+      failure: new Error(THREADLEAF_EDITOR_UNAVAILABLE),
+      failureStage: "focus-editor",
+    });
+    assert.equal(caught.status, "blocked");
+    assert.equal(caught.outcome, "mutation-caught");
+    assert.equal(caught.control, "passed");
+    assert.match(caught.reason, /focus\/input boundary was blocked/u);
+
+    const notCaught = classifyThreadleafMutation({
+      mutation: THREADLEAF_MUTATION.REMOVE_THEN_REINSERT_EDITOR,
+      evidence: {
+        removed: true,
+        reinserted: true,
+        editorPresentBeforeFocus: true,
+      },
+      failure: null,
+      failureStage: "complete",
+    });
+    assert.equal(notCaught.status, "failed");
+    assert.equal(notCaught.outcome, "mutation-not-caught");
+    assert.equal(notCaught.control, "failed");
+    assert.match(notCaught.reason, /mutation unexpectedly completed the production path/u);
+
+    assert.equal(
+      classifyThreadleafMutation({
+        mutation: null,
+        evidence: null,
+        failure: null,
+        failureStage: "complete",
+      }),
+      null,
+    );
+
+    const unrelatedFailure = classifyThreadleafMutation({
+      mutation: THREADLEAF_MUTATION.REMOVE_EDITOR,
+      evidence: { removed: true, editorPresentBeforeFocus: false },
+      failure: new Error("unrelated launch failure"),
+      failureStage: "initial-launch",
+    });
+    assert.equal(unrelatedFailure.status, "blocked");
+    assert.equal(unrelatedFailure.outcome, "mutation-indeterminate");
+    assert.equal(unrelatedFailure.control, "inconclusive");
+  });
+
   it("red-controls the exact Threadleaf receipt and the Obsidian comparison seam", () => {
     const runRoot = "/tmp/threadleaf-obsidian-lab-scratch/run-2";
     const vaultPath = path.join(runRoot, "threadleaf-vault-data");
@@ -586,7 +662,14 @@ describe("Threadleaf external-oracle candidate", () => {
     });
 
     const failedCandidate = structuredClone(valid);
-    failedCandidate.status = "blocked";
+    failedCandidate.status = "failed";
+    failedCandidate.reason =
+      "RC-THREADLEAF-01 mutation not caught: mutation unexpectedly completed the production path.";
+    failedCandidate.mutation = {
+      id: "RC-THREADLEAF-01",
+      outcome: "mutation-not-caught",
+      control: "failed",
+    };
     assert.throws(() => threadleafBehaviorMatch(reference, failedCandidate), /not observed/u);
 
     const divergentReference = structuredClone(reference);

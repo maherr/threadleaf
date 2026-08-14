@@ -37,6 +37,7 @@ import {
 import {
   runThreadleafRoundtrip,
   THREADLEAF_CELL_ID,
+  THREADLEAF_MUTATION,
   threadleafBehaviorMatch,
 } from "./obsidian-behavior-lab/threadleaf.mjs";
 
@@ -62,10 +63,20 @@ const sourceEvidencePaths = [
 const args = new Set(process.argv.slice(2));
 const redControl = args.has("--red-control");
 const threadleafRedControl = args.has("--threadleaf-red-control");
+const threadleafRedControlReinsertEditor = args.has("--threadleaf-red-control-reinsert-editor");
+assert(
+  !(threadleafRedControl && threadleafRedControlReinsertEditor),
+  "--threadleaf-red-control and --threadleaf-red-control-reinsert-editor are mutually exclusive mutation variants.",
+);
+const threadleafMutation = threadleafRedControl
+  ? THREADLEAF_MUTATION.REMOVE_EDITOR
+  : threadleafRedControlReinsertEditor
+    ? THREADLEAF_MUTATION.REMOVE_THEN_REINSERT_EDITOR
+    : null;
 const keepRun = !args.has("--cleanup");
 assert(
-  !(redControl && threadleafRedControl),
-  "--red-control and --threadleaf-red-control exercise different failure paths and cannot be combined.",
+  !(redControl && threadleafMutation),
+  "--red-control and a Threadleaf red-control mutation exercise different failure paths and cannot be combined.",
 );
 
 function assert(condition, message) {
@@ -1225,7 +1236,7 @@ async function run() {
         runRoot,
         vaultPath: threadleafVaultPath,
         marker,
-        mutation: threadleafRedControl,
+        mutation: threadleafMutation,
       }).catch((error) => ({
         status: "blocked",
         reason: String(error),
@@ -1254,7 +1265,7 @@ async function run() {
     redControl: {
       id: "RC-THREADLEAF-01",
       expected:
-        "removing the live disposable production CodeMirror editor blocks real input and makes the lab exit nonzero",
+        "removing the live disposable production CodeMirror editor blocks real focus/input; a completed production path is a mutation-not-caught control failure",
     },
     threadleafSeam: ["src/main", "src/renderer", "src/kernel"],
   });
@@ -1277,7 +1288,13 @@ async function run() {
     };
     matchStatus = "observed";
   } catch (error) {
-    matchReason = String(error);
+    if (threadleafCandidate.mutation?.outcome === "mutation-not-caught") {
+      matchStatus = "failed";
+      matchReason =
+        "RC-THREADLEAF-01 mutation not caught: mutation unexpectedly completed the production path.";
+    } else {
+      matchReason = String(error);
+    }
   }
   const matchReceipt = receiptFor("MATCH-01", matchStatus, {
     reason: matchReason,
@@ -1320,6 +1337,15 @@ async function run() {
   const manifestBytes = await fs.readFile(manifestPath);
   const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
   const inventorySha256 = createHash("sha256").update(JSON.stringify(inventory)).digest("hex");
+  const threadleafRedControlResult = threadleafCandidate.mutation
+    ? {
+        id: threadleafCandidate.mutation.id,
+        outcome: threadleafCandidate.mutation.outcome,
+        control: threadleafCandidate.mutation.control,
+        status: threadleafCandidate.status,
+        reason: threadleafCandidate.reason,
+      }
+    : null;
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -1331,6 +1357,7 @@ async function run() {
         sourceFileHashes: source.files,
         artifactInventorySha256: inventorySha256,
         manifestSha256,
+        threadleafRedControl: threadleafRedControlResult,
       },
       null,
       2,
