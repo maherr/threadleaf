@@ -9,6 +9,7 @@ import {
   diffVaultSnapshots,
   NodeVaultWatcher,
   type VaultSnapshot,
+  WorkspacePathActivityLedger,
   workspacePathForFilesystemActivity,
 } from "./node-vault-watcher";
 import { VaultPathPolicy } from "./path-policy";
@@ -64,6 +65,20 @@ describe("workspace path activity", () => {
     expect(workspacePathForFilesystemActivity("Other.md")).toBe("Other.md");
     expect(workspacePathForFilesystemActivity(".syncthing.image.png.tmp")).toBeNull();
     expect(workspacePathForFilesystemActivity("../Outside.md")).toBeNull();
+  });
+
+  it("keeps one path's receipt independent of activity on other paths", () => {
+    const activity = new WorkspacePathActivityLedger();
+    activity.record(".syncthing.Syncing.md.tmp");
+    const syncingVersion = activity.versionForPath("Syncing.md");
+
+    for (let index = 0; index < 5_000; index += 1) {
+      activity.record(`Unrelated-${index}.md`);
+    }
+
+    expect(syncingVersion).toBeGreaterThan(0);
+    expect(activity.versionForPath("Syncing.md")).toBe(syncingVersion);
+    expect(activity.versionForPath("Unrelated-4999.md")).toBeGreaterThan(syncingVersion);
   });
 });
 

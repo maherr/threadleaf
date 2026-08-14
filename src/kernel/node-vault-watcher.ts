@@ -21,8 +21,6 @@ import {
 
 export type VaultSnapshot = Map<string, WatchedPathState>;
 
-const maximumRememberedPathActivities = 4_096;
-
 /**
  * The workspace path a filesystem event says is making progress.
  *
@@ -61,6 +59,28 @@ export function workspacePathForFilesystemActivity(
     return normalizeVaultPath(candidate);
   } catch {
     return null;
+  }
+}
+
+/** Monotonic exact-path receipts consumed by adaptive startup reconciliation. */
+export class WorkspacePathActivityLedger {
+  #version = 0;
+  // Do not evict by unrelated-path volume. The runtime reads a startup path's
+  // receipt only at reconciliation boundaries, so eviction would make other
+  // vault churn erase the very activity that extends that path's quiet window.
+  readonly #versions = new Map<string, number>();
+
+  record(fileName: string | Buffer | null): void {
+    const activityPath = workspacePathForFilesystemActivity(fileName);
+    if (!activityPath) {
+      return;
+    }
+    this.#version += 1;
+    this.#versions.set(activityPath, this.#version);
+  }
+
+  versionForPath(relativePath: string): number {
+    return this.#versions.get(normalizeVaultPath(relativePath)) ?? 0;
   }
 }
 
@@ -352,8 +372,7 @@ export class NodeVaultWatcher {
   #listener: ((batch: VaultChangeBatch) => void | Promise<void>) | undefined;
   #flushTail: Promise<void> = Promise.resolve();
   #activitySinceScan = false;
-  #pathActivityVersion = 0;
-  readonly #pathActivityVersions = new Map<string, number>();
+  readonly #pathActivity = new WorkspacePathActivityLedger();
   #closed = false;
 
   private constructor(
@@ -398,7 +417,7 @@ export class NodeVaultWatcher {
 
   /** Monotonic activity receipt for one exact visible workspace path. */
   activityVersionForPath(relativePath: string): number {
-    return this.#pathActivityVersions.get(normalizeVaultPath(relativePath)) ?? 0;
+    return this.#pathActivity.versionForPath(relativePath);
   }
 
   start(listener: (batch: VaultChangeBatch) => void | Promise<void>): void {
@@ -410,17 +429,7 @@ export class NodeVaultWatcher {
     }
     this.#listener = listener;
     this.#watcher = watch(this.policy.rootPath, { recursive: true }, (_eventType, fileName) => {
-      const activityPath = workspacePathForFilesystemActivity(fileName);
-      if (activityPath) {
-        this.#pathActivityVersion += 1;
-        this.#pathActivityVersions.delete(activityPath);
-        this.#pathActivityVersions.set(activityPath, this.#pathActivityVersion);
-        while (this.#pathActivityVersions.size > maximumRememberedPathActivities) {
-          const oldest = this.#pathActivityVersions.keys().next().value;
-          if (oldest === undefined) break;
-          this.#pathActivityVersions.delete(oldest);
-        }
-      }
+      this.#pathActivity.record(fileName);
       if (fileName && hasHiddenVaultSegment(fileName.toString())) {
         return;
       }
