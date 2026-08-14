@@ -17,6 +17,10 @@
   --color-accent: #1769aa;
   --interactive-accent: var(--color-accent);
   --interactive-accent-hover: #0e4f86;
+  /* Compat: some community themes (e.g. Sanctum) read a bare --interactive as
+     their own general accent source and never see Threadleaf's real value
+     otherwise. Map it honestly to the same accent Threadleaf itself uses. */
+  --interactive: var(--interactive-accent);
   --text-accent: #0e4f86;
   --text-accent-hover: #073a65;
   --text-error: #a54b00;
@@ -69,6 +73,43 @@
   --text-error: #f3a35d;
   --shadow-small: 0 8px 24px rgb(0 0 0 / 22%);
   --shadow-large: 0 28px 70px rgb(0 0 0 / 38%);
+}
+
+/*
+ * Compat: re-anchor Threadleaf's own token aliases at body.
+ *
+ * A community theme's design tokens are conventionally scoped to `body.theme-light`/
+ * `body.theme-dark`, matching real Obsidian, where `:root` never carries meaningful
+ * theme state. Threadleaf additionally toggles the same `theme-light`/`theme-dark`
+ * classes onto `:root` for its own baseline above, so a theme's class-scoped rule can
+ * also match `:root` directly -- but a theme's supporting constants are typically
+ * reachable only from `body` downward, so that same rule can be valid at `body` and
+ * invalid at `:root`. These aliases are declared only once above and read purely
+ * through var() with no scheme-specific override, so they inherit their value from
+ * wherever they were declared; if that declaration resolves invalid at `:root`, every
+ * descendant -- including a perfectly healthy `body` -- silently inherits the
+ * invalid value. Re-declaring the same formulas here re-evaluates each one at body,
+ * where a theme's own tokens reliably reach, instead of leaving them inherited-only
+ * from a root scope a theme was never written to support.
+ */
+body {
+  --icon-color: var(--text-muted);
+  --canvas: var(--background-secondary);
+  --surface: var(--background-primary);
+  --surface-raised: var(--background-primary-alt);
+  --surface-sunken: var(--background-secondary-alt);
+  --ink: var(--text-normal);
+  --ink-soft: var(--text-muted);
+  --ink-muted: var(--text-faint);
+  --line: var(--background-modifier-border);
+  --line-strong: var(--background-modifier-border-hover);
+  --accent: var(--interactive-accent);
+  --accent-strong: var(--text-accent);
+  --accent-soft: color-mix(in srgb, var(--interactive-accent) 25%, var(--background-primary));
+  --interactive: var(--interactive-accent);
+  --signal: var(--text-error);
+  --signal-soft: var(--background-modifier-error);
+  --mono: var(--font-monospace);
 }
 
 * {
