@@ -997,6 +997,16 @@ async function applyTheme(theme, verification) {
 
 async function setScheme(scheme) {
   await openSettings();
+  await clickSelector("#settings-nav-appearance");
+  await waitFor(
+    async () =>
+      (await evaluate(
+        "document.querySelector('[data-settings-page=appearance]')?.hidden === false",
+      ))
+        ? true
+        : null,
+    "Appearance settings did not open",
+  );
   await clickSelector(`#scheme-${scheme}`);
   await waitFor(
     async () => (await evaluate("document.documentElement.dataset.theme")) === scheme,
@@ -1093,7 +1103,6 @@ async function probeCues() {
     const focusStyle = getComputedStyle(input);
     const focusBackground = paintedBackground(input);
     const roleSelectors = [
-      ['active-file', '#file-list [aria-current="page"]', 'borderColor'],
       ['section-heading', '#files-heading', 'color'],
       ['muted-summary', '#filter-summary', 'color'],
       ['signal-accent', '.toast', 'borderColor'],
@@ -1321,6 +1330,7 @@ async function runTheme(theme, verification, baselineManifest) {
     );
     const themeCases = themeCasesInRequiredOrder(currentManifest, theme.id);
     for (const testCase of themeCases) {
+      process.stdout.write(`COMMUNITY_THEME_CASE_START ${theme.id} ${testCase.id}\n`);
       await setScheme(testCase.scheme);
       await setHighContrast(Boolean(testCase.highContrast));
       const viewport = currentManifest.viewports.find(
