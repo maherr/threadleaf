@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { flatpakArgs } from "../check-obsidian-behavior-lab.mjs";
 import {
   FIXTURE_ID,
   FIXTURE_PREDICATE,
@@ -136,54 +137,74 @@ describe("profile and process containment", () => {
 
   it("red-controls any weakened Flatpak launch policy", () => {
     const runRoot = "/tmp/threadleaf-obsidian-lab-scratch/run-1";
-    const safe = [
-      "run",
-      "--sandbox",
-      "--die-with-parent",
-      "--unshare=network",
-      "--nofilesystem=home",
-      `--filesystem=${runRoot}:rw`,
-      "--socket=x11",
-      "--nosocket=wayland",
-      "--command=/usr/bin/python3",
-    ];
+    const profilePath = path.join(runRoot, "profile-data");
+    const vaultPath = path.join(runRoot, "vault-data");
+    // The real shape the harness constructs today (flatpakArgs() in
+    // check-obsidian-behavior-lab.mjs), not a hand-copied approximation.
+    const safe = flatpakArgs(
+      runRoot,
+      profilePath,
+      vaultPath,
+      43117,
+      "THREADLEAF_OBSIDIAN_LAB_RUN_abc123def456",
+      {
+        hostNetworkNamespace: "net:[4026531840]",
+        referenceVersion: "1.13.7",
+        referenceRuntime: "org.freedesktop.Platform/x86_64/23.08",
+        referenceCommit: "abc123def456",
+      },
+    );
+
+    // Positive control: the real, unmodified argument set must pass.
     assert.equal(assertFlatpakContainmentArgs(safe, { runRoot }), true);
+
     assert.throws(
-      () => assertFlatpakContainmentArgs(safe.filter((flag) => flag !== "--unshare=network")),
-      /unshare=network/u,
+      () => assertFlatpakContainmentArgs(safe),
+      /requires a runRoot/u,
+      "runRoot must be required to validate the launch shape",
     );
-    assert.throws(
-      () => assertFlatpakContainmentArgs([...safe, "--share=network"]),
-      /shares network/u,
+    assert.throws(() =>
+      assertFlatpakContainmentArgs(
+        safe.filter((flag) => flag !== "--unshare=network"),
+        { runRoot },
+      ),
     );
-    assert.throws(
-      () => assertFlatpakContainmentArgs([...safe, "--parent-share-pids"]),
-      /host PID visibility/u,
+    assert.throws(() => assertFlatpakContainmentArgs([...safe, "--share=network"], { runRoot }));
+    assert.throws(() =>
+      assertFlatpakContainmentArgs([...safe, "--parent-share-pids"], { runRoot }),
     );
-    assert.throws(
-      () => assertFlatpakContainmentArgs([...safe, "--filesystem=home"]),
-      /exactly one filesystem|broad host filesystem/u,
+    assert.throws(() => assertFlatpakContainmentArgs([...safe, "--filesystem=home"], { runRoot }));
+    assert.throws(() =>
+      assertFlatpakContainmentArgs(
+        safe.map((flag) => (flag === "--socket=x11" ? "--socket=wayland" : flag)),
+        { runRoot },
+      ),
     );
-    assert.throws(
-      () =>
-        assertFlatpakContainmentArgs(
-          safe.map((flag) => (flag === "--socket=x11" ? "--socket=wayland" : flag)),
-          { runRoot },
-        ),
-      /missing|unexpected host socket/u,
+    assert.throws(() =>
+      assertFlatpakContainmentArgs(
+        safe.map((flag) => (flag.startsWith("--filesystem=") ? "--filesystem=/tmp:rw" : flag)),
+        { runRoot },
+      ),
     );
-    assert.throws(
-      () =>
-        assertFlatpakContainmentArgs(
-          safe.map((flag) => (flag.startsWith("--filesystem=") ? "--filesystem=/tmp:rw" : flag)),
-          { runRoot },
-        ),
-      /dedicated run root/u,
-    );
-    assert.throws(
-      () => assertFlatpakContainmentArgs([...safe, "--device=all"]),
-      /broad host device/u,
-    );
+    assert.throws(() => assertFlatpakContainmentArgs([...safe, "--device=all"], { runRoot }));
+
+    // Prior-review LOW-5: each of these five arguments passed the old
+    // partial-denylist check because it rejected only a few named flags.
+    // The strict positional whitelist must reject every one of them.
+    const previouslyPassingViolations = [
+      "--persist=.",
+      "--device=dri",
+      "--share=ipc",
+      "--talk-name=org.freedesktop.secrets",
+      "--env=HOME=/home/maher",
+    ];
+    for (const violation of previouslyPassingViolations) {
+      assert.throws(
+        () => assertFlatpakContainmentArgs([...safe, violation], { runRoot }),
+        /not on the allowed list/u,
+        `expected the strict whitelist to reject ${violation}`,
+      );
+    }
   });
 
   it("red-controls live profile, vault, and workspace paths", () => {

@@ -462,7 +462,7 @@ async function runHarnessIntegrity(runRoot, marker) {
   };
 }
 
-function flatpakArgs(
+export function flatpakArgs(
   runRoot,
   profilePath,
   vaultPath,
@@ -1228,4 +1228,11 @@ async function run() {
   }
 }
 
-await run();
+// Guard the real Flatpak lab run behind an entry-point check so this module
+// can be imported elsewhere (for example, to reuse flatpakArgs() in tests)
+// without side-effecting a live launch.
+const isMainModule =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  await run();
+}

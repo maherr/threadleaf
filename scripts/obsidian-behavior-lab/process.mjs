@@ -168,55 +168,89 @@ export function assertRendererX11(processes, label = "renderer") {
   );
 }
 
+const FLATPAK_APPLICATION_ID = "md.obsidian.Obsidian";
+const SAFE_TOKEN_PATTERN = /^[A-Za-z0-9._:-]+$/u;
+const PORT_TOKEN_PATTERN = /^[1-9]\d{0,4}$/u;
+const NET_NAMESPACE_PATTERN = /^net:\[\d+\]$/u;
+const OPAQUE_METADATA_PATTERN = /^[\x20-\x7e]{0,256}$/u;
+
+function exact(value) {
+  return { label: JSON.stringify(value), test: (candidate) => candidate === value };
+}
+
+function matching(regex, label) {
+  return { label, test: (candidate) => typeof candidate === "string" && regex.test(candidate) };
+}
+
+function descendantOfRunRoot(runRoot, label) {
+  return {
+    label,
+    test: (candidate) => typeof candidate === "string" && isStrictDescendant(runRoot, candidate),
+  };
+}
+
+// Every element of a legitimate launch is produced by exactly one call to
+// flatpakArgs() in check-obsidian-behavior-lab.mjs, in this fixed order. This
+// is a strict positional whitelist, not a denylist: an argument is accepted
+// only if it is the explicitly allowed literal or pattern at its position.
+// Any unrecognized, reordered, duplicated, or additional argument -
+// including one that is not itself individually "dangerous" - changes the
+// array's length or shape and is rejected.
 export function assertFlatpakContainmentArgs(args, { runRoot } = {}) {
-  const required = [
-    "run",
-    "--sandbox",
-    "--die-with-parent",
-    "--unshare=network",
-    "--nofilesystem=home",
-    "--socket=x11",
-    "--nosocket=wayland",
-    "--command=/usr/bin/python3",
+  assert(Array.isArray(args), "Flatpak launch arguments must be an array.");
+  assert(runRoot, "assertFlatpakContainmentArgs requires a runRoot to validate the launch shape.");
+  const resolvedRunRoot = path.resolve(runRoot);
+  const busPath = path.join(resolvedRunRoot, "bus");
+  const supervisorPath = path.join(resolvedRunRoot, "harness", "sandbox-supervisor.py");
+  const screenshotPath = path.join(resolvedRunRoot, "ui", "UI-01.png");
+  const resultPath = path.join(resolvedRunRoot, "harness", "supervisor-result.v1.json");
+  const allowed = [
+    exact("run"),
+    exact("--sandbox"),
+    exact("--die-with-parent"),
+    exact("--unshare=network"),
+    exact("--nofilesystem=home"),
+    exact(`--filesystem=${resolvedRunRoot}:rw`),
+    exact("--socket=x11"),
+    exact("--nosocket=wayland"),
+    matching(/^--env=[A-Za-z0-9._:-]+=1$/u, "--env=<run marker>=1"),
+    exact(`--env=DBUS_SESSION_BUS_ADDRESS=unix:path=${busPath}`),
+    exact("--command=/usr/bin/python3"),
+    exact(FLATPAK_APPLICATION_ID),
+    exact(supervisorPath),
+    exact("--run-root"),
+    exact(resolvedRunRoot),
+    exact("--profile"),
+    descendantOfRunRoot(resolvedRunRoot, "profile path below the run root"),
+    exact("--vault"),
+    descendantOfRunRoot(resolvedRunRoot, "vault path below the run root"),
+    exact("--cdp-port"),
+    matching(PORT_TOKEN_PATTERN, "numeric CDP port"),
+    exact("--marker"),
+    matching(SAFE_TOKEN_PATTERN, "safe run marker"),
+    exact("--host-network-namespace"),
+    matching(NET_NAMESPACE_PATTERN, "host network namespace descriptor"),
+    exact("--reference-version"),
+    matching(OPAQUE_METADATA_PATTERN, "reference version"),
+    exact("--reference-runtime"),
+    matching(OPAQUE_METADATA_PATTERN, "reference runtime"),
+    exact("--reference-commit"),
+    matching(OPAQUE_METADATA_PATTERN, "reference commit"),
+    exact("--screenshot"),
+    exact(screenshotPath),
+    exact("--result"),
+    exact(resultPath),
   ];
-  for (const flag of required) {
-    assert(args.includes(flag), `Flatpak containment flag is missing: ${flag}`);
-  }
-  assert(!args.includes("--share=network"), "Flatpak launch explicitly shares network access.");
   assert(
-    !args.some((flag) => flag === "--filesystem=home" || flag === "--filesystem=/"),
-    "Flatpak launch grants a broad host filesystem path.",
+    args.length === allowed.length,
+    `Flatpak launch argument count is not on the allowed list: expected ${allowed.length}, got ${args.length}.`,
   );
-  assert(
-    !args.some((flag) => flag === "--device=all" || flag === "--share=host"),
-    "Flatpak launch grants a broad host device or namespace share.",
-  );
-  assert(
-    !args.includes("--parent-share-pids") && !args.includes("--parent-expose-pids"),
-    "Flatpak launch shares host PID visibility; containment must be proved inside the sandbox.",
-  );
-  const filesystemGrants = args.filter((flag) => flag.startsWith("--filesystem="));
-  assert(filesystemGrants.length === 1, "Flatpak launch must have exactly one filesystem grant.");
-  if (runRoot) {
+  for (const [index, matcher] of allowed.entries()) {
     assert(
-      filesystemGrants[0] === `--filesystem=${path.resolve(runRoot)}:rw`,
-      `Flatpak launch filesystem grant is not the dedicated run root: ${filesystemGrants[0]}`,
+      matcher.test(args[index]),
+      `Flatpak launch argument at position ${index} is not on the allowed list (expected ${matcher.label}, got ${JSON.stringify(args[index])}).`,
     );
   }
-  assert(
-    args.filter((flag) => flag.startsWith("--socket=")).every((flag) => flag === "--socket=x11"),
-    "Flatpak launch grants an unexpected host socket.",
-  );
-  assert(
-    args
-      .filter((flag) => flag.startsWith("--nosocket="))
-      .every((flag) => flag === "--nosocket=wayland"),
-    "Flatpak launch changes the explicit Wayland socket denylist.",
-  );
-  assert(
-    !args.some((flag) => flag === "--filesystem=home" || flag === "--filesystem=/"),
-    "Flatpak launch grants a broad host filesystem path.",
-  );
   return true;
 }
 
