@@ -23,7 +23,7 @@ const corpusRoot = path.resolve(
   stringArgument(
     "--corpus-root",
     process.env.THREADLEAF_VAULT_SCALE_CORPUS_ROOT ??
-      "/home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1",
+      path.join(appRoot, ".bench-corpus", "threadleaf-vault-scale-v1"),
   ),
 );
 const outputDirectory = path.resolve(

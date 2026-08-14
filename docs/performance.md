@@ -146,10 +146,10 @@ Generate once and reuse it:
 ```sh
 pnpm benchmark:vault-scale:generate -- \
   --variant full \
-  --output /home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1/full
+  --output .bench-corpus/threadleaf-vault-scale-v1/full
 pnpm benchmark:vault-scale:generate -- \
   --variant notes-only \
-  --output /home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1/notes-only
+  --output .bench-corpus/threadleaf-vault-scale-v1/notes-only
 ```
 
 Before each app matrix, verify available memory and take the shared heavy lock. The app lane
@@ -164,7 +164,7 @@ land in `benchmarks/results/threadleaf-vault-scale-{full,notes-only}.json`.
 grep MemAvailable /proc/meminfo
 flock -w 21600 /tmp/threadleaf-heavy-gate.lock -c \
   'pnpm benchmark:vault-scale -- \
-    --corpus-root /home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1 \
+    --corpus-root .bench-corpus/threadleaf-vault-scale-v1 \
     --output-dir benchmarks/results \
     --runs 2'
 ```
