@@ -826,6 +826,11 @@ async function runElectron({
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     if (error?.partial) partial = { ...partial, startup: error.partial };
+    if (sampler && !samplerStopped) {
+      await sampler.stop().catch(() => undefined);
+      samplerStopped = true;
+      partial = { ...partial, processData: sampler.summary() };
+    }
     partial = {
       ...partial,
       memorySafety: memoryGuard?.snapshot() ?? null,
