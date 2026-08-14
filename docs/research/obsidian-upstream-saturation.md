@@ -23,7 +23,7 @@ remains the normative evidence policy, and a level still requires an executable 
 | Plugin API surface | `docs.obsidian.md/Reference/TypeScript+API/*`, [`docs.obsidian.md/Reference/Manifest`](https://docs.obsidian.md/Reference/Manifest), [`github.com/obsidianmd/obsidian-api`](https://github.com/obsidianmd/obsidian-api) | Same developer site already cited once in `plugins.md`. |
 | Theme/CSS contract | [`docs.obsidian.md/Reference/CSS+variables`](https://docs.obsidian.md/Reference/CSS+variables/CSS+variables), `docs.obsidian.md/Themes/App+themes/Build+a+theme` | Developer site. |
 | JSON Canvas | [`jsoncanvas.org/spec/1.0/`](https://jsoncanvas.org/spec/1.0/), [`github.com/obsidianmd/jsoncanvas`](https://github.com/obsidianmd/jsoncanvas) | Independent open-format site, MIT-licensed, still under the `obsidianmd` GitHub org. Not part of `docs.obsidian.md`. |
-| Sync/conflict (publicly documented) | `obsidian.md/help/obsidian-sync` and `.../troubleshoot-obsidian-sync`, [`obsidian.md/changelog`](https://obsidian.md/changelog/), [`github.com/obsidianmd/obsidian-headless`](https://github.com/obsidianmd/obsidian-headless) | Obsidian Sync itself is a proprietary paid service; only its publicly documented *behavior* is in-scope evidence, never its server protocol. |
+| Sync/conflict (publicly documented) | `obsidian.md/help/Obsidian+Sync/Version+history` and `obsidian.md/help/Obsidian+Sync/Troubleshoot+Obsidian+Sync`, [`obsidian.md/changelog`](https://obsidian.md/changelog/), [`github.com/obsidianmd/obsidian-headless`](https://github.com/obsidianmd/obsidian-headless) | Obsidian Sync itself is a proprietary paid service; only its publicly documented *behavior* is in-scope evidence, never its server protocol. |
 | Packaging/installer | [`obsidian.md/download`](https://obsidian.md/download), `obsidian.md/changelog`, `github.com/obsidianmd/obsidian-releases` | Public download/release surface. |
 
 Forum threads (`forum.obsidian.md`) surfaced during research are cited only where explicitly marked as
@@ -296,8 +296,8 @@ closest related material is `roadmap.md`'s own "Future lane: encrypted sync serv
 Threadleaf to a self-hostable, end-to-end-encrypted, versioned-object protocol, an intentionally
 different design, not a claim of Obsidian Sync compatibility.
 
-**Checked against live sources** (via `obsidian.md/help/obsidian-sync`,
-`.../troubleshoot-obsidian-sync`, `obsidian.md/changelog`, and `github.com/obsidianmd/obsidian-headless`):
+**Checked against live sources** (via `obsidian.md/help/Obsidian+Sync/Version+history`,
+`obsidian.md/help/Obsidian+Sync/Troubleshoot+Obsidian+Sync`, `obsidian.md/changelog`, and `github.com/obsidianmd/obsidian-headless`):
 
 - Markdown files: Sync merges conflicting changes automatically using Google's diff-match-patch
   algorithm by default.
@@ -407,7 +407,10 @@ Run after Pass 1 was committed (base commit `0c217e1`). Pass 2 deliberately used
 a different order than Pass 1: the GitHub API directly against the `obsidianmd/obsidian-api` and
 `obsidianmd/jsoncanvas` repositories (issue and commit history, not the rendered guide pages), a direct
 fetch of a specific dated Obsidian changelog entry (not search-engine synthesis), and renewed slug
-attempts for the two pages that 404'd in Pass 1.
+attempts for the two pages that 404'd in Pass 1. (Terminology note: `obsidian.md/help` is an Obsidian Publish
+single-page app that returns HTTP 200 with an empty shell for any slug; a missing page is
+detected by its title echoing the raw slug, not by a 404 status. "404'd" in this document
+means that unresolved-slug state.)
 
 **Corrections to Pass 1, found while re-checking Seam 1**:
 
