@@ -3,6 +3,188 @@
   "uri": "urn:threadleaf:spec:v1:themes",
   "threadleafVersion": "0.1.0-beta.3",
   "colorSchemes": ["system", "light", "dark"],
+  "themeContract": {
+    "version": 1,
+    "uri": "urn:threadleaf:theme:v1",
+    "tokens": [
+      {
+        "name": "--background-primary",
+        "role": "surface"
+      },
+      {
+        "name": "--background-primary-alt",
+        "role": "surface-raised"
+      },
+      {
+        "name": "--background-secondary",
+        "role": "surface-sunken"
+      },
+      {
+        "name": "--background-secondary-alt",
+        "role": "surface-sunken-alt"
+      },
+      {
+        "name": "--background-modifier-border",
+        "role": "border"
+      },
+      {
+        "name": "--background-modifier-border-hover",
+        "role": "border-strong"
+      },
+      {
+        "name": "--background-modifier-hover",
+        "role": "surface-hover"
+      },
+      {
+        "name": "--background-modifier-error",
+        "role": "signal-soft"
+      },
+      {
+        "name": "--text-normal",
+        "role": "text-primary"
+      },
+      {
+        "name": "--text-muted",
+        "role": "text-secondary"
+      },
+      {
+        "name": "--text-faint",
+        "role": "text-muted"
+      },
+      {
+        "name": "--text-accent",
+        "role": "accent-strong"
+      },
+      {
+        "name": "--text-accent-hover",
+        "role": "accent-hover"
+      },
+      {
+        "name": "--text-error",
+        "role": "signal"
+      },
+      {
+        "name": "--icon-color",
+        "role": "icon"
+      },
+      {
+        "name": "--color-accent",
+        "role": "accent"
+      },
+      {
+        "name": "--interactive-accent",
+        "role": "accent"
+      },
+      {
+        "name": "--interactive-accent-hover",
+        "role": "accent-hover"
+      },
+      {
+        "name": "--canvas",
+        "role": "canvas"
+      },
+      {
+        "name": "--surface",
+        "role": "surface"
+      },
+      {
+        "name": "--surface-raised",
+        "role": "surface-raised"
+      },
+      {
+        "name": "--surface-sunken",
+        "role": "surface-sunken"
+      },
+      {
+        "name": "--ink",
+        "role": "text-primary"
+      },
+      {
+        "name": "--ink-soft",
+        "role": "text-secondary"
+      },
+      {
+        "name": "--ink-muted",
+        "role": "text-muted"
+      },
+      {
+        "name": "--line",
+        "role": "border"
+      },
+      {
+        "name": "--line-strong",
+        "role": "border-strong"
+      },
+      {
+        "name": "--accent",
+        "role": "accent"
+      },
+      {
+        "name": "--accent-strong",
+        "role": "accent-strong"
+      },
+      {
+        "name": "--accent-soft",
+        "role": "accent-soft"
+      },
+      {
+        "name": "--signal",
+        "role": "signal"
+      },
+      {
+        "name": "--signal-soft",
+        "role": "signal-soft"
+      },
+      {
+        "name": "--font-interface",
+        "role": "interface-font"
+      },
+      {
+        "name": "--font-text",
+        "role": "text-font"
+      },
+      {
+        "name": "--font-monospace",
+        "role": "monospace-font"
+      },
+      {
+        "name": "--file-margins",
+        "role": "file-margin"
+      },
+      {
+        "name": "--radius-s",
+        "role": "small-radius"
+      },
+      {
+        "name": "--radius-m",
+        "role": "medium-radius"
+      },
+      {
+        "name": "--radius-l",
+        "role": "large-radius"
+      }
+    ],
+    "stateCues": [
+      {
+        "state": "selected",
+        "cue": "aria-current, aria-pressed, or an equivalent visible label plus a border or shape"
+      },
+      {
+        "state": "warning",
+        "cue": "status text or an announced warning symbol plus a non-color border style"
+      },
+      {
+        "state": "error",
+        "cue": "status text or an announced error symbol plus a non-color border style"
+      },
+      {
+        "state": "loading",
+        "cue": "status text or an announced progress state, never color alone"
+      }
+    ],
+    "schemes": ["light", "dark", "high-contrast-light", "high-contrast-dark"],
+    "source": "src/shared/theme-contract.ts"
+  },
   "assetIds": [
     {
       "kind": "theme",
@@ -70,6 +252,10 @@
     }
   ],
   "gates": [
+    {
+      "path": "src/shared/theme-contract.test.ts",
+      "command": "pnpm test"
+    },
     {
       "path": "src/main/vault-appearance-loader.test.ts",
       "command": "pnpm test"

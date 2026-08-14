@@ -33,6 +33,7 @@
     "docs/compatibility/contract.md",
     "docs/cli.md",
     "docs/compatibility/themes.md",
+    "src/shared/theme-contract.ts",
     "docs/compatibility/migration.md",
     "docs/compatibility/live-preview.md",
     "docs/compatibility/excalidraw-roundtrip.md",

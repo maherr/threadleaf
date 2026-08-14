@@ -102,8 +102,8 @@ schema. The datasets are generated from the existing executable contracts and ev
   measured plugin authority vocabulary.
 - [CLI contract](data/cli.v1.json) lists the versioned command IDs, native forms, exit codes,
   output formats, and source gates.
-- [Theme contract](data/themes.v1.json) lists color-scheme choices, asset identifiers, bounds,
-  cascade order, and loader gates.
+- [Theme contract](data/themes.v1.json) lists color-scheme choices, the versioned semantic token
+  and non-color state-cue contract, asset identifiers, bounds, cascade order, and loader gates.
 - [Fixture manifest](data/fixtures.v1.json) links both CC0 corpora to every canonical byte,
   license and provenance digest, and the explicit official Obsidian observation status.
 - [Conformance report](data/conformance.v1.json) joins passing claims, gates, exact versions,

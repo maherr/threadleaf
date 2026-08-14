@@ -22,6 +22,7 @@ const registrySourcePath = path.join(rootPath, "compatibility", "registry.v1.jso
 const pluginEvidencePath = path.join(rootPath, "compatibility", "plugin-evidence.v1.json");
 const pluginSourcePath = path.join(rootPath, "src", "shared", "plugins.ts");
 const appearanceSourcePath = path.join(rootPath, "src", "shared", "appearance.ts");
+const themeContractSourcePath = path.join(rootPath, "src", "shared", "theme-contract.ts");
 const appearanceLoaderPath = path.join(rootPath, "src", "main", "vault-appearance-loader.ts");
 const themePackageManagerPath = path.join(rootPath, "src", "main", "theme-package-manager.ts");
 const cliSourcePath = path.join(rootPath, "src", "cli", "command-line.ts");
@@ -204,6 +205,34 @@ function stringLiterals(block) {
   return [...block.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/gu)].map((match) =>
     JSON.parse(`"${match[1]}"`),
   );
+}
+
+function parseThemeContract(source) {
+  const version = Number(source.match(/themeContractVersion\s*=\s*(\d+)/u)?.[1] ?? 0);
+  const uri = source.match(/themeContractUri\s*=\s*"([^"\\]*(?:\\.[^"\\]*)*)"/u)?.[1];
+  assert(Number.isInteger(version) && version > 0, "theme contract version is missing");
+  assert(uri, "theme contract URI is missing");
+  const tokenBlock = balancedBlock(source, "themeContractTokens", "[");
+  const tokens = [...tokenBlock.matchAll(/\[\s*"([^"\\]+)"\s*,\s*"([^"\\]+)"\s*\]/gu)].map(
+    (match) => ({ name: match[1], role: match[2] }),
+  );
+  const cueBlock = balancedBlock(source, "themeContractStateCues", "[");
+  const stateCues = [
+    ...cueBlock.matchAll(/\[\s*"([^"\\]+)"\s*,\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*\]/gu),
+  ].map((match) => ({ state: match[1], cue: JSON.parse(`"${match[2]}"`) }));
+  const schemeBlock = balancedBlock(source, "themeContractSchemes", "[");
+  const schemes = stringLiterals(schemeBlock);
+  assert(tokens.length > 0, "theme contract token list is empty");
+  assert(stateCues.length > 0, "theme contract state cue list is empty");
+  assert(schemes.length > 0, "theme contract scheme list is empty");
+  return {
+    version,
+    uri: JSON.parse(`"${uri}"`),
+    tokens,
+    stateCues,
+    schemes,
+    source: sourceRef(themeContractSourcePath),
+  };
 }
 
 function parseCapabilityDefinitions(source) {
@@ -894,6 +923,7 @@ async function buildModel() {
   const version = text(packageJson.version, "package version", 100);
   const pluginSource = await readText(pluginSourcePath);
   const appearanceSource = await readText(appearanceSourcePath);
+  const themeContractSource = await readText(themeContractSourcePath);
   const appearanceLoader = await readText(appearanceLoaderPath);
   const cliSource = await readText(cliSourcePath);
   const cliSchemaSource = await readText(cliSchemaSourcePath);
@@ -1023,11 +1053,13 @@ async function buildModel() {
     display: `${limit.bytes.toLocaleString("en-US")} ${limit.unit}`,
   }));
   const colorSchemeBlock = balancedBlock(appearanceSource, "colorSchemePreferences", "[");
+  const themeContract = parseThemeContract(themeContractSource);
   const themes = {
     schemaVersion: 1,
     uri: "urn:threadleaf:spec:v1:themes",
     threadleafVersion: version,
     colorSchemes: stringLiterals(colorSchemeBlock),
+    themeContract,
     assetIds: [
       {
         kind: "theme",
@@ -1055,6 +1087,7 @@ async function buildModel() {
       },
     ],
     gates: [
+      gate("src/shared/theme-contract.test.ts", "pnpm test", "theme token contract"),
       gate("src/main/vault-appearance-loader.test.ts", "pnpm test", "theme loader"),
       gate(
         "scripts/check-appearance-watcher.mjs",
@@ -1119,6 +1152,7 @@ async function buildModel() {
       sourceRef(contractPath),
       sourceRef(cliGuidePath),
       sourceRef(themeContractPath),
+      sourceRef(themeContractSourcePath),
       sourceRef(migrationPath),
       sourceRef(livePreviewPath),
       sourceRef(excalidrawDocPath),
@@ -1362,6 +1396,7 @@ function schemaFor(name) {
         "uri",
         "threadleafVersion",
         "colorSchemes",
+        "themeContract",
         "assetIds",
         "limits",
         "cascade",
@@ -1372,6 +1407,43 @@ function schemaFor(name) {
         uri: { const: "urn:threadleaf:spec:v1:themes" },
         threadleafVersion: { type: "string" },
         colorSchemes: stringArray,
+        themeContract: {
+          type: "object",
+          required: ["version", "uri", "tokens", "stateCues", "schemes", "source"],
+          properties: {
+            version: { type: "integer", minimum: 1 },
+            uri: { type: "string", pattern: "^urn:threadleaf:theme:v[0-9]+$" },
+            tokens: {
+              type: "array",
+              minItems: 1,
+              items: {
+                type: "object",
+                required: ["name", "role"],
+                properties: {
+                  name: { type: "string", pattern: "^--[a-z0-9-]+$" },
+                  role: { type: "string", minLength: 1 },
+                },
+                additionalProperties: false,
+              },
+            },
+            stateCues: {
+              type: "array",
+              minItems: 1,
+              items: {
+                type: "object",
+                required: ["state", "cue"],
+                properties: {
+                  state: { type: "string", minLength: 1 },
+                  cue: { type: "string", minLength: 1 },
+                },
+                additionalProperties: false,
+              },
+            },
+            schemes: stringArray,
+            source: { type: "string" },
+          },
+          additionalProperties: false,
+        },
         assetIds: {
           type: "array",
           items: {
