@@ -432,16 +432,30 @@ export class Vault {
   }
 
   getAvailablePath(basePath: string, extension: string): string {
+    const portableBase = basePath.replaceAll("\\", "/");
+    if (path.posix.isAbsolute(portableBase) || path.win32.isAbsolute(basePath)) {
+      throw new Error("Available-path base must be vault-relative.");
+    }
     const normalizedBase = normalizePath(basePath);
     if (!normalizedBase || normalizedBase.endsWith("/")) {
       throw new Error("Available-path base must name a file.");
     }
+    this.resolveVaultPath(normalizedBase);
     const normalizedExtension = extension.replace(/^\.+/u, "");
-    const occupied = new Set(
-      [...this.getFiles(), ...this.getAllFolders(true)].map((entry) =>
-        entry.path.toLocaleLowerCase("en-US"),
-      ),
-    );
+    if (/[\\/]/u.test(normalizedExtension)) {
+      throw new Error("Available-path extension must be a plain extension.");
+    }
+    const occupied = new Set<string>();
+    const collectOccupiedPaths = (absoluteDirectory: string, relativeDirectory: string): void => {
+      for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true })) {
+        const relativePath = normalizePath(path.posix.join(relativeDirectory, entry.name));
+        occupied.add(relativePath.toLocaleLowerCase("en-US"));
+        if (entry.isDirectory()) {
+          collectOccupiedPaths(path.join(absoluteDirectory, entry.name), relativePath);
+        }
+      }
+    };
+    collectOccupiedPaths(this.rootPath, "");
     const suffix = normalizedExtension ? `.${normalizedExtension}` : "";
     for (let collision = 0; collision < 10_000; collision += 1) {
       const candidate = `${normalizedBase}${collision === 0 ? "" : ` ${collision}`}${suffix}`;
@@ -1014,12 +1028,21 @@ export function parseFrontMatterEntry(
   return null;
 }
 
+function isValidTagBody(value: string): boolean {
+  const segments = value.split("/");
+  return (
+    segments.every(
+      (segment) => segment.length > 0 && /^[\p{L}\p{M}\p{N}\p{S}_-]+$/u.test(segment),
+    ) && /[\p{L}\p{S}]/u.test(value)
+  );
+}
+
 function normalizeFrontmatterTag(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
   const normalized = value.trim().replace(/^#+/u, "");
-  return normalized ? `#${normalized}` : null;
+  return isValidTagBody(normalized) ? `#${normalized}` : null;
 }
 
 export function parseFrontMatterTags(frontmatter: unknown | null): string[] | null {
@@ -1073,14 +1096,15 @@ function cacheLocation(content: string, offset: number): CacheLocation {
 function inlineTagCaches(content: string): TagCache[] {
   const searchable = maskMarkdownCodeAndComments(content);
   const tags: TagCache[] = [];
-  for (const match of searchable.matchAll(/(?:^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
-    if (match.index === undefined || !match[1]) {
+  for (const match of searchable.matchAll(/(?:^|[\s(])#([\p{L}\p{M}\p{N}\p{S}_/-]+)/gu)) {
+    const tag = match[1];
+    if (match.index === undefined || !tag || !isValidTagBody(tag)) {
       continue;
     }
     const hashOffset = match.index + match[0].lastIndexOf("#");
-    const endOffset = hashOffset + match[1].length + 1;
+    const endOffset = hashOffset + tag.length + 1;
     tags.push({
-      tag: `#${match[1]}`,
+      tag: `#${tag}`,
       position: {
         start: cacheLocation(content, hashOffset),
         end: cacheLocation(content, endOffset),
@@ -2084,24 +2108,40 @@ function fuzzyRanges(
   return ranges;
 }
 
+function foldSimpleSearchText(value: string): {
+  folded: string;
+  sourceRanges: SearchMatchPart[];
+} {
+  const folded = value.toLocaleLowerCase("en-US");
+  const sourceRanges: SearchMatchPart[] = [];
+  for (const character of fuzzyCharacters(value)) {
+    for (let offset = 0; offset < character.folded.length; offset += 1) {
+      sourceRanges.push([character.start, character.end]);
+    }
+  }
+  return { folded, sourceRanges };
+}
+
 export function prepareSimpleSearch(query: string): (text: string) => SearchResult | null {
   const words = query.trim().split(/\s+/u).filter(Boolean);
   if (words.length === 0) {
     return () => ({ score: 0, matches: [] });
   }
-  const foldedWords = words.map((word) => word.toLocaleLowerCase("en-US"));
+  const foldedWords = words.map((word) => foldSimpleSearchText(word).folded);
 
   return (text: string): SearchResult | null => {
-    const foldedText = text.toLocaleLowerCase("en-US");
+    const { folded: foldedText, sourceRanges } = foldSimpleSearchText(text);
     const matches: SearchMatchPart[] = [];
     let positionCost = 0;
     for (const word of foldedWords) {
-      const start = foldedText.indexOf(word);
-      if (start === -1) {
+      const foldedStart = foldedText.indexOf(word);
+      const sourceStart = sourceRanges[foldedStart];
+      const sourceEnd = sourceRanges[foldedStart + word.length - 1];
+      if (foldedStart === -1 || !sourceStart || !sourceEnd) {
         return null;
       }
-      matches.push([start, start + word.length]);
-      positionCost += start;
+      matches.push([sourceStart[0], sourceEnd[1]]);
+      positionCost += sourceStart[0];
     }
     matches.sort(([left], [right]) => left - right);
     const merged: SearchMatchPart[] = [];

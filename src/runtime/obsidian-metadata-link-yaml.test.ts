@@ -72,6 +72,28 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     expect(getAllTags({})).toBeNull();
   });
 
+  it("rejects numeric-only and malformed tag segments while retaining valid nested and symbol tags", async () => {
+    expect(
+      parseFrontMatterTags({
+        tags: ["123", "---", "/leading", "trailing/", "double//slash", "topic/123", "✅"],
+      }),
+    ).toEqual(["#topic/123", "#✅"]);
+
+    const { vault } = await createTemporaryVault({
+      "Tags.md": [
+        "---",
+        "tags: ['123', '---', 'foo/', 'foo//bar', 'topic/123', '✅']",
+        "---",
+        "#123 #--- #/ #foo/ #foo//bar #topic/123 #✅",
+      ].join("\n"),
+    });
+    const metadataCache = new MetadataCache(vault);
+    const cache = metadataCache.getCache("Tags.md");
+
+    expect(cache?.tags?.map(({ tag }) => tag)).toEqual(["#topic/123", "#✅"]);
+    expect(metadataCache.getTags()).toEqual({ "#topic/123": 2, "#✅": 2 });
+  });
+
   it("splits wikilink paths from heading and block subpaths at the first hash", () => {
     expect(parseLinktext("Folder/Note#Heading#Nested")).toEqual({
       path: "Folder/Note",
@@ -113,6 +135,14 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
       [0, 2],
       [9, 13],
     ]);
+  });
+
+  it("maps length-changing case folds back to ranges in the original UTF-16 string", () => {
+    expect(prepareSimpleSearch("İ")("İ")).toEqual({ score: 0, matches: [[0, 1]] });
+    const trailingMatch = prepareSimpleSearch("y")("xİy");
+    expect(trailingMatch?.matches).toEqual([[2, 3]]);
+    expect(trailingMatch?.score).toBeCloseTo(-2 / 3);
+    expect(prepareSimpleSearch("ος")("ΟΣ")).toEqual({ score: 0, matches: [[0, 2]] });
   });
 
   it("builds Obsidian-shaped file caches and aggregate tag counts from canonical note bytes", async () => {
@@ -175,6 +205,19 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     expect(vault.getAvailablePath("Fresh", ".md")).toBe("Fresh.md");
     expect(vault.getAvailablePath("case", "md")).toBe("case 1.md");
     expect(vault.getAvailablePath("Taken", "")).toBe("Taken 1");
+  });
+
+  it("counts private occupied paths and rejects unsafe available-path inputs", async () => {
+    const { vault } = await createTemporaryVault({
+      ".Private.md": "private\n",
+      ".Secret/Claim.md": "hidden nested claim\n",
+    });
+
+    expect(vault.getAvailablePath(".private", "md")).toBe(".private 1.md");
+    expect(vault.getAvailablePath(".secret/claim", "md")).toBe(".secret/claim 1.md");
+    expect(() => vault.getAvailablePath("../outside", "md")).toThrow("escapes the vault");
+    expect(() => vault.getAvailablePath("/absolute/name", "md")).toThrow("vault-relative");
+    expect(() => vault.getAvailablePath("Note", "../md")).toThrow("plain extension");
   });
 
   it("publishes the shared helper references on the compatibility module", async () => {
