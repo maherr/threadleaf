@@ -1,6 +1,6 @@
 # Community theme visual matrix v1
 
-**Last updated:** 2026-08-14T11:33:08-04:00
+**Last updated:** 2026-08-14T11:38:29-04:00
 
 This is a contained-loader compatibility fixture, not a theme store. The matrix uses three
 permissively licensed, open community themes that exercise different CSS shapes, plus a fourth,
@@ -155,8 +155,19 @@ black in Threadleaf's light cascade.
 **Root cause, found through live investigation (Electron + CDP), not source reasoning alone.** Two
 distinct issues, not one:
 
-1. `--interactive` itself was simply never published by Threadleaf's baseline. Sanctum's own
-   `--color-accent: var(--interactive)` chain had nothing to read.
+1. `--interactive` was never published by Threadleaf's baseline at a scope any community theme's
+   own cascade actually reaches, so Sanctum's own `--color-accent: var(--interactive)` chain had
+   nothing valid to read. Sanctum does declare its own `--interactive` (`sanctum/theme.css:361,420`,
+   inside `.theme-light`/`.theme-dark`), but that declaration is itself unusable at `:root`: its
+   inputs, `--color-accent-rgb-l`/`-d`, are declared via a bare `body { }` selector that can never
+   match `:root`/`<html>`. Threadleaf's own `:root { --interactive: var(--interactive-accent) }`
+   fix is also inert against Sanctum specifically: `:root` and a bare `.theme-light`/`.theme-dark`
+   class selector are equal specificity, and Sanctum's `theme.css` loads after Threadleaf's own
+   baseline, so Sanctum's `.theme-light`/`.theme-dark` rule wins by source order and overrides it
+   with Sanctum's own (at `:root`, unusable) chain. What actually fixes Sanctum is the `body { }`
+   re-declaration below: its `html:not(...) body` selector reaches specificity `(0,1,2)`, strictly
+   higher than `.theme-light`/`.theme-dark`'s `(0,1,0)`, so it wins regardless of source order, at
+   the scope (`body`) where Sanctum's own inputs are actually declared.
 2. A deeper, unrelated mechanism was independently poisoning `--ink`, `--signal`, `--canvas`,
    `--surface*`, `--line*`, and `--mono` for every descendant of `<body>` -- which is what
    `section-heading`'s colour (via `--ink`, inherited from `body { color: var(--ink) }`) and
@@ -245,6 +256,16 @@ parent, `!important` or not:
 `--icon-color`, `--interactive`, `--mono`, and `--accent-soft` are not part of the high-contrast
 override and remain re-declared at `body` unconditionally (subject only to the high-contrast gate
 on the whole block, for consistency).
+
+**Recorded authority inversion.** Because the `body { }` block's `html:not(...) body` selector
+outranks a community theme's own `.theme-light`/`.theme-dark` class selector on specificity, it
+also overrides a community theme's own body-level `--interactive` (and any of the same aliased
+token names a theme happens to declare at that scope) with Threadleaf's value, even where the
+theme's own declaration would otherwise have resolved validly -- Sanctum's own `--interactive` is
+one such case (see above). Verified inert today: nothing in Threadleaf's own CSS reads
+`var(--interactive)`, so no visible behaviour currently depends on which side wins. Recorded here
+because a future consumer of `--interactive` would silently get Threadleaf's compat value instead
+of the active community theme's own choice.
 
 **Remaining, lower-severity gap, not fixed here.** `--font-interface`, `--font-monospace`,
 `--file-margins`, `--radius-s`, `--radius-m`, and `--radius-l` are the same shape of `:root`-only

@@ -17,9 +17,11 @@
   --color-accent: #1769aa;
   --interactive-accent: var(--color-accent);
   --interactive-accent-hover: #0e4f86;
-  /* Compat: some community themes (e.g. Sanctum) read a bare --interactive as
-     their own general accent source and never see Threadleaf's real value
-     otherwise. Map it honestly to the same accent Threadleaf itself uses. */
+  /* Compat: some community themes (e.g. Sanctum) read a bare --interactive as their
+     own general accent source. Sanctum also declares its own --interactive, but only
+     inside .theme-light/.theme-dark, whose inputs are declared at body and never
+     reach :root -- so at :root it has nothing valid to read either way. Map it
+     honestly to the same accent Threadleaf itself uses. */
   --interactive: var(--interactive-accent);
   --text-accent: #0e4f86;
   --text-accent-hover: #073a65;
