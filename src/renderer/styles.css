@@ -40,7 +40,7 @@
   --line-strong: var(--background-modifier-border-hover);
   --accent: var(--interactive-accent);
   --accent-strong: var(--text-accent);
-  --accent-soft: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+  --accent-soft: color-mix(in srgb, var(--interactive-accent) 25%, var(--background-primary));
   --signal: var(--text-error);
   --signal-soft: var(--background-modifier-error);
   --shadow-small: 0 8px 24px rgb(35 41 48 / 10%);
