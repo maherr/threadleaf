@@ -815,7 +815,13 @@ async function launchPackage(executablePath, expectedVersion, stage) {
   const port = await availablePort();
   const child = spawn(
     executablePath,
-    [`--remote-debugging-port=${port}`, processMarkerArgument, "--disable-gpu", "--password-store=basic", "--safe-plugins"],
+    [
+      `--remote-debugging-port=${port}`,
+      processMarkerArgument,
+      "--disable-gpu",
+      "--password-store=basic",
+      "--safe-plugins",
+    ],
     {
       cwd: scratchPath,
       env: {
