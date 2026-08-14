@@ -1,10 +1,12 @@
 # Obsidian behavior lab
 
-The behavior lab is a clean-room, Linux-only observer harness for the declared Obsidian Flatpak
+The behavior lab is a clean-room, Linux-only external oracle for the declared Obsidian Flatpak
 release `md.obsidian.Obsidian` version `1.13.7`. Each run records the installed Flatpak commit and
 runtime reference (`org.freedesktop.Platform/x86_64/25.08` at the current baseline) and refuses to
-observe a different app version or an unresolved runtime. It is a benchmark and compatibility
-input, not a claim that Threadleaf reproduces private implementation details.
+observe a different app version or an unresolved runtime. It asserts one specific Threadleaf
+compatibility behavior without reading either application's private implementation details:
+open the fixture note, append synthetic UTF-8 text, save, exit, and reopen with the exact bytes
+intact.
 
 ## Run contract
 
@@ -43,6 +45,14 @@ currently recorded as blocked when no separately isolatable public Obsidian CLI 
 available. Raw screenshots, process streams, profile receipts, and manifests remain mode `0600`
 under the temporary run root and are never copied into the repository.
 
+The Threadleaf candidate is also a fresh production Electron process, never a renderer fixture or
+an internal `window.threadleaf` shortcut. It receives a dedicated run-root profile, HOME, XDG
+directories, and TMPDIR; runs under Xvfb with explicit X11 and loopback-only CDP; disables Electron
+background networking and component updates; and enables Threadleaf safe-plugin mode. Its fixture
+note is selected through the visible navigation target, then real CDP pointer, keyboard, and text
+input exercise the rendered CodeMirror editor. The candidate must preserve every fixture path except
+the single note byte delta and must not write `.obsidian`.
+
 ## Cells in the first tranche
 
 `HARNESS-00` proves fixture integrity, Xvfb, marker cleanup, probe quiescence, and the process
@@ -55,6 +65,18 @@ normalized accessibility nodes, viewport surface geometry, and one private scree
 `CLI-01` records the explicit access gap without guessing a command grammar. Every run also emits
 the candidate Git SHA/tree when available, a deterministic source tree hash, and exact hashes for
 the runner, all lab modules, fixture manifest, and package script.
+
+`THREADLEAF-01` runs the current built Threadleaf production app against an independently generated
+copy of the same fixture. It opens `00 Overview.md` through visible navigation, appends
+`THREADLEAF_OBSIDIAN_LAB_CANDIDATE_EDIT_V1`, saves, closes the process, launches a fresh process,
+and proves the reopened on-disk bytes and visible text are exact. Its private screenshot must match
+Threadleaf's measured renderer viewport. That screenshot is rendered-surface evidence, not a claim
+that Threadleaf's minimum window geometry matches Obsidian's fixed `800x650` reference capture.
+
+`MATCH-01` is the compatibility assertion. It is observed only when `FILE-01` and
+`THREADLEAF-01` both complete the same open, edit, save, exit, reopen behavior with exact persisted
+bytes, and Threadleaf changed no other fixture path. The reference-only containment and UI cells
+remain evidence about the oracle, not hidden Threadleaf-equivalence claims.
 
 The observer never reads bundled application code, source maps, private modules or assets; dumps
 unbounded DOM or framework state; enumerates globals; accesses a real vault/profile; or permits
@@ -75,7 +97,13 @@ Run the isolated first tranche with:
 pnpm run obsidian:behavior-lab
 ```
 
-The command prints the private temporary `runRoot` and cell statuses. Use `--red-control` to prove
-that a seeded fixture-byte mutation is rejected. By default the run root is retained after sealing,
-for independent verification. `--cleanup` prints the sealed manifest (all cell receipts) to stdout
-and then removes this run's root; it never touches another run's root.
+The command builds Threadleaf first, then prints the private temporary `runRoot` and cell statuses.
+Use `--red-control` to prove that a seeded fixture-byte mutation is rejected. Use
+`--threadleaf-red-control` to remove the live disposable production CodeMirror editor after the
+fixture has rendered. The real focus/input path must then block `THREADLEAF-01`, block
+`MATCH-01`, and make the command exit nonzero. A following unmodified run must restore both cells
+to `observed`. The mutation changes no source or persisted test fixture.
+
+By default the run root is retained after sealing, for independent verification. `--cleanup` prints
+the sealed manifest (all cell receipts) to stdout and then removes this run's root; it never touches
+another run's root.
