@@ -241,6 +241,161 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     expect(() => vault.getAvailablePath("Note", "../md")).toThrow("plain extension");
   });
 
+  it("resolves linkpaths with Obsidian's exact-path and relative-path precedence", async () => {
+    // MetadataCache.getFirstLinkpathDest() is the documented best-match resolver:
+    // https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
+    // This precedence matrix was observed in an isolated Obsidian 1.13.7 host oracle.
+    const { vault } = await createTemporaryVault({
+      "A/Duplicate.md": "first global duplicate\n",
+      "Elsewhere/Duplicate.md": "other global duplicate\n",
+      "Folder/Exact.md": "vault-root exact target\n",
+      "Lengthier/Path/Duplicate.md": "long global duplicate\n",
+      "Notes/ParentTarget.md": "parent target\n",
+      "Notes/Sub/Duplicate.md": "near duplicate\n",
+      "Notes/Sub/Folder/Exact.md": "source-relative exact lookalike\n",
+      "Notes/Sub/Source.md": "source\n",
+      "Notes/Sub/Target.md": "near target\n",
+      "Root.md": "root target\n",
+      "Unrelated/Source.md": "source without a nearby duplicate\n",
+    });
+    const metadataCache = new MetadataCache(vault);
+    const sourcePath = "Notes/Sub/Source.md";
+
+    expect(metadataCache.getFirstLinkpathDest("", sourcePath)?.path).toBe(sourcePath);
+    expect(metadataCache.getFirstLinkpathDest("Root.md", sourcePath)?.path).toBe("Root.md");
+    expect(metadataCache.getFirstLinkpathDest("Folder/Exact", sourcePath)?.path).toBe(
+      "Folder/Exact.md",
+    );
+    expect(metadataCache.getFirstLinkpathDest("./Folder/Exact", sourcePath)?.path).toBe(
+      "Notes/Sub/Folder/Exact.md",
+    );
+    expect(metadataCache.getFirstLinkpathDest("Target", sourcePath)?.path).toBe(
+      "Notes/Sub/Target.md",
+    );
+    expect(metadataCache.getFirstLinkpathDest("../ParentTarget", sourcePath)?.path).toBe(
+      "Notes/ParentTarget.md",
+    );
+    expect(metadataCache.getFirstLinkpathDest("Duplicate", sourcePath)?.path).toBe(
+      "Notes/Sub/Duplicate.md",
+    );
+    expect(metadataCache.getFirstLinkpathDest("Duplicate", "Unrelated/Source.md")?.path).toBe(
+      "A/Duplicate.md",
+    );
+    expect(metadataCache.getFirstLinkpathDest("Missing", sourcePath)).toBeNull();
+  });
+
+  it("formats link text from the observed newLinkFormat and omit-extension contract", async () => {
+    // MetadataCache.fileToLinktext() is public API:
+    // https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
+    // The three newLinkFormat values and default omitMdExtension=true were observed
+    // in an isolated Obsidian 1.13.7 host oracle.
+    const cases = [
+      {
+        format: "shortest",
+        expected: {
+          unique: "Unique",
+          sameFolderDuplicate: "Notes/Sub/Duplicate",
+          elsewhereDuplicate: "Elsewhere/Duplicate",
+        },
+      },
+      {
+        format: "relative",
+        expected: {
+          unique: "../../Elsewhere/Unique",
+          sameFolderDuplicate: "Duplicate",
+          elsewhereDuplicate: "../../Elsewhere/Duplicate",
+        },
+      },
+      {
+        format: "absolute",
+        expected: {
+          unique: "Elsewhere/Unique",
+          sameFolderDuplicate: "Notes/Sub/Duplicate",
+          elsewhereDuplicate: "Elsewhere/Duplicate",
+        },
+      },
+    ] as const;
+
+    for (const { format, expected } of cases) {
+      const { vault } = await createTemporaryVault({
+        ".obsidian/app.json": JSON.stringify({ newLinkFormat: format }),
+        "Elsewhere/Duplicate.md": "duplicate\n",
+        "Elsewhere/Unique.md": "unique\n",
+        "Notes/Sub/Duplicate.md": "duplicate\n",
+        "Notes/Sub/Source.md": "source\n",
+      });
+      const metadataCache = new MetadataCache(vault);
+      const sourcePath = "Notes/Sub/Source.md";
+      const unique = vault.getFileByPath("Elsewhere/Unique.md");
+      const sameFolderDuplicate = vault.getFileByPath("Notes/Sub/Duplicate.md");
+      const elsewhereDuplicate = vault.getFileByPath("Elsewhere/Duplicate.md");
+
+      if (!unique || !sameFolderDuplicate || !elsewhereDuplicate) {
+        throw new Error("Link-text fixture files must exist.");
+      }
+      expect(metadataCache.fileToLinktext(unique, sourcePath)).toBe(expected.unique);
+      expect(metadataCache.fileToLinktext(unique, sourcePath, false)).toBe(`${expected.unique}.md`);
+      expect(metadataCache.fileToLinktext(sameFolderDuplicate, sourcePath)).toBe(
+        expected.sameFolderDuplicate,
+      );
+      expect(metadataCache.fileToLinktext(elsewhereDuplicate, sourcePath)).toBe(
+        expected.elsewhereDuplicate,
+      );
+    }
+  });
+
+  it("exposes actual resolved and unresolved link maps, without a private empty getLinks stub", async () => {
+    // resolvedLinks and unresolvedLinks are the public maps of source and destination
+    // paths with counts: https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
+    // The source and external-link treatment below was observed in Obsidian 1.13.7.
+    const { vault } = await createTemporaryVault({
+      "Elsewhere/Duplicate.md": "duplicate\n",
+      "Elsewhere/Unique.md": "unique\n",
+      "Folder/Exact.md": "exact\n",
+      "Notes/ParentTarget.md": "parent\n",
+      "Notes/Sub/Duplicate.md": "duplicate\n",
+      "Notes/Sub/Source.md": "[[Target]] [[Duplicate]] [[Missing]]\n",
+      "Notes/Sub/Target.md": "target\n",
+      "Resolved.md":
+        "[[Notes/Sub/Target]] [[Notes/Sub/Target]] ![[Notes/Sub/Target]] [root](Root.md) [web](https://example.com) [[Missing]]\n",
+      "Root.md": "root\n",
+    });
+    const metadataCache = new MetadataCache(vault);
+    const compatibilityMaps = metadataCache as MetadataCache & {
+      unresolvedLinks?: Record<string, Record<string, number>>;
+    };
+
+    expect("getLinks" in metadataCache).toBe(false);
+    expect(metadataCache.resolvedLinks).toEqual({
+      "Elsewhere/Duplicate.md": {},
+      "Elsewhere/Unique.md": {},
+      "Folder/Exact.md": {},
+      "Notes/ParentTarget.md": {},
+      "Notes/Sub/Duplicate.md": {},
+      "Notes/Sub/Source.md": {
+        "Notes/Sub/Duplicate.md": 1,
+        "Notes/Sub/Target.md": 1,
+      },
+      "Notes/Sub/Target.md": {},
+      "Resolved.md": {
+        "Notes/Sub/Target.md": 3,
+        "Root.md": 1,
+      },
+      "Root.md": {},
+    });
+    expect(compatibilityMaps.unresolvedLinks).toEqual({
+      "Elsewhere/Duplicate.md": {},
+      "Elsewhere/Unique.md": {},
+      "Folder/Exact.md": {},
+      "Notes/ParentTarget.md": {},
+      "Notes/Sub/Duplicate.md": {},
+      "Notes/Sub/Source.md": { Missing: 1 },
+      "Notes/Sub/Target.md": {},
+      "Resolved.md": { Missing: 1 },
+      "Root.md": {},
+    });
+  });
+
   it("publishes the shared helper references on the compatibility module", async () => {
     const { vault } = await createTemporaryVault({ "Note.md": "body\n" });
     const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));

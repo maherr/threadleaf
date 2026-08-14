@@ -16,7 +16,7 @@ import TurndownService from "turndown";
 import { parse as parseYaml, stringify as yamlStringify } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
-import { maskMarkdownCodeAndComments } from "../kernel/markdown-links";
+import { maskMarkdownCodeAndComments, parseMarkdownLinks } from "../kernel/markdown-links";
 import { isPathInside } from "../kernel/path-policy";
 import type {
   VaultDirectoryCreateResult,
@@ -1298,6 +1298,21 @@ function cleanLinkpath(linkpath: string): string {
   }
 }
 
+function isExplicitRelativeLinkpath(linkpath: string): boolean {
+  const rawPath = linkpath.split("#", 1)[0]?.split("|", 1)[0]?.trim() ?? "";
+  try {
+    return /^(?:\.{1,2})(?:\/|$)/u.test(decodeURIComponent(rawPath));
+  } catch {
+    return /^(?:\.{1,2})(?:\/|$)/u.test(rawPath);
+  }
+}
+
+function isExternalLinkpath(linkpath: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/iu.test(linkpath) || linkpath.startsWith("//");
+}
+
+type NewLinkFormat = "shortest" | "relative" | "absolute";
+
 export class MetadataCache {
   readonly blockCache = {
     getForFile: async (_token: unknown, _file: TFile): Promise<{ blocks: unknown[] }> => ({
@@ -1414,22 +1429,31 @@ export class MetadataCache {
     }
 
     const sourceDirectory = path.posix.dirname(normalizePath(sourcePath));
-    const candidates = new Set<string>();
-    const addCandidate = (candidate: string): void => {
+    const directCandidate = (candidate: string): TFile | null => {
       const normalized = normalizePath(candidate);
-      candidates.add(normalized);
+      const candidates = [normalized];
       if (!path.posix.extname(normalized)) {
-        candidates.add(`${normalized}.md`);
+        candidates.push(`${normalized}.md`);
       }
+      for (const resolvedPath of candidates) {
+        const file = this.vault.getFileByPath(resolvedPath);
+        if (file) {
+          return file;
+        }
+      }
+      return null;
     };
-    if (sourceDirectory !== ".") {
-      addCandidate(path.posix.join(sourceDirectory, requested));
+
+    if (!isExplicitRelativeLinkpath(linkpath)) {
+      const exactPath = directCandidate(requested);
+      if (exactPath) {
+        return exactPath;
+      }
     }
-    addCandidate(requested);
-    for (const candidate of candidates) {
-      const file = this.vault.getFileByPath(candidate);
-      if (file) {
-        return file;
+    if (sourceDirectory !== ".") {
+      const sourceRelative = directCandidate(path.posix.join(sourceDirectory, requested));
+      if (sourceRelative) {
+        return sourceRelative;
       }
     }
 
@@ -1450,7 +1474,8 @@ export class MetadataCache {
     );
   }
 
-  fileToLinktext(file: TFile, _sourcePath: string, omitMdExtension = false): string {
+  fileToLinktext(file: TFile, sourcePath: string, omitMdExtension = true): string {
+    const linkFormat = this.newLinkFormat();
     const sameBasename = this.vault
       .getFiles()
       .filter(
@@ -1458,18 +1483,79 @@ export class MetadataCache {
           candidate.basename.toLocaleLowerCase("en-US") ===
           file.basename.toLocaleLowerCase("en-US"),
       );
-    const shortestUniquePath = sameBasename.length === 1 ? file.name : file.path;
+    const linktext =
+      linkFormat === "relative"
+        ? path.posix.relative(path.posix.dirname(normalizePath(sourcePath)), file.path)
+        : linkFormat === "absolute" || sameBasename.length > 1
+          ? file.path
+          : file.name;
     return omitMdExtension && file.extension.toLocaleLowerCase("en-US") === "md"
-      ? shortestUniquePath.slice(0, -3)
-      : shortestUniquePath;
-  }
-
-  getLinks(): Record<string, Array<{ link: string }>> {
-    return {};
+      ? linktext.slice(0, -3)
+      : linktext;
   }
 
   get resolvedLinks(): Record<string, Record<string, number>> {
-    return {};
+    return this.linkMaps().resolved;
+  }
+
+  get unresolvedLinks(): Record<string, Record<string, number>> {
+    return this.linkMaps().unresolved;
+  }
+
+  private newLinkFormat(): NewLinkFormat {
+    try {
+      const settingsPath = this.vault.resolveVaultPath(
+        path.posix.join(this.vault.configDir, "app.json"),
+      );
+      const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+        newLinkFormat?: unknown;
+      };
+      if (
+        settings.newLinkFormat === "shortest" ||
+        settings.newLinkFormat === "relative" ||
+        settings.newLinkFormat === "absolute"
+      ) {
+        return settings.newLinkFormat;
+      }
+    } catch {
+      // Obsidian uses shortest links unless the vault's optional setting says otherwise.
+    }
+    return "shortest";
+  }
+
+  private linkMaps(): {
+    resolved: Record<string, Record<string, number>>;
+    unresolved: Record<string, Record<string, number>>;
+  } {
+    const resolved: Record<string, Record<string, number>> = {};
+    const unresolved: Record<string, Record<string, number>> = {};
+    for (const source of this.vault.getMarkdownFiles()) {
+      const resolvedForSource: Record<string, number> = {};
+      const unresolvedForSource: Record<string, number> = {};
+      resolved[source.path] = resolvedForSource;
+      unresolved[source.path] = unresolvedForSource;
+      let content: string;
+      try {
+        content = readFileSync(this.vault.resolveVaultPath(source.path), "utf8");
+      } catch {
+        continue;
+      }
+      for (const link of parseMarkdownLinks(content)) {
+        if (isExternalLinkpath(link.target)) {
+          continue;
+        }
+        const destination = this.getFirstLinkpathDest(link.target, source.path);
+        if (destination) {
+          resolvedForSource[destination.path] = (resolvedForSource[destination.path] ?? 0) + 1;
+          continue;
+        }
+        const unresolvedPath = cleanLinkpath(link.target);
+        if (unresolvedPath) {
+          unresolvedForSource[unresolvedPath] = (unresolvedForSource[unresolvedPath] ?? 0) + 1;
+        }
+      }
+    }
+    return { resolved, unresolved };
   }
 
   getLinkSuggestions(): Array<{ file: TFile; path: string }> {
