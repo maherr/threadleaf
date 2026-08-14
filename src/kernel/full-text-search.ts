@@ -90,8 +90,20 @@ interface IndexedSearchDocument {
   canonicalTitle: string;
   normalizedTitle: string;
   titleSimple: boolean;
-  lines: IndexedLine[];
-  canonicalContent: string;
+  /**
+   * The exact saved source. Per-line index objects are deliberately not
+   * retained: one object plus two folded strings for every line of every note
+   * was 55 percent of the whole index heap at vault scale (about 3.1 GiB for
+   * 31.45 million lines), to describe text this field already holds. Lines are
+   * derived from here at query time, for matched documents only.
+   */
+  content: string;
+  /**
+   * The one whole-note comparable key kept at rest. The case-preserving
+   * companion is derived on demand instead of stored, because for a note that
+   * is already NFC it is a V8 alias of `content` and for a note carrying Latin
+   * diacritics it is a second full copy.
+   */
   normalizedContent: string;
   contentSimple: boolean;
   headings: IndexedHeading[];
@@ -120,6 +132,73 @@ function comparableText(canonical: string, normalized: string, caseSensitive: bo
 
 function comparableLine(line: IndexedLine, caseSensitive: boolean): string {
   return caseSensitive ? line.canonical : line.normalized;
+}
+
+/** The exact string `indexDocument` folds, shared by both whole-note keys. */
+function lineFeedContent(content: string): string {
+  return content.replaceAll("\r\n", "\n");
+}
+
+/**
+ * The whole-note comparable key for one query. The case-folded key is stored;
+ * the case-preserving key is recomputed here because storing it would either
+ * pin the raw note through a V8 alias or duplicate it outright.
+ */
+function comparableContent(document: IndexedSearchDocument, caseSensitive: boolean): string {
+  return caseSensitive
+    ? foldSearchText(lineFeedContent(document.content), true)
+    : document.normalizedContent;
+}
+
+/**
+ * Rebuild the per-line index for one document, identical in every field to the
+ * shape the index used to hold. Only the returned array's lifetime changed:
+ * it is now a query-local temporary for a matched document rather than a
+ * permanent structure held for all of them.
+ */
+function deriveLines(content: string): IndexedLine[] {
+  const lines = content.split(/\r?\n/).map((text, index) => ({
+    line: index + 1,
+    text,
+    canonical: foldSearchText(text, true),
+    normalized: foldSearchText(text),
+    simple: false,
+  }));
+  for (const line of lines) {
+    line.simple = isSimpleSearchText(line.canonical) && isSimpleSearchText(line.normalized);
+  }
+  return lines;
+}
+
+/**
+ * True when a single saved line carries every term.
+ *
+ * This walks the folded whole-note key rather than re-folding each line, which
+ * would cost 31 million `foldSearchText` calls on a large vault for one broad
+ * query. `foldSearchText` is distributive over "\n" (proved over an
+ * adversarial corpus in full-text-search-folding.test.ts), so a newline-bounded
+ * slice of the folded key is exactly the folded line the index used to store.
+ *
+ * `simple` is passed as false rather than recomputed from a single variant: it
+ * is a pure fast-path hint, never a semantic one. `searchTextContains` already
+ * takes the same plain `indexOf` route whenever the haystack is simple, so
+ * both values answer identically, while a `simple` inferred from one variant
+ * could read true where the stored flag, which also consulted the other
+ * variant, read false.
+ */
+function anyLineContainsEveryTerm(folded: string, terms: readonly string[]): boolean {
+  let start = 0;
+  for (;;) {
+    const lineBreak = folded.indexOf("\n", start);
+    const end = lineBreak === -1 ? folded.length : lineBreak;
+    if (terms.every((term) => containsComparable(folded.slice(start, end), term, false))) {
+      return true;
+    }
+    if (lineBreak === -1) {
+      return false;
+    }
+    start = lineBreak + 1;
+  }
 }
 
 function containsComparable(value: string, term: string, simple: boolean): boolean {
@@ -152,18 +231,9 @@ function propertyText(key: string, value: string | string[]): string {
 }
 
 function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument {
-  const canonicalContent = foldSearchText(document.content.replaceAll("\r\n", "\n"), true);
-  const normalizedContent = foldSearchText(document.content.replaceAll("\r\n", "\n"));
-  const lines = document.content.split(/\r?\n/).map((text, index) => ({
-    line: index + 1,
-    text,
-    canonical: foldSearchText(text, true),
-    normalized: foldSearchText(text),
-    simple: false,
-  }));
-  for (const line of lines) {
-    line.simple = isSimpleSearchText(line.canonical) && isSimpleSearchText(line.normalized);
-  }
+  const lineFeed = lineFeedContent(document.content);
+  const canonicalContent = foldSearchText(lineFeed, true);
+  const normalizedContent = foldSearchText(lineFeed);
   const title = displayTitleFromVaultPath(document.path);
   const canonicalPath = foldSearchText(document.path, true);
   const normalizedPath = foldSearchText(document.path);
@@ -182,8 +252,7 @@ function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument 
     canonicalTitle,
     normalizedTitle,
     titleSimple,
-    lines,
-    canonicalContent,
+    content: document.content,
     normalizedContent,
     contentSimple,
     headings: document.headings.map((heading) => {
@@ -314,6 +383,7 @@ function containsTerm(
   document: IndexedSearchDocument,
   term: string,
   caseSensitive: boolean,
+  content: string,
 ): boolean {
   return (
     containsComparable(
@@ -326,11 +396,7 @@ function containsTerm(
       term,
       document.pathSimple,
     ) ||
-    containsComparable(
-      comparableText(document.canonicalContent, document.normalizedContent, caseSensitive),
-      term,
-      document.contentSimple,
-    ) ||
+    containsComparable(content, term, document.contentSimple) ||
     document.headings.some((heading) =>
       containsComparable(
         comparableText(heading.canonical, heading.normalized, caseSensitive),
@@ -359,14 +425,10 @@ function scoreDocument(
   document: IndexedSearchDocument,
   terms: string[],
   caseSensitive: boolean,
+  content: string,
 ): number {
   const title = comparableText(document.canonicalTitle, document.normalizedTitle, caseSensitive);
   const filePath = comparableText(document.canonicalPath, document.normalizedPath, caseSensitive);
-  const content = comparableText(
-    document.canonicalContent,
-    document.normalizedContent,
-    caseSensitive,
-  );
   let score = 0;
   for (const term of terms) {
     let strongestField = 0;
@@ -432,12 +494,7 @@ function scoreDocument(
     }
     score += strongestField;
   }
-  if (
-    document.lines.some((line) => {
-      const text = comparableLine(line, caseSensitive);
-      return terms.every((term) => containsComparable(text, term, line.simple));
-    })
-  ) {
+  if (anyLineContainsEveryTerm(content, terms)) {
     score += 35;
   }
   return score;
@@ -450,7 +507,7 @@ function contextCandidates(
   exactContext: boolean,
 ): ContextCandidate[] {
   const candidates: ContextCandidate[] = [];
-  for (const line of document.lines) {
+  for (const line of deriveLines(document.content)) {
     const comparison = comparableLine(line, caseSensitive);
     const coverage = termCoverage(comparison, terms, line.simple);
     if (coverage === 0 || !line.text.trim()) {
@@ -529,16 +586,49 @@ function contextCandidates(
   return candidates;
 }
 
-function searchDocument(
+interface ScoredDocument {
+  document: IndexedSearchDocument;
+  score: number;
+  matchCount: number;
+}
+
+/**
+ * Match and score one document without touching its lines. Scoring reads the
+ * folded whole-note key, which is retained; only the contexts of the results a
+ * page actually returns need the source, and those are built later.
+ */
+function scoreMatch(
+  document: IndexedSearchDocument,
+  terms: string[],
+  caseSensitive: boolean,
+): ScoredDocument | null {
+  const content = comparableContent(document, caseSensitive);
+  if (!terms.every((term) => containsTerm(document, term, caseSensitive, content))) {
+    return null;
+  }
+  return {
+    document,
+    score: scoreDocument(document, terms, caseSensitive, content),
+    matchCount: terms.reduce(
+      (count, term) => count + Math.max(1, countOccurrences(content, term, document.contentSimple)),
+      0,
+    ),
+  };
+}
+
+/**
+ * Build the contexts for one returned result. Contexts were previously built
+ * for every matched document and then thrown away for all but the first
+ * `limit` of them, so restricting the work to the returned page is a pure
+ * saving: a discarded hit's contexts were never observable.
+ */
+function documentContexts(
   document: IndexedSearchDocument,
   terms: string[],
   caseSensitive: boolean,
   maxContexts: number,
   exactContext: boolean,
-): FullTextSearchHit | null {
-  if (!terms.every((term) => containsTerm(document, term, caseSensitive))) {
-    return null;
-  }
+): FullTextSearchContext[] {
   const candidates = contextCandidates(document, terms, caseSensitive, exactContext).sort(
     (left, right) =>
       right.coverage - left.coverage ||
@@ -563,24 +653,7 @@ function searchDocument(
       break;
     }
   }
-  return {
-    path: document.path,
-    score: scoreDocument(document, terms, caseSensitive),
-    matchCount: terms.reduce(
-      (count, term) =>
-        count +
-        Math.max(
-          1,
-          countOccurrences(
-            comparableText(document.canonicalContent, document.normalizedContent, caseSensitive),
-            term,
-            document.contentSimple,
-          ),
-        ),
-      0,
-    ),
-    contexts,
-  };
+  return contexts;
 }
 
 export class FullTextSearchIndex {
@@ -619,24 +692,32 @@ export class FullTextSearchIndex {
     if (terms.length === 0) {
       return { query, terms, total: 0, truncated: false, results: [] };
     }
-    const matches: FullTextSearchHit[] = [];
+    const matches: ScoredDocument[] = [];
     const folderPrefix = options.folder ? `${options.folder.replace(/\/+$/, "")}/` : "";
     for (const document of this.#documents.values()) {
       if (folderPrefix && !document.path.startsWith(folderPrefix)) {
         continue;
       }
-      const match = searchDocument(document, terms, caseSensitive, maxContexts, exactContext);
+      const match = scoreMatch(document, terms, caseSensitive);
       if (match) {
         matches.push(match);
       }
     }
-    matches.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
+    matches.sort(
+      (left, right) =>
+        right.score - left.score || left.document.path.localeCompare(right.document.path),
+    );
     return {
       query,
       terms,
       total: matches.length,
       truncated: matches.length > limit,
-      results: matches.slice(0, limit),
+      results: matches.slice(0, limit).map((match) => ({
+        path: match.document.path,
+        score: match.score,
+        matchCount: match.matchCount,
+        contexts: documentContexts(match.document, terms, caseSensitive, maxContexts, exactContext),
+      })),
     };
   }
 }
