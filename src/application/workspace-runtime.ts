@@ -170,6 +170,17 @@ const confirmedAbsenceObservations = 2;
 export const transientAbsenceSettleMs = 1500;
 
 /**
+ * The same window for a path that was already missing when the session opened.
+ *
+ * A restored tab has no transition behind it. This process did not watch the
+ * vault lose the file; it has simply never seen it, which on a machine that
+ * syncs its vault from other hosts is the ordinary state of a boot that beat
+ * the sync. With no observed loss to weigh against, the window is sized for a
+ * vault still arriving rather than for one atomic replace.
+ */
+export const startupAbsenceSettleMs = 60_000;
+
+/**
  * Follow-up scans one unconfirmed absence may ask for. Confirmation normally
  * needs one, so the cap only bounds the pathological case where a long write
  * holds a file aside, or a filesystem that cannot answer at all: those resolve
@@ -1063,15 +1074,43 @@ export class WorkspaceRuntime {
         ...indexReactor.index.snapshot().documents.map((document) => document.path),
         ...visible.files.filter(isCanvasPath),
       ]);
+      // The restore reconciles against the vault listing like the projection
+      // does, so it retains through the same authority rather than dropping on
+      // first sight. A tab whose file has not arrived on this machine yet - the
+      // ordinary state of a boot that beat the sync - would otherwise be closed,
+      // unpinned, and written back over the saved workspace before anything had
+      // looked at the vault twice.
+      const restoredTracked = new Set<string>();
+      for (const pane of restoredWorkspace.panes) {
+        for (const filePath of pane.openPaths) {
+          restoredTracked.add(filePath);
+        }
+        for (const filePath of pane.navigationHistory?.back ?? []) {
+          restoredTracked.add(filePath);
+        }
+        for (const filePath of pane.navigationHistory?.forward ?? []) {
+          restoredTracked.add(filePath);
+        }
+      }
+      const { retainedPaths } = runtime.retainTrackedPaths(
+        availablePaths,
+        restoredTracked,
+        startupAbsenceSettleMs,
+      );
       const panes = restoredWorkspace.panes.map((pane) => {
-        const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
+        const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
+        // A retained path holds its tab but cannot hold the selection yet:
+        // nothing readable has been published for it in this session, so the
+        // snapshot would have to read a file that is not there.
         const activePath =
-          pane.activePath && openPaths.includes(pane.activePath)
+          pane.activePath &&
+          openPaths.includes(pane.activePath) &&
+          availablePaths.has(pane.activePath)
             ? pane.activePath
-            : (openPaths.at(-1) ?? null);
+            : (openPaths.filter((filePath) => availablePaths.has(filePath)).at(-1) ?? null);
         const navigationHistory = navigationHistoryForPaths(
           pane.navigationHistory,
-          availablePaths,
+          retainedPaths,
           activePath,
         );
         return {
@@ -1106,6 +1145,7 @@ export class WorkspaceRuntime {
     }
     if (!runtime.readOnly) {
       watcher.start((batch) => runtime?.handleWatchBatch(batch));
+      runtime.requestRestoredAbsenceFollowUp();
     }
     return runtime;
   }
@@ -3140,6 +3180,60 @@ export class WorkspaceRuntime {
     return changed;
   }
 
+  /**
+   * The paths a workspace may still hold, given what the vault currently lists.
+   *
+   * Index membership is not evidence a file is gone. An atomic replace, an
+   * outside writer's unlink-and-rewrite, a rebuild that ran while a file was
+   * held aside, a failed re-read, and a vault still syncing onto this machine
+   * all take a path out of the listing while it is still there or coming back.
+   * So a tracked path the listing has lost is never dropped by whoever noticed:
+   * it is retained, recorded as an unconfirmed absence, and left for the
+   * confirmation pass to decide.
+   *
+   * Every reconciliation path goes through here - the snapshot projection, the
+   * session restore, and navigation history - because a single guarded sink is
+   * only a guard if it is the only sink. Each of those computed the same
+   * available set for itself and wrote its own answer back, so each was one.
+   */
+  private retainTrackedPaths(
+    availablePaths: ReadonlySet<string>,
+    trackedPaths: Iterable<string>,
+    settleMs?: number,
+  ): { retainedPaths: ReadonlySet<string>; trackedMissing: string[] } {
+    const trackedMissing = [...trackedPaths].filter((filePath) => !availablePaths.has(filePath));
+    let armFollowUpScan = false;
+    for (const filePath of trackedMissing) {
+      armFollowUpScan = this.recordUnconfirmedAbsence(filePath, settleMs) || armFollowUpScan;
+    }
+    if (armFollowUpScan) {
+      this.watcher.requestFollowUpScan();
+    }
+    this.armAbsenceWake();
+    return {
+      retainedPaths:
+        trackedMissing.length === 0
+          ? availablePaths
+          : new Set([...availablePaths, ...trackedMissing]),
+      trackedMissing,
+    };
+  }
+
+  /**
+   * Ask for the confirmation pass a path retained by the restore is waiting on.
+   *
+   * The watcher ignores a follow-up request before it is started and the restore
+   * runs first, so a tab kept there would otherwise be waiting on unrelated
+   * vault activity for the look that resolves it - which on a vault nobody is
+   * touching never arrives, and a file deleted before this session started would
+   * keep its tab forever.
+   */
+  private requestRestoredAbsenceFollowUp(): void {
+    if (this.#unconfirmedAbsences.size > 0) {
+      this.watcher.requestFollowUpScan();
+    }
+  }
+
   private recordWatcherError(error: unknown): void {
     this.#watcherError = error instanceof Error ? error.message : String(error);
   }
@@ -3188,30 +3282,14 @@ export class WorkspaceRuntime {
     }
     const { documents, backlinks, files } = projection;
     const availablePaths = new Set([...documents.keys(), ...canvasPaths]);
-    // This projection is the only place a tab is closed by reconciliation rather
-    // than by an explicit request, so it is where the guard has to be. Index
-    // membership is not evidence a file is gone: an atomic replace, a rebuild
-    // that ran while a file was held aside, and a failed re-read all remove a
-    // path from the index while it is still there or coming back. So a tracked
-    // path missing from the index is not dropped here at all; it becomes an
-    // unconfirmed absence, and only the confirmed-absent path in
-    // settleUnconfirmedAbsences may take it out of the panes. Every entry point
-    // inherits that, including the ones that record nothing themselves.
-    const trackedMissing = [...this.trackedWorkspacePaths()].filter(
-      (filePath) => !availablePaths.has(filePath),
+    // Reconciliation closes a tab here and in the two sibling call sites that
+    // reconcile against the vault listing, so all three ask the same authority
+    // what may still be held. Only the confirmed-absent path in
+    // settleUnconfirmedAbsences may take a retained path out of the panes.
+    const { retainedPaths, trackedMissing } = this.retainTrackedPaths(
+      availablePaths,
+      this.trackedWorkspacePaths(),
     );
-    let armFollowUpScan = false;
-    for (const filePath of trackedMissing) {
-      armFollowUpScan = this.recordUnconfirmedAbsence(filePath) || armFollowUpScan;
-    }
-    if (armFollowUpScan) {
-      this.watcher.requestFollowUpScan();
-    }
-    this.armAbsenceWake();
-    const retainedPaths =
-      trackedMissing.length === 0
-        ? availablePaths
-        : new Set([...availablePaths, ...trackedMissing]);
     // A retained path can still be unrenderable: nothing readable was ever
     // published for it. Such a path keeps its tab but may not hold the active
     // selection, because the snapshot would have to read a file that is not there.
