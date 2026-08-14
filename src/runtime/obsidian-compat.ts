@@ -9,24 +9,13 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { isDeepStrictEqual } from "node:util";
 import MarkdownIt from "markdown-it";
 import moment from "moment";
 import TurndownService from "turndown";
-import {
-  isAlias,
-  isCollection,
-  isMap,
-  isPair,
-  isScalar,
-  parseDocument,
-  parse as parseYaml,
-  stringify as yamlStringify,
-} from "yaml";
+import { parse as parseYaml, stringify as yamlStringify } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
 import { maskMarkdownCodeAndComments } from "../kernel/markdown-links";
-import { MetadataIndex } from "../kernel/metadata-index";
 import { isPathInside } from "../kernel/path-policy";
 import type {
   VaultDirectoryCreateResult,
@@ -461,27 +450,6 @@ export class Vault {
       }
     }
     throw new Error(`Could not find an available path for ${normalizedBase}${suffix}.`);
-  }
-
-  async getAvailablePathForAttachments(
-    filename: string,
-    extension: string,
-    sourceFile?: TFile | null,
-  ): Promise<string> {
-    const normalizedFilename = path.posix.basename(normalizePath(filename));
-    if (!normalizedFilename) {
-      throw new Error("Attachment filename must not be empty.");
-    }
-    if (sourceFile && sourceFile.vault !== this) {
-      throw new Error(
-        "Attachment paths require a source file from the active compatibility vault.",
-      );
-    }
-    const parentPath = sourceFile?.parent?.path ?? "";
-    return this.getAvailablePath(
-      normalizePath(path.posix.join(parentPath, normalizedFilename)),
-      extension,
-    );
   }
 
   getAllLoadedFiles(): TAbstractFile[] {
@@ -947,334 +915,26 @@ export class FileManager {
     return this.vault.trash(file);
   }
 
-  async getAvailablePathForAttachment(filename: string, sourcePath = ""): Promise<string> {
+  async getAvailablePathForAttachment(filename: string, sourcePath: string): Promise<string> {
     const normalizedFilename = path.posix.basename(normalizePath(filename));
     if (!normalizedFilename) {
       throw new Error("Attachment filename must not be empty.");
     }
-    const dottedExtension = path.posix.extname(normalizedFilename);
-    const stem = dottedExtension
-      ? normalizedFilename.slice(0, -dottedExtension.length)
-      : normalizedFilename;
-    const sourceFile = sourcePath ? this.vault.getFileByPath(sourcePath) : null;
-    if (sourcePath && !sourceFile) {
-      const sourceDirectory = path.posix.dirname(normalizePath(sourcePath));
-      return this.vault.getAvailablePath(
-        normalizePath(path.posix.join(sourceDirectory === "." ? "" : sourceDirectory, stem)),
-        dottedExtension,
-      );
-    }
-    return this.vault.getAvailablePathForAttachments(stem, dottedExtension, sourceFile);
-  }
+    const normalizedSource = normalizePath(sourcePath);
+    const sourceDirectory = path.posix.dirname(normalizedSource);
+    const folder = sourceDirectory === "." ? "" : sourceDirectory;
+    const extension = path.posix.extname(normalizedFilename);
+    const stem = extension ? normalizedFilename.slice(0, -extension.length) : normalizedFilename;
 
-  async processFrontMatter(
-    file: TFile,
-    callback: (frontmatter: Record<string, unknown>) => unknown,
-    _options?: unknown,
-  ): Promise<void> {
-    if (file.vault !== this.vault) {
-      throw new Error("Frontmatter updates require a file from the active compatibility vault.");
-    }
-    if (file.extension.toLocaleLowerCase("en-US") !== "md") {
-      throw new Error("Frontmatter updates require a Markdown file.");
-    }
-    const content = await this.vault.read(file);
-    const updated = updateFrontmatterBytes(content, callback);
-    if (updated !== content) {
-      await this.vault.modify(file, updated);
-    }
-  }
-}
-
-interface FrontmatterRegion {
-  source: string;
-  sourceEnd: number;
-  sourceStart: number;
-}
-
-function locateFrontmatter(content: string): FrontmatterRegion | null {
-  const opening = /^\ufeff?---[\t ]*(?:\r\n|\n)/u.exec(content);
-  if (!opening) {
-    return null;
-  }
-  const remaining = content.slice(opening[0].length);
-  const closing = /^(?:---|\.\.\.)[\t ]*(?:\r\n|\n|$)/mu.exec(remaining);
-  if (!closing) {
-    throw new Error("Cannot process unterminated YAML frontmatter.");
-  }
-  const sourceStart = opening[0].length;
-  const sourceEnd = sourceStart + closing.index;
-  return {
-    source: content.slice(sourceStart, sourceEnd),
-    sourceEnd,
-    sourceStart,
-  };
-}
-
-function yamlLineEnding(content: string): "\n" | "\r\n" {
-  return content.includes("\r\n") ? "\r\n" : "\n";
-}
-
-function assertSupportedFrontmatterValue(value: unknown, seen = new Set<object>()): void {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    typeof value === "undefined"
-  ) {
-    return;
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      throw new Error("Cannot serialize a non-finite frontmatter number.");
-    }
-    return;
-  }
-  if (typeof value !== "object") {
-    throw new Error(`Cannot serialize frontmatter value of type ${typeof value}.`);
-  }
-  if (seen.has(value)) {
-    throw new Error(
-      "Cannot serialize a shared or cyclic frontmatter value as implicit YAML aliases.",
-    );
-  }
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      assertSupportedFrontmatterValue(item, seen);
-    }
-  } else {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new Error("Cannot serialize a non-plain frontmatter object.");
-    }
-    for (const item of Object.values(value as Record<string, unknown>)) {
-      assertSupportedFrontmatterValue(item, seen);
-    }
-  }
-}
-
-function yamlNodeHasUnsupportedSyntax(node: unknown): boolean {
-  if (isAlias(node)) {
-    return true;
-  }
-  if (isPair(node)) {
-    return yamlNodeHasUnsupportedSyntax(node.key) || yamlNodeHasUnsupportedSyntax(node.value);
-  }
-  if (isScalar(node)) {
-    return Boolean(node.anchor || node.tag || node.commentBefore || node.comment);
-  }
-  if (isCollection(node)) {
-    return (
-      Boolean(
-        node.anchor ||
-          node.tag ||
-          node.commentBefore ||
-          node.comment ||
-          node.flow ||
-          node.spaceBefore,
-      ) || node.items.some((item) => yamlNodeHasUnsupportedSyntax(item))
-    );
-  }
-  return node !== null && node !== undefined;
-}
-
-function serializeYamlEntry(key: string, value: unknown, lineEnding: string): string {
-  assertSupportedFrontmatterValue(value);
-  const entry = Object.create(null) as Record<string, unknown>;
-  entry[key] = value;
-  return yamlStringify(entry, { lineWidth: 0 }).replaceAll("\n", lineEnding);
-}
-
-function serializeScalarLike(node: unknown, value: unknown): string {
-  assertSupportedFrontmatterValue(value);
-  if (!isScalar(node) || node.anchor || node.tag) {
-    throw new Error("Cannot modify unsupported YAML scalar syntax without normalizing it.");
-  }
-  if (typeof value === "string" && typeof node.value === "string") {
-    if (node.type === "QUOTE_DOUBLE") {
-      return JSON.stringify(value);
-    }
-    if (node.type === "QUOTE_SINGLE") {
-      return `'${value.replaceAll("'", "''")}'`;
-    }
-    if (node.type === "BLOCK_FOLDED" || node.type === "BLOCK_LITERAL") {
-      throw new Error("Cannot modify unsupported YAML block scalar syntax without normalizing it.");
-    }
-  }
-  const serialized = yamlStringify(value, { lineWidth: 0 }).trimEnd();
-  if (serialized.includes("\n")) {
-    throw new Error("Cannot replace a YAML scalar with a collection through a scalar patch.");
-  }
-  return serialized;
-}
-
-function yamlNodeRange(node: unknown): [number, number, number] | null {
-  if (!node || typeof node !== "object" || !("range" in node)) {
-    return null;
-  }
-  const range = (node as { range?: unknown }).range;
-  return Array.isArray(range) && range.length === 3 && range.every(Number.isInteger)
-    ? (range as [number, number, number])
-    : null;
-}
-
-function yamlPairEnd(source: string, pair: unknown): number {
-  if (!isPair(pair)) {
-    throw new Error("Cannot patch unsupported YAML top-level content.");
-  }
-  const valueRange = yamlNodeRange(pair.value);
-  if (valueRange) {
-    return valueRange[2];
-  }
-  const keyRange = yamlNodeRange(pair.key);
-  if (!keyRange) {
-    throw new Error("Cannot patch unsupported YAML key syntax.");
-  }
-  const newline = source.indexOf("\n", keyRange[2]);
-  return newline === -1 ? source.length : newline + 1;
-}
-
-function patchExistingFrontmatter(
-  source: string,
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-  lineEnding: string,
-): string {
-  const document = parseDocument(source, {
-    keepSourceTokens: true,
-    uniqueKeys: true,
-  });
-  if (document.errors.length > 0) {
-    throw document.errors[0];
-  }
-  if (document.contents !== null && !isMap(document.contents)) {
-    throw new Error("Cannot process YAML frontmatter whose top level is not a mapping.");
-  }
-  const pairsByKey = new Map<string, unknown>();
-  for (const pair of document.contents?.items ?? []) {
-    if (!isPair(pair) || !isScalar(pair.key)) {
-      throw new Error("Cannot process unsupported YAML frontmatter key syntax.");
-    }
-    pairsByKey.set(String(pair.key.value), pair);
-  }
-
-  const edits: Array<{ end: number; replacement: string; start: number }> = [];
-  for (const key of Object.keys(before)) {
-    if (Object.hasOwn(after, key) && isDeepStrictEqual(before[key], after[key])) {
-      continue;
-    }
-    const pair = pairsByKey.get(key);
-    if (!isPair(pair)) {
-      throw new Error(`Cannot find the source YAML for frontmatter key ${key}.`);
-    }
-    const keyRange = yamlNodeRange(pair.key);
-    if (!keyRange) {
-      throw new Error(`Cannot patch unsupported YAML key ${key}.`);
-    }
-    if (!Object.hasOwn(after, key)) {
-      if (yamlNodeHasUnsupportedSyntax(pair)) {
-        throw new Error(`Cannot remove ${key} because it uses unsupported YAML syntax.`);
+    for (let suffix = 0; suffix < 10_000; suffix += 1) {
+      const candidateName = suffix === 0 ? normalizedFilename : `${stem} ${suffix}${extension}`;
+      const candidate = normalizePath(path.posix.join(folder, candidateName));
+      if (!this.vault.getAbstractFileByPath(candidate)) {
+        return candidate;
       }
-      edits.push({ start: keyRange[0], end: yamlPairEnd(source, pair), replacement: "" });
-      continue;
     }
-
-    const nextValue = after[key];
-    const nextValueIsScalar =
-      nextValue === null ||
-      typeof nextValue === "string" ||
-      typeof nextValue === "number" ||
-      typeof nextValue === "boolean" ||
-      typeof nextValue === "undefined";
-    if (isScalar(pair.value) && nextValueIsScalar) {
-      const valueRange = yamlNodeRange(pair.value);
-      if (!valueRange) {
-        throw new Error(`Cannot patch unsupported YAML scalar ${key}.`);
-      }
-      edits.push({
-        start: valueRange[0],
-        end: valueRange[1],
-        replacement: serializeScalarLike(pair.value, nextValue),
-      });
-      continue;
-    }
-    if (yamlNodeHasUnsupportedSyntax(pair)) {
-      throw new Error(`Cannot modify ${key} because it uses unsupported YAML syntax.`);
-    }
-    edits.push({
-      start: keyRange[0],
-      end: yamlPairEnd(source, pair),
-      replacement: serializeYamlEntry(key, nextValue, lineEnding),
-    });
+    throw new Error(`Could not find an available attachment path for ${normalizedFilename}.`);
   }
-
-  let patched = source;
-  for (const edit of edits.sort((left, right) => right.start - left.start)) {
-    patched = `${patched.slice(0, edit.start)}${edit.replacement}${patched.slice(edit.end)}`;
-  }
-  const additions = Object.keys(after).filter((key) => !Object.hasOwn(before, key));
-  if (additions.length > 0) {
-    if (patched && !patched.endsWith("\n")) {
-      patched += lineEnding;
-    }
-    for (const key of additions) {
-      patched += serializeYamlEntry(key, after[key], lineEnding);
-    }
-  }
-  return patched;
-}
-
-function updateFrontmatterBytes(
-  content: string,
-  callback: (frontmatter: Record<string, unknown>) => unknown,
-): string {
-  const region = locateFrontmatter(content);
-  const lineEnding = yamlLineEnding(content);
-  const parsed = region ? parseYaml(region.source, { maxAliasCount: 100, uniqueKeys: true }) : {};
-  const before = parsed ?? {};
-  if (
-    before === null ||
-    typeof before !== "object" ||
-    Array.isArray(before) ||
-    Object.getPrototypeOf(before) !== Object.prototype
-  ) {
-    throw new Error("Cannot process YAML frontmatter whose top level is not a mapping.");
-  }
-  const frontmatter = before as Record<string, unknown>;
-  const baseline = structuredClone(frontmatter);
-  const callbackResult = callback(frontmatter);
-  if (
-    callbackResult &&
-    (typeof callbackResult === "object" || typeof callbackResult === "function") &&
-    "then" in callbackResult
-  ) {
-    throw new Error("Frontmatter processing callbacks must be synchronous.");
-  }
-  if (isDeepStrictEqual(baseline, frontmatter)) {
-    return content;
-  }
-
-  let updated: string;
-  if (region) {
-    const patchedSource = patchExistingFrontmatter(
-      region.source,
-      baseline,
-      frontmatter,
-      lineEnding,
-    );
-    updated = `${content.slice(0, region.sourceStart)}${patchedSource}${content.slice(region.sourceEnd)}`;
-  } else {
-    const bom = content.startsWith("\ufeff") ? "\ufeff" : "";
-    const body = content.slice(bom.length);
-    const yaml = stringifyYaml(frontmatter).replaceAll("\n", lineEnding);
-    updated = `${bom}---${lineEnding}${yaml}---${lineEnding}${body}`;
-  }
-  const reparsed = parseFrontmatter(updated);
-  if (!reparsed || !isDeepStrictEqual(reparsed, frontmatter)) {
-    throw new Error("Frontmatter patch verification failed; no vault write was attempted.");
-  }
-  return updated;
 }
 
 export interface CachedMetadata {
@@ -1505,33 +1165,6 @@ export class MetadataCache {
       }
     }
     return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
-  }
-
-  get unresolvedLinks(): Record<string, Record<string, number>> {
-    const snapshots = this.vault.getMarkdownFiles().map((file) => {
-      const content = readFileSync(this.vault.resolveVaultPath(file.path), "utf8");
-      return {
-        path: file.path,
-        content,
-        revision: revisionOf(Buffer.from(content, "utf8")),
-        size: Buffer.byteLength(content, "utf8"),
-      };
-    });
-    const unresolved: Record<string, Record<string, number>> = {};
-    for (const document of MetadataIndex.fromSnapshots(snapshots).snapshot().documents) {
-      const counts = new Map<string, number>();
-      for (const link of document.links) {
-        if (link.resolution.status !== "resolved") {
-          counts.set(link.target, (counts.get(link.target) ?? 0) + 1);
-        }
-      }
-      if (counts.size > 0) {
-        unresolved[document.path] = Object.fromEntries(
-          [...counts].sort(([left], [right]) => left.localeCompare(right)),
-        );
-      }
-    }
-    return unresolved;
   }
 
   getFirstLinkpathDest(linkpath: string, sourcePath: string): TFile | null {
@@ -2481,7 +2114,7 @@ export function prepareSimpleSearch(query: string): (text: string) => SearchResu
       }
     }
     return {
-      score: -positionCost / Math.max(text.length, 1),
+      score: positionCost === 0 ? 0 : -positionCost / Math.max(text.length, 1),
       matches: merged,
     };
   };

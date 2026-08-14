@@ -1,13 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { revisionOf } from "../kernel/durability";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   App,
   CommandRegistry,
   createObsidianCompatibilityModule,
-  FileManager,
   getAllTags,
   getLinkpath,
   MetadataCache,
@@ -42,22 +40,6 @@ async function createTemporaryVault(
     await fs.writeFile(path.join(rootPath, relativePath), content, "utf8");
   }
   return { rootPath, vault: new Vault(rootPath) };
-}
-
-function writableVault(rootPath: string): { vault: Vault; writeText: ReturnType<typeof vi.fn> } {
-  const writeText = vi.fn(async (filePath: string, content: string, expectedRevision: string) => {
-    const absolutePath = path.join(rootPath, filePath);
-    const before = await fs.readFile(absolutePath);
-    expect(expectedRevision).toBe(revisionOf(before));
-    await fs.writeFile(absolutePath, content, "utf8");
-    return {
-      status: "committed" as const,
-      path: filePath,
-      revision: revisionOf(Buffer.from(content, "utf8")),
-      transactionId: `frontmatter-${writeText.mock.calls.length}`,
-    };
-  });
-  return { vault: new Vault(rootPath, undefined, { writeText }), writeText };
 }
 
 describe("Obsidian metadata, link, and YAML compatibility", () => {
@@ -119,6 +101,11 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
       [0, 5],
       [11, 16],
     ]);
+    expect(prepareSimpleSearch("gamma alpha")("Alpha beta GAMMA")).toEqual(direct);
+    expect(prepareSimpleSearch("alpha alpha")("alpha beta alpha")).toEqual({
+      score: 0,
+      matches: [[0, 5]],
+    });
     expect(direct?.score).toBeGreaterThan(delayed?.score ?? Number.NEGATIVE_INFINITY);
     expect(search("alpha only")).toBeNull();
     expect(prepareSimpleSearch("")("anything")).toEqual({ score: 0, matches: [] });
@@ -156,28 +143,6 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     });
   });
 
-  it("projects unresolved and ambiguous local links with per-source occurrence counts", async () => {
-    const { vault } = await createTemporaryVault({
-      "A.md": [
-        "[[B]]",
-        "[[Missing]] and [[Missing#Heading|Alias]]",
-        "[Other](Other.md)",
-        "[[Same]]",
-      ].join("\n"),
-      "B.md": "resolved\n",
-      "One/Same.md": "ambiguous one\n",
-      "Two/Same.md": "ambiguous two\n",
-    });
-
-    expect(new MetadataCache(vault).unresolvedLinks).toEqual({
-      "A.md": {
-        Missing: 2,
-        "Other.md": 1,
-        Same: 1,
-      },
-    });
-  });
-
   it("returns every visible folder, including empty folders, and includes root only on request", async () => {
     const { rootPath, vault } = await createTemporaryVault({
       "Boards/Kanban.md": "board\n",
@@ -198,146 +163,21 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     ]);
   });
 
-  it("deduplicates available note and attachment paths without changing extensions", async () => {
-    const { vault } = await createTemporaryVault({
+  it("deduplicates available paths case-insensitively without changing extensions", async () => {
+    const { rootPath, vault } = await createTemporaryVault({
       "Note.md": "first\n",
       "Note 1.md": "second\n",
       "CASE.md": "case collision\n",
-      "Boards/Kanban.md": "board\n",
-      "Boards/Pasted image.png": "image\n",
     });
-    const board = vault.getFileByPath("Boards/Kanban.md");
-    if (!board) {
-      throw new Error("Board fixture was not discovered.");
-    }
+    await fs.mkdir(path.join(rootPath, "Taken"));
 
     expect(vault.getAvailablePath("Note", "md")).toBe("Note 2.md");
     expect(vault.getAvailablePath("Fresh", ".md")).toBe("Fresh.md");
     expect(vault.getAvailablePath("case", "md")).toBe("case 1.md");
-    await expect(vault.getAvailablePathForAttachments("Pasted image", "png", board)).resolves.toBe(
-      "Boards/Pasted image 1.png",
-    );
-    await expect(
-      new FileManager(vault).getAvailablePathForAttachment("Pasted image.png", "Boards/Kanban.md"),
-    ).resolves.toBe("Boards/Pasted image 1.png");
+    expect(vault.getAvailablePath("Taken", "")).toBe("Taken 1");
   });
 
-  it("patches supported frontmatter while preserving BOM, CRLF, comments, body, and unrelated YAML", async () => {
-    const before = [
-      "\ufeff---",
-      'title: "Old" # keep title comment',
-      "complex: &anchor",
-      "  nested: value",
-      "alias: *anchor",
-      "tags:",
-      "  - first",
-      "---",
-      "Body stays exact.",
-      "",
-    ].join("\r\n");
-    const { rootPath } = await createTemporaryVault({ "Note.md": before });
-    const { vault, writeText } = writableVault(rootPath);
-    const file = vault.getFileByPath("Note.md");
-    if (!file) {
-      throw new Error("Frontmatter fixture was not discovered.");
-    }
-
-    await new FileManager(vault).processFrontMatter(file, (frontmatter) => {
-      frontmatter.title = "New";
-      if (!Array.isArray(frontmatter.tags)) {
-        throw new Error("Tags fixture was not parsed as an array.");
-      }
-      frontmatter.tags.push("second");
-      frontmatter.enabled = true;
-    });
-
-    const after = await fs.readFile(path.join(rootPath, "Note.md"), "utf8");
-    expect(after).toBe(
-      [
-        "\ufeff---",
-        'title: "New" # keep title comment',
-        "complex: &anchor",
-        "  nested: value",
-        "alias: *anchor",
-        "tags:",
-        "  - first",
-        "  - second",
-        "enabled: true",
-        "---",
-        "Body stays exact.",
-        "",
-      ].join("\r\n"),
-    );
-    expect(writeText).toHaveBeenCalledOnce();
-  });
-
-  it("creates frontmatter without disturbing a BOM or body and skips a no-op mutation", async () => {
-    const before = "\ufeffBody\r\n";
-    const { rootPath } = await createTemporaryVault({ "Note.md": before });
-    const { vault, writeText } = writableVault(rootPath);
-    const file = vault.getFileByPath("Note.md");
-    if (!file) {
-      throw new Error("Frontmatter creation fixture was not discovered.");
-    }
-    const fileManager = new FileManager(vault);
-
-    await fileManager.processFrontMatter(file, (frontmatter) => {
-      frontmatter.tags = ["created"];
-    });
-    await fileManager.processFrontMatter(file, () => undefined);
-
-    await expect(fs.readFile(path.join(rootPath, "Note.md"), "utf8")).resolves.toBe(
-      "\ufeff---\r\ntags:\r\n  - created\r\n---\r\nBody\r\n",
-    );
-    expect(writeText).toHaveBeenCalledOnce();
-  });
-
-  it("fails closed when a callback would normalize unsupported YAML", async () => {
-    const before = [
-      "---",
-      "complex: &anchor",
-      "  nested: value",
-      "alias: *anchor",
-      "---",
-      "Body",
-      "",
-    ].join("\n");
-    const { rootPath } = await createTemporaryVault({ "Note.md": before });
-    const { vault, writeText } = writableVault(rootPath);
-    const file = vault.getFileByPath("Note.md");
-    if (!file) {
-      throw new Error("Unsupported YAML fixture was not discovered.");
-    }
-
-    await expect(
-      new FileManager(vault).processFrontMatter(file, (frontmatter) => {
-        frontmatter.alias = { nested: "changed" };
-      }),
-    ).rejects.toThrow("unsupported YAML");
-    expect(writeText).not.toHaveBeenCalled();
-    await expect(fs.readFile(path.join(rootPath, "Note.md"), "utf8")).resolves.toBe(before);
-  });
-
-  it("refuses to invent YAML aliases from shared callback objects", async () => {
-    const before = "---\ntitle: Plain\n---\nBody\n";
-    const { rootPath } = await createTemporaryVault({ "Note.md": before });
-    const { vault, writeText } = writableVault(rootPath);
-    const file = vault.getFileByPath("Note.md");
-    if (!file) {
-      throw new Error("Shared-object fixture was not discovered.");
-    }
-    const shared = { nested: "value" };
-
-    await expect(
-      new FileManager(vault).processFrontMatter(file, (frontmatter) => {
-        frontmatter.items = [shared, shared];
-      }),
-    ).rejects.toThrow("implicit YAML aliases");
-    expect(writeText).not.toHaveBeenCalled();
-    await expect(fs.readFile(path.join(rootPath, "Note.md"), "utf8")).resolves.toBe(before);
-  });
-
-  it("publishes one helper function per bare or obsidian-prefixed module access path", async () => {
+  it("publishes the shared helper references on the compatibility module", async () => {
     const { vault } = await createTemporaryVault({ "Note.md": "body\n" });
     const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
     const compatibility = createObsidianCompatibilityModule(app);
