@@ -955,12 +955,101 @@ export class FileManager {
     this.vault = vault;
   }
 
+  getNewFileParent(sourcePath: string, _newFilePath?: string): TFolder {
+    const location = this.vault.getConfig("newFileLocation");
+    if (location === "current") {
+      const normalizedSource = normalizePath(sourcePath);
+      const source = normalizedSource ? this.vault.getAbstractFileByPath(normalizedSource) : null;
+      if (source instanceof TFolder) {
+        return source;
+      }
+      const parentPath = path.posix.dirname(normalizedSource);
+      const parent = this.vault.getFolderByPath(parentPath === "." ? "" : parentPath);
+      if (parent) {
+        return parent;
+      }
+    }
+    if (location === "folder") {
+      const configuredPath = this.vault.getConfig("newFileFolderPath");
+      if (typeof configuredPath === "string") {
+        const configuredFolder = this.vault.getFolderByPath(configuredPath);
+        if (configuredFolder) {
+          return configuredFolder;
+        }
+      }
+    }
+    return this.vault.getRoot();
+  }
+
   renameFile(file: TAbstractFile, newPath: string): Promise<void> {
     return this.vault.rename(file, newPath);
   }
 
   trashFile(file: TAbstractFile): Promise<void> {
     return this.vault.trash(file);
+  }
+
+  async promptForDeletion(file: TAbstractFile): Promise<boolean> {
+    if (typeof globalThis.confirm !== "function") {
+      return false;
+    }
+    if (!globalThis.confirm(`Delete ${file.name}?`)) {
+      return false;
+    }
+    await this.trashFile(file);
+    return true;
+  }
+
+  promptForFileDeletion(file: TAbstractFile): Promise<boolean> {
+    return this.promptForDeletion(file);
+  }
+
+  generateMarkdownLink(file: TFile, _sourcePath: string, subpath = "", alias = ""): string {
+    if (file.vault !== this.vault) {
+      throw new Error("Markdown links require a file from the active compatibility vault.");
+    }
+    const sameBasename = this.vault
+      .getFiles()
+      .filter(
+        (candidate) =>
+          candidate.basename.toLocaleLowerCase("en-US") ===
+          file.basename.toLocaleLowerCase("en-US"),
+      );
+    const linkPath = sameBasename.length === 1 ? file.name : file.path;
+    const linktext =
+      file.extension.toLocaleLowerCase("en-US") === "md" ? linkPath.slice(0, -3) : linkPath;
+    return `[[${linktext}${subpath}${alias ? `|${alias}` : ""}]]`;
+  }
+
+  async createNewMarkdownFile(parent: TFolder, name: string): Promise<TFile> {
+    if (parent.vault !== this.vault) {
+      throw new Error(
+        "Markdown file creation requires a folder from the active compatibility vault.",
+      );
+    }
+    const trimmedName = name.trim();
+    if (
+      !trimmedName ||
+      trimmedName === "." ||
+      trimmedName === ".." ||
+      trimmedName.includes("/") ||
+      trimmedName.includes("\\") ||
+      trimmedName.includes("\0")
+    ) {
+      throw new Error("Markdown file name must be a non-empty basename.");
+    }
+    const markdownName = trimmedName.toLocaleLowerCase("en-US").endsWith(".md")
+      ? trimmedName
+      : `${trimmedName}.md`;
+    const stem = markdownName.slice(0, -3);
+    for (let suffix = 0; suffix < 10_000; suffix += 1) {
+      const candidateName = suffix === 0 ? markdownName : `${stem} ${suffix}.md`;
+      const candidatePath = normalizePath(path.posix.join(parent.path, candidateName));
+      if (!this.vault.getAbstractFileByPath(candidatePath)) {
+        return this.vault.create(candidatePath, "");
+      }
+    }
+    throw new Error(`Could not find an available Markdown path for ${markdownName}.`);
   }
 
   async getAvailablePathForAttachment(filename: string, sourcePath: string): Promise<string> {

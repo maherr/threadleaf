@@ -63,7 +63,7 @@ function workspaceContainer(): HTMLElement {
 export class WorkspaceSplit {
   readonly children: unknown[] = [];
   readonly containerEl = createWorkspaceElement("workspace-split");
-  readonly direction: "horizontal" | "vertical";
+  direction: "horizontal" | "vertical";
   readonly workspace: Workspace;
 
   constructor(workspace: Workspace, direction: "horizontal" | "vertical") {
@@ -81,6 +81,7 @@ export class WorkspaceSplit {
 }
 
 export class Workspace {
+  activeEditor: unknown | null = null;
   activeLeaf: unknown | null = null;
   readonly containerEl = workspaceContainer();
   readonly rootSplit = new WorkspaceSplit(this, "vertical");
@@ -88,10 +89,16 @@ export class Workspace {
   private readonly layoutReadyCallbacks = new Set<() => unknown>();
   private readonly leaves = new Set<unknown>();
   private readonly listeners = new Map<string, Set<EventCallback>>();
+  private readonly rightLeaves = new Set<unknown>();
   private leafFactory: WorkspaceLeafFactory | null = null;
   private layoutReadyCallbackActive = false;
   private layoutReadyErrorHandler: ((error: unknown) => void) | null = null;
-  private layoutReady = false;
+  private layoutReadyState = false;
+  private mostRecentFile: unknown | null = null;
+
+  get layoutReady(): boolean {
+    return this.layoutReadyState;
+  }
 
   setLeafFactory(factory: WorkspaceLeafFactory): void {
     this.leafFactory = factory;
@@ -102,7 +109,7 @@ export class Workspace {
   }
 
   onLayoutReady(callback: () => unknown): void {
-    if (this.layoutReady) {
+    if (this.layoutReadyState) {
       if (this.layoutReadyCallbackActive) {
         queueMicrotask(() => this.invokeLayoutReadyCallback(callback));
       } else {
@@ -114,8 +121,8 @@ export class Workspace {
   }
 
   async markLayoutReady(): Promise<void> {
-    if (!this.layoutReady) {
-      this.layoutReady = true;
+    if (!this.layoutReadyState) {
+      this.layoutReadyState = true;
       const callbacks = [...this.layoutReadyCallbacks];
       this.layoutReadyCallbacks.clear();
       for (const callback of callbacks) {
@@ -125,7 +132,7 @@ export class Workspace {
   }
 
   isLayoutReady(): boolean {
-    return this.layoutReady;
+    return this.layoutReadyState;
   }
 
   private invokeLayoutReadyCallback(callback: () => unknown): void {
@@ -160,6 +167,7 @@ export class Workspace {
     }
     return () => {
       this.leaves.delete(leaf);
+      this.rightLeaves.delete(leaf);
       if (this.activeLeaf === leaf) {
         const nextLeaf = [...this.leaves].at(-1) ?? null;
         this.activeLeaf = null;
@@ -175,6 +183,15 @@ export class Workspace {
       return;
     }
     this.activeLeaf = leaf;
+    const activeView = this.leafView(leaf);
+    this.activeEditor =
+      activeView && "file" in activeView && "editor" in activeView && activeView.editor
+        ? activeView
+        : null;
+    const activeFile = this.fileForLeaf(leaf);
+    if (activeFile) {
+      this.mostRecentFile = activeFile;
+    }
     for (const candidate of this.leaves) {
       this.setLeafVisibility(candidate, candidate === leaf);
     }
@@ -245,33 +262,45 @@ export class Workspace {
     return this.activeLeaf;
   }
 
+  getActiveFile(): unknown | null {
+    const activeFile = this.fileForLeaf(this.activeLeaf);
+    if (activeFile) {
+      this.mostRecentFile = activeFile;
+      return activeFile;
+    }
+    return this.mostRecentFile;
+  }
+
   getLayout(): WorkspaceLayout {
-    const mainLeaves = [...this.leaves]
-      .map((leaf): WorkspaceLayoutLeaf | null => {
-        if (!leaf || typeof leaf !== "object" || !("id" in leaf)) {
-          return null;
-        }
-        const getViewState =
-          "getViewState" in leaf && typeof leaf.getViewState === "function"
-            ? leaf.getViewState.bind(leaf)
-            : null;
-        const viewState = getViewState?.() ?? { type: "empty", state: {} };
-        return {
-          id: typeof leaf.id === "string" ? leaf.id : String(leaf.id),
-          state: {
-            state:
-              viewState && typeof viewState === "object" && "state" in viewState
-                ? structuredClone(viewState.state as Record<string, unknown>)
-                : {},
-            type:
-              viewState && typeof viewState === "object" && "type" in viewState
-                ? String(viewState.type)
-                : "empty",
-          },
-          type: "leaf",
-        };
-      })
-      .filter((leaf): leaf is WorkspaceLayoutLeaf => leaf !== null);
+    const layoutLeaves = (leaves: unknown[]): WorkspaceLayoutLeaf[] =>
+      leaves
+        .map((leaf): WorkspaceLayoutLeaf | null => {
+          if (!leaf || typeof leaf !== "object" || !("id" in leaf)) {
+            return null;
+          }
+          const getViewState =
+            "getViewState" in leaf && typeof leaf.getViewState === "function"
+              ? leaf.getViewState.bind(leaf)
+              : null;
+          const viewState = getViewState?.() ?? { type: "empty", state: {} };
+          return {
+            id: typeof leaf.id === "string" ? leaf.id : String(leaf.id),
+            state: {
+              state:
+                viewState && typeof viewState === "object" && "state" in viewState
+                  ? structuredClone(viewState.state as Record<string, unknown>)
+                  : {},
+              type:
+                viewState && typeof viewState === "object" && "type" in viewState
+                  ? String(viewState.type)
+                  : "empty",
+            },
+            type: "leaf",
+          };
+        })
+        .filter((leaf): leaf is WorkspaceLayoutLeaf => leaf !== null);
+    const mainLeaves = layoutLeaves([...this.leaves].filter((leaf) => !this.rightLeaves.has(leaf)));
+    const rightLeaves = layoutLeaves([...this.rightLeaves]);
     const emptySplit = (): WorkspaceLayoutSplit => ({
       children: [],
       direction: "vertical",
@@ -285,7 +314,11 @@ export class Workspace {
         direction: this.rootSplit.direction,
         type: "split",
       },
-      right: emptySplit(),
+      right: {
+        children: rightLeaves,
+        direction: "vertical",
+        type: "split",
+      },
     };
   }
 
@@ -293,7 +326,70 @@ export class Workspace {
     if (newLeaf === true || typeof newLeaf === "string") {
       return this.createLeafBySplit(this.activeLeaf);
     }
-    return this.activeLeaf;
+    return this.activeLeaf ?? this.createLeafBySplit();
+  }
+
+  getUnpinnedLeaf(): unknown | null {
+    return this.getLeaf(false);
+  }
+
+  splitActiveLeaf(direction?: "horizontal" | "vertical"): unknown | null {
+    if (direction) {
+      this.rootSplit.direction = direction;
+    }
+    return this.createLeafBySplit(this.activeLeaf);
+  }
+
+  getRightLeaf(split: boolean): unknown | null {
+    if (!split) {
+      const existingLeaf = [...this.rightLeaves].at(-1);
+      if (existingLeaf) {
+        return existingLeaf;
+      }
+    }
+    const leaf = this.createLeafBySplit(this.activeLeaf);
+    if (leaf) {
+      this.rightLeaves.add(leaf);
+    }
+    return leaf;
+  }
+
+  async revealLeaf(leaf: unknown): Promise<void> {
+    if (this.leaves.has(leaf)) {
+      this.setActiveLeaf(leaf);
+    }
+  }
+
+  async openLinkText(
+    linktext: string,
+    sourcePath: string,
+    newLeaf?: "split" | "tab" | "window" | boolean,
+    openViewState?: Record<string, unknown>,
+  ): Promise<void> {
+    const app = this.leafApp(this.activeLeaf);
+    const metadataCache = app?.metadataCache;
+    if (
+      !metadataCache ||
+      typeof metadataCache !== "object" ||
+      !("getFirstLinkpathDest" in metadataCache) ||
+      typeof metadataCache.getFirstLinkpathDest !== "function"
+    ) {
+      return;
+    }
+    const file = metadataCache.getFirstLinkpathDest(linktext, sourcePath);
+    if (!file) {
+      return;
+    }
+    const leaf = newLeaf ? this.getLeaf(newLeaf) : this.getLeaf(false);
+    if (!leaf || typeof leaf !== "object" || !("openFile" in leaf)) {
+      return;
+    }
+    const openFile = leaf.openFile;
+    if (typeof openFile !== "function") {
+      return;
+    }
+    await openFile.call(leaf, file, openViewState);
+    this.setActiveLeaf(leaf);
   }
 
   createLeafBySplit(originLeaf?: unknown): unknown | null {
@@ -344,6 +440,31 @@ export class Workspace {
 
   createLeafInParent(_parent: WorkspaceSplit, _index: number): unknown {
     return this.createLeafBySplit(this.activeLeaf);
+  }
+
+  private fileForLeaf(leaf: unknown): unknown | null {
+    const view = this.leafView(leaf);
+    if (!view || !("file" in view)) {
+      return null;
+    }
+    const file = view.file;
+    return file && typeof file === "object" ? file : null;
+  }
+
+  private leafApp(leaf: unknown): Record<string, unknown> | null {
+    if (!leaf || typeof leaf !== "object" || !("app" in leaf)) {
+      return null;
+    }
+    const app = leaf.app;
+    return app && typeof app === "object" ? (app as Record<string, unknown>) : null;
+  }
+
+  private leafView(leaf: unknown): Record<string, unknown> | null {
+    if (!leaf || typeof leaf !== "object" || !("view" in leaf)) {
+      return null;
+    }
+    const view = leaf.view;
+    return view && typeof view === "object" ? (view as Record<string, unknown>) : null;
   }
 
   private leafContainer(leaf: unknown): HTMLElement | null {
