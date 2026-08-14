@@ -4,7 +4,7 @@ import path from "node:path";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, CommandRegistry, FileManager, NoticeBus, TFile, Vault } from "./obsidian-compat";
-import { MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
+import { Editor, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import { Workspace } from "./obsidian-workspace-compat";
 
 const temporaryDirectories: string[] = [];
@@ -58,140 +58,177 @@ async function withDocument<T>(callback: (document: Document) => T | Promise<T>)
   }
 }
 
-function registerLeaf(
-  workspace: Workspace,
-  document: Document,
-  id: string,
-  view: Record<string, unknown>,
-) {
-  const containerEl = document.createElement("div");
-  document.body.append(containerEl);
-  const leaf = {
-    app: null as unknown,
-    containerEl,
-    getViewState: () => ({ state: {}, type: "fixture" }),
-    id,
-    openFile: vi.fn(async () => undefined),
-    view,
-  };
-  workspace.registerLeaf(leaf);
-  return leaf;
-}
-
-function installLeafFactory(workspace: Workspace, document: Document): void {
-  let sequence = 0;
-  workspace.setLeafFactory((providedContainer) => {
-    sequence += 1;
-    const leaf = {
-      app: null as unknown,
-      containerEl: providedContainer ?? document.createElement("div"),
-      getViewState: () => ({ state: {}, type: "empty" }),
-      id: `fixture-leaf-${sequence}`,
-      openFile: vi.fn(async () => undefined),
-      view: null,
-    };
-    workspace.registerLeaf(leaf);
-    return leaf;
-  });
-}
-
 describe("Obsidian workspace compatibility wedge", () => {
-  it("getActiveFile returns the active file and retains the most recent file for non-file views", async () => {
-    await withDocument((document) => {
-      const workspace = new Workspace();
-      const note = { path: "Notes/Active.md" };
-      const fileLeaf = registerLeaf(workspace, document, "file", { file: note });
-      const utilityLeaf = registerLeaf(workspace, document, "utility", {
-        getViewType: () => "graph",
-      });
-
-      workspace.setActiveLeaf(fileLeaf);
-      expect(workspace.getActiveFile()).toBe(note);
-      workspace.setActiveLeaf(utilityLeaf);
-      expect(workspace.getActiveFile()).toBe(note);
-    });
-  });
-
-  it("activeEditor is the exact active editor-bearing view, remains writable, and is null otherwise", async () => {
-    await withDocument((document) => {
-      const workspace = new Workspace();
-      const editorView = { app: {}, editor: {}, file: { path: "Notes/Active.md" } };
-      const editorLeaf = registerLeaf(workspace, document, "editor", editorView);
-      const utilityLeaf = registerLeaf(workspace, document, "utility", { file: null });
-
-      workspace.setActiveLeaf(editorLeaf);
-      expect(workspace.activeEditor).toBe(editorView);
-      const embeddedEditor = { editor: {}, file: { path: "Boards/Active.md" } };
-      workspace.activeEditor = embeddedEditor;
-      expect(workspace.activeEditor).toBe(embeddedEditor);
-      workspace.setActiveLeaf(utilityLeaf);
-      expect(workspace.activeEditor).toBeNull();
-
-      const finalWorkspace = new Workspace();
-      const finalView = { editor: {}, file: { path: "Notes/Final.md" } };
-      const finalLeaf = {
-        containerEl: document.createElement("div"),
-        view: finalView,
-      };
-      const unregisterFinalLeaf = finalWorkspace.registerLeaf(finalLeaf);
-      expect(finalWorkspace.activeEditor).toBe(finalView);
-      unregisterFinalLeaf();
-      expect(finalWorkspace.activeLeaf).toBeNull();
-      expect(finalWorkspace.activeEditor).toBeNull();
-    });
-  });
-
-  it("openLinkText resolves from the source, opens on the selected leaf, and leaves misses untouched", async () => {
-    await withDocument(async (document) => {
-      const workspace = new Workspace();
-      const target = { path: "Notes/Target.md" };
-      const getFirstLinkpathDest = vi.fn((linktext: string) =>
-        linktext.startsWith("Target") ? target : null,
+  it("returns non-null production leaves with tab and split pane semantics, or throws when a pane is unsupported", async () => {
+    await withDocument(async () => {
+      const unsupportedWorkspace = new Workspace();
+      expect(() => unsupportedWorkspace.getLeaf(false)).toThrow(
+        "requires an installed compatibility leaf factory",
       );
-      const leaf = registerLeaf(workspace, document, "active", { file: null });
-      leaf.app = { metadataCache: { getFirstLinkpathDest } };
-      const openState = { state: { line: 7 } };
+      expect(() => unsupportedWorkspace.splitActiveLeaf()).toThrow(
+        "requires an installed compatibility leaf factory",
+      );
+      expect(() => unsupportedWorkspace.getRightLeaf(true)).toThrow(
+        "requires an installed compatibility leaf factory",
+      );
 
-      await expect(
-        workspace.openLinkText("Target#Heading", "Notes/Source.md", false, openState),
-      ).resolves.toBeUndefined();
-      expect(getFirstLinkpathDest).toHaveBeenCalledWith("Target#Heading", "Notes/Source.md");
-      expect(leaf.openFile).toHaveBeenCalledWith(target, {
-        state: { line: 7, subpath: "#Heading" },
-      });
-      expect(openState).toEqual({ state: { line: 7 } });
+      const vault = await createVault();
+      const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
+      app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));
 
-      await workspace.openLinkText("Missing", "Notes/Source.md");
-      expect(leaf.openFile).toHaveBeenCalledOnce();
+      const first = app.workspace.getLeaf(false);
+      const tab = app.workspace.getLeaf("tab");
+      const booleanTab = app.workspace.getLeaf(true);
+      const split = app.workspace.getLeaf("split", "horizontal");
+      const parentLeaf = app.workspace.createLeafInParent(app.workspace.rootSplit, 0);
+      const secondSplit = app.workspace.splitActiveLeaf("vertical");
+      const rightLeaf = app.workspace.getRightLeaf(true);
+      if (!rightLeaf) {
+        throw new Error("getRightLeaf(true) did not create a WorkspaceLeaf.");
+      }
+
+      for (const leaf of [first, tab, booleanTab, split, parentLeaf, secondSplit, rightLeaf]) {
+        expect(leaf).toBeInstanceOf(WorkspaceLeaf);
+      }
+      expect(app.workspace.getLeaf(false)).toBe(first);
+      expect(tab.containerEl.dataset.threadleafPaneType).toBe("tab");
+      expect(booleanTab.containerEl.dataset.threadleafPaneType).toBe("tab");
+      expect(split.containerEl.dataset.threadleafPaneType).toBe("split");
+      expect(secondSplit.containerEl.dataset.threadleafPaneType).toBe("split");
+      expect(rightLeaf.containerEl.dataset.threadleafPaneType).toBe("split");
+      expect(app.workspace.getRightLeaf(false)).toBe(rightLeaf);
+      expect(app.workspace.rootSplit.direction).toBe("vertical");
+      expect(app.workspace.rootSplit.children).toContain(parentLeaf);
+      expect(app.workspace.getUnpinnedLeaf()).toBe(first);
+
+      app.workspace.setActiveLeaf(tab);
+      expect(first.containerEl.hidden).toBe(true);
+      expect(tab.containerEl.hidden).toBe(false);
+      expect(split.containerEl.hidden).toBe(true);
+      expect(secondSplit.containerEl.hidden).toBe(true);
+      app.workspace.setActiveLeaf(split);
+      expect(first.containerEl.hidden).toBe(true);
+      expect(tab.containerEl.hidden).toBe(true);
+      expect(split.containerEl.hidden).toBe(false);
+      expect(() => app.workspace.getLeaf("window")).toThrow("popout leaves are not supported");
     });
   });
 
-  it("openLinkText bootstraps a production leaf and preserves subpath, state, and editor state", async () => {
+  it("returns real TFile and MarkdownFileInfo shapes, and rejects plausible wrong-shaped active values", async () => {
     const vault = await createVault({
+      "Notes/Active.md": "active",
+    });
+    await withDocument(async (document) => {
+      const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
+      app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));
+      const file = vault.getFileByPath("Notes/Active.md");
+      if (!file) {
+        throw new Error("Active-file fixture was not discovered.");
+      }
+
+      const fileLeaf = app.workspace.getLeaf(false);
+      await fileLeaf.openFile(file);
+      const activeFile = app.workspace.getActiveFile();
+      expect(activeFile).toBeInstanceOf(TFile);
+      expect(activeFile).toMatchObject({
+        path: "Notes/Active.md",
+        vault,
+      });
+      const activeEditor = app.workspace.activeEditor;
+      expect(activeEditor).toMatchObject({
+        app,
+        file,
+        hoverPopover: null,
+      });
+      expect(activeEditor?.editor).toBeInstanceOf(Editor);
+      expect(typeof app.workspace.activeEditor).not.toBe("function");
+      app.workspace.activeEditor = activeEditor;
+      expect(app.workspace.activeEditor).toBe(activeEditor);
+
+      app.workspace.activeEditor = {
+        app,
+        editor: {},
+        file,
+        hoverPopover: null,
+      } as never;
+      expect(app.workspace.activeEditor).toBeNull();
+
+      app.workspace.activeEditor = {
+        app,
+        editor: new Editor(),
+        file,
+        hoverPopover: {},
+      } as never;
+      expect(app.workspace.activeEditor).toBeNull();
+
+      const malformedFileLeaf = app.workspace.getLeaf("split");
+      malformedFileLeaf.view = {
+        app,
+        editor: {},
+        file: { path: "Notes/Not-a-TFile.md" },
+        hoverPopover: null,
+      } as never;
+      app.workspace.setActiveLeaf(malformedFileLeaf);
+      expect(app.workspace.activeEditor).toBeNull();
+      expect(app.workspace.getActiveFile()).toMatchObject({
+        path: "Notes/Active.md",
+        vault,
+      });
+
+      const emptyWorkspace = new Workspace();
+      const malformedOnlyLeaf = {
+        app,
+        containerEl: document.createElement("div"),
+        getViewState: () => ({ state: {}, type: "markdown" }),
+        id: "malformed-file-only-leaf",
+        openFile: async () => undefined,
+        view: {
+          app,
+          file: { path: "Notes/Not-a-TFile.md" },
+          hoverPopover: null,
+        },
+      } as unknown as WorkspaceLeaf;
+      emptyWorkspace.registerLeaf(malformedOnlyLeaf);
+      expect(emptyWorkspace.getActiveFile()).toBeNull();
+      expect(emptyWorkspace.activeEditor).toBeNull();
+    });
+  });
+
+  it("honors OpenViewState state, group, and active fields without forcing activation", async () => {
+    const vault = await createVault({
+      "Notes/Source.md": "source",
       "Notes/Target.md": "zero\none two\nthree",
     });
     await withDocument(async () => {
       const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
       app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));
-      expect(app.workspace.activeLeaf).toBeNull();
+      const sourceFile = vault.getFileByPath("Notes/Source.md");
+      if (!sourceFile) {
+        throw new Error("Source fixture was not discovered.");
+      }
+      const sourceLeaf = app.workspace.getLeaf(false);
+      await sourceLeaf.openFile(sourceFile);
 
-      await app.workspace.openLinkText("Target#Heading", "Notes/Source.md", false, {
+      await app.workspace.openLinkText("Target#Heading", "Notes/Source.md", "split", {
+        active: false,
         eState: {
           cursor: {
             from: { ch: 0, line: 1 },
             to: { ch: 3, line: 1 },
           },
-          line: 1,
         },
+        group: sourceLeaf,
         state: { mode: "source" },
       });
 
-      const leaf = app.workspace.activeLeaf;
-      expect(leaf).toBeInstanceOf(WorkspaceLeaf);
-      if (!(leaf instanceof WorkspaceLeaf)) {
-        throw new Error("openLinkText did not create a production WorkspaceLeaf.");
+      const targetLeaf = app.workspace
+        .getLeavesOfType("markdown")
+        .find((leaf) => leaf !== sourceLeaf);
+      if (!targetLeaf) {
+        throw new Error("openLinkText did not create a target WorkspaceLeaf.");
       }
-      expect(leaf.getViewState()).toEqual({
+      expect(app.workspace.activeLeaf).toBe(sourceLeaf);
+      expect(targetLeaf.getViewState()).toMatchObject({
         state: {
           file: "Notes/Target.md",
           mode: "source",
@@ -199,79 +236,30 @@ describe("Obsidian workspace compatibility wedge", () => {
         },
         type: "markdown",
       });
-      expect(leaf.view).toBeInstanceOf(MarkdownView);
-      if (!(leaf.view instanceof MarkdownView)) {
+      expect(app.workspace.getLeafGroupMember(targetLeaf)).toBe(sourceLeaf);
+      expect(targetLeaf.view).toBeInstanceOf(MarkdownView);
+      if (!(targetLeaf.view instanceof MarkdownView)) {
         throw new Error("openLinkText did not open a MarkdownView.");
       }
-      expect(leaf.view.editor.getSelection()).toBe("one");
-      expect(leaf.view.editor.getCursor("from")).toEqual({ ch: 0, line: 1 });
-      expect(leaf.view.editor.getCursor("to")).toEqual({ ch: 3, line: 1 });
-    });
-  });
+      expect(targetLeaf.view.editor.getSelection()).toBe("one");
 
-  it("getRightLeaf returns null without a factory and stable or split right-sidebar leaves with one", async () => {
-    await withDocument((document) => {
-      const workspace = new Workspace();
-      expect(workspace.getRightLeaf(false)).toBeNull();
+      await targetLeaf.setViewState({
+        active: false,
+        group: sourceLeaf,
+        pinned: true,
+        state: { file: "Notes/Target.md", mode: "preview" },
+        type: "markdown",
+      });
+      expect(app.workspace.activeLeaf).toBe(sourceLeaf);
+      expect(targetLeaf.getViewState()).toMatchObject({
+        pinned: true,
+        state: { file: "Notes/Target.md", mode: "preview" },
+        type: "markdown",
+      });
 
-      installLeafFactory(workspace, document);
-      const first = workspace.getRightLeaf(false);
-      expect(first).not.toBeNull();
-      expect(workspace.getRightLeaf(false)).toBe(first);
-      const split = workspace.getRightLeaf(true);
-      expect(split).not.toBeNull();
-      expect(split).not.toBe(first);
-      expect(workspace.getLayout().right.children).toHaveLength(2);
-      expect(workspace.getLayout().main.children).toEqual([]);
-    });
-  });
-
-  it("revealLeaf activates a registered leaf without claiming a foreign leaf", async () => {
-    await withDocument(async (document) => {
-      const workspace = new Workspace();
-      const first = registerLeaf(workspace, document, "first", { file: null });
-      const second = registerLeaf(workspace, document, "second", { file: null });
-      workspace.setActiveLeaf(first);
-
-      await expect(workspace.revealLeaf(second)).resolves.toBeUndefined();
-      expect(workspace.activeLeaf).toBe(second);
-      expect(second.containerEl.hidden).toBe(false);
-      expect(first.containerEl.hidden).toBe(true);
-
-      const foreign = { id: "foreign" };
-      await workspace.revealLeaf(foreign);
-      expect(workspace.activeLeaf).toBe(second);
-    });
-  });
-
-  it("getUnpinnedLeaf mirrors the current leaf and returns null when none exists", async () => {
-    await withDocument((document) => {
-      const workspace = new Workspace();
-      expect(workspace.getUnpinnedLeaf()).toBeNull();
-      installLeafFactory(workspace, document);
-      const created = workspace.getUnpinnedLeaf();
-      expect(created).not.toBeNull();
-      expect(workspace.getUnpinnedLeaf()).toBe(created);
-
-      const freshWorkspace = new Workspace();
-      const freshLeaf = registerLeaf(freshWorkspace, document, "fresh-active", { file: null });
-      expect(freshWorkspace.getUnpinnedLeaf()).toBe(freshLeaf);
-    });
-  });
-
-  it("splitActiveLeaf returns null without capability and creates the requested split shape", async () => {
-    await withDocument((document) => {
-      const workspace = new Workspace();
-      expect(workspace.splitActiveLeaf()).toBeNull();
-      installLeafFactory(workspace, document);
-      const original = workspace.getLeaf(true);
-      const split = workspace.splitActiveLeaf("horizontal");
-
-      expect(original).not.toBeNull();
-      expect(split).not.toBeNull();
-      expect(split).not.toBe(original);
-      expect(workspace.getLayout().main.direction).toBe("horizontal");
-      expect(workspace.getLayout().main.children).toHaveLength(2);
+      app.workspace.setActiveLeaf(targetLeaf);
+      expect(sourceLeaf.containerEl.hidden).toBe(true);
+      expect(targetLeaf.containerEl.hidden).toBe(false);
     });
   });
 
@@ -289,50 +277,65 @@ describe("Obsidian workspace compatibility wedge", () => {
 });
 
 describe("Obsidian FileManager compatibility wedge", () => {
-  it("getNewFileParent returns root or a configured, existing source-relative folder", async () => {
+  it("honestly refuses preference-backed path and Markdown-link helpers until the real preferences are available", async () => {
     const vault = await createVault({
       "Notes/Current.md": "current",
-      "Templates/.keep": "",
+      "Notes/Target.md": "target",
     });
     const fileManager = new FileManager(vault);
-
-    expect(fileManager.getNewFileParent("Notes/Current.md").path).toBe("");
-    vi.spyOn(vault, "getConfig").mockImplementation((key) => {
-      if (key === "newFileLocation") {
-        return "current";
-      }
-      return undefined;
-    });
-    expect(fileManager.getNewFileParent("Notes/Current.md").path).toBe("Notes");
-
-    vi.mocked(vault.getConfig).mockImplementation((key) => {
-      if (key === "newFileLocation") {
-        return "folder";
-      }
-      return key === "newFileFolderPath" ? "Templates" : undefined;
-    });
-    expect(fileManager.getNewFileParent("Notes/Current.md").path).toBe("Templates");
-  });
-
-  it("generateMarkdownLink emits a wiki link with exact subpath, alias, and unique-path shape", async () => {
-    const vault = await createVault({
-      "Folder/Note.md": "first",
-      "Other/Note.md": "second",
-      "Other/Source.md": "source",
-    });
-    const fileManager = new FileManager(vault);
-    const file = vault.getFileByPath("Folder/Note.md");
+    const file = vault.getFileByPath("Notes/Target.md");
     if (!file) {
       throw new Error("Link fixture file was not discovered.");
     }
+    const getConfig = vi.spyOn(vault, "getConfig").mockReturnValue("fabricated preference");
 
-    expect(
-      fileManager.generateMarkdownLink(file, "Other/Source.md", "#Heading", "Display text"),
-    ).toBe("[[Folder/Note#Heading|Display text]]");
-    expect(fileManager.generateMarkdownLink(file, "Other/Source.md")).toBe("[[Folder/Note]]");
-    expect(() =>
-      fileManager.generateMarkdownLink(new TFile(file.path, null), "Other/Source.md"),
-    ).toThrow("active compatibility vault");
+    expect(() => fileManager.getNewFileParent("Notes/Current.md")).toThrow("not yet supported");
+    expect(() => fileManager.generateMarkdownLink(file, "Notes/Current.md")).toThrow(
+      "not yet supported",
+    );
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+
+  it("visibly refuses rename when link-bearing vault files could require Obsidian preference-controlled rewrites", async () => {
+    const fixtureVault = await createVault({
+      "Notes/Inbound.md": "[[Notes/Target]]",
+      "Notes/Target.md": "target",
+    });
+    const renameFile = vi.fn(async (sourcePath: string, targetPath: string) => {
+      await fs.mkdir(path.dirname(path.join(fixtureVault.rootPath, targetPath)), {
+        recursive: true,
+      });
+      await fs.rename(
+        path.join(fixtureVault.rootPath, sourcePath),
+        path.join(fixtureVault.rootPath, targetPath),
+      );
+      return {
+        from: sourcePath,
+        status: "committed" as const,
+        to: targetPath,
+        transactionId: "unexpected-link-bearing-rename",
+      };
+    });
+    const vault = new Vault(fixtureVault.rootPath, undefined, {
+      renameFile,
+      writeText: vi.fn(),
+    });
+    const fileManager = new FileManager(vault);
+    const file = vault.getFileByPath("Notes/Target.md");
+    if (!file) {
+      throw new Error("Rename fixture file was not discovered.");
+    }
+    const rename = vi.spyOn(vault, "rename");
+
+    await expect(fileManager.renameFile(file, "Notes/Renamed.md")).rejects.toThrow(
+      "not yet supported",
+    );
+    expect(rename).not.toHaveBeenCalled();
+    expect(renameFile).not.toHaveBeenCalled();
+    expect(vault.getFileByPath("Notes/Target.md")).toMatchObject({
+      path: "Notes/Target.md",
+      vault,
+    });
   });
 
   it("promptForDeletion cancels without mutation and trashes only after explicit confirmation", async () => {

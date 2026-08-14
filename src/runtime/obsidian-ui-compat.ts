@@ -1,6 +1,7 @@
 import type { App, Plugin, TFile } from "./obsidian-compat";
 import { BaseComponent, Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
+import type { OpenViewState } from "./obsidian-workspace-compat";
 
 function currentDocument(): Document {
   if (typeof document === "undefined") {
@@ -1092,10 +1093,10 @@ export class PluginSettingTab extends SettingTab {
   }
 }
 
-interface WorkspaceOpenViewState {
+interface WorkspaceViewState {
   active?: boolean;
-  eState?: Record<string, unknown>;
   group?: WorkspaceLeaf;
+  pinned?: boolean;
   state?: Record<string, unknown>;
 }
 
@@ -1106,6 +1107,7 @@ export class WorkspaceLeaf {
   readonly tabHeaderInnerIconEl: HTMLElement;
   readonly tabHeaderInnerTitleEl: HTMLElement;
   view: View | null = null;
+  private pinned = false;
   private readonly releaseWorkspaceRegistration: () => void;
   private viewState: { type: string; state: Record<string, unknown> } = {
     type: "empty",
@@ -1126,15 +1128,18 @@ export class WorkspaceLeaf {
     this.releaseWorkspaceRegistration = app.workspace.registerLeaf(this);
   }
 
-  getViewState(): { type: string; state: Record<string, unknown> } {
+  getViewState(): WorkspaceViewState & { type: string; state: Record<string, unknown> } {
+    const group = this.app.workspace.getLeafGroupMember(this);
     return {
       type: this.viewState.type,
       state: structuredClone(this.viewState.state),
+      ...(this.pinned ? { pinned: true } : {}),
+      ...(group ? { group } : {}),
     };
   }
 
   async setViewState(
-    viewState: { type: string; state?: Record<string, unknown> },
+    viewState: WorkspaceViewState & { type: string },
     result: Record<string, unknown> = {},
   ): Promise<void> {
     await this.releaseView();
@@ -1164,8 +1169,16 @@ export class WorkspaceLeaf {
         const filePath = candidate instanceof FileView ? candidate.file?.path : null;
         candidate.setHeaderTitle(filePath ?? displayText);
       }
-      this.app.workspace.setActiveLeaf(this);
-      this.app.workspace.trigger("active-leaf-change", this);
+      if (viewState.group) {
+        this.app.workspace.setLeafGroup(this, viewState.group);
+      }
+      if (viewState.pinned !== undefined) {
+        this.pinned = viewState.pinned;
+      }
+      if (viewState.active !== false) {
+        this.app.workspace.setActiveLeaf(this);
+        this.app.workspace.trigger("active-leaf-change", this);
+      }
       this.app.workspace.trigger("layout-change");
     } catch (error) {
       await this.releaseView();
@@ -1173,7 +1186,7 @@ export class WorkspaceLeaf {
     }
   }
 
-  async openFile(file: TFile, openState: WorkspaceOpenViewState = {}): Promise<void> {
+  async openFile(file: TFile, openState: OpenViewState = {}): Promise<void> {
     const viewType =
       this.app.compatibility.getViewTypeForExtension(file.extension) ??
       this.view?.getViewType() ??
@@ -1184,6 +1197,8 @@ export class WorkspaceLeaf {
         ...structuredClone(openState.state ?? {}),
         file: file.path,
       },
+      ...(openState.active === undefined ? {} : { active: openState.active }),
+      ...(openState.group ? { group: openState.group } : {}),
     });
     if (openState.eState) {
       this.view?.setEphemeralState(structuredClone(openState.eState));
@@ -1201,6 +1216,19 @@ export class WorkspaceLeaf {
       this.releaseWorkspaceRegistration();
       this.containerEl.remove();
     }
+  }
+
+  setPinned(pinned: boolean): void {
+    this.pinned = pinned;
+    this.app.workspace.trigger("layout-change");
+  }
+
+  togglePinned(): void {
+    this.setPinned(!this.pinned);
+  }
+
+  setGroupMember(other: WorkspaceLeaf): void {
+    this.app.workspace.setLeafGroup(this, other);
   }
 
   private async releaseView(): Promise<void> {
@@ -1589,6 +1617,7 @@ export class Editor {
 
 export class MarkdownView extends TextFileView {
   readonly editor: Editor;
+  hoverPopover: null = null;
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);

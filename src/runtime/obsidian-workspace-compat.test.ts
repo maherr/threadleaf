@@ -93,14 +93,18 @@ describe("Obsidian compatibility workspace lifecycle", () => {
     const createLeaf = (id: string, viewType: string) => {
       let release = () => {};
       const leaf = {
+        app: null as unknown as App,
+        containerEl: new EventTarget() as HTMLElement,
+        getViewState: () => ({ state: {}, type: viewType }),
         id,
+        openFile: async () => undefined,
         view: { getViewType: () => viewType },
         detach: () => {
           detached.push(id);
           release();
         },
       };
-      release = workspace.registerLeaf(leaf);
+      release = workspace.registerLeaf(leaf as unknown as WorkspaceLeaf);
       return leaf;
     };
     createLeaf("drawing-one", "excalidraw");

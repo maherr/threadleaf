@@ -955,34 +955,27 @@ export class FileManager {
     this.vault = vault;
   }
 
-  getNewFileParent(sourcePath: string, _newFilePath?: string): TFolder {
-    const location = this.vault.getConfig("newFileLocation");
-    if (location === "current") {
-      const normalizedSource = normalizePath(sourcePath);
-      const source = normalizedSource ? this.vault.getAbstractFileByPath(normalizedSource) : null;
-      if (source instanceof TFolder) {
-        return source;
-      }
-      const parentPath = path.posix.dirname(normalizedSource);
-      const parent = this.vault.getFolderByPath(parentPath === "." ? "" : parentPath);
-      if (parent) {
-        return parent;
-      }
-    }
-    if (location === "folder") {
-      const configuredPath = this.vault.getConfig("newFileFolderPath");
-      if (typeof configuredPath === "string") {
-        const configuredFolder = this.vault.getFolderByPath(configuredPath);
-        if (configuredFolder) {
-          return configuredFolder;
-        }
-      }
-    }
-    return this.vault.getRoot();
+  getNewFileParent(_sourcePath: string, _newFilePath?: string): TFolder {
+    throw new Error(
+      "FileManager.getNewFileParent is not yet supported: this compatibility runtime does not read Obsidian new-file-location preferences.",
+    );
   }
 
-  renameFile(file: TAbstractFile, newPath: string): Promise<void> {
-    return this.vault.rename(file, newPath);
+  /**
+   * Obsidian changes inbound Markdown and Canvas links according to user preferences. This
+   * compatibility surface refuses that potentially link-bearing case until it can do the same.
+   */
+  async renameFile(file: TAbstractFile, newPath: string): Promise<void> {
+    if (
+      this.vault
+        .getFiles()
+        .some((candidate) => ["canvas", "md"].includes(candidate.extension.toLowerCase()))
+    ) {
+      throw new Error(
+        "FileManager.renameFile is not yet supported for vaults containing Markdown or Canvas files: Threadleaf cannot update inbound links according to Obsidian preferences.",
+      );
+    }
+    await this.vault.rename(file, newPath);
   }
 
   trashFile(file: TAbstractFile): Promise<void> {
@@ -1004,21 +997,10 @@ export class FileManager {
     return this.promptForDeletion(file);
   }
 
-  generateMarkdownLink(file: TFile, _sourcePath: string, subpath = "", alias = ""): string {
-    if (file.vault !== this.vault) {
-      throw new Error("Markdown links require a file from the active compatibility vault.");
-    }
-    const sameBasename = this.vault
-      .getFiles()
-      .filter(
-        (candidate) =>
-          candidate.basename.toLocaleLowerCase("en-US") ===
-          file.basename.toLocaleLowerCase("en-US"),
-      );
-    const linkPath = sameBasename.length === 1 ? file.name : file.path;
-    const linktext =
-      file.extension.toLocaleLowerCase("en-US") === "md" ? linkPath.slice(0, -3) : linkPath;
-    return `[[${linktext}${subpath}${alias ? `|${alias}` : ""}]]`;
+  generateMarkdownLink(_file: TFile, _sourcePath: string, _subpath = "", _alias = ""): string {
+    throw new Error(
+      "FileManager.generateMarkdownLink is not yet supported: this compatibility runtime does not read Obsidian link-format preferences.",
+    );
   }
 
   async createNewMarkdownFile(parent: TFolder, name: string): Promise<TFile> {

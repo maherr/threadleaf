@@ -4,11 +4,34 @@ import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
 } from "./obsidian-compat";
+import { type App, TFile } from "./obsidian-compat";
 import type { CompatibilityEventRef } from "./obsidian-components";
+import type { WorkspaceLeaf } from "./obsidian-ui-compat";
+import { Editor } from "./obsidian-ui-compat";
 
 type EventCallback = (...args: unknown[]) => unknown;
-type WorkspaceLeafFactory = (containerEl?: HTMLElement) => unknown;
-type WorkspaceLinkResolver = (linktext: string, sourcePath: string) => unknown | null;
+type PaneType = "split" | "tab" | "window";
+type SplitDirection = "horizontal" | "vertical";
+type WorkspaceLeafFactory = (containerEl?: HTMLElement) => WorkspaceLeaf;
+type WorkspaceLinkResolver = (linktext: string, sourcePath: string) => TFile | null;
+
+export interface MarkdownFileInfo {
+  app: App;
+  readonly file: TFile | null;
+  editor?: Editor;
+  hoverPopover: null;
+}
+
+export interface OpenViewState {
+  active?: boolean;
+  eState?: Record<string, unknown>;
+  group?: WorkspaceLeaf;
+  state?: Record<string, unknown>;
+}
+
+interface WorkspaceLeafGroup {
+  readonly leaves: Set<WorkspaceLeaf>;
+}
 
 interface WorkspaceLayoutLeaf {
   id: string;
@@ -62,9 +85,9 @@ function workspaceContainer(): HTMLElement {
 }
 
 export class WorkspaceSplit {
-  readonly children: unknown[] = [];
+  readonly children: WorkspaceLeaf[] = [];
   readonly containerEl = createWorkspaceElement("workspace-split");
-  direction: "horizontal" | "vertical";
+  direction: SplitDirection;
   readonly workspace: Workspace;
 
   constructor(workspace: Workspace, direction: "horizontal" | "vertical") {
@@ -82,21 +105,32 @@ export class WorkspaceSplit {
 }
 
 export class Workspace {
-  activeEditor: unknown | null = null;
-  activeLeaf: unknown | null = null;
+  private activeEditorState: MarkdownFileInfo | null = null;
+  activeLeaf: WorkspaceLeaf | null = null;
   readonly containerEl = workspaceContainer();
   readonly rootSplit = new WorkspaceSplit(this, "vertical");
   readonly floatingSplit = new WorkspaceSplit(this, "vertical");
   private readonly layoutReadyCallbacks = new Set<() => unknown>();
-  private readonly leaves = new Set<unknown>();
+  private readonly leafGroups = new Map<WorkspaceLeaf, WorkspaceLeafGroup>();
+  private readonly leaves = new Set<WorkspaceLeaf>();
   private readonly listeners = new Map<string, Set<EventCallback>>();
-  private readonly rightLeaves = new Set<unknown>();
+  private readonly rightLeaves = new Set<WorkspaceLeaf>();
   private leafFactory: WorkspaceLeafFactory | null = null;
   private linkResolver: WorkspaceLinkResolver | null = null;
   private layoutReadyCallbackActive = false;
   private layoutReadyErrorHandler: ((error: unknown) => void) | null = null;
   private layoutReadyState = false;
-  private mostRecentFile: unknown | null = null;
+  private mostRecentFile: TFile | null = null;
+  private pendingLeafGroup: WorkspaceLeafGroup | null = null;
+
+  get activeEditor(): MarkdownFileInfo | null {
+    return this.activeEditorState;
+  }
+
+  set activeEditor(value: MarkdownFileInfo | null) {
+    const activeApp = this.activeLeaf?.app;
+    this.activeEditorState = activeApp && this.isMarkdownFileInfo(value, activeApp) ? value : null;
+  }
 
   get layoutReady(): boolean {
     return this.layoutReadyState;
@@ -164,7 +198,11 @@ export class Workspace {
     await Promise.resolve();
   }
 
-  registerLeaf(leaf: unknown): () => void {
+  registerLeaf(leaf: WorkspaceLeaf): () => void {
+    this.assertWorkspaceLeaf(leaf);
+    const group =
+      this.pendingLeafGroup ?? this.groupForLeaf(this.activeLeaf) ?? this.createLeafGroup();
+    this.assignLeafToGroup(leaf, group);
     this.leaves.add(leaf);
     if (this.activeLeaf === null) {
       this.setActiveLeaf(leaf);
@@ -174,6 +212,9 @@ export class Workspace {
     return () => {
       this.leaves.delete(leaf);
       this.rightLeaves.delete(leaf);
+      const group = this.leafGroups.get(leaf);
+      group?.leaves.delete(leaf);
+      this.leafGroups.delete(leaf);
       if (this.activeLeaf === leaf) {
         const nextLeaf = [...this.leaves].at(-1) ?? null;
         this.activeLeaf = null;
@@ -185,14 +226,14 @@ export class Workspace {
     };
   }
 
-  setActiveLeaf(leaf: unknown): void {
+  setActiveLeaf(leaf: WorkspaceLeaf, _params?: { focus?: boolean }): void {
     if (!this.leaves.has(leaf)) {
       return;
     }
     this.activeLeaf = leaf;
     const activeView = this.leafView(leaf);
     this.activeEditor =
-      activeView && "file" in activeView && "editor" in activeView && activeView.editor
+      activeView && this.isMarkdownFileInfo(activeView, leaf.app) && activeView.editor
         ? activeView
         : null;
     const activeFile = this.fileForLeaf(leaf);
@@ -231,11 +272,8 @@ export class Workspace {
     this.trigger("layout-change");
   }
 
-  getLeavesOfType(viewType: string): unknown[] {
+  getLeavesOfType(viewType: string): WorkspaceLeaf[] {
     return [...this.leaves].filter((leaf) => {
-      if (!leaf || typeof leaf !== "object" || !("view" in leaf)) {
-        return false;
-      }
       const view = leaf.view;
       return (
         view !== null &&
@@ -249,9 +287,6 @@ export class Workspace {
 
   detachLeavesOfType(viewType: string): void {
     for (const leaf of this.getLeavesOfType(viewType)) {
-      if (!leaf || typeof leaf !== "object" || !("detach" in leaf)) {
-        continue;
-      }
       const detach = leaf.detach;
       if (typeof detach === "function") {
         void detach.call(leaf);
@@ -259,17 +294,17 @@ export class Workspace {
     }
   }
 
-  iterateAllLeaves(callback: (leaf: unknown) => unknown): void {
+  iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => unknown): void {
     for (const leaf of this.leaves) {
       callback(leaf);
     }
   }
 
-  getMostRecentLeaf(): unknown | null {
+  getMostRecentLeaf(): WorkspaceLeaf | null {
     return this.activeLeaf;
   }
 
-  getActiveFile(): unknown | null {
+  getActiveFile(): TFile | null {
     const activeFile = this.fileForLeaf(this.activeLeaf);
     if (activeFile) {
       this.mostRecentFile = activeFile;
@@ -279,19 +314,12 @@ export class Workspace {
   }
 
   getLayout(): WorkspaceLayout {
-    const layoutLeaves = (leaves: unknown[]): WorkspaceLayoutLeaf[] =>
+    const layoutLeaves = (leaves: WorkspaceLeaf[]): WorkspaceLayoutLeaf[] =>
       leaves
         .map((leaf): WorkspaceLayoutLeaf | null => {
-          if (!leaf || typeof leaf !== "object" || !("id" in leaf)) {
-            return null;
-          }
-          const getViewState =
-            "getViewState" in leaf && typeof leaf.getViewState === "function"
-              ? leaf.getViewState.bind(leaf)
-              : null;
-          const viewState = getViewState?.() ?? { type: "empty", state: {} };
+          const viewState = leaf.getViewState();
           return {
-            id: typeof leaf.id === "string" ? leaf.id : String(leaf.id),
+            id: leaf.id,
             state: {
               state:
                 viewState && typeof viewState === "object" && "state" in viewState
@@ -329,39 +357,50 @@ export class Workspace {
     };
   }
 
-  getLeaf(newLeaf?: boolean | string): unknown | null {
-    if (newLeaf === true || typeof newLeaf === "string") {
-      return this.createLeafBySplit(this.activeLeaf);
+  getLeaf(newLeaf?: "split", direction?: SplitDirection): WorkspaceLeaf;
+  getLeaf(newLeaf?: PaneType | boolean): WorkspaceLeaf;
+  getLeaf(newLeaf?: PaneType | boolean, direction?: SplitDirection): WorkspaceLeaf {
+    if (newLeaf === undefined || newLeaf === false) {
+      return this.activeLeaf ?? this.createLeafInPane("tab");
     }
-    return this.activeLeaf ?? this.createLeafBySplit();
-  }
-
-  getUnpinnedLeaf(): unknown | null {
-    return this.getLeaf(false);
-  }
-
-  splitActiveLeaf(direction?: "horizontal" | "vertical"): unknown | null {
-    if (direction) {
-      this.rootSplit.direction = direction;
+    if (newLeaf === true || newLeaf === "tab") {
+      return this.createLeafInPane("tab", this.activeLeaf);
     }
-    return this.createLeafBySplit(this.activeLeaf);
+    if (newLeaf === "split") {
+      return this.createLeafBySplit(this.activeLeaf ?? this.getLeaf(false), direction);
+    }
+    if (newLeaf === "window") {
+      throw new Error("Workspace popout leaves are not supported by this compatibility runtime.");
+    }
+    throw new Error(`Unsupported workspace pane type: ${String(newLeaf)}.`);
   }
 
-  getRightLeaf(split: boolean): unknown | null {
+  getUnpinnedLeaf(): WorkspaceLeaf {
+    return (
+      [...this.leaves].find((leaf) => leaf.getViewState().pinned !== true) ?? this.getLeaf("tab")
+    );
+  }
+
+  splitActiveLeaf(direction?: SplitDirection): WorkspaceLeaf {
+    return this.getLeaf("split", direction);
+  }
+
+  getRightLeaf(split: boolean): WorkspaceLeaf | null {
     if (!split) {
       const existingLeaf = [...this.rightLeaves].at(-1);
       if (existingLeaf) {
         return existingLeaf;
       }
+      if (!this.leafFactory) {
+        return null;
+      }
     }
-    const leaf = this.createLeafBySplit(this.activeLeaf);
-    if (leaf) {
-      this.rightLeaves.add(leaf);
-    }
+    const leaf = this.createLeafBySplit(this.activeLeaf ?? this.getLeaf(false));
+    this.rightLeaves.add(leaf);
     return leaf;
   }
 
-  async revealLeaf(leaf: unknown): Promise<void> {
+  async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
     if (this.leaves.has(leaf)) {
       this.setActiveLeaf(leaf);
     }
@@ -370,8 +409,8 @@ export class Workspace {
   async openLinkText(
     linktext: string,
     sourcePath: string,
-    newLeaf?: "split" | "tab" | "window" | boolean,
-    openViewState?: Record<string, unknown>,
+    newLeaf?: PaneType | boolean,
+    openViewState?: OpenViewState,
   ): Promise<void> {
     let resolver = this.linkResolver;
     if (!resolver) {
@@ -395,14 +434,8 @@ export class Workspace {
     if (!file) {
       return;
     }
-    const leaf = newLeaf ? this.getLeaf(newLeaf) : this.getLeaf(false);
-    if (!leaf || typeof leaf !== "object" || !("openFile" in leaf)) {
-      return;
-    }
+    const leaf = newLeaf === undefined ? this.getLeaf(false) : this.getLeaf(newLeaf);
     const openFile = leaf.openFile;
-    if (typeof openFile !== "function") {
-      return;
-    }
     const subpathIndex = linktext.indexOf("#");
     const subpath = subpathIndex >= 0 ? linktext.slice(subpathIndex) : "";
     const requestedState = openViewState?.state;
@@ -420,21 +453,70 @@ export class Workspace {
         }
       : openViewState;
     await openFile.call(leaf, file, effectiveOpenViewState);
-    this.setActiveLeaf(leaf);
+    if (effectiveOpenViewState?.active !== false) {
+      this.setActiveLeaf(leaf);
+    }
   }
 
-  createLeafBySplit(originLeaf?: unknown): unknown | null {
+  createLeafBySplit(
+    originLeaf?: WorkspaceLeaf | null,
+    direction?: SplitDirection,
+    before = false,
+  ): WorkspaceLeaf {
+    if (direction) {
+      this.rootSplit.direction = direction;
+    }
+    return this.createLeafInPane("split", originLeaf, before);
+  }
+
+  createLeafInParent(parent: WorkspaceSplit, index: number): WorkspaceLeaf {
+    if (parent.workspace !== this) {
+      throw new Error("Workspace leaf parent belongs to a different workspace.");
+    }
+    const leaf = this.createLeafInPane("tab", this.activeLeaf);
+    const insertionIndex = Math.max(0, Math.min(index, parent.children.length));
+    parent.children.splice(insertionIndex, 0, leaf);
+    return leaf;
+  }
+
+  setLeafGroup(leaf: WorkspaceLeaf, groupLeaf: WorkspaceLeaf): void {
+    if (!this.leaves.has(leaf) || !this.leaves.has(groupLeaf)) {
+      throw new Error("Workspace leaf groups require leaves from the active workspace.");
+    }
+    const group = this.groupForLeaf(groupLeaf);
+    if (!group) {
+      throw new Error("Workspace leaf group is unavailable.");
+    }
+    this.assignLeafToGroup(leaf, group);
+    if (this.activeLeaf && this.groupForLeaf(this.activeLeaf) === group) {
+      for (const candidate of group.leaves) {
+        this.setLeafVisibility(candidate, candidate === this.activeLeaf);
+      }
+    }
+  }
+
+  getLeafGroupMember(leaf: WorkspaceLeaf): WorkspaceLeaf | null {
+    const group = this.groupForLeaf(leaf);
+    return [...(group?.leaves ?? [])].find((candidate) => candidate !== leaf) ?? null;
+  }
+
+  private createLeafInPane(
+    paneType: Exclude<PaneType, "window">,
+    originLeaf?: WorkspaceLeaf | null,
+    before = false,
+  ): WorkspaceLeaf {
     if (!this.leafFactory) {
-      return null;
+      throw new Error("Workspace leaf creation requires an installed compatibility leaf factory.");
     }
     const originContainer = this.leafContainer(originLeaf);
     const doc =
       originContainer?.ownerDocument ?? (typeof document === "undefined" ? null : document);
     if (!doc) {
-      return this.leafFactory();
+      throw new Error("Workspace leaf creation requires a renderer document.");
     }
     const containerEl = doc.createElement("div");
-    containerEl.className = "threadleaf-plugin-surface workspace-leaf";
+    containerEl.className = `threadleaf-plugin-surface workspace-leaf mod-${paneType}`;
+    containerEl.dataset.threadleafPaneType = paneType;
     Object.assign(containerEl.style, {
       display: "flex",
       inset: "0",
@@ -444,22 +526,37 @@ export class Workspace {
       position: "absolute",
     });
     if (originContainer?.parentElement) {
-      originContainer.after(containerEl);
+      if (before) {
+        originContainer.before(containerEl);
+      } else {
+        originContainer.after(containerEl);
+      }
     } else {
       doc.body.append(containerEl);
     }
-    return this.leafFactory(containerEl);
+    const group =
+      paneType === "tab"
+        ? (this.groupForLeaf(originLeaf ?? null) ?? this.createLeafGroup())
+        : this.createLeafGroup();
+    this.pendingLeafGroup = group;
+    try {
+      const leaf = this.leafFactory(containerEl);
+      this.assertWorkspaceLeaf(leaf);
+      if (!this.leaves.has(leaf)) {
+        this.registerLeaf(leaf);
+      }
+      this.assignLeafToGroup(leaf, group);
+      return leaf;
+    } finally {
+      this.pendingLeafGroup = null;
+    }
   }
 
-  getLeafById(leafId: string | null | undefined): unknown | null {
+  getLeafById(leafId: string | null | undefined): WorkspaceLeaf | null {
     if (!leafId) {
       return null;
     }
-    return (
-      [...this.leaves].find(
-        (leaf) => leaf !== null && typeof leaf === "object" && "id" in leaf && leaf.id === leafId,
-      ) ?? null
-    );
+    return [...this.leaves].find((leaf) => leaf.id === leafId) ?? null;
   }
 
   getActiveViewOfType<T>(viewType: new (...args: never[]) => T): T | null {
@@ -469,37 +566,48 @@ export class Workspace {
     return this.activeLeaf.view instanceof viewType ? this.activeLeaf.view : null;
   }
 
-  createLeafInParent(_parent: WorkspaceSplit, _index: number): unknown {
-    return this.createLeafBySplit(this.activeLeaf);
+  private createLeafGroup(): WorkspaceLeafGroup {
+    return { leaves: new Set<WorkspaceLeaf>() };
   }
 
-  private fileForLeaf(leaf: unknown): unknown | null {
+  private assignLeafToGroup(leaf: WorkspaceLeaf, group: WorkspaceLeafGroup): void {
+    const previous = this.leafGroups.get(leaf);
+    if (previous === group) {
+      return;
+    }
+    previous?.leaves.delete(leaf);
+    group.leaves.add(leaf);
+    this.leafGroups.set(leaf, group);
+  }
+
+  private groupForLeaf(leaf: WorkspaceLeaf | null): WorkspaceLeafGroup | null {
+    return leaf ? (this.leafGroups.get(leaf) ?? null) : null;
+  }
+
+  private fileForLeaf(leaf: WorkspaceLeaf | null): TFile | null {
     const view = this.leafView(leaf);
     if (!view || !("file" in view)) {
       return null;
     }
     const file = view.file;
-    return file && typeof file === "object" ? file : null;
+    return file instanceof TFile ? file : null;
   }
 
-  private leafApp(leaf: unknown): Record<string, unknown> | null {
-    if (!leaf || typeof leaf !== "object" || !("app" in leaf)) {
-      return null;
-    }
-    const app = leaf.app;
-    return app && typeof app === "object" ? (app as Record<string, unknown>) : null;
+  private leafApp(leaf: WorkspaceLeaf | null): Record<string, unknown> | null {
+    const app = leaf?.app;
+    return app && typeof app === "object" ? (app as unknown as Record<string, unknown>) : null;
   }
 
-  private leafView(leaf: unknown): Record<string, unknown> | null {
-    if (!leaf || typeof leaf !== "object" || !("view" in leaf)) {
+  private leafView(leaf: WorkspaceLeaf | null): Record<string, unknown> | null {
+    if (!leaf) {
       return null;
     }
     const view = leaf.view;
-    return view && typeof view === "object" ? (view as Record<string, unknown>) : null;
+    return view && typeof view === "object" ? (view as unknown as Record<string, unknown>) : null;
   }
 
-  private leafContainer(leaf: unknown): HTMLElement | null {
-    if (!leaf || typeof leaf !== "object" || !("containerEl" in leaf)) {
+  private leafContainer(leaf: WorkspaceLeaf | null | undefined): HTMLElement | null {
+    if (!leaf) {
       return null;
     }
     const containerEl = leaf.containerEl;
@@ -508,13 +616,47 @@ export class Workspace {
       : null;
   }
 
-  private setLeafVisibility(leaf: unknown, active: boolean): void {
+  private setLeafVisibility(leaf: WorkspaceLeaf, active: boolean): void {
     const containerEl = this.leafContainer(leaf);
     if (!containerEl) {
       return;
     }
     containerEl.hidden = !active;
     containerEl.classList.toggle("mod-active", active);
+  }
+
+  private assertWorkspaceLeaf(value: unknown): asserts value is WorkspaceLeaf {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("id" in value) ||
+      typeof value.id !== "string" ||
+      !("containerEl" in value) ||
+      !("openFile" in value) ||
+      typeof value.openFile !== "function" ||
+      !("getViewState" in value) ||
+      typeof value.getViewState !== "function"
+    ) {
+      throw new Error("Compatibility workspace leaf factory returned an invalid WorkspaceLeaf.");
+    }
+  }
+
+  private isMarkdownFileInfo(value: unknown, expectedApp?: unknown): value is MarkdownFileInfo {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    const candidate = value as Record<string, unknown>;
+    if (
+      !("app" in candidate) ||
+      (expectedApp !== undefined && candidate.app !== expectedApp) ||
+      !("file" in candidate) ||
+      (candidate.file !== null && !(candidate.file instanceof TFile)) ||
+      !("hoverPopover" in candidate) ||
+      candidate.hoverPopover !== null
+    ) {
+      return false;
+    }
+    return !("editor" in candidate) || candidate.editor instanceof Editor;
   }
 }
 
