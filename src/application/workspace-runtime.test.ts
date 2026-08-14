@@ -171,11 +171,7 @@ class BlockingWorkspaceStateStore implements WorkspaceStateStore {
     // with the timeout blamed on whichever assertion happened to be next.
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(
-          new Error(
-            `waitForSaveCount(${target}) still at ${this.#saveCount} after 15000ms`,
-          ),
-        );
+        reject(new Error(`waitForSaveCount(${target}) still at ${this.#saveCount} after 15000ms`));
       }, 15_000);
       const waiters = this.#saveCountWaiters.get(target) ?? [];
       waiters.push(() => {
