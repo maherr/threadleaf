@@ -17,6 +17,10 @@ private vault content in an issue, discussion, test fixture, or pull request (`S
 find a serious issue before the reporting channel exists, holding it privately is the only available
 option; there is nowhere in this repository to send it yet.
 
+This section is intentionally temporary. Publishing this repository is expected to include enabling
+GitHub's private vulnerability reporting and updating or removing this section in that same change,
+not as a followup task left for later.
+
 ## Channel, once the repository is public
 
 Report a vulnerability through GitHub's private Security Advisory flow on the canonical repository
@@ -26,8 +30,9 @@ and the maintainers with advisory access until a fix is ready.
 
 Do not include real vault content, note text, or personally identifying data in a report. A minimal
 reproduction against a synthetic vault, matching the standard this project already holds contributed
-fixtures to (`AGENTS.md`; [`CONTRIBUTING.md`](../../CONTRIBUTING.md)), is more useful than a real one
-and does not put anyone's data at risk in transit.
+fixtures to ([`CONTRIBUTING.md`](../../CONTRIBUTING.md): "keep user vaults out of tests and examples,
+use synthetic data only"), is more useful than a real one and does not put anyone's data at risk in
+transit.
 
 ## Response targets
 

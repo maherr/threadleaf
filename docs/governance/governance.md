@@ -50,8 +50,10 @@ A change is accepted when it is consistent with [`AGENTS.md`](../../AGENTS.md)'s
 - **Vault mutations are explicit, atomic, recoverable, and tested under interruption** (`AGENTS.md`).
   A change that writes to a user's vault needs an interruption fixture, not just a happy-path test.
 - **The kernel stays small.** Optional product behavior belongs in first-party plugins when
-  practical, and existing Obsidian-ecosystem plugins run only in the labeled trusted compatibility
-  runtime, never as a substitute for a reviewed native extension (`AGENTS.md`).
+  practical (`AGENTS.md`), and existing Obsidian-ecosystem plugins run only in the labeled trusted
+  compatibility runtime, which the native extension contract keeps deliberately separate: it is "a
+  review and lifecycle gate, not this native runtime's permission model"
+  ([native extension capability contract](../compatibility/native-extensions.md)).
 - **No new network or account requirement in an offline workflow** (`AGENTS.md`).
 - **Public specification and corpus contributions** follow the stricter normative rules in
   [`public-spec/v1/contributing.md`](../../public-spec/v1/contributing.md): implementation-neutral,

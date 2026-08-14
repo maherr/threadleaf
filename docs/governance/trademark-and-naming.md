@@ -1,8 +1,8 @@
 # Trademark and naming
 
 Threadleaf has not registered a trademark for its name or any wordmark. This document states
-current naming policy and community expectations, not asserted trademark rights. If that changes, a
-registration, a transfer, a new maintainer with a different policy, this document is updated to
+current naming policy and community expectations, not asserted trademark rights. If that changes (a
+registration, a transfer, a new maintainer with a different policy), this document is updated to
 match, not the other way around. "Threadleaf" below means the project name, as distinct from any
 specific maintainer, company, or legal entity.
 

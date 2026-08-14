@@ -42,6 +42,14 @@ expected to be a deliberate, recorded event rather than an incidental refactor:
   documented in [`docs/cli.md`](../cli.md)) is regenerated from `src/cli/command-line.ts` and
   published as part of the same public specification's CLI dataset, so it inherits that
   specification's versioning policy rather than having its own.
+- **The Markdown processor family** (post processors, fenced-code block processors, and the
+  render-child lifecycle that manages them) has its own normative contract,
+  [`docs/compatibility/open-plugin-api.md`](../compatibility/open-plugin-api.md), which states
+  plainly that it is "normative for the signatures and observable behavior below." It is also
+  recorded as the `markdown-processors` surface in the public specification's generated API dataset
+  (`public-spec/data/api.v1.json`), so, like the CLI, it inherits that specification's versioning
+  policy rather than having its own, even though it remains desktop-compatibility-only and is not a
+  portable native-extension API.
 
 ## Explicitly unstable: the compatibility runtime's internals
 
@@ -50,10 +58,16 @@ community plugins run (`AGENTS.md`: "existing plugins run only in the clearly id
 compatibility runtime") is not a versioned public API for new development, and carries no
 deprecation window. It exists to track whatever surface existing third-party plugin bundles actually
 call, measured per plugin and per compatibility level in the
-[compatibility contract](../compatibility/contract.md), and it can change, at any time and without
-notice, whenever that is what fixing or extending measured compatibility requires. Do not build a new
-integration against this module's internals; it is scoped to running plugins written against upstream
-Obsidian's API, not to being a second stable API of Threadleaf's own. New extension authors should
+[compatibility contract](../compatibility/contract.md), and the module's remaining, undocumented
+surface can change, at any time and without notice, whenever that is what fixing or extending
+measured compatibility requires. A family that has its own normative contract, such as the Markdown
+processor family covered above, is the exception: it changes only under the public specification's
+version policy, not silently, because
+[`docs/compatibility/open-plugin-api.md`](../compatibility/open-plugin-api.md) and the
+`markdown-processors` entry in `public-spec/data/api.v1.json` already pulled it out of
+"undocumented." Do not build a new integration against the rest of this module's internals; it is
+scoped to running plugins written against upstream Obsidian's API, not to being a second stable API
+of Threadleaf's own. New extension authors should
 target the versioned native extension API above instead (`docs/charter.md` invariant: "Native
 extensions use declared capabilities and a versioned API").
 
@@ -79,8 +93,8 @@ otherwise, and expect this document and the README to be updated together when i
 ## Deprecation windows and breaking-change announcements
 
 **Today, pre-1.0:** any of the surfaces above can still change between beta releases, including in a
-breaking way, without a soak period. What is consistent is that a breaking change is recorded as a
-`Changed` or `Removed` entry in [`CHANGELOG.md`](../../CHANGELOG.md), which already follows
+breaking way, without a soak period. What is consistent is that a breaking change will be recorded
+as a `Changed` or `Removed` entry in [`CHANGELOG.md`](../../CHANGELOG.md), which already follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and that a native extension manifest or API
 version bump, or a public specification version bump, accompanies a change to field meaning or byte
 semantics, per the policies cited above. There is no dedicated `Deprecated` changelog section in use
@@ -92,6 +106,7 @@ closer to 1.0.
 specification requires a major version bump of the relevant contract, not just the application, and
 a capability or command intended for removal is marked deprecated in the changelog at least one
 minor release before it is removed, so a consumer pinned to a minor version has a documented window
-to react. This is the same commitment [the roadmap](../roadmap.md#phase-6-ecosystem-and-public-launch)
-already makes as its Phase 6 exit condition; this document is where that commitment is written down
-in concrete, contract-specific terms rather than as a single roadmap checkbox.
+to react. [The roadmap](../roadmap.md#phase-6-ecosystem-and-public-launch) commits only to
+documenting "API stability, deprecation, succession, and fork continuity before calling the project
+1.0"; it does not itself specify a window. This document, and the specific windows above, is the
+concrete form of that roadmap item, not a separate promise the roadmap already makes.

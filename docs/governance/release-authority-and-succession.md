@@ -24,6 +24,10 @@ with no repository secrets, so anyone with the source and the right native toolc
 build and verify a Threadleaf package without asking the maintainer for anything. Only the signed,
 published lane requires the credentials above.
 
+The "no public repository yet" premise above, and in Mirror expectations below, is intentionally
+temporary. Publishing this repository canonically is expected to include updating both sections in
+that same change, not as a followup task left for later.
+
 ## If the current maintainer disappears
 
 Threadleaf's fork-continuity story is that nothing needed to keep going lives only in one person's
