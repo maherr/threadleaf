@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import {
   type ParsedMarkdownLink,
+  type ParsedMarkdownReferenceDefinitionCandidate,
   parseMarkdownDestinationTarget,
   parseMarkdownLinks,
-  parseMarkdownReferenceDefinitions,
+  parseMarkdownReferenceDefinitionCandidates,
   parseMarkdownReferenceUsages,
 } from "../kernel/markdown-links";
 import { VaultLinkResolver } from "../kernel/metadata-index";
@@ -235,6 +236,190 @@ function mayReferenceSource(
   );
 }
 
+function sourceCandidatePaths(visibleFiles: readonly string[], sourcePath: string): string[] {
+  return visibleFiles.filter(
+    (candidate) =>
+      normalizedKey(path.posix.basename(candidate)) ===
+      normalizedKey(path.posix.basename(sourcePath)),
+  );
+}
+
+function referenceLabelMayIdentifySource(label: string, sourcePath: string): boolean {
+  const normalizedLabel = normalizedKey(label);
+  const basename = path.posix.basename(sourcePath);
+  const extension = path.posix.extname(basename);
+  const stem = extension ? basename.slice(0, -extension.length) : basename;
+  const exactKeys = new Set([sourcePath, basename, stem].map(normalizedKey));
+  if (exactKeys.has(normalizedLabel)) return true;
+
+  const sourceTokens = normalizedKey(stem)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((token) => token.length >= 3);
+  if (sourceTokens.length === 0) return false;
+  const labelTokens = new Set(normalizedLabel.split(/[^\p{L}\p{N}]+/u));
+  return sourceTokens.every((token) => labelTokens.has(token));
+}
+
+function opaqueReferenceDestination(rawTarget: string): string | null {
+  let cursor = 0;
+  while (cursor < rawTarget.length && /\s/u.test(rawTarget[cursor] ?? "")) cursor += 1;
+  if (rawTarget[cursor] === "<") cursor += 1;
+  const start = cursor;
+  let escaped = false;
+  let parentheses = 0;
+  for (; cursor < rawTarget.length; cursor += 1) {
+    const character = rawTarget[cursor] ?? "";
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === "(") {
+      parentheses += 1;
+      continue;
+    }
+    if (character === ")" && parentheses > 0) {
+      parentheses -= 1;
+      continue;
+    }
+    if (character === ">" || (/\s/u.test(character) && parentheses === 0)) break;
+  }
+  const destination = rawTarget.slice(start, cursor).trim();
+  return destination || null;
+}
+
+type OpaqueDefinitionSourceEvidence = "source" | "external" | "unrelated" | "unknown";
+
+function opaqueDefinitionSourceEvidence(
+  documentPath: string,
+  definition: ParsedMarkdownReferenceDefinitionCandidate,
+  sourcePath: string,
+): OpaqueDefinitionSourceEvidence {
+  const destination = opaqueReferenceDestination(definition.rawTarget);
+  if (!destination) return "unknown";
+  const parsed = parseVaultAttachmentTarget(documentPath, destination);
+  if (parsed.status === "local") {
+    return mayReferenceSource(parsed, sourcePath) ? "source" : "unrelated";
+  }
+  if (parsed.reason === "external") return "external";
+  if (parsed.parsed) {
+    return mayReferenceSource(parsed.parsed, sourcePath, parsed.reason) ? "source" : "unrelated";
+  }
+  return "unknown";
+}
+
+type ReferenceDefinitionEvidence = "resolved" | "ambiguous" | "unresolved" | "opaque";
+
+function referenceDefinitionEvidence(
+  documentPath: string,
+  definition: ParsedMarkdownReferenceDefinitionCandidate,
+  sourcePath: string,
+  resolver: VaultLinkResolver,
+): ReferenceDefinitionEvidence | null {
+  if (!definition.valid || !definition.target) {
+    const opaqueEvidence = opaqueDefinitionSourceEvidence(documentPath, definition, sourcePath);
+    if (opaqueEvidence === "source") return "opaque";
+    if (opaqueEvidence === "external" || opaqueEvidence === "unrelated") return null;
+    return referenceLabelMayIdentifySource(definition.label, sourcePath) ? "opaque" : null;
+  }
+  const resolution = resolveAttachmentLink(documentPath, definition.rawTarget, resolver);
+  if (
+    resolution.status === "resolved" &&
+    resolution.path !== undefined &&
+    normalizedKey(resolution.path) === normalizedKey(sourcePath)
+  ) {
+    return "resolved";
+  }
+  if (
+    resolution.status === "ambiguous" &&
+    resolution.candidates?.some(
+      (candidate) => normalizedKey(candidate) === normalizedKey(sourcePath),
+    )
+  ) {
+    return "ambiguous";
+  }
+  if (
+    resolution.status === "unresolved" &&
+    mayReferenceSource(resolution.parsed, sourcePath, resolution.rejectionReason)
+  ) {
+    return "unresolved";
+  }
+  return null;
+}
+
+function referenceDefinitionCandidateId(
+  documentPath: string,
+  definition: ParsedMarkdownReferenceDefinitionCandidate,
+): string {
+  return `${documentPath}:${definition.line}:${definition.position}`;
+}
+
+function referenceDefinitionBlocker(
+  documentPath: string,
+  usage: ReturnType<typeof parseMarkdownReferenceUsages>[number],
+  definitions: readonly ParsedMarkdownReferenceDefinitionCandidate[],
+  sourcePath: string,
+  resolver: VaultLinkResolver,
+  visibleFiles: readonly string[],
+): AttachmentMoveBlocker | null {
+  const relevantDefinitions = definitions.filter((definition) => definition.label === usage.label);
+  if (relevantDefinitions.length === 0) {
+    if (!referenceLabelMayIdentifySource(usage.label, sourcePath)) return null;
+    return {
+      documentPath,
+      line: usage.line,
+      target: `![${usage.label}][]`,
+      syntax: "markdown",
+      reason: "unsupported",
+      candidates: sourceCandidatePaths(visibleFiles, sourcePath),
+    };
+  }
+  const evidence = relevantDefinitions.flatMap((definition) => {
+    const result = referenceDefinitionEvidence(documentPath, definition, sourcePath, resolver);
+    return result ? [{ definition, result }] : [];
+  });
+  if (evidence.length === 0) return null;
+  const candidates = evidence.map(({ definition }) =>
+    referenceDefinitionCandidateId(documentPath, definition),
+  );
+  if (relevantDefinitions.length > 1 || evidence.some(({ result }) => result === "ambiguous")) {
+    return {
+      documentPath,
+      line: usage.line,
+      target: `![${usage.label}][]`,
+      syntax: "markdown",
+      reason: "ambiguous",
+      candidates,
+    };
+  }
+  const only = evidence[0];
+  if (!only) return null;
+  if (only.definition.sourceOnly || only.result === "opaque") {
+    return {
+      documentPath,
+      line: usage.line,
+      target: `![${usage.label}][]`,
+      syntax: "markdown",
+      reason: "unsupported",
+      candidates,
+    };
+  }
+  if (only.result === "unresolved") {
+    return {
+      documentPath,
+      line: usage.line,
+      target: `![${usage.label}][]`,
+      syntax: "markdown",
+      reason: "unresolved",
+      candidates: sourceCandidatePaths(visibleFiles, sourcePath),
+    };
+  }
+  return null;
+}
+
 function rewriteContent(content: string, candidates: readonly PlannedCandidate[]): string {
   let result = content;
   for (const candidate of [...candidates].sort(
@@ -459,31 +644,43 @@ export async function planBinaryAttachmentMove(
       };
     }
     markdownRevisions.push({ path: documentPath, revision: snapshot.revision });
-    const referenceDefinitions = parseMarkdownReferenceDefinitions(snapshot.content);
-    const definitionsByLabel = new Map<string, typeof referenceDefinitions>();
-    for (const definition of referenceDefinitions) {
-      const entries = definitionsByLabel.get(definition.label) ?? [];
-      entries.push(definition);
-      definitionsByLabel.set(definition.label, entries);
-    }
-    for (const usage of parseMarkdownReferenceUsages(snapshot.content)) {
-      const definitions = definitionsByLabel.get(usage.label) ?? [];
-      if (definitions.length === 1 && definitions[0]?.valid) continue;
-      const candidates = definitions.map((definition) => `${documentPath}:${definition.line}`);
-      unresolvedBlockers.push({
+    const referenceDefinitions = parseMarkdownReferenceDefinitionCandidates(snapshot.content);
+    const referenceUsages = parseMarkdownReferenceUsages(snapshot.content);
+    const referencedLabels = new Set(referenceUsages.map((usage) => usage.label));
+    const referenceDefinitionTargetRanges = new Set(
+      referenceDefinitions.flatMap((definition) =>
+        !definition.sourceOnly &&
+        definition.valid &&
+        definition.targetStart !== null &&
+        definition.targetEnd !== null &&
+        referencedLabels.has(definition.label)
+          ? [`${definition.targetStart}:${definition.targetEnd}`]
+          : [],
+      ),
+    );
+    for (const usage of referenceUsages) {
+      const blocker = referenceDefinitionBlocker(
         documentPath,
-        line: usage.line,
-        target: `![${usage.label}][]`,
-        syntax: "markdown",
-        reason: definitions.length > 1 ? "ambiguous" : "unsupported",
-        candidates,
-      });
+        usage,
+        referenceDefinitions,
+        sourcePath,
+        resolver,
+        visibleFiles,
+      );
+      if (blocker) unresolvedBlockers.push(blocker);
     }
     const candidates: PlannedCandidate[] = [];
     for (const link of parseMarkdownLinks(snapshot.content)) {
       const rawTarget = snapshot.content.slice(link.targetStart, link.targetEnd);
       const resolution = resolveAttachmentLink(documentPath, rawTarget, resolver);
+      const isReferencedDefinition =
+        link.syntax === "markdown" &&
+        referenceDefinitionTargetRanges.has(`${link.targetStart}:${link.targetEnd}`);
       if (resolution.status !== "resolved" || resolution.path !== sourcePath) {
+        // The reference-usage gate above owns non-resolved definitions tied to
+        // visible image usages. Exact target ranges prevent an inline link on
+        // the same line from inheriting a malformed definition's uncertainty.
+        if (isReferencedDefinition) continue;
         if (
           resolution.status === "ambiguous" &&
           resolution.candidates?.some(

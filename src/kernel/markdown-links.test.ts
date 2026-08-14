@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseMarkdownLinks,
+  parseMarkdownReferenceDefinitionCandidates,
   parseMarkdownReferenceDefinitions,
   parseMarkdownReferenceUsages,
 } from "./markdown-links";
@@ -186,6 +187,121 @@ describe("Markdown link source parser", () => {
     const links = parseMarkdownLinks(content);
     expect(links.map((link) => link.target)).toEqual(["Visible.pdf"]);
     expect(links[0]?.line).toBe(5);
+  });
+
+  it("retains exact visible, opaque, and source-only definition candidates", () => {
+    const content = [
+      "---",
+      "[hidden]: ../Assets/report.pdf",
+      "---",
+      "[visible]: ../Assets/report.pdf",
+      "[broken]: <../Assets/report.pdf",
+      "```md",
+      "[ignored]: ../Assets/report.pdf",
+      "```",
+    ].join("\n");
+
+    const candidates = parseMarkdownReferenceDefinitionCandidates(content);
+
+    expect(
+      candidates.map(({ label, valid, external, target, rawTarget, line, sourceOnly }) => ({
+        label,
+        valid,
+        external,
+        target,
+        rawTarget,
+        line,
+        sourceOnly,
+      })),
+    ).toEqual([
+      {
+        label: "hidden",
+        valid: true,
+        external: false,
+        target: "../Assets/report.pdf",
+        rawTarget: "../Assets/report.pdf",
+        line: 2,
+        sourceOnly: true,
+      },
+      {
+        label: "visible",
+        valid: true,
+        external: false,
+        target: "../Assets/report.pdf",
+        rawTarget: "../Assets/report.pdf",
+        line: 4,
+        sourceOnly: false,
+      },
+      {
+        label: "broken",
+        valid: false,
+        external: false,
+        target: null,
+        rawTarget: " <../Assets/report.pdf",
+        line: 5,
+        sourceOnly: false,
+      },
+    ]);
+    const visible = candidates[1];
+    if (!visible || visible.targetStart === null || visible.targetEnd === null) {
+      throw new Error("Expected an exact visible definition destination range.");
+    }
+    expect(content.slice(visible.targetStart, visible.targetEnd)).toBe("../Assets/report.pdf");
+  });
+
+  it("keeps code and comments out of reference-definition candidates", () => {
+    const content = [
+      "`[inline]: ../Assets/report.pdf`",
+      "<!-- [comment]: ../Assets/report.pdf -->",
+      "```md",
+      "[fenced]: ../Assets/report.pdf",
+      "```",
+      "[visible]: ../Assets/report.pdf",
+    ].join("\n");
+
+    expect(
+      parseMarkdownReferenceDefinitionCandidates(content).map((candidate) => candidate.label),
+    ).toEqual(["visible"]);
+  });
+
+  it("preserves exact definition destination ranges across CR-only line endings", () => {
+    const content =
+      "![first image][first]\r[first]: ../Assets/report.pdf\r[second]: ../Assets/other.pdf";
+    const candidates = parseMarkdownReferenceDefinitionCandidates(content);
+
+    expect(
+      candidates.map((candidate) => ({ label: candidate.label, line: candidate.line })),
+    ).toEqual([
+      { label: "first", line: 2 },
+      { label: "second", line: 3 },
+    ]);
+    const ranges = candidates.map((candidate) => {
+      if (candidate.targetStart === null || candidate.targetEnd === null) {
+        throw new Error("Expected an exact definition destination range.");
+      }
+      return content.slice(candidate.targetStart, candidate.targetEnd);
+    });
+    expect(ranges).toEqual(["../Assets/report.pdf", "../Assets/other.pdf"]);
+    expect(parseMarkdownReferenceUsages(content)).toEqual([
+      expect.objectContaining({ label: "first", line: 1 }),
+    ]);
+  });
+
+  it("keeps CR-only frontmatter definitions source-only", () => {
+    const content = "---\r[hidden]: ../Assets/report.pdf\r---\r[visible]: ../Assets/report.pdf";
+
+    expect(
+      parseMarkdownReferenceDefinitionCandidates(content).map((candidate) => ({
+        label: candidate.label,
+        sourceOnly: candidate.sourceOnly,
+      })),
+    ).toEqual([
+      { label: "hidden", sourceOnly: true },
+      { label: "visible", sourceOnly: false },
+    ]);
+    expect(parseMarkdownLinks(content).map((link) => link.target)).toEqual([
+      "../Assets/report.pdf",
+    ]);
   });
 
   it("does not treat escaped literal query or fragment bytes as suffixes", () => {

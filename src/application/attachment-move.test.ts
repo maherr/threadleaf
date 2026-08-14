@@ -309,6 +309,350 @@ describe("attachment move planning", () => {
     );
   });
 
+  it("ignores an unrelated missing image reference while planning source references", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const referencePath = path.join(vaultPath, "Notes", "Reference scope.md");
+    await fs.writeFile(
+      referencePath,
+      [
+        "![unrelated broken image][missing-label]",
+        "[direct report](../Assets/report.pdf)",
+        "![reference report][report-asset]",
+        "![external image][external-image]",
+        "",
+        "[report-asset]: ../Assets/report.pdf",
+        "[external-image]: https://example.test/report.pdf",
+      ].join("\n"),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected scoped attachment fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.rewrites).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentPath: "Notes/Reference scope.md",
+          beforeTarget: "../Assets/report.pdf",
+          afterTarget: "../Archive/report.pdf",
+        }),
+      ]),
+    );
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/report.pdf",
+        source.snapshot.revision,
+      ),
+    ).resolves.toMatchObject({ status: "requires-confirmation" });
+  });
+
+  it("ignores unrelated malformed and duplicate definitions without associating a same-line link", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const referencePath = path.join(vaultPath, "Notes", "Unrelated definitions.md");
+    await fs.writeFile(
+      referencePath,
+      [
+        "![unrelated malformed][broken-label]",
+        "[broken-label]: <../Assets/not-report.pdf [direct report](../Assets/report.pdf)",
+        "![unrelated duplicate][other-label]",
+        "[other-label]: ../Assets/Other/other.pdf",
+        "[other-label]: https://example.test/other.pdf",
+      ].join("\n"),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected scoped attachment fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    const rewrites = plan.rewrites.filter(
+      (rewrite) => rewrite.documentPath === "Notes/Unrelated definitions.md",
+    );
+    expect(rewrites).toEqual([
+      expect.objectContaining({
+        line: 2,
+        beforeTarget: "../Assets/report.pdf",
+        afterTarget: "../Archive/report.pdf",
+      }),
+    ]);
+  });
+
+  it("blocks a missing image label that plausibly identifies the moving source", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Notes", "Missing source label.md"),
+      "![report image][report]\n",
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Missing source label.md",
+          reason: "unsupported",
+        }),
+      ],
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.blockers).toHaveLength(1);
+  });
+
+  it("allows valid and malformed external definitions even when their labels resemble the source", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Notes", "External source-like labels.md"),
+      [
+        "![valid external][report]",
+        "[report]: https://example.test/report.pdf",
+        "![malformed external][report-copy]",
+        "[report-copy]: <https://example.test/report.pdf",
+      ].join("\n"),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [], rewrites: [] });
+  });
+
+  it("allows a malformed definition with a definitively unrelated local destination", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Notes", "Unrelated source-like malformed label.md"),
+      ["![unrelated malformed][report-copy]", "[report-copy]: <../Assets/Other/other.pdf"].join(
+        "\n",
+      ),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [], rewrites: [] });
+  });
+
+  it("blocks an opaque source definition and keeps duplicate source definitions ambiguous", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const opaquePath = path.join(vaultPath, "Notes", "Opaque source definition.md");
+    const opaqueDuplicatePath = path.join(vaultPath, "Notes", "Opaque duplicate definition.md");
+    const duplicatePath = path.join(vaultPath, "Notes", "Duplicate source definition.md");
+    await fs.writeFile(
+      opaquePath,
+      ["![report image][report-asset]", "[report-asset]: <../Assets/report.pdf"].join("\n"),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const opaquePlan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+    expect(opaquePlan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Opaque source definition.md",
+          reason: "unsupported",
+        }),
+      ],
+    });
+
+    await fs.unlink(opaquePath);
+    await fs.writeFile(
+      opaqueDuplicatePath,
+      [
+        "![report image][report-asset]",
+        "[report-asset]: <../Assets/report.pdf",
+        "[report-asset]: https://example.test/report.pdf",
+      ].join("\n"),
+      "utf8",
+    );
+    const opaqueDuplicatePlan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+    expect(opaqueDuplicatePlan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Opaque duplicate definition.md",
+          reason: "ambiguous",
+        }),
+      ],
+    });
+    if (opaqueDuplicatePlan.status !== "planned")
+      throw new Error("Expected a planned publication.");
+    expect(opaqueDuplicatePlan.blockers).toHaveLength(1);
+
+    await fs.unlink(opaqueDuplicatePath);
+    await fs.writeFile(
+      duplicatePath,
+      [
+        "![report image][report-asset]",
+        "[report-asset]: ../Assets/report.pdf",
+        "[report-asset]: https://example.test/report.pdf",
+      ].join("\n"),
+      "utf8",
+    );
+    const duplicatePlan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+    expect(duplicatePlan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Duplicate source definition.md",
+          reason: "ambiguous",
+        }),
+      ],
+    });
+    if (duplicatePlan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(duplicatePlan.blockers).toHaveLength(1);
+  });
+
+  it("emits one blocker for a referenced definition that is unresolved by path policy", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Notes", "Referenced unresolved definition.md"),
+      ["![report image][report]", "[report]: ../.obsidian/report.pdf"].join("\n"),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Referenced unresolved definition.md",
+          reason: "unresolved",
+        }),
+      ],
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.blockers).toHaveLength(1);
+  });
+
+  it("blocks a CR-only source reference definition", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Notes", "CR-only source definition.md"),
+      "![report image][report]\r[report]: <../Assets/report.pdf",
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/CR-only source definition.md",
+          reason: "unsupported",
+        }),
+      ],
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.blockers).toHaveLength(1);
+  });
+
+  it("keeps source-only frontmatter definition evidence blocked", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Notes", "Frontmatter source definition.md"),
+      [
+        "---",
+        "[report-asset]: ../Assets/Report%20PDF.bin",
+        "---",
+        "",
+        "![report image][report-asset]",
+      ].join("\n"),
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/Report PDF.bin", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/Report PDF.bin",
+      "Archive/Frontmatter.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({
+      status: "planned",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Notes/Frontmatter source definition.md",
+          reason: "unsupported",
+        }),
+      ],
+    });
+    if (plan.status !== "planned") throw new Error("Expected a planned publication.");
+    expect(plan.blockers).toHaveLength(1);
+  });
+
   it("rewrites visible reference-style image definitions and blocks source-only definitions", async () => {
     const visiblePath = path.join(vaultPath, "Notes", "Visible Reference.md");
     await fs.writeFile(

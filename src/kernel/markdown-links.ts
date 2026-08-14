@@ -40,6 +40,25 @@ export interface ParsedMarkdownReferenceDefinition {
   line: number;
 }
 
+/**
+ * A reference-definition candidate, including source-only frontmatter evidence
+ * that a mutation planner must retain without treating it as a visible link.
+ */
+export interface ParsedMarkdownReferenceDefinitionCandidate
+  extends ParsedMarkdownReferenceDefinition {
+  /** The parsed local or external destination when the definition is valid. */
+  target: string | null;
+  /** The exact raw destination token, or remaining source after `:` when opaque. */
+  rawTarget: string;
+  /** Exact source range for a valid destination; null for an opaque definition. */
+  targetStart: number | null;
+  targetEnd: number | null;
+  /** Offset of the definition marker in the original Markdown source. */
+  position: number;
+  /** True only for a definition inside YAML frontmatter. */
+  sourceOnly: boolean;
+}
+
 const markdownEscapes = "\\!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
 export function normalizeMarkdownReferenceLabel(value: string): string {
@@ -496,17 +515,17 @@ function applyMaskRanges(content: string, ranges: readonly MaskRange[]): string 
 
 function yamlFrontmatterRanges(content: string): MaskRange[] {
   const bom = content.startsWith("\uFEFF") ? 1 : 0;
-  const firstEnd = content.indexOf("\n", bom);
-  const firstLineEnd = firstEnd === -1 ? content.length : firstEnd;
+  const firstBreak = content.slice(bom).search(/\r\n|\r|\n/u);
+  const firstLineEnd = firstBreak === -1 ? content.length : bom + firstBreak;
   const firstLine = content.slice(bom, firstLineEnd).replace(/\r$/u, "");
   if (!/^ {0,3}---$/u.test(firstLine)) return [];
   const ranges: MaskRange[] = [];
   let offset = bom;
-  const lines = content.slice(bom).match(/[^\r\n]*(?:\r\n|\n|$)/gu) ?? [];
+  const lines = content.slice(bom).match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   let closed = false;
   for (const full of lines) {
     if (full.length === 0) break;
-    const line = full.replace(/\r?\n$/u, "");
+    const line = full.replace(/\r\n$|[\r\n]$/u, "");
     const trimmed = line.replace(/^ {0,3}/u, "");
     ranges.push({ start: offset, end: offset + full.length });
     offset += full.length;
@@ -597,51 +616,118 @@ export function maskMarkdownCodeAndComments(content: string): string {
   return applyMaskRanges(content, [...structuralRanges, ...inlineCodeRanges(structuralMask)]);
 }
 
+function parseMarkdownReferenceDefinitionCandidate(
+  sourceLine: string,
+  searchableLine: string,
+  lineStart: number,
+  lineNumber: number,
+  sourceOnly: boolean,
+): ParsedMarkdownReferenceDefinitionCandidate | null {
+  // Frontmatter is intentionally source-only. Its candidates must remain
+  // inspectable by a mutation planner even though normal link parsing masks it.
+  const definitionLine = sourceOnly ? sourceLine : searchableLine;
+  const leading = definitionLine.match(/^ {0,3}/u)?.[0].length ?? 0;
+  let cursor = leading;
+  if (definitionLine[cursor] === "!") cursor += 1;
+  if (definitionLine[cursor] !== "[") return null;
+  const close = findClosingBracket(definitionLine, cursor + 1);
+  if (close === -1 || definitionLine[close + 1] !== ":") return null;
+  const label = normalizeMarkdownReferenceLabel(sourceLine.slice(cursor + 1, close));
+  if (!label) return null;
+
+  const base = {
+    label,
+    line: lineNumber,
+    position: lineStart + leading,
+    sourceOnly,
+  };
+  const destination = scanDefinitionDestination(definitionLine, close + 2);
+  if (!destination) {
+    return {
+      ...base,
+      valid: false,
+      external: false,
+      target: null,
+      rawTarget: sourceLine.slice(close + 2),
+      targetStart: null,
+      targetEnd: null,
+    };
+  }
+  const rawDestination = sourceLine.slice(destination.targetStart, destination.targetEnd);
+  const subpathAt = subpathOffset(rawDestination);
+  const rawTargetOnly = subpathAt === -1 ? rawDestination : rawDestination.slice(0, subpathAt);
+  const normalizedTarget = normalizeLinkTarget(rawTargetOnly).trim();
+  if (!normalizedTarget) {
+    return {
+      ...base,
+      valid: false,
+      external: false,
+      target: null,
+      rawTarget: rawDestination,
+      targetStart: null,
+      targetEnd: null,
+    };
+  }
+  const targetRange = trimmedRange(rawTargetOnly);
+  return {
+    ...base,
+    valid: true,
+    external: isExternalLink(normalizedTarget),
+    target: normalizedTarget,
+    rawTarget: rawDestination,
+    targetStart: lineStart + destination.targetStart + targetRange.start,
+    targetEnd: lineStart + destination.targetStart + targetRange.end,
+  };
+}
+
+/**
+ * Returns each reference-definition candidate with exact destination ranges.
+ * Visible definitions follow normal parser masking; YAML definitions are
+ * retained as source-only evidence for mutation safety and are never emitted
+ * by `parseMarkdownLinks`.
+ */
+export function parseMarkdownReferenceDefinitionCandidates(
+  content: string,
+  maskedContent = maskMarkdownCodeAndComments(content),
+): ParsedMarkdownReferenceDefinitionCandidate[] {
+  if (maskedContent.length !== content.length) {
+    throw new Error("Masked Markdown must preserve source offsets.");
+  }
+  const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
+  const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
+  const frontmatter = yamlFrontmatterRanges(content);
+  const definitions: ParsedMarkdownReferenceDefinitionCandidate[] = [];
+  let offset = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const full = lines[index] ?? "";
+    if (!full && index === lines.length - 1) break;
+    const sourceLine = full.replace(/\r\n$|[\r\n]$/u, "");
+    const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
+    const sourceOnly = frontmatter.some((range) => offset >= range.start && offset < range.end);
+    const candidate = parseMarkdownReferenceDefinitionCandidate(
+      sourceLine,
+      searchableLine,
+      offset,
+      index + 1,
+      sourceOnly,
+    );
+    if (candidate) definitions.push(candidate);
+    offset += full.length;
+  }
+  return definitions;
+}
+
 /**
  * Returns visible reference definitions independently of their destination
- * kind. The attachment mover uses this to distinguish an external definition
- * from a malformed or source-only definition before it offers a move.
+ * kind. This compatibility view deliberately excludes source-only candidates.
  */
 export function parseMarkdownReferenceDefinitions(
   content: string,
   maskedContent = maskMarkdownCodeAndComments(content),
 ): ParsedMarkdownReferenceDefinition[] {
-  if (maskedContent.length !== content.length) {
-    throw new Error("Masked Markdown must preserve source offsets.");
-  }
-  const lines = content.match(/[^\r\n]*(?:\r\n|\n|$)/gu) ?? [];
-  const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\n|$)/gu) ?? [];
-  const definitions: ParsedMarkdownReferenceDefinition[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const full = lines[index] ?? "";
-    if (!full && index === lines.length - 1) break;
-    const sourceLine = full.replace(/\r?\n$/u, "");
-    const searchableLine = (searchableLines[index] ?? "").replace(/\r?\n$/u, "");
-    const leading = searchableLine.match(/^ {0,3}/u)?.[0].length ?? 0;
-    let cursor = leading;
-    if (searchableLine[cursor] === "!") cursor += 1;
-    if (searchableLine[cursor] !== "[") continue;
-    const close = findClosingBracket(searchableLine, cursor + 1);
-    if (close === -1 || searchableLine[close + 1] !== ":") continue;
-    const label = normalizeMarkdownReferenceLabel(sourceLine.slice(cursor + 1, close));
-    if (!label) continue;
-    const destination = scanDefinitionDestination(searchableLine, close + 2);
-    if (!destination) {
-      definitions.push({ label, valid: false, external: false, line: index + 1 });
-      continue;
-    }
-    const rawDestination = sourceLine.slice(destination.targetStart, destination.targetEnd);
-    const subpathAt = subpathOffset(rawDestination);
-    const rawTargetOnly = subpathAt === -1 ? rawDestination : rawDestination.slice(0, subpathAt);
-    const normalizedTarget = normalizeLinkTarget(rawTargetOnly).trim();
-    definitions.push({
-      label,
-      valid: normalizedTarget.length > 0,
-      external: normalizedTarget.length > 0 && isExternalLink(normalizedTarget),
-      line: index + 1,
-    });
-  }
-  return definitions;
+  return parseMarkdownReferenceDefinitionCandidates(content, maskedContent)
+    .filter((definition) => !definition.sourceOnly)
+    .map(({ label, valid, external, line }) => ({ label, valid, external, line }));
 }
 
 /**
@@ -656,14 +742,14 @@ export function parseMarkdownReferenceUsages(
   if (maskedContent.length !== content.length) {
     throw new Error("Masked Markdown must preserve source offsets.");
   }
-  const lines = content.match(/[^\r\n]*(?:\r\n|\n|$)/gu) ?? [];
-  const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\n|$)/gu) ?? [];
+  const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
+  const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const usages: ParsedMarkdownReferenceUsage[] = [];
   let offset = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const full = lines[index] ?? "";
     if (!full && index === lines.length - 1) break;
-    const searchableLine = (searchableLines[index] ?? "").replace(/\r?\n$/u, "");
+    const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
     let cursor = 0;
     while (cursor < searchableLine.length) {
       const marker = searchableLine.indexOf("!", cursor);
