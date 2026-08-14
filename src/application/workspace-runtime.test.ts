@@ -10,6 +10,9 @@ import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import {
+  absenceConfirmationIntervalMs,
+  maximumAbsenceConfirmationAttempts,
+  startupAbsenceMaximumSettleMs,
   startupAbsenceSettleMs,
   transientAbsenceSettleMs,
   WorkspaceRuntime,
@@ -1182,7 +1185,7 @@ describe("WorkspaceRuntime", () => {
     // does resolve away rather than keeping a tab forever.
     clock.advance(startupAbsenceSettleMs + 1);
     await workspace.reconcileNow();
-    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const pruned = await workspace.reconcileNow();
     expect(pruned.workspace).toMatchObject({
       tabs: [
@@ -1233,7 +1236,7 @@ describe("WorkspaceRuntime", () => {
 
     clock.advance(startupAbsenceSettleMs + 1);
     await workspace.reconcileNow();
-    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     await workspace.reconcileNow();
     expect(store.saved.at(-1)).toMatchObject({
       panes: [{ openPaths: ["Linked Note.md"], activePath: "Linked Note.md" }],
@@ -1424,6 +1427,7 @@ describe("WorkspaceRuntime", () => {
     await workspace.reconcileNow();
     clock.advance(2000);
     await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const deleted = await workspace.reconcileNow();
     expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
     expect(deleted.workspace).toMatchObject({
@@ -1455,6 +1459,7 @@ describe("WorkspaceRuntime", () => {
     await workspace.reconcileNow();
     clock.advance(2000);
     await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const deleted = await workspace.reconcileNow();
     expect(deleted.workspace?.activeNote?.path).toBe("Linked Note.md");
     expect(deleted.workspace?.panes[0]).toMatchObject({ canGoBack: false });
@@ -2881,6 +2886,7 @@ describe("WorkspaceRuntime atomic-replace reconciliation", () => {
     await workspace.reconcileNow();
     clock.advance(2000);
     await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const settled = await workspace.reconcileNow();
     expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
     expect(settled.workspace?.activeNote?.path).toBe("Linked Note.md");
@@ -3059,6 +3065,7 @@ describe("WorkspaceRuntime atomic-replace reconciliation", () => {
     await workspace.reconcileNow();
     clock.advance(2000);
     await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const settled = await workspace.reconcileNow();
     expect(tabPaths(settled)).toEqual(["Linked Note.md"]);
   });
@@ -3075,13 +3082,277 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     return (snapshot.workspace?.tabs ?? []).map(({ path: filePath }) => filePath);
   }
 
-  async function openPinnedPair(store: MemoryWorkspaceStateStore): Promise<WorkspaceRuntime> {
-    const workspace = await openRuntime(store);
+  async function openPinnedPair(
+    store: MemoryWorkspaceStateStore,
+    now?: () => number,
+  ): Promise<WorkspaceRuntime> {
+    const workspace = await openRuntime(store, undefined, undefined, undefined, now);
     await workspace.openNote("Linked Note.md");
     await workspace.openNote("Welcome.md");
     await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
     return workspace;
   }
+
+  it("bounds confirmation work during unrelated churn and still closes deleted notes and canvases", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+    await workspace.openNote("Linked Note.md");
+    await workspace.watcher.close();
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await fs.unlink(path.join(vaultPath, "Boards", "Overview.canvas"));
+    const observed = await workspace.reconcileNow();
+    expect(tabPaths(observed)).toEqual(
+      expect.arrayContaining(["Welcome.md", "Boards/Overview.canvas"]),
+    );
+
+    const probes = new Map([
+      ["Welcome.md", 0],
+      ["Boards/Overview.canvas", 0],
+    ]);
+    const realpath = fs.realpath;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string") {
+        for (const filePath of probes.keys()) {
+          if (probed.endsWith(`/${filePath}`)) {
+            probes.set(filePath, (probes.get(filePath) ?? 0) + 1);
+          }
+        }
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    // Activity elsewhere in the vault may cause arbitrarily many reconciliation
+    // passes. It cannot spend, replenish, or otherwise touch either target's
+    // per-absence confirmation work while the settle window is still open.
+    for (let pass = 0; pass < 24; pass += 1) {
+      await fs.writeFile(path.join(vaultPath, "Churn.md"), `# Churn ${pass}\n`, "utf8");
+      const during = await workspace.reconcileNow();
+      expect(tabPaths(during)).toEqual(
+        expect.arrayContaining(["Welcome.md", "Boards/Overview.canvas"]),
+      );
+    }
+
+    clock.advance(transientAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let confirmation = 0; confirmation < 6; confirmation += 1) {
+      await fs.writeFile(
+        path.join(vaultPath, "Churn.md"),
+        `# Confirmation churn ${confirmation}\n`,
+        "utf8",
+      );
+      settled = await workspace.reconcileNow();
+      clock.advance(250);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(tabPaths(settled)).not.toContain("Boards/Overview.canvas");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).not.toContain("Boards/Overview.canvas");
+    expect(Object.fromEntries(probes)).toEqual({
+      "Welcome.md": expect.any(Number),
+      "Boards/Overview.canvas": expect.any(Number),
+    });
+    expect(probes.get("Welcome.md")).toBeLessThanOrEqual(4);
+    expect(probes.get("Boards/Overview.canvas")).toBeLessThanOrEqual(4);
+  });
+
+  it("converges after bounded alternating indeterminate and absent reads", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Linked Note.md");
+    await workspace.openNote("Welcome.md");
+    await workspace.watcher.close();
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+
+    const realpath = fs.realpath;
+    let targetProbes = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        targetProbes += 1;
+        if (targetProbes % 2 === 1) {
+          const error: NodeJS.ErrnoException = new Error("EACCES: permission denied");
+          error.code = "EACCES";
+          throw error;
+        }
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    let settled = await workspace.getSnapshot();
+    for (let confirmation = 0; confirmation < 12; confirmation += 1) {
+      settled = await workspace.reconcileNow();
+      clock.advance(250);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);
+    expect(targetProbes).toBeGreaterThan(0);
+    expect(targetProbes).toBeLessThanOrEqual(4);
+  });
+
+  it("does not let a retained-tab selection resurrect a concurrently confirmed deletion", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.watcher.close();
+
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+
+    store.resetSaveCount();
+    store.blockSaves();
+    const selection = workspace.openNote("Welcome.md");
+    await store.waitForSaveCount(1);
+    const confirmation = workspace.reconcileNow();
+    await store.waitForSaveCount(2);
+    store.releaseSaves();
+    await Promise.all([selection, confirmation]);
+
+    const openPaths = store.inner.value?.panes[0]?.openPaths ?? [];
+    expect(openPaths).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("extends a startup absence while that exact path is active and keeps a slow arrival", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Syncing.md"],
+      pinnedPaths: ["Syncing.md"],
+      activePath: "Syncing.md",
+    });
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.watcher.close();
+    let syncingActivity = 0;
+    vi.spyOn(workspace.watcher, "activityVersionForPath").mockImplementation((filePath) =>
+      filePath === "Syncing.md" ? syncingActivity : 0,
+    );
+
+    clock.advance(startupAbsenceSettleMs - 1);
+    syncingActivity += 1;
+    await workspace.reconcileNow();
+
+    // This is beyond the fixed startup window. Two confirmation opportunities
+    // would have removed the tab without the exact-path quiet extension.
+    clock.advance(2);
+    await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
+    const beyondFixedWindow = await workspace.reconcileNow();
+    expect(tabPaths(beyondFixedWindow)).toContain("Syncing.md");
+
+    clock.advance(startupAbsenceSettleMs / 2);
+    await fs.writeFile(
+      path.join(vaultPath, "Syncing.md"),
+      "# Syncing\n\narrived after the fixed window\n",
+      "utf8",
+    );
+    await workspace.reconcileNow();
+    const landed = await workspace.openNote("Syncing.md");
+    expect(landed.workspace?.activeNote?.content).toBe(
+      "# Syncing\n\narrived after the fixed window\n",
+    );
+    expect(landed.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true, active: true }),
+    );
+    for (const saved of store.saved) {
+      expect(saved.panes[0]?.openPaths).toContain("Syncing.md");
+      expect(saved.panes[0]?.pinnedPaths).toEqual(["Syncing.md"]);
+    }
+  });
+
+  it("closes a startup absence within the bounded confirmation tail once the vault is quiet", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Never Arrives.md"],
+      pinnedPaths: ["Never Arrives.md"],
+      activePath: "Never Arrives.md",
+    });
+    const clock = manualClock();
+    const startedAt = clock.now();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.watcher.close();
+    const realpath = fs.realpath;
+    let targetProbes = 0;
+    vi.spyOn(fs, "realpath").mockImplementation((async (
+      probed: Parameters<typeof realpath>[0],
+      ...rest: unknown[]
+    ) => {
+      if (typeof probed === "string" && probed.endsWith("/Never Arrives.md")) {
+        targetProbes += 1;
+      }
+      return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
+    }) as unknown as typeof fs.realpath);
+
+    clock.advance(startupAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let attempt = 0; attempt < maximumAbsenceConfirmationAttempts; attempt += 1) {
+      settled = await workspace.reconcileNow();
+      if (!tabPaths(settled).includes("Never Arrives.md")) break;
+      clock.advance(absenceConfirmationIntervalMs + 1);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Never Arrives.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
+    expect(targetProbes).toBeLessThanOrEqual(maximumAbsenceConfirmationAttempts);
+    expect(clock.now() - startedAt).toBeLessThanOrEqual(
+      startupAbsenceSettleMs +
+        maximumAbsenceConfirmationAttempts * (absenceConfirmationIntervalMs + 1) +
+        1,
+    );
+  });
+
+  it("caps startup extensions even when exact-path activity never becomes quiet", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Still Syncing.md"],
+      pinnedPaths: ["Still Syncing.md"],
+      activePath: "Still Syncing.md",
+    });
+    const clock = manualClock();
+    const startedAt = clock.now();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.watcher.close();
+    let syncingActivity = 0;
+    vi.spyOn(workspace.watcher, "activityVersionForPath").mockImplementation((filePath) =>
+      filePath === "Still Syncing.md" ? syncingActivity : 0,
+    );
+
+    const activityStepMs = startupAbsenceSettleMs / 2;
+    while (clock.now() - startedAt < startupAbsenceMaximumSettleMs) {
+      clock.advance(activityStepMs);
+      syncingActivity += 1;
+      await workspace.reconcileNow();
+    }
+    let settled = await workspace.getSnapshot();
+    for (let attempt = 0; attempt < maximumAbsenceConfirmationAttempts; attempt += 1) {
+      syncingActivity += 1;
+      settled = await workspace.reconcileNow();
+      if (!tabPaths(settled).includes("Still Syncing.md")) break;
+      clock.advance(absenceConfirmationIntervalMs + 1);
+    }
+
+    expect(tabPaths(settled)).not.toContain("Still Syncing.md");
+    expect(clock.now() - startedAt).toBeLessThanOrEqual(
+      startupAbsenceMaximumSettleMs +
+        maximumAbsenceConfirmationAttempts * (absenceConfirmationIntervalMs + 1),
+    );
+  });
 
   it("keeps the tab when an external replacement lands before the batch is handled", async () => {
     const store = new MemoryWorkspaceStateStore();
@@ -3335,7 +3606,8 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
 
   it("keeps the tab when the confirming re-read cannot tell", async () => {
     const store = new MemoryWorkspaceStateStore();
-    const workspace = await openPinnedPair(store);
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
     const target = path.join(vaultPath, "Welcome.md");
     const asidePath = path.join(sandboxPath, "Welcome.md.aside");
     await fs.rename(target, asidePath);
@@ -3358,7 +3630,7 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
       return (realpath as (...args: unknown[]) => unknown)(target, ...rest);
     }) as unknown as typeof fs.realpath);
 
-    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
     const blocked = await workspace.reconcileNow();
     expect(injected).toBeGreaterThan(0);
     expect(tabPaths(blocked)).toContain("Welcome.md");
@@ -3375,7 +3647,8 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
 
   it("applies the rest of a batch when one deleted path cannot be read", async () => {
     const store = new MemoryWorkspaceStateStore();
-    const workspace = await openPinnedPair(store);
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
     const realpath = fs.realpath;
     let injected = 0;
     vi.spyOn(fs, "realpath").mockImplementation((async (
@@ -3401,6 +3674,7 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     // after it is where the unreadable path is actually met.
     const applied = await workspace.reconcileNow();
     expect(injected).toBe(0);
+    clock.advance(transientAbsenceSettleMs + 1);
     const settled = await workspace.reconcileNow();
 
     expect(injected).toBeGreaterThan(0);
@@ -3490,9 +3764,10 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(tabPaths(settled)).not.toContain("Untracked.md");
   });
 
-  it("stops asking for more scans while a re-read keeps failing", async () => {
+  it("stops asking for watcher scans while bounded direct re-reads keep failing", async () => {
     const store = new MemoryWorkspaceStateStore();
-    const workspace = await openPinnedPair(store);
+    const clock = manualClock();
+    const workspace = await openPinnedPair(store, clock.now);
     const target = path.join(vaultPath, "Welcome.md");
     const asidePath = path.join(sandboxPath, "Welcome.md.aside");
     await fs.rename(target, asidePath);
@@ -3511,24 +3786,25 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
       return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
     }) as unknown as typeof fs.realpath);
     const followUps = vi.spyOn(workspace.watcher, "requestFollowUpScan");
-    const passes = 40;
-    for (let pass = 0; pass < passes; pass += 1) {
+    clock.advance(transientAbsenceSettleMs + 1);
+    for (let pass = 0; pass < maximumAbsenceConfirmationAttempts; pass += 1) {
       await workspace.reconcileNow();
+      clock.advance(absenceConfirmationIntervalMs + 1);
     }
     const requested = followUps.mock.calls.length;
     followUps.mockRestore();
     failing.mockRestore();
 
-    // An absence that cannot be read is kept, but it must not drive the watcher
-    // for as long as the filesystem stays unreadable. Re-recording it each pass
-    // would reset the count and spin at the debounce rate indefinitely.
-    expect(requested).toBeLessThan(passes / 2);
-    const held = await workspace.getSnapshot();
-    expect(tabPaths(held)).toContain("Welcome.md");
-    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
+    // Indeterminate reads consume the epoch's fixed direct-read budget. They do
+    // not request watcher scans, and a filesystem that never answers cannot hold
+    // the tab forever.
+    expect(requested).toBe(0);
+    const settled = await workspace.getSnapshot();
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual([]);
   }, 30000);
 
-  it("gives an absence its scan budget back once the filesystem answers again", async () => {
+  it("does not reset an absence epoch merely because the filesystem answers again", async () => {
     const store = new MemoryWorkspaceStateStore();
     const clock = manualClock();
     const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
@@ -3539,33 +3815,34 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     await workspace.reconcileNow();
 
     const realpath = fs.realpath;
-    let unreadable = true;
+    let targetProbe = 0;
     vi.spyOn(fs, "realpath").mockImplementation((async (
       probed: Parameters<typeof realpath>[0],
       ...rest: unknown[]
     ) => {
-      if (unreadable && typeof probed === "string" && probed.endsWith("/Welcome.md")) {
-        const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
-        error.code = "EIO";
-        throw error;
+      if (typeof probed === "string" && probed.endsWith("/Welcome.md")) {
+        targetProbe += 1;
+        if (targetProbe % 2 === 1) {
+          const error: NodeJS.ErrnoException = new Error("EIO: i/o error");
+          error.code = "EIO";
+          throw error;
+        }
       }
       return (realpath as (...args: unknown[]) => unknown)(probed, ...rest);
     }) as unknown as typeof fs.realpath);
-    for (let pass = 0; pass < 20; pass += 1) {
-      await workspace.reconcileNow();
+    const followUps = vi.spyOn(workspace.watcher, "requestFollowUpScan");
+    clock.advance(transientAbsenceSettleMs + 1);
+    let settled = await workspace.getSnapshot();
+    for (let pass = 0; pass < maximumAbsenceConfirmationAttempts; pass += 1) {
+      settled = await workspace.reconcileNow();
+      clock.advance(absenceConfirmationIntervalMs + 1);
     }
 
-    const followUps = vi.spyOn(workspace.watcher, "requestFollowUpScan");
-    await workspace.reconcileNow();
+    // EIO, absent, EIO, absent is one epoch. Definitive reads do not replenish
+    // work after an indeterminate one, so the fourth bounded read must settle it.
+    expect(targetProbe).toBe(maximumAbsenceConfirmationAttempts);
     expect(followUps.mock.calls).toHaveLength(0);
-
-    // The budget is spent on reads that answered nothing. Once the filesystem is
-    // answering again the absence has somewhere to get to, and an absence left
-    // stranded on a budget it burned while blind is one no later scan reaches.
-    unreadable = false;
-    await workspace.reconcileNow();
-    expect(followUps.mock.calls.length).toBeGreaterThan(0);
-    expect(tabPaths(await workspace.getSnapshot())).toContain("Welcome.md");
+    expect(tabPaths(settled)).not.toContain("Welcome.md");
   }, 30000);
 
   it("restores a deferred tab when the workspace is reopened mid-window", async () => {
@@ -3853,6 +4130,7 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     await workspace.reconcileNow();
     clock.advance(transientAbsenceSettleMs + 1);
     await workspace.reconcileNow();
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const confirmed = await workspace.reconcileNow();
     expect(tabPaths(confirmed)).not.toContain("Boards/Overview.canvas");
     expect(store.saved.at(-1)?.panes[0]?.openPaths).not.toContain("Boards/Overview.canvas");
@@ -3913,6 +4191,7 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(tabPaths(single)).toContain("Welcome.md");
     expect(store.saved.at(-1)?.panes[0]?.pinnedPaths).toEqual(["Welcome.md"]);
 
+    clock.advance(absenceConfirmationIntervalMs + 1);
     const confirmed = await workspace.reconcileNow();
     expect(tabPaths(confirmed)).toEqual(["Linked Note.md"]);
     expect(store.saved.at(-1)?.panes[0]?.openPaths).toEqual(["Linked Note.md"]);

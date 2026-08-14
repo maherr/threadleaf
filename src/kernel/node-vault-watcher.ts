@@ -5,6 +5,7 @@ import {
   hasHiddenVaultSegment,
   isPathInside,
   normalizeVaultDirectoryPath,
+  normalizeVaultPath,
   VaultPathPolicy,
 } from "./path-policy";
 import type { VaultTextSnapshot } from "./ports";
@@ -19,6 +20,49 @@ import {
 } from "./watch-protocol";
 
 export type VaultSnapshot = Map<string, WatchedPathState>;
+
+const maximumRememberedPathActivities = 4_096;
+
+/**
+ * The workspace path a filesystem event says is making progress.
+ *
+ * Syncthing writes a hidden `.syncthing.<name>.tmp` beside the eventual file.
+ * Hidden files still stay out of vault discovery, but that exact temporary name
+ * is useful evidence that the corresponding restored tab is still arriving.
+ * No directory-wide inference is made: activity for another path must not keep
+ * this one alive.
+ */
+export function workspacePathForFilesystemActivity(
+  fileName: string | Buffer | null,
+): string | null {
+  if (!fileName) {
+    return null;
+  }
+  const raw = fileName.toString().replaceAll("\\", "/");
+  if (!raw || raw.startsWith("/") || raw.split("/").includes("..")) {
+    return null;
+  }
+  const normalized = path.posix.normalize(raw).replace(/^\.\//, "");
+  const directory = path.posix.dirname(normalized);
+  const basename = path.posix.basename(normalized);
+  const syncthingTemporary = /^\.syncthing\.(.+)\.tmp$/u.exec(basename);
+  const candidate = syncthingTemporary
+    ? path.posix.join(directory === "." ? "" : directory, syncthingTemporary[1] ?? "")
+    : normalized;
+  const folded = candidate.toLocaleLowerCase("en-US");
+  if (
+    !candidate ||
+    hasHiddenVaultSegment(candidate) ||
+    (!folded.endsWith(".md") && !folded.endsWith(".canvas"))
+  ) {
+    return null;
+  }
+  try {
+    return normalizeVaultPath(candidate);
+  } catch {
+    return null;
+  }
+}
 
 export interface VaultBootstrapScan {
   documents: VaultTextSnapshot[];
@@ -308,6 +352,8 @@ export class NodeVaultWatcher {
   #listener: ((batch: VaultChangeBatch) => void | Promise<void>) | undefined;
   #flushTail: Promise<void> = Promise.resolve();
   #activitySinceScan = false;
+  #pathActivityVersion = 0;
+  readonly #pathActivityVersions = new Map<string, number>();
   #closed = false;
 
   private constructor(
@@ -350,6 +396,11 @@ export class NodeVaultWatcher {
     return this.#ledger;
   }
 
+  /** Monotonic activity receipt for one exact visible workspace path. */
+  activityVersionForPath(relativePath: string): number {
+    return this.#pathActivityVersions.get(normalizeVaultPath(relativePath)) ?? 0;
+  }
+
   start(listener: (batch: VaultChangeBatch) => void | Promise<void>): void {
     if (this.#closed) {
       throw new Error("Vault watcher is closed.");
@@ -359,6 +410,17 @@ export class NodeVaultWatcher {
     }
     this.#listener = listener;
     this.#watcher = watch(this.policy.rootPath, { recursive: true }, (_eventType, fileName) => {
+      const activityPath = workspacePathForFilesystemActivity(fileName);
+      if (activityPath) {
+        this.#pathActivityVersion += 1;
+        this.#pathActivityVersions.delete(activityPath);
+        this.#pathActivityVersions.set(activityPath, this.#pathActivityVersion);
+        while (this.#pathActivityVersions.size > maximumRememberedPathActivities) {
+          const oldest = this.#pathActivityVersions.keys().next().value;
+          if (oldest === undefined) break;
+          this.#pathActivityVersions.delete(oldest);
+        }
+      }
       if (fileName && hasHiddenVaultSegment(fileName.toString())) {
         return;
       }

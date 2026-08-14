@@ -9,6 +9,7 @@ import {
   diffVaultSnapshots,
   NodeVaultWatcher,
   type VaultSnapshot,
+  workspacePathForFilesystemActivity,
 } from "./node-vault-watcher";
 import { VaultPathPolicy } from "./path-policy";
 import { FixedStateRoot } from "./ports";
@@ -53,6 +54,18 @@ function state(
 function snapshot(...states: WatchedPathState[]): VaultSnapshot {
   return new Map(states.map((entry) => [entry.path, entry]));
 }
+
+describe("workspace path activity", () => {
+  it("attributes a Syncthing temporary to its exact eventual workspace path", () => {
+    expect(workspacePathForFilesystemActivity(".syncthing.Syncing.md.tmp")).toBe("Syncing.md");
+    expect(workspacePathForFilesystemActivity("Boards/.syncthing.Overview.canvas.tmp")).toBe(
+      "Boards/Overview.canvas",
+    );
+    expect(workspacePathForFilesystemActivity("Other.md")).toBe("Other.md");
+    expect(workspacePathForFilesystemActivity(".syncthing.image.png.tmp")).toBeNull();
+    expect(workspacePathForFilesystemActivity("../Outside.md")).toBeNull();
+  });
+});
 
 describe("snapshot diff", () => {
   it("pairs a unique inode move and reports edits, creates, and deletes deterministically", () => {
