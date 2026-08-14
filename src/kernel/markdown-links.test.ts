@@ -1008,6 +1008,148 @@ describe("Markdown link source parser", () => {
     ]);
   });
 
+  it("keeps renderer-visible unmatched wiki-prefix references as unmappable evidence", () => {
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const target = "../Assets/report.pdf";
+    const layouts = [
+      {
+        name: "top-level",
+        source: (usage: readonly string[], definition: string) => [...usage, "", definition],
+      },
+      {
+        name: "blockquote",
+        source: (usage: readonly string[], definition: string) => [
+          ...usage.map((line) => `> ${line}`),
+          ">",
+          `> ${definition}`,
+        ],
+      },
+      {
+        name: "nested-list-blockquote",
+        source: (usage: readonly string[], definition: string) => [
+          `- > ${usage[0] ?? ""}`,
+          ...usage.slice(1).map((line) => `  > ${line}`),
+          "  >",
+          `  > ${definition}`,
+        ],
+      },
+    ];
+    const minimalForms = [
+      { name: "ordinary", lines: ["[[asset", "]"] },
+      { name: "bang", lines: ["![[asset", "]"] },
+    ];
+
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const layout of layouts) {
+        for (const form of minimalForms) {
+          const source = layout.source(form.lines, `[asset]: ${target}`).join(ending);
+          const label = `${layout.name} ${form.name} ${JSON.stringify(ending)}`;
+          expect(renderer.render(source), label).toContain(`href="${target}"`);
+          const unmappable = parseMarkdownReferenceUsages(source).filter(
+            (usage) => usage.sourceMappable === false,
+          );
+          expect(unmappable, label).toEqual([
+            expect.objectContaining({ label: "asset", embed: false, line: 1 }),
+          ]);
+          for (const usage of unmappable) {
+            expect(usage.sourceRanges, label).toBeUndefined();
+            expect(usage.labelSourceRanges, label).toBeUndefined();
+          }
+        }
+      }
+    }
+
+    const longLabel = "a".repeat(999);
+    const edgeCases = [
+      {
+        name: "one-backslash escaped opener",
+        lines: ["\\[[asset]]"],
+        definitionLabel: "asset",
+        label: "asset",
+        expected: 1,
+      },
+      {
+        name: "whitespace and case",
+        lines: ["[[ \t ASSET ", "]"],
+        definitionLabel: " aSsEt ",
+        label: "asset",
+        expected: 1,
+      },
+      {
+        name: "escaped label close",
+        lines: ["[[asset\\]", "]"],
+        definitionLabel: "asset\\]",
+        label: "asset]",
+        expected: 1,
+      },
+      {
+        name: "collapsed close",
+        lines: ["[[asset", "][]"],
+        definitionLabel: "asset",
+        label: "asset",
+        expected: 1,
+      },
+      {
+        name: "extra close",
+        lines: ["[[asset", "]]"],
+        definitionLabel: "asset",
+        label: "asset",
+        expected: 1,
+      },
+      {
+        name: "999-character label",
+        lines: [`[[${longLabel}`, "]"],
+        definitionLabel: longLabel,
+        label: longLabel,
+        expected: 1,
+      },
+      {
+        name: "mixed ordinary and bang events",
+        lines: ["[[asset", "] ![[asset", "]"],
+        definitionLabel: "asset",
+        label: "asset",
+        expected: 2,
+      },
+    ];
+
+    for (const edgeCase of edgeCases) {
+      const source = [...edgeCase.lines, "", `[${edgeCase.definitionLabel}]: ${target}`].join("\n");
+      expect(renderer.render(source), edgeCase.name).toContain(`href="${target}"`);
+      const unmappable = parseMarkdownReferenceUsages(source).filter(
+        (usage) => usage.sourceMappable === false,
+      );
+      expect(unmappable, edgeCase.name).toHaveLength(edgeCase.expected);
+      for (const usage of unmappable) {
+        expect(usage, edgeCase.name).toEqual(
+          expect.objectContaining({ label: edgeCase.label, embed: false, line: 1 }),
+        );
+        expect(usage.sourceRanges, edgeCase.name).toBeUndefined();
+        expect(usage.labelSourceRanges, edgeCase.name).toBeUndefined();
+      }
+    }
+
+    const ordinaryReference = ["[missing] [asset]", "", `[asset]: ${target}`].join("\n");
+    expect(renderer.render(ordinaryReference)).toContain(`href="${target}"`);
+    expect(
+      parseMarkdownReferenceUsages(ordinaryReference).filter(
+        (usage) => usage.sourceMappable === false,
+      ),
+    ).toEqual([]);
+
+    for (const control of ["[[asset]]", "![[asset]]", "\\\\[[asset]]", "\\\\![[asset]]"]) {
+      const source = [control, "", `[asset]: ${target}`].join("\n");
+      expect(parseMarkdownReferenceUsages(source), control).toEqual([]);
+      expect(parseMarkdownLinks(source), control).toEqual(
+        expect.arrayContaining([expect.objectContaining({ sourceKind: "wiki" })]),
+      );
+    }
+  });
+
   it("maps renderer-live wrapped reference labels when their target shares the definition segment", () => {
     const renderer = new MarkdownIt({
       breaks: false,

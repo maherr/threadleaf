@@ -1375,6 +1375,25 @@ function parseReferenceUsageCandidates(
   return usages;
 }
 
+/**
+ * A complete single-line wiki span has already been masked before generic
+ * reference scanning. If one remains, Threadleaf declined it as a wiki span
+ * (for example because its opener is escaped or incomplete), while MarkdownIt
+ * can still surface an inner reference token. Keep that renderer-only token
+ * as opaque evidence instead of assigning it a guessed source range.
+ */
+function hasUnrecognizedWikiPrefix(source: string, maskedSource: string): boolean {
+  const sourceLines = source.split(/\r\n|\r|\n/u);
+  const maskedLines = maskedSource.split(/\r\n|\r|\n/u);
+  if (sourceLines.length !== maskedLines.length) return false;
+  return sourceLines.some((sourceLine, index) => {
+    const angleMasked = maskInlineAngleTokens(maskedLines[index] ?? "");
+    const wikiLinks = parseWikiLinks(sourceLine, angleMasked, 0, index + 1);
+    const searchable = maskParsedLinkRanges(angleMasked, wikiLinks, 0);
+    return searchable.includes("[[");
+  });
+}
+
 function rendererMappedReferenceUsages(
   content: string,
   maskedContent: string,
@@ -1388,9 +1407,6 @@ function rendererMappedReferenceUsages(
       logical.content.length === logicalMasked.content.length
         ? parseReferenceUsageCandidates(logical.content, logicalMasked.content)
         : [];
-    const hasLogicalMultilineUsage = logicalUsages.some((usage) =>
-      logicalRangeSpansRendererSegments(logical.segments, usage.position, usage.end),
-    );
     const tokenContentMatches = logicalMasked.content === context.content;
     const exactRendererSequence =
       tokenContentMatches &&
@@ -1401,12 +1417,16 @@ function rendererMappedReferenceUsages(
           usage.embed === context.usages[index]?.embed,
       );
     if (!exactRendererSequence) {
-      // Do not let a same-label lookalike steal a later renderer token. An
-      // unmatched renderer-visible hard-wrapped reference is explicit source
-      // evidence, and the attachment planner blocks source-related instances
-      // below. A paragraph that contains only physical-line candidates must
-      // stay out of this renderer-only path.
-      if (hasLogicalMultilineUsage) {
+      // Do not let a same-label lookalike steal a later renderer token. A
+      // complete wiki span has already been masked, so a remaining wiki-like
+      // opener makes every unmatched renderer token opaque evidence. This
+      // covers physical hard wraps and one-line escaped or incomplete openers
+      // without changing ordinary independent reference candidates.
+      const hasUnrecognizedPrefix = hasUnrecognizedWikiPrefix(
+        logical.content,
+        logicalMasked.content,
+      );
+      if (hasUnrecognizedPrefix) {
         usages.push(
           ...context.usages.map((expected) => ({
             label: expected.label,

@@ -3436,6 +3436,220 @@ describe("attachment move planning", () => {
     expect(plan.writes.some((write) => write.path === unrelatedPath)).toBe(false);
   });
 
+  it("blocks renderer-visible unmatched wiki-prefix source evidence without scheduling unsafe writes", async () => {
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes),
+      fs.writeFile(path.join(vaultPath, "Assets", "other.pdf"), pdfBytes),
+    ]);
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const target = "../Assets/report.pdf";
+    const sourceNotes: Array<{ path: string; content: string; name: string }> = [];
+    const layouts = [
+      {
+        name: "top-level",
+        source: (usage: readonly string[], definition: string) => [...usage, "", definition],
+      },
+      {
+        name: "blockquote",
+        source: (usage: readonly string[], definition: string) => [
+          ...usage.map((line) => `> ${line}`),
+          ">",
+          `> ${definition}`,
+        ],
+      },
+      {
+        name: "nested-list-blockquote",
+        source: (usage: readonly string[], definition: string) => [
+          `- > ${usage[0] ?? ""}`,
+          ...usage.slice(1).map((line) => `  > ${line}`),
+          "  >",
+          `  > ${definition}`,
+        ],
+      },
+    ];
+    const forms = [
+      { name: "ordinary", lines: ["[[asset", "]"] },
+      { name: "bang", lines: ["![[asset", "]"] },
+    ];
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const layout of layouts) {
+        for (const form of forms) {
+          const suffix = ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr";
+          const name = `${layout.name}-${form.name}-${suffix}`;
+          sourceNotes.push({
+            path: `Notes/Unmatched wiki ${name}.md`,
+            content: layout.source(form.lines, `[asset]: ${target}`).join(ending),
+            name,
+          });
+        }
+      }
+    }
+    const longLabel = "a".repeat(999);
+    for (const edgeCase of [
+      { name: "one-backslash", lines: ["\\[[asset]]"], definitionLabel: "asset" },
+      {
+        name: "whitespace-case",
+        lines: ["[[ \t ASSET ", "]"],
+        definitionLabel: " aSsEt ",
+      },
+      {
+        name: "escaped-label-close",
+        lines: ["[[asset\\]", "]"],
+        definitionLabel: "asset\\]",
+      },
+      { name: "collapsed", lines: ["[[asset", "][]"], definitionLabel: "asset" },
+      { name: "extra-close", lines: ["[[asset", "]]"], definitionLabel: "asset" },
+      {
+        name: "long-label",
+        lines: [`[[${longLabel}`, "]"],
+        definitionLabel: longLabel,
+      },
+      {
+        name: "mixed-event",
+        lines: ["[[asset", "] ![[asset", "]"],
+        definitionLabel: "asset",
+      },
+    ]) {
+      sourceNotes.push({
+        path: `Notes/Unmatched wiki ${edgeCase.name}.md`,
+        content: [...edgeCase.lines, "", `[${edgeCase.definitionLabel}]: ${target}`].join("\n"),
+        name: edgeCase.name,
+      });
+    }
+    const dormantNotes = [
+      {
+        path: "Notes/Unmatched wiki unrelated.md",
+        content: ["[[asset", "]", "", "[asset]: ../Assets/other.pdf"].join("\n"),
+      },
+      {
+        path: "Notes/Unmatched wiki external.md",
+        content: ["[[asset", "]", "", "[asset]: https://example.test/report.pdf"].join("\n"),
+      },
+      {
+        path: "Notes/Complete wiki ordinary.md",
+        content: ["[[asset]]", "", `[asset]: ${target}`].join("\n"),
+      },
+      {
+        path: "Notes/Complete wiki bang.md",
+        content: ["![[asset]]", "", `[asset]: ${target}`].join("\n"),
+      },
+      {
+        path: "Notes/Complete wiki two-backslash.md",
+        content: ["\\\\[[asset]]", "", `[asset]: ${target}`].join("\n"),
+      },
+    ];
+    await Promise.all([
+      ...sourceNotes.map((note) =>
+        fs.writeFile(path.join(vaultPath, note.path), note.content, "utf8"),
+      ),
+      ...dormantNotes.map((note) =>
+        fs.writeFile(path.join(vaultPath, note.path), note.content, "utf8"),
+      ),
+    ]);
+    for (const note of sourceNotes) {
+      expect(renderer.render(note.content), note.name).toContain(`href="${target}"`);
+      expect(
+        parseMarkdownReferenceUsages(note.content).some((usage) => usage.sourceMappable === false),
+        note.name,
+      ).toBe(true);
+    }
+    for (const note of dormantNotes) {
+      if (note.path.includes("Complete wiki")) {
+        expect(parseMarkdownReferenceUsages(note.content), note.path).toEqual([]);
+      } else {
+        expect(renderer.render(note.content), note.path).toContain("href=");
+        expect(
+          parseMarkdownReferenceUsages(note.content).some(
+            (usage) => usage.sourceMappable === false,
+          ),
+          note.path,
+        ).toBe(true);
+      }
+    }
+
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected renderer-evidence source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/unmatched-wiki-evidence.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", rewrites: [], writes: [] });
+    if (plan.status !== "planned") throw new Error("Expected renderer-evidence planner output.");
+    for (const note of sourceNotes) {
+      expect(plan.blockers, note.name).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ documentPath: note.path, reason: "unsupported" }),
+        ]),
+      );
+    }
+    for (const note of dormantNotes) {
+      expect(
+        plan.blockers.some((blocker) => blocker.documentPath === note.path),
+        note.path,
+      ).toBe(false);
+      expect(
+        plan.rewrites.some((rewrite) => rewrite.documentPath === note.path),
+        note.path,
+      ).toBe(false);
+      expect(
+        plan.writes.some((write) => write.path === note.path),
+        note.path,
+      ).toBe(false);
+    }
+    await expect(
+      moveBinaryAttachment(
+        kernel,
+        "Assets/report.pdf",
+        "Archive/unmatched-wiki-evidence.pdf",
+        source.snapshot.revision,
+        { plan, acceptCurrentRewrites: true },
+      ),
+    ).resolves.toMatchObject({ status: "blocked" });
+    for (const note of [...sourceNotes, ...dormantNotes]) {
+      await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(
+        note.content,
+      );
+    }
+    await expect(
+      fs.stat(path.join(vaultPath, "Archive", "unmatched-wiki-evidence.pdf")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps independently parsed missing references from becoming unmappable evidence", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const notePath = "Notes/Independent missing reference.md";
+    const before = ["[missing] [asset]", "", "[asset]: ../Assets/report.pdf"].join("\n");
+    const after = ["[missing] [asset]", "", "[asset]: ../Archive/independent-reference.pdf"].join(
+      "\n",
+    );
+    await fs.writeFile(path.join(vaultPath, notePath), before, "utf8");
+    expect(
+      parseMarkdownReferenceUsages(before).filter((usage) => usage.sourceMappable === false),
+    ).toEqual([]);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready")
+      throw new Error("Expected independent-reference source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/independent-reference.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned")
+      throw new Error("Expected independent-reference planner output.");
+    expect(plan.writes).toContainEqual(expect.objectContaining({ path: notePath, content: after }));
+  });
+
   it("blocks source-only attachment definitions inside renderer-recognized trimmed frontmatter", async () => {
     await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
     const notes: Array<{ path: string; content: string }> = [];
