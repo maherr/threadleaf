@@ -244,6 +244,74 @@ describe("native extension manifest and capability host", () => {
     await host.close();
   });
 
+  it("delivers exactly 4096 UTF-16 code units", async () => {
+    const messages: string[] = [];
+    const host = createNativeExtensionTestHost({
+      ports: {
+        vault: fakeVault().port,
+        notifications: bindNativeNotificationPort((message) => {
+          messages.push(message);
+        }),
+      },
+    });
+    const fixture = bundle("notification-max-length", ["notifications"], async (context) =>
+      context.notifications.show("x".repeat(4096)),
+    );
+    host.register(fixture);
+    await host.grant(vaultId, "notification-max-length");
+    await expect(
+      host.execute(vaultId, "notification-max-length", undefined),
+    ).resolves.toBeUndefined();
+    expect(messages).toEqual(["x".repeat(4096)]);
+    await host.close();
+  });
+
+  it("rejects 4097 UTF-16 code units without touching the notification sink", async () => {
+    const messages: string[] = [];
+    const host = createNativeExtensionTestHost({
+      ports: {
+        vault: fakeVault().port,
+        notifications: bindNativeNotificationPort((message) => {
+          messages.push(message);
+        }),
+      },
+    });
+    const fixture = bundle("notification-over-limit", ["notifications"], async (context) =>
+      context.notifications.show("x".repeat(4097)),
+    );
+    host.register(fixture);
+    await host.grant(vaultId, "notification-over-limit");
+    await expectCode(
+      host.execute(vaultId, "notification-over-limit", undefined),
+      "invalid-request",
+    );
+    expect(messages).toEqual([]);
+    await host.close();
+  });
+
+  it("rejects non-string inputs with invalid-request without touching the sink", async () => {
+    const messages: string[] = [];
+    const host = createNativeExtensionTestHost({
+      ports: {
+        vault: fakeVault().port,
+        notifications: bindNativeNotificationPort((message) => {
+          messages.push(message);
+        }),
+      },
+    });
+    const fixture = bundle("notification-non-string-input", ["notifications"], async (context) => {
+      await context.notifications.show(12 as unknown as string);
+    });
+    host.register(fixture);
+    await host.grant(vaultId, "notification-non-string-input");
+    await expectCode(
+      host.execute(vaultId, "notification-non-string-input", undefined),
+      "invalid-request",
+    );
+    expect(messages).toEqual([]);
+    await host.close();
+  });
+
   it("binds grants to exact bytes and requires re-review when authority grows", async () => {
     const fake = fakeVault();
     const host = hostWith(fake.port);
