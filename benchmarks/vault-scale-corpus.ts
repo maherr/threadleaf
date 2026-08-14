@@ -522,6 +522,25 @@ export async function verifyVaultScaleCorpus(
   ) {
     throw new Error("Generated vault-scale note-size or visibility statistics differ.");
   }
+  let bucketOffset = 0;
+  for (const bucket of expected.noteSizeDistribution.buckets) {
+    const segment = noteSizes.slice(bucketOffset, bucketOffset + bucket.count);
+    const segmentMinimum = segment.length > 0 ? Math.min(...segment) : null;
+    const segmentMaximum = segment.length > 0 ? Math.max(...segment) : null;
+    if (
+      segment.length !== bucket.count ||
+      segmentMinimum !== bucket.minimumBytes ||
+      segmentMaximum !== bucket.maximumBytes
+    ) {
+      throw new Error(
+        `Generated vault-scale note sizes for the "${bucket.label}" bucket differ from the ` +
+          `manifest: expected ${bucket.count} notes spanning [${bucket.minimumBytes}, ` +
+          `${bucket.maximumBytes}], found ${segment.length} spanning [${segmentMinimum}, ` +
+          `${segmentMaximum}].`,
+      );
+    }
+    bucketOffset += bucket.count;
+  }
   for (const sample of expected.sampleFiles) {
     const bytes = await fs.readFile(path.join(absoluteOutput, "vault", ...sample.path.split("/")));
     if (bytes.length !== sample.bytes || sha256(bytes) !== sample.sha256) {
