@@ -66,6 +66,10 @@ import {
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
 import {
+  measureSerializableValue,
+  type WorkspaceOpenDiagnostics,
+} from "../shared/workspace-open-diagnostics";
+import {
   createDefaultVaultWorkspaceSettings,
   defaultNotePath,
   parseVaultWorkspaceSettings,
@@ -142,6 +146,8 @@ export interface WorkspaceRuntimeOptions {
    * callers leave it unset.
    */
   now?: () => number;
+  /** Optional monotonic diagnostics recorder. Production enables it only by flag. */
+  diagnostics?: WorkspaceOpenDiagnostics;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -890,6 +896,7 @@ export class WorkspaceRuntime {
   readonly #retainedCanvases = new Map<string, WorkspaceCanvasSnapshot>();
   #reconcilePass = 0;
   readonly #now: () => number;
+  readonly #diagnostics: WorkspaceOpenDiagnostics | undefined;
   /**
    * One timer for the whole runtime, set for the earliest direct confirmation.
    * Without it, an otherwise idle vault would never revisit a deletion after its
@@ -926,6 +933,7 @@ export class WorkspaceRuntime {
     workspacePersistedState: PersistedWorkspaceState | null | undefined,
     workspaceLoadWarning: string | null,
     workspaceSettings: VaultWorkspaceSettings,
+    diagnostics: WorkspaceOpenDiagnostics | undefined,
     now: () => number = Date.now,
   ) {
     this.#now = now;
@@ -941,6 +949,7 @@ export class WorkspaceRuntime {
     this.#workspacePersistedState = workspacePersistedState;
     this.#workspaceSettings = workspaceSettings;
     this.#workspaceLoadWarning = workspaceLoadWarning;
+    this.#diagnostics = diagnostics;
     this.#releaseActions.push(
       this.actions.register("threadleaf-workspace", {
         id: "workspace.create-note",
@@ -1067,12 +1076,19 @@ export class WorkspaceRuntime {
     });
     await options.beforeWorkspaceStateRestore?.(kernel.vaultId);
     let runtime: WorkspaceRuntime | undefined;
-    const bootstrap = await captureVaultBootstrap(kernel.paths);
+    const bootstrap = await captureVaultBootstrap(kernel.paths, options.diagnostics);
     const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, bootstrap.snapshot, {
       onError: (error) => runtime?.recordWatcherError(error),
       transientAbsences: kernel.transientAbsences,
+      ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}),
     });
+    const parseIndexStartedAt = options.diagnostics?.now();
     const indexReactor = await VaultIndexReactor.fromSnapshotsAsync(kernel, bootstrap.documents);
+    if (options.diagnostics && parseIndexStartedAt !== undefined) {
+      options.diagnostics.addSpan("parse-index", parseIndexStartedAt, {
+        documents: bootstrap.documents.length,
+      });
+    }
     bootstrap.documents.length = 0;
     const pluginHost = options.pluginRuntimeFactory
       ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
@@ -1119,6 +1135,7 @@ export class WorkspaceRuntime {
       workspaceStateReadable ? persistedWorkspace : undefined,
       workspaceLoadWarning,
       workspaceSettings,
+      options.diagnostics,
       options.now ?? Date.now,
     );
 
@@ -3460,6 +3477,7 @@ export class WorkspaceRuntime {
   }
 
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
+    const snapshotStartedAt = this.#diagnostics?.now();
     const index = this.indexReactor.index.snapshot();
     const visibleFiles = await this.visibleVaultFiles();
     const canvasPaths = visibleFiles.filter(isCanvasPath);
@@ -3713,7 +3731,7 @@ export class WorkspaceRuntime {
         this.#retainedCanvases.delete(filePath);
       }
     }
-    return {
+    const snapshot: NonNullable<RuntimeSnapshot["workspace"]> = {
       state: this.#watcherError ? "degraded" : "ready",
       indexGeneration: this.indexReactor.index.generation,
       files,
@@ -3731,5 +3749,22 @@ export class WorkspaceRuntime {
         error: this.#watcherError,
       },
     };
+    if (this.#diagnostics && snapshotStartedAt !== undefined) {
+      const shape = measureSerializableValue(snapshot);
+      this.#diagnostics.addMetric("snapshot.payload", 0, {
+        bytes: shape.bytes,
+        attributes: {
+          arrays: shape.arrays,
+          objects: shape.objects,
+          scalars: shape.scalars,
+        },
+      });
+      this.#diagnostics.addSpan("snapshot.construction", snapshotStartedAt, {
+        files: snapshot.files.length,
+        payloadBytes: shape.bytes,
+        payloadObjects: shape.objects,
+      });
+    }
+    return snapshot;
   }
 }

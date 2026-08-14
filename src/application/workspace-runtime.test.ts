@@ -8,6 +8,7 @@ import type { KernelFaultInjector } from "../kernel/vault-kernel";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
+import { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import {
   absenceConfirmationIntervalMs,
@@ -268,6 +269,39 @@ async function openRuntime(
 }
 
 describe("WorkspaceRuntime", () => {
+  it("partitions parse/index and snapshot construction without wall-clock assertions", async () => {
+    const diagnostics = new WorkspaceOpenDiagnostics();
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      diagnostics,
+    });
+
+    const snapshot = await runtime.getSnapshot();
+    const captured = diagnostics.snapshot();
+
+    expect(captured.spans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "bootstrap.filesystem" }),
+        expect.objectContaining({
+          name: "parse-index",
+          attributes: { documents: snapshot.vault.markdownFileCount },
+        }),
+        expect.objectContaining({
+          name: "snapshot.construction",
+          attributes: expect.objectContaining({
+            files: snapshot.workspace?.files.length,
+            payloadBytes: expect.any(Number),
+            payloadObjects: expect.any(Number),
+          }),
+        }),
+      ]),
+    );
+    expect(captured.metrics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "snapshot.payload", count: 1 })]),
+    );
+  });
+
   it("reuses one visible-file inventory across attachment-card hydration", async () => {
     await fs.mkdir(path.join(vaultPath, "Drawings"), { recursive: true });
     await fs.mkdir(path.join(vaultPath, "Assets", "Ébauche"), { recursive: true });

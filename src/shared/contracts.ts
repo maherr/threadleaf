@@ -42,6 +42,10 @@ import type {
   AppearancePackageReview,
 } from "./theme-packages";
 import type { WorkspaceLayoutSnapshot } from "./workspace-layout";
+import type {
+  WorkspaceOpenTransferAcknowledgement,
+  WorkspaceOpenTransferReceipt,
+} from "./workspace-open-diagnostics";
 import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "./workspace-settings";
 
 export type AppearanceUpdateResponse =
@@ -286,6 +290,7 @@ export interface RuntimeSnapshot {
   resourceDiagnostics?: PluginResourceDiagnostic[];
   workspace?: WorkspaceSnapshot;
   workspaceLayout?: WorkspaceLayoutSnapshot;
+  workspaceOpenDiagnostics?: WorkspaceOpenTransferReceipt;
 }
 
 export interface WorkspaceFileSummary {
@@ -1085,6 +1090,7 @@ export interface ThreadleafBridge {
   downloadAppUpdate(): Promise<AppUpdateSnapshot>;
   installAppUpdate(): Promise<AppUpdateSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  reportWorkspaceOpenDiagnostics(acknowledgement: WorkspaceOpenTransferAcknowledgement): void;
   getWorkspaceLayout(expectedVaultId?: string): Promise<WorkspaceLayoutSnapshot>;
   setWorkspaceDockCollapsed(
     dockId: "left" | "right",

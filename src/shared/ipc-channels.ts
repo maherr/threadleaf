@@ -8,6 +8,7 @@ export const ipcChannels = {
   installAppUpdate: "threadleaf:install-app-update",
   snapshot: "threadleaf:snapshot",
   snapshotChanged: "threadleaf:snapshot-changed",
+  workspaceOpenDiagnostics: "threadleaf:workspace-open-diagnostics",
   workspaceLayout: "threadleaf:workspace-layout",
   workspaceLayoutChanged: "threadleaf:workspace-layout-changed",
   setWorkspaceDockCollapsed: "threadleaf:set-workspace-dock-collapsed",

@@ -5,6 +5,7 @@ export default defineConfig({
     runner: "benchmarks/runner.ts",
     "vault-scale-corpus": "benchmarks/vault-scale-corpus.ts",
     "vault-scale-kernel": "benchmarks/vault-scale-kernel.ts",
+    "workspace-open-diagnostics": "benchmarks/workspace-open-diagnostics.ts",
   },
   outDir: ".bench-dist",
   format: ["cjs"],

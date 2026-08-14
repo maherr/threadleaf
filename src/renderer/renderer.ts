@@ -99,6 +99,7 @@ import type {
   AppearancePackageReview,
   ManagedAppearancePackageSummary,
 } from "../shared/theme-packages";
+import { measureSerializableValue } from "../shared/workspace-open-diagnostics";
 import {
   createDefaultVaultWorkspaceSettings,
   type VaultWorkspaceSettings,
@@ -8618,6 +8619,7 @@ async function togglePluginPopout(): Promise<void> {
 }
 
 function render(snapshot: RuntimeSnapshot): void {
+  const diagnosticsStartedAt = snapshot.workspaceOpenDiagnostics ? performance.now() : null;
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
   if (previousVaultId !== snapshot.vault.id) {
@@ -8847,6 +8849,14 @@ function render(snapshot: RuntimeSnapshot): void {
     runInPaneContext(pane.id, () => maybeRestoreEditorDraft(snapshot));
   }
   activatePaneContext(workspace?.activePaneId ?? "primary");
+  if (snapshot.workspaceOpenDiagnostics && diagnosticsStartedAt !== null) {
+    window.threadleaf.reportWorkspaceOpenDiagnostics({
+      phase: "rendered",
+      transferId: snapshot.workspaceOpenDiagnostics.transferId,
+      durationMs: Math.max(0, performance.now() - diagnosticsStartedAt),
+      objectCount: measureSerializableValue(snapshot).objects,
+    });
+  }
 }
 
 function clearTabDragVisual(tabsElement: HTMLElement): void {

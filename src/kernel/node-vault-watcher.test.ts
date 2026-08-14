@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import { revisionOf } from "./durability";
 import {
   captureVaultBootstrap,
@@ -299,6 +300,49 @@ describe("watch protocol", () => {
 });
 
 describe("NodeVaultWatcher", () => {
+  it("partitions bootstrap filesystem and watcher-rescan work without timing assertions", async () => {
+    await fs.writeFile(path.join(vaultPath, "Alpha.md"), "alpha", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Beta.md"), "beta", "utf8");
+    const policy = await VaultPathPolicy.open(vaultPath);
+    const diagnostics = new WorkspaceOpenDiagnostics();
+
+    const bootstrap = await captureVaultBootstrap(policy, diagnostics);
+    await captureVaultSnapshot(policy, bootstrap.snapshot, "", {
+      diagnostics,
+      reason: "fixture-rescan",
+    });
+
+    const captured = diagnostics.snapshot();
+    expect(captured.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "bootstrap.list", count: 1 }),
+        expect.objectContaining({ name: "bootstrap.realpath", count: 2 }),
+        expect.objectContaining({ name: "bootstrap.stat", count: 4 }),
+        expect.objectContaining({ name: "bootstrap.read", count: 2, bytes: 9 }),
+        expect.objectContaining({ name: "bootstrap.hash", count: 2, bytes: 9 }),
+        expect.objectContaining({
+          name: "watcher-rescan.list",
+          count: 1,
+          attributes: { reason: "fixture-rescan" },
+        }),
+        expect.objectContaining({ name: "watcher-rescan.realpath", count: 2 }),
+        expect.objectContaining({ name: "watcher-rescan.stat", count: 2 }),
+      ]),
+    );
+    expect(captured.spans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "bootstrap.filesystem",
+          attributes: { documents: 2, paths: 2 },
+        }),
+        expect.objectContaining({
+          name: "watcher-rescan.capture",
+          attributes: { paths: 2, reason: "fixture-rescan" },
+        }),
+      ]),
+    );
+  });
+
   it("seeds the index and watcher from one visible Markdown scan", async () => {
     await fs.mkdir(path.join(vaultPath, "Folder"));
     await fs.mkdir(path.join(vaultPath, ".archive"));

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { type FSWatcher, promises as fs, watch } from "node:fs";
 import path from "node:path";
+import type { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import {
   hasHiddenVaultSegment,
   isPathInside,
@@ -119,11 +120,15 @@ async function readWatchedFile(
   previous: WatchedPathState | undefined,
   includeDocument: boolean,
   attempt = 0,
+  diagnostics?: WorkspaceOpenDiagnostics,
+  metricPrefix = "watcher",
 ): Promise<{ document?: VaultTextSnapshot; state: WatchedPathState } | null> {
   const lexicalPath = policy.resolveLexical(relativePath);
   let canonicalPath: string;
   try {
-    canonicalPath = await fs.realpath(lexicalPath);
+    canonicalPath = diagnostics
+      ? await diagnostics.measure(`${metricPrefix}.realpath`, () => fs.realpath(lexicalPath))
+      : await fs.realpath(lexicalPath);
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return null;
@@ -134,7 +139,11 @@ async function readWatchedFile(
     return null;
   }
 
-  const stat = await fs.stat(canonicalPath, { bigint: true });
+  const stat = diagnostics
+    ? await diagnostics.measure(`${metricPrefix}.stat`, () =>
+        fs.stat(canonicalPath, { bigint: true }),
+      )
+    : await fs.stat(canonicalPath, { bigint: true });
   if (!stat.isFile()) {
     return null;
   }
@@ -155,8 +164,16 @@ async function readWatchedFile(
     return { state: { ...observed, revision: previous.revision } };
   }
 
-  const bytes = await fs.readFile(canonicalPath);
-  const after = await fs.stat(canonicalPath, { bigint: true });
+  const bytes = diagnostics
+    ? await diagnostics.measure(`${metricPrefix}.read`, () => fs.readFile(canonicalPath), {
+        bytes: (value) => value.byteLength,
+      })
+    : await fs.readFile(canonicalPath);
+  const after = diagnostics
+    ? await diagnostics.measure(`${metricPrefix}.stat`, () =>
+        fs.stat(canonicalPath, { bigint: true }),
+      )
+    : await fs.stat(canonicalPath, { bigint: true });
   if (
     after.dev !== stat.dev ||
     after.ino !== stat.ino ||
@@ -167,9 +184,21 @@ async function readWatchedFile(
     if (attempt >= 2) {
       throw new Error(`File kept changing while it was scanned: ${relativePath}`);
     }
-    return readWatchedFile(policy, relativePath, undefined, includeDocument, attempt + 1);
+    return readWatchedFile(
+      policy,
+      relativePath,
+      undefined,
+      includeDocument,
+      attempt + 1,
+      diagnostics,
+      metricPrefix,
+    );
   }
-  const revision = revisionOf(bytes);
+  const revision = diagnostics
+    ? diagnostics.measureSync(`${metricPrefix}.hash`, () => revisionOf(bytes), {
+        bytes: () => bytes.byteLength,
+      })
+    : revisionOf(bytes);
   return {
     state: { ...observed, revision },
     ...(includeDocument
@@ -222,39 +251,91 @@ export async function watchedPathExists(
   }
 }
 
-export async function captureVaultBootstrap(policy: VaultPathPolicy): Promise<VaultBootstrapScan> {
+export async function captureVaultBootstrap(
+  policy: VaultPathPolicy,
+  diagnostics?: WorkspaceOpenDiagnostics,
+): Promise<VaultBootstrapScan> {
+  const startedAt = diagnostics?.now();
   const snapshot: VaultSnapshot = new Map();
   const documents: VaultTextSnapshot[] = [];
-  const paths = await policy.listMarkdownPaths();
+  const paths = diagnostics
+    ? await diagnostics.measure("bootstrap.list", () => policy.listMarkdownPaths())
+    : await policy.listMarkdownPaths();
   for (const relativePath of paths) {
     if (isTransactionTemporary(path.posix.basename(relativePath))) {
       continue;
     }
-    const scanned = await readWatchedFile(policy, relativePath, undefined, true);
+    const scanned = await readWatchedFile(
+      policy,
+      relativePath,
+      undefined,
+      true,
+      0,
+      diagnostics,
+      "bootstrap",
+    );
     if (!scanned?.document) {
       continue;
     }
     snapshot.set(relativePath, scanned.state);
     documents.push(scanned.document);
   }
+  if (diagnostics && startedAt !== undefined) {
+    diagnostics.addSpan("bootstrap.filesystem", startedAt, {
+      documents: documents.length,
+      paths: paths.length,
+    });
+  }
   return { documents, snapshot };
+}
+
+export interface VaultSnapshotCaptureDiagnostics {
+  diagnostics?: WorkspaceOpenDiagnostics;
+  reason?: string;
 }
 
 export async function captureVaultSnapshot(
   policy: VaultPathPolicy,
   previous: VaultSnapshot = new Map(),
   relativeDirectory = "",
+  options: VaultSnapshotCaptureDiagnostics = {},
 ): Promise<VaultSnapshot> {
+  const startedAt = options.diagnostics?.now();
   const snapshot: VaultSnapshot = new Map();
-  const paths = await policy.listMarkdownPaths(relativeDirectory);
+  const attributes = { reason: options.reason ?? "unspecified" };
+  const paths = options.diagnostics
+    ? await options.diagnostics.measure(
+        "watcher-rescan.list",
+        () => policy.listMarkdownPaths(relativeDirectory),
+        { attributes },
+      )
+    : await policy.listMarkdownPaths(relativeDirectory);
   for (const relativePath of paths) {
     if (isTransactionTemporary(path.posix.basename(relativePath))) {
       continue;
     }
-    const state = await readWatchedState(policy, relativePath, previous.get(relativePath));
+    const state = options.diagnostics
+      ? ((
+          await readWatchedFile(
+            policy,
+            relativePath,
+            previous.get(relativePath),
+            false,
+            0,
+            options.diagnostics,
+            "watcher-rescan",
+          )
+        )?.state ?? null)
+      : await readWatchedState(policy, relativePath, previous.get(relativePath));
     if (state) {
       snapshot.set(relativePath, state);
     }
+  }
+  if (options.diagnostics && startedAt !== undefined) {
+    options.diagnostics.addSpan("watcher-rescan.capture", startedAt, {
+      ...attributes,
+      paths: paths.length,
+    });
   }
   return snapshot;
 }
@@ -357,6 +438,7 @@ export interface NodeVaultWatcherOptions {
   onError?: (error: unknown) => void;
   /** Paths a write transaction is holding aside; see {@link TransientAbsenceRegistry}. */
   transientAbsences?: TransientAbsenceRegistry;
+  diagnostics?: WorkspaceOpenDiagnostics;
 }
 
 export class NodeVaultWatcher {
@@ -364,6 +446,7 @@ export class NodeVaultWatcher {
   readonly #sequencer: WatchBatchSequencer;
   readonly #ledger: WatchOperationLedger;
   readonly #transientAbsences: TransientAbsenceRegistry | undefined;
+  readonly #diagnostics: WorkspaceOpenDiagnostics | undefined;
   readonly #debounceMs: number;
   readonly #onError: (error: unknown) => void;
   #snapshot: VaultSnapshot;
@@ -385,6 +468,7 @@ export class NodeVaultWatcher {
     this.#debounceMs = options.debounceMs ?? 80;
     this.#onError = options.onError ?? (() => undefined);
     this.#transientAbsences = options.transientAbsences;
+    this.#diagnostics = options.diagnostics;
     this.#ledger = new WatchOperationLedger(
       options.transientAbsences ? { transientAbsences: options.transientAbsences } : {},
     );
@@ -399,7 +483,10 @@ export class NodeVaultWatcher {
     options: NodeVaultWatcherOptions = {},
   ): Promise<NodeVaultWatcher> {
     const policy = await VaultPathPolicy.open(rootPath);
-    const snapshot = await captureVaultSnapshot(policy);
+    const snapshot = await captureVaultSnapshot(policy, new Map(), "", {
+      ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}),
+      reason: "watcher-open",
+    });
     return new NodeVaultWatcher(policy, snapshot, options);
   }
 
@@ -451,7 +538,10 @@ export class NodeVaultWatcher {
     // some point inside the walk, and the transaction responsible may well have
     // finished and released its claim before the diff is annotated below.
     const since = this.#transientAbsences?.mark();
-    const next = await captureVaultSnapshot(this.policy, this.#snapshot);
+    const next = await captureVaultSnapshot(this.policy, this.#snapshot, "", {
+      ...(this.#diagnostics ? { diagnostics: this.#diagnostics } : {}),
+      reason: "watcher-scan",
+    });
     const diff = diffVaultSnapshots(this.#snapshot, next);
     this.#snapshot = next;
     if (diff.changes.length === 0 && !diff.rescan) {
@@ -474,6 +564,10 @@ export class NodeVaultWatcher {
       this.policy,
       this.#snapshot,
       normalizedDirectory,
+      {
+        ...(this.#diagnostics ? { diagnostics: this.#diagnostics } : {}),
+        reason: "watcher-subtree",
+      },
     );
     const next = new Map(this.#snapshot);
     for (const filePath of next.keys()) {
