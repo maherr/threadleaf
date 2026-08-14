@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FileManager, TFile, Vault } from "./obsidian-compat";
+import { App, CommandRegistry, FileManager, NoticeBus, TFile, Vault } from "./obsidian-compat";
+import { MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import { Workspace } from "./obsidian-workspace-compat";
 
 const temporaryDirectories: string[] = [];
@@ -155,10 +156,56 @@ describe("Obsidian workspace compatibility wedge", () => {
         workspace.openLinkText("Target#Heading", "Notes/Source.md", false, openState),
       ).resolves.toBeUndefined();
       expect(getFirstLinkpathDest).toHaveBeenCalledWith("Target#Heading", "Notes/Source.md");
-      expect(leaf.openFile).toHaveBeenCalledWith(target, openState);
+      expect(leaf.openFile).toHaveBeenCalledWith(target, {
+        state: { line: 7, subpath: "#Heading" },
+      });
+      expect(openState).toEqual({ state: { line: 7 } });
 
       await workspace.openLinkText("Missing", "Notes/Source.md");
       expect(leaf.openFile).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("openLinkText bootstraps a production leaf and preserves subpath, state, and editor state", async () => {
+    const vault = await createVault({
+      "Notes/Target.md": "zero\none two\nthree",
+    });
+    await withDocument(async () => {
+      const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
+      app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));
+      expect(app.workspace.activeLeaf).toBeNull();
+
+      await app.workspace.openLinkText("Target#Heading", "Notes/Source.md", false, {
+        eState: {
+          cursor: {
+            from: { ch: 0, line: 1 },
+            to: { ch: 3, line: 1 },
+          },
+          line: 1,
+        },
+        state: { mode: "source" },
+      });
+
+      const leaf = app.workspace.activeLeaf;
+      expect(leaf).toBeInstanceOf(WorkspaceLeaf);
+      if (!(leaf instanceof WorkspaceLeaf)) {
+        throw new Error("openLinkText did not create a production WorkspaceLeaf.");
+      }
+      expect(leaf.getViewState()).toEqual({
+        state: {
+          file: "Notes/Target.md",
+          mode: "source",
+          subpath: "#Heading",
+        },
+        type: "markdown",
+      });
+      expect(leaf.view).toBeInstanceOf(MarkdownView);
+      if (!(leaf.view instanceof MarkdownView)) {
+        throw new Error("openLinkText did not open a MarkdownView.");
+      }
+      expect(leaf.view.editor.getSelection()).toBe("one");
+      expect(leaf.view.editor.getCursor("from")).toEqual({ ch: 0, line: 1 });
+      expect(leaf.view.editor.getCursor("to")).toEqual({ ch: 3, line: 1 });
     });
   });
 

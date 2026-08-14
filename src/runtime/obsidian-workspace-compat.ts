@@ -8,6 +8,7 @@ import type { CompatibilityEventRef } from "./obsidian-components";
 
 type EventCallback = (...args: unknown[]) => unknown;
 type WorkspaceLeafFactory = (containerEl?: HTMLElement) => unknown;
+type WorkspaceLinkResolver = (linktext: string, sourcePath: string) => unknown | null;
 
 interface WorkspaceLayoutLeaf {
   id: string;
@@ -91,6 +92,7 @@ export class Workspace {
   private readonly listeners = new Map<string, Set<EventCallback>>();
   private readonly rightLeaves = new Set<unknown>();
   private leafFactory: WorkspaceLeafFactory | null = null;
+  private linkResolver: WorkspaceLinkResolver | null = null;
   private layoutReadyCallbackActive = false;
   private layoutReadyErrorHandler: ((error: unknown) => void) | null = null;
   private layoutReadyState = false;
@@ -102,6 +104,10 @@ export class Workspace {
 
   setLeafFactory(factory: WorkspaceLeafFactory): void {
     this.leafFactory = factory;
+  }
+
+  setLinkResolver(resolver: WorkspaceLinkResolver): void {
+    this.linkResolver = resolver;
   }
 
   setLayoutReadyErrorHandler(handler: (error: unknown) => void): void {
@@ -367,17 +373,25 @@ export class Workspace {
     newLeaf?: "split" | "tab" | "window" | boolean,
     openViewState?: Record<string, unknown>,
   ): Promise<void> {
-    const app = this.leafApp(this.activeLeaf);
-    const metadataCache = app?.metadataCache;
-    if (
-      !metadataCache ||
-      typeof metadataCache !== "object" ||
-      !("getFirstLinkpathDest" in metadataCache) ||
-      typeof metadataCache.getFirstLinkpathDest !== "function"
-    ) {
+    let resolver = this.linkResolver;
+    if (!resolver) {
+      const app = this.leafApp(this.activeLeaf);
+      const metadataCache = app?.metadataCache;
+      if (
+        metadataCache &&
+        typeof metadataCache === "object" &&
+        "getFirstLinkpathDest" in metadataCache &&
+        typeof metadataCache.getFirstLinkpathDest === "function"
+      ) {
+        const getFirstLinkpathDest = metadataCache.getFirstLinkpathDest;
+        resolver = (candidate, source) =>
+          getFirstLinkpathDest.call(metadataCache, candidate, source);
+      }
+    }
+    if (!resolver) {
       return;
     }
-    const file = metadataCache.getFirstLinkpathDest(linktext, sourcePath);
+    const file = resolver(linktext, sourcePath);
     if (!file) {
       return;
     }
@@ -389,7 +403,23 @@ export class Workspace {
     if (typeof openFile !== "function") {
       return;
     }
-    await openFile.call(leaf, file, openViewState);
+    const subpathIndex = linktext.indexOf("#");
+    const subpath = subpathIndex >= 0 ? linktext.slice(subpathIndex) : "";
+    const requestedState = openViewState?.state;
+    const state =
+      requestedState && typeof requestedState === "object"
+        ? (requestedState as Record<string, unknown>)
+        : {};
+    const effectiveOpenViewState = subpath
+      ? {
+          ...openViewState,
+          state: {
+            ...state,
+            subpath,
+          },
+        }
+      : openViewState;
+    await openFile.call(leaf, file, effectiveOpenViewState);
     this.setActiveLeaf(leaf);
   }
 

@@ -1092,6 +1092,13 @@ export class PluginSettingTab extends SettingTab {
   }
 }
 
+interface WorkspaceOpenViewState {
+  active?: boolean;
+  eState?: Record<string, unknown>;
+  group?: WorkspaceLeaf;
+  state?: Record<string, unknown>;
+}
+
 export class WorkspaceLeaf {
   readonly app: App;
   readonly containerEl: HTMLElement;
@@ -1166,12 +1173,21 @@ export class WorkspaceLeaf {
     }
   }
 
-  async openFile(file: TFile): Promise<void> {
+  async openFile(file: TFile, openState: WorkspaceOpenViewState = {}): Promise<void> {
     const viewType =
       this.app.compatibility.getViewTypeForExtension(file.extension) ??
       this.view?.getViewType() ??
       "markdown";
-    await this.setViewState({ type: viewType, state: { file: file.path } });
+    await this.setViewState({
+      type: viewType,
+      state: {
+        ...structuredClone(openState.state ?? {}),
+        file: file.path,
+      },
+    });
+    if (openState.eState) {
+      this.view?.setEphemeralState(structuredClone(openState.eState));
+    }
   }
 
   async rebuildView(): Promise<void> {
@@ -1597,6 +1613,39 @@ export class MarkdownView extends TextFileView {
 
   override getViewType(): string {
     return "markdown";
+  }
+
+  override setEphemeralState(state: unknown): void {
+    if (!state || typeof state !== "object") {
+      return;
+    }
+    const cursor = "cursor" in state ? state.cursor : null;
+    if (cursor && typeof cursor === "object" && "from" in cursor) {
+      const from = this.editorPosition(cursor.from);
+      const to = "to" in cursor ? this.editorPosition(cursor.to) : from;
+      if (from) {
+        this.editor.setSelection(from, to ?? from);
+        return;
+      }
+    }
+    const line = "line" in state ? state.line : null;
+    if (typeof line === "number" && Number.isFinite(line)) {
+      this.editor.setCursor({ ch: 0, line });
+    }
+  }
+
+  private editorPosition(value: unknown): EditorPosition | null {
+    if (!value || typeof value !== "object" || !("line" in value) || !("ch" in value)) {
+      return null;
+    }
+    const line = value.line;
+    const ch = value.ch;
+    return typeof line === "number" &&
+      Number.isFinite(line) &&
+      typeof ch === "number" &&
+      Number.isFinite(ch)
+      ? { ch, line }
+      : null;
   }
 }
 

@@ -1592,6 +1592,9 @@ export class App {
     this.metadataCache = new MetadataCache(vault);
     this.commands = commands;
     this.notices = notices;
+    this.workspace.setLinkResolver((linktext, sourcePath) =>
+      this.metadataCache.getFirstLinkpathDest(linktext, sourcePath),
+    );
     this.vault.on("create", (file) => {
       if (file instanceof TFile) {
         this.metadataCache.trigger("changed", file, "", this.metadataCache.getFileCache(file));
