@@ -3651,6 +3651,92 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(returned.workspace?.activeNote?.path).toBe("Welcome.md");
   });
 
+  it("navigates onto a briefly missing path rather than swallowing the Back", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    const target = path.join(vaultPath, "Welcome.md");
+    const asidePath = path.join(sandboxPath, "Welcome.md.aside");
+    await fs.rename(target, asidePath);
+    await workspace.reconcileNow();
+
+    const back = await workspace.goBack(workspace.vaultId);
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+    expect(store.saved.at(-1)?.panes[0]?.navigationHistory).toEqual({
+      back: [],
+      forward: ["Linked Note.md"],
+    });
+    // The pane says what it is waiting for rather than rendering a document it
+    // cannot read, and the tab it landed on is the selected one.
+    expect(back.workspace?.panes[0]?.activeUnavailable).toMatchObject({ path: "Welcome.md" });
+    expect(back.workspace?.panes[0]?.activeNote).toBeNull();
+    expect(back.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", active: true }),
+    );
+
+    await fs.writeFile(target, "# Welcome\n\nback again\n", "utf8");
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.panes[0]?.activeUnavailable ?? null).toBeNull();
+    expect(settled.workspace?.activeNote).toMatchObject({
+      path: "Welcome.md",
+      content: "# Welcome\n\nback again\n",
+    });
+  });
+
+  it("selects a retained tab instead of throwing out of the click", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Syncing.md"],
+      pinnedPaths: ["Syncing.md"],
+      activePath: "Welcome.md",
+    });
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    expect((await workspace.getSnapshot()).workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true, active: false }),
+    );
+
+    // Nothing has ever been read for this path in this session, so there is no
+    // retained snapshot to fall back on either. The click still has to work.
+    const clicked = await workspace.openNote("Syncing.md");
+    expect(clicked.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Syncing.md", pinned: true, active: true }),
+    );
+    expect(clicked.workspace?.panes[0]?.activeUnavailable).toEqual({
+      path: "Syncing.md",
+      title: "Syncing",
+    });
+    expect(clicked.workspace?.activeNote).toBeNull();
+
+    await fs.writeFile(path.join(vaultPath, "Syncing.md"), "# Syncing\n\nlanded\n", "utf8");
+    const landed = await workspace.reconcileNow();
+    expect(landed.workspace?.panes[0]?.activeUnavailable ?? null).toBeNull();
+    expect(landed.workspace?.activeNote).toMatchObject({
+      path: "Syncing.md",
+      content: "# Syncing\n\nlanded\n",
+    });
+  });
+
+  it("keeps a retained canvas selectable and reports it as unavailable", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Boards/Missing.canvas"],
+      activePath: "Welcome.md",
+    });
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+
+    const clicked = await workspace.openNote("Boards/Missing.canvas");
+    expect(clicked.workspace?.panes[0]?.activeUnavailable).toMatchObject({
+      path: "Boards/Missing.canvas",
+    });
+    expect(clicked.workspace?.panes[0]?.activeCanvas ?? null).toBeNull();
+    expect(clicked.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Boards/Missing.canvas", active: true }),
+    );
+  });
+
   it("observes a canvas going missing even though the watcher never diffs one", async () => {
     // The watcher snapshots Markdown only, so a canvas rename produces no diff
     // and no batch of its own. Anything that decided when to look at the vault

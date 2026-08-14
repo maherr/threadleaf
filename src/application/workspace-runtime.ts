@@ -2095,7 +2095,16 @@ export class WorkspaceRuntime {
 
   private async selectNote(request: OpenNoteRequest): Promise<void> {
     const filePath = normalizeVaultPath(request.path);
-    if (isCanvasPath(filePath)) {
+    // A tab the workspace is deliberately holding through an unconfirmed absence
+    // is one the user can see, so it is one they will click. Both branches below
+    // prove the file is there by reading it, which for such a path throws out of
+    // the click and leaves a tab that can be seen and not used. Selecting it is
+    // allowed; the pane reports it as unavailable until its file is back or its
+    // absence is confirmed, and either way the answer arrives on its own.
+    const retained = this.#unconfirmedAbsences.has(filePath) && this.tracksWorkspacePath(filePath);
+    if (retained) {
+      // Nothing to read.
+    } else if (isCanvasPath(filePath)) {
       const visible = await this.kernel.listVisiblePaths();
       if (!visible.files.includes(filePath)) {
         throw new Error(`Canvas is not present in the active vault: ${filePath}`);
@@ -3311,12 +3320,11 @@ export class WorkspaceRuntime {
       this.trackedWorkspacePaths(),
     );
     // A retained path can still be unrenderable: nothing readable was ever
-    // published for it. Such a path keeps its tab but may not hold the active
-    // selection, because the snapshot would have to read a file that is not
-    // there. A canvas has its own retained snapshots, and reading renderability
-    // from the note map alone made every canvas unrenderable the moment it went
-    // missing, so an active one lost its selection to a neighbour and did not
-    // get it back.
+    // published for it. It may hold the selection anyway - the pane says what it
+    // is waiting for instead of rendering a document - because a selection this
+    // pane was given is not something reconciliation gets to overwrite for an
+    // absence it has not confirmed. What renderability decides is which tab is
+    // picked when the pane has to choose one for itself.
     const renderablePaths =
       trackedMissing.length === 0
         ? availablePaths
@@ -3330,11 +3338,11 @@ export class WorkspaceRuntime {
     const reconciledPanes = this.#panes.map((pane) => {
       const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
       const activePath =
-        pane.activePath &&
-        openPaths.includes(pane.activePath) &&
-        renderablePaths.has(pane.activePath)
+        pane.activePath && openPaths.includes(pane.activePath)
           ? pane.activePath
-          : (openPaths.filter((filePath) => renderablePaths.has(filePath)).at(-1) ?? null);
+          : (openPaths.filter((filePath) => renderablePaths.has(filePath)).at(-1) ??
+            openPaths.at(-1) ??
+            null);
       const navigationHistory = navigationHistoryForPaths(
         pane.navigationHistory,
         retainedPaths,
@@ -3460,12 +3468,21 @@ export class WorkspaceRuntime {
     const snapshotState = reconciledState;
     const panes: WorkspacePaneSnapshot[] = await Promise.all(
       snapshotState.panes.map(async (pane) => {
+        // The selected tab may be one whose file is not there and for which
+        // nothing readable has been published this session - a tab restored on a
+        // vault that has not finished arriving, or one navigated to during an
+        // absence. Reading it is what used to throw out of here and fail the
+        // whole publish, so the pane names what it is waiting for instead.
+        const unavailablePath =
+          pane.activePath && !renderablePaths.has(pane.activePath) ? pane.activePath : null;
         const activeCanvas =
-          pane.activePath && isCanvasPath(pane.activePath)
+          !unavailablePath && pane.activePath && isCanvasPath(pane.activePath)
             ? await loadCanvasSnapshot(pane.activePath)
             : null;
         const activeNote =
-          pane.activePath && !activeCanvas ? await loadNoteSnapshot(pane.activePath) : null;
+          !unavailablePath && pane.activePath && !activeCanvas
+            ? await loadNoteSnapshot(pane.activePath)
+            : null;
         return {
           id: pane.id,
           active: pane.id === snapshotState.activePaneId,
@@ -3481,6 +3498,16 @@ export class WorkspaceRuntime {
           canGoBack: Boolean(pane.navigationHistory?.back.length),
           canGoForward: Boolean(pane.navigationHistory?.forward.length),
           ...(activeCanvas ? { activeCanvas } : {}),
+          ...(unavailablePath
+            ? {
+                activeUnavailable: {
+                  path: unavailablePath,
+                  title: isCanvasPath(unavailablePath)
+                    ? titleForJsonCanvasPath(unavailablePath)
+                    : displayTitleFromVaultPath(unavailablePath),
+                },
+              }
+            : {}),
         };
       }),
     );
@@ -3515,6 +3542,7 @@ export class WorkspaceRuntime {
       splitDirection: snapshotState.splitDirection,
       tabs: activePane.tabs,
       activeNote: activePane.activeNote,
+      ...(activePane.activeUnavailable ? { activeUnavailable: activePane.activeUnavailable } : {}),
       recoveryActionCount: this.kernel.startupRecoveryActions.length,
       watcher: {
         lastSequence: this.#lastWatchSequence,

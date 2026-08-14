@@ -469,6 +469,8 @@ export interface WorkspaceSnapshot {
   tabs: WorkspaceTabSummary[];
   /** Active-pane projection retained for one-pane consumers and compatibility plugins. */
   activeNote: WorkspaceNoteSnapshot | null;
+  /** Active-pane projection retained for one-pane consumers and compatibility plugins. */
+  activeUnavailable?: WorkspaceUnavailableEntry | null;
   recoveryActionCount: number;
   watcher: {
     lastSequence: number;
@@ -485,6 +487,20 @@ export interface WorkspacePaneSnapshot {
   canGoBack?: boolean;
   canGoForward?: boolean;
   activeCanvas?: WorkspaceCanvasSnapshot | null;
+  /**
+   * Set instead of `activeNote` or `activeCanvas` when the selected tab's file
+   * is not on disk right now and nothing readable has been published for it in
+   * this session. The workspace keeps such a tab rather than closing it on an
+   * absence it has not confirmed, so the pane has to be able to say what it is
+   * waiting for instead of rendering a document it cannot read.
+   */
+  activeUnavailable?: WorkspaceUnavailableEntry | null;
+}
+
+/** The selected tab whose file the workspace is still waiting on. */
+export interface WorkspaceUnavailableEntry {
+  path: string;
+  title: string;
 }
 
 export type CanvasUnavailableReason =

@@ -51,6 +51,7 @@ import type {
   WorkspacePropertySummary,
   WorkspaceSplitDirection,
   WorkspaceTabSummary,
+  WorkspaceUnavailableEntry,
 } from "../shared/contracts";
 import {
   type AppSettingsSnapshot,
@@ -156,6 +157,7 @@ import {
   quickSwitcherNotesFromFiles,
 } from "./quick-switcher-model";
 import { RecoveryViewController } from "./recovery-view";
+import { unavailableNoticeText } from "./unavailable-notice";
 import { vaultSearchDisplayContext } from "./vault-search-model";
 import "./styles.css";
 import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
@@ -8400,6 +8402,7 @@ function renderWorkspacePanes(
       paneUi.canvasView.hidden = true;
     }
     renderNote(displayedNote);
+    renderUnavailableNotice(displayedNote ? null : pane.activeUnavailable);
   }
 
   activatePaneContext(activePaneId);
@@ -8411,6 +8414,11 @@ function renderWorkspacePanes(
     elements.canvasView.hidden = false;
   } else {
     renderNote(displayedNote);
+    renderUnavailableNotice(
+      displayedNote
+        ? null
+        : workspace?.panes.find((pane) => pane.id === activePaneId)?.activeUnavailable,
+    );
   }
   return displayedNote;
 }
@@ -9584,6 +9592,18 @@ function renderVaultSearchResults(activePath: string | null, indexedCount: numbe
 
   if (response.results.length === 0) {
     renderEmpty(elements.fileList, "No saved note contains this search.");
+  }
+}
+
+function renderUnavailableNotice(entry: WorkspaceUnavailableEntry | null | undefined): void {
+  const text = unavailableNoticeText(entry);
+  const heading = elements.noteEmpty.querySelector("h2");
+  const detail = elements.noteEmpty.querySelector("p");
+  if (heading) {
+    heading.textContent = text.heading;
+  }
+  if (detail) {
+    detail.textContent = text.detail;
   }
 }
 
