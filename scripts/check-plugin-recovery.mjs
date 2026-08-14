@@ -157,7 +157,7 @@ async function waitForReadyPlugins(vaultPath, timeoutMs) {
       snapshot?.vault?.path === vaultPath &&
       snapshot?.workspace?.state === "ready" &&
       commandIds.has("hang") &&
-      commandIds.has("threadleaf-fixture-confirm")
+      commandIds.has("threadleaf-fixture:threadleaf-fixture-confirm")
     ) {
       return snapshot;
     }
@@ -365,7 +365,7 @@ try {
   const resourceWarning = await waitForResourceWarning(5_000);
   const rendererPidsAfter = await waitForRendererProcesses(child.pid, 3, 5_000);
   const survivor = await withTimeout(
-    evaluate('window.threadleaf.runCommand("threadleaf-fixture-confirm")'),
+    evaluate('window.threadleaf.runCommand("threadleaf-fixture:threadleaf-fixture-confirm")'),
     5_000,
     "The healthy plugin command stopped responding after its sibling timed out.",
   );
@@ -413,7 +413,7 @@ try {
   );
   assert(
     result.recovered.commands.length === 1 &&
-      result.recovered.commands[0]?.id === "threadleaf-fixture-confirm",
+      result.recovered.commands[0]?.id === "threadleaf-fixture:threadleaf-fixture-confirm",
     "The isolated recovery did not preserve the healthy plugin command.",
   );
   assert(

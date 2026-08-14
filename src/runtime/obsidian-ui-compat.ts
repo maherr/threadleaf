@@ -624,35 +624,102 @@ export interface Instruction {
   purpose: string;
 }
 
-interface ScopeKeyRegistration {
-  func: (event: KeyboardEvent) => unknown;
-  key: string;
-  modifiers: string[];
+export type Modifier = "Mod" | "Ctrl" | "Meta" | "Shift" | "Alt";
+
+export interface KeymapContext {
+  key: string | null;
+  modifiers: string | null;
+  vkey: string;
+}
+
+export interface KeymapEventHandler {
+  key: string | null;
+  modifiers: string | null;
+  scope: Scope;
+}
+
+export type KeymapEventListener = (event: KeyboardEvent, context: KeymapContext) => false | unknown;
+
+interface ScopeKeyRegistration extends KeymapEventHandler {
+  func: KeymapEventListener;
+  modifierList: Modifier[] | null;
+}
+
+function normalizedEventKey(key: string): string {
+  return key.length === 1 ? key.toLocaleLowerCase("en-US") : key;
+}
+
+function eventModifiers(event: KeyboardEvent): Modifier[] {
+  const modifiers: Modifier[] = [];
+  if (event.ctrlKey) modifiers.push("Ctrl");
+  if (event.metaKey) modifiers.push("Meta");
+  if (event.shiftKey) modifiers.push("Shift");
+  if (event.altKey) modifiers.push("Alt");
+  return modifiers;
+}
+
+function matchesModifiers(event: KeyboardEvent, modifiers: Modifier[] | null): boolean {
+  if (modifiers === null) {
+    return true;
+  }
+  const expected = new Set(
+    modifiers.map((modifier) =>
+      modifier === "Mod" ? (process.platform === "darwin" ? "Meta" : "Ctrl") : modifier,
+    ),
+  );
+  const actual = new Set(eventModifiers(event));
+  return expected.size === actual.size && [...expected].every((modifier) => actual.has(modifier));
 }
 
 export class Scope {
   readonly parent: Scope | null;
-  readonly keys: ScopeKeyRegistration[] = [];
+  private readonly keys: ScopeKeyRegistration[] = [];
 
   constructor(parent: Scope | null = null) {
     this.parent = parent;
   }
 
   register(
-    modifiers: string[],
-    key: string,
-    func: (event: KeyboardEvent) => unknown,
-  ): ScopeKeyRegistration {
-    const registration = { func, key, modifiers: [...modifiers] };
+    modifiers: Modifier[] | null,
+    key: string | null,
+    func: KeymapEventListener,
+  ): KeymapEventHandler {
+    const modifierList = modifiers ? [...modifiers] : null;
+    const registration: ScopeKeyRegistration = {
+      func,
+      key,
+      modifierList,
+      modifiers: modifierList?.join(",") ?? null,
+      scope: this,
+    };
     this.keys.push(registration);
     return registration;
   }
 
-  unregister(registration: ScopeKeyRegistration): void {
-    const index = this.keys.indexOf(registration);
+  unregister(handler: KeymapEventHandler): void {
+    const index = this.keys.indexOf(handler as ScopeKeyRegistration);
     if (index >= 0) {
       this.keys.splice(index, 1);
     }
+  }
+
+  /** @internal Dispatches within this scope only. Parent traversal belongs to Keymap. */
+  handleKeyEvent(event: KeyboardEvent): { matched: boolean; result?: unknown } {
+    const eventKey = normalizedEventKey(event.key);
+    for (const registration of [...this.keys].reverse()) {
+      if (
+        (registration.key === null || normalizedEventKey(registration.key) === eventKey) &&
+        matchesModifiers(event, registration.modifierList)
+      ) {
+        const context: KeymapContext = {
+          key: registration.key,
+          modifiers: registration.modifiers,
+          vkey: eventKey,
+        };
+        return { matched: true, result: registration.func(event, context) };
+      }
+    }
+    return { matched: false };
   }
 }
 

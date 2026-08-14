@@ -809,7 +809,7 @@ async function completeVaultExport(relativePath, label) {
 
 async function exportPublicFixtures() {
   const drawingPath = "Drawings/Unicode Scene.excalidraw.md";
-  await evaluate(cdp, `window.threadleaf.runCommand("export-image")`);
+  await evaluate(cdp, `window.threadleaf.runCommand("obsidian-excalidraw-plugin:export-image")`);
   await waitFor(
     pluginCdp,
     "document.body?.textContent?.includes('Export Drawing')",
@@ -822,7 +822,7 @@ async function exportPublicFixtures() {
     "Plugin PNG export signature is invalid.",
   );
 
-  await evaluate(cdp, `window.threadleaf.runCommand("export-image")`);
+  await evaluate(cdp, `window.threadleaf.runCommand("obsidian-excalidraw-plugin:export-image")`);
   await waitFor(
     pluginCdp,
     "document.body?.textContent?.includes('Export Drawing')",

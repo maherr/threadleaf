@@ -1232,6 +1232,8 @@ export class WorkspaceRuntime {
 
   private async snapshotWithPluginState(pluginSnapshot: RuntimeSnapshot): Promise<RuntimeSnapshot> {
     const workspace = await this.getWorkspaceSnapshot();
+    const workspaceActions = this.actions.list();
+    const workspaceActionIds = new Set(workspaceActions.map(({ id }) => id));
     return {
       ...pluginSnapshot,
       vault: {
@@ -1244,10 +1246,8 @@ export class WorkspaceRuntime {
         warning: this.warning,
       },
       actions: [
-        ...this.actions.list(),
-        ...pluginSnapshot.actions.filter(
-          (pluginAction) => !this.actions.list().some((action) => action.id === pluginAction.id),
-        ),
+        ...workspaceActions,
+        ...pluginSnapshot.actions.filter(({ id }) => !workspaceActionIds.has(id)),
       ],
       workspace,
     };

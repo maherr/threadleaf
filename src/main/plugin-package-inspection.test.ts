@@ -361,7 +361,7 @@ describe("exact plugin package inspection", () => {
       }),
     ).toBe(true);
     expect(report.registrations).toMatchObject({
-      commands: [{ id: "inspection-safe-command" }],
+      commands: [{ id: "inspection-safe:inspection-safe-command" }],
       viewTypes: ["inspection-safe-view"],
       markdownPostProcessors: 1,
     });
