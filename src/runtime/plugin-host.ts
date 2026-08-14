@@ -53,6 +53,15 @@ interface LoadedPluginRecord {
   summary: PluginSummary;
 }
 
+/**
+ * Matches the note-embed service's 8 MiB aggregate returned-Markdown budget
+ * (`DEFAULT_VAULT_NOTE_EMBED_MAX_BYTES` is 2 MiB per source note, but a full preview's returned
+ * content is bounded at 8 MiB). A settled projection's HTML can exceed its Markdown input due to
+ * tag/attribute overhead, so the note-embed *output* budget, not its per-source-note input budget,
+ * is the closer sibling cap for this feature's own output.
+ */
+export const maxMarkdownProjectionHtmlBytes = 8 * 1024 * 1024;
+
 const compatibilityHostModuleRoots = [
   "@codemirror/autocomplete",
   "@codemirror/collab",
@@ -269,10 +278,14 @@ export class PluginHost implements PluginRuntimePort {
   /**
    * Execute `pluginId`'s currently registered Markdown post processors against `content` through
    * the same `MarkdownRenderer.render` path plugins use, then discard the ephemeral render
-   * component. The settled (already-awaited) sanitizer-bound HTML crosses back on the snapshot;
-   * no DOM node, callback, or live render child survives this call. Rejects rather than returning
-   * a partial snapshot when the plugin is not loaded or its processor throws, so a caller never
-   * mistakes an unprocessed or partial result for a settled one.
+   * component. The settled (already-awaited, non-live) HTML crosses back on the snapshot; no DOM
+   * node, callback, or live render child survives this call. The returned `html` is NOT
+   * sanitized -- the processor mutates the DOM after `MarkdownRenderer.render`'s own
+   * script/attribute stripping already ran, so nothing re-sanitizes what it added before this
+   * method captures `element.innerHTML`. Callers must treat it as untrusted plugin output.
+   * Rejects rather than returning a partial snapshot when the plugin is not loaded, its processor
+   * throws, or the settled HTML exceeds {@link maxMarkdownProjectionHtmlBytes}, so a caller never
+   * mistakes an unprocessed, partial, or oversized result for a settled one.
    */
   async renderMarkdownProjection(
     pluginId: string,
@@ -310,6 +323,26 @@ export class PluginHost implements PluginRuntimePort {
       // The projection is settled and captured above; nothing will call back into this component
       // afterward, so its render children release deterministically right here.
       component.unload();
+    }
+    const htmlBytes = Buffer.byteLength(html, "utf8");
+    if (htmlBytes > maxMarkdownProjectionHtmlBytes) {
+      this.record(
+        "error",
+        createPluginDiagnostic("runtime-render-too-large", { pluginId }).message,
+      );
+      // A distinct diagnostic code, not a message-text convention: pluginDiagnosticError always
+      // reconstructs its thrown message from the stable per-code template (see
+      // plugin-diagnostics.ts), discarding whatever wording the `cause` below carries. The code
+      // survives IPC only inside that reconstructed message's `[code].` suffix -- see
+      // parsePluginDiagnosticMessage, which plugin-markdown-projection-service.ts uses to recover
+      // it reliably rather than pattern-matching arbitrary freeform text.
+      throw pluginDiagnosticError(
+        "runtime-render-too-large",
+        { pluginId },
+        new Error(
+          `Settled Markdown projection is ${htmlBytes} bytes, exceeding the ${maxMarkdownProjectionHtmlBytes} byte limit.`,
+        ),
+      );
     }
     this.record("plugin", `Rendered a settled Markdown projection for ${record.summary.name}.`);
     const snapshot = await this.getSnapshot();

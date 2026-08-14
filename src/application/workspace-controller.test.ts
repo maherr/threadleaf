@@ -94,6 +94,13 @@ class FakeRuntime implements WorkspaceRuntimePort {
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
   attachmentLoader: (() => Promise<VaultAttachmentResponse>) | null = null;
   noteEmbedLoader: (() => Promise<VaultNoteEmbedResponse>) | null = null;
+  renderedMarkdownProjection: {
+    pluginId: string;
+    sourceNotePath: string;
+    content: string;
+    expectedVaultId: string;
+  } | null = null;
+  markdownProjectionLoader: (() => Promise<PluginMarkdownProjectionResponse>) | null = null;
   closedNote: { filePath: string; expectedVaultId: string } | null = null;
   toggledTabPin: {
     filePath: string;
@@ -272,10 +279,14 @@ class FakeRuntime implements WorkspaceRuntimePort {
 
   async renderPluginMarkdownProjection(
     pluginId: string,
-    _sourceNotePath: string,
-    _content: string,
+    sourceNotePath: string,
+    content: string,
     expectedVaultId: string,
   ): Promise<PluginMarkdownProjectionResponse> {
+    this.renderedMarkdownProjection = { pluginId, sourceNotePath, content, expectedVaultId };
+    if (this.markdownProjectionLoader) {
+      return this.markdownProjectionLoader();
+    }
     if (expectedVaultId !== this.vaultId) {
       return { status: "stale-vault", vaultId: this.vaultId };
     }
@@ -995,6 +1006,48 @@ describe("WorkspaceController", () => {
       filePath: "Notes/Current.md",
       expectedVaultId,
     });
+    await controller.close();
+  });
+
+  it("forwards a settled Markdown projection request with exact arguments and returns the runtime's result verbatim", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+    const firstRuntime = harness.runtimes[0];
+    if (!firstRuntime) {
+      throw new Error("Expected the initial runtime.");
+    }
+    const distinctiveResult: PluginMarkdownProjectionResponse = {
+      status: "ready",
+      vaultId: expectedVaultId,
+      pluginId: "cite",
+      sourcePath: "Notes/Citations.md",
+      contentSha256: "b".repeat(64),
+      html: "<p>distinctive settled markup</p>",
+      postProcessorCount: 1,
+    };
+    firstRuntime.markdownProjectionLoader = () => Promise.resolve(distinctiveResult);
+
+    const response = await controller.renderPluginMarkdownProjection(
+      "cite",
+      "Notes/Citations.md",
+      "[cite: Doe 2024]",
+      expectedVaultId,
+    );
+
+    expect(firstRuntime.renderedMarkdownProjection).toEqual({
+      pluginId: "cite",
+      sourceNotePath: "Notes/Citations.md",
+      content: "[cite: Doe 2024]",
+      expectedVaultId,
+    });
+    expect(response).toBe(distinctiveResult);
     await controller.close();
   });
 

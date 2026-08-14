@@ -380,4 +380,23 @@ describe("CITE settled Reading projection", () => {
 
     await host.close();
   });
+
+  it("rejects a settled projection whose HTML exceeds the outbound size cap instead of returning it", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    exposeDom(dom);
+    const host = new PluginHost(citeVaultPath);
+    const oversizedPluginPath = path.join(citeVaultPath, ".obsidian", "plugins", "cite-oversized");
+    await host.loadPlugin(oversizedPluginPath);
+
+    await expect(
+      host.renderMarkdownProjection("cite-oversized", "Citations.md", "trigger"),
+    ).rejects.toThrow(/\[runtime-render-too-large\]\.$/u);
+
+    // The oversized HTML must never have been returned on a "successful" snapshot as a partial
+    // or truncated result -- the rejection above is the only outcome.
+    const snapshot = await host.getSnapshot();
+    expect(snapshot.plugins?.find(({ id }) => id === "cite-oversized")?.state).toBe("loaded");
+
+    await host.close();
+  });
 });

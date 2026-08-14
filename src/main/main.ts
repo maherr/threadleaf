@@ -2456,13 +2456,13 @@ function registerIpcHandlers(): void {
     ipcChannels.renderPluginMarkdownProjection,
     (
       _event,
-      pluginId: unknown,
+      pluginIdValue: unknown,
       sourceNotePath: unknown,
       content: unknown,
       expectedVaultId: unknown,
     ) => {
       if (
-        typeof pluginId !== "string" ||
+        typeof pluginIdValue !== "string" ||
         typeof sourceNotePath !== "string" ||
         typeof content !== "string" ||
         typeof expectedVaultId !== "string"
@@ -2471,11 +2471,17 @@ function registerIpcHandlers(): void {
           "Rendering a plugin Markdown projection requires string plugin, note, content, and vault values.",
         );
       }
-      return workspaceController.renderPluginMarkdownProjection(
-        pluginId,
-        sourceNotePath,
-        content,
-        expectedVaultId,
+      const pluginId = parsePluginId(pluginIdValue);
+      return serializePluginCatalogOperation(
+        () =>
+          workspaceController.renderPluginMarkdownProjection(
+            pluginId,
+            sourceNotePath,
+            content,
+            expectedVaultId,
+          ),
+        "runtime-render-failed",
+        { pluginId },
       );
     },
   );

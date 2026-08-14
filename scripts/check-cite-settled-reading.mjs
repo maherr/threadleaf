@@ -267,6 +267,9 @@ try {
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
+      // Avoid a headless/Xvfb attempt to reach a real OS keyring for Chromium's password store,
+      // which can hang or prompt with no display backend to satisfy it.
+      "--password-store=basic",
       ".",
     ],
     {
@@ -355,6 +358,15 @@ try {
       ready.citations.includes("Smith 2023"),
     `The settled projection did not decorate both citations: ${JSON.stringify(ready)}`,
   );
+  // Whole-note duplication is an honest, disclosed consequence (see
+  // docs/compatibility/open-plugin-api.md), not a defect -- assert it directly rather than
+  // leaving it undisclosed. The panel renders CITE's complete settled output for the note's full
+  // content, so a line carrying no citation marker at all must still appear in the panel body,
+  // not just the two citation-bearing lines.
+  assert(
+    ready.body.includes("This paragraph has no citation marker in it."),
+    `The settled projection did not repeat the note's full content, only its citation-bearing lines: ${JSON.stringify(ready)}`,
+  );
 
   assert(
     (await currentTheme()) === "dark",
@@ -394,20 +406,32 @@ try {
     return plugin && plugin.state !== "loaded" ? plugin : null;
   }, "CITE did not finish unloading after being disabled");
 
+  // Transit through a different note, then back to the SAME "Citations.md" note the ready
+  // screenshot used. Comparing ready-vs-disabled on two DIFFERENT notes would confound the plugin
+  // state variable with the native-content variable -- of course the screenshots would differ,
+  // since the notes themselves differ, regardless of whether the panel logic is even correct. The
+  // isolated red control needs exactly one variable to change: plugin state, same note, same
+  // theme.
   await openNoteInReadingView("No Citations.md");
+  await openNoteInReadingView("Citations.md");
   const disabled = await waitForProjectionPanel("unavailable");
   assert(
-    disabled.body.toLowerCase().includes("not"),
-    `The disabled-plugin projection state was not an honest explicit message: ${JSON.stringify(disabled)}`,
+    disabled.body === "CITE is not currently active in the compatibility runtime.",
+    `The disabled-plugin projection did not render the exact honest message: ${JSON.stringify(disabled)}`,
+  );
+  assert(
+    (await currentTheme()) === "dark",
+    "The disabled-state screenshot was not captured in the dark scheme.",
   );
   const disabledScreenshot = await captureScreenshot("cite-settled-reading-dark-disabled");
 
-  // Red control: the disabled-plugin screenshot must differ from the settled-projection
+  // Red control, isolated to the plugin-state variable alone (same note, same theme as
+  // darkReady): the disabled-plugin screenshot must differ from the settled-projection
   // screenshot. If a regression made the panel render identical content regardless of plugin
   // state, this assertion is the one that would go red and catch it.
   assert(
     !darkReady.equals(disabledScreenshot),
-    "The settled and disabled-plugin screenshots were pixel-identical; the visual check cannot distinguish the two states.",
+    "The settled and disabled-plugin screenshots of the SAME note were pixel-identical; the visual check cannot distinguish the two states.",
   );
 
   console.log(

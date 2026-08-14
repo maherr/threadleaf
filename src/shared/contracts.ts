@@ -201,9 +201,13 @@ export interface PluginIntegrationSnapshot {
 
 /**
  * A settled Markdown post-processor projection: the plugin's registered processors already ran
- * to completion inside the trusted compatibility renderer, and `html` is that sanitizer-bound
- * result, not a live callback. Bound to `pluginId` + `sourcePath` + `contentSha256` so a consumer
- * can refuse a stale result rather than showing it against different content.
+ * to completion inside the trusted compatibility renderer, so `html` is that settled (non-live,
+ * already-awaited) result, never a live callback. `html` is NOT sanitized: the plugin's processor
+ * mutates the DOM after the compatibility renderer's own script/attribute stripping runs, so
+ * nothing re-sanitizes what the processor added. Treat `html` as untrusted plugin output; every
+ * consumer must sanitize it before display (see `sanitizePluginMarkdownProjection`). Bound to
+ * `pluginId` + `sourcePath` + `contentSha256` so a consumer can refuse a stale result rather than
+ * showing it against different content.
  */
 export interface PluginMarkdownProjectionSnapshot {
   contentSha256: string;
@@ -1021,7 +1025,8 @@ export type VaultNoteEmbedResponse =
 export type PluginMarkdownProjectionUnavailableReason =
   | "plugin-disabled"
   | "processor-error"
-  | "timeout";
+  | "timeout"
+  | "too-large";
 
 /**
  * The primary-renderer-facing result of requesting an explicit settled Markdown post-processor

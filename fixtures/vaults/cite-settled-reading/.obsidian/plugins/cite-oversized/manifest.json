@@ -1,0 +1,9 @@
+{
+  "id": "cite-oversized",
+  "name": "CITE Oversized Output Fixture",
+  "version": "0.1.2",
+  "minAppVersion": "1.12.7",
+  "description": "A registered Markdown post processor that emits settled HTML past the outbound size cap, for explicit too-large evidence.",
+  "author": "Threadleaf fixtures",
+  "isDesktopOnly": false
+}

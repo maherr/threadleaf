@@ -1,9 +1,14 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import type { RuntimeSnapshot } from "../shared/contracts";
+import type { PluginMarkdownProjectionSnapshot, RuntimeSnapshot } from "../shared/contracts";
+import { pluginDiagnosticError } from "../shared/plugin-diagnostics";
 import {
   type PluginMarkdownProjectionRuntime,
   renderPluginMarkdownProjection,
 } from "./plugin-markdown-projection-service";
+
+const fixtureSourcePath = "Notes/Fixture.md";
+const fixtureContent = "[cite: Doe 2024]";
 
 function baseSnapshot(vaultId: string): RuntimeSnapshot {
   return {
@@ -51,6 +56,25 @@ function loadedCiteSnapshot(vaultId: string): RuntimeSnapshot {
   };
 }
 
+function contentSha256(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/** A correctly bound projection for the fixture's own path/content, so happy-path tests pass the
+ * identity check by default; mutation tests override exactly one field away from this baseline. */
+function matchingProjection(
+  overrides: Partial<PluginMarkdownProjectionSnapshot> = {},
+): PluginMarkdownProjectionSnapshot {
+  return {
+    contentSha256: contentSha256(fixtureContent),
+    html: "<p>settled</p>",
+    pluginId: "cite",
+    postProcessorCount: 1,
+    sourcePath: fixtureSourcePath,
+    ...overrides,
+  };
+}
+
 function fakeRuntime(
   vaultId: string,
   overrides: Partial<PluginMarkdownProjectionRuntime> = {},
@@ -61,13 +85,7 @@ function fakeRuntime(
     renderMarkdownProjection: () =>
       Promise.resolve({
         ...loadedCiteSnapshot(vaultId),
-        markdownProjection: {
-          contentSha256: "a".repeat(64),
-          html: "<p>settled</p>",
-          pluginId: "cite",
-          postProcessorCount: 1,
-          sourcePath: "Notes/Fixture.md",
-        },
+        markdownProjection: matchingProjection(),
       }),
     ...overrides,
   };
@@ -79,16 +97,16 @@ describe("renderPluginMarkdownProjection", () => {
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
-      "[cite: Doe 2024]",
+      fixtureSourcePath,
+      fixtureContent,
       "vault-a",
     );
     expect(response).toEqual({
       status: "ready",
       vaultId: "vault-a",
       pluginId: "cite",
-      sourcePath: "Notes/Fixture.md",
-      contentSha256: "a".repeat(64),
+      sourcePath: fixtureSourcePath,
+      contentSha256: contentSha256(fixtureContent),
       html: "<p>settled</p>",
       postProcessorCount: 1,
     });
@@ -99,7 +117,7 @@ describe("renderPluginMarkdownProjection", () => {
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
       "vault-b",
     );
@@ -117,23 +135,14 @@ describe("renderPluginMarkdownProjection", () => {
         // Simulate the active vault switching while the settled render was in flight.
         const snapshot = loadedCiteSnapshot(currentVaultId);
         currentVaultId = "vault-b";
-        return {
-          ...snapshot,
-          markdownProjection: {
-            contentSha256: "a".repeat(64),
-            html: "<p>settled</p>",
-            pluginId: "cite",
-            postProcessorCount: 1,
-            sourcePath: "Notes/Fixture.md",
-          },
-        };
+        return { ...snapshot, markdownProjection: matchingProjection() };
       },
     };
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
-      "[cite: Doe 2024]",
+      fixtureSourcePath,
+      fixtureContent,
       "vault-a",
     );
     expect(response).toEqual({ status: "stale-vault", vaultId: "vault-b" });
@@ -157,7 +166,7 @@ describe("renderPluginMarkdownProjection", () => {
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
       "vault-a",
     );
@@ -188,7 +197,7 @@ describe("renderPluginMarkdownProjection", () => {
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
       "vault-a",
     );
@@ -211,7 +220,7 @@ describe("renderPluginMarkdownProjection", () => {
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
       "vault-a",
     );
@@ -225,7 +234,7 @@ describe("renderPluginMarkdownProjection", () => {
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
       "vault-a",
     );
@@ -238,16 +247,107 @@ describe("renderPluginMarkdownProjection", () => {
     });
   });
 
-  it("reports timeout honestly when the operation deadline elapses", async () => {
+  it("distinguishes runtime-render-failed from runtime-render-too-large by code, not just diagnostic-message shape", async () => {
+    // A realistic *different* diagnostic code, in the same reconstructed-message-after-IPC shape
+    // as the too-large test above. If the classification only checked "looks like a diagnostic
+    // message" rather than the specific code, this would be misreported as too-large.
+    const ordinaryFailure = pluginDiagnosticError(
+      "runtime-render-failed",
+      { pluginId: "cite" },
+      new Error("boom"),
+    );
     const runtime = fakeRuntime("vault-a", {
-      renderMarkdownProjection: () =>
-        Promise.reject(new Error("Plugin renderer operation timed out: render-markdown.")),
+      renderMarkdownProjection: () => Promise.reject(new Error(ordinaryFailure.message)),
     });
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
+      "vault-a",
+    );
+    expect(response).toMatchObject({ status: "unavailable", reason: "processor-error" });
+  });
+
+  it("reports too-large honestly when PluginHost's own outbound cap rejects the render", async () => {
+    // Simulates exactly what crosses IPC in production: pluginDiagnosticError always throws its
+    // stable per-code template, discarding the raw cause text, and only the reconstructed
+    // message (not the non-enumerable code) survives serialization -- see
+    // parsePluginDiagnosticMessage in plugin-diagnostics.ts and its usage in
+    // plugin-markdown-projection-service.ts's catch block.
+    const realisticError = pluginDiagnosticError(
+      "runtime-render-too-large",
+      { pluginId: "cite" },
+      new Error("Settled Markdown projection is 9000000 bytes, exceeding the limit."),
+    );
+    const runtime = fakeRuntime("vault-a", {
+      renderMarkdownProjection: () => Promise.reject(new Error(realisticError.message)),
+    });
+    const response = await renderPluginMarkdownProjection(
+      runtime,
+      "cite",
+      fixtureSourcePath,
+      "content",
+      "vault-a",
+    );
+    expect(response).toEqual({
+      status: "unavailable",
+      vaultId: "vault-a",
+      pluginId: "cite",
+      reason: "too-large",
+      message: "CITE's settled Markdown projection was too large to return.",
+    });
+  });
+
+  it("refuses oversized inbound content before any round trip (too-large, inbound cap)", async () => {
+    const getSnapshot = vi.fn();
+    const renderMarkdownProjection = vi.fn();
+    const runtime = fakeRuntime("vault-a", { getSnapshot, renderMarkdownProjection });
+    const oversizedContent = "x".repeat(2 * 1024 * 1024 + 1);
+
+    const response = await renderPluginMarkdownProjection(
+      runtime,
+      "cite",
+      fixtureSourcePath,
+      oversizedContent,
+      "vault-a",
+    );
+
+    expect(response).toMatchObject({ status: "unavailable", reason: "too-large" });
+    expect(getSnapshot).not.toHaveBeenCalled();
+    expect(renderMarkdownProjection).not.toHaveBeenCalled();
+  });
+
+  it("reports timeout honestly from the typed resourceDiagnostics signal, not a message guess", async () => {
+    // RecoveringPluginRuntime absorbs a real operation-deadline breach and resolves from a fresh
+    // replacement renderer (see its recover()); renderMarkdownProjection never rejects for this
+    // case in production. The only reliable signal is the merged resourceDiagnostics entry.
+    const runtime = fakeRuntime("vault-a", {
+      renderMarkdownProjection: () =>
+        Promise.resolve({
+          ...loadedCiteSnapshot("vault-a"),
+          resourceDiagnostics: [
+            {
+              pluginId: "cite",
+              reason: "operation-deadline",
+              metric: null,
+              operation: "render-markdown",
+              available: true,
+              measuredValue: 15_000,
+              configuredBudget: 15_000,
+              unit: "milliseconds",
+              sampleCount: null,
+              startedAt: new Date(0).toISOString(),
+              observedAt: new Date(0).toISOString(),
+            },
+          ],
+        }),
+    });
+    const response = await renderPluginMarkdownProjection(
+      runtime,
+      "cite",
+      fixtureSourcePath,
+      fixtureContent,
       "vault-a",
     );
     expect(response).toEqual({
@@ -259,15 +359,71 @@ describe("renderPluginMarkdownProjection", () => {
     });
   });
 
-  it("reports processor-error when the render returns a mismatched or missing projection", async () => {
+  it("reports processor-error, not timeout, when a projection is simply missing with no deadline diagnostic", async () => {
     const runtime = fakeRuntime("vault-a", {
       renderMarkdownProjection: () => Promise.resolve(loadedCiteSnapshot("vault-a")),
     });
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
+      "vault-a",
+    );
+    expect(response).toMatchObject({ status: "unavailable", reason: "processor-error" });
+  });
+
+  it("mutation-proves the pluginId binding: a projection for a different plugin id is refused", async () => {
+    const runtime = fakeRuntime("vault-a", {
+      renderMarkdownProjection: () =>
+        Promise.resolve({
+          ...loadedCiteSnapshot("vault-a"),
+          markdownProjection: matchingProjection({ pluginId: "not-cite" }),
+        }),
+    });
+    const response = await renderPluginMarkdownProjection(
+      runtime,
+      "cite",
+      fixtureSourcePath,
+      fixtureContent,
+      "vault-a",
+    );
+    expect(response).toMatchObject({ status: "unavailable", reason: "processor-error" });
+  });
+
+  it("mutation-proves the sourcePath binding: a projection for a different note is refused", async () => {
+    const runtime = fakeRuntime("vault-a", {
+      renderMarkdownProjection: () =>
+        Promise.resolve({
+          ...loadedCiteSnapshot("vault-a"),
+          markdownProjection: matchingProjection({ sourcePath: "Notes/Different.md" }),
+        }),
+    });
+    const response = await renderPluginMarkdownProjection(
+      runtime,
+      "cite",
+      fixtureSourcePath,
+      fixtureContent,
+      "vault-a",
+    );
+    expect(response).toMatchObject({ status: "unavailable", reason: "processor-error" });
+  });
+
+  it("mutation-proves the contentSha256 binding: a projection for different content is refused", async () => {
+    const runtime = fakeRuntime("vault-a", {
+      renderMarkdownProjection: () =>
+        Promise.resolve({
+          ...loadedCiteSnapshot("vault-a"),
+          markdownProjection: matchingProjection({
+            contentSha256: contentSha256("a completely different note body"),
+          }),
+        }),
+    });
+    const response = await renderPluginMarkdownProjection(
+      runtime,
+      "cite",
+      fixtureSourcePath,
+      fixtureContent,
       "vault-a",
     );
     expect(response).toMatchObject({ status: "unavailable", reason: "processor-error" });
@@ -284,7 +440,7 @@ describe("renderPluginMarkdownProjection", () => {
     const response = await renderPluginMarkdownProjection(
       runtime,
       "cite",
-      "Notes/Fixture.md",
+      fixtureSourcePath,
       "content",
       "vault-a",
     );

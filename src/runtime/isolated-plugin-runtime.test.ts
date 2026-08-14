@@ -36,6 +36,7 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   commandIdOverride: string | null = null;
   readonly loadCalls: Array<{ directory: string; hash: string | undefined }> = [];
   readonly markLayoutReady = vi.fn(async () => this.snapshot());
+  readonly renderCalls: string[] = [];
   readonly runCalls: string[] = [];
   readonly waitForPluginMutations = vi.fn(async () => this.snapshot());
   readonly instanceId: number;
@@ -71,6 +72,24 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   ): Promise<RuntimeSnapshot> {
     this.runCalls.push(commandId);
     return this.snapshot([`${this.pluginId} command completed in renderer ${this.instanceId}.`]);
+  }
+
+  async renderMarkdownProjection(
+    pluginId: string,
+    sourcePath: string,
+    _content: string,
+  ): Promise<RuntimeSnapshot> {
+    this.renderCalls.push(pluginId);
+    return {
+      ...this.snapshot(),
+      markdownProjection: {
+        contentSha256: "a".repeat(64),
+        html: "<p>settled</p>",
+        pluginId,
+        postProcessorCount: 1,
+        sourcePath,
+      },
+    };
   }
 
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
@@ -233,6 +252,38 @@ describe("IsolatedPluginRuntime", () => {
     await expect(runtime.runCommand(alpha.id)).rejects.toThrow(
       "ambiguous across isolated runtimes",
     );
+    await runtime.close();
+  });
+
+  it("does not let an ambient settled-projection render retarget a later no-arg unload/reload", async () => {
+    const created: FakeIsolatedRuntime[] = [];
+    const runtime = await IsolatedPluginRuntime.open({
+      create: async () => {
+        const instance = new FakeIsolatedRuntime(created.length + 1);
+        created.push(instance);
+        return instance;
+      },
+    });
+    await runtime.loadPlugin("/vault/.obsidian/plugins/alpha", "a".repeat(64));
+    await runtime.loadPlugin("/vault/.obsidian/plugins/cite", "b".repeat(64));
+
+    // A deliberate user action naming "alpha" is the last thing that should determine a later
+    // no-arg target.
+    await runtime.runCommand("alpha:command");
+    expect(created[0]?.runCalls).toEqual(["alpha:command"]);
+
+    // Reading view opening a note whose plugin happens to be "cite" fires this ambiently; it must
+    // not silently redirect subsequent no-arg plugin operations to "cite".
+    await runtime.renderMarkdownProjection("cite", "Notes/Fixture.md", "[cite: Doe 2024]");
+    expect(created[1]?.renderCalls).toEqual(["cite"]);
+
+    const unloaded = await runtime.unloadPlugin();
+
+    expect(created[0]?.close).toHaveBeenCalledOnce();
+    expect(created[1]?.close).not.toHaveBeenCalled();
+    expect(unloaded.plugins?.find(({ id }) => id === "alpha")?.state).toBe("unloaded");
+    expect(unloaded.plugins?.find(({ id }) => id === "cite")?.state).toBe("loaded");
+
     await runtime.close();
   });
 });

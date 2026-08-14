@@ -1357,12 +1357,35 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
 }
 
 /**
+ * Every native-control class a settled plugin projection must never carry: the five privileged
+ * classes `renderMarkdownPreview` strips from untrusted (non-render-token) elements, plus the
+ * four classes `renderer.ts` matches by `closest()` to dispatch a delegated click (source jump,
+ * note-embed open, attachment action, canvas-embed open). Neither list alone is sufficient --
+ * `renderMarkdownPreview`'s own untrusted-element pass (markdown-preview.ts) only needed the
+ * first five, because the delegated-click four are never emitted by ordinary note-content
+ * rendering in the first place. Plugin output has no such constraint.
+ */
+const strippedProjectionClasses = new Set([
+  "external-link",
+  "internal-link",
+  "preview-embed-link",
+  "preview-footnote-backref",
+  "preview-footnote-ref",
+  "preview-source-action",
+  "preview-note-embed-open",
+  "preview-attachment-action",
+  "preview-canvas-embed-open",
+]);
+
+/**
  * Sanitize an exact plugin's settled (already-executed) Markdown post-processor HTML for display
  * as a bounded, explicitly labeled Reading-view projection. Reuses the exact same allowlist as
  * ordinary note content (`sanitizeConfig`), then additionally strips every
- * `data-threadleaf-*`/`data-source-line` attribute and inert-links every anchor: plugin-produced
- * markup is never a trusted render-token source and must never be able to pose as an internal
- * link, footnote, wiki embed, or other privileged native control.
+ * `data-threadleaf-*`/`data-source-line` attribute, every privileged/delegated-click class in
+ * {@link strippedProjectionClasses}, and inert-links every anchor: plugin-produced markup is
+ * never a trusted render-token source and must never be able to pose as an internal link,
+ * footnote, wiki embed, source-jump control, or other privileged or click-delegated native
+ * control.
  */
 export function sanitizePluginMarkdownProjection(html: string): DocumentFragment {
   const fragment = DOMPurify.sanitize(html, sanitizeConfig);
@@ -1371,6 +1394,9 @@ export function sanitizePluginMarkdownProjection(html: string): DocumentFragment
       if (attribute.name.startsWith("data-threadleaf-") || attribute.name === "data-source-line") {
         element.removeAttribute(attribute.name);
       }
+    }
+    for (const className of strippedProjectionClasses) {
+      element.classList.remove(className);
     }
   }
   for (const anchor of fragment.querySelectorAll<HTMLAnchorElement>("a")) {

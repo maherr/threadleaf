@@ -156,6 +156,13 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     });
   }
 
+  /**
+   * Deliberately does not update `lastPluginId`. Unlike `runCommand`/`openPluginView`/
+   * `openPluginSettings`, this fires ambiently on every Reading-view render of a note whose
+   * plugin happens to be loaded -- never from a deliberate user action naming this plugin. Letting
+   * it retarget `lastPluginId` would silently redirect a later no-arg `unloadPlugin()` or
+   * `reloadPlugin()` to whichever plugin the user last merely had a note open for.
+   */
   renderMarkdownProjection(
     pluginId: string,
     sourcePath: string,
@@ -168,7 +175,6 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       }
       const snapshot = await slot.runtime.renderMarkdownProjection(pluginId, sourcePath, content);
       this.rememberSlotSnapshot(pluginId, snapshot);
-      this.lastPluginId = pluginId;
       return this.mergeSnapshot(pluginId, snapshot);
     });
   }

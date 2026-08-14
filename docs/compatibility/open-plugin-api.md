@@ -42,11 +42,17 @@ delivery architecture. It runs exactly the requested, already-loaded plugin's re
 processors to completion through the existing `MarkdownRenderer.render` path (the same host used by
 this document's Phase 0 evidence and the `markdown-processors-fixture` corpus), inside the trusted
 isolated compatibility renderer, then discards the ephemeral render component. The resulting
-settled DOM -- sanitized in the primary renderer through the same allowlist Reading view uses for
-ordinary note content -- crosses back on `RuntimeSnapshot.markdownProjection`, bound to the exact
-plugin ID, source path, and a SHA-256 of the rendered content. It is a point-in-time record of what
-the plugin produced, never a live callback: no render child, timer, or DOM reference from the
-compatibility renderer survives the call.
+settled DOM crosses back UNSANITIZED on `RuntimeSnapshot.markdownProjection`, bound to the exact
+plugin ID, source path, and a SHA-256 of the rendered content: a plugin's registered processor runs
+after `MarkdownRenderer.render`'s own script/attribute stripping, so nothing re-sanitizes what the
+processor added before capture. Every consumer, including the one primary-renderer consumer this
+slice ships (`sanitizePluginMarkdownProjection` in `src/renderer/markdown-preview.ts`), must
+sanitize it through the same allowlist Reading view uses for ordinary note content before display;
+that consumer also strips every privileged and delegated-click class (internal/external links,
+footnote references, source-jump and embed/attachment-open controls) so plugin output can never
+pose as a trusted native control. It is a point-in-time record of what the plugin produced, never a
+live callback: no render child, timer, or DOM reference from the compatibility renderer survives
+the call.
 
 The exact evidenced instance is the established `cite` fixture identity (name `CITE`, version
 `0.1.2`, `minAppVersion` `1.12.7`; see `src/main/plugin-package-inspection.test.ts` and
@@ -54,11 +60,29 @@ The exact evidenced instance is the established `cite` fixture identity (name `C
 post-processor bundle at `fixtures/vaults/cite-settled-reading/.obsidian/plugins/cite/`. Native
 Reading view fetches and mounts CITE's settled projection in an explicitly labeled panel beneath
 the note's own rendered content, honestly showing one of: the settled projection, an installed but
-inactive plugin, or a processor/timeout failure -- never unprocessed content silently standing in
-for a settled result. `src/runtime/obsidian-markdown-processors.test.ts` and
+inactive plugin, or a processor/timeout/too-large failure -- never unprocessed content silently
+standing in for a settled result. The panel renders CITE's complete settled output for the note's
+full current content, not an excerpt: because `render-markdown` receives the whole note (so CITE
+can see cross-paragraph context exactly as it would in a real Reading render), and the compatibility
+renderer's own `MarkdownRenderer.render` re-parses that whole note through its own Markdown-it
+instance, the panel's content -- including the note's own top-level heading -- necessarily repeats
+everything already shown natively above it. This is the honest, disclosed consequence of showing a
+plugin's genuine complete output rather than a selectively merged excerpt, not a defect; it is
+asserted directly in `scripts/check-cite-settled-reading.mjs`, which confirms the panel's body
+contains the full note's text, not only its citation-bearing lines.
+
+Both `content` sent to the compatibility renderer and the settled `html` returned from it are
+bounded: inbound `content` at 2 MiB (matching the note-embed service's own per-source-note cap),
+outbound `html` at 8 MiB (matching the note-embed service's aggregate returned-Markdown budget,
+since settled HTML can exceed its Markdown input due to tag/attribute overhead). Either bound
+crossed reports the explicit `too-large` reason rather than truncating or hanging.
+
+`src/runtime/obsidian-markdown-processors.test.ts` and
 `src/application/plugin-markdown-projection-service.test.ts` cover the settled render, its explicit
-failure states, and the vault/content staleness guard; `pnpm test:cite-settled-reading` is the
-packaged Electron/Xvfb proof that it renders visibly in both themes.
+failure states (including both size caps and the plugin ID/source path/content hash identity check
+that actually enforces the bound-result guarantee), and the vault/content staleness guard;
+`pnpm test:cite-settled-reading` is the packaged Electron/Xvfb proof that it renders visibly in both
+themes.
 
 This slice does not claim general dynamic render-child or Live Preview/CM6 delivery for arbitrary
 community plugins, and it does not claim Tasks compatibility. Live Preview and CodeMirror 6 remain

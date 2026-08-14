@@ -2261,11 +2261,13 @@ function renderPluginMarkdownProjectionPanel(
   state: "loading" | "ready" | "unavailable",
   detail: { html?: DocumentFragment; pluginName: string; message?: string },
 ): void {
-  container.querySelector<HTMLElement>('[data-plugin-projection="cite"]')?.remove();
+  container
+    .querySelector<HTMLElement>(`[data-plugin-projection="${settledMarkdownProjectionPluginId}"]`)
+    ?.remove();
   const doc = container.ownerDocument;
   const panel = doc.createElement("section");
   panel.className = "plugin-markdown-projection";
-  panel.dataset.pluginProjection = "cite";
+  panel.dataset.pluginProjection = settledMarkdownProjectionPluginId;
   panel.dataset.pluginProjectionState = state;
   const heading = doc.createElement("p");
   heading.className = "plugin-markdown-projection-heading";
@@ -2283,12 +2285,14 @@ function renderPluginMarkdownProjectionPanel(
 }
 
 /**
- * Fetch and mount CITE's settled (already-executed, sanitized) Markdown post-processor
- * projection for the note currently shown in Reading view. `isCurrent` is the same
- * note+revision+vault staleness guard `hydrateMarkdownPreview` uses, so a response that arrives
- * after the user switched notes, edited the draft, or the vault changed is dropped instead of
- * being mounted against different content. Silently does nothing when CITE is not installed in
- * this vault at all; an installed-but-inactive CITE renders its honest "unavailable" state.
+ * Fetch CITE's settled (already-executed) Markdown post-processor projection for the note
+ * currently shown in Reading view, sanitize it through `sanitizePluginMarkdownProjection` (the
+ * returned `html` itself is unsanitized plugin output -- this call site is what makes it safe to
+ * mount), and display it. `isCurrent` is the same note+revision+vault staleness guard
+ * `hydrateMarkdownPreview` uses, so a response that arrives after the user switched notes, edited
+ * the draft, or the vault changed is dropped instead of being mounted against different content.
+ * Silently does nothing when CITE is not installed in this vault at all; an installed-but-inactive
+ * CITE renders its honest "unavailable" state.
  */
 function renderCiteSettledProjection(
   sourceNotePath: string,
@@ -2327,7 +2331,9 @@ function renderCiteSettledProjection(
           message: response.message,
         });
       } else {
-        elements.notePreview.querySelector('[data-plugin-projection="cite"]')?.remove();
+        elements.notePreview
+          .querySelector(`[data-plugin-projection="${settledMarkdownProjectionPluginId}"]`)
+          ?.remove();
       }
     })
     .catch(() => {

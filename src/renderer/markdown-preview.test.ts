@@ -927,4 +927,48 @@ describe("sanitizePluginMarkdownProjection", () => {
     }
     expect(container.textContent).toBe("externalinternal-looking");
   });
+
+  it("strips every privileged and delegated-click class so plugin output cannot pose as a trusted native control", () => {
+    // Payload proof: each class below is individually meaningful to renderer.ts's markup
+    // (internal/external link styling, footnote wiring) or its delegated click handlers
+    // (source-jump, note-embed open, attachment action, canvas-embed open), which all match by
+    // `closest(".classname")` -- any allowed element carrying the class is the real threat model,
+    // not specifically a <button>. A settled plugin projection must never carry any of them.
+    const strippedClasses = [
+      "internal-link",
+      "external-link",
+      "preview-embed-link",
+      "preview-footnote-ref",
+      "preview-footnote-backref",
+      "preview-source-action",
+      "preview-note-embed-open",
+      "preview-attachment-action",
+      "preview-canvas-embed-open",
+    ];
+    const letters = "abcdefghi";
+    const payload = strippedClasses
+      .map((className, index) => `<span class="${className}">${letters[index]}</span>`)
+      .join("");
+    const fragment = sanitizePluginMarkdownProjection(payload);
+    const container = document.createElement("div");
+    container.append(fragment);
+    for (const className of strippedClasses) {
+      expect(container.querySelector(`.${className}`)).toBeNull();
+    }
+    // The elements and their text survive; only the privileged/delegated-click classes are gone,
+    // proving this is a targeted class strip, not a broader element removal.
+    expect(container.textContent).toBe(letters);
+    expect(container.querySelectorAll("span")).toHaveLength(9);
+  });
+
+  it("preserves an allowed class that happens to share no name with a privileged or delegated-click one", () => {
+    const fragment = sanitizePluginMarkdownProjection(
+      '<span class="cite-citation internal-link">Doe 2024</span>',
+    );
+    const container = document.createElement("div");
+    container.append(fragment);
+    const span = container.querySelector("span");
+    expect(span?.classList.contains("cite-citation")).toBe(true);
+    expect(span?.classList.contains("internal-link")).toBe(false);
+  });
 });
