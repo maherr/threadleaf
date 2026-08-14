@@ -8718,6 +8718,7 @@ async function togglePluginPopout(): Promise<void> {
 function render(snapshot: RuntimeSnapshot): void {
   const diagnosticsStartedAt = snapshot.workspaceOpenDiagnostics ? performance.now() : null;
   const previousVaultId = currentSnapshot?.vault.id ?? null;
+  const previousStartupOpening = currentSnapshot?.startup?.phase === "opening";
   currentSnapshot = snapshot;
   reconcileWorkspaceFilePages(snapshot);
   if (previousVaultId !== snapshot.vault.id) {
@@ -8831,11 +8832,21 @@ function render(snapshot: RuntimeSnapshot): void {
     void refreshNoteWorkflows();
     void refreshWorkspaceSettings();
     void refreshPlugins();
-    void refreshMigrationPreview();
+    if (!snapshot.startup) {
+      void refreshMigrationPreview();
+    }
     void maybeMigrateLegacyTheme();
     if (snapshot.vault.id) {
       void refreshNoteBookmarks(snapshot.vault.id);
     }
+  }
+  if (
+    previousVaultId === snapshot.vault.id &&
+    previousStartupOpening &&
+    !snapshot.startup &&
+    snapshot.vault.id
+  ) {
+    void refreshMigrationPreview();
   }
   const startup = snapshot.startup;
   const opening = startup?.phase === "opening";
@@ -8855,9 +8866,6 @@ function render(snapshot: RuntimeSnapshot): void {
         : snapshot.vault.source === "restored"
           ? "Restored vault"
           : "Local vault";
-  elements.fileCount.textContent = opening
-    ? "…"
-    : String(workspace?.filePage.total ?? snapshot.vault.markdownFileCount);
   const activePane = workspace?.panes.find((pane) => pane.id === workspace?.activePaneId);
   renderCanvasFiles(
     workspace?.canvasFiles ?? [],
@@ -8866,6 +8874,13 @@ function render(snapshot: RuntimeSnapshot): void {
   const needsAttention =
     !opening && (workspace?.state === "degraded" || snapshot.vault.warning !== null);
   const warming = workspace?.state === "warming";
+  elements.fileCount.textContent = opening
+    ? "…"
+    : String(
+        warming
+          ? workspace.census.indexed
+          : (workspace?.filePage.total ?? snapshot.vault.markdownFileCount),
+      );
   elements.runtimeState.textContent = opening
     ? "Opening"
     : warming
@@ -9545,7 +9560,12 @@ function renderFiles(
   renderVirtualFiles(true);
 
   if (files.length === 0) {
-    renderEmpty(elements.fileList, "No Markdown notes found.");
+    renderEmpty(
+      elements.fileList,
+      currentSnapshot?.workspace?.state === "warming"
+        ? "Indexing Markdown notes in the background."
+        : "No Markdown notes found.",
+    );
   }
 }
 

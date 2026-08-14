@@ -308,6 +308,7 @@ try {
   const state = await waitForRenderedVault(deadline);
   const readyMs = Date.now() - startedAt;
   const opening = state.snapshot?.startup?.phase === "opening";
+  const warming = state.snapshot?.workspace?.state === "warming";
   if (opening) {
     assert(state.runtimeState === "Opening", "Opening workspace lacked its visible state label.");
     assert(state.indexStatus === "Indexing", "Opening workspace lacked its index progress label.");
@@ -325,6 +326,25 @@ try {
       !state.openVaultDisabled,
       "Open vault must remain available to supersede a slow startup.",
     );
+  } else if (warming) {
+    assert(
+      state.runtimeState === "Ready, indexing",
+      "Interactive warming workspace lacked its visible state label.",
+    );
+    assert(
+      state.indexStatus.includes("/"),
+      "Interactive warming workspace lacked bounded census progress.",
+    );
+    assert(
+      state.filterSummary.endsWith("indexed"),
+      "Interactive warming workspace lacked its indexed-count summary.",
+    );
+    assert(
+      state.statusShape === "opening",
+      "Interactive warming workspace lacked its non-color progress shape.",
+    );
+    assert(!state.newNoteDisabled, "New note was unavailable after workspace restore.");
+    assert(!state.fileSearchDisabled, "Vault search was unavailable after workspace restore.");
   } else {
     assert(
       state.snapshot?.vault?.path === configuredVault,
@@ -335,12 +355,12 @@ try {
   let screenshots = [];
   if (screenshotDirectory) {
     await fs.mkdir(screenshotDirectory, { recursive: true });
-    const stateName = opening ? "opening" : "ready";
+    const stateName = opening ? "opening" : warming ? "warming" : "ready";
     screenshots = [await captureTheme("dark", stateName), await captureTheme("light", stateName)];
   }
 
-  let fullReadyMs = opening ? null : readyMs;
-  if (readyBudgetMs !== null && opening) {
+  let fullReadyMs = opening || warming ? null : readyMs;
+  if (readyBudgetMs !== null && (opening || warming)) {
     await waitForReadyVault(startedAt + readyBudgetMs);
     fullReadyMs = Date.now() - startedAt;
     if (screenshotDirectory) {
@@ -355,7 +375,7 @@ try {
       readyBudgetMs,
       readyMs,
       fullReadyMs,
-      state: opening ? "opening" : "ready",
+      state: opening ? "opening" : warming ? "warming" : "ready",
       targetName: path.basename(configuredVault) || configuredVault,
       screenshots,
       virtualFiles,
