@@ -44,6 +44,21 @@ container, title bar, workspace splits, tabs and leaves, file navigation, Markdo
 reading views, inline title, and status bar. The baseline also publishes commonly used Obsidian
 background, text, accent, icon, font, radius, and file-margin variables.
 
+Threadleaf's own semantic aliases (`--surface`, `--ink`, `--line`, `--signal`, `--accent-soft`, and
+similar) are declared once on `:root`, then re-declared on `body` for most of the set (see
+`src/renderer/styles.css`). A community theme's own supporting design tokens are conventionally
+scoped to `body`, matching real Obsidian, where `:root` never carries meaningful theme state; a
+theme's `:root`-matching declaration for a variable Threadleaf's baseline also aliases can resolve
+validly at `body` and invalidly at `:root`, and because Threadleaf's aliases inherit from wherever
+they were declared, an invalid `:root` value would otherwise silently poison an entirely healthy
+`body`. The `body` re-declaration exists to keep that from happening. `--accent`, `--accent-strong`,
+and the accent half of `--accent-soft`/`--interactive` are the deliberate exception: they stay
+inherited-only from `:root` so the accessibility Accent and High Contrast preferences, which pin
+colours with `!important` on `:root[data-threadleaf-*]` selectors that can never match `body`,
+remain authoritative over any theme. See
+[community-themes-v1.md](community-themes-v1.md#body-level-compat-re-anchoring-and-its-two-exclusions)
+for the full mechanism and the live findings that shaped it.
+
 This is a measured subset, not a claim that every existing selector is already supported. A theme
 reaches compatibility only when named views pass a rendered workflow. Unsupported selectors remain
 inert CSS and do not block the rest of the theme.
