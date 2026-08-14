@@ -1,3 +1,5 @@
+import { caseFoldingCodePoints, caseFoldingTargets } from "../generated/case-folding-table";
+
 /**
  * A derived, comparable search projection. `source` is never rewritten or
  * persisted; segments retain the source UTF-16 range for each extended
@@ -32,6 +34,39 @@ const markPattern = /^\p{M}$/u;
 const diacriticPattern = /^\p{Diacritic}$/u;
 const latinMarkPattern = /^\p{Script_Extensions=Latin}$/u;
 const inheritedMarkPattern = /^\p{Script_Extensions=Inherited}$/u;
+
+const caseFoldingTable = new Map<number, number>();
+for (let index = 0; index < caseFoldingCodePoints.length; index += 1) {
+  caseFoldingTable.set(caseFoldingCodePoints[index] ?? 0, caseFoldingTargets[index] ?? 0);
+}
+
+/**
+ * Pinned Unicode 17 Simple case folding: Common (C) + Simple (S) status
+ * mappings only, from the generated table in
+ * src/generated/case-folding-table.ts. Every mapping is exactly one code
+ * point to exactly one code point, so folding never changes a grapheme's
+ * code point count. A code point absent from the table folds to itself
+ * ("All code points not listed in this file map to themselves",
+ * CaseFolding.txt).
+ *
+ * Unlike `String.prototype.toLowerCase`, this mapping is context-
+ * independent: Greek capital sigma always folds to U+03C3 (regular sigma),
+ * the same target as final sigma U+03C2, rather than the word-position-
+ * dependent Final_Sigma lowering rule. Full (F) mappings that grow a string
+ * in length (for example sharp s, U+00DF, to "ss") and Turkic (T)
+ * dotted/dotless I remapping are excluded by construction, so sharp s stays
+ * distinct from "ss" and dotted/dotless I forms are never conflated with
+ * plain Latin I outside an explicit Turkic locale.
+ */
+function caseFold(value: string): string {
+  let folded = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    const target = caseFoldingTable.get(codePoint);
+    folded += target === undefined ? character : String.fromCodePoint(target);
+  }
+  return folded;
+}
 
 /**
  * Offset arrays are deliberately chunked instead of growing one JavaScript
@@ -110,9 +145,12 @@ function foldGrapheme(grapheme: string): string {
   const base = Array.from(decomposed).find(isLatinBase);
   let folded = canonical;
   if (base) {
-    // U+0130 is a distinct dotted Latin letter. Keep its dot so default
-    // lowercasing can expand it to `i\u0307` and the source map can account for
-    // the extra UTF-16 code unit.
+    // U+0130 (dotted capital I) is a distinct Latin letter, not "I" plus a
+    // decorative accent: Unicode Simple case folding (Common + Simple
+    // status) has no mapping for it, so it must fold to itself and stay
+    // distinct from plain "I" / "i". Stripping this dot as an ordinary Latin
+    // diacritic before case folding would collapse that distinction, so it
+    // is kept regardless of case-folding mode.
     const preserveDottedI = (base === "I" || base === "i") && decomposed.includes("\u0307");
     folded = Array.from(decomposed)
       .filter((value) => !isLatinDiacritic(value) || (preserveDottedI && value === "\u0307"))
@@ -129,17 +167,17 @@ function foldGrapheme(grapheme: string): string {
  * compatibility decomposition or transliteration.
  */
 export function projectSearchText(value: string, caseSensitive = false): SearchTextProjection {
-  const canonicalChunks: string[] = [];
+  const textChunks: string[] = [];
   let chunkParts: string[] = [];
   let chunkLength = 0;
-  const appendCanonical = (part: string): void => {
+  const appendFolded = (part: string): void => {
     if (!part) {
       return;
     }
     chunkParts.push(part);
     chunkLength += part.length;
     if (chunkLength >= textChunkSize) {
-      canonicalChunks.push(chunkParts.join(""));
+      textChunks.push(chunkParts.join(""));
       chunkParts = [];
       chunkLength = 0;
     }
@@ -156,12 +194,18 @@ export function projectSearchText(value: string, caseSensitive = false): SearchT
   for (const part of graphemeSegmenter.segment(value)) {
     const sourceStart = part.index;
     const sourceEnd = sourceStart + part.segment.length;
-    const foldedGrapheme = foldGrapheme(part.segment);
-    appendCanonical(foldedGrapheme);
-    const foldedPart = caseSensitive ? foldedGrapheme : foldedGrapheme.toLowerCase();
+    const strippedGrapheme = foldGrapheme(part.segment);
+    // Case folding is context-independent (unlike `String.prototype.toLowerCase`, which
+    // applies word-position-dependent rules such as Greek Final_Sigma), so folding this
+    // grapheme in isolation always matches folding it as part of the whole string. The
+    // projected `text` below is built directly from these same per-grapheme parts rather
+    // than re-derived from a separate whole-string fold that could disagree with the
+    // offsets recorded here.
+    const foldedPart = caseSensitive ? strippedGrapheme : caseFold(strippedGrapheme);
+    appendFolded(foldedPart);
     const foldedStart = foldedOffset;
     foldedOffset += foldedPart.length;
-    if (foldedGrapheme.length > 0) {
+    if (foldedPart.length > 0) {
       data.foldedStarts.push(foldedStart);
       data.foldedEnds.push(foldedOffset);
       data.sourceStarts.push(sourceStart);
@@ -170,10 +214,9 @@ export function projectSearchText(value: string, caseSensitive = false): SearchT
     data.boundaries.push(sourceEnd);
   }
   if (chunkParts.length > 0) {
-    canonicalChunks.push(chunkParts.join(""));
+    textChunks.push(chunkParts.join(""));
   }
-  const canonicalText = canonicalChunks.join("");
-  const text = caseSensitive ? canonicalText : canonicalText.toLowerCase();
+  const text = textChunks.join("");
   if (text.length !== foldedOffset) {
     throw new Error("Search projection offset map is inconsistent with its folded text.");
   }
@@ -229,7 +272,7 @@ export function foldSearchText(value: string, caseSensitive = false): string {
     }
   }
   if (!hasLatinBase) {
-    return caseSensitive ? canonical : canonical.toLowerCase();
+    return caseSensitive ? canonical : caseFold(canonical);
   }
   const foldedChunks: string[] = [];
   let foldedParts: string[] = [];
@@ -248,7 +291,7 @@ export function foldSearchText(value: string, caseSensitive = false): string {
     foldedChunks.push(foldedParts.join(""));
   }
   const foldedText = foldedChunks.join("");
-  return caseSensitive ? foldedText : foldedText.toLowerCase();
+  return caseSensitive ? foldedText : caseFold(foldedText);
 }
 
 interface GraphemeRange {

@@ -21,7 +21,49 @@ describe("search text projection", () => {
     expect(foldSearchText("عربي")).not.toBe(foldSearchText("عَرَبِيّ"));
     expect(foldSearchText("α\u0301")).toBe(foldSearchText("ά"));
     expect(foldSearchText("ε")).not.toBe(foldSearchText("έ"));
-    expect(foldSearchText("ΟΣ")).toBe("ος");
+    expect(foldSearchText("ΟΣ")).toBe("οσ");
+  });
+
+  it("folds Greek final and medial sigma to the same Common-status form", () => {
+    // CaseFolding.txt: `03A3; C; 03C3` and `03C2; C; 03C3` both target regular
+    // sigma. This is a caseless-matching (case *folding*) property, distinct
+    // from `String.prototype.toLowerCase`, whose word-position-dependent
+    // Final_Sigma rule sends a word-final capital Sigma to U+03C2 instead.
+    const finalSigma = "ς";
+    const mediumSigma = "σ";
+    const capitalSigma = "Σ";
+    expect(finalSigma).not.toBe(mediumSigma);
+
+    expect(foldSearchText(finalSigma)).toBe(mediumSigma);
+    expect(foldSearchText(mediumSigma)).toBe(mediumSigma);
+    expect(foldSearchText(capitalSigma)).toBe(mediumSigma);
+    // A capital Sigma at the end of a "word" is exactly the case where
+    // `toLowerCase` and Unicode simple case folding disagree.
+    expect(foldSearchText("ΛΟΓΟΣ")).toBe("λογοσ");
+
+    const projection = projectSearchText(`word${capitalSigma}`);
+    expect(projection.text).toBe(`word${mediumSigma}`);
+    expect(searchTextContains(projection.text, mediumSigma)).toBe(true);
+  });
+
+  it("keeps German sharp S distinct from ss under Simple case folding", () => {
+    // CaseFolding.txt gives sharp s (U+00DF) only a Full (F) mapping to "ss";
+    // it has no Common/Simple entry, so pinned Simple folding leaves it
+    // unchanged. Capital sharp S (U+1E9E) has a Simple (S) entry to U+00DF,
+    // so the two case pair with each other but neither ever becomes "ss".
+    const sharpS = "ß";
+    const capitalSharpS = "ẞ";
+
+    expect(foldSearchText(sharpS)).toBe(sharpS);
+    expect(foldSearchText(capitalSharpS)).toBe(sharpS);
+    expect(foldSearchText("STRASSE")).not.toBe(foldSearchText("Straße"));
+    expect(foldSearchText("Straße")).not.toBe(foldSearchText("Strasse"));
+    expect(foldSearchText(`Stra${capitalSharpS}e`)).toBe(foldSearchText("Straße"));
+
+    const projection = projectSearchText("Straße");
+    expect(projection.text).toBe("straße");
+    expect(searchTextContains(projection.text, "strasse")).toBe(false);
+    expect(searchTextContains(projection.text, "straße")).toBe(true);
   });
 
   it("keeps script-specific marks significant inside Latin graphemes", () => {
@@ -42,7 +84,9 @@ describe("search text projection", () => {
     expect(foldSearchText("a\u0301", true)).toBe("a");
     expect(foldSearchText("a\u0307", true)).toBe("a");
     expect(foldSearchText("İ", true)).toBe("İ");
-    expect(foldSearchText("İ")).toBe("i\u0307");
+    // U+0130 has no Common/Simple case-fold entry (only Full and Turkic),
+    // so pinned Simple case folding leaves it unchanged in every mode.
+    expect(foldSearchText("İ")).toBe("İ");
     expect(foldSearchText("a\u20dd", true)).toBe("a\u20dd");
     expect(foldSearchText("a\ufe0f", true)).toBe("a\ufe0f");
     expect(foldSearchText("a\u200d", true)).toBe("a\u200d");
@@ -112,6 +156,30 @@ describe("search text projection", () => {
     expect(searchTextContains("\r\n", "\r\n")).toBe(true);
   });
 
+  it("case-folds a cased letter inside a Prepend grapheme without splitting it", () => {
+    // A Unicode Prepend character (grapheme cluster break property Prepend)
+    // attaches to the following character to form one extended grapheme
+    // cluster, so a cased base letter can appear inside a multi-code-point
+    // grapheme. Folding must reach that letter while leaving the Prepend
+    // character itself untouched, and the grapheme must still be
+    // impenetrable to a query for either half alone.
+    const prepends = ["؀", "࢐", String.fromCodePoint(0x110bd)];
+    for (const prepend of prepends) {
+      const source = `${prepend}Apple`;
+      const projection = projectSearchText(source);
+
+      expect(projection.text).toBe(`${prepend}apple`);
+      expect(searchTextContains(projection.text, "apple")).toBe(false);
+      expect(searchTextContains(projection.text, `${prepend}apple`)).toBe(true);
+
+      const match = searchTextFindMatch(projection.text, `${prepend}apple`);
+      expect(mapSearchMatchToSourceRange(projection, match, `${prepend}apple`.length)).toEqual({
+        start: 0,
+        end: source.length,
+      });
+    }
+  });
+
   it("maps folded matches to exact UTF-16 source ranges and grapheme boundaries", () => {
     const source = "prefix 😀 Cafe\u0301 target";
     const projection = projectSearchText(source);
@@ -128,13 +196,26 @@ describe("search text projection", () => {
     expect(mapSearchMatchToSourceRange(projectSearchText("a\u064e"), 0, 1)).toBeNull();
   });
 
-  it("maps offsets after case folding a Turkish dotted I and astral graphemes", () => {
+  it("maps a Turkish dotted I to correct UTF-16 source offsets alongside astral and decomposed graphemes", () => {
     const source = "prefix 😀 İ Cafe\u0301 target";
     const projection = projectSearchText(source);
+
+    // Pinned Simple case folding has no Common/Simple entry for U+0130, so it
+    // folds to itself and survives untouched inside an otherwise lower-cased
+    // key -- unlike `String.prototype.toLowerCase`, which would expand it to
+    // "i" + a combining dot above.
+    expect(projection.text).toContain("İ cafe target");
+
+    const dottedIStart = projection.text.indexOf("İ");
+    const dottedIRange = mapSearchMatchToSourceRange(projection, dottedIStart, 1);
+    expect(dottedIRange).toEqual({
+      start: source.indexOf("İ"),
+      end: source.indexOf("İ") + 1,
+    });
+    expect(source.slice(dottedIRange?.start, dottedIRange?.end)).toBe("İ");
+
     const foldedStart = projection.text.indexOf("cafe");
     const range = mapSearchMatchToSourceRange(projection, foldedStart, "cafe".length);
-
-    expect(projection.text).toContain("i\u0307 cafe target");
     expect(range).toEqual({
       start: source.indexOf("Cafe"),
       end: source.indexOf(" target"),
@@ -142,14 +223,22 @@ describe("search text projection", () => {
     expect(source.slice(range?.start, range?.end)).toBe("Cafe\u0301");
   });
 
-  it("keeps lower-case expansion edges grapheme-safe", () => {
-    const projection = projectSearchText("İ");
+  it("keeps Turkish dotted I distinct from plain Latin I under Simple case folding", () => {
+    const source = "İstanbul";
+    const projection = projectSearchText(source);
 
-    expect(projection.text).toBe("i\u0307");
-    expect(searchTextContains(projection.text, "i")).toBe(false);
-    expect(searchTextFindMatch(projection.text, "i")).toBe(-1);
-    expect(searchTextMatchCount(projection.text, "i")).toBe(0);
-    expect(searchTextContains(projection.text, "i\u0307")).toBe(true);
-    expect(mapSearchMatchToSourceRange(projection, 0, 2)).toEqual({ start: 0, end: 1 });
+    // No Turkic (T) folding is applied: the dotted capital is not conflated
+    // with plain "i"/"I", so only a query that itself carries the dotted
+    // capital finds this grapheme.
+    expect(projection.text).toBe(source);
+    expect(searchTextContains(projection.text, "istanbul")).toBe(false);
+    expect(searchTextContains(projection.text, source)).toBe(true);
+
+    const match = searchTextFindMatch(projection.text, source);
+    expect(match).toBe(0);
+    expect(mapSearchMatchToSourceRange(projection, match, source.length)).toEqual({
+      start: 0,
+      end: source.length,
+    });
   });
 });

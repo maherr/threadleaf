@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mapSearchMatchToSourceRange, projectSearchText, searchTextFindMatch } from "./search-text";
+import {
+  foldSearchText,
+  mapSearchMatchToSourceRange,
+  projectSearchText,
+  searchTextFindMatch,
+} from "./search-text";
 
 const MiB = 1024 * 1024;
 
@@ -31,6 +36,37 @@ function measureNonAsciiSearch(repetitions: number): number {
   const started = performance.now();
   const position = searchTextFindMatch(source, "needle");
   expect(position).toBe(source.length - "needle".length);
+  return performance.now() - started;
+}
+
+/**
+ * Content that forces every grapheme through the pinned case-folding table
+ * (uppercase Latin letters routed through caseFoldingCodePoints/Targets) and
+ * through Latin-diacritic stripping (É), rather than the ASCII fast path.
+ */
+function caseFoldingSource(units: number): string {
+  const word = "CAFÉ STRASSE ";
+  const padding = word.repeat(Math.ceil(units / word.length) + 1).slice(0, units);
+  return `${padding}needle`;
+}
+
+function measureFoldSearchText(units: number): number {
+  const source = caseFoldingSource(units);
+  const started = performance.now();
+  const folded = foldSearchText(source);
+  expect(folded.endsWith("needle")).toBe(true);
+  return performance.now() - started;
+}
+
+function measureCaseFoldingProjection(units: number): number {
+  const source = caseFoldingSource(units);
+  const started = performance.now();
+  const projection = projectSearchText(source);
+  const position = searchTextFindMatch(projection.text, "needle");
+  expect(position).toBeGreaterThan(0);
+  expect(mapSearchMatchToSourceRange(projection, position, "needle".length)?.end).toBe(
+    source.length,
+  );
   return performance.now() - started;
 }
 
@@ -73,6 +109,31 @@ describe("search text projection scale", () => {
     // The fallback walks Intl.Segmenter boundaries once for each query. Keep
     // a deliberately broad ceiling for ICU and CI variance while rejecting
     // accidental repeated rescans of the full grapheme stream.
+    expect(long).toBeLessThan(Math.max(short * 4, 50));
+  });
+
+  it("keeps foldSearchText near-linear at 16k/32k/64k character scales", () => {
+    // Every grapheme here does a pinned case-folding table lookup (and, for
+    // É, Latin-diacritic stripping); a per-character Map lookup keeps
+    // this linear, but an accidental O(n^2) scan (e.g. repeated string
+    // concatenation or a rescan per grapheme) would show up as a growing
+    // per-unit cost well before one million units.
+    measureFoldSearchText(16_384);
+    const shortRuns = Array.from({ length: 3 }, () => measureFoldSearchText(32_768));
+    const longRuns = Array.from({ length: 3 }, () => measureFoldSearchText(65_536));
+    const short = Math.min(...shortRuns);
+    const long = Math.min(...longRuns);
+
+    expect(long).toBeLessThan(Math.max(short * 4, 50));
+  });
+
+  it("keeps projectSearchText's per-grapheme case folding near-linear at 16k/32k/64k character scales", () => {
+    measureCaseFoldingProjection(16_384);
+    const shortRuns = Array.from({ length: 3 }, () => measureCaseFoldingProjection(32_768));
+    const longRuns = Array.from({ length: 3 }, () => measureCaseFoldingProjection(65_536));
+    const short = Math.min(...shortRuns);
+    const long = Math.min(...longRuns);
+
     expect(long).toBeLessThan(Math.max(short * 4, 50));
   });
 });
