@@ -2975,14 +2975,12 @@ function fishScript(): string {
   ];
   for (const option of cliGlobalOptions) {
     const names = option.names;
-    const longName = names.find((name) => name.startsWith("--"));
-    const shortName = names.find((name) => name.startsWith("-") && !name.startsWith("--"));
+    const condition = fishCondition(`__threadleaf_fish_option_allowed ${option.id}`);
     lines.push(
       [
         "complete -c threadleaf -f",
-        `-n ${fishCondition(`__threadleaf_fish_option_allowed ${option.id}`)}`,
-        longName ? `-l ${fishQuote(longName.slice(2))}` : "",
-        shortName ? `-s ${fishQuote(shortName.slice(1))}` : "",
+        `-n ${condition}`,
+        `-a "${names.join(" ")}"`,
         option.takesValue ? "-r" : "",
       ]
         .filter(Boolean)

@@ -327,6 +327,7 @@ function parserAccepts(args: readonly string[]): boolean {
 interface LiteralParserOracleCase {
   args: string[];
   accepted: boolean;
+  terminal?: boolean;
   label: string;
 }
 
@@ -372,8 +373,13 @@ const literalParserOracleCases: readonly LiteralParserOracleCase[] = [
     accepted: false,
     label: "completion terminal state",
   },
-  { args: ["--help", "search"], accepted: true, label: "help terminal state" },
+  { args: ["--help", "search"], accepted: true, terminal: true, label: "help terminal state" },
   { args: ["completion", "bash"], accepted: true, label: "completion terminal option state" },
+  {
+    args: ["--vault", "/v", "read", "Note"],
+    accepted: true,
+    label: "read consumed target option state",
+  },
   {
     args: ["--vault", "/v", "create", "Note", "--content="],
     accepted: true,
@@ -1731,6 +1737,19 @@ describe("CLI schema and generated completion", () => {
             expect(candidates, `${shell} ${testCase.label}`).toEqual([]);
             continue;
           }
+
+          // Both directions are pinned: a terminal accepted state (help or
+          // completion mode short-circuits the rest of the invocation) must
+          // offer nothing, and every other accepted state must actually offer
+          // candidates, or the per-candidate validity loop below is vacuous.
+          if (testCase.terminal) {
+            expect(candidates, `${shell} ${testCase.label} must stay empty`).toEqual([]);
+            continue;
+          }
+          expect(
+            candidates.length,
+            `${shell} ${testCase.label} produced no candidates`,
+          ).toBeGreaterThan(0);
 
           for (const candidate of candidates) {
             const candidateArgs = [...testCase.args, candidate];
