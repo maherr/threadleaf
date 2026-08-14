@@ -48,20 +48,15 @@ describe("plugin pop-out monitor ownership", () => {
     ["generation rolled back below the callback's snapshot, same owner", 1, 9, true],
     ["matching generation but a different owner instance", 4, 4, false],
     ["unrelated stale callback: different owner and different generation", 1, 42, false],
-  ] as const)(
-    "rejects a %s",
-    (_scenario, ownerGeneration, callbackGeneration, sameOwner) => {
-      const owner = {};
-      const monitor: PluginPopoutMonitorHandle<object> = {
-        owner,
-        generation: ownerGeneration,
-        timer: vi.fn() as unknown as NodeJS.Timeout,
-      };
-      const candidateOwner = sameOwner ? owner : {};
+  ] as const)("rejects a %s", (_scenario, ownerGeneration, callbackGeneration, sameOwner) => {
+    const owner = {};
+    const monitor: PluginPopoutMonitorHandle<object> = {
+      owner,
+      generation: ownerGeneration,
+      timer: vi.fn() as unknown as NodeJS.Timeout,
+    };
+    const candidateOwner = sameOwner ? owner : {};
 
-      expect(isCurrentPluginPopoutMonitor(monitor, candidateOwner, callbackGeneration)).toBe(
-        false,
-      );
-    },
-  );
+    expect(isCurrentPluginPopoutMonitor(monitor, candidateOwner, callbackGeneration)).toBe(false);
+  });
 });

@@ -36,4 +36,38 @@ describe("SerializedPluginOperationQueue", () => {
     expect(writes).toEqual(['B:same-command-id:{"payload":"same bytes"}']);
     expect(writes).not.toContain("stale-A:same-command-id");
   });
+
+  it("rejects the result of an in-flight operation whose vault switched away before it resolved", async () => {
+    let activeVaultId = "vault-a";
+    const queue = new SerializedPluginOperationQueue(() => activeVaultId);
+    let operationRan = false;
+    let resolveOperation!: (value: string) => void;
+
+    const inFlight = queue.run(
+      () =>
+        new Promise<string>((resolve) => {
+          // The Promise executor runs synchronously, so by the time this
+          // line executes the pre-op guard has already passed with vault-a
+          // still active: the operation genuinely started, it just has not
+          // resolved yet.
+          operationRan = true;
+          resolveOperation = resolve;
+        }),
+      "vault-a",
+    );
+
+    await Promise.resolve();
+    expect(operationRan).toBe(true);
+
+    // The active vault changes while the long-running operation is still
+    // in flight...
+    activeVaultId = "vault-b";
+    // ...and only then does the operation itself finish successfully.
+    resolveOperation("operation result");
+
+    // The operation body completed and produced a result, but the post-op
+    // guard (checked after `await operation()`) must still discard it: the
+    // caller sees a rejection, never "operation result".
+    await expect(inFlight).rejects.toBeInstanceOf(StalePluginVaultError);
+  });
 });
