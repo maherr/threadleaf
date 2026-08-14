@@ -783,6 +783,39 @@ function navigationHistoryEqual(
   );
 }
 
+function removeWorkspacePath(panes: PersistedWorkspacePane[], filePath: string): boolean {
+  let changed = false;
+  for (const pane of panes) {
+    if (pane.navigationHistory) {
+      const nextHistory: WorkspaceNavigationHistory = {
+        back: pane.navigationHistory.back.filter((path) => path !== filePath),
+        forward: pane.navigationHistory.forward.filter((path) => path !== filePath),
+      };
+      if (!navigationHistoryEqual(pane.navigationHistory, nextHistory)) {
+        pane.navigationHistory = nextHistory;
+        changed = true;
+      }
+    }
+    const index = pane.openPaths.indexOf(filePath);
+    if (index === -1) {
+      continue;
+    }
+    pane.openPaths.splice(index, 1);
+    pane.pinnedPaths = pane.pinnedPaths.filter((pinnedPath) => pinnedPath !== filePath);
+    if (pane.activePath === filePath) {
+      pane.activePath = pane.openPaths[index] ?? pane.openPaths[index - 1] ?? null;
+    }
+    if (pane.navigationHistory && pane.activePath) {
+      pane.navigationHistory = {
+        back: pane.navigationHistory.back.filter((path) => path !== pane.activePath),
+        forward: pane.navigationHistory.forward.filter((path) => path !== pane.activePath),
+      };
+    }
+    changed = true;
+  }
+  return changed;
+}
+
 function recordNavigation(
   history: WorkspaceNavigationHistory | undefined,
   from: string,
@@ -834,9 +867,11 @@ export class WorkspaceRuntime {
   readonly #unconfirmedAbsences = new Map<string, UnconfirmedAbsence>();
   /**
    * Per-path receipts for confirmations that permanently removed a tracked path.
-   * A UI save that began before one of these receipts may not put the path back.
+   * Incoming workspace state may not put one back until a later positive vault
+   * observation justifies that path's presence at the same receipt version.
    */
   readonly #confirmedRemovalVersions = new Map<string, number>();
+  readonly #presenceJustificationVersions = new Map<string, number>();
   #confirmedRemovalSequence = 0;
   /**
    * The last snapshot published for a note, kept only while that note is a
@@ -1144,7 +1179,7 @@ export class WorkspaceRuntime {
         restoredWorkspace.activePaneId,
         restoredWorkspace.splitDirection,
       );
-      runtime.applyWorkspaceState(restored, null);
+      runtime.applyWorkspaceState(restored);
       if (!workspaceStatesEqual(restoredWorkspace, restored)) {
         await runtime.persistWorkspaceStateBestEffort();
       }
@@ -2031,41 +2066,15 @@ export class WorkspaceRuntime {
     );
   }
 
-  private workspaceStateContainsRemovalConfirmedAfter(
-    state: PersistedWorkspaceState,
-    confirmedRemovalVersion: number,
-  ): boolean {
-    for (const pane of state.panes) {
-      const paths = [
-        ...pane.openPaths,
-        ...pane.pinnedPaths,
-        ...(pane.activePath ? [pane.activePath] : []),
-        ...(pane.navigationHistory?.back ?? []),
-        ...(pane.navigationHistory?.forward ?? []),
-      ];
-      if (
-        paths.some(
-          (filePath) =>
-            (this.#confirmedRemovalVersions.get(filePath) ?? 0) > confirmedRemovalVersion,
-        )
-      ) {
-        return true;
-      }
+  private justifyWorkspacePathPresence(filePath: string): void {
+    const confirmedRemovalVersion = this.#confirmedRemovalVersions.get(filePath);
+    if (confirmedRemovalVersion !== undefined) {
+      this.#presenceJustificationVersions.set(filePath, confirmedRemovalVersion);
     }
-    return false;
   }
 
-  private applyWorkspaceState(
-    state: PersistedWorkspaceState,
-    confirmedRemovalVersion: number | null,
-  ): boolean {
-    if (
-      confirmedRemovalVersion !== null &&
-      this.workspaceStateContainsRemovalConfirmedAfter(state, confirmedRemovalVersion)
-    ) {
-      return false;
-    }
-    this.#panes = state.panes.map((pane) => {
+  private scrubConfirmedRemovals(state: PersistedWorkspaceState): PersistedWorkspaceState {
+    const panes = state.panes.map((pane) => {
       const navigationHistory = cloneNavigationHistory(pane.navigationHistory);
       return {
         id: pane.id,
@@ -2075,9 +2084,77 @@ export class WorkspaceRuntime {
         ...(navigationHistory ? { navigationHistory } : {}),
       };
     });
-    this.#activePaneId = state.activePaneId;
-    this.#splitDirection = state.splitDirection;
-    return true;
+    let changed = false;
+    for (const [filePath, confirmedRemovalVersion] of this.#confirmedRemovalVersions) {
+      const presenceJustificationVersion = this.#presenceJustificationVersions.get(filePath) ?? 0;
+      if (confirmedRemovalVersion > presenceJustificationVersion) {
+        changed = removeWorkspacePath(panes, filePath) || changed;
+      }
+    }
+    return changed
+      ? createWorkspaceLayout(state.vaultId, panes, state.activePaneId, state.splitDirection)
+      : state;
+  }
+
+  private applyWorkspaceState(state: PersistedWorkspaceState): PersistedWorkspaceState {
+    const scrubbed = this.scrubConfirmedRemovals(state);
+    this.#panes = scrubbed.panes.map((pane) => {
+      const navigationHistory = cloneNavigationHistory(pane.navigationHistory);
+      return {
+        id: pane.id,
+        openPaths: [...pane.openPaths],
+        pinnedPaths: [...pane.pinnedPaths],
+        activePath: pane.activePath,
+        ...(navigationHistory ? { navigationHistory } : {}),
+      };
+    });
+    this.#activePaneId = scrubbed.activePaneId;
+    this.#splitDirection = scrubbed.splitDirection;
+    return scrubbed;
+  }
+
+  private async adoptWorkspaceState(
+    state: PersistedWorkspaceState,
+    persistBeforeAdopting: boolean,
+  ): Promise<void> {
+    const expectedCurrent = this.currentWorkspaceState();
+    if (workspaceStatesEqual(expectedCurrent, state)) {
+      return;
+    }
+    if (!this.#workspaceStateStore) {
+      this.applyWorkspaceState(state);
+      return;
+    }
+    if (!persistBeforeAdopting) {
+      this.applyWorkspaceState(state);
+      await this.persistWorkspaceStateBestEffort();
+      return;
+    }
+    try {
+      const persisted = await this.#workspaceStateStore.save(state, expectedCurrent);
+      this.#workspacePersistedState = persisted;
+      this.#workspaceLoadWarning = null;
+      this.#workspaceSaveWarning = null;
+      const applied = this.applyWorkspaceState(persisted);
+      if (!workspaceStatesEqual(persisted, applied)) {
+        // The save raced a confirmed removal. Apply the healthy parts of the
+        // mutation, then repair the private document from that scrubbed state.
+        await this.persistWorkspaceStateBestEffort();
+      }
+    } catch (error) {
+      const scrubbed = this.scrubConfirmedRemovals(state);
+      if (!workspaceStatesEqual(state, scrubbed)) {
+        // A racing confirmation may have won the store's compare-and-save first.
+        // Keep the mutation's unrelated changes and converge the store from the
+        // scrubbed in-memory result instead of treating the whole action as lost.
+        this.applyWorkspaceState(scrubbed);
+        await this.persistWorkspaceStateBestEffort();
+        return;
+      }
+      const message = `Could not save workspace state: ${errorMessage(error)}`;
+      this.#workspaceSaveWarning = message;
+      throw new Error(message, { cause: error });
+    }
   }
 
   private workspacePane(paneId: WorkspacePaneId): PersistedWorkspacePane {
@@ -2086,50 +2163,6 @@ export class WorkspaceRuntime {
       throw new Error(`Workspace pane is not open: ${paneId}`);
     }
     return pane;
-  }
-
-  private async adoptWorkspaceState(
-    state: PersistedWorkspaceState,
-    persistBeforeAdopting: boolean,
-  ): Promise<boolean> {
-    const expectedCurrent = this.currentWorkspaceState();
-    if (workspaceStatesEqual(expectedCurrent, state)) {
-      return true;
-    }
-    if (!this.#workspaceStateStore) {
-      this.applyWorkspaceState(state, null);
-      return true;
-    }
-    if (!persistBeforeAdopting) {
-      this.applyWorkspaceState(state, null);
-      await this.persistWorkspaceStateBestEffort();
-      return true;
-    }
-    const confirmedRemovalVersion = this.#confirmedRemovalSequence;
-    try {
-      const persisted = await this.#workspaceStateStore.save(state, expectedCurrent);
-      this.#workspacePersistedState = persisted;
-      this.#workspaceLoadWarning = null;
-      this.#workspaceSaveWarning = null;
-      if (!this.applyWorkspaceState(persisted, confirmedRemovalVersion)) {
-        // This save began before the reconciler confirmed one of its paths gone. Do not
-        // apply the stale tab set it just wrote; repair the private document from
-        // the confirmed in-memory authority instead.
-        await this.persistWorkspaceStateBestEffort();
-        return false;
-      }
-      return true;
-    } catch (error) {
-      if (this.workspaceStateContainsRemovalConfirmedAfter(state, confirmedRemovalVersion)) {
-        // A racing confirmation may have won the store's compare-and-save first.
-        // That is the desired outcome for this stale workspace mutation, not a UI error.
-        await this.persistWorkspaceStateBestEffort();
-        return false;
-      }
-      const message = `Could not save workspace state: ${errorMessage(error)}`;
-      this.#workspaceSaveWarning = message;
-      throw new Error(message, { cause: error });
-    }
   }
 
   private async persistWorkspaceStateBestEffort(): Promise<void> {
@@ -2186,6 +2219,9 @@ export class WorkspaceRuntime {
         throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
       }
       await this.kernel.readText(filePath);
+    }
+    if (!retained) {
+      this.justifyWorkspacePathPresence(filePath);
     }
     const paneId = request.paneId ?? this.#activePaneId;
     this.workspacePane(paneId);
@@ -2323,36 +2359,7 @@ export class WorkspaceRuntime {
   }
 
   private removeOpenPath(filePath: string): boolean {
-    let changed = false;
-    for (const pane of this.#panes) {
-      if (pane.navigationHistory) {
-        const nextHistory: WorkspaceNavigationHistory = {
-          back: pane.navigationHistory.back.filter((path) => path !== filePath),
-          forward: pane.navigationHistory.forward.filter((path) => path !== filePath),
-        };
-        if (!navigationHistoryEqual(pane.navigationHistory, nextHistory)) {
-          pane.navigationHistory = nextHistory;
-          changed = true;
-        }
-      }
-      const index = pane.openPaths.indexOf(filePath);
-      if (index === -1) {
-        continue;
-      }
-      pane.openPaths.splice(index, 1);
-      pane.pinnedPaths = pane.pinnedPaths.filter((pinnedPath) => pinnedPath !== filePath);
-      if (pane.activePath === filePath) {
-        pane.activePath = pane.openPaths[index] ?? pane.openPaths[index - 1] ?? null;
-      }
-      if (pane.navigationHistory && pane.activePath) {
-        pane.navigationHistory = {
-          back: pane.navigationHistory.back.filter((path) => path !== pane.activePath),
-          forward: pane.navigationHistory.forward.filter((path) => path !== pane.activePath),
-        };
-      }
-      changed = true;
-    }
-    return changed;
+    return removeWorkspacePath(this.#panes, filePath);
   }
 
   private assertNoPinnedWorkspaceTabsForRemoval(filePath: string): void {
@@ -3334,6 +3341,9 @@ export class WorkspaceRuntime {
     trackedPaths: Iterable<string>,
     policy: AbsencePolicy = "transient",
   ): { retainedPaths: ReadonlySet<string>; trackedMissing: string[] } {
+    for (const filePath of availablePaths) {
+      this.justifyWorkspacePathPresence(filePath);
+    }
     const tracked = [...trackedPaths];
     this.clearReturnedAbsences(availablePaths, tracked);
     const trackedMissing = tracked.filter((filePath) => !availablePaths.has(filePath));
@@ -3475,7 +3485,7 @@ export class WorkspaceRuntime {
       this.#splitDirection,
     );
     if (!workspaceStatesEqual(this.currentWorkspaceState(), reconciledState)) {
-      this.applyWorkspaceState(reconciledState, null);
+      this.applyWorkspaceState(reconciledState);
       await this.persistWorkspaceStateBestEffort();
     }
 

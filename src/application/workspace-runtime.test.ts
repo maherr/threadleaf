@@ -3114,7 +3114,11 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     await workspace.reconcileNow();
     clock.advance(transientAbsenceSettleMs + 1);
     const firstConfirmation = await workspace.reconcileNow();
-    expect(tabPaths(firstConfirmation)).toContain("Welcome.md");
+    expect(
+      firstConfirmation.workspace?.panes.flatMap((pane) =>
+        pane.tabs.map(({ path: filePath }) => filePath),
+      ),
+    ).toContain("Welcome.md");
     clock.advance(absenceConfirmationIntervalMs + 1);
 
     store.resetSaveCount();
@@ -3348,6 +3352,107 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
 
     expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
     expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards a pane-close save against a concurrently confirmed removal", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.closeWorkspacePane("secondary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("guards history navigation when confirmation lands inside its visible-path read", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    expect(store.value?.panes[0]?.navigationHistory?.back).toContain("Welcome.md");
+
+    await workspace.watcher.close();
+    await fs.unlink(path.join(vaultPath, "Welcome.md"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    const first = await workspace.reconcileNow();
+    expect(tabPaths(first)).toContain("Welcome.md");
+    clock.advance(absenceConfirmationIntervalMs + 1);
+
+    const realList = workspace.kernel.listVisiblePaths.bind(workspace.kernel);
+    let injected = false;
+    vi.spyOn(workspace.kernel, "listVisiblePaths").mockImplementation(async () => {
+      const result = await realList();
+      if (!injected) {
+        injected = true;
+        await workspace.reconcileNow();
+      }
+      return result;
+    });
+
+    await workspace.goBack(workspace.vaultId);
+    vi.restoreAllMocks();
+    expect(injected).toBe(true);
+
+    const persisted = store.value?.panes.flatMap((pane) => [
+      ...pane.openPaths,
+      ...pane.pinnedPaths,
+      ...(pane.activePath ? [pane.activePath] : []),
+      ...(pane.navigationHistory?.back ?? []),
+      ...(pane.navigationHistory?.forward ?? []),
+    ]);
+    expect(persisted).not.toContain("Welcome.md");
+    expect(tabPaths(await workspace.getSnapshot())).not.toContain("Welcome.md");
+  });
+
+  it("keeps an unrelated pin when a confirmed removal scrubs the same pane state", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.toggleTabPin("Linked Note.md", "primary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+
+    const snapshot = await workspace.getSnapshot();
+    expect(store.inner.value?.panes[0]?.pinnedPaths ?? []).toContain("Linked Note.md");
+    expect(snapshot.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Linked Note.md", pinned: true }),
+    );
+  });
+
+  it("keeps another pane's pin when a confirmed removal scrubs the workspace state", async () => {
+    const store = new BlockingWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Linked Note.md");
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    expect(store.inner.value?.panes[0]?.openPaths).toContain("Welcome.md");
+    expect(store.inner.value?.panes[1]?.openPaths).toEqual(["Linked Note.md"]);
+
+    await raceConfirmedWelcomeRemovalAgainst(workspace, store, clock, () =>
+      workspace.toggleTabPin("Linked Note.md", "secondary", workspace.vaultId),
+    );
+
+    expect(persistedTrackedPaths(store)).not.toContain("Welcome.md");
+
+    const snapshot = await workspace.getSnapshot();
+    expect(store.inner.value?.panes[1]?.pinnedPaths ?? []).toContain("Linked Note.md");
+    expect(snapshot.workspace?.panes.find(({ id }) => id === "secondary")?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Linked Note.md", pinned: true }),
+    );
   });
 
   it("extends a startup absence while that exact path is active and keeps a slow arrival", async () => {
