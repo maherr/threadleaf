@@ -1360,15 +1360,43 @@ function createInternalPlugins() {
       node.detach();
     },
   };
+  const canvasViews = {
+    canvas: () => ({ canvas }),
+  };
+  const canvasInstance = {
+    views: canvasViews,
+  };
+  const canvasPlugin = {
+    enabled: true,
+    _loaded: true,
+    instance: canvasInstance,
+    load: async () => undefined,
+    views: canvasViews,
+  };
+  const dailyNotes = { enabled: false };
+  const bookmarks = { enabled: false };
+  const fileExplorer = { enabled: false };
+  const outline = { enabled: false };
+  const plugins = {
+    canvas: canvasPlugin,
+    "daily-notes": dailyNotes,
+    bookmarks,
+    starred: bookmarks,
+    "file-explorer": fileExplorer,
+    outline,
+  };
+  const getPluginById = (pluginId: string) =>
+    Object.hasOwn(plugins, pluginId) ? plugins[pluginId as keyof typeof plugins] : null;
+
   return {
-    plugins: {
-      canvas: {
-        _loaded: true,
-        load: async () => undefined,
-        views: {
-          canvas: () => ({ canvas }),
-        },
-      },
+    plugins,
+    getPluginById,
+    getEnabledPluginById: (pluginId: string) => {
+      const plugin = getPluginById(pluginId);
+      if (!plugin?.enabled || !("instance" in plugin)) {
+        return null;
+      }
+      return plugin.instance;
     },
   };
 }
