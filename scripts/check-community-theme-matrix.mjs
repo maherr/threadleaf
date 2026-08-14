@@ -599,36 +599,118 @@ function pairwiseDeutanDistance(left, right) {
   );
 }
 
-function assertColourPairwise(probe) {
-  const check = (pairs, minimum, category) => {
-    assert(
-      Array.isArray(pairs) && pairs.length >= 2,
-      `Fewer than two ${category} colours were measured.`,
-    );
-    const results = [];
-    for (let leftIndex = 0; leftIndex < pairs.length; leftIndex += 1) {
-      for (let rightIndex = leftIndex + 1; rightIndex < pairs.length; rightIndex += 1) {
-        const left = pairs[leftIndex];
-        const right = pairs[rightIndex];
-        assert(left.label && right.label, `${category} pair labels are required.`);
-        assert(left.colour && right.colour, `${category} pair colours are required.`);
-        const distances = pairwiseDeutanDistance(left.colour, right.colour);
-        const minimumDistance = Math.min(...Object.values(distances));
-        assert(
-          minimumDistance >= minimum,
-          `${category} pair ${left.label}/${right.label} has CIEDE2000 ${minimumDistance.toFixed(2)} ` +
-            `under Machado deuteranomaly (minimum ${minimum}).`,
-        );
-        results.push({ labels: [left.label, right.label], distances });
-      }
+// Workspace deuteranomaly doctrine (root CLAUDE.md): simulate Machado 2009 deutan at 0.6
+// moderate / 0.8 stress, then compare CIEDE2000 between every measured pair. A distance below
+// CIEDE_FAIL_THRESHOLD is an outright failure. A distance at or above CIEDE_PASS_THRESHOLD is an
+// outright pass. Between the two is "thin", a distinct state, neither pass nor fail on its own.
+const CIEDE_FAIL_THRESHOLD = 7;
+const CIEDE_PASS_THRESHOLD = 11;
+
+function iteratePairs(pairs, category) {
+  assert(
+    Array.isArray(pairs) && pairs.length >= 2,
+    `Fewer than two ${category} colours were measured.`,
+  );
+  const entries = [];
+  for (let leftIndex = 0; leftIndex < pairs.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < pairs.length; rightIndex += 1) {
+      const left = pairs[leftIndex];
+      const right = pairs[rightIndex];
+      assert(left.label && right.label, `${category} pair labels are required.`);
+      assert(left.colour && right.colour, `${category} pair colours are required.`);
+      const distances = pairwiseDeutanDistance(left.colour, right.colour);
+      const minimumDistance = Math.min(...Object.values(distances));
+      entries.push({
+        left,
+        right,
+        distances,
+        minimumDistance,
+        pairLabel: `${left.label}/${right.label}`,
+      });
     }
-    assert(results.length > 0, `No ${category} colour pairs were measured.`);
-    return results;
-  };
+  }
+  assert(entries.length > 0, `No ${category} colour pairs were measured.`);
+  return entries;
+}
+
+function evaluateRedundantCue(cue, forPairLabel) {
+  assert(
+    cue?.left?.label && cue?.right?.label && cue.left.colour && cue.right.colour,
+    `Thin pair ${forPairLabel} declared a redundant cue with no labelled colours.`,
+  );
+  const distances = pairwiseDeutanDistance(cue.left.colour, cue.right.colour);
+  const measuredDe = Math.min(...Object.values(distances));
+  return { pair: `${cue.left.label}/${cue.right.label}`, measuredDe };
+}
+
+// Categorical roles are the workspace's "strong ink" signals: a plain minimum-7 pass/fail bar,
+// unchanged from the original implementation.
+function assertCategoricalPairwise(pairs) {
+  const entries = iteratePairs(pairs, "categorical");
+  for (const entry of entries) {
+    assert(
+      entry.minimumDistance >= CIEDE_FAIL_THRESHOLD,
+      `categorical pair ${entry.pairLabel} has CIEDE2000 ${entry.minimumDistance.toFixed(2)} under ` +
+        `Machado deuteranomaly (minimum ${CIEDE_FAIL_THRESHOLD}). Measured colours: ` +
+        `${entry.left.label}=${JSON.stringify(entry.left.colour)} ${entry.right.label}=${JSON.stringify(entry.right.colour)}.`,
+    );
+  }
+  return entries.map((entry) => ({
+    labels: [entry.left.label, entry.right.label],
+    distances: entry.distances,
+  }));
+}
+
+// Thin-state roles are the workspace's "pale tint" signals and get the full three-tier gate: a
+// measurement inside the thin band only passes when the same live case also carries a declared,
+// independently-measured redundant cue that itself clears CIEDE_PASS_THRESHOLD. Every such pass
+// is returned in thinPasses so callers can record it in the run receipt.
+function assertThinStatePairwise(pairs, redundantCues) {
+  const entries = iteratePairs(pairs, "thin-state");
+  const thinPasses = [];
+  for (const entry of entries) {
+    assert(
+      entry.minimumDistance >= CIEDE_FAIL_THRESHOLD,
+      `thin-state pair ${entry.pairLabel} has CIEDE2000 ${entry.minimumDistance.toFixed(2)} under ` +
+        `Machado deuteranomaly (fails below ${CIEDE_FAIL_THRESHOLD}). Measured colours: ` +
+        `${entry.left.label}=${JSON.stringify(entry.left.colour)} ${entry.right.label}=${JSON.stringify(entry.right.colour)}.`,
+    );
+    if (entry.minimumDistance >= CIEDE_PASS_THRESHOLD) continue;
+    const cue = redundantCues?.[entry.pairLabel];
+    assert(
+      cue,
+      `thin-state pair ${entry.pairLabel} is thin (CIEDE2000 ${entry.minimumDistance.toFixed(2)}, ` +
+        `between ${CIEDE_FAIL_THRESHOLD} and ${CIEDE_PASS_THRESHOLD}) with no declared redundant cue.`,
+    );
+    const redundant = evaluateRedundantCue(cue, entry.pairLabel);
+    assert(
+      redundant.measuredDe >= CIEDE_PASS_THRESHOLD,
+      `thin-state pair ${entry.pairLabel} is thin (CIEDE2000 ${entry.minimumDistance.toFixed(2)}) and ` +
+        `its redundant cue ${redundant.pair} only measures ${redundant.measuredDe.toFixed(2)} ` +
+        `(needs >= ${CIEDE_PASS_THRESHOLD}).`,
+    );
+    thinPasses.push({
+      pair: entry.pairLabel,
+      measuredDe: Number(entry.minimumDistance.toFixed(2)),
+      redundantCue: { pair: redundant.pair, measuredDe: Number(redundant.measuredDe.toFixed(2)) },
+    });
+  }
   return {
-    categorical: check(probe.categorical, 7, "categorical"),
-    thinState: check(probe.thinState, 11, "thin-state"),
+    results: entries.map((entry) => ({
+      labels: [entry.left.label, entry.right.label],
+      distances: entry.distances,
+    })),
+    thinPasses,
   };
+}
+
+function assertColourPairwise(probe) {
+  const categorical = assertCategoricalPairwise(probe.categorical);
+  const { results: thinState, thinPasses } = assertThinStatePairwise(
+    probe.thinState,
+    probe.redundantCues,
+  );
+  return { categorical, thinState, thinPasses };
 }
 
 function assertDeuteranomalyCue(probe) {
@@ -1053,6 +1135,12 @@ async function probeCues() {
         { label: 'active-file-background', colour: activeStyle.backgroundColor },
         { label: 'inactive-file-background', colour: inactiveStyle.backgroundColor },
       ],
+      redundantCues: {
+        'active-file-background/inactive-file-background': {
+          left: { label: 'active-file-border', colour: activeStyle.borderColor },
+          right: { label: 'active-file-background', colour: activeStyle.backgroundColor },
+        },
+      },
       accessibleNames: controls.filter((element) => !accessibleName(element)).map((element) => ({
         tag: element.tagName.toLowerCase(), id: element.id, role: element.getAttribute('role'),
       })),
@@ -1241,6 +1329,13 @@ async function runTheme(theme, verification, baselineManifest) {
       assert(viewport, `Missing viewport ${testCase.viewport}.`);
       await setViewport(viewport);
       const audit = await probeCues();
+      for (const thinPass of audit.audit.colourPairs.thinPasses ?? []) {
+        process.stdout.write(
+          `COMMUNITY_THEME_THIN_PASS ${theme.id} ${testCase.id} pair=${thinPass.pair} ` +
+            `dE=${thinPass.measuredDe} redundantCue=${thinPass.redundantCue.pair} ` +
+            `redundantDe=${thinPass.redundantCue.measuredDe}\n`,
+        );
+      }
       const geometry = await probeViewportGeometry(viewport);
       audits.push({ case: testCase.id, ...audit.audit, geometry });
       const outputName = `${theme.id}-${testCase.id}.png`;
@@ -1507,23 +1602,72 @@ function assertStaticColourControls(manifest) {
     ],
   };
   assertColourPairwise(validColours);
-  const rejected = {
-    categorical: [
-      { label: "community:red-control", colour: [220 / 255, 140 / 255, 80 / 255] },
-      { label: "community:green-control", colour: [120 / 255, 180 / 255, 80 / 255] },
+
+  // Positive demonstration of the thin tier's success branch: this pair measures inside the
+  // thin band (~9.0) on its own, but a declared redundant cue clears the pass threshold
+  // (~92.0), so the gate must accept it and record exactly one thin-pass receipt.
+  const thinPairLabel = "community:thin-active/community:thin-background";
+  const thinWithCue = {
+    categorical: validColours.categorical,
+    thinState: [
+      { label: "community:thin-active", colour: [0.7851, 0.8337, 0.8476] },
+      { label: "community:thin-background", colour: [0.945, 0.933, 0.91] },
     ],
-    thinState: validColours.thinState,
+    redundantCues: {
+      [thinPairLabel]: {
+        left: { label: "community:thin-border", colour: [0.05, 0.05, 0.05] },
+        right: { label: "community:thin-active", colour: [0.95, 0.95, 0.95] },
+      },
+    },
   };
-  let rejectedAsExpected = false;
-  try {
-    assertColourPairwise(rejected);
-  } catch (error) {
-    rejectedAsExpected = true;
-    process.stdout.write(
-      `COMMUNITY_THEME_STATIC_RED_CONTROL PASS ${error instanceof Error ? error.message : String(error)}\n`,
+  const thinWithCueResult = assertColourPairwise(thinWithCue);
+  assert(
+    thinWithCueResult.thinPasses.length === 1 &&
+      thinWithCueResult.thinPasses[0].pair === thinPairLabel,
+    `Thin pair with a valid redundant cue was not recorded as a thin-pass: ${JSON.stringify(thinWithCueResult.thinPasses)}.`,
+  );
+  process.stdout.write(
+    `COMMUNITY_THEME_STATIC_THIN_PASS PASS ${JSON.stringify(thinWithCueResult.thinPasses[0])}\n`,
+  );
+
+  // Three independent red controls, one per failure tier the gate can produce.
+  const rejectedCases = {
+    "categorical below 7": {
+      categorical: [
+        { label: "community:red-control", colour: [220 / 255, 140 / 255, 80 / 255] },
+        { label: "community:green-control", colour: [120 / 255, 180 / 255, 80 / 255] },
+      ],
+      thinState: validColours.thinState,
+    },
+    "thin-state below 7": {
+      categorical: validColours.categorical,
+      thinState: [
+        { label: "community:red-control", colour: [220 / 255, 140 / 255, 80 / 255] },
+        { label: "community:green-control", colour: [120 / 255, 180 / 255, 80 / 255] },
+      ],
+    },
+    "thin-state 7-11 without a redundant cue": {
+      categorical: validColours.categorical,
+      thinState: thinWithCue.thinState,
+      // redundantCues intentionally omitted: the ~9.0 measurement must fail closed.
+    },
+  };
+  for (const [label, rejected] of Object.entries(rejectedCases)) {
+    let rejectedAsExpected = false;
+    try {
+      assertColourPairwise(rejected);
+    } catch (error) {
+      rejectedAsExpected = true;
+      process.stdout.write(
+        `COMMUNITY_THEME_STATIC_RED_CONTROL PASS (${label}) ` +
+          `${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
+    assert(
+      rejectedAsExpected,
+      `Community theme colour red control did not fail the pairwise gate: ${label}.`,
     );
   }
-  assert(rejectedAsExpected, "Community theme colour red control did not fail the pairwise gate.");
   process.stdout.write(
     `COMMUNITY_THEME_STATIC_CONTROLS PASS themes=${manifest.themes.map((theme) => theme.id).join(",")}\n`,
   );

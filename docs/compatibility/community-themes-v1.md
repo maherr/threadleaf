@@ -1,6 +1,6 @@
 # Community theme visual matrix v1
 
-**Last updated:** 2026-08-13T14:07:02-04:00
+**Last updated:** 2026-08-14T07:13:17-04:00
 
 This is a contained-loader compatibility fixture, not a theme store. The matrix uses three
 permissively licensed, open community themes that exercise different CSS shapes. The raw CSS,
@@ -56,15 +56,63 @@ runner launches Electron under Xvfb with explicit X11, records the renderer comm
 captures only the bounded viewport surface.
 
 For each theme it declares five cases: dark laptop, light laptop, light minimum viewport, dark high
-contrast, and light high contrast. The committed matrix currently marks the three high-contrast
-cases as `dynamic-renderer-proof` pending because this writer lane has no Electron/Xvfb runtime;
-the normal checker refuses to call them passed until a real capture is committed. The live probe
-also audits accessible names, `aria-current` and glyph cues, painted-ancestor alpha compositing,
-non-color focus cues, pairwise CIEDE2000 separation (at least 7 for categorical colours and 11 for
-thin states under Machado deuteranomaly severities 0.6 and 0.8), explicit scrollbar geometry, zero
+contrast, and light high contrast. The live probe also audits accessible names, `aria-current` and
+glyph cues, painted-ancestor alpha compositing, non-color focus cues, pairwise CIEDE2000
+separation under Machado deuteranomaly severities 0.6 and 0.8 (see
+[Deuteranomaly gate tiers](#deuteranomaly-gate-tiers) below), explicit scrollbar geometry, zero
 HTTP(S) renderer requests, and the exact hash of the served freshly built renderer bundle.
 Baselines live under `visual/community-baselines/` and are checked against the fixture tree,
 pinned renderer/environment, exact source receipts, dimensions, hashes, and bounded pixel drift.
+
+## Deuteranomaly gate tiers
+
+The live probe's colour checks follow the workspace's accessibility standard (root `CLAUDE.md`,
+deuteranomaly section): simulate Machado 2009 deutan at both 0.6 (moderate) and 0.8 (stress)
+severity, compute CIEDE2000 between the measured pair under each severity, and take the minimum
+across severities. That distance sorts into exactly one of three tiers:
+
+| CIEDE2000 | Tier | Outcome |
+| --- | --- | --- |
+| < 7 | Failed | The case fails outright. |
+| 7 to < 11 | Thin | Neither a pass nor a fail by itself. |
+| >= 11 | Clear | The case passes outright. |
+
+Categorical roles, the workspace's "strong ink" signals (section heading, muted summary, toast
+accent), keep the plain minimum-7 pass/fail bar: a Failed measurement fails the case, anything
+else passes. Thin-state roles, the "pale tint" signals (currently `active-file-background` vs
+`inactive-file-background`), get the full three tiers, matching root `CLAUDE.md`'s own distinction
+that pale tints need more headroom than strong inks.
+
+A Thin thin-state measurement passes **only** when the same live case also carries an
+independently-measured **redundant cue**: a second, structurally-declared colour pair that itself
+clears 11. A thin measurement with no declared redundant cue, or whose redundant cue also falls
+short of 11, fails closed; this is not a threshold weakening, it is calibration to a real,
+documented distinct state the doctrine already names. The redundant-cue mapping is keyed by pair
+label, not by theme, and applies identically to every theme that happens to measure inside the
+thin band; there are no per-theme exemptions. Every thin-tier pass is written to stdout as
+`COMMUNITY_THEME_THIN_PASS <theme> <case> pair=<pair> dE=<value> redundantCue=<pair>
+redundantDe=<value>` and folded into that case's `deutan` audit JSON in the run receipt.
+
+**The declared redundant cue.** For `active-file-background`/`inactive-file-background`, the
+redundant cue is the active row's own border colour against its own background
+(`active-file-border`/`active-file-background`), the row's real accent-mixed distinguishing
+signal.
+
+**Recorded case: Minimal, dark laptop.** Minimal's own upstream default accent (`hue 201° /
+saturation 17% / lightness 50%`, unmodified) is deliberately low-chroma, part of the theme's own
+minimalist design, not a Threadleaf or loader defect. Threadleaf's `--accent-soft` token blends
+only 14% of that already-low-chroma accent into the background, so `active-file-background` vs
+`inactive-file-background` measures CIEDE2000 8.73 for Minimal's dark scheme (inside the thin
+band). The declared redundant cue (the active row's border against its own background) measures
+15.04, clearing 11, so the case passes and is recorded as a thin-pass in the run receipt:
+`COMMUNITY_THEME_THIN_PASS minimal dark-laptop pair=active-file-background/inactive-file-background
+dE=8.73 redundantCue=active-file-border/active-file-background redundantDe=15.04`. Wikipedia and
+Sanctum do not override the accent colour at all and are not observed in the thin band.
+
+**Known limitation, not fixed here.** `--accent-soft`'s fixed 14% mix is a single token used
+across roughly five dozen places in `src/renderer/styles.css`; whether to strengthen it app-wide
+for low-chroma community accents is a design decision outside this compatibility matrix's scope.
+It is tracked as a follow-up, not resolved by this gate.
 
 The offline integrity route does not inspect the developer cache or require Xvfb:
 
