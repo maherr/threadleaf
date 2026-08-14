@@ -106,11 +106,12 @@ uploaded."
   check that an unpainted redundant cue cannot rescue a thin pair, prove the gate can actually
   fail. The offline check, `pnpm run community-theme:integrity`, runs inside `pnpm check` and
   inside all six CI and release jobs that build a package; the live capture, `pnpm run
-  community-theme:check`, renders three real, permissively licensed community themes under Xvfb and
-  compares the result against committed baselines. Read honestly: as of this writing it reports two
-  open findings against Threadleaf's own default styling, not against the third-party themes; only
-  the Minimal theme is fully live-verified, and Wikipedia and Sanctum remain pending because their
-  measured separations land under the gate's own hard-fail floor. See
+  community-theme:check`, renders four real subjects under Xvfb, three permissively licensed
+  community themes (Minimal, Wikipedia, Sanctum) plus Threadleaf's own default appearance, and
+  compares the result against committed baselines. All four are fully live-verified with every
+  measured color pair clearing the gate's clear tier, and reading-view body copy holds WCAG AA
+  contrast across all four. Two findings that once sat under the gate's floor, on Threadleaf's own
+  default styling rather than the third-party themes, are both closed. See
   [`docs/compatibility/community-themes-v1.md`](../compatibility/community-themes-v1.md).
 
 ## Where Obsidian is ahead today

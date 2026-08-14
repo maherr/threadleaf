@@ -163,7 +163,7 @@ Finding 10 needs no lane; it is informational only.
   override actually suppressing motion in the live app, not just in the stylesheet; (d) the
   Accessibility settings panel's font-scale sliders (`index.html:871-937`) under 400% OS zoom for
   reflow/clipping.
-- **Files not read in full.** `renderer.ts` (11,695 lines) and `styles.css` (8,446 lines) were
+- **Files not read in full.** `renderer.ts` (11,695 lines) and `styles.css` (8,638 lines) were
   covered through systematic grep sweeps across every relevant pattern (click/keydown listeners,
   `aria-*`, `role`, `tabindex`, `:focus-visible`, `outline`, `dir`/rtl/bidi,
   `cursor: pointer`) plus full reads of every section a sweep surfaced, rather than linearly

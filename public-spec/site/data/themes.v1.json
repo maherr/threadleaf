@@ -128,6 +128,10 @@
         "role": "accent-soft"
       },
       {
+        "name": "--interactive",
+        "role": "accent"
+      },
+      {
         "name": "--signal",
         "role": "signal"
       },

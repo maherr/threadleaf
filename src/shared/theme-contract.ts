@@ -43,6 +43,7 @@ export const themeContractTokens = [
   ["--accent", "accent"],
   ["--accent-strong", "accent-strong"],
   ["--accent-soft", "accent-soft"],
+  ["--interactive", "accent"],
   ["--signal", "signal"],
   ["--signal-soft", "signal-soft"],
   ["--font-interface", "interface-font"],

@@ -237,9 +237,13 @@ if a stability guarantee existed.
   code or fixtures, so this is not a live break, only confirming evidence that the risk above is real
   and not merely hypothetical. Does not change the **Adapt** disposition, which already anticipated
   exactly this.
-  Community-theme fixture pinning (`minimal`/`sanctum`/`wikipedia` SHA-256, folded in above) is the
-  correct mitigation already in place: pinned fixtures make drift detectable rather than assumed away.
-  This is unaffected by the variable-stability gap and remains sufficient.
+  Community-theme fixture pinning (`minimal`/`sanctum`/`wikipedia` SHA-256, folded in above) makes
+  fixture drift detectable rather than assumed away, but it is not sufficient on its own: the live
+  deuteranomaly matrix caught a Sanctum failure (its supporting tokens declared at `body`, invalid at
+  `:root`, collapsing an ink pair to zero separation) that a byte-identical pinned fixture passed
+  cleanly, because the defect was in how Threadleaf's own token layer resolved against the theme, not
+  in the theme bytes. Pinning plus live rendering under the deutan simulator is the mitigation; either
+  alone leaves a real class of regression invisible.
 - The "Plugins" CSS category includes Canvas-view variables, which Threadleaf cannot yet target
   because JSON Canvas (Seam 4) is unimplemented. Sequencing note, not a new risk.
 
