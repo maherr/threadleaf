@@ -13,7 +13,11 @@ import MarkdownIt from "markdown-it";
 import moment from "moment";
 import TurndownService from "turndown";
 import { parse as parseYaml } from "yaml";
-import { ActionRegistry } from "../application/action-registry";
+import {
+  ActionRegistry,
+  type ActionSource,
+  type ActionSummary,
+} from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
 import { isPathInside } from "../kernel/path-policy";
 import type {
@@ -43,6 +47,7 @@ import {
   ItemView,
   MarkdownView,
   Modal,
+  type Modifier,
   MomentFormatComponent,
   PluginSettingTab,
   PopoverSuggest,
@@ -82,7 +87,21 @@ export interface Command {
   id: string;
   name: string;
   callback?: () => unknown | Promise<unknown>;
-  checkCallback?: (checking: boolean) => boolean | undefined | Promise<boolean | undefined>;
+  checkCallback?: (checking: boolean) => boolean | undefined;
+  editorCallback?: (editor: Editor, view: MarkdownView) => unknown | Promise<unknown>;
+  editorCheckCallback?: (
+    checking: boolean,
+    editor: Editor,
+    view: MarkdownView,
+  ) => boolean | undefined;
+  hotkeys?: Hotkey[];
+  mobileOnly?: boolean;
+  repeatable?: boolean;
+}
+
+export interface Hotkey {
+  modifiers: Modifier[];
+  key: string;
 }
 
 export interface MarkdownSectionInformation {
@@ -121,9 +140,12 @@ export type MarkdownCodeBlockProcessor = (
   // biome-ignore lint/suspicious/noConfusingVoidType: This mirrors the public Obsidian callback contract.
 ) => Promise<unknown> | void;
 
-interface RegisteredCommand extends Command {
+interface RegisteredCommandMetadata {
   ownerId: string;
   releaseAction: () => void;
+  releaseHostAction: () => void;
+  runtimeId: string;
+  runtimeName: string;
 }
 
 type VaultEventCallback = (...args: unknown[]) => unknown;
@@ -1121,103 +1143,179 @@ export class MetadataCache {
   }
 }
 
-export class CommandRegistry {
-  private readonly registeredCommands = new Map<string, RegisteredCommand>();
-  readonly actions: ActionRegistry;
+interface CommandEditorContext {
+  editor: Editor;
+  view: MarkdownView;
+}
 
-  constructor(actions = new ActionRegistry()) {
-    this.actions = actions;
+interface CommandRegistrationOptions {
+  runtimeId?: string;
+  runtimeName?: string;
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    "then" in value &&
+    typeof value.then === "function"
+  );
+}
+
+class CommandActionRegistry extends ActionRegistry {
+  constructor(private readonly project: (actions: ActionSummary[]) => ActionSummary[]) {
+    super();
   }
 
-  register(ownerId: string, command: Command): () => void {
+  override list(source?: ActionSource): ActionSummary[] {
+    return this.project(super.list(source));
+  }
+}
+
+export class CommandRegistry {
+  readonly commands: Record<string, Command> = {};
+  private readonly registeredCommands = new Map<string, RegisteredCommandMetadata>();
+  private editorContextProvider: () => CommandEditorContext | null = () => null;
+  private readonly hostActions: ActionRegistry;
+  readonly actions: ActionRegistry;
+
+  constructor(hostActions = new ActionRegistry()) {
+    this.hostActions = hostActions;
+    // Public command dispatch uses qualified IDs in this isolated registry. The host action surface
+    // receives one legacy local-ID projection below so existing Threadleaf snapshots stay stable.
+    this.actions = new CommandActionRegistry((summaries) =>
+      summaries.map((summary) => {
+        const registered = this.registeredCommands.get(summary.id);
+        return registered
+          ? { ...summary, id: registered.runtimeId, name: registered.runtimeName }
+          : summary;
+      }),
+    );
+  }
+
+  register(
+    ownerId: string,
+    command: Command,
+    options: CommandRegistrationOptions = {},
+  ): () => void {
     const previous = this.registeredCommands.get(command.id);
     if (previous && previous.ownerId !== ownerId) {
       throw new Error(`Command already registered: ${command.id}`);
     }
     previous?.releaseAction();
+    previous?.releaseHostAction();
 
+    const commandId = command.id;
+    const runtimeId = options.runtimeId ?? commandId;
+    const runtimeName = options.runtimeName ?? command.name;
     const releaseAction = this.actions.register(ownerId, {
-      id: command.id,
+      id: commandId,
       name: command.name,
       source: "plugin",
-      execute: async () => {
-        if (command.checkCallback) {
-          return command.checkCallback(false);
-        }
-        if (command.callback) {
-          return command.callback();
-        }
-        throw new Error(`Command has no supported callback: ${command.id}`);
-      },
+      execute: () => this.executeByKey(commandId),
     });
-    const registered = { ...command, ownerId, releaseAction };
-    this.registeredCommands.set(command.id, registered);
+    const registered: RegisteredCommandMetadata = {
+      ownerId,
+      releaseAction,
+      releaseHostAction: () => undefined,
+      runtimeId,
+      runtimeName,
+    };
+    this.commands[commandId] = command;
+    this.registeredCommands.set(commandId, registered);
+    if (!this.hostActions.list().some((action) => action.id === runtimeId)) {
+      registered.releaseHostAction = this.hostActions.register(ownerId, {
+        id: runtimeId,
+        name: runtimeName,
+        source: "plugin",
+        execute: () => this.executeByKey(commandId),
+      });
+    }
     return () => {
-      if (this.registeredCommands.get(command.id) === registered) {
-        this.registeredCommands.delete(command.id);
+      if (this.registeredCommands.get(commandId) === registered) {
+        this.registeredCommands.delete(commandId);
+        Reflect.deleteProperty(this.commands, commandId);
         releaseAction();
+        registered.releaseHostAction();
       }
     };
   }
 
-  get commands(): Record<string, Command> {
-    return Object.fromEntries(
-      [...this.registeredCommands.entries()].map(([id, registered]) => {
-        const command = { ...registered };
-        Reflect.deleteProperty(command, "ownerId");
-        Reflect.deleteProperty(command, "releaseAction");
-        return [id, command];
-      }),
-    );
+  setEditorContextProvider(provider: () => CommandEditorContext | null): void {
+    this.editorContextProvider = provider;
   }
 
   removeCommand(commandId: string): void {
-    const command = this.registeredCommands.get(commandId);
-    if (!command) {
+    const commandKey = this.resolveCommandKey(commandId);
+    if (!commandKey) {
       return;
     }
-    this.registeredCommands.delete(commandId);
-    command.releaseAction();
+    const registered = this.registeredCommands.get(commandKey);
+    if (!registered) {
+      return;
+    }
+    this.registeredCommands.delete(commandKey);
+    Reflect.deleteProperty(this.commands, commandKey);
+    registered.releaseAction();
+    registered.releaseHostAction();
   }
 
   executeCommandById(commandId: string): boolean {
-    const command = this.registeredCommands.get(commandId);
-    if (!command) {
-      return false;
-    }
-    if (command.checkCallback) {
-      const available = command.checkCallback(true);
-      if (available instanceof Promise || available !== true) {
-        return false;
-      }
-    } else if (!command.callback) {
+    const commandKey = this.resolveCommandKey(commandId);
+    const command = commandKey ? this.commands[commandKey] : undefined;
+    if (!command || command.mobileOnly) {
       return false;
     }
 
-    void this.actions.dispatch(commandId);
-    return true;
+    const context = this.editorContextProvider();
+    if (context?.editor && command.editorCheckCallback) {
+      return command.editorCheckCallback(false, context.editor, context.view) === true;
+    }
+    if (context?.editor && command.editorCallback) {
+      const result = command.editorCallback(context.editor, context.view);
+      return isPromiseLike(result) || result !== false;
+    }
+    if (command.checkCallback) {
+      return command.checkCallback(false) === true;
+    }
+    if (command.callback) {
+      const result = command.callback();
+      return isPromiseLike(result) || result !== false;
+    }
+    return false;
   }
 
   list(): CommandSummary[] {
-    return [...this.registeredCommands.values()]
-      .map(({ id, name, ownerId }) => ({ id, name, ownerId }))
+    return [...this.registeredCommands.entries()]
+      .filter(([commandId]) => this.commands[commandId] !== undefined)
+      .map(([, { ownerId, runtimeId, runtimeName }]) => ({
+        id: runtimeId,
+        name: runtimeName,
+        ownerId,
+      }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
   async run(commandId: string): Promise<boolean> {
-    const command = this.registeredCommands.get(commandId);
-    if (!command || !(await this.canRun(commandId))) {
+    const commandKey = this.resolveCommandKey(commandId);
+    if (!commandKey || !(await this.canRun(commandKey))) {
       return false;
     }
-
-    await this.actions.dispatch(commandId);
-    return true;
+    return (await this.actions.dispatch<boolean>(commandKey)) === true;
   }
 
   async canRun(commandId: string): Promise<boolean> {
-    const command = this.registeredCommands.get(commandId);
-    if (!command) {
+    const commandKey = this.resolveCommandKey(commandId);
+    const command = commandKey ? this.commands[commandKey] : undefined;
+    if (!command || command.mobileOnly) {
       return false;
+    }
+    const context = this.editorContextProvider();
+    if (context?.editor && command.editorCheckCallback) {
+      return command.editorCheckCallback(true, context.editor, context.view) === true;
+    }
+    if (context?.editor && command.editorCallback) {
+      return true;
     }
     if (command.checkCallback) {
       return (await command.checkCallback(true)) === true;
@@ -1226,14 +1324,51 @@ export class CommandRegistry {
   }
 
   ownerIdFor(commandId: string): string | null {
-    return this.registeredCommands.get(commandId)?.ownerId ?? null;
+    const commandKey = this.resolveCommandKey(commandId);
+    return commandKey ? (this.registeredCommands.get(commandKey)?.ownerId ?? null) : null;
+  }
+
+  private async executeByKey(commandId: string): Promise<boolean> {
+    const command = this.commands[commandId];
+    if (!command || command.mobileOnly) {
+      return false;
+    }
+    const context = this.editorContextProvider();
+    if (context?.editor && command.editorCheckCallback) {
+      return command.editorCheckCallback(false, context.editor, context.view) === true;
+    }
+    if (context?.editor && command.editorCallback) {
+      return (await command.editorCallback(context.editor, context.view)) !== false;
+    }
+    if (command.checkCallback) {
+      return command.checkCallback(false) === true;
+    }
+    if (command.callback) {
+      return (await command.callback()) !== false;
+    }
+    return false;
+  }
+
+  private resolveCommandKey(commandId: string): string | null {
+    if (this.registeredCommands.has(commandId)) {
+      return commandId;
+    }
+    const matches = [...this.registeredCommands.entries()].filter(
+      ([, registered]) => registered.runtimeId === commandId,
+    );
+    return matches.length === 1 ? (matches[0]?.[0] ?? null) : null;
   }
 }
 
 export class Keymap extends BaseKeymap {
-  // This preserves plugin scope lifecycle and activation order only. Keyboard event delivery
-  // remains owned by Threadleaf's renderer and is not synthesized by this compatibility surface.
   private readonly scopeStack: Scope[] = [];
+  private readonly ownerDocument: Document | null;
+
+  constructor(ownerDocument = typeof document === "undefined" ? null : document) {
+    super();
+    this.ownerDocument = ownerDocument;
+    this.ownerDocument?.addEventListener("keydown", this.handleKeyDown);
+  }
 
   pushScope(scope: Scope): void {
     this.scopeStack.push(scope);
@@ -1245,6 +1380,58 @@ export class Keymap extends BaseKeymap {
       this.scopeStack.splice(index, 1);
     }
   }
+
+  static isModifier(event: MouseEvent | TouchEvent | KeyboardEvent, modifier: Modifier): boolean {
+    switch (modifier) {
+      case "Mod":
+        return process.platform === "darwin" ? event.metaKey : event.ctrlKey;
+      case "Ctrl":
+        return event.ctrlKey;
+      case "Meta":
+        return event.metaKey;
+      case "Shift":
+        return event.shiftKey;
+      case "Alt":
+        return event.altKey;
+    }
+  }
+
+  static isModEvent(
+    event?: MouseEvent | TouchEvent | KeyboardEvent | null,
+  ): "tab" | "split" | "window" | boolean {
+    if (!event) {
+      return false;
+    }
+    if ("button" in event && event.button === 1) {
+      return "tab";
+    }
+    if (!Keymap.isModifier(event, "Mod")) {
+      return false;
+    }
+    if (Keymap.isModifier(event, "Alt") && Keymap.isModifier(event, "Shift")) {
+      return "window";
+    }
+    if (Keymap.isModifier(event, "Alt")) {
+      return "split";
+    }
+    return "tab";
+  }
+
+  private readonly handleKeyDown = (event: KeyboardEvent): void => {
+    let scope: Scope | null = this.scopeStack.at(-1) ?? this.getRootScope();
+    const visited = new Set<Scope>();
+    while (scope && !visited.has(scope)) {
+      visited.add(scope);
+      const dispatched = scope.handleKeyEvent(event);
+      if (dispatched.matched) {
+        if (dispatched.result === false) {
+          event.preventDefault();
+        }
+        return;
+      }
+      scope = scope.parent;
+    }
+  };
 }
 
 export class NoticeBus {
@@ -1434,7 +1621,8 @@ export class App {
   readonly workspace = new Workspace();
   readonly compatibility = new CompatibilityIntegrationRegistry();
   readonly internalPlugins = createInternalPlugins();
-  readonly keymap = new Keymap();
+  readonly keymap: Keymap;
+  readonly scope: Scope;
   readonly plugins = new PluginManager();
   private readonly pluginModals = new Map<string, Set<{ close(): void }>>();
 
@@ -1444,6 +1632,12 @@ export class App {
     this.metadataCache = new MetadataCache(vault);
     this.commands = commands;
     this.notices = notices;
+    this.keymap = new Keymap();
+    this.scope = this.keymap.getRootScope();
+    this.commands.setEditorContextProvider(() => {
+      const view = this.workspace.getActiveViewOfType(MarkdownView);
+      return view ? { editor: view.editor, view } : null;
+    });
     this.vault.on("create", (file) => {
       if (file instanceof TFile) {
         this.metadataCache.trigger("changed", file, "", this.metadataCache.getFileCache(file));
@@ -1536,6 +1730,7 @@ export class App {
 export class Plugin extends Component {
   readonly app: App;
   readonly manifest: PluginManifest;
+  private readonly commandReleases = new Map<string, () => void>();
 
   constructor(app: App, manifest: PluginManifest) {
     super();
@@ -1548,8 +1743,54 @@ export class Plugin extends Component {
   async onunload(): Promise<void> {}
 
   addCommand(command: Command): Command {
-    this.register(this.app.commands.register(this.manifest.id, command));
+    const idPrefix = `${this.manifest.id}:`;
+    const namePrefix = `${this.manifest.name}: `;
+    const localId = command.id.startsWith(idPrefix)
+      ? command.id.slice(idPrefix.length)
+      : command.id;
+    const localName = command.name.startsWith(namePrefix)
+      ? command.name.slice(namePrefix.length)
+      : command.name;
+    this.removeCommand(localId);
+
+    command.id = `${idPrefix}${localId}`;
+    command.name = `${namePrefix}${localName}`;
+    const qualifiedId = command.id;
+    const releaseCommand = this.app.commands.register(this.manifest.id, command, {
+      runtimeId: localId,
+      runtimeName: localName,
+    });
+    const hotkeyHandlers = (command.hotkeys ?? []).map((hotkey) =>
+      this.app.scope.register(hotkey.modifiers, hotkey.key, (event) => {
+        if (event.repeat && command.repeatable !== true) {
+          return true;
+        }
+        return !this.app.commands.executeCommandById(qualifiedId);
+      }),
+    );
+    let active = true;
+    const release = (): void => {
+      if (!active) {
+        return;
+      }
+      active = false;
+      for (const handler of hotkeyHandlers) {
+        this.app.scope.unregister(handler);
+      }
+      releaseCommand();
+      if (this.commandReleases.get(localId) === release) {
+        this.commandReleases.delete(localId);
+      }
+    };
+    this.commandReleases.set(localId, release);
+    this.register(release);
     return command;
+  }
+
+  removeCommand(commandId: string): void {
+    const idPrefix = `${this.manifest.id}:`;
+    const localId = commandId.startsWith(idPrefix) ? commandId.slice(idPrefix.length) : commandId;
+    this.commandReleases.get(localId)?.();
   }
 
   addRibbonIcon(
