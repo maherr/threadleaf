@@ -171,6 +171,13 @@ function hiddenPath(index: number): string {
   );
 }
 
+const tailBucketMinimumBytes = 174_080;
+
+function tailBucketRampBytes(offset: number): number {
+  const span = noteSizeBuckets[4].bytes - tailBucketMinimumBytes;
+  return tailBucketMinimumBytes + Math.floor((offset * span) / noteSizeBuckets[3].count);
+}
+
 function noteSize(index: number): number {
   const p50End = noteSizeBuckets[0].count;
   const p90End = p50End + noteSizeBuckets[1].count;
@@ -179,11 +186,7 @@ function noteSize(index: number): number {
   if (index < p50End) return noteSizeBuckets[0].bytes;
   if (index < p90End) return noteSizeBuckets[1].bytes;
   if (index < p99End) return noteSizeBuckets[2].bytes;
-  if (index < tailEnd) {
-    const offset = index - p99End;
-    const span = noteSizeBuckets[4].bytes - 174_080;
-    return 174_080 + Math.floor((offset * span) / noteSizeBuckets[3].count);
-  }
+  if (index < tailEnd) return tailBucketRampBytes(index - p99End);
   return noteSizeBuckets[4].bytes;
 }
 
@@ -391,8 +394,8 @@ export function buildVaultScaleManifest(variant: VaultScaleVariant): VaultScaleM
           ? {
               label: bucket.label,
               count: bucket.count,
-              minimumBytes: 174_080,
-              maximumBytes: 1_224_998,
+              minimumBytes: tailBucketRampBytes(0),
+              maximumBytes: tailBucketRampBytes(bucket.count - 1),
             }
           : {
               label: bucket.label,
