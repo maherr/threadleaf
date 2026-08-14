@@ -268,10 +268,25 @@ function completionCandidateArgs(
   }
 }
 
+// Specs are static for the process lifetime, so the parser-valid suffix for a
+// given (spec, spelling) pair never changes. Root states repeatedly complete
+// the same command spellings, and each lookup here reruns a parser-oracle
+// search; memoizing removes that redundant work from the sweep's hot path.
+const parserValidSuffixCache = new Map<(typeof cliCommandSpecs)[number], Map<string, string[]>>();
+
 function parserValidSuffixForCommand(
   spec: (typeof cliCommandSpecs)[number],
   spelling: string,
 ): string[] {
+  let bySpelling = parserValidSuffixCache.get(spec);
+  if (!bySpelling) {
+    bySpelling = new Map();
+    parserValidSuffixCache.set(spec, bySpelling);
+  }
+  const cached = bySpelling.get(spelling);
+  if (cached) {
+    return cached;
+  }
   const prefix = completionCommandPrefix(spec, spelling);
   const parserCandidates = [
     prefix,
@@ -283,7 +298,9 @@ function parserValidSuffixForCommand(
   if (!accepted) {
     throw new Error(`No parser-valid completion suffix for ${spelling}`);
   }
-  return accepted.slice(prefix.length);
+  const suffix = accepted.slice(prefix.length);
+  bySpelling.set(spelling, suffix);
+  return suffix;
 }
 
 interface CompletionState {
@@ -360,6 +377,34 @@ function completionCandidateIsParserPrefix(candidate: string): boolean {
     option.inlineValue === null &&
     (cliGlobalOptions.find((item) => item.id === option.id)?.takesValue ?? false)
   );
+}
+
+/**
+ * Materializes a parser-prefix candidate (a bare value-taking option or a
+ * `key=` prefix) into the args the real parser would see once a value is
+ * chosen, so the sweep can assert the completed form is still accepted.
+ */
+function completionOptionArgsForCheck(token: string): string[] {
+  if (token.endsWith("=")) {
+    return [completionCandidateToken(token)];
+  }
+  const option = parseCliOptionToken(token);
+  if (
+    !option ||
+    option.inlineValue !== null ||
+    !cliGlobalOptions.find((item) => item.id === option.id)?.takesValue
+  ) {
+    return [token];
+  }
+  const values: Record<string, string> = {
+    vault: "/vault",
+    directory: "Notes",
+    limit: "5",
+    content: "fixture content",
+    to: "Archive/Note.md",
+    name: "Renamed",
+  };
+  return [token, values[option.id] ?? "fixture"];
 }
 
 async function shellOutputByState(
@@ -1445,6 +1490,14 @@ describe("CLI schema and generated completion", () => {
               const args = completionCandidateArgsForState(state, candidate);
               if (completionCandidateIsParserPrefix(candidate)) {
                 expect(args.at(-1), `${shell} ${state.label} ${candidate}`).toBe(candidate);
+                expect(
+                  () =>
+                    parseCliArguments([
+                      ...args.slice(0, -1),
+                      ...completionOptionArgsForCheck(candidate),
+                    ]),
+                  `${shell} ${state.label} ${candidate}`,
+                ).not.toThrow();
                 continue;
               }
               expect(
@@ -1474,7 +1527,7 @@ describe("CLI schema and generated completion", () => {
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
-  }, 60_000);
+  }, 150_000);
 
   it("keeps root eligibility and literal parser-oracle candidates visible", async () => {
     const completionSpec = cliCommandSpecs.find((spec) => spec.id === "completion");
