@@ -447,7 +447,7 @@ Working $y$`);
     const anchor = rendered.querySelector<HTMLAnchorElement>("a");
 
     expect(anchor?.dataset.threadleafLink).toBe("external");
-    expect(anchor?.dataset.threadleafExternalUrl).toBe("https://example.com/raw");
+    expect(anchor?.dataset.threadleafExternalUrl).toBeUndefined();
     expect(anchor?.getAttribute("href")).toBe("#");
   });
 
@@ -489,6 +489,25 @@ Working $y$`);
     expect(
       rendered.querySelector<HTMLElement>(".preview-footnote-ref a")?.getAttribute("href"),
     ).toMatch(/^#threadleaf-footnote-/u);
+  });
+
+  it("keeps forged footnote navigation inert inside a genuine definition", () => {
+    const source = [
+      "A genuine note.[^source]",
+      "",
+      '[^source]: <a class="preview-footnote-backref" data-threadleaf-footnote-ref="true" data-threadleaf-external-url="https://evil.example/footnote" href="https://evil.example/footnote">forged</a>',
+    ].join("\n");
+    const rendered = preview(source);
+    const raw = rendered.querySelector<HTMLAnchorElement>("a[data-threadleaf-raw-link='true']");
+    const genuineReference = rendered.querySelector<HTMLAnchorElement>(
+      ".preview-footnote-ref a",
+    );
+
+    expect(raw?.textContent).toBe("forged");
+    expect(raw?.getAttribute("href")).toBe("#");
+    expect(raw?.dataset.threadleafExternalUrl).toBeUndefined();
+    expect(raw?.classList.contains("preview-footnote-backref")).toBe(false);
+    expect(genuineReference?.getAttribute("href")).toMatch(/^#threadleaf-footnote-/u);
   });
 
   it("keeps reading Markdown after a raw script close-tag lookalike", () => {

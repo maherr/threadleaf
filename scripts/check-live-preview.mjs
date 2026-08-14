@@ -505,7 +505,25 @@ async function liveSurfaceState() {
         : null;
     })(),
     codeLines: document.querySelectorAll(".tl-live-code-line").length,
-    tableLines: document.querySelectorAll(".tl-live-table-line").length,
+    tableRows: document.querySelectorAll(".tl-live-table-widget").length,
+    tableCells: document.querySelectorAll(".tl-live-table-cell").length,
+    tableText: [...document.querySelectorAll(".tl-live-table-widget")]
+      .map((row) => row.textContent ?? "")
+      .join("|")
+      .replace(/\s+/gu, " ")
+      .trim(),
+    tableGeometry: (() => {
+      const row = document.querySelector(".tl-live-table-row-header");
+      const cells = row ? [...row.querySelectorAll(".tl-live-table-cell")] : [];
+      const style = row instanceof HTMLElement ? getComputedStyle(row) : null;
+      return {
+        display: style?.display ?? "",
+        columns: style?.gridTemplateColumns ?? "",
+        rowWidth: row instanceof HTMLElement ? row.getBoundingClientRect().width : 0,
+        cellWidths: cells.map((cell) => (cell instanceof HTMLElement ? cell.getBoundingClientRect().width : 0)),
+        cellLefts: cells.map((cell) => (cell instanceof HTMLElement ? cell.getBoundingClientRect().left : 0)),
+      };
+    })(),
     frontmatterLines: document.querySelectorAll(".tl-live-frontmatter-line").length,
     activeText: document.querySelector(".cm-activeLine")?.textContent ?? "",
     overflow: (() => {
@@ -592,7 +610,13 @@ try {
         candidate.embedState.target === "Linked Note.md" &&
         candidate.readyImages === 1 &&
         candidate.codeLines >= 3 &&
-        candidate.tableLines >= 3 &&
+        candidate.tableRows >= 3 &&
+        candidate.tableCells >= 6 &&
+        candidate.tableGeometry?.display === "grid" &&
+        candidate.tableGeometry.rowWidth > 0 &&
+        candidate.tableGeometry.cellWidths.length >= 2 &&
+        candidate.tableGeometry.cellWidths.every((width) => width > 0) &&
+        candidate.tableGeometry.cellLefts[1] > candidate.tableGeometry.cellLefts[0] &&
         candidate.frontmatterLines >= 4
         ? candidate
         : null;
@@ -603,6 +627,8 @@ try {
     );
   }
   assert(surface.overflow <= 1, `Live Preview overflowed horizontally by ${surface.overflow}px.`);
+  assert(surface.tableText.includes("Field") && surface.tableText.includes("Value"), "Live table header text was not visible.");
+  assert(surface.tableText.includes("modelive") || surface.tableText.includes("mode live"), "Live table body text was not visible.");
   const darkBaseline = await captureScreenshot("live-preview-dark");
   assert(
     (await evaluate("document.documentElement.dataset.theme")) === "dark",

@@ -361,6 +361,54 @@ describe("Live Preview async ownership", () => {
     host.remove();
   });
 
+  it("keeps raw-text and mismatched-fence contents source-visible when mounted", async () => {
+    const source = [
+      `<textarea>[[hidden]] $x$ </textarea>`,
+      "~~~",
+      "```",
+      "[^code]: this is still fenced source",
+      "**also source**",
+    ].join("\n");
+    const current = { path: "Current.md", vaultId: "vault-a" };
+    const { view, host } = editorFor(source, current, async () => {
+      throw new Error("The opacity fixture has no note embeds.");
+    });
+
+    await flushAsyncWork();
+    expect(host.querySelector(".tl-live-link, .tl-live-math, .tl-live-footnote")).toBeNull();
+    expect(host.querySelector(".tl-live-strong")).toBeNull();
+    expect(host.textContent).toContain("[[hidden]] $x$");
+    expect(host.textContent).toContain("[^code]: this is still fenced source");
+    expect(host.textContent).toContain("**also source**");
+    view.destroy();
+    host.remove();
+  });
+
+  it("keeps an immutable embed request identity separate from the dynamic stale guard", async () => {
+    const pending = deferred<VaultNoteEmbedResponse>();
+    const current = { path: "Current.md", vaultId: "vault-a" };
+    const requests: Array<[string, string, string | null, string]> = [];
+    const { view, host } = editorFor(
+      "![[Target.md]]",
+      current,
+      async (sourceNotePath, target, subpath, expectedVaultId) => {
+        requests.push([sourceNotePath, target, subpath, expectedVaultId]);
+        current.path = "Other.md";
+        current.vaultId = "vault-b";
+        return pending.promise;
+      },
+    );
+
+    pending.resolve(readyEmbed("Target.md", "# stale"));
+    await flushAsyncWork();
+    expect(requests[0]).toEqual(["Current.md", "Target.md", null, "vault-a"]);
+    const embed = host.querySelector<HTMLElement>(".tl-live-embed");
+    expect(embed?.dataset.tlTransclusionStatus).toBeUndefined();
+    expect(embed?.querySelector(".tl-live-embed-preview")).toBeNull();
+    view.destroy();
+    host.remove();
+  });
+
   it("binds each table body widget to its own source line", async () => {
     const source = [
       "| Field | Value |",

@@ -7,6 +7,7 @@ import {
   resolveInlineTransclusions,
   subtractSourceRanges,
 } from "./live-preview";
+import type { LivePreviewMappingScanStats } from "./live-preview";
 import { markdownHtmlRanges } from "./markdown-extensions";
 
 interface FixtureToken {
@@ -461,6 +462,26 @@ describe("source/decorated mapping fixture", () => {
     expect(fallback?.sourceText).toContain("[bad](path/(nested)");
     expect(mapping.segments.some((segment) => segment.kind === "fallback")).toBe(true);
     expect(mapping.rendered).toContain("[bad](path/(nested)");
+  });
+
+  it("keeps repeated nested Markdown destinations within a linear scan ceiling", () => {
+    type NestedScanStats = LivePreviewMappingScanStats & { nestedDestinationSteps: number };
+    const steps: number[] = [];
+    for (const size of [256, 512, 1_024]) {
+      const source = "[label](".repeat(size) + ")".repeat(size);
+      const stats = {
+        lines: 0,
+        protectedRangeChecks: 0,
+        rawTextSteps: 0,
+        rangeSubtractionComparisons: 0,
+      } as NestedScanStats;
+      const mapping = buildLivePreviewMapping(source, { stats });
+      expect(mapping.source).toBe(source);
+      expect(stats.nestedDestinationSteps).toBeLessThan(source.length * 8);
+      steps.push(stats.nestedDestinationSteps);
+    }
+    expect(steps[1]).toBeLessThan((steps[0] ?? 0) * 3);
+    expect(steps[2]).toBeLessThan((steps[1] ?? 0) * 3);
   });
 });
 

@@ -2,11 +2,35 @@ import { describe, expect, it } from "vitest";
 import { externalTextFromEditor, externalTextRepresentation } from "./editor-text";
 import {
   applyEditorTextHistoryEntry,
+  boundedEditorTextHistory,
   captureEditorTextHistoryEntry,
+  maxEditorTextHistoryEntries,
   type EditorTextHistoryChange,
 } from "./editor-text-history";
 
 describe("external editor-text history deltas", () => {
+  it("retains only the bounded newest metadata entries", () => {
+    const entries = Array.from({ length: maxEditorTextHistoryEntries + 17 }, (_, index) => ({
+      changes: [
+        {
+          from: index,
+          to: index,
+          newFrom: index,
+          newTo: index + 1,
+          insert: String(index),
+          removedText: "",
+          removedLineEndings: [],
+          insertedLineEndings: [],
+        },
+      ],
+    }));
+
+    const retained = boundedEditorTextHistory(entries);
+    expect(retained).toHaveLength(maxEditorTextHistoryEntries);
+    expect(retained[0]?.changes[0]?.from).toBe(17);
+    expect(retained.at(-1)?.changes[0]?.from).toBe(maxEditorTextHistoryEntries + 16);
+  });
+
   it("keeps long-note undo metadata proportional to changed lines", () => {
     const source = Array.from({ length: 8_192 }, (_, index) => `line ${index}`).join("\r\n");
     const initial = externalTextRepresentation(source);
