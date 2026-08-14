@@ -196,6 +196,38 @@ describe("search text projection", () => {
     expect(mapSearchMatchToSourceRange(projectSearchText("a\u064e"), 0, 1)).toBeNull();
   });
 
+  it("expands a folded match back to the full source grapheme when NFC normalization grows it (U+0344)", () => {
+    // U+0344 COMBINING GREEK DIALYTIKA TONOS has a canonical decomposition to U+0308 U+0301
+    // (combining diaeresis + combining acute), and that decomposed pair is a full composition
+    // exclusion, so NFC normalization of a lone U+0344 does not round-trip: it grows from 1
+    // UTF-16 unit to 2. Attached to a Greek base (no Latin letter anywhere in its
+    // decomposition), `foldGrapheme` takes the canonical-only branch -- no diacritic
+    // stripping -- so this grapheme's folded length (3: base + 2 marks) exceeds its source
+    // length (2: base + the single precomposed mark).
+    const grapheme = "\u03b5\u0344";
+    expect(grapheme.length).toBe(2);
+    expect(grapheme.normalize("NFC").length).toBe(3);
+
+    const source = `prefix ${grapheme} suffix`;
+    const projection = projectSearchText(source);
+    expect(projection.text).toBe(`prefix ${grapheme.normalize("NFC")} suffix`);
+
+    const foldedStart = projection.text.indexOf(grapheme.normalize("NFC"));
+    const range = mapSearchMatchToSourceRange(projection, foldedStart, 3);
+
+    // The match maps back to the grapheme's full source range, and only that range -- never a
+    // half-grapheme. A match confined to the folded head (the base alone, without either
+    // combining mark) or one offset into the folded tail (the mark pair alone, without the
+    // base) must fail to align with any recorded segment boundary and return null.
+    expect(range).toEqual({
+      start: source.indexOf(grapheme),
+      end: source.indexOf(grapheme) + grapheme.length,
+    });
+    expect(source.slice(range?.start, range?.end)).toBe(grapheme);
+    expect(mapSearchMatchToSourceRange(projection, foldedStart, 1)).toBeNull();
+    expect(mapSearchMatchToSourceRange(projection, foldedStart + 1, 2)).toBeNull();
+  });
+
   it("maps a Turkish dotted I to correct UTF-16 source offsets alongside astral and decomposed graphemes", () => {
     const source = "prefix 😀 İ Cafe\u0301 target";
     const projection = projectSearchText(source);
