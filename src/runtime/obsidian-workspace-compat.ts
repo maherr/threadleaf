@@ -6,7 +6,7 @@ import type {
 } from "./obsidian-compat";
 import { type App, TFile } from "./obsidian-compat";
 import type { CompatibilityEventRef } from "./obsidian-components";
-import { Editor, WorkspaceLeaf } from "./obsidian-ui-compat";
+import { Editor, isConstructedWorkspaceLeaf, WorkspaceLeaf } from "./obsidian-ui-compat";
 
 type EventCallback = (...args: unknown[]) => unknown;
 type PaneType = "split" | "tab" | "window";
@@ -540,7 +540,7 @@ export class Workspace {
     this.pendingLeafGroup = group;
     try {
       const leaf = this.leafFactory(containerEl);
-      if (!(leaf instanceof WorkspaceLeaf)) {
+      if (!(leaf instanceof WorkspaceLeaf) || !isConstructedWorkspaceLeaf(leaf)) {
         throw new Error(
           "Compatibility workspace leaf factory must return an actual WorkspaceLeaf.",
         );

@@ -83,6 +83,19 @@ describe("Obsidian workspace compatibility wedge", () => {
       );
       expect(() => wrongShapeWorkspace.getLeaf(false)).toThrow("actual WorkspaceLeaf");
 
+      // A prototype graft passes instanceof without running the constructor;
+      // the construction brand must still reject it.
+      const graftedWorkspace = new Workspace();
+      graftedWorkspace.setLeafFactory((containerEl) =>
+        Object.assign(Object.create(WorkspaceLeaf.prototype) as WorkspaceLeaf, {
+          containerEl,
+          getViewState: () => ({ state: {}, type: "empty" }),
+          id: "grafted-prototype-leaf",
+          openFile: async () => undefined,
+        }),
+      );
+      expect(() => graftedWorkspace.getLeaf(false)).toThrow("actual WorkspaceLeaf");
+
       const vault = await createVault();
       const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
       app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));

@@ -1100,6 +1100,14 @@ interface WorkspaceViewState {
   state?: Record<string, unknown>;
 }
 
+const constructedWorkspaceLeaves = new WeakSet<WorkspaceLeaf>();
+
+// A prototype-grafted impostor passes instanceof without ever running the
+// constructor; only construction-time branding proves a real leaf.
+export function isConstructedWorkspaceLeaf(leaf: WorkspaceLeaf): boolean {
+  return constructedWorkspaceLeaves.has(leaf);
+}
+
 export class WorkspaceLeaf {
   readonly app: App;
   readonly containerEl: HTMLElement;
@@ -1117,6 +1125,7 @@ export class WorkspaceLeaf {
   private static nextId = 1;
 
   constructor(app: App, containerEl?: HTMLElement) {
+    constructedWorkspaceLeaves.add(this);
     this.app = app;
     this.containerEl = containerEl ?? currentDocument().createElement("div");
     this.containerEl.classList.add("workspace-leaf");
