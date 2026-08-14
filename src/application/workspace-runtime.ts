@@ -832,6 +832,12 @@ export class WorkspaceRuntime {
    * never handed a different document and never re-reads one that is missing.
    */
   readonly #retainedNotes = new Map<string, WorkspaceNoteSnapshot>();
+  /**
+   * The same for a canvas. A pane showing one is showing a live surface with its
+   * own view state, so a canvas whose file is briefly not on disk is republished
+   * exactly as it was rather than emptied and rebuilt for a gap nobody caused.
+   */
+  readonly #retainedCanvases = new Map<string, WorkspaceCanvasSnapshot>();
   #reconcilePass = 0;
   readonly #now: () => number;
   /**
@@ -1155,7 +1161,13 @@ export class WorkspaceRuntime {
   }
 
   private visibleVaultFiles(): Promise<readonly string[]> {
-    const sequence = this.#lastWatchSequence;
+    // Keyed on the reconcile pass rather than the watcher's sequence. The
+    // watcher snapshots Markdown only, so a canvas appearing or disappearing
+    // moves no sequence, and an inventory held against one was reused across the
+    // very reconciliation meant to notice. Every pass advances this, so no look
+    // at the vault is answered from before it - and a pass is still one pass, so
+    // a single snapshot build still lists the vault once.
+    const sequence = this.#reconcilePass;
     if (this.#visibleVaultFiles?.sequence === sequence) {
       return this.#visibleVaultFiles.promise;
     }
@@ -1981,6 +1993,7 @@ export class WorkspaceRuntime {
     this.clearAbsenceWake();
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
+    this.#retainedCanvases.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
     for (const release of this.#releaseActions.reverse()) {
       release();
@@ -3299,13 +3312,20 @@ export class WorkspaceRuntime {
     );
     // A retained path can still be unrenderable: nothing readable was ever
     // published for it. Such a path keeps its tab but may not hold the active
-    // selection, because the snapshot would have to read a file that is not there.
+    // selection, because the snapshot would have to read a file that is not
+    // there. A canvas has its own retained snapshots, and reading renderability
+    // from the note map alone made every canvas unrenderable the moment it went
+    // missing, so an active one lost its selection to a neighbour and did not
+    // get it back.
     const renderablePaths =
       trackedMissing.length === 0
         ? availablePaths
         : new Set([
             ...availablePaths,
-            ...trackedMissing.filter((filePath) => this.#retainedNotes.has(filePath)),
+            ...trackedMissing.filter(
+              (filePath) =>
+                this.#retainedNotes.has(filePath) || this.#retainedCanvases.has(filePath),
+            ),
           ]);
     const reconciledPanes = this.#panes.map((pane) => {
       const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
@@ -3409,16 +3429,31 @@ export class WorkspaceRuntime {
       if (cached) {
         return cached;
       }
+      // Same answer as a note whose file is momentarily not on disk: republish
+      // what was last published for it rather than failing the whole snapshot.
+      const retained = this.#retainedCanvases.get(filePath);
       const pending = loadJsonCanvas(this.kernel, filePath, this.kernel.vaultId, {
         readOnly: this.readOnly,
-      }).then((response) => {
-        if (response.status !== "ready") {
-          throw new Error(
-            response.status === "unavailable" ? response.message : "The active vault changed.",
-          );
-        }
-        return response.canvas;
-      });
+      }).then(
+        (response) => {
+          if (response.status !== "ready") {
+            if (retained && response.status === "unavailable" && response.reason === "missing") {
+              return retained;
+            }
+            throw new Error(
+              response.status === "unavailable" ? response.message : "The active vault changed.",
+            );
+          }
+          this.#retainedCanvases.set(filePath, response.canvas);
+          return response.canvas;
+        },
+        (error: unknown) => {
+          if (retained) {
+            return retained;
+          }
+          throw error;
+        },
+      );
       canvasSnapshots.set(filePath, pending);
       return pending;
     };
@@ -3463,6 +3498,11 @@ export class WorkspaceRuntime {
     for (const filePath of this.#retainedNotes.keys()) {
       if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
         this.#retainedNotes.delete(filePath);
+      }
+    }
+    for (const filePath of this.#retainedCanvases.keys()) {
+      if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
+        this.#retainedCanvases.delete(filePath);
       }
     }
     return {

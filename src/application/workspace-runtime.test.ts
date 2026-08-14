@@ -3651,6 +3651,82 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     expect(returned.workspace?.activeNote?.path).toBe("Welcome.md");
   });
 
+  it("observes a canvas going missing even though the watcher never diffs one", async () => {
+    // The watcher snapshots Markdown only, so a canvas rename produces no diff
+    // and no batch of its own. Anything that decided when to look at the vault
+    // again from the watcher's sequence therefore never looked at all, and the
+    // absence of a canvas was invisible until unrelated Markdown activity moved
+    // the sequence on.
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+
+    const target = path.join(vaultPath, "Boards", "Overview.canvas");
+    const asidePath = path.join(sandboxPath, "Overview.canvas.aside");
+    await fs.rename(target, asidePath);
+    expect(await workspace.watcher.scanNow()).toBeNull();
+
+    const during = await workspace.reconcileNow();
+    expect(during.workspace?.canvasFiles ?? []).not.toContainEqual(
+      expect.objectContaining({ path: "Boards/Overview.canvas" }),
+    );
+
+    await fs.rename(asidePath, target);
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.canvasFiles ?? []).toContainEqual(
+      expect.objectContaining({ path: "Boards/Overview.canvas" }),
+    );
+  });
+
+  it("keeps an active canvas tab, its pin, and its selection through a transient absence", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+    await workspace.toggleTabPin("Boards/Overview.canvas", "primary", workspace.vaultId);
+    const settledSetup = store.saved.length;
+
+    const target = path.join(vaultPath, "Boards", "Overview.canvas");
+    const asidePath = path.join(sandboxPath, "Overview.canvas.aside");
+    await fs.rename(target, asidePath);
+    const during = await workspace.reconcileNow();
+    expect(during.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Boards/Overview.canvas", pinned: true, active: true }),
+    );
+
+    await fs.rename(asidePath, target);
+    const settled = await workspace.reconcileNow();
+    expect(settled.workspace?.panes[0]?.activeCanvas?.path).toBe("Boards/Overview.canvas");
+    // The selection is the assertion, not just the tab: a retained path that
+    // cannot hold it has its pane's activePath rewritten and persisted, and
+    // nothing puts the selection back when the file returns.
+    for (const saved of store.saved.slice(settledSetup)) {
+      expect(saved.panes[0]?.activePath).toBe("Boards/Overview.canvas");
+      expect(saved.panes[0]?.openPaths).toContain("Boards/Overview.canvas");
+      expect(saved.panes[0]?.pinnedPaths).toEqual(["Boards/Overview.canvas"]);
+    }
+  });
+
+  it("closes a canvas tab once its deletion is confirmed", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const clock = manualClock();
+    const workspace = await openRuntime(store, undefined, undefined, undefined, clock.now);
+    await workspace.openNote("Welcome.md");
+    await workspace.openNote("Boards/Overview.canvas");
+
+    await fs.unlink(path.join(vaultPath, "Boards", "Overview.canvas"));
+    await workspace.reconcileNow();
+    clock.advance(transientAbsenceSettleMs + 1);
+    await workspace.reconcileNow();
+    const confirmed = await workspace.reconcileNow();
+    expect(tabPaths(confirmed)).not.toContain("Boards/Overview.canvas");
+    expect(store.saved.at(-1)?.panes[0]?.openPaths).not.toContain("Boards/Overview.canvas");
+    expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Welcome.md");
+  });
+
   it("keeps an unattributed replace for as many passes as its settle window lasts", async () => {
     const store = new MemoryWorkspaceStateStore();
     const clock = manualClock();
