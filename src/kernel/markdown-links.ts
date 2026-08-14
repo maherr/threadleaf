@@ -1,4 +1,4 @@
-import MarkdownIt, { type StateBlock } from "markdown-it";
+import MarkdownIt, { type Env, type StateBlock } from "markdown-it";
 
 export interface ParsedMarkdownLink {
   target: string;
@@ -597,25 +597,10 @@ function parseLine(
   lineStart: number,
   lineNumber: number,
 ): ParsedMarkdownLink[] {
-  const candidate = parseMarkdownReferenceDefinitionCandidate(
-    sourceLine,
-    searchableLine,
-    lineStart,
-    lineNumber,
-    false,
-  );
-  const definition = parseReferenceDefinition(sourceLine, searchableLine, lineStart, lineNumber);
-  // A syntactically valid definition consumes its whole source line. Its
-  // destination is the only mutable link; title bytes are inert Markdown.
-  if (candidate?.valid) return definition ? [definition] : [];
   const inlineSearchable = maskInlineAngleTokens(searchableLine);
   const wikiLinks = parseWikiLinks(sourceLine, inlineSearchable, lineStart, lineNumber);
   const nonWikiSearchable = maskParsedLinkRanges(inlineSearchable, wikiLinks, lineStart);
-  return [
-    ...wikiLinks,
-    ...(definition ? [definition] : []),
-    ...parseInlineLinks(sourceLine, nonWikiSearchable, lineStart, lineNumber),
-  ];
+  return [...wikiLinks, ...parseInlineLinks(sourceLine, nonWikiSearchable, lineStart, lineNumber)];
 }
 
 interface MaskRange {
@@ -749,6 +734,132 @@ markdownMathBlockClassifier.block.ruler.before(
   "threadleaf_math_block",
   classifyThreadleafMathBlock,
 );
+
+interface RendererReferenceDefinitionContext {
+  /** Physical source line where MarkdownIt's reference rule began. */
+  line: number;
+  /** Exclusive physical source line after MarkdownIt's accepted definition. */
+  endLine: number;
+  /** Exact original-source range for the first logical definition line. */
+  start: number;
+  end: number;
+  /** Logical source segments consumed by MarkdownIt's reference rule. */
+  segments: MaskRange[];
+}
+
+interface RendererReferenceDefinitionEnvironment extends Env {
+  threadleafReferenceDefinitionContexts: RendererReferenceDefinitionContext[];
+  /** Maps a MarkdownIt-normalized source boundary back to the original source. */
+  threadleafReferenceSourceOffsets: readonly number[];
+}
+
+interface NormalizedReferenceSource {
+  content: string;
+  /** Original offset at each normalized-string boundary. */
+  sourceOffsets: number[];
+}
+
+/**
+ * MarkdownIt normalizes CRLF and CR to LF before its block rules see them.
+ * Keep that renderer behavior explicit here, while retaining a boundary map
+ * for exact ranges in the unnormalized note source.
+ */
+function normalizeReferenceSource(content: string): NormalizedReferenceSource {
+  let normalized = "";
+  const sourceOffsets = [0];
+  let sourceOffset = 0;
+  while (sourceOffset < content.length) {
+    const character = content[sourceOffset] ?? "";
+    if (character === "\r") {
+      normalized += "\n";
+      sourceOffset += content[sourceOffset + 1] === "\n" ? 2 : 1;
+    } else {
+      normalized += character;
+      sourceOffset += 1;
+    }
+    sourceOffsets.push(sourceOffset);
+  }
+  return { content: normalized, sourceOffsets };
+}
+
+/**
+ * This classifier deliberately wraps MarkdownIt's own reference block rule
+ * instead of recognizing definitions from isolated physical lines.  The
+ * renderer makes that rule responsible for paragraph interruption, blockquote
+ * and list container prefixes, and continued title/destination lines.  Its
+ * `bMarks`/`eMarks` values retain exact original offsets after those prefixes.
+ */
+const markdownReferenceDefinitionClassifier = new MarkdownIt({
+  breaks: false,
+  html: true,
+  linkify: false,
+  typographer: false,
+});
+
+markdownReferenceDefinitionClassifier.block.ruler.before(
+  "fence",
+  "threadleaf_math_block",
+  classifyThreadleafMathBlock,
+);
+
+const markdownReferenceRule = markdownReferenceDefinitionClassifier.block.ruler.__rules__.find(
+  (rule) => rule.name === "reference",
+);
+if (!markdownReferenceRule) {
+  throw new Error("MarkdownIt reference block rule is unavailable.");
+}
+
+const markdownReferenceRuleFunction = markdownReferenceRule.fn;
+markdownReferenceDefinitionClassifier.block.ruler.at(
+  "reference",
+  (state, startLine, endLine, silent) => {
+    const accepted = markdownReferenceRuleFunction(state, startLine, endLine, silent);
+    if (!accepted || silent) return accepted;
+    const environment = state.env as RendererReferenceDefinitionEnvironment;
+    const contexts = environment.threadleafReferenceDefinitionContexts;
+    if (!Array.isArray(contexts) || state.line <= startLine) return accepted;
+    const sourceOffsets = environment.threadleafReferenceSourceOffsets;
+    const segments: MaskRange[] = [];
+    for (let line = startLine; line < state.line; line += 1) {
+      const normalizedStart = state.bMarks[line];
+      const normalizedEnd = state.eMarks[line];
+      if (normalizedStart === undefined || normalizedEnd === undefined) continue;
+      const start = sourceOffsets[normalizedStart];
+      const end = sourceOffsets[normalizedEnd];
+      if (start === undefined || end === undefined) continue;
+      segments.push({ start, end });
+    }
+    const first = segments[0];
+    if (first) {
+      contexts.push({
+        line: startLine + 1,
+        endLine: state.line + 1,
+        start: first.start,
+        end: first.end,
+        segments,
+      });
+    }
+    return accepted;
+  },
+  { alt: markdownReferenceRule.alt },
+);
+
+function rendererReferenceDefinitionContexts(
+  content: string,
+  frontmatterRanges: readonly MaskRange[],
+): RendererReferenceDefinitionContext[] {
+  // Reading view renders frontmatter as source-only text before MarkdownIt
+  // sees it. Keep those exact offsets but prevent a frontmatter line from
+  // becoming a visible definition in this classifier.
+  const rendererSource = applyMaskRanges(content, frontmatterRanges);
+  const normalizedSource = normalizeReferenceSource(rendererSource);
+  const environment: RendererReferenceDefinitionEnvironment = {
+    threadleafReferenceDefinitionContexts: [],
+    threadleafReferenceSourceOffsets: normalizedSource.sourceOffsets,
+  };
+  markdownReferenceDefinitionClassifier.parse(normalizedSource.content, environment);
+  return environment.threadleafReferenceDefinitionContexts;
+}
 
 /**
  * Uses the preview's block-state math grammar so container prefixes do not
@@ -888,6 +999,68 @@ function parseMarkdownReferenceDefinitionCandidate(
   };
 }
 
+function opaqueRendererReferenceDefinitionCandidate(
+  sourceLine: string,
+  lineStart: number,
+  lineNumber: number,
+): ParsedMarkdownReferenceDefinitionCandidate | null {
+  const leading = sourceLine.match(/^ {0,3}/u)?.[0].length ?? 0;
+  const close =
+    sourceLine[leading] === "[" ? findClosingReferenceLabel(sourceLine, leading + 1) : -1;
+  if (close === -1 || sourceLine[close + 1] !== ":") return null;
+  const label = normalizeMarkdownReferenceLabel(sourceLine.slice(leading + 1, close));
+  if (!label) return null;
+  return {
+    label,
+    valid: false,
+    external: false,
+    target: null,
+    rawTarget: sourceLine.slice(close + 2),
+    targetStart: null,
+    targetEnd: null,
+    line: lineNumber,
+    position: lineStart + leading,
+    sourceOnly: false,
+  };
+}
+
+function rendererDefinitionCandidate(
+  content: string,
+  context: RendererReferenceDefinitionContext,
+): ParsedMarkdownReferenceDefinitionCandidate | null {
+  const sourceLine = content.slice(context.start, context.end);
+  let candidate = parseMarkdownReferenceDefinitionCandidate(
+    sourceLine,
+    sourceLine,
+    context.start,
+    context.line,
+    false,
+  );
+  // MarkdownIt accepted the definition, but this deliberately narrower
+  // one-line target parser could not preserve an exact mutable destination.
+  // Retain it as opaque source evidence rather than allowing a stale rewrite.
+  candidate ??= opaqueRendererReferenceDefinitionCandidate(sourceLine, context.start, context.line);
+  if (
+    candidate &&
+    !candidate.valid &&
+    candidate.rawTarget.trim() === "" &&
+    context.segments.length > 1
+  ) {
+    const continuation = context.segments
+      .slice(1)
+      .map((segment) => content.slice(segment.start, segment.end))
+      .join("\n");
+    if (continuation) {
+      candidate = {
+        ...candidate,
+        rawTarget: `${candidate.rawTarget}\n${continuation}`,
+        multilineContinuation: true,
+      };
+    }
+  }
+  return candidate;
+}
+
 /**
  * Returns each reference-definition candidate with exact destination ranges.
  * Visible definitions follow normal parser masking; YAML definitions are
@@ -904,6 +1077,12 @@ export function parseMarkdownReferenceDefinitionCandidates(
   const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const frontmatter = yamlFrontmatterRanges(content);
+  const visibleDefinitions = new Map(
+    rendererReferenceDefinitionContexts(content, frontmatter).map((context) => [
+      context.line,
+      context,
+    ]),
+  );
   const definitions: ParsedMarkdownReferenceDefinitionCandidate[] = [];
   let offset = 0;
   for (let index = 0; index < lines.length; index += 1) {
@@ -912,13 +1091,29 @@ export function parseMarkdownReferenceDefinitionCandidates(
     const sourceLine = full.replace(/\r\n$|[\r\n]$/u, "");
     const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
     const sourceOnly = frontmatter.some((range) => offset >= range.start && offset < range.end);
-    let candidate = parseMarkdownReferenceDefinitionCandidate(
-      sourceLine,
-      searchableLine,
-      offset,
-      index + 1,
-      sourceOnly,
-    );
+    const context = sourceOnly ? undefined : visibleDefinitions.get(index + 1);
+    const lexicalCandidate = sourceOnly
+      ? null
+      : parseMarkdownReferenceDefinitionCandidate(
+          sourceLine,
+          searchableLine,
+          offset,
+          index + 1,
+          false,
+        );
+    let candidate = sourceOnly
+      ? parseMarkdownReferenceDefinitionCandidate(
+          sourceLine,
+          searchableLine,
+          offset,
+          index + 1,
+          true,
+        )
+      : context
+        ? rendererDefinitionCandidate(content, context)
+        : lexicalCandidate?.valid
+          ? null
+          : lexicalCandidate;
     // Multi-line definition destinations are intentionally not rewritten in
     // this one-line parser. Preserve their exact raw source so the planner can
     // block source-related evidence instead of silently publishing stale links.
@@ -939,7 +1134,7 @@ export function parseMarkdownReferenceDefinitionCandidates(
         found = true;
         next += 1;
       }
-      if (found) {
+      if (found && !candidate.multilineContinuation) {
         candidate = {
           ...candidate,
           rawTarget: `${candidate.rawTarget}${continuation}`,
@@ -976,14 +1171,15 @@ export function parseMarkdownReferenceUsages(
   }
   const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
-  const opaqueDefinitionLines = new Set(
-    parseMarkdownReferenceDefinitionCandidates(content, maskedContent)
-      .filter(
-        (definition) =>
-          !definition.sourceOnly && (definition.valid || definition.multilineContinuation),
-      )
-      .map((definition) => definition.line),
-  );
+  const opaqueDefinitionLines = new Set<number>();
+  for (const context of rendererReferenceDefinitionContexts(
+    content,
+    yamlFrontmatterRanges(content),
+  )) {
+    for (let line = context.line; line < context.endLine; line += 1) {
+      opaqueDefinitionLines.add(line);
+    }
+  }
   const usages: ParsedMarkdownReferenceUsage[] = [];
   let offset = 0;
   for (let index = 0; index < lines.length; index += 1) {
@@ -1009,9 +1205,17 @@ export function parseMarkdownReferenceUsages(
         !hasOddBackslashEscape(searchableLine, beforeBracket);
       const marker = possibleImage ? beforeBracket : bracket;
       if (hasOddBackslashEscape(searchableLine, marker)) {
-        const escapedWikiEnd =
-          searchableLine[bracket + 1] === "[" ? searchableLine.indexOf("]]", bracket + 2) : -1;
-        cursor = escapedWikiEnd === -1 ? bracket + 1 : escapedWikiEnd + 2;
+        // One escaped `[[` is not a wiki span. MarkdownIt's escape rule
+        // literalizes the opener and consumes its first bracketed fragment,
+        // then resumes generic inline parsing. Do not skip through a raw
+        // trailing `]]`: a later `[report]` can still be live, while the
+        // immediate pseudo-wiki body remains opaque. Even escapes and actual
+        // wiki spans remain masked by the parsed-wiki range above.
+        const escapedPseudoWikiClose =
+          searchableLine[bracket + 1] === "["
+            ? findClosingReferenceLabel(searchableLine, bracket + 2)
+            : -1;
+        cursor = escapedPseudoWikiClose === -1 ? bracket + 1 : escapedPseudoWikiClose + 1;
         continue;
       }
       const embed = possibleImage;
@@ -1092,6 +1296,19 @@ export function parseMarkdownLinks(
   const links: ParsedMarkdownLink[] = [];
   const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
+  const referenceContexts = rendererReferenceDefinitionContexts(
+    content,
+    yamlFrontmatterRanges(content),
+  );
+  const referenceContextByLine = new Map(
+    referenceContexts.map((context) => [context.line, context]),
+  );
+  const opaqueReferenceLines = new Set<number>();
+  for (const context of referenceContexts) {
+    for (let line = context.line; line < context.endLine; line += 1) {
+      opaqueReferenceLines.add(line);
+    }
+  }
   let offset = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const full = lines[index] ?? "";
@@ -1100,7 +1317,19 @@ export function parseMarkdownLinks(
     }
     const sourceLine = full.replace(/\r\n$|[\r\n]$/u, "");
     const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
-    links.push(...parseLine(sourceLine, searchableLine, offset, index + 1));
+    const context = referenceContextByLine.get(index + 1);
+    if (context) {
+      const definitionLine = content.slice(context.start, context.end);
+      const definition = parseReferenceDefinition(
+        definitionLine,
+        definitionLine,
+        context.start,
+        context.line,
+      );
+      if (definition) links.push(definition);
+    } else if (!opaqueReferenceLines.has(index + 1)) {
+      links.push(...parseLine(sourceLine, searchableLine, offset, index + 1));
+    }
     offset += full.length;
   }
   return links.sort(

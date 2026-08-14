@@ -1,3 +1,4 @@
+import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
 import {
   maskMarkdownCodeAndComments,
@@ -156,6 +157,7 @@ describe("Markdown link source parser", () => {
   it("parses reference-style definitions with angle destinations and titles", () => {
     const content = [
       "Use [report][asset] and ![report image][asset].",
+      "",
       '[asset]: <../Assets/Report (draft).pdf?download=1#page=2> "Report title"',
     ].join("\n");
     const links = parseMarkdownLinks(content);
@@ -164,7 +166,7 @@ describe("Markdown link source parser", () => {
       target: "../Assets/Report (draft).pdf?download=1",
       syntax: "markdown",
       embed: false,
-      line: 2,
+      line: 3,
     });
     expect(content.slice(links[0]?.targetStart, links[0]?.targetEnd)).toBe(
       "../Assets/Report (draft).pdf?download=1",
@@ -175,11 +177,11 @@ describe("Markdown link source parser", () => {
   });
 
   it("parses escaped balanced-parenthesis destinations without consuming the title", () => {
-    const content = '[asset]: ../Assets/Report\\ \\(draft\\).pdf?download=1#page=2 "title"';
+    const content = '[asset]: ../Assets/Report\\(draft\\).pdf?download=1#page=2 "title"';
     const links = parseMarkdownLinks(content);
     expect(links).toHaveLength(1);
     expect(content.slice(links[0]?.targetStart, links[0]?.targetEnd)).toBe(
-      "../Assets/Report\\ \\(draft\\).pdf?download=1",
+      "../Assets/Report\\(draft\\).pdf?download=1",
     );
   });
 
@@ -267,14 +269,14 @@ describe("Markdown link source parser", () => {
 
   it("preserves exact definition destination ranges across CR-only line endings", () => {
     const content =
-      "![first image][first]\r[first]: ../Assets/report.pdf\r[second]: ../Assets/other.pdf";
+      "![first image][first]\r\r[first]: ../Assets/report.pdf\r[second]: ../Assets/other.pdf";
     const candidates = parseMarkdownReferenceDefinitionCandidates(content);
 
     expect(
       candidates.map((candidate) => ({ label: candidate.label, line: candidate.line })),
     ).toEqual([
-      { label: "first", line: 2 },
-      { label: "second", line: 3 },
+      { label: "first", line: 3 },
+      { label: "second", line: 4 },
     ]);
     const ranges = candidates.map((candidate) => {
       if (candidate.targetStart === null || candidate.targetEnd === null) {
@@ -285,6 +287,119 @@ describe("Markdown link source parser", () => {
     expect(ranges).toEqual(["../Assets/report.pdf", "../Assets/other.pdf"]);
     expect(parseMarkdownReferenceUsages(content)).toEqual([
       expect.objectContaining({ label: "first", line: 1 }),
+    ]);
+  });
+
+  it("uses renderer reference-block acceptance for paragraph, blockquote, and nested-list contexts", () => {
+    const previewReferenceRenderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const forms = [
+      { name: "ordinary full", usage: "[visible][asset]", embed: false },
+      { name: "ordinary collapsed", usage: "[asset][]", embed: false },
+      { name: "ordinary shortcut", usage: "[asset]", embed: false },
+      { name: "image full", usage: "![visible][asset]", embed: true },
+      { name: "image collapsed", usage: "![asset][]", embed: true },
+      { name: "image shortcut", usage: "![asset]", embed: true },
+    ];
+    const endings = ["\n", "\r\n", "\r"] as const;
+
+    for (const ending of endings) {
+      for (const form of forms) {
+        const paragraphAdjacent = [form.usage, "[asset]: ../Assets/report.pdf"].join(ending);
+        const targetAttribute = form.embed ? "src" : "href";
+        expect(previewReferenceRenderer.render(paragraphAdjacent)).not.toContain(
+          `${targetAttribute}="../Assets/report.pdf"`,
+        );
+        expect(parseMarkdownReferenceDefinitionCandidates(paragraphAdjacent)).toEqual([]);
+        expect(parseMarkdownReferenceDefinitions(paragraphAdjacent)).toEqual([]);
+        expect(parseMarkdownLinks(paragraphAdjacent)).toEqual([]);
+
+        for (const source of [
+          [`> ${form.usage}`, ">", "> [asset]: ../Assets/report.pdf"].join(ending),
+          [`- > ${form.usage}`, "  >", "  > [asset]: ../Assets/report.pdf"].join(ending),
+        ]) {
+          expect(previewReferenceRenderer.render(source)).toContain(
+            `${targetAttribute}="../Assets/report.pdf"`,
+          );
+          const candidates = parseMarkdownReferenceDefinitionCandidates(source);
+          expect(candidates).toEqual([
+            expect.objectContaining({
+              label: "asset",
+              valid: true,
+              sourceOnly: false,
+              line: 3,
+            }),
+          ]);
+          const candidate = candidates[0];
+          if (!candidate || candidate.targetStart === null || candidate.targetEnd === null) {
+            throw new Error(`Expected an exact ${form.name} definition destination range.`);
+          }
+          expect(source.slice(candidate.targetStart, candidate.targetEnd)).toBe(
+            "../Assets/report.pdf",
+          );
+          expect(parseMarkdownReferenceDefinitions(source)).toEqual([
+            { label: "asset", valid: true, external: false, line: 3 },
+          ]);
+          expect(parseMarkdownLinks(source)).toEqual([
+            expect.objectContaining({
+              target: "../Assets/report.pdf",
+              syntax: "markdown",
+              line: 3,
+            }),
+          ]);
+          expect(
+            parseMarkdownReferenceUsages(source).filter((usage) => usage.label === "asset"),
+          ).toEqual([expect.objectContaining({ embed: form.embed, line: 1 })]);
+        }
+      }
+    }
+  });
+
+  it("resumes reference scanning after an odd-escaped pseudo-wiki opener", () => {
+    const previewReferenceRenderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const forms = [
+      { name: "ordinary full", usage: "[visible][report]", embed: false },
+      { name: "ordinary collapsed", usage: "[report][]", embed: false },
+      { name: "ordinary shortcut", usage: "[report]", embed: false },
+      { name: "image full", usage: "![visible][report]", embed: true },
+      { name: "image collapsed", usage: "![report][]", embed: true },
+      { name: "image shortcut", usage: "![report]", embed: true },
+    ];
+    for (const form of forms) {
+      const source = [`\\[[a] ${form.usage}]`, "", "[report]: ../Assets/report.pdf"].join("\n");
+      const targetAttribute = form.embed ? "src" : "href";
+      expect(previewReferenceRenderer.render(source)).toContain(
+        `${targetAttribute}="../Assets/report.pdf"`,
+      );
+      expect(parseMarkdownReferenceUsages(source)).toEqual([
+        expect.objectContaining({ label: "report", embed: form.embed, line: 1 }),
+      ]);
+    }
+
+    const evenEscaped = ["\\\\[[a] [report]]", "", "[report]: ../Assets/report.pdf"].join("\n");
+    const rawSingleBracketWiki = ["[[a] [report]tail]]", "", "[report]: ../Assets/report.pdf"].join(
+      "\n",
+    );
+    expect(
+      parseMarkdownReferenceUsages(evenEscaped).filter((usage) => usage.label === "report"),
+    ).toEqual([]);
+    expect(
+      parseMarkdownReferenceUsages(rawSingleBracketWiki).filter(
+        (usage) => usage.label === "report",
+      ),
+    ).toEqual([]);
+    expect(parseMarkdownLinks(rawSingleBracketWiki)).toEqual([
+      expect.objectContaining({ syntax: "wiki", target: "a] [report]tail" }),
+      expect.objectContaining({ syntax: "markdown", target: "../Assets/report.pdf", line: 3 }),
     ]);
   });
 
@@ -341,6 +456,7 @@ describe("Markdown link source parser", () => {
       "[asset]: Hidden.pdf",
       "---",
       "![full][asset] ![collapsed][] ![shortcut]",
+      "",
       "[asset]: Visible.pdf",
     ].join("\n");
     expect(parseMarkdownReferenceUsages(content).map((usage) => usage.label)).toEqual([
@@ -349,7 +465,7 @@ describe("Markdown link source parser", () => {
       "shortcut",
     ]);
     expect(parseMarkdownReferenceDefinitions(content)).toEqual([
-      { label: "asset", valid: true, external: false, line: 5 },
+      { label: "asset", valid: true, external: false, line: 6 },
     ]);
   });
 
@@ -384,6 +500,7 @@ describe("Markdown link source parser", () => {
     const content = [
       '[external](https://example.test "literal [report] title")',
       "[other [report]](https://example.test)",
+      "",
       '[external definition]: https://example.test "literal [report] title"',
       '[local definition]: ../Assets/Other/local.pdf "literal [report] title"',
       "[report]: ../Assets/report.pdf",
@@ -489,6 +606,7 @@ describe("Markdown link source parser", () => {
     const content = [
       "<https://example.test/[report]>",
       '<span data-x="[report]">',
+      "",
       "[report]: ../Assets/report.pdf",
     ].join("\r\n");
 
@@ -574,6 +692,7 @@ describe("Markdown link source parser", () => {
     const content = [
       "[[Assets/report[.pdf]]",
       "[[Target|alias[report]]]",
+      "",
       "[report]: ../Assets/report.pdf",
     ].join("\n");
 
@@ -583,6 +702,7 @@ describe("Markdown link source parser", () => {
   it("uses first-close wiki spans with raw single brackets and keeps them opaque to references", () => {
     const content = [
       "[[../Assets/report]draft.pdf#section|alias [report] title]]",
+      "",
       "[report]: ../Assets/report.pdf",
     ].join("\n");
 
