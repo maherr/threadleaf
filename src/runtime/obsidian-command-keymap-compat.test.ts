@@ -271,6 +271,54 @@ describe("Obsidian command registry compatibility", () => {
     expect(app.commands.commands[replacement.id]).toBeUndefined();
     expect(app.commands.actions.list("plugin")).toEqual([]);
   });
+
+  it("keeps duplicate local IDs distinguishable and runnable by qualified dispatch ID", async () => {
+    const app = createApp();
+    const first = new Plugin(app, { id: "first", name: "First", version: "0.1.0" });
+    const second = new Plugin(app, { id: "second", name: "Second", version: "0.1.0" });
+    const firstCallback = vi.fn();
+    const secondCallback = vi.fn();
+    first.addCommand({ id: "run", name: "First run", callback: firstCallback });
+    second.addCommand({ id: "run", name: "Second run", callback: secondCallback });
+
+    const rows = app.commands.list();
+    expect(rows).toEqual([
+      { id: "first:run", name: "First run", ownerId: "first" },
+      { id: "second:run", name: "Second run", ownerId: "second" },
+    ]);
+    expect(new Set(rows.map(({ id }) => id)).size).toBe(2);
+
+    await expect(app.commands.run(rows[0]?.id ?? "")).resolves.toBe(true);
+    expect(firstCallback).toHaveBeenCalledOnce();
+    expect(secondCallback).not.toHaveBeenCalled();
+
+    await expect(app.commands.run(rows[1]?.id ?? "")).resolves.toBe(true);
+    expect(secondCallback).toHaveBeenCalledOnce();
+  });
+
+  it("does not retarget a qualified-looking local ID to another plugin", async () => {
+    const app = createApp();
+    const first = new Plugin(app, { id: "first", name: "First", version: "0.1.0" });
+    const second = new Plugin(app, { id: "second", name: "Second", version: "0.1.0" });
+    const firstCallback = vi.fn();
+    const secondCallback = vi.fn();
+    first.addCommand({ id: "run", name: "First run", callback: firstCallback });
+    const secondCommand = second.addCommand({
+      id: "first:run",
+      name: "Second crafted run",
+      callback: secondCallback,
+    });
+
+    const secondRow = app.commands.list().find(({ ownerId }) => ownerId === "second");
+    expect(secondRow).toEqual({
+      id: secondCommand.id,
+      name: "Second crafted run",
+      ownerId: "second",
+    });
+    await expect(app.commands.run(secondRow?.id ?? "")).resolves.toBe(true);
+    expect(secondCallback).toHaveBeenCalledOnce();
+    expect(firstCallback).not.toHaveBeenCalled();
+  });
 });
 
 describe("Obsidian keymap and scope compatibility", () => {

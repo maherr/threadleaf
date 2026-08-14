@@ -73,13 +73,13 @@ describe("PluginHost", () => {
     expect(host.app.plugins.getPlugin("threadleaf-fixture")?._loaded).toBe(true);
     expect(loaded.commands).toEqual([
       {
-        id: "threadleaf-fixture-confirm",
+        id: "threadleaf-fixture:threadleaf-fixture-confirm",
         name: "Confirm compatibility bridge",
         ownerId: "threadleaf-fixture",
       },
     ]);
 
-    const verified = await host.runCommand("threadleaf-fixture-confirm");
+    const verified = await host.runCommand("threadleaf-fixture:threadleaf-fixture-confirm");
     expect(verified.plugin?.compatibilityLevel).toBe(4);
     expect(verified.notices).toContain("Fixture command crossed the compatibility bridge.");
 
@@ -289,12 +289,20 @@ module.exports = class SecondaryPlugin extends Plugin {
         { id: "threadleaf-secondary", state: "loaded", compatibilityLevel: 3 },
       ]);
       expect(bothLoaded.commands.map(({ id, ownerId }) => ({ id, ownerId }))).toEqual([
-        { id: "threadleaf-fixture-confirm", ownerId: "threadleaf-fixture" },
-        { id: "threadleaf-secondary-confirm", ownerId: "threadleaf-secondary" },
+        {
+          id: "threadleaf-fixture:threadleaf-fixture-confirm",
+          ownerId: "threadleaf-fixture",
+        },
+        {
+          id: "threadleaf-secondary:threadleaf-secondary-confirm",
+          ownerId: "threadleaf-secondary",
+        },
       ]);
 
       const oneUnloaded = await host.unloadPlugin("threadleaf-secondary");
-      expect(oneUnloaded.commands.map(({ id }) => id)).toEqual(["threadleaf-fixture-confirm"]);
+      expect(oneUnloaded.commands.map(({ id }) => id)).toEqual([
+        "threadleaf-fixture:threadleaf-fixture-confirm",
+      ]);
       expect(oneUnloaded.plugins?.find(({ id }) => id === "threadleaf-fixture")?.state).toBe(
         "loaded",
       );
@@ -397,7 +405,7 @@ module.exports = class HostModulePlugin extends Plugin {
       const loaded = await host.loadPlugin(pluginPath);
       expect(loaded.plugin).toMatchObject({ state: "loaded", compatibilityLevel: 3 });
 
-      const verified = await host.runCommand("confirm-host-module");
+      const verified = await host.runCommand("host-module-fixture:confirm-host-module");
       expect(verified.notices.some((message) => message.startsWith("EditorView:"))).toBe(true);
     } finally {
       await fs.rm(sandboxPath, { recursive: true, force: true });
@@ -640,10 +648,12 @@ module.exports = class EditorFixture extends Plugin {
 
       const host = new PluginHost(vaultPath);
       await host.loadPlugin(pluginPath);
-      await expect(host.runCommand("insert-embed")).rejects.toThrow("[runtime-command-failed].");
+      await expect(host.runCommand("editor-fixture:insert-embed")).rejects.toThrow(
+        "[runtime-command-failed].",
+      );
 
       const revision = "d".repeat(64);
-      const snapshot = await host.runCommand("insert-embed", {
+      const snapshot = await host.runCommand("editor-fixture:insert-embed", {
         path: "Welcome.md",
         content: "alpha\nomega",
         revision,
@@ -665,7 +675,7 @@ module.exports = class EditorFixture extends Plugin {
         "alpha\nomega",
       );
 
-      const secondSnapshot = await host.runCommand("insert-embed", {
+      const secondSnapshot = await host.runCommand("editor-fixture:insert-embed", {
         path: "Welcome.md",
         content: "fresh content",
         revision: "e".repeat(64),

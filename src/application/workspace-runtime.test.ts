@@ -357,7 +357,7 @@ describe("WorkspaceRuntime", () => {
       { id: "workspace.close-note", name: "Close note", source: "workspace" },
       { id: "workspace.close-pane", name: "Close workspace pane", source: "workspace" },
       {
-        id: "threadleaf-fixture-confirm",
+        id: "threadleaf-fixture:threadleaf-fixture-confirm",
         name: "Confirm compatibility bridge",
         source: "plugin",
       },
@@ -423,7 +423,9 @@ describe("WorkspaceRuntime", () => {
       workspace.openNote(".obsidian/plugins/threadleaf-fixture/main.js"),
     ).rejects.toThrow("not indexed");
 
-    const commanded = await workspace.runPluginCommand("threadleaf-fixture-confirm");
+    const commanded = await workspace.runPluginCommand(
+      "threadleaf-fixture:threadleaf-fixture-confirm",
+    );
     expect(commanded.notices).toContain("Fixture command crossed the compatibility bridge.");
     expect(commanded.plugin?.compatibilityLevel).toBe(4);
   });
@@ -564,6 +566,65 @@ describe("WorkspaceRuntime", () => {
     await runtime.close();
     runtime = undefined;
     expect(closed).toBe(true);
+  });
+
+  it("keeps a plugin command projected once when its local ID collides with a workspace action", async () => {
+    const pluginDirectory = path.join(
+      vaultPath,
+      ".obsidian",
+      "plugins",
+      "action-collision-fixture",
+    );
+    await fs.mkdir(pluginDirectory, { recursive: true });
+    await fs.writeFile(
+      path.join(pluginDirectory, "manifest.json"),
+      JSON.stringify({
+        id: "action-collision-fixture",
+        name: "Action Collision Fixture",
+        version: "0.1.0",
+      }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(pluginDirectory, "main.js"),
+      `const { Plugin } = require("obsidian");
+module.exports = class ActionCollisionFixture extends Plugin {
+  async onload() {
+    this.addCommand({ id: "workspace.open-note", name: "Plugin open note", callback() {} });
+  }
+};
+`,
+      "utf8",
+    );
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      pluginDirectory,
+    });
+
+    const qualifiedId = "action-collision-fixture:workspace.open-note";
+    const initial = await runtime.getSnapshot();
+    expect(initial.commands).toContainEqual({
+      id: qualifiedId,
+      name: "Plugin open note",
+      ownerId: "action-collision-fixture",
+    });
+    expect(runtime.actions.list("plugin")).toEqual([
+      { id: qualifiedId, name: "Plugin open note", source: "plugin" },
+    ]);
+    expect(initial.actions.filter(({ id }) => id === qualifiedId)).toEqual([
+      { id: qualifiedId, name: "Plugin open note", source: "plugin" },
+    ]);
+    expect(initial.actions.filter(({ id }) => id === "workspace.open-note")).toEqual([
+      { id: "workspace.open-note", name: "Open note", source: "workspace" },
+    ]);
+
+    const unloaded = await runtime.unloadPlugin("action-collision-fixture");
+    expect(runtime.actions.list("plugin")).toEqual([]);
+    expect(unloaded.actions.some(({ id }) => id === qualifiedId)).toBe(false);
+    expect(unloaded.actions.filter(({ id }) => id === "workspace.open-note")).toEqual([
+      { id: "workspace.open-note", name: "Open note", source: "workspace" },
+    ]);
   });
 
   it("opens, reuses, activates, and closes ordered note tabs", async () => {

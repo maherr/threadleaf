@@ -13,11 +13,7 @@ import MarkdownIt from "markdown-it";
 import moment from "moment";
 import TurndownService from "turndown";
 import { parse as parseYaml } from "yaml";
-import {
-  ActionRegistry,
-  type ActionSource,
-  type ActionSummary,
-} from "../application/action-registry";
+import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
 import { isPathInside } from "../kernel/path-policy";
 import type {
@@ -144,8 +140,7 @@ interface RegisteredCommandMetadata {
   ownerId: string;
   releaseAction: () => void;
   releaseHostAction: () => void;
-  runtimeId: string;
-  runtimeName: string;
+  displayName: string;
 }
 
 type VaultEventCallback = (...args: unknown[]) => unknown;
@@ -1149,8 +1144,7 @@ interface CommandEditorContext {
 }
 
 interface CommandRegistrationOptions {
-  runtimeId?: string;
-  runtimeName?: string;
+  displayName?: string;
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -1162,16 +1156,6 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   );
 }
 
-class CommandActionRegistry extends ActionRegistry {
-  constructor(private readonly project: (actions: ActionSummary[]) => ActionSummary[]) {
-    super();
-  }
-
-  override list(source?: ActionSource): ActionSummary[] {
-    return this.project(super.list(source));
-  }
-}
-
 export class CommandRegistry {
   readonly commands: Record<string, Command> = {};
   private readonly registeredCommands = new Map<string, RegisteredCommandMetadata>();
@@ -1181,16 +1165,7 @@ export class CommandRegistry {
 
   constructor(hostActions = new ActionRegistry()) {
     this.hostActions = hostActions;
-    // Public command dispatch uses qualified IDs in this isolated registry. The host action surface
-    // receives one legacy local-ID projection below so existing Threadleaf snapshots stay stable.
-    this.actions = new CommandActionRegistry((summaries) =>
-      summaries.map((summary) => {
-        const registered = this.registeredCommands.get(summary.id);
-        return registered
-          ? { ...summary, id: registered.runtimeId, name: registered.runtimeName }
-          : summary;
-      }),
-    );
+    this.actions = new ActionRegistry();
   }
 
   register(
@@ -1206,11 +1181,10 @@ export class CommandRegistry {
     previous?.releaseHostAction();
 
     const commandId = command.id;
-    const runtimeId = options.runtimeId ?? commandId;
-    const runtimeName = options.runtimeName ?? command.name;
+    const displayName = options.displayName ?? command.name;
     const releaseAction = this.actions.register(ownerId, {
       id: commandId,
-      name: command.name,
+      name: displayName,
       source: "plugin",
       execute: () => this.executeByKey(commandId),
     });
@@ -1218,19 +1192,16 @@ export class CommandRegistry {
       ownerId,
       releaseAction,
       releaseHostAction: () => undefined,
-      runtimeId,
-      runtimeName,
+      displayName,
     };
     this.commands[commandId] = command;
     this.registeredCommands.set(commandId, registered);
-    if (!this.hostActions.list().some((action) => action.id === runtimeId)) {
-      registered.releaseHostAction = this.hostActions.register(ownerId, {
-        id: runtimeId,
-        name: runtimeName,
-        source: "plugin",
-        execute: () => this.executeByKey(commandId),
-      });
-    }
+    registered.releaseHostAction = this.hostActions.register(ownerId, {
+      id: commandId,
+      name: displayName,
+      source: "plugin",
+      execute: () => this.executeByKey(commandId),
+    });
     return () => {
       if (this.registeredCommands.get(commandId) === registered) {
         this.registeredCommands.delete(commandId);
@@ -1288,9 +1259,9 @@ export class CommandRegistry {
   list(): CommandSummary[] {
     return [...this.registeredCommands.entries()]
       .filter(([commandId]) => this.commands[commandId] !== undefined)
-      .map(([, { ownerId, runtimeId, runtimeName }]) => ({
-        id: runtimeId,
-        name: runtimeName,
+      .map(([commandId, { ownerId, displayName }]) => ({
+        id: commandId,
+        name: displayName,
         ownerId,
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
@@ -1350,13 +1321,7 @@ export class CommandRegistry {
   }
 
   private resolveCommandKey(commandId: string): string | null {
-    if (this.registeredCommands.has(commandId)) {
-      return commandId;
-    }
-    const matches = [...this.registeredCommands.entries()].filter(
-      ([, registered]) => registered.runtimeId === commandId,
-    );
-    return matches.length === 1 ? (matches[0]?.[0] ?? null) : null;
+    return this.registeredCommands.has(commandId) ? commandId : null;
   }
 }
 
@@ -1757,8 +1722,7 @@ export class Plugin extends Component {
     command.name = `${namePrefix}${localName}`;
     const qualifiedId = command.id;
     const releaseCommand = this.app.commands.register(this.manifest.id, command, {
-      runtimeId: localId,
-      runtimeName: localName,
+      displayName: localName,
     });
     const hotkeyHandlers = (command.hotkeys ?? []).map((hotkey) =>
       this.app.scope.register(hotkey.modifiers, hotkey.key, (event) => {

@@ -2118,15 +2118,16 @@ function commandCatalog(): RendererCommand[] {
 
   for (const command of opening ? [] : (currentSnapshot?.commands ?? [])) {
     const owner = (currentSnapshot?.plugins ?? []).find(({ id }) => id === command.ownerId);
+    const dispatchId = command.id;
     commands.push({
-      id: `plugin.command.${command.id}`,
+      id: `plugin.command.${dispatchId}`,
       label: command.name,
       category: owner?.name ?? "Compatibility plugin",
-      keywords: [command.id, "plugin", "compatibility"],
+      keywords: [dispatchId, "plugin", "compatibility"],
       shortcut: null,
       enabled: !busy && !saving,
       disabledReason: busy || saving ? "Threadleaf is finishing another action." : null,
-      run: () => runCompatibilityCommand(command.id),
+      run: () => runCompatibilityCommand(dispatchId),
     });
   }
 
