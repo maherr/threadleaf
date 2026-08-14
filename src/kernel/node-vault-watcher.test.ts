@@ -389,6 +389,36 @@ describe("NodeVaultWatcher", () => {
     await watcher.close();
   });
 
+  it("reports bounded scan progress and catches changes before the watcher becomes current", async () => {
+    await fs.writeFile(path.join(vaultPath, "Alpha.md"), "alpha", "utf8");
+    const policy = await VaultPathPolicy.open(vaultPath);
+    const progress: Array<{ scanned: number; total: number }> = [];
+    const captured = await captureVaultBootstrap(policy, undefined, {
+      onProgress: (value) => progress.push(value),
+    });
+    expect(progress).toEqual([
+      { scanned: 0, total: 1 },
+      { scanned: 1, total: 1 },
+    ]);
+
+    await fs.writeFile(path.join(vaultPath, "Beta.md"), "beta", "utf8");
+    const watcher = NodeVaultWatcher.fromSnapshot(policy, captured.snapshot, {
+      streamId: "startup-catch-up",
+    });
+    const batches: VaultChangeBatch[] = [];
+    const batch = await watcher.startWithInitialScan((value) => {
+      batches.push(value);
+    });
+
+    expect(batch).toMatchObject({
+      streamId: "startup-catch-up",
+      sequence: 1,
+      changes: [{ kind: "upsert", state: { path: "Beta.md" } }],
+    });
+    expect(batches).toEqual([batch]);
+    await watcher.close();
+  });
+
   it("captures Markdown and conflict files while excluding transaction temporaries and external links", async () => {
     await fs.writeFile(path.join(vaultPath, "Note.md"), "note", "utf8");
     await fs.writeFile(

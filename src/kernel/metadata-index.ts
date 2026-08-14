@@ -314,6 +314,20 @@ export class VaultLinkResolver {
 }
 
 const snapshotBuildYieldInterval = 32;
+const snapshotBuildProgressInterval = 512;
+
+export interface MetadataIndexBuildOptions {
+  signal?: AbortSignal;
+  onProgress?: (indexed: number, total: number) => void;
+}
+
+function throwIfIndexBuildAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    const error = new Error("Metadata index build was cancelled.");
+    error.name = "AbortError";
+    throw error;
+  }
+}
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -348,9 +362,14 @@ export class MetadataIndex {
     return index;
   }
 
-  static async fromSnapshotsAsync(snapshots: readonly VaultTextSnapshot[]): Promise<MetadataIndex> {
+  static async fromSnapshotsAsync(
+    snapshots: readonly VaultTextSnapshot[],
+    options: MetadataIndexBuildOptions = {},
+  ): Promise<MetadataIndex> {
     const index = new MetadataIndex();
+    options.onProgress?.(0, snapshots.length);
     for (let cursor = 0; cursor < snapshots.length; cursor += 1) {
+      throwIfIndexBuildAborted(options.signal);
       const snapshot = snapshots[cursor];
       if (!snapshot) {
         continue;
@@ -358,6 +377,9 @@ export class MetadataIndex {
       const document = parseDocument(snapshot);
       index.#documents.set(snapshot.path, document);
       index.#searchIndex.upsert(toSearchDocument(document, snapshot.content));
+      if ((cursor + 1) % snapshotBuildProgressInterval === 0 || cursor + 1 === snapshots.length) {
+        options.onProgress?.(cursor + 1, snapshots.length);
+      }
       if ((cursor + 1) % snapshotBuildYieldInterval === 0) {
         await yieldToEventLoop();
       }
@@ -525,8 +547,12 @@ export class VaultIndexReactor {
   static async fromSnapshotsAsync(
     source: VaultReadPort,
     snapshots: readonly VaultTextSnapshot[],
+    options: MetadataIndexBuildOptions = {},
   ): Promise<VaultIndexReactor> {
-    return new VaultIndexReactor(source, await MetadataIndex.fromSnapshotsAsync(snapshots));
+    return new VaultIndexReactor(
+      source,
+      await MetadataIndex.fromSnapshotsAsync(snapshots, options),
+    );
   }
 
   async accept(batch: VaultChangeBatch): Promise<IndexUpdateResult> {

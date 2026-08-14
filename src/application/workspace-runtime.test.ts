@@ -269,6 +269,159 @@ async function openRuntime(
 }
 
 describe("WorkspaceRuntime", () => {
+  it("keeps the interactive workspace payload bounded independently of corpus size", async () => {
+    await Promise.all(
+      Array.from({ length: 600 }, (_, index) =>
+        fs.writeFile(
+          path.join(vaultPath, `Payload-${index.toString().padStart(3, "0")}.md`),
+          `# Payload ${index}\n`,
+          "utf8",
+        ),
+      ),
+    );
+    const workspace = await openRuntime();
+
+    const snapshot = await workspace.getSnapshot();
+    const filePage = snapshot.workspace?.filePage;
+
+    expect(snapshot.workspace?.files.length).toBeLessThanOrEqual(256);
+    expect(filePage).toMatchObject({ total: 602, complete: false });
+    await expect(
+      workspace.getWorkspaceFilePage({
+        expectedVaultId: workspace.vaultId,
+        generation: filePage?.generation ?? "missing",
+        offset: 0,
+        limit: 200,
+        query: "payload 599",
+      }),
+    ).resolves.toMatchObject({
+      status: "ready",
+      page: { total: 1, complete: true },
+      files: [{ path: "Payload-599.md", title: "Payload-599" }],
+    });
+    const boundedQuickSwitcher = await workspace.getWorkspaceFilePage({
+      expectedVaultId: workspace.vaultId,
+      generation: filePage?.generation ?? "missing",
+      offset: 0,
+      limit: 200,
+      query: "",
+    });
+    expect(boundedQuickSwitcher.status).toBe("ready");
+    if (boundedQuickSwitcher.status === "ready") {
+      expect(boundedQuickSwitcher.files).toHaveLength(200);
+    }
+  });
+
+  it("rejects a file page from the generation before a corpus mutation", async () => {
+    const workspace = await openRuntime();
+    const before = await workspace.getSnapshot();
+    const generation = before.workspace?.filePage.generation;
+    expect(generation).toEqual(expect.any(String));
+    await workspace.createNote("Generation-change.md", "# Changed\n", workspace.vaultId);
+
+    const stale = await workspace.getWorkspaceFilePage({
+      expectedVaultId: workspace.vaultId,
+      generation: generation ?? "missing",
+      offset: 0,
+      limit: 64,
+    });
+
+    expect(stale).toMatchObject({ status: "stale-generation" });
+  });
+
+  it("keeps an uncensused restored active tab selected in its waiting state", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Not-arrived.md"],
+      pinnedPaths: ["Not-arrived.md"],
+      activePath: "Not-arrived.md",
+    });
+    let releaseCensus: (() => void) | undefined;
+    const censusGate = new Promise<void>((resolve) => {
+      releaseCensus = resolve;
+    });
+    const diagnostics = new WorkspaceOpenDiagnostics();
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      workspaceStateStore: store,
+      diagnostics,
+      ...({
+        deferWorkspaceCensus: true,
+        beforeBackgroundCensus: () => censusGate,
+      } as Record<string, unknown>),
+    });
+    try {
+      const warming = await runtime.getSnapshot();
+
+      expect(warming.workspace?.state).toBe("warming");
+      expect(warming.workspace?.tabs).toContainEqual(
+        expect.objectContaining({ path: "Not-arrived.md", active: true, pinned: true }),
+      );
+      expect(warming.workspace?.activeUnavailable).toMatchObject({ path: "Not-arrived.md" });
+      const warmingGeneration = warming.workspace?.filePage.generation;
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+      const current = await runtime.getSnapshot();
+
+      expect(current.workspace).toMatchObject({
+        state: "ready",
+        census: { state: "current", total: 2, indexed: 2 },
+        filePage: { total: 2, complete: true },
+        activeUnavailable: { path: "Not-arrived.md" },
+      });
+      await expect(
+        runtime.getWorkspaceFilePage({
+          expectedVaultId: runtime.vaultId,
+          generation: warmingGeneration ?? "missing",
+          offset: 0,
+          limit: 64,
+        }),
+      ).resolves.toMatchObject({ status: "stale-generation" });
+      expect(diagnostics.snapshot().spans).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "census.parse-index", attributes: { documents: 2 } }),
+        ]),
+      );
+    } finally {
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+    }
+  });
+
+  it("returns a bounded first-time workspace before choosing its first indexed note", async () => {
+    let releaseCensus: (() => void) | undefined;
+    const censusGate = new Promise<void>((resolve) => {
+      releaseCensus = resolve;
+    });
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => censusGate,
+    });
+    try {
+      const warming = await runtime.getSnapshot();
+      expect(warming.workspace).toMatchObject({
+        state: "warming",
+        files: [],
+        tabs: [],
+        filePage: { total: 0, complete: true },
+      });
+
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+      const current = await runtime.getSnapshot();
+      expect(current.workspace).toMatchObject({
+        state: "ready",
+        census: { state: "current", total: 2, indexed: 2 },
+        activeNote: { path: "Linked Note.md" },
+      });
+    } finally {
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+    }
+  });
+
   it("partitions parse/index and snapshot construction without wall-clock assertions", async () => {
     const diagnostics = new WorkspaceOpenDiagnostics();
     runtime = await WorkspaceRuntime.open({

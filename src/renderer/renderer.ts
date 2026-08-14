@@ -155,7 +155,7 @@ import {
 import { pluginViewTypeForPath } from "./plugin-view-model";
 import { createStandalonePublishedNoteHtml } from "./publish-export";
 import {
-  filterQuickSwitcherNotes,
+  maximumQuickSwitcherResults,
   moveQuickSwitcherSelection,
   type QuickSwitcherNote,
   quickSwitcherNotesFromFiles,
@@ -170,6 +170,13 @@ import { vaultSearchDisplayContext } from "./vault-search-model";
 import "./styles.css";
 import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
+import {
+  applyWorkspaceFilePage,
+  loadedWorkspaceFiles,
+  reconcileWorkspaceFilePageSnapshot,
+  unloadedWorkspaceFilePageOffsets,
+  type WorkspaceFilePagesState,
+} from "./workspace-file-pages";
 import { type TabDragState, tabInsertionIndex } from "./workspace-tab-dnd";
 
 const elements = {
@@ -909,7 +916,10 @@ let quickSwitcherMatches: QuickSwitcherNote[] = [];
 let quickSwitcherSelection = -1;
 let quickSwitcherRestoreFocus: HTMLElement | null = null;
 let quickSwitcherIdentity: { vaultId: string; indexGeneration: number } | null = null;
+let quickSwitcherFileGeneration: string | null = null;
 let quickSwitcherRequest = 0;
+let quickSwitcherStatus: "idle" | "loading" | "warming" | "ready" | "error" = "idle";
+let quickSwitcherMessage = "";
 let settingsSnapshot: AppSettingsSnapshot = {
   settings: createDefaultAppSettings(),
   warning: null,
@@ -993,9 +1003,10 @@ const virtualFileOverscan = 6;
 let virtualFileRenderFrame: number | undefined;
 let virtualFileRenderKey = "";
 let virtualFileState: {
-  files: WorkspaceFileSummary[];
+  files: Array<WorkspaceFileSummary | undefined>;
   activePath: string | null;
 } = { files: [], activePath: null };
+let workspaceFilePages: WorkspaceFilePagesState | null = null;
 let lastVirtualActivePath: string | null = null;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
@@ -3097,27 +3108,19 @@ function renderQuickSwitcherResults(): void {
     return;
   }
   const identity = currentVaultSearchIdentity();
-  if (!identity) {
+  const fileGeneration = currentSnapshot?.workspace?.filePage.generation;
+  if (!identity || !fileGeneration) {
     closeQuickSwitcher(false);
     return;
   }
   if (
     quickSwitcherIdentity?.vaultId !== identity.vaultId ||
-    quickSwitcherIdentity?.indexGeneration !== identity.indexGeneration
+    quickSwitcherIdentity?.indexGeneration !== identity.indexGeneration ||
+    quickSwitcherFileGeneration !== fileGeneration
   ) {
-    quickSwitcherRequest += 1;
-    quickSwitcherIdentity = identity;
+    void loadQuickSwitcherResults();
+    return;
   }
-  const selectedPath = quickSwitcherMatches[quickSwitcherSelection]?.path;
-  quickSwitcherMatches = filterQuickSwitcherNotes(
-    quickSwitcherNotesFromFiles(currentSnapshot?.workspace?.files ?? []),
-    elements.quickSwitcherQuery.value,
-  );
-  const preservedIndex = selectedPath
-    ? quickSwitcherMatches.findIndex((note) => note.path === selectedPath)
-    : -1;
-  quickSwitcherSelection =
-    preservedIndex >= 0 ? preservedIndex : quickSwitcherMatches.length > 0 ? 0 : -1;
   elements.quickSwitcherResults.replaceChildren();
   for (const [index, note] of quickSwitcherMatches.entries()) {
     const option = document.createElement("button");
@@ -3145,11 +3148,99 @@ function renderQuickSwitcherResults(): void {
   if (quickSwitcherMatches.length === 0) {
     const empty = document.createElement("p");
     empty.className = "quick-switcher-empty";
-    empty.textContent = "No indexed note matches this search.";
+    empty.textContent =
+      quickSwitcherStatus === "loading"
+        ? "Loading indexed notes…"
+        : quickSwitcherStatus === "warming"
+          ? "The note index is still warming."
+          : quickSwitcherStatus === "error"
+            ? quickSwitcherMessage
+            : "No indexed note matches this search.";
     elements.quickSwitcherResults.append(empty);
   }
-  elements.quickSwitcherCount.textContent = `${quickSwitcherMatches.length} shown`;
+  elements.quickSwitcherCount.textContent =
+    quickSwitcherStatus === "loading"
+      ? "Loading"
+      : quickSwitcherStatus === "warming"
+        ? "Indexing"
+        : quickSwitcherStatus === "error"
+          ? "Unavailable"
+          : `${quickSwitcherMatches.length} shown`;
   selectQuickSwitcherIndex(quickSwitcherSelection, false);
+}
+
+async function loadQuickSwitcherResults(): Promise<void> {
+  if (!elements.quickSwitcher.open) {
+    return;
+  }
+  const identity = currentVaultSearchIdentity();
+  const fileGeneration = currentSnapshot?.workspace?.filePage.generation;
+  if (!identity || !fileGeneration) {
+    closeQuickSwitcher(false);
+    return;
+  }
+  const query = elements.quickSwitcherQuery.value;
+  const selectedPath = quickSwitcherMatches[quickSwitcherSelection]?.path;
+  const request = ++quickSwitcherRequest;
+  quickSwitcherIdentity = identity;
+  quickSwitcherFileGeneration = fileGeneration;
+  quickSwitcherStatus = "loading";
+  quickSwitcherMessage = "";
+  renderQuickSwitcherResults();
+  try {
+    const response = await window.threadleaf.getWorkspaceFilePage({
+      expectedVaultId: identity.vaultId,
+      generation: fileGeneration,
+      offset: 0,
+      limit: maximumQuickSwitcherResults,
+      query,
+    });
+    if (
+      request !== quickSwitcherRequest ||
+      !elements.quickSwitcher.open ||
+      elements.quickSwitcherQuery.value !== query
+    ) {
+      return;
+    }
+    const currentIdentity = currentVaultSearchIdentity();
+    const currentFileGeneration = currentSnapshot?.workspace?.filePage.generation;
+    if (
+      !currentIdentity ||
+      currentIdentity.vaultId !== identity.vaultId ||
+      currentIdentity.indexGeneration !== identity.indexGeneration ||
+      currentFileGeneration !== fileGeneration
+    ) {
+      void loadQuickSwitcherResults();
+      return;
+    }
+    if (response.status === "stale-vault") {
+      closeQuickSwitcher(false);
+      return;
+    }
+    if (response.status !== "ready") {
+      quickSwitcherMatches = [];
+      quickSwitcherSelection = -1;
+      quickSwitcherStatus = "warming";
+      renderQuickSwitcherResults();
+      return;
+    }
+    quickSwitcherMatches = quickSwitcherNotesFromFiles(response.files);
+    const preservedIndex = selectedPath
+      ? quickSwitcherMatches.findIndex((note) => note.path === selectedPath)
+      : -1;
+    quickSwitcherSelection =
+      preservedIndex >= 0 ? preservedIndex : quickSwitcherMatches.length > 0 ? 0 : -1;
+    quickSwitcherStatus = "ready";
+  } catch (error) {
+    if (request !== quickSwitcherRequest || !elements.quickSwitcher.open) {
+      return;
+    }
+    quickSwitcherMatches = [];
+    quickSwitcherSelection = -1;
+    quickSwitcherStatus = "error";
+    quickSwitcherMessage = error instanceof Error ? error.message : String(error);
+  }
+  renderQuickSwitcherResults();
 }
 
 function openQuickSwitcher(): void {
@@ -3173,12 +3264,15 @@ function openQuickSwitcher(): void {
   }
   quickSwitcherRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  quickSwitcherRequest += 1;
-  quickSwitcherIdentity = currentVaultSearchIdentity();
   elements.quickSwitcherQuery.value = "";
+  quickSwitcherMatches = [];
   quickSwitcherSelection = -1;
+  quickSwitcherIdentity = null;
+  quickSwitcherFileGeneration = null;
+  quickSwitcherStatus = "idle";
+  quickSwitcherMessage = "";
   elements.quickSwitcher.showModal();
-  renderQuickSwitcherResults();
+  void loadQuickSwitcherResults();
   window.requestAnimationFrame(() => {
     elements.quickSwitcherQuery.focus();
     elements.quickSwitcherQuery.select();
@@ -3192,6 +3286,9 @@ function closeQuickSwitcher(restoreFocus = true): void {
   quickSwitcherRequest += 1;
   elements.quickSwitcher.close();
   quickSwitcherIdentity = null;
+  quickSwitcherFileGeneration = null;
+  quickSwitcherStatus = "idle";
+  quickSwitcherMessage = "";
   if (documentViewMode === "plugin") {
     setPluginSurfacePresentationVisible(true);
   }
@@ -8335,7 +8432,7 @@ function scheduleVaultSearch(delay = 120, renderNow = true): void {
   if (!query) {
     vaultSearchState = { status: "idle" };
     if (renderNow) {
-      renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+      renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
     }
     return;
   }
@@ -8349,13 +8446,13 @@ function scheduleVaultSearch(delay = 120, renderNow = true): void {
       message: "The vault index is not ready yet.",
     };
     if (renderNow) {
-      renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+      renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
     }
     return;
   }
   vaultSearchState = { status: "loading", query, ...identity };
   if (renderNow) {
-    renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+    renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
   }
   vaultSearchTimer = window.setTimeout(() => {
     vaultSearchTimer = undefined;
@@ -8398,7 +8495,7 @@ async function performVaultSearch(
       message: error instanceof Error ? error.message : String(error),
     };
   }
-  renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+  renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
 }
 
 function reconcileVaultSearch(snapshot: RuntimeSnapshot): void {
@@ -8622,6 +8719,7 @@ function render(snapshot: RuntimeSnapshot): void {
   const diagnosticsStartedAt = snapshot.workspaceOpenDiagnostics ? performance.now() : null;
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   currentSnapshot = snapshot;
+  reconcileWorkspaceFilePages(snapshot);
   if (previousVaultId !== snapshot.vault.id) {
     workspaceModeRequest += 1;
     resetPaneDocumentModes(snapshot.vault.id);
@@ -8759,7 +8857,7 @@ function render(snapshot: RuntimeSnapshot): void {
           : "Local vault";
   elements.fileCount.textContent = opening
     ? "…"
-    : String(workspace?.files.length ?? snapshot.vault.markdownFileCount);
+    : String(workspace?.filePage.total ?? snapshot.vault.markdownFileCount);
   const activePane = workspace?.panes.find((pane) => pane.id === workspace?.activePaneId);
   renderCanvasFiles(
     workspace?.canvasFiles ?? [],
@@ -8767,13 +8865,23 @@ function render(snapshot: RuntimeSnapshot): void {
   );
   const needsAttention =
     !opening && (workspace?.state === "degraded" || snapshot.vault.warning !== null);
+  const warming = workspace?.state === "warming";
   elements.runtimeState.textContent = opening
     ? "Opening"
-    : needsAttention
-      ? "Needs attention"
-      : "Ready";
-  elements.statusShape.dataset.state = opening ? "opening" : needsAttention ? "degraded" : "ready";
-  elements.indexStatus.textContent = opening ? "Indexing" : workspace ? "Current" : "Unavailable";
+    : warming
+      ? "Ready, indexing"
+      : needsAttention
+        ? "Needs attention"
+        : "Ready";
+  elements.statusShape.dataset.state =
+    opening || warming ? "opening" : needsAttention ? "degraded" : "ready";
+  elements.indexStatus.textContent = opening
+    ? "Indexing"
+    : warming
+      ? `${workspace.census.indexed.toLocaleString()} / ${workspace.census.total?.toLocaleString() ?? "…"}`
+      : workspace
+        ? "Current"
+        : "Unavailable";
   elements.recoveryCount.textContent = String(workspace?.recoveryActionCount ?? 0);
   elements.watchSequence.textContent = String(workspace?.watcher.lastSequence ?? 0);
   elements.watchMessage.textContent = opening
@@ -8784,7 +8892,9 @@ function render(snapshot: RuntimeSnapshot): void {
         ? `Watcher error: ${workspace.watcher.error}`
         : workspace?.watcher.lastRescanReason
           ? `Recovered by ${workspace.watcher.lastRescanReason} rescan`
-          : "Filesystem and index agree";
+          : warming
+            ? `Workspace restored; ${workspace.census.state} continues in the background`
+            : "Filesystem and index agree";
   if (snapshot.vault.warning && snapshot.vault.warning !== lastVaultWarning) {
     showToast(snapshot.vault.warning);
   }
@@ -8809,8 +8919,8 @@ function render(snapshot: RuntimeSnapshot): void {
   }
   reconcileVaultSearch(snapshot);
   renderQuickSwitcherResults();
-  renderFiles(workspace?.files ?? [], displayedNote?.path ?? null);
-  renderNoteBookmarks(workspace?.files ?? [], displayedNote?.path ?? null);
+  renderFiles(currentWorkspaceFileSlots(), displayedNote?.path ?? null);
+  renderNoteBookmarks(currentLoadedWorkspaceFiles(), displayedNote?.path ?? null);
 
   elements.pluginState.textContent = plugin?.state ?? "empty";
   elements.pluginState.dataset.state = plugin?.state ?? "empty";
@@ -9321,7 +9431,73 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
   }
 }
 
-function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): void {
+function reconcileWorkspaceFilePages(snapshot: RuntimeSnapshot): void {
+  const workspace = snapshot.workspace;
+  const vaultId = snapshot.vault.id;
+  if (!workspace || !vaultId) {
+    workspaceFilePages = null;
+    return;
+  }
+  workspaceFilePages = reconcileWorkspaceFilePageSnapshot(
+    workspaceFilePages,
+    vaultId,
+    workspace.filePage,
+    workspace.files,
+  );
+}
+
+function currentWorkspaceFileSlots(): Array<WorkspaceFileSummary | undefined> {
+  return workspaceFilePages?.files ?? currentSnapshot?.workspace?.files ?? [];
+}
+
+function currentLoadedWorkspaceFiles(): WorkspaceFileSummary[] {
+  return loadedWorkspaceFiles(workspaceFilePages);
+}
+
+function requestWorkspaceFileRange(start: number, end: number): void {
+  const pages = workspaceFilePages;
+  const workspace = currentSnapshot?.workspace;
+  if (!pages || !workspace || workspace.census.state !== "current") {
+    return;
+  }
+  const pageSize = Math.max(1, pages.descriptor.limit);
+  for (const offset of unloadedWorkspaceFilePageOffsets(pages, start, end)) {
+    pages.pendingOffsets.add(offset);
+    void window.threadleaf
+      .getWorkspaceFilePage({
+        expectedVaultId: pages.vaultId,
+        generation: pages.descriptor.generation,
+        offset,
+        limit: pageSize,
+      })
+      .then((response) => {
+        if (
+          response.status !== "ready" ||
+          workspaceFilePages !== pages ||
+          response.page.generation !== pages.descriptor.generation
+        ) {
+          return;
+        }
+        if (!applyWorkspaceFilePage(pages, response.page, response.files)) return;
+        renderVirtualFiles(true);
+        renderNoteBookmarks(currentLoadedWorkspaceFiles(), loadedNote?.path ?? null);
+        renderQuickSwitcherResults();
+      })
+      .catch((error: unknown) => {
+        if (workspaceFilePages === pages) {
+          showToast(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        pages.pendingOffsets.delete(offset);
+      });
+  }
+}
+
+function renderFiles(
+  files: Array<WorkspaceFileSummary | undefined>,
+  activePath: string | null,
+): void {
   const query = elements.fileSearch.value.trim();
   if (vaultOpening()) {
     cancelVirtualFileRender();
@@ -9350,11 +9526,12 @@ function renderFiles(files: WorkspaceFileSummary[], activePath: string | null): 
     return;
   }
 
-  elements.filterSummary.textContent = `${files.length} ${files.length === 1 ? "note" : "notes"} indexed`;
+  const indexed = currentSnapshot?.workspace?.census.indexed ?? files.length;
+  elements.filterSummary.textContent = `${indexed.toLocaleString()} ${indexed === 1 ? "note" : "notes"} indexed`;
   const activeChanged = activePath !== lastVirtualActivePath;
   virtualFileState = { files, activePath };
   if (activeChanged && activePath) {
-    const activeIndex = files.findIndex((file) => file.path === activePath);
+    const activeIndex = files.findIndex((file) => file?.path === activePath);
     if (activeIndex >= 0) {
       elements.fileList.scrollTop = nearestItemScrollTop(
         activeIndex,
@@ -9417,6 +9594,7 @@ function renderNoteBookmarks(files: WorkspaceFileSummary[], activePath: string |
   const available = Boolean(activeVaultId && bookmarkVaultId === activeVaultId);
   const visiblePaths = available ? bookmarkPaths : [];
   const filesByPath = new Map(files.map((file) => [file.path, file]));
+  const completeInventory = workspaceFilePages?.descriptor.complete ?? true;
   elements.bookmarkCount.textContent = String(visiblePaths.length);
   elements.bookmarkShelf.hidden = visiblePaths.length === 0;
   elements.bookmarkShelf.setAttribute("aria-busy", String(bookmarkBusy));
@@ -9424,7 +9602,8 @@ function renderNoteBookmarks(files: WorkspaceFileSummary[], activePath: string |
 
   for (const filePath of visiblePaths) {
     const file = filesByPath.get(filePath);
-    const missing = !file;
+    const missing = !file && completeInventory;
+    const pending = !file && !completeInventory;
     const row = document.createElement("div");
     row.className = "bookmark-row";
     row.dataset.current = String(filePath === activePath);
@@ -9435,7 +9614,11 @@ function renderNoteBookmarks(files: WorkspaceFileSummary[], activePath: string |
     open.type = "button";
     open.className = "bookmark-open";
     open.disabled = missing || busy;
-    open.ariaLabel = missing ? `${filePath} is missing from the vault` : `Open ${filePath}`;
+    open.ariaLabel = missing
+      ? `${filePath} is missing from the vault`
+      : pending
+        ? `Open ${filePath} while its index page loads`
+        : `Open ${filePath}`;
     if (filePath === activePath) {
       open.setAttribute("aria-current", "page");
     }
@@ -9443,13 +9626,17 @@ function renderNoteBookmarks(files: WorkspaceFileSummary[], activePath: string |
     const mark = document.createElement("span");
     mark.className = "bookmark-open-mark";
     mark.ariaHidden = "true";
-    mark.textContent = missing ? "◇" : "★";
+    mark.textContent = missing || pending ? "◇" : "★";
     const copy = document.createElement("span");
     copy.className = "bookmark-open-copy";
     const title = document.createElement("strong");
     title.textContent = file?.title ?? bookmarkTitle(filePath);
     const location = document.createElement("small");
-    location.textContent = missing ? `Missing note · ${filePath}` : filePath;
+    location.textContent = missing
+      ? `Missing note · ${filePath}`
+      : pending
+        ? `Index page pending · ${filePath}`
+        : filePath;
     copy.append(title, location);
     open.append(mark, copy);
     if (!missing) {
@@ -9497,7 +9684,7 @@ function renderBookmarkToggle(): void {
 
 function renderBookmarkSurfaces(): void {
   renderAllPaneEditControls();
-  renderNoteBookmarks(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+  renderNoteBookmarks(currentLoadedWorkspaceFiles(), loadedNote?.path ?? null);
 }
 
 async function refreshNoteBookmarks(expectedVaultId: string): Promise<void> {
@@ -9595,6 +9782,7 @@ function renderVirtualFiles(force = false): void {
     viewportHeight: Math.max(virtualFileRowHeight, elements.fileList.clientHeight),
     overscan: virtualFileOverscan,
   });
+  requestWorkspaceFileRange(geometry.start, geometry.end);
   const renderKey = `${geometry.start}:${geometry.end}:${activePath ?? ""}:${files.length}`;
   if (!force && renderKey === virtualFileRenderKey) {
     return;
@@ -9606,6 +9794,11 @@ function renderVirtualFiles(force = false): void {
   for (let index = geometry.start; index < geometry.end; index += 1) {
     const file = files[index];
     if (!file) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "virtual-file-row";
+      placeholder.style.height = `${virtualFileRowHeight}px`;
+      placeholder.setAttribute("aria-hidden", "true");
+      fragment.append(placeholder);
       continue;
     }
     const button = createFileButton(file.path, file.title, activePath, "◇");
@@ -10810,8 +11003,8 @@ function activateWorkspacePaneLocally(paneId: WorkspacePaneId): void {
       `${candidateId === "primary" ? "Primary" : "Secondary"} editor pane${candidateId === paneId ? ", active" : ""}`,
     );
   }
-  renderFiles(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
-  renderNoteBookmarks(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+  renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
+  renderNoteBookmarks(currentLoadedWorkspaceFiles(), loadedNote?.path ?? null);
   renderNote(loadedNote);
   setActionState(busy);
 }
@@ -10947,7 +11140,7 @@ function setActionState(nextBusy: boolean): void {
   elements.runCommand.disabled =
     opening || busy || paneSaving || (currentSnapshot?.commands.length ?? 0) === 0;
   renderAllPaneEditControls();
-  renderNoteBookmarks(currentSnapshot?.workspace?.files ?? [], loadedNote?.path ?? null);
+  renderNoteBookmarks(currentLoadedWorkspaceFiles(), loadedNote?.path ?? null);
 }
 
 elements.fileSearch.addEventListener("input", () => {
@@ -11220,7 +11413,7 @@ elements.commandPalette.addEventListener("click", (event) => {
     closeCommandPalette();
   }
 });
-elements.quickSwitcherQuery.addEventListener("input", renderQuickSwitcherResults);
+elements.quickSwitcherQuery.addEventListener("input", () => void loadQuickSwitcherResults());
 elements.quickSwitcherQuery.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();

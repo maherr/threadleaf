@@ -12,6 +12,7 @@ import type {
   StateRootPort,
   VaultDirectoryCreateResult,
   VaultRenameResult,
+  VaultTextSnapshot,
   VaultWriteResult,
 } from "../kernel/ports";
 import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
@@ -53,6 +54,9 @@ import type {
   VaultTrashResponse,
   WorkspaceCanvasSnapshot,
   WorkspaceCanvasSummary,
+  WorkspaceCensusSnapshot,
+  WorkspaceFilePageRequest,
+  WorkspaceFilePageResponse,
   WorkspaceFileSummary,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
@@ -60,11 +64,13 @@ import type {
   WorkspacePaneSnapshot,
   WorkspaceSplitDirection,
 } from "../shared/contracts";
+import { maximumWorkspaceFilePageSize } from "../shared/contracts";
 import {
   isNoteWorkflowTemplatePath,
   parseVaultNoteWorkflowSettings,
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
+import { filterQuickSwitcherNotes } from "../shared/quick-switcher";
 import {
   measureSerializableValue,
   type WorkspaceOpenDiagnostics,
@@ -148,6 +154,10 @@ export interface WorkspaceRuntimeOptions {
   now?: () => number;
   /** Optional monotonic diagnostics recorder. Production enables it only by flag. */
   diagnostics?: WorkspaceOpenDiagnostics;
+  /** Return a restored workspace before the whole-vault census and index complete. */
+  deferWorkspaceCensus?: boolean;
+  /** Test seam for observing the interactive state before background census starts. */
+  beforeBackgroundCensus?: () => Promise<void>;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -225,6 +235,7 @@ interface WorkspaceIndexProjection {
   documents: Map<string, DocumentMetadataSnapshot>;
   backlinks: Map<string, string[]>;
   files: WorkspaceFileSummary[];
+  interactiveFiles: WorkspaceFileSummary[];
 }
 
 const MAX_DESKTOP_TRASH_ENTRIES = 500;
@@ -842,7 +853,7 @@ export class WorkspaceRuntime {
   readonly actions: ActionRegistry;
   readonly kernel: VaultKernel;
   readonly watcher: NodeVaultWatcher;
-  readonly indexReactor: VaultIndexReactor;
+  indexReactor: VaultIndexReactor;
   readonly pluginHost: PluginRuntimePort;
   readonly selectionSource: VaultSelectionSource;
   readonly readOnly: boolean;
@@ -897,6 +908,24 @@ export class WorkspaceRuntime {
   #reconcilePass = 0;
   readonly #now: () => number;
   readonly #diagnostics: WorkspaceOpenDiagnostics | undefined;
+  #census: WorkspaceCensusSnapshot = {
+    state: "current",
+    generation: 1,
+    discovered: 0,
+    indexed: 0,
+    total: 0,
+    error: null,
+  };
+  readonly #censusAbort = new AbortController();
+  #censusPromise: Promise<void> | null = null;
+  #censusProgressTimer: ReturnType<typeof setInterval> | undefined;
+  #censusProgressPublishPending = false;
+  #closed = false;
+  #filePageEpoch = 1;
+  #reconcileStartupPathsAfterCensus = false;
+  #activateFirstNoteAfterCensus = false;
+  readonly #warmingVisiblePaths = new Set<string>();
+  readonly #warmingPluginSnapshot: RuntimeSnapshot;
   /**
    * One timer for the whole runtime, set for the earliest direct confirmation.
    * Without it, an otherwise idle vault would never revisit a deletion after its
@@ -934,6 +963,9 @@ export class WorkspaceRuntime {
     workspaceLoadWarning: string | null,
     workspaceSettings: VaultWorkspaceSettings,
     diagnostics: WorkspaceOpenDiagnostics | undefined,
+    deferredCensus: boolean,
+    warmingVisiblePaths: Iterable<string>,
+    activateFirstNoteAfterCensus: boolean,
     now: () => number = Date.now,
   ) {
     this.#now = now;
@@ -950,6 +982,34 @@ export class WorkspaceRuntime {
     this.#workspaceSettings = workspaceSettings;
     this.#workspaceLoadWarning = workspaceLoadWarning;
     this.#diagnostics = diagnostics;
+    for (const filePath of warmingVisiblePaths) this.#warmingVisiblePaths.add(filePath);
+    this.#activateFirstNoteAfterCensus = activateFirstNoteAfterCensus;
+    if (deferredCensus) {
+      this.#census = {
+        state: "warming",
+        generation: 1,
+        discovered: this.indexReactor.index.snapshot().documents.length,
+        indexed: this.indexReactor.index.snapshot().documents.length,
+        total: null,
+        error: null,
+      };
+    }
+    this.#warmingPluginSnapshot = {
+      vault: {
+        id: null,
+        name: this.kernel.paths.rootPath.split("/").at(-1) ?? "Vault",
+        path: this.kernel.paths.rootPath,
+        markdownFileCount: this.#census.indexed,
+        mode: "synthetic-read-only",
+        source: this.selectionSource,
+        warning: null,
+      },
+      plugin: null,
+      commands: [],
+      actions: [],
+      notices: [],
+      events: [],
+    };
     this.#releaseActions.push(
       this.actions.register("threadleaf-workspace", {
         id: "workspace.create-note",
@@ -1075,30 +1135,6 @@ export class WorkspaceRuntime {
       ...(options.faultInjector ? { faultInjector: options.faultInjector } : {}),
     });
     await options.beforeWorkspaceStateRestore?.(kernel.vaultId);
-    let runtime: WorkspaceRuntime | undefined;
-    const bootstrap = await captureVaultBootstrap(kernel.paths, options.diagnostics);
-    const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, bootstrap.snapshot, {
-      onError: (error) => runtime?.recordWatcherError(error),
-      transientAbsences: kernel.transientAbsences,
-      ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}),
-    });
-    const parseIndexStartedAt = options.diagnostics?.now();
-    const indexReactor = await VaultIndexReactor.fromSnapshotsAsync(kernel, bootstrap.documents);
-    if (options.diagnostics && parseIndexStartedAt !== undefined) {
-      options.diagnostics.addSpan("parse-index", parseIndexStartedAt, {
-        documents: bootstrap.documents.length,
-      });
-    }
-    bootstrap.documents.length = 0;
-    const pluginHost = options.pluginRuntimeFactory
-      ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
-      : new PluginHost(
-          kernel.paths.rootPath,
-          kernel,
-          actions,
-          options.pluginModuleResolver,
-          kernel,
-        );
     let persistedWorkspace: PersistedWorkspaceState | null = null;
     let restoredWorkspace: PersistedWorkspaceState | null = null;
     let workspaceLoadWarning: string | null = null;
@@ -1123,6 +1159,59 @@ export class WorkspaceRuntime {
         workspaceLoadWarning = `Could not read saved workspace state: ${errorMessage(error)} The file was not changed.`;
       }
     }
+    const deferredCensus = Boolean(
+      options.deferWorkspaceCensus && (options.selectionSource ?? "direct") !== "bundled",
+    );
+    const warmingVisiblePaths = new Set<string>();
+    let initialDocuments: VaultTextSnapshot[];
+    let initialWatcherSnapshot = new Map();
+    if (deferredCensus) {
+      initialDocuments = [];
+      const activePaths = new Set(
+        (restoredWorkspace?.panes ?? [])
+          .map((pane) => pane.activePath)
+          .filter((filePath): filePath is string => filePath !== null),
+      );
+      for (const filePath of activePaths) {
+        if (!(await watchedPathExists(kernel.paths, filePath))) continue;
+        warmingVisiblePaths.add(filePath);
+        if (!isCanvasPath(filePath)) {
+          try {
+            initialDocuments.push(await kernel.readText(filePath));
+          } catch (error) {
+            if (await watchedPathExists(kernel.paths, filePath)) throw error;
+            warmingVisiblePaths.delete(filePath);
+          }
+        }
+      }
+    } else {
+      const bootstrap = await captureVaultBootstrap(kernel.paths, options.diagnostics);
+      initialDocuments = bootstrap.documents;
+      initialWatcherSnapshot = bootstrap.snapshot;
+    }
+    let runtime: WorkspaceRuntime | undefined;
+    const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, initialWatcherSnapshot, {
+      onError: (error) => runtime?.recordWatcherError(error),
+      transientAbsences: kernel.transientAbsences,
+      ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}),
+    });
+    const parseIndexStartedAt = options.diagnostics?.now();
+    const indexReactor = await VaultIndexReactor.fromSnapshotsAsync(kernel, initialDocuments);
+    if (options.diagnostics && parseIndexStartedAt !== undefined) {
+      options.diagnostics.addSpan("parse-index", parseIndexStartedAt, {
+        documents: initialDocuments.length,
+      });
+    }
+    initialDocuments.length = 0;
+    const pluginHost = options.pluginRuntimeFactory
+      ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
+      : new PluginHost(
+          kernel.paths.rootPath,
+          kernel,
+          actions,
+          options.pluginModuleResolver,
+          kernel,
+        );
     runtime = new WorkspaceRuntime(
       actions,
       kernel,
@@ -1136,93 +1225,168 @@ export class WorkspaceRuntime {
       workspaceLoadWarning,
       workspaceSettings,
       options.diagnostics,
+      deferredCensus,
+      warmingVisiblePaths,
+      deferredCensus && restoredWorkspace === null,
       options.now ?? Date.now,
     );
 
     if (restoredWorkspace) {
-      const visible = await kernel.listVisiblePaths();
-      const availablePaths = new Set([
-        ...indexReactor.index.snapshot().documents.map((document) => document.path),
-        ...visible.files.filter(isCanvasPath),
-      ]);
-      // The restore reconciles against the vault listing like the projection
-      // does, so it retains through the same authority rather than dropping on
-      // first sight. A tab whose file has not arrived on this machine yet - the
-      // ordinary state of a boot that beat the sync - would otherwise be closed,
-      // unpinned, and written back over the saved workspace before anything had
-      // looked at the vault twice.
-      const restoredTracked = new Set<string>();
-      for (const pane of restoredWorkspace.panes) {
-        for (const filePath of pane.openPaths) {
-          restoredTracked.add(filePath);
+      if (deferredCensus) {
+        runtime.applyWorkspaceState(restoredWorkspace);
+      } else {
+        const visible = await kernel.listVisiblePaths();
+        const availablePaths = new Set([
+          ...indexReactor.index.snapshot().documents.map((document) => document.path),
+          ...visible.files.filter(isCanvasPath),
+        ]);
+        // The restore reconciles against the vault listing like the projection
+        // does, so it retains through the same authority rather than dropping on
+        // first sight. A tab whose file has not arrived on this machine yet - the
+        // ordinary state of a boot that beat the sync - would otherwise be closed,
+        // unpinned, and written back over the saved workspace before anything had
+        // looked at the vault twice.
+        const restoredTracked = new Set<string>();
+        for (const pane of restoredWorkspace.panes) {
+          for (const filePath of pane.openPaths) {
+            restoredTracked.add(filePath);
+          }
+          for (const filePath of pane.navigationHistory?.back ?? []) {
+            restoredTracked.add(filePath);
+          }
+          for (const filePath of pane.navigationHistory?.forward ?? []) {
+            restoredTracked.add(filePath);
+          }
         }
-        for (const filePath of pane.navigationHistory?.back ?? []) {
-          restoredTracked.add(filePath);
-        }
-        for (const filePath of pane.navigationHistory?.forward ?? []) {
-          restoredTracked.add(filePath);
-        }
-      }
-      const { retainedPaths } = runtime.retainTrackedPaths(
-        availablePaths,
-        restoredTracked,
-        "startup",
-      );
-      const panes = restoredWorkspace.panes.map((pane) => {
-        const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
-        // A retained path holds its tab but cannot hold the selection yet:
-        // nothing readable has been published for it in this session, so the
-        // snapshot would have to read a file that is not there.
-        const activePath =
-          pane.activePath &&
-          openPaths.includes(pane.activePath) &&
-          availablePaths.has(pane.activePath)
-            ? pane.activePath
-            : (openPaths.filter((filePath) => availablePaths.has(filePath)).at(-1) ?? null);
-        const navigationHistory = navigationHistoryForPaths(
-          pane.navigationHistory,
-          retainedPaths,
-          activePath,
+        const { retainedPaths } = runtime.retainTrackedPaths(
+          availablePaths,
+          restoredTracked,
+          "startup",
         );
-        return {
-          id: pane.id,
-          openPaths,
-          pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
-          activePath,
-          ...(navigationHistory ? { navigationHistory } : {}),
-        };
-      });
-      const restored = createWorkspaceLayout(
-        kernel.vaultId,
-        panes,
-        restoredWorkspace.activePaneId,
-        restoredWorkspace.splitDirection,
-      );
-      runtime.applyWorkspaceState(restored);
-      if (!workspaceStatesEqual(restoredWorkspace, restored)) {
-        await runtime.persistWorkspaceStateBestEffort();
+        const panes = restoredWorkspace.panes.map((pane) => {
+          const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
+          // A retained path holds its tab but cannot hold the selection yet:
+          // nothing readable has been published for it in this session, so the
+          // snapshot would have to read a file that is not there.
+          const activePath =
+            pane.activePath &&
+            openPaths.includes(pane.activePath) &&
+            availablePaths.has(pane.activePath)
+              ? pane.activePath
+              : (openPaths.filter((filePath) => availablePaths.has(filePath)).at(-1) ?? null);
+          const navigationHistory = navigationHistoryForPaths(
+            pane.navigationHistory,
+            retainedPaths,
+            activePath,
+          );
+          return {
+            id: pane.id,
+            openPaths,
+            pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
+            activePath,
+            ...(navigationHistory ? { navigationHistory } : {}),
+          };
+        });
+        const restored = createWorkspaceLayout(
+          kernel.vaultId,
+          panes,
+          restoredWorkspace.activePaneId,
+          restoredWorkspace.splitDirection,
+        );
+        runtime.applyWorkspaceState(restored);
+        if (!workspaceStatesEqual(restoredWorkspace, restored)) {
+          await runtime.persistWorkspaceStateBestEffort();
+        }
       }
     } else {
-      const firstPath = indexReactor.index.snapshot().documents[0]?.path;
-      if (firstPath) {
-        runtime.activatePath(firstPath, "primary", false);
-      }
-      if (options.workspaceStateStore && workspaceStateReadable) {
-        await runtime.persistWorkspaceStateBestEffort();
+      if (!deferredCensus) {
+        const firstPath = indexReactor.index.snapshot().documents[0]?.path;
+        if (firstPath) {
+          runtime.activatePath(firstPath, "primary", false);
+        }
+        if (options.workspaceStateStore && workspaceStateReadable) {
+          await runtime.persistWorkspaceStateBestEffort();
+        }
       }
     }
     if (options.pluginDirectory) {
       await pluginHost.loadPlugin(options.pluginDirectory);
     }
     if (!runtime.readOnly) {
-      watcher.start((batch) => runtime?.handleWatchBatch(batch));
-      runtime.requestRestoredAbsenceFollowUp();
+      if (deferredCensus) {
+        runtime.startBackgroundCensus(options.beforeBackgroundCensus);
+      } else {
+        watcher.start((batch) => runtime?.handleWatchBatch(batch));
+        runtime.requestRestoredAbsenceFollowUp();
+      }
     }
     return runtime;
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
-    return this.snapshotWithPluginState(await this.pluginHost.getSnapshot());
+    return this.snapshotWithPluginState(
+      this.#census.state === "current"
+        ? await this.pluginHost.getSnapshot()
+        : this.#warmingPluginSnapshot,
+    );
+  }
+
+  async getWorkspaceFilePage(
+    request: WorkspaceFilePageRequest,
+  ): Promise<WorkspaceFilePageResponse> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    if (
+      !Number.isSafeInteger(request.offset) ||
+      request.offset < 0 ||
+      !Number.isSafeInteger(request.limit) ||
+      request.limit < 1 ||
+      request.limit > maximumWorkspaceFilePageSize
+    ) {
+      throw new Error(
+        `Workspace file pages require a non-negative offset and a limit from 1 to ${maximumWorkspaceFilePageSize}.`,
+      );
+    }
+    const generation = this.workspaceFilePageGeneration();
+    if (request.generation !== generation) {
+      return {
+        status: "stale-generation",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    if (this.#census.state !== "current") {
+      return {
+        status: "warming",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    const projection = this.workspaceIndexProjection();
+    const sourceFiles =
+      request.query === undefined
+        ? projection.files
+        : filterQuickSwitcherNotes(projection.files, request.query);
+    const files = sourceFiles.slice(request.offset, request.offset + request.limit);
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      page: {
+        generation,
+        offset: request.offset,
+        limit: request.limit,
+        total: sourceFiles.length,
+        complete: request.offset + files.length >= sourceFiles.length,
+      },
+      files,
+    };
+  }
+
+  async waitForCensusCompletion(): Promise<void> {
+    await this.#censusPromise;
   }
 
   private visibleVaultFiles(): Promise<readonly string[]> {
@@ -2097,6 +2261,13 @@ export class WorkspaceRuntime {
   }
 
   async close(): Promise<void> {
+    this.#closed = true;
+    this.#censusAbort.abort();
+    if (this.#censusProgressTimer) {
+      clearTimeout(this.#censusProgressTimer);
+      this.#censusProgressTimer = undefined;
+    }
+    await this.#censusPromise?.catch(() => undefined);
     this.clearAbsenceWake();
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
@@ -2279,7 +2450,12 @@ export class WorkspaceRuntime {
     // allowed; the pane reports it as unavailable until its file is back or its
     // absence is confirmed, and either way the answer arrives on its own.
     const retained = this.#unconfirmedAbsences.has(filePath) && this.tracksWorkspacePath(filePath);
-    if (retained) {
+    const warmingUnknown =
+      this.#census.state !== "current" &&
+      this.tracksWorkspacePath(filePath) &&
+      !this.#warmingVisiblePaths.has(filePath) &&
+      !this.indexReactor.index.snapshot().documents.some((document) => document.path === filePath);
+    if (retained || warmingUnknown) {
       // Nothing to read.
     } else if (isCanvasPath(filePath)) {
       const visible = await this.kernel.listVisiblePaths();
@@ -2287,6 +2463,7 @@ export class WorkspaceRuntime {
         throw new Error(`Canvas is not present in the active vault: ${filePath}`);
       }
       await this.kernel.readBinary(filePath, 8 * 1024 * 1024);
+      this.#warmingVisiblePaths.add(filePath);
     } else {
       const exists = this.indexReactor.index
         .snapshot()
@@ -2295,8 +2472,9 @@ export class WorkspaceRuntime {
         throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
       }
       await this.kernel.readText(filePath);
+      this.#warmingVisiblePaths.add(filePath);
     }
-    if (!retained) {
+    if (!retained && !warmingUnknown) {
       this.justifyWorkspacePathPresence(filePath);
     }
     const paneId = request.paneId ?? this.#activePaneId;
@@ -3466,7 +3644,6 @@ export class WorkspaceRuntime {
   }
 
   private async publishSnapshot(pluginSnapshot?: RuntimeSnapshot): Promise<RuntimeSnapshot> {
-    this.#visibleVaultFiles = null;
     const snapshot = pluginSnapshot
       ? await this.snapshotWithPluginState(pluginSnapshot)
       : await this.getSnapshot();
@@ -3478,46 +3655,41 @@ export class WorkspaceRuntime {
 
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const snapshotStartedAt = this.#diagnostics?.now();
-    const index = this.indexReactor.index.snapshot();
-    const visibleFiles = await this.visibleVaultFiles();
+    const projection = this.workspaceIndexProjection();
+    const visibleFiles =
+      this.#census.state === "current"
+        ? await this.visibleVaultFiles()
+        : [...this.#warmingVisiblePaths];
     const canvasPaths = visibleFiles.filter(isCanvasPath);
     const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
       path: filePath,
       title: titleForJsonCanvasPath(filePath),
     }));
-    let projection = this.#indexProjection;
-    if (!projection || projection.generation !== this.indexReactor.index.generation) {
-      const documents = new Map(index.documents.map((document) => [document.path, document]));
-      const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
-      const files: WorkspaceFileSummary[] = index.documents.map((document) => {
-        const noteLinks = document.links.filter(isWorkspaceNoteLink);
-        return {
-          path: document.path,
-          title: displayTitleFromVaultPath(document.path),
-          tags: document.tags,
-          backlinkCount: backlinks.get(document.path)?.length ?? 0,
-          outgoingCount: noteLinks.length,
-          unresolvedCount: noteLinks.filter((link) => link.resolution.status !== "resolved").length,
-        };
-      });
-      projection = {
-        generation: this.indexReactor.index.generation,
-        documents,
-        backlinks,
-        files,
-      };
-      this.#indexProjection = projection;
-    }
     const { documents, backlinks, files } = projection;
     const availablePaths = new Set([...documents.keys(), ...canvasPaths]);
     // Reconciliation closes a tab here and in the two sibling call sites that
     // reconcile against the vault listing, so all three ask the same authority
     // what may still be held. Only the confirmed-absent path in
     // settleUnconfirmedAbsences may take a retained path out of the panes.
-    const { retainedPaths, trackedMissing } = this.retainTrackedPaths(
-      availablePaths,
-      this.trackedWorkspacePaths(),
-    );
+    const trackedPaths = this.trackedWorkspacePaths();
+    let retainedPaths: ReadonlySet<string>;
+    let trackedMissing: string[];
+    if (this.#census.state === "current") {
+      const retained = this.retainTrackedPaths(
+        availablePaths,
+        trackedPaths,
+        this.#reconcileStartupPathsAfterCensus ? "startup" : "transient",
+      );
+      retainedPaths = retained.retainedPaths;
+      trackedMissing = retained.trackedMissing;
+      this.#reconcileStartupPathsAfterCensus = false;
+    } else {
+      trackedMissing = [...trackedPaths].filter((filePath) => !availablePaths.has(filePath));
+      retainedPaths =
+        trackedMissing.length === 0
+          ? availablePaths
+          : new Set([...availablePaths, ...trackedMissing]);
+    }
     // A retained path can still be unrenderable: nothing readable was ever
     // published for it. It may hold the selection anyway - the pane says what it
     // is waiting for instead of rendering a document - because a selection this
@@ -3732,9 +3904,22 @@ export class WorkspaceRuntime {
       }
     }
     const snapshot: NonNullable<RuntimeSnapshot["workspace"]> = {
-      state: this.#watcherError ? "degraded" : "ready",
+      state:
+        this.#watcherError || this.#census.state === "degraded"
+          ? "degraded"
+          : this.#census.state === "current"
+            ? "ready"
+            : "warming",
       indexGeneration: this.indexReactor.index.generation,
-      files,
+      files: projection.interactiveFiles,
+      filePage: {
+        generation: this.workspaceFilePageGeneration(),
+        offset: 0,
+        limit: maximumWorkspaceFilePageSize,
+        total: files.length,
+        complete: files.length <= maximumWorkspaceFilePageSize,
+      },
+      census: this.censusSnapshot(),
       ...(canvasFiles.length > 0 ? { canvasFiles } : {}),
       panes,
       activePaneId: snapshotState.activePaneId,
@@ -3766,5 +3951,157 @@ export class WorkspaceRuntime {
       });
     }
     return snapshot;
+  }
+
+  private workspaceIndexProjection(): WorkspaceIndexProjection {
+    const index = this.indexReactor.index.snapshot();
+    let projection = this.#indexProjection;
+    if (!projection || projection.generation !== this.indexReactor.index.generation) {
+      const documents = new Map(index.documents.map((document) => [document.path, document]));
+      const backlinks = new Map(index.backlinks.map((entry) => [entry.path, entry.sources]));
+      const files: WorkspaceFileSummary[] = index.documents.map((document) => {
+        const noteLinks = document.links.filter(isWorkspaceNoteLink);
+        return {
+          path: document.path,
+          title: displayTitleFromVaultPath(document.path),
+          tags: document.tags,
+          backlinkCount: backlinks.get(document.path)?.length ?? 0,
+          outgoingCount: noteLinks.length,
+          unresolvedCount: noteLinks.filter((link) => link.resolution.status !== "resolved").length,
+        };
+      });
+      projection = {
+        generation: this.indexReactor.index.generation,
+        documents,
+        backlinks,
+        files,
+        interactiveFiles: files.slice(0, maximumWorkspaceFilePageSize),
+      };
+      this.#indexProjection = projection;
+    }
+    return projection;
+  }
+
+  private workspaceFilePageGeneration(): string {
+    return `${this.#filePageEpoch}:${this.indexReactor.index.generation}`;
+  }
+
+  private censusSnapshot(): WorkspaceCensusSnapshot {
+    return { ...this.#census };
+  }
+
+  private scheduleCensusProgressPublish(): void {
+    if (this.#closed || this.#censusProgressPublishPending || this.#listeners.size === 0) {
+      return;
+    }
+    this.#censusProgressPublishPending = true;
+    this.#censusProgressTimer = setTimeout(() => {
+      this.#censusProgressTimer = undefined;
+      this.#censusProgressPublishPending = false;
+      if (!this.#closed) {
+        void this.publishSnapshot().catch((error) => this.recordWatcherError(error));
+      }
+    }, 250);
+    this.#censusProgressTimer.unref?.();
+  }
+
+  private startBackgroundCensus(beforeStart?: () => Promise<void>): void {
+    if (this.#censusPromise || this.#census.state === "current") {
+      return;
+    }
+    this.#censusPromise = (async () => {
+      try {
+        await beforeStart?.();
+        if (this.#closed || this.#censusAbort.signal.aborted) return;
+        this.#census = { ...this.#census, state: "scanning", error: null };
+        this.scheduleCensusProgressPublish();
+        const bootstrap = await captureVaultBootstrap(this.kernel.paths, this.#diagnostics, {
+          signal: this.#censusAbort.signal,
+          onProgress: ({ scanned, total }) => {
+            this.#census = {
+              ...this.#census,
+              state: "scanning",
+              discovered: scanned,
+              total,
+            };
+            this.scheduleCensusProgressPublish();
+          },
+        });
+        this.#census = {
+          ...this.#census,
+          state: "indexing",
+          discovered: bootstrap.documents.length,
+          indexed: 0,
+          total: bootstrap.documents.length,
+        };
+        this.scheduleCensusProgressPublish();
+        const censusIndexStartedAt = this.#diagnostics?.now();
+        const nextReactor = await VaultIndexReactor.fromSnapshotsAsync(
+          this.kernel,
+          bootstrap.documents,
+          {
+            signal: this.#censusAbort.signal,
+            onProgress: (indexed, total) => {
+              this.#census = { ...this.#census, state: "indexing", indexed, total };
+              this.scheduleCensusProgressPublish();
+            },
+          },
+        );
+        if (this.#diagnostics && censusIndexStartedAt !== undefined) {
+          this.#diagnostics.addSpan("census.parse-index", censusIndexStartedAt, {
+            documents: bootstrap.documents.length,
+          });
+        }
+        bootstrap.documents.length = 0;
+        if (this.#closed || this.#censusAbort.signal.aborted) return;
+        this.indexReactor = nextReactor;
+        this.#indexProjection = null;
+        this.#filePageEpoch += 1;
+        if (
+          this.#activateFirstNoteAfterCensus &&
+          this.#panes.every((pane) => pane.openPaths.length === 0)
+        ) {
+          const firstPath = this.indexReactor.index.snapshot().documents[0]?.path;
+          if (firstPath && this.activatePath(firstPath, "primary", false)) {
+            await this.persistWorkspaceStateBestEffort();
+          }
+        }
+        this.#activateFirstNoteAfterCensus = false;
+        this.#census = { ...this.#census, state: "reconciling" };
+        this.watcher.installStartupSnapshot(bootstrap.snapshot);
+        await this.watcher.startWithInitialScan((batch) => this.handleWatchBatch(batch), {
+          signal: this.#censusAbort.signal,
+          onProgress: ({ scanned, total }) => {
+            this.#census = { ...this.#census, state: "reconciling", discovered: scanned, total };
+            this.scheduleCensusProgressPublish();
+          },
+        });
+        if (this.#closed || this.#censusAbort.signal.aborted) return;
+        const total = this.indexReactor.index.snapshot().documents.length;
+        this.#census = {
+          state: "current",
+          generation: this.#census.generation + 1,
+          discovered: total,
+          indexed: total,
+          total,
+          error: null,
+        };
+        this.#reconcileStartupPathsAfterCensus = true;
+        await this.publishSnapshot();
+        this.requestRestoredAbsenceFollowUp();
+      } catch (error) {
+        if (
+          this.#closed ||
+          this.#censusAbort.signal.aborted ||
+          (error instanceof Error && error.name === "AbortError")
+        ) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        this.#census = { ...this.#census, state: "degraded", error: message };
+        this.recordWatcherError(error);
+        await this.publishSnapshot();
+      }
+    })();
   }
 }

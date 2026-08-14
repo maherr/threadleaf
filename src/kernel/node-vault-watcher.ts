@@ -90,6 +90,24 @@ export interface VaultBootstrapScan {
   snapshot: VaultSnapshot;
 }
 
+export interface VaultScanProgress {
+  scanned: number;
+  total: number;
+}
+
+export interface VaultScanControl {
+  signal?: AbortSignal;
+  onProgress?: (progress: VaultScanProgress) => void;
+}
+
+function throwIfScanAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    const error = new Error("Vault scan was cancelled.");
+    error.name = "AbortError";
+    throw error;
+  }
+}
+
 export interface SnapshotDiff {
   changes: VaultChange[];
   rescan?: RescanRequest;
@@ -254,6 +272,7 @@ export async function watchedPathExists(
 export async function captureVaultBootstrap(
   policy: VaultPathPolicy,
   diagnostics?: WorkspaceOpenDiagnostics,
+  control: VaultScanControl = {},
 ): Promise<VaultBootstrapScan> {
   const startedAt = diagnostics?.now();
   const snapshot: VaultSnapshot = new Map();
@@ -261,8 +280,16 @@ export async function captureVaultBootstrap(
   const paths = diagnostics
     ? await diagnostics.measure("bootstrap.list", () => policy.listMarkdownPaths())
     : await policy.listMarkdownPaths();
-  for (const relativePath of paths) {
+  throwIfScanAborted(control.signal);
+  control.onProgress?.({ scanned: 0, total: paths.length });
+  for (let cursor = 0; cursor < paths.length; cursor += 1) {
+    throwIfScanAborted(control.signal);
+    const relativePath = paths[cursor];
+    if (!relativePath) continue;
     if (isTransactionTemporary(path.posix.basename(relativePath))) {
+      if ((cursor + 1) % 256 === 0 || cursor + 1 === paths.length) {
+        control.onProgress?.({ scanned: cursor + 1, total: paths.length });
+      }
       continue;
     }
     const scanned = await readWatchedFile(
@@ -275,10 +302,16 @@ export async function captureVaultBootstrap(
       "bootstrap",
     );
     if (!scanned?.document) {
+      if ((cursor + 1) % 256 === 0 || cursor + 1 === paths.length) {
+        control.onProgress?.({ scanned: cursor + 1, total: paths.length });
+      }
       continue;
     }
     snapshot.set(relativePath, scanned.state);
     documents.push(scanned.document);
+    if ((cursor + 1) % 256 === 0 || cursor + 1 === paths.length) {
+      control.onProgress?.({ scanned: cursor + 1, total: paths.length });
+    }
   }
   if (diagnostics && startedAt !== undefined) {
     diagnostics.addSpan("bootstrap.filesystem", startedAt, {
@@ -289,7 +322,7 @@ export async function captureVaultBootstrap(
   return { documents, snapshot };
 }
 
-export interface VaultSnapshotCaptureDiagnostics {
+export interface VaultSnapshotCaptureDiagnostics extends VaultScanControl {
   diagnostics?: WorkspaceOpenDiagnostics;
   reason?: string;
 }
@@ -310,8 +343,16 @@ export async function captureVaultSnapshot(
         { attributes },
       )
     : await policy.listMarkdownPaths(relativeDirectory);
-  for (const relativePath of paths) {
+  throwIfScanAborted(options.signal);
+  options.onProgress?.({ scanned: 0, total: paths.length });
+  for (let cursor = 0; cursor < paths.length; cursor += 1) {
+    throwIfScanAborted(options.signal);
+    const relativePath = paths[cursor];
+    if (!relativePath) continue;
     if (isTransactionTemporary(path.posix.basename(relativePath))) {
+      if ((cursor + 1) % 256 === 0 || cursor + 1 === paths.length) {
+        options.onProgress?.({ scanned: cursor + 1, total: paths.length });
+      }
       continue;
     }
     const state = options.diagnostics
@@ -329,6 +370,9 @@ export async function captureVaultSnapshot(
       : await readWatchedState(policy, relativePath, previous.get(relativePath));
     if (state) {
       snapshot.set(relativePath, state);
+    }
+    if ((cursor + 1) % 256 === 0 || cursor + 1 === paths.length) {
+      options.onProgress?.({ scanned: cursor + 1, total: paths.length });
     }
   }
   if (options.diagnostics && startedAt !== undefined) {
@@ -502,12 +546,41 @@ export class NodeVaultWatcher {
     return this.#ledger;
   }
 
+  installStartupSnapshot(snapshot: VaultSnapshot): void {
+    if (this.#closed || this.#watcher) {
+      throw new Error("The startup snapshot can only be installed before the watcher starts.");
+    }
+    this.#snapshot = new Map(snapshot);
+  }
+
   /** Monotonic activity receipt for one exact visible workspace path. */
   activityVersionForPath(relativePath: string): number {
     return this.#pathActivity.versionForPath(relativePath);
   }
 
   start(listener: (batch: VaultChangeBatch) => void | Promise<void>): void {
+    this.startBackend(listener);
+    this.scheduleScan();
+  }
+
+  async startWithInitialScan(
+    listener: (batch: VaultChangeBatch) => void | Promise<void>,
+    control: VaultScanControl = {},
+  ): Promise<VaultChangeBatch | null> {
+    this.startBackend(listener);
+    let result: VaultChangeBatch | null = null;
+    const initialScan = this.#flushTail.then(async () => {
+      result = await this.scanNow(control);
+      if (!this.#closed && result && this.#listener) {
+        await this.#listener(result);
+      }
+    });
+    this.#flushTail = initialScan.catch(() => undefined);
+    await initialScan;
+    return result;
+  }
+
+  private startBackend(listener: (batch: VaultChangeBatch) => void | Promise<void>): void {
     if (this.#closed) {
       throw new Error("Vault watcher is closed.");
     }
@@ -530,10 +603,9 @@ export class NodeVaultWatcher {
       this.#onError(error);
       void this.emitRescan("backend-error").catch(this.#onError);
     });
-    this.scheduleScan();
   }
 
-  async scanNow(): Promise<VaultChangeBatch | null> {
+  async scanNow(control: VaultScanControl = {}): Promise<VaultChangeBatch | null> {
     // Taken before the walk: a file this scan reads as missing was missing at
     // some point inside the walk, and the transaction responsible may well have
     // finished and released its claim before the diff is annotated below.
@@ -541,6 +613,8 @@ export class NodeVaultWatcher {
     const next = await captureVaultSnapshot(this.policy, this.#snapshot, "", {
       ...(this.#diagnostics ? { diagnostics: this.#diagnostics } : {}),
       reason: "watcher-scan",
+      ...(control.signal ? { signal: control.signal } : {}),
+      ...(control.onProgress ? { onProgress: control.onProgress } : {}),
     });
     const diff = diffVaultSnapshots(this.#snapshot, next);
     this.#snapshot = next;

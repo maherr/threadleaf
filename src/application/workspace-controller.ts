@@ -33,6 +33,8 @@ import type {
   VaultSearchResponse,
   VaultSelectionSource,
   VaultTrashResponse,
+  WorkspaceFilePageRequest,
+  WorkspaceFilePageResponse,
   WorkspacePaneId,
   WorkspaceSplitDirection,
 } from "../shared/contracts";
@@ -64,6 +66,7 @@ export interface WorkspaceRuntimePort {
   readonly vaultId: string;
   readonly vaultPath: string;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse>;
   loadVaultImage(
@@ -319,6 +322,7 @@ function runtimeOptions(
     ...(workspaceSettingsForVault ? { workspaceSettingsForVault } : {}),
     ...(beforeWorkspaceStateRestore ? { beforeWorkspaceStateRestore } : {}),
     ...(diagnostics ? { diagnostics } : {}),
+    ...(selectionSource !== "bundled" ? { deferWorkspaceCensus: true } : {}),
   };
 }
 
@@ -484,6 +488,20 @@ export class WorkspaceController {
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.#runtime.getSnapshot().then((snapshot) => this.decorateSnapshot(snapshot));
+  }
+
+  async getWorkspaceFilePage(
+    request: WorkspaceFilePageRequest,
+  ): Promise<WorkspaceFilePageResponse> {
+    const runtime = this.activeRuntime("load workspace files");
+    if (runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.getWorkspaceFilePage(request);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
   }
 
   async activateDeferredInitialVault(): Promise<InitialVaultActivationOutcome> {

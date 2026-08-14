@@ -1796,6 +1796,17 @@ function registerIpcHandlers(): void {
     }
     return workspaceLayoutController.snapshot();
   });
+  ipcMain.handle(ipcChannels.workspaceFilePage, (event, request: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Workspace file pages require the active Threadleaf window.");
+    }
+    if (typeof request !== "object" || request === null) {
+      throw new Error("Workspace file pages require a page request.");
+    }
+    return workspaceController.getWorkspaceFilePage(
+      request as Parameters<WorkspaceController["getWorkspaceFilePage"]>[0],
+    );
+  });
   ipcMain.handle(
     ipcChannels.setWorkspaceDockCollapsed,
     (event, dockId: unknown, collapsed: unknown, expectedVaultId: unknown) => {

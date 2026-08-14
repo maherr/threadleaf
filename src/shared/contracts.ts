@@ -302,6 +302,49 @@ export interface WorkspaceFileSummary {
   unresolvedCount: number;
 }
 
+export const maximumWorkspaceFilePageSize = 256;
+
+export interface WorkspaceFilePageDescriptor {
+  generation: string;
+  offset: number;
+  limit: number;
+  total: number;
+  complete: boolean;
+}
+
+export interface WorkspaceFilePageRequest {
+  expectedVaultId: string;
+  generation: string;
+  offset: number;
+  limit: number;
+  /** Bounded title/path ranking for the quick switcher. Omit for tree order. */
+  query?: string;
+}
+
+export type WorkspaceFilePageResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      page: WorkspaceFilePageDescriptor;
+      files: WorkspaceFileSummary[];
+    }
+  | {
+      status: "warming" | "stale-generation";
+      vaultId: string;
+      generation: string;
+      census: WorkspaceCensusSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export interface WorkspaceCensusSnapshot {
+  state: "warming" | "scanning" | "indexing" | "reconciling" | "current" | "degraded";
+  generation: number;
+  discovered: number;
+  indexed: number;
+  total: number | null;
+  error: string | null;
+}
+
 export interface WorkspaceCanvasSummary {
   path: string;
   title: string;
@@ -482,9 +525,11 @@ export type VaultGraphResponse =
   | { status: "stale-vault"; vaultId: string };
 
 export interface WorkspaceSnapshot {
-  state: "ready" | "degraded";
+  state: "warming" | "ready" | "degraded";
   indexGeneration: number;
   files: WorkspaceFileSummary[];
+  filePage: WorkspaceFilePageDescriptor;
+  census: WorkspaceCensusSnapshot;
   canvasFiles?: WorkspaceCanvasSummary[];
   panes: WorkspacePaneSnapshot[];
   activePaneId: WorkspacePaneId;
@@ -1090,6 +1135,7 @@ export interface ThreadleafBridge {
   downloadAppUpdate(): Promise<AppUpdateSnapshot>;
   installAppUpdate(): Promise<AppUpdateSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
   reportWorkspaceOpenDiagnostics(acknowledgement: WorkspaceOpenTransferAcknowledgement): void;
   getWorkspaceLayout(expectedVaultId?: string): Promise<WorkspaceLayoutSnapshot>;
   setWorkspaceDockCollapsed(

@@ -57,6 +57,14 @@ describe("quick switcher model", () => {
       path: `Notes/${index}.md`,
       title: `Note ${index}`,
     }));
-    expect(filterQuickSwitcherNotes(largeVault, "")).toHaveLength(maximumQuickSwitcherResults);
+    expect(filterQuickSwitcherNotes(largeVault, "")).toEqual(
+      [...largeVault]
+        .sort(
+          (left, right) =>
+            left.title.localeCompare(right.title, "en-US") ||
+            left.path.localeCompare(right.path, "en-US"),
+        )
+        .slice(0, maximumQuickSwitcherResults),
+    );
   });
 });

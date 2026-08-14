@@ -46,6 +46,7 @@ import type {
   VaultOpenResponse,
   VaultSearchResponse,
   VaultTrashResponse,
+  WorkspaceFilePageResponse,
   WorkspaceSettingsResponse,
   WorkspaceSettingsUpdateResponse,
 } from "../shared/contracts";
@@ -98,6 +99,11 @@ const bridge: ThreadleafBridge = {
     acknowledgeWorkspaceOpenReceipt(
       (await ipcRenderer.invoke(ipcChannels.snapshot)) as RuntimeSnapshot,
     ),
+  getWorkspaceFilePage: (request) =>
+    ipcRenderer.invoke(
+      ipcChannels.workspaceFilePage,
+      request,
+    ) as Promise<WorkspaceFilePageResponse>,
   reportWorkspaceOpenDiagnostics: (acknowledgement) =>
     ipcRenderer.send(ipcChannels.workspaceOpenDiagnostics, acknowledgement),
   getWorkspaceLayout: (expectedVaultId?: string) =>

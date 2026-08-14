@@ -205,6 +205,7 @@ async function main(): Promise<void> {
       selectionSource: "restored",
       workspaceStateStore: stateStore,
       diagnostics,
+      deferWorkspaceCensus: true,
     });
     const runtimeOpenedAt = performance.now();
     const unsubscribe = runtime.onSnapshot((snapshot) => {
@@ -234,7 +235,8 @@ async function main(): Promise<void> {
         censusCompleteMs: censusAt - openStartedAt,
       },
       firstSnapshot: {
-        fileCount: firstSnapshot.workspace?.files.length ?? 0,
+        payloadFileCount: firstSnapshot.workspace?.files.length ?? 0,
+        totalFileCount: firstSnapshot.workspace?.filePage.total ?? 0,
         markdownFileCount: firstSnapshot.vault.markdownFileCount,
         indexGeneration: firstSnapshot.workspace?.indexGeneration ?? 0,
         tabs: firstSnapshot.workspace?.tabs ?? [],
@@ -242,7 +244,8 @@ async function main(): Promise<void> {
         census: workspaceProgress(firstSnapshot),
       },
       finalSnapshot: {
-        fileCount: finalSnapshot.workspace?.files.length ?? 0,
+        payloadFileCount: finalSnapshot.workspace?.files.length ?? 0,
+        totalFileCount: finalSnapshot.workspace?.filePage.total ?? 0,
         markdownFileCount: finalSnapshot.vault.markdownFileCount,
         indexGeneration: finalSnapshot.workspace?.indexGeneration ?? 0,
         census: workspaceProgress(finalSnapshot),

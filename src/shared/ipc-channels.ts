@@ -10,6 +10,7 @@ export const ipcChannels = {
   snapshotChanged: "threadleaf:snapshot-changed",
   workspaceOpenDiagnostics: "threadleaf:workspace-open-diagnostics",
   workspaceLayout: "threadleaf:workspace-layout",
+  workspaceFilePage: "threadleaf:workspace-file-page",
   workspaceLayoutChanged: "threadleaf:workspace-layout-changed",
   setWorkspaceDockCollapsed: "threadleaf:set-workspace-dock-collapsed",
   popOutPluginView: "threadleaf:pop-out-plugin-view",
