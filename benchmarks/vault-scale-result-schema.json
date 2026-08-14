@@ -61,10 +61,155 @@
       "additionalProperties": true
     },
     "configuration": { "type": "object" },
-    "correctness": { "type": "array" },
-    "runs": { "type": "array" },
-    "agreement": { "type": "object" },
-    "error": { "type": ["object", "null"] },
+    "correctness": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "details"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "enum": ["pass", "aborted"] },
+          "details": { "type": "string" }
+        }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "runIndex", "kernel", "cold", "warm"],
+        "properties": {
+          "status": { "enum": ["complete", "aborted"] },
+          "runIndex": { "type": "integer", "minimum": 1 },
+          "kernel": {
+            "anyOf": [
+              { "type": "null" },
+              { "$ref": "#/$defs/kernelSuccess" },
+              { "$ref": "#/$defs/kernelFailure" }
+            ]
+          },
+          "cold": {
+            "anyOf": [
+              { "type": "null" },
+              { "$ref": "#/$defs/runLegSuccess" },
+              { "$ref": "#/$defs/runLegAborted" }
+            ]
+          },
+          "warm": {
+            "anyOf": [
+              { "type": "null" },
+              { "$ref": "#/$defs/runLegSuccess" },
+              { "$ref": "#/$defs/runLegAborted" }
+            ]
+          }
+        }
+      }
+    },
+    "agreement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs", "bounds", "status", "metrics"],
+      "properties": {
+        "runs": { "type": "integer", "minimum": 0 },
+        "bounds": { "type": "object" },
+        "status": {
+          "enum": ["insufficient-runs", "insufficient-data", "within-bounds", "outside-bounds"]
+        },
+        "metrics": { "type": "array" }
+      }
+    },
+    "error": {
+      "type": ["object", "null"],
+      "if": { "type": "object" },
+      "then": {
+        "required": ["message", "completedRuns", "observedRuns", "kernelError", "partial"],
+        "properties": {
+          "message": { "type": "string" },
+          "completedRuns": { "type": "integer", "minimum": 0 },
+          "observedRuns": { "type": "integer", "minimum": 0 },
+          "kernelError": {
+            "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/kernelFailure" }]
+          },
+          "partial": { "type": ["object", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
     "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "kernelSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "variant",
+        "corpus",
+        "timings",
+        "incremental",
+        "memory",
+        "responsiveness"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "variant": { "enum": ["full", "notes-only"] },
+        "corpus": { "type": "object" },
+        "timings": { "type": "object" },
+        "incremental": { "type": "object" },
+        "memory": { "type": "object" },
+        "responsiveness": { "type": "object" }
+      }
+    },
+    "kernelFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "message", "code", "signal", "timedOut", "stderrTail"],
+      "properties": {
+        "status": { "const": "aborted" },
+        "message": { "type": "string" },
+        "code": { "type": ["string", "number", "null"] },
+        "signal": { "type": ["string", "null"] },
+        "timedOut": { "type": "boolean" },
+        "stderrTail": { "type": "string" }
+      }
+    },
+    "runLegSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "mode",
+        "runIndex",
+        "startup",
+        "incremental",
+        "memory",
+        "responsiveness",
+        "exit"
+      ],
+      "properties": {
+        "status": { "const": "complete" },
+        "mode": { "enum": ["cold", "warm"] },
+        "runIndex": { "type": "integer", "minimum": 1 },
+        "startup": { "type": "object" },
+        "incremental": { "type": ["object", "null"] },
+        "memory": { "type": "object" },
+        "responsiveness": { "type": "object" },
+        "exit": { "type": "object" }
+      }
+    },
+    "runLegAborted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "mode", "runIndex", "error", "partial"],
+      "properties": {
+        "status": { "const": "aborted" },
+        "mode": { "enum": ["cold", "warm"] },
+        "runIndex": { "type": "integer", "minimum": 1 },
+        "error": { "type": "string" },
+        "partial": { "type": ["object", "null"] }
+      }
+    }
   }
 }
