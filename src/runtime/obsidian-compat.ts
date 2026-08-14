@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   type Dirent,
   promises as fs,
+  lstatSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -229,6 +230,11 @@ export interface AdapterStat {
   size: number;
 }
 
+export interface DataWriteOptions {
+  ctime?: number;
+  mtime?: number;
+}
+
 export type SearchMatchPart = [number, number];
 
 export interface SearchResult {
@@ -254,6 +260,56 @@ export class FileSystemAdapter {
 
   getBasePath(): string {
     return this.basePath;
+  }
+
+  getFullPath(normalizedPath: string): string {
+    const lexicalPath = this.vault.resolveVaultPath(normalizePath(normalizedPath));
+    this.assertExistingAncestorContained(normalizedPath, lexicalPath);
+    return lexicalPath;
+  }
+
+  async write(normalizedPath: string, data: string, options?: DataWriteOptions): Promise<void> {
+    if (options?.ctime !== undefined || options?.mtime !== undefined) {
+      throw new Error(
+        "Plugin adapter timestamp options are not available through the revision-aware vault writer.",
+      );
+    }
+    const normalized = normalizePath(normalizedPath);
+    this.getFullPath(normalized);
+    const existing = this.vault.getAbstractFileByPath(normalized);
+    if (existing instanceof TFolder) {
+      throw new Error(`Plugin adapter write requires a file path: ${normalized}`);
+    }
+    if (existing instanceof TFile) {
+      await this.vault.modify(existing, data);
+      return;
+    }
+    await this.vault.create(normalized, data);
+  }
+
+  async mkdir(normalizedPath: string): Promise<void> {
+    const normalized = normalizePath(normalizedPath);
+    this.getFullPath(normalized);
+    await this.vault.createFolder(normalized);
+  }
+
+  async copy(source: string, target: string): Promise<void> {
+    const sourcePath = normalizePath(source);
+    const targetPath = normalizePath(target);
+    this.getFullPath(sourcePath);
+    this.getFullPath(targetPath);
+    const sourceStat = await this.stat(sourcePath);
+    if (!sourceStat) {
+      throw new Error(`Plugin adapter copy source does not exist: ${sourcePath}`);
+    }
+    if (sourceStat.type !== "file") {
+      throw new Error(`Plugin adapter copy requires a file source: ${sourcePath}`);
+    }
+    if (await this.exists(targetPath)) {
+      throw new Error(`Plugin adapter copy refused to overwrite ${targetPath}.`);
+    }
+    const content = await this.readBinary(sourcePath);
+    await this.vault.createBinary(targetPath, content);
   }
 
   async exists(normalizedPath: string, sensitive = false): Promise<boolean> {
@@ -353,6 +409,37 @@ export class FileSystemAdapter {
       throw new Error(`Path resolves outside the vault: ${normalizedPath}`);
     }
     return canonicalPath;
+  }
+
+  private assertExistingAncestorContained(normalizedPath: string, lexicalPath: string): void {
+    let existingPath = lexicalPath;
+    while (true) {
+      try {
+        lstatSync(existingPath);
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw error;
+        }
+        const parentPath = path.dirname(existingPath);
+        if (parentPath === existingPath) {
+          throw error;
+        }
+        existingPath = parentPath;
+      }
+    }
+    let canonicalPath: string;
+    try {
+      canonicalPath = realpathSync(existingPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error(`Path cannot be resolved inside the vault: ${normalizedPath}`);
+      }
+      throw error;
+    }
+    if (!isPathInside(this.canonicalRootPath, canonicalPath)) {
+      throw new Error(`Path resolves outside the vault: ${normalizedPath}`);
+    }
   }
 }
 
