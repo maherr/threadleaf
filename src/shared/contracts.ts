@@ -488,7 +488,7 @@ export interface WorkspaceSnapshot {
   tabs: WorkspaceTabSummary[];
   /** Active-pane projection retained for one-pane consumers and compatibility plugins. */
   activeNote: WorkspaceNoteSnapshot | null;
-  /** Active-pane projection retained for one-pane consumers and compatibility plugins. */
+  /** Waiting-state entry for the active pane when its file is absent but not yet confirmed removed. */
   activeUnavailable?: WorkspaceUnavailableEntry | null;
   recoveryActionCount: number;
   watcher: {

@@ -9732,6 +9732,10 @@ function renderNote(note: WorkspaceNoteSnapshot | null): void {
   elements.noteEmpty.hidden = note !== null;
   elements.noteView.hidden = note === null;
   if (!note) {
+    // This fallback write is corrected for waiting panes only because
+    // renderEditControls() below tail-calls renderDocumentView(), whose
+    // toolbar-label pass gives an activeUnavailable entry precedence.
+    // Removing that chain silently reverts waiting labels to this text.
     elements.notePath.textContent = "No note selected";
     elements.noteTags.replaceChildren();
     elements.linkCount.textContent = "0";

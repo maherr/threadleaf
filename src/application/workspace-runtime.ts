@@ -872,9 +872,7 @@ export class WorkspaceRuntime {
    * Incoming workspace state may not put one back until a later positive vault
    * observation justifies that path's presence at the same receipt version.
    */
-  readonly #confirmedRemovalVersions = new Map<string, number>();
-  readonly #presenceJustificationVersions = new Map<string, number>();
-  #confirmedRemovalSequence = 0;
+  readonly #confirmedRemovalPaths = new Set<string>();
   /**
    * The last snapshot published for a note, kept only while that note is a
    * pane's active path or is awaiting confirmation. It is what an active note
@@ -2084,8 +2082,7 @@ export class WorkspaceRuntime {
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
     this.#retainedCanvases.clear();
-    this.#confirmedRemovalVersions.clear();
-    this.#presenceJustificationVersions.clear();
+    this.#confirmedRemovalPaths.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
     for (const release of this.#releaseActions.reverse()) {
       release();
@@ -2104,21 +2101,14 @@ export class WorkspaceRuntime {
   }
 
   private justifyWorkspacePathPresence(filePath: string): void {
-    // Absent entries mean justified: a later genuine removal re-arms the pair
-    // with a strictly higher version, so deleting here is behavior-identical
-    // to storing j = v while keeping both maps bounded by live removals.
-    if (this.#confirmedRemovalVersions.delete(filePath)) {
-      this.#presenceJustificationVersions.delete(filePath);
-    }
+    // Membership means confirmed-removed-and-unjustified; a legitimate return
+    // clears it and a later genuine removal re-adds it, so a plain set carries
+    // the whole justification story without vestigial version numbering.
+    this.#confirmedRemovalPaths.delete(filePath);
   }
 
   private workspacePathIsStale(filePath: string): boolean {
-    const confirmedRemovalVersion = this.#confirmedRemovalVersions.get(filePath);
-    if (confirmedRemovalVersion === undefined) {
-      return false;
-    }
-    const presenceJustificationVersion = this.#presenceJustificationVersions.get(filePath) ?? 0;
-    return confirmedRemovalVersion > presenceJustificationVersion;
+    return this.#confirmedRemovalPaths.has(filePath);
   }
 
   private scrubConfirmedRemovals(state: PersistedWorkspaceState): PersistedWorkspaceState {
@@ -3363,8 +3353,7 @@ export class WorkspaceRuntime {
   }
 
   private markConfirmedRemoval(filePath: string): void {
-    this.#confirmedRemovalSequence += 1;
-    this.#confirmedRemovalVersions.set(filePath, this.#confirmedRemovalSequence);
+    this.#confirmedRemovalPaths.add(filePath);
   }
 
   /** Remove a returned path's old epoch before a later loss can reuse it. */
