@@ -324,6 +324,68 @@ function parserAccepts(args: readonly string[]): boolean {
   }
 }
 
+interface LiteralParserOracleCase {
+  args: string[];
+  accepted: boolean;
+  label: string;
+}
+
+// Keep these as literal argv histories. The runtime oracle below deliberately
+// does not repair missing or malformed values before asking the real parser
+// and generated completion scripts what they do with the exact history.
+const literalParserOracleCases: readonly LiteralParserOracleCase[] = [
+  {
+    args: ["--vault", "/v", "search", "query=needle", "--limit"],
+    accepted: false,
+    label: "pending option value",
+  },
+  {
+    args: ["--vault", "/v", "search", "query=needle", "--limit=0"],
+    accepted: false,
+    label: "malformed option value",
+  },
+  { args: ["--vault=", "vault"], accepted: false, label: "empty option value" },
+  {
+    args: ["--vault", "/v", "search", "query="],
+    accepted: false,
+    label: "empty static value",
+  },
+  {
+    args: ["--vault", "/v", "files", "folder="],
+    accepted: false,
+    label: "empty static key value",
+  },
+  {
+    args: ["--vault", "/v", "search", "query=needle", "path=Notes", "--directory", "Notes"],
+    accepted: false,
+    label: "static/global conflict",
+  },
+  {
+    args: ["--vault", "/v", "search", "query=needle", "--limit=1", "--limit=2"],
+    accepted: false,
+    label: "duplicate option",
+  },
+  { args: ["--vault", "/v", "SEARCH"], accepted: false, label: "case-sensitive command" },
+  { args: ["completion", "BASH"], accepted: false, label: "case-sensitive completion" },
+  {
+    args: ["completion", "bash", "extra"],
+    accepted: false,
+    label: "completion terminal state",
+  },
+  { args: ["--help", "search"], accepted: true, label: "help terminal state" },
+  { args: ["completion", "bash"], accepted: true, label: "completion terminal option state" },
+  {
+    args: ["--vault", "/v", "create", "Note", "--content="],
+    accepted: true,
+    label: "empty content allowed by schema",
+  },
+  {
+    args: ["--vault", "/v", "search", "query=needle"],
+    accepted: true,
+    label: "static value continuation",
+  },
+];
+
 function completionStates(): CompletionState[] {
   const states = new Map<string, CompletionState>();
   const add = (args: string[], label: string): void => {
@@ -1109,7 +1171,7 @@ describe("CLI schema and generated completion", () => {
         for (const spec of cliCommandSpecs) {
           for (const spelling of spec.names) {
             for (const word of completionStaticWordsForCommand(spelling)) {
-              expect(script, shell + " " + spelling + " " + word).toContain(word);
+              expect(script, `${shell} ${spelling} ${word}`).toContain(word);
             }
           }
         }
@@ -1627,57 +1689,103 @@ describe("CLI schema and generated completion", () => {
       expect(rootSearch[0]).toBe("search");
       expect(parserAccepts(rootSearch)).toBe(true);
 
-      const literalParserCases: Array<{ args: string[]; accepted: boolean; label: string }> = [
-        {
-          args: ["--vault", "/v", "search", "query=needle", "--limit"],
-          accepted: false,
-          label: "missing option value",
-        },
-        {
-          args: ["--vault", "/v", "search", "query="],
-          accepted: false,
-          label: "empty query",
-        },
-        {
-          args: ["--vault", "/v", "files", "folder="],
-          accepted: false,
-          label: "empty static value",
-        },
-        {
-          args: ["--vault", "/v", "search", "query=needle", "path=Notes", "--directory", "Notes"],
-          accepted: false,
-          label: "static/global conflict",
-        },
-        {
-          args: ["--vault", "/v", "search", "query=needle", "--limit=1", "--limit=2"],
-          accepted: false,
-          label: "duplicate option",
-        },
-        { args: ["--vault", "/v", "SEARCH"], accepted: false, label: "case-sensitive command" },
-        { args: ["completion", "BASH"], accepted: false, label: "case-sensitive completion" },
-        {
-          args: ["completion", "bash", "extra"],
-          accepted: false,
-          label: "completion terminal state",
-        },
-        {
-          args: ["--help", "search"],
-          accepted: true,
-          label: "help terminal state",
-        },
-        {
-          args: ["--vault", "/v", "create", "Note", "--content="],
-          accepted: true,
-          label: "empty content allowed by schema",
-        },
-      ];
-      for (const testCase of literalParserCases) {
+      for (const testCase of literalParserOracleCases) {
         expect(parserAccepts(testCase.args), testCase.label).toBe(testCase.accepted);
       }
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("uses literal parser histories as generated completion runtime oracles", async () => {
+    const temporaryRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-cli-literal-oracle-"),
+    );
+    const bashPath = path.join(temporaryRoot, "threadleaf.bash");
+    const fishPath = path.join(temporaryRoot, "threadleaf.fish");
+    try {
+      await fs.writeFile(bashPath, generateCliCompletion("bash"), "utf8");
+      await fs.writeFile(fishPath, generateCliCompletion("fish"), "utf8");
+
+      for (const testCase of literalParserOracleCases) {
+        expect(parserAccepts(testCase.args), testCase.label).toBe(testCase.accepted);
+        for (const shell of ["bash", "fish"] as const) {
+          const candidates =
+            shell === "bash"
+              ? runShell(
+                  "bash",
+                  bashPath,
+                  bashCompletionCommand(["threadleaf", ...testCase.args, ""]),
+                  temporaryRoot,
+                )
+              : runShell(
+                  "fish",
+                  fishPath,
+                  fishCompletionCommand(["threadleaf", ...testCase.args, ""].join(" ")),
+                  temporaryRoot,
+                );
+          if (!testCase.accepted) {
+            expect(candidates, `${shell} ${testCase.label}`).toEqual([]);
+            continue;
+          }
+
+          for (const candidate of candidates) {
+            const candidateArgs = [...testCase.args, candidate];
+            if (!completionCandidateIsParserPrefix(candidate)) {
+              expect(parserAccepts(candidateArgs), `${shell} ${testCase.label} ${candidate}`).toBe(
+                true,
+              );
+              continue;
+            }
+
+            // Prefixes are intentionally incomplete parser states. Preserve
+            // that exact literal form, and require it to suppress a second
+            // completion surface if the parser rejects it as incomplete.
+            if (!parserAccepts(candidateArgs)) {
+              const afterPrefix =
+                shell === "bash"
+                  ? runShell(
+                      "bash",
+                      bashPath,
+                      bashCompletionCommand(["threadleaf", ...candidateArgs, ""]),
+                      temporaryRoot,
+                    )
+                  : runShell(
+                      "fish",
+                      fishPath,
+                      fishCompletionCommand(["threadleaf", ...candidateArgs, ""].join(" ")),
+                      temporaryRoot,
+                    );
+              expect(afterPrefix, `${shell} ${testCase.label} ${candidate} pending`).toEqual([]);
+            }
+          }
+        }
+      }
+
+      // Zsh and PowerShell are not installed on this host. Keep literal
+      // parser fixtures above as the authority, and pin the generated
+      // recognizers which must turn those invalid histories into no output.
+      const zsh = generateCliCompletion("zsh");
+      expect(zsh).toContain('case "$token" in');
+      expect(zsh).toContain("if ! _threadleaf_completion_value_valid");
+      expect(zsh).toContain("positive-integer)");
+      expect(zsh).toContain("query)");
+      expect(zsh).toContain("if (( pending_value || invalid_option || invalid_argument )); then");
+      expect(zsh).toContain('case "$command" in');
+
+      const powershell = generateCliCompletion("powershell");
+      expect(powershell).toContain("switch -Regex -CaseSensitive ($text)");
+      expect(powershell).toContain("switch -CaseSensitive ($command)");
+      expect(powershell).toContain("'positive-integer'");
+      expect(powershell).toContain("'query'");
+      expect(powershell).toContain("'completion' {");
+      expect(powershell).toContain(
+        "if ($pendingValue -or $invalidOption -or $invalidArgument) { return }",
+      );
+    } finally {
+      await fs.rm(temporaryRoot, { recursive: true, force: true });
+    }
+  }, 45_000);
 
   it("uses TabExpansion2 when PowerShell exists and keeps a deterministic fallback otherwise", async () => {
     const powershell = executable("pwsh") ?? executable("powershell");
