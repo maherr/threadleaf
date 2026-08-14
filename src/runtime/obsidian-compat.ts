@@ -13,9 +13,10 @@ import { pathToFileURL } from "node:url";
 import MarkdownIt from "markdown-it";
 import moment from "moment";
 import TurndownService from "turndown";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as yamlStringify } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
+import { maskMarkdownCodeAndComments } from "../kernel/markdown-links";
 import { isPathInside } from "../kernel/path-policy";
 import type {
   VaultDirectoryCreateResult,
@@ -498,6 +499,58 @@ export class Vault {
 
   getMarkdownFiles(): TFile[] {
     return this.getFiles().filter((file) => file.extension.toLowerCase() === "md");
+  }
+
+  getAllFolders(includeRoot = false): TFolder[] {
+    const folders: TFolder[] = includeRoot ? [this.folderForPath("")] : [];
+    const collect = (absoluteDirectory: string): void => {
+      for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true })) {
+        if (entry.name.startsWith(".") || !entry.isDirectory()) {
+          continue;
+        }
+        const absolutePath = path.join(absoluteDirectory, entry.name);
+        const relativePath = path.relative(this.rootPath, absolutePath).split(path.sep).join("/");
+        folders.push(this.folderForPath(relativePath));
+        collect(absolutePath);
+      }
+    };
+    collect(this.rootPath);
+    return folders.sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  getAvailablePath(basePath: string, extension: string): string {
+    const portableBase = basePath.replaceAll("\\", "/");
+    if (path.posix.isAbsolute(portableBase) || path.win32.isAbsolute(basePath)) {
+      throw new Error("Available-path base must be vault-relative.");
+    }
+    const normalizedBase = normalizePath(basePath);
+    if (!normalizedBase || normalizedBase.endsWith("/")) {
+      throw new Error("Available-path base must name a file.");
+    }
+    this.resolveVaultPath(normalizedBase);
+    const normalizedExtension = extension.replace(/^\.+/u, "");
+    if (/[\\/]/u.test(normalizedExtension)) {
+      throw new Error("Available-path extension must be a plain extension.");
+    }
+    const occupied = new Set<string>();
+    const collectOccupiedPaths = (absoluteDirectory: string, relativeDirectory: string): void => {
+      for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true })) {
+        const relativePath = normalizePath(path.posix.join(relativeDirectory, entry.name));
+        occupied.add(relativePath.toLocaleLowerCase("en-US"));
+        if (entry.isDirectory()) {
+          collectOccupiedPaths(path.join(absoluteDirectory, entry.name), relativePath);
+        }
+      }
+    };
+    collectOccupiedPaths(this.rootPath, "");
+    const suffix = normalizedExtension ? `.${normalizedExtension}` : "";
+    for (let collision = 0; collision < 10_000; collision += 1) {
+      const candidate = `${normalizedBase}${collision === 0 ? "" : ` ${collision}`}${suffix}`;
+      if (!occupied.has(candidate.toLocaleLowerCase("en-US"))) {
+        return candidate;
+      }
+    }
+    throw new Error(`Could not find an available path for ${normalizedBase}${suffix}.`);
   }
 
   getAllLoadedFiles(): TAbstractFile[] {
@@ -1058,6 +1111,23 @@ export class FileManager {
 
 export interface CachedMetadata {
   frontmatter?: Record<string, unknown>;
+  tags?: TagCache[];
+}
+
+export interface CacheLocation {
+  col: number;
+  line: number;
+  offset: number;
+}
+
+export interface CachePosition {
+  end: CacheLocation;
+  start: CacheLocation;
+}
+
+export interface TagCache {
+  position: CachePosition;
+  tag: string;
 }
 
 interface CachedMetadataRecord {
@@ -1116,6 +1186,92 @@ export function parseFrontMatterEntry(
   return null;
 }
 
+function isValidTagBody(value: string): boolean {
+  const segments = value.split("/");
+  return (
+    segments.every(
+      (segment) => segment.length > 0 && /^[\p{L}\p{M}\p{N}\p{S}_-]+$/u.test(segment),
+    ) && /[\p{L}\p{S}]/u.test(value)
+  );
+}
+
+function normalizeFrontmatterTag(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().replace(/^#+/u, "").replace(/\/+$/u, "");
+  return isValidTagBody(normalized) ? `#${normalized}` : null;
+}
+
+export function parseFrontMatterTags(frontmatter: unknown | null): string[] | null {
+  const entry = parseFrontMatterEntry(frontmatter, "tags");
+  const values = Array.isArray(entry) ? entry : typeof entry === "string" ? entry.split(",") : null;
+  if (!values) {
+    return null;
+  }
+  return values
+    .map((value) => normalizeFrontmatterTag(value))
+    .filter((value): value is string => value !== null);
+}
+
+export function getAllTags(cache: CachedMetadata): string[] | null {
+  const frontmatterTags = parseFrontMatterTags(cache.frontmatter ?? null);
+  const inlineTags = cache.tags?.map(({ tag }) => tag) ?? [];
+  if (frontmatterTags === null && cache.tags === undefined) {
+    return null;
+  }
+  return [...(frontmatterTags ?? []), ...inlineTags];
+}
+
+export function parseLinktext(linktext: string): { path: string; subpath: string } {
+  const subpathStart = linktext.indexOf("#");
+  return subpathStart === -1
+    ? { path: linktext, subpath: "" }
+    : {
+        path: linktext.slice(0, subpathStart),
+        subpath: linktext.slice(subpathStart),
+      };
+}
+
+export function getLinkpath(linktext: string): string {
+  return parseLinktext(linktext).path;
+}
+
+export function stringifyYaml(value: unknown): string {
+  return yamlStringify(value, { aliasDuplicateObjects: false, lineWidth: 0, nullStr: "" });
+}
+
+function cacheLocation(content: string, offset: number): CacheLocation {
+  const before = content.slice(0, offset);
+  const lastNewline = before.lastIndexOf("\n");
+  return {
+    line: before.split("\n").length - 1,
+    col: offset - (lastNewline + 1),
+    offset,
+  };
+}
+
+function inlineTagCaches(content: string): TagCache[] {
+  const searchable = maskMarkdownCodeAndComments(content);
+  const tags: TagCache[] = [];
+  for (const match of searchable.matchAll(/(?:^|[\s(])#([\p{L}\p{M}\p{N}\p{S}_/-]+)/gu)) {
+    const tag = match[1]?.replace(/\/+$/u, "");
+    if (match.index === undefined || !tag || !isValidTagBody(tag)) {
+      continue;
+    }
+    const hashOffset = match.index + match[0].lastIndexOf("#");
+    const endOffset = hashOffset + tag.length + 1;
+    tags.push({
+      tag: `#${tag}`,
+      position: {
+        start: cacheLocation(content, hashOffset),
+        end: cacheLocation(content, endOffset),
+      },
+    });
+  }
+  return tags;
+}
+
 function cleanLinkpath(linkpath: string): string {
   const withoutReference = linkpath.split("#", 1)[0]?.split("|", 1)[0] ?? "";
   try {
@@ -1159,10 +1315,13 @@ export class MetadataCache {
     let value: CachedMetadata = {};
     if (file.extension.toLowerCase() === "md") {
       try {
-        const frontmatter = parseFrontmatter(
-          readFileSync(this.vault.resolveVaultPath(file.path), "utf8"),
-        );
-        value = frontmatter ? { frontmatter } : {};
+        const content = readFileSync(this.vault.resolveVaultPath(file.path), "utf8");
+        const frontmatter = parseFrontmatter(content);
+        const tags = inlineTagCaches(content);
+        value = {
+          ...(frontmatter ? { frontmatter } : {}),
+          ...(tags.length > 0 ? { tags } : {}),
+        };
       } catch {
         value = {};
       }
@@ -1177,6 +1336,58 @@ export class MetadataCache {
 
   getCachedFiles(): string[] {
     return this.vault.getFiles().map((file) => file.path);
+  }
+
+  getTags(): Record<string, number> {
+    const counts = new Map<string, number>();
+    for (const file of this.vault.getMarkdownFiles()) {
+      const tags = getAllTags(this.getFileCache(file) ?? {});
+      for (const tag of tags ?? []) {
+        const normalized = tag.replace(/\/+$/u, "");
+        if (normalized === "#" || /^#\d+$/u.test(normalized)) {
+          continue;
+        }
+        const parts = normalized.slice(1).split("/");
+        for (let length = 1; length <= parts.length; length += 1) {
+          const parent = `#${parts.slice(0, length).join("/")}`;
+          if (parent !== "#" && !/^#\d+$/u.test(parent)) {
+            counts.set(parent, (counts.get(parent) ?? 0) + 1);
+          }
+        }
+      }
+    }
+    const consolidated = new Map<
+      string,
+      { count: number; firstSeen: number; representative: string; representativeCount: number }
+    >();
+    let firstSeen = 0;
+    for (const [tag, count] of counts) {
+      const key = tag.toLowerCase();
+      const existing = consolidated.get(key);
+      if (!existing) {
+        consolidated.set(key, {
+          count,
+          firstSeen: firstSeen++,
+          representative: tag,
+          representativeCount: count,
+        });
+      } else {
+        existing.count += count;
+        if (count > existing.representativeCount) {
+          existing.representative = tag;
+          existing.representativeCount = count;
+        }
+      }
+    }
+    return Object.fromEntries(
+      [...consolidated.values()]
+        .sort(
+          (left, right) =>
+            left.representative.localeCompare(right.representative) ||
+            left.firstSeen - right.firstSeen,
+        )
+        .map(({ count, representative }) => [representative, count]),
+    );
   }
 
   getFirstLinkpathDest(linkpath: string, sourcePath: string): TFile | null {
@@ -1840,7 +2051,9 @@ export interface ObsidianCompatibilityModule {
   FileSystemAdapter: typeof FileSystemAdapter;
   FileView: typeof FileView;
   FuzzySuggestModal: typeof FuzzySuggestModal;
+  getAllTags: typeof getAllTags;
   getLanguage: typeof getLanguage;
+  getLinkpath: typeof getLinkpath;
   htmlToMarkdown: typeof htmlToMarkdown;
   ItemView: typeof ItemView;
   Keymap: typeof Keymap;
@@ -1883,13 +2096,17 @@ export interface ObsidianCompatibilityModule {
   getIcon(id: string): SVGSVGElement | null;
   normalizePath(filePath: string): string;
   parseFrontMatterEntry: typeof parseFrontMatterEntry;
+  parseFrontMatterTags: typeof parseFrontMatterTags;
+  parseLinktext: typeof parseLinktext;
   Platform: typeof Platform;
   prepareFuzzySearch: typeof prepareFuzzySearch;
+  prepareSimpleSearch: typeof prepareSimpleSearch;
   requireApiVersion(version: string): boolean;
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
   setTooltip: typeof setTooltip;
   sleep(milliseconds: number): Promise<void>;
+  stringifyYaml: typeof stringifyYaml;
 }
 
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -2117,6 +2334,54 @@ function fuzzyRanges(
   return ranges;
 }
 
+export function prepareSimpleSearch(query: string): (text: string) => SearchResult | null {
+  const words = [...new Set(query.toLowerCase().split(" ").filter(Boolean))];
+  if (words.length === 0) {
+    return () => ({ score: 0, matches: [] });
+  }
+
+  return (text: string): SearchResult | null => {
+    const loweredText = text.toLowerCase();
+    const matches: SearchMatchPart[] = [];
+    for (const word of words) {
+      let start = loweredText.indexOf(word);
+      if (start === -1) {
+        return null;
+      }
+      while (start !== -1) {
+        matches.push([start, start + word.length]);
+        start = loweredText.indexOf(word, start + word.length + 1);
+      }
+    }
+    matches.sort(([left], [right]) => left - right);
+    const merged: SearchMatchPart[] = [];
+    for (const match of matches) {
+      const previous = merged.at(-1);
+      if (previous && match[0] <= previous[1]) {
+        previous[1] = Math.max(previous[1], match[1]);
+      } else {
+        merged.push([...match]);
+      }
+    }
+    let score = query.length / 100 - text.length / 10_000;
+    for (const [index, match] of merged.entries()) {
+      const [start, end] = match;
+      if (index === 0) {
+        score -=
+          (end - start + (words.length === 1 || merged.length === 1 || end - start === 1 ? 1 : 0)) /
+            100 +
+          start / 1_000;
+      } else {
+        score -= 1 + start / 100;
+      }
+    }
+    return {
+      score,
+      matches: merged,
+    };
+  };
+}
+
 export function prepareFuzzySearch(query: string): (text: string) => SearchResult | null {
   const queryCharacters = fuzzyCharacters(query.trim());
   if (queryCharacters.length === 0) {
@@ -2268,6 +2533,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     FileSystemAdapter,
     FileView,
     FuzzySuggestModal,
+    getAllTags,
+    getLinkpath,
     ItemView,
     Keymap,
     MarkdownView,
@@ -2310,12 +2577,16 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     htmlToMarkdown,
     normalizePath,
     parseFrontMatterEntry,
+    parseFrontMatterTags,
+    parseLinktext,
     Platform,
     prepareFuzzySearch,
+    prepareSimpleSearch,
     requireApiVersion: () => true,
     sanitizeHTMLToDom,
     setIcon,
     setTooltip,
     sleep,
+    stringifyYaml,
   };
 }
