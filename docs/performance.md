@@ -173,9 +173,8 @@ The cold definition is a fresh Electron user-data root, not a flushed Linux page
 restart reuses that root and therefore observes workspace state and filesystem/runtime caches;
 this base revision has no persisted metadata-index cache. The headless record isolates the kernel
 scan and index seams but is not a substitute for the rendered app path. Obsidian's owner-supplied
-startup observation, 14,081 ms total for 207,726 files with 11,966 ms in the vault stage, is
-included beside the Threadleaf numbers in the JSON and reviewed report as context only, not as a
-pass/fail gate.
+startup observation, 14,081 ms total for 207,726 files with 11,966 ms in the vault stage, is noted
+here as context only, not as a pass/fail gate.
 
 ### 2026-08-14 pre-landing measurement run
 
