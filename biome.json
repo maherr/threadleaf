@@ -28,6 +28,7 @@
         "compatibility/registry.v1.json",
         "src/generated/plugin-compatibility-registry.ts",
         "src/generated/case-folding-table.ts",
+        "benchmarks/results/*.json",
         "fixtures/search-golden/full-text-search-golden.json",
         "fixtures/corpus/same-vault-v1/cases.json",
         "fixtures/corpus/same-vault-v1/manifest.json",
