@@ -66,6 +66,37 @@ export interface IndexUpdateResult {
   reason?: RescanReason | "read-race";
 }
 
+/**
+ * Detach a short retained string from the note it was cut out of.
+ *
+ * Every string this module keeps -- a heading, a tag, a property value, a link
+ * target -- arrives as a substring of the note body or of one of the
+ * `stripFencedCode` / `maskMarkdownCodeAndComments` copies of it. V8 represents
+ * such a substring as a SlicedString: a 32-byte header pointing at its parent,
+ * which stays alive for as long as the slice does. One two-word heading
+ * therefore pinned a 40 KiB note plus two full-note masking copies, and a live
+ * metadata index retained 83.3 KiB per note against 7.4 KiB for the same
+ * metadata forced through a flattening round trip.
+ *
+ * Copying the characters through a UTF-8 buffer produces a fresh sequential
+ * string with no parent pointer, so the note body is released as soon as the
+ * indexer drops it. The equality check is not defensive dressing: it is a
+ * per-call proof that the round trip was lossless, and it makes the one input
+ * class that cannot survive UTF-8 -- a string carrying an unpaired surrogate --
+ * fall back to the original rather than silently becoming U+FFFD.
+ */
+function flatten(value: string): string {
+  if (value.length === 0) {
+    return value;
+  }
+  const copy = Buffer.from(value, "utf8").toString("utf8");
+  return copy === value ? copy : value;
+}
+
+function flattenValue(value: string | string[]): string | string[] {
+  return Array.isArray(value) ? value.map(flatten) : flatten(value);
+}
+
 function normalizeKey(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase("en-US");
 }
@@ -139,7 +170,9 @@ function parseProperties(content: string): Record<string, string | string[]> {
     }
   }
   return Object.fromEntries(
-    Object.entries(properties).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(properties)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => [flatten(key), flattenValue(value)]),
   );
 }
 
@@ -174,7 +207,7 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     const line = lines[index] ?? "";
     const heading = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
     if (heading?.[1] && heading[2]) {
-      headings.push({ level: heading[1].length, text: heading[2], line: index + 1 });
+      headings.push({ level: heading[1].length, text: flatten(heading[2]), line: index + 1 });
     }
     const tagLine = tagLines[index] ?? "";
     for (const tag of tagLine.matchAll(/(?:^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
@@ -184,7 +217,9 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     }
   }
   const sortedTagCounts = Object.fromEntries(
-    [...tagCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    [...tagCounts.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([tag, count]) => [flatten(tag), count]),
   );
   return {
     path: snapshot.path,
@@ -193,7 +228,12 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     tags: Object.keys(sortedTagCounts),
     tagCounts: sortedTagCounts,
     properties,
-    links: parseMarkdownLinks(snapshot.content, masked),
+    links: parseMarkdownLinks(snapshot.content, masked).map((link) => ({
+      ...link,
+      target: flatten(link.target),
+      subpath: link.subpath === null ? null : flatten(link.subpath),
+      alias: link.alias === null ? null : flatten(link.alias),
+    })),
   };
 }
 
