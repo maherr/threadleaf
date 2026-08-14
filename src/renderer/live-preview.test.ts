@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { LivePreviewMappingScanStats } from "./live-preview";
 import {
   buildLivePreviewMapping,
   measureLivePreviewMapping,
@@ -485,24 +484,54 @@ describe("source/decorated mapping fixture", () => {
     expect(mapping.rendered).toContain("[bad](path/(nested)");
   });
 
-  it("keeps repeated nested Markdown destinations within a linear scan ceiling", () => {
-    type NestedScanStats = LivePreviewMappingScanStats & { nestedDestinationSteps: number };
-    const steps: number[] = [];
-    for (const size of [256, 512, 1_024]) {
-      const source = "[label](".repeat(size) + ")".repeat(size);
-      const stats = {
-        lines: 0,
-        protectedRangeChecks: 0,
-        rawTextSteps: 0,
-        rangeSubtractionComparisons: 0,
-      } as NestedScanStats;
-      const mapping = buildLivePreviewMapping(source, { stats });
-      expect(mapping.source).toBe(source);
-      expect(stats.nestedDestinationSteps).toBeLessThan(source.length * 8);
-      steps.push(stats.nestedDestinationSteps);
-    }
-    expect(steps[1]).toBeLessThan((steps[0] ?? 0) * 3);
-    expect(steps[2]).toBeLessThan((steps[1] ?? 0) * 3);
+  it("never lets a link nested inside an unterminated destination become its own widget", () => {
+    // Regression for a nested-destination scanning bug: an outer fallback
+    // that cannot be added because its range is already occupied (here, by
+    // [tail](y.md), matched independently by the simple-link pass before the
+    // nested-destination pass runs) must still terminate the nested-
+    // destination scan for the rest of the line. Otherwise a later candidate
+    // like [inner](x.md), which sits inside the same abandoned, ambiguous
+    // construct, can slip through as an independent widget and hide source
+    // bytes that docs/compatibility/live-preview.md guarantees stay visible
+    // ("Fallback ranges stay source-visible and are never replaced by a
+    // widget"). [tail] itself still resolves as a widget on its own, exactly
+    // as the pre-perf-fix baseline does; only [inner] must stay literal.
+    const source = "[outer]([inner](x.md) trailing [tail](y.md)";
+    const mapping = buildLivePreviewMapping(source);
+    expect(mapping.rendered).toBe("[outer]([inner](x.md) trailing tail");
+    expect(mapping.rendered).not.toContain("inner trailing");
+    const innerAsWidget = mapping.tokens.some(
+      (token) => token.status === "mapped" && token.sourceText.startsWith("[inner]"),
+    );
+    expect(innerAsWidget).toBe(false);
+  });
+
+  it("keeps repeated nested Markdown destinations near-linear at 2048/8192-open scales", () => {
+    // A step-counter assertion here is unfalsifiable: scanMarkdownDestinations
+    // reports the same steps = text.length + prefix.length + stack.length
+    // for both correct and a quadratic reimplementation, since the counter
+    // measures the O(n) destination scan's own bookkeeping, not the
+    // occupied-range skip that actually prevents O(n^2) work. What must stay
+    // linear is the *candidate loop* in parseLivePreviewLine: every nested
+    // [label]( candidate whose range is already covered by an outer fallback
+    // is skipped (via the occupied-range check) BEFORE slicing text or
+    // calling parseMarkdownLink on it. Removing that check still lets
+    // scanMarkdownDestinations run in O(n), but every one of the n nested
+    // candidates then slices an ever-larger destination string, which is
+    // O(n^2) overall -- and only a wall-clock measurement of the real
+    // candidate loop, not a step count taken from the linear scan alone,
+    // catches that regression.
+    measureNestedDestinationScan(512);
+    const shortRuns = Array.from({ length: 3 }, () => measureNestedDestinationScan(2_048));
+    const longRuns = Array.from({ length: 3 }, () => measureNestedDestinationScan(8_192));
+    const short = Math.min(...shortRuns);
+    const long = Math.min(...longRuns);
+
+    // Same 4x short/long step and 8x ceiling as search-text.scale.test.ts's
+    // scale tests, for the same reason: linear predicts about 4x (slightly
+    // above with cache effects), quadratic roughly 16x, and the 8x ceiling
+    // leaves about 2x margin to each side.
+    expect(long).toBeLessThan(Math.max(short * 8, 50));
   });
 });
 

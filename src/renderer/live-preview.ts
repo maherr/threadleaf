@@ -513,10 +513,23 @@ export function parseLivePreviewLine(
       from: lineFrom + (embed ? match.index : open),
       to: lineFrom + fallbackTo,
     };
+    // An unterminated destination with a nested open owns the rest of the
+    // line even when something else already occupies its exact range (e.g. a
+    // simple link matched earlier in the same span): that is still the
+    // signal that later candidates sit inside abandoned, ambiguous syntax
+    // and must stay source-visible rather than become their own widgets.
+    const ownsRestOfLine = destinationTo < 0 && hasLiteralOpen;
     // Once an outer fallback owns the complete nested construct, the inner
     // candidates cannot produce a different widget. Skip them before slicing
     // or parsing their increasingly large destination strings.
     if (intersectsAny(candidate, protectedRanges) || intersectsAny(candidate, occupied)) {
+      if (ownsRestOfLine) {
+        // Even though this candidate could not be added (its range is
+        // already spoken for), it still marks the rest of the line as
+        // owned fallback territory. Stop scanning here so a later nested
+        // candidate cannot be mistaken for an independent, valid link.
+        break;
+      }
       continue;
     }
     const rawTarget = text.slice(destinationFrom, rawTargetTo);
@@ -536,7 +549,7 @@ export function parseLivePreviewLine(
       ...(link ? { link } : {}),
       label: link?.label ?? label.trim(),
     });
-    if (destinationTo < 0 && hasLiteralOpen) {
+    if (ownsRestOfLine) {
       // This fallback owns the rest of the line; scanning later candidates
       // could only rediscover ranges that are already source-visible.
       break;
