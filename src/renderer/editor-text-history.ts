@@ -20,6 +20,15 @@ export interface EditorTextHistoryEntry {
   changes: readonly EditorTextHistoryChange[];
 }
 
+/** Keep metadata bounded even if CodeMirror's own history depth is extended. */
+export const maxEditorTextHistoryEntries = 256;
+
+export function boundedEditorTextHistory(
+  history: readonly EditorTextHistoryEntry[],
+): EditorTextHistoryEntry[] {
+  return history.slice(-maxEditorTextHistoryEntries);
+}
+
 function newlineCount(source: string): number {
   let count = 0;
   for (const character of source) {

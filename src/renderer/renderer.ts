@@ -126,6 +126,7 @@ import {
 } from "./editor-text";
 import {
   applyEditorTextHistoryEntry,
+  boundedEditorTextHistory,
   captureEditorTextHistoryEntry,
   type EditorTextHistoryChange,
   type EditorTextHistoryEntry,
@@ -1192,8 +1193,8 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
   loadedNote = session.loadedNote;
   loadedVaultId = session.loadedVaultId;
   loadedTextRepresentation = session.loadedTextRepresentation;
-  editorTextUndoHistory = session.editorTextUndoHistory;
-  editorTextRedoHistory = session.editorTextRedoHistory;
+  editorTextUndoHistory = boundedEditorTextHistory(session.editorTextUndoHistory);
+  editorTextRedoHistory = boundedEditorTextHistory(session.editorTextRedoHistory);
   pendingDiskNote = session.pendingDiskNote;
   diskChanged = session.diskChanged;
   editNoticeState = session.editNoticeState;
@@ -1362,7 +1363,7 @@ function updateEditorTextRepresentation(update: ViewUpdate): void {
             );
           }
         }
-        editorTextRedoHistory.unshift(...moved);
+        editorTextRedoHistory = boundedEditorTextHistory([...moved, ...editorTextRedoHistory]);
       } else {
         const moved = sourceHistory.splice(0, targetIndex + 1);
         for (const entry of moved) {
@@ -1372,7 +1373,7 @@ function updateEditorTextRepresentation(update: ViewUpdate): void {
             "forward",
           );
         }
-        editorTextUndoHistory.push(...moved);
+        editorTextUndoHistory = boundedEditorTextHistory([...editorTextUndoHistory, ...moved]);
       }
       return;
     }
@@ -1390,7 +1391,7 @@ function updateEditorTextRepresentation(update: ViewUpdate): void {
     update.startState.doc.toString(),
     changes,
   );
-  editorTextUndoHistory.push(entry);
+  editorTextUndoHistory = boundedEditorTextHistory([...editorTextUndoHistory, entry]);
   loadedTextRepresentation = applyEditorTextHistoryEntry(
     loadedTextRepresentation,
     entry,
