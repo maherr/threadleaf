@@ -299,9 +299,9 @@ module.exports = class RendererFixture extends Plugin {
         compatibilityLevel: 3,
       });
       expect(loaded?.actions.map(({ id }) => id)).toEqual([
-        "renderer-binary",
-        "renderer-create",
-        "renderer-command",
+        "renderer-fixture:renderer-binary",
+        "renderer-fixture:renderer-create",
+        "renderer-fixture:renderer-command",
       ]);
       expect(loaded?.integrations).toMatchObject({
         extensions: [{ extension: "drawing", viewType: "renderer-view" }],
@@ -391,7 +391,7 @@ module.exports = class RendererFixture extends Plugin {
       );
 
       const created = await service.handle(
-        request("run-command", { commandId: "renderer-create" }),
+        request("run-command", { commandId: "renderer-fixture:renderer-create" }),
       );
       expect(created?.pluginSurface).toEqual({
         displayText: "New",
@@ -404,7 +404,9 @@ module.exports = class RendererFixture extends Plugin {
         "new drawing content",
       );
 
-      await service.handle(request("run-command", { commandId: "renderer-binary" }));
+      await service.handle(
+        request("run-command", { commandId: "renderer-fixture:renderer-binary" }),
+      );
       expect(binaryCreates).toHaveLength(1);
       expect(new Uint8Array(binaryCreates[0]?.content ?? new ArrayBuffer(0))).toEqual(
         Uint8Array.from([137, 80, 78, 71, 0, 255]),
@@ -445,7 +447,9 @@ module.exports = class RendererFixture extends Plugin {
       expect(closed?.pluginSurface).toBeNull();
       expect(dom.window.document.querySelector("#threadleaf-plugin-surface")).toBeNull();
 
-      const ran = await service.handle(request("run-command", { commandId: "renderer-command" }));
+      const ran = await service.handle(
+        request("run-command", { commandId: "renderer-fixture:renderer-command" }),
+      );
       expect(ran?.notices).toContain("Renderer command ran.");
       expect(ran?.plugin?.compatibilityLevel).toBe(4);
 
