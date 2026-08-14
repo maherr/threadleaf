@@ -232,10 +232,7 @@ try {
       "--output",
       separatorOutputPath,
     ]);
-    assert(
-      separator.code === 0,
-      `Documented pnpm run separator form failed: ${separator.stderr}`,
-    );
+    assert(separator.code === 0, `Documented pnpm run separator form failed: ${separator.stderr}`);
     assert(
       (await fs.readFile(firstManifestPath, "utf8")) ===
         (await fs.readFile(path.join(separatorOutputPath, manifestName), "utf8")),
