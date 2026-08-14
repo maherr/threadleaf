@@ -42,3 +42,18 @@ export function renderUnavailableNoticeToolbarLabel(
 ): void {
   if (entry) notePath.textContent = text.toolbarLabel;
 }
+
+export function renderDocumentViewToolbarLabel(
+  notePath: { textContent: string | null },
+  options: {
+    loadedPath: string | null;
+    unavailable: WorkspaceUnavailableEntry | null | undefined;
+    pluginLabel?: string | null;
+  },
+): void {
+  notePath.textContent =
+    options.pluginLabel ??
+    (options.unavailable
+      ? unavailableNoticeText(options.unavailable).toolbarLabel
+      : (options.loadedPath ?? noSelection.toolbarLabel));
+}

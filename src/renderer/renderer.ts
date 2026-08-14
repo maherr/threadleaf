@@ -157,7 +157,11 @@ import {
   quickSwitcherNotesFromFiles,
 } from "./quick-switcher-model";
 import { RecoveryViewController } from "./recovery-view";
-import { renderUnavailableNoticeToolbarLabel, unavailableNoticeText } from "./unavailable-notice";
+import {
+  renderDocumentViewToolbarLabel,
+  renderUnavailableNoticeToolbarLabel,
+  unavailableNoticeText,
+} from "./unavailable-notice";
 import { vaultSearchDisplayContext } from "./vault-search-model";
 import "./styles.css";
 import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
@@ -2324,7 +2328,9 @@ function renderReadingView(): void {
 
 function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
-  const activeCanvas = workspacePaneSnapshot()?.activeCanvas;
+  const activePane = workspacePaneSnapshot();
+  const activeCanvas = activePane?.activeCanvas;
+  const activeUnavailable = activePane?.activeUnavailable;
   const hasCanvas = activeCanvas !== undefined && activeCanvas !== null;
   const settingsPending = Boolean(currentSnapshot?.vault.id && hasNote && !settingsLoaded);
   if (settingsPending) {
@@ -2337,7 +2343,10 @@ function renderDocumentView(): void {
     elements.noteView.hidden = true;
     elements.canvasView.hidden = !hasCanvas;
     elements.pluginSurfaceHost.hidden = true;
-    elements.notePath.textContent = loadedNote?.path ?? "No note selected";
+    renderDocumentViewToolbarLabel(elements.notePath, {
+      loadedPath: loadedNote?.path ?? activeCanvas?.path ?? null,
+      unavailable: activeUnavailable,
+    });
     elements.editView.disabled = true;
     elements.sourceView.disabled = true;
     elements.readView.disabled = true;
@@ -2404,16 +2413,20 @@ function renderDocumentView(): void {
   elements.popOutPluginView.textContent = popoutOpen ? "↙" : "↗";
   elements.popOutPluginView.ariaLabel = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";
   elements.popOutPluginView.title = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";
-  if (pluginSettings && plugin) {
-    const pluginName = (currentSnapshot?.plugins ?? []).find(
-      ({ id }) => id === pluginSettingsTargetId,
-    )?.name;
-    elements.notePath.textContent =
-      currentSnapshot?.pluginSurface?.displayText ??
-      (pluginName ? `${pluginName} settings` : "Plugin settings");
-  } else {
-    elements.notePath.textContent = loadedNote?.path ?? "No note selected";
-  }
+  const pluginName =
+    pluginSettings && plugin
+      ? (currentSnapshot?.plugins ?? []).find(({ id }) => id === pluginSettingsTargetId)?.name
+      : undefined;
+  const pluginLabel =
+    pluginSettings && plugin
+      ? (currentSnapshot?.pluginSurface?.displayText ??
+        (pluginName ? `${pluginName} settings` : "Plugin settings"))
+      : null;
+  renderDocumentViewToolbarLabel(elements.notePath, {
+    loadedPath: loadedNote?.path ?? activeCanvas?.path ?? null,
+    unavailable: activeUnavailable,
+    pluginLabel,
+  });
   const shortcut = shortcutFor("editor.toggle-reading-view");
   elements.editView.title = "Live Preview editing mode";
   elements.sourceView.title = "Source editing mode";

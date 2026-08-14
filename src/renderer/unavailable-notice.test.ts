@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { renderUnavailableNoticeToolbarLabel, unavailableNoticeText } from "./unavailable-notice";
+import {
+  renderDocumentViewToolbarLabel,
+  renderUnavailableNoticeToolbarLabel,
+  unavailableNoticeText,
+} from "./unavailable-notice";
 
 describe("unavailableNoticeText", () => {
   it("invites a choice when no tab is selected", () => {
@@ -30,5 +34,19 @@ describe("unavailableNoticeText", () => {
 
     expect(notePath.textContent).toBe("Welcome.md");
     expect(notePath.textContent).not.toBe("No note selected");
+  });
+
+  it("writes a waiting label and keeps it through a document-view render", () => {
+    const notePath: { textContent: string | null } = { textContent: "No note selected" };
+    const unavailable = { path: "Syncing.md", title: "Syncing" };
+
+    renderUnavailableNoticeToolbarLabel(notePath, unavailable);
+    expect(notePath.textContent).toBe("Waiting for Syncing.md");
+
+    renderDocumentViewToolbarLabel(notePath, {
+      loadedPath: null,
+      unavailable,
+    });
+    expect(notePath.textContent).toBe("Waiting for Syncing.md");
   });
 });
