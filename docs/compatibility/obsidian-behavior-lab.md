@@ -76,5 +76,6 @@ pnpm run obsidian:behavior-lab
 ```
 
 The command prints the private temporary `runRoot` and cell statuses. Use `--red-control` to prove
-that a seeded fixture-byte mutation is rejected. `--cleanup` does not delete receipts: sealing and
-retention are deliberately separate from the observer process.
+that a seeded fixture-byte mutation is rejected. By default the run root is retained after sealing,
+for independent verification. `--cleanup` prints the sealed manifest (all cell receipts) to stdout
+and then removes this run's root; it never touches another run's root.

@@ -1222,9 +1222,10 @@ async function run() {
   );
   if (unobservedFailures.length > 0) process.exitCode = 1;
   if (!keepRun) {
-    process.stdout.write(
-      "cleanup requested, but the receipt root is retained for independent sealing verification\n",
-    );
+    process.stdout.write("sealed manifest (printed before the receipt root is removed):\n");
+    process.stdout.write(manifestBytes.toString("utf8"));
+    await fs.rm(runRoot, { recursive: true, force: true });
+    process.stdout.write(`cleanup requested: receipt root removed after sealing: ${runRoot}\n`);
   }
 }
 
