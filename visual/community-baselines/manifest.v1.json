@@ -31,26 +31,27 @@
   "cases": {
     "minimal:dark-laptop": {
       "path": "minimal-dark-laptop.png",
-      "sha256": "97d844454c1b4cd1a8e71a8dba99d68ba089ecaffcf8e0fe6114977ba993fec0",
+      "sha256": "9993e82c5dc5a6fdb26fb26024d939d9f486d155b33012a366c640386cce0a74",
       "dimensions": [1180, 820]
     },
     "minimal:light-laptop": {
       "path": "minimal-light-laptop.png",
-      "sha256": "d85da6f9f9df64b40413fc5545a28b7fb2ffcf8924f340c74d41ad3c135b34d7",
+      "sha256": "ca79a291d95bec6a97ebc52086ca2cea800f06086f0e7577deb87ba8b9ea2016",
       "dimensions": [1180, 820]
     },
     "minimal:light-minimum": {
       "path": "minimal-light-minimum.png",
-      "sha256": "7c6cd235993dd3bdecbfb6b8cb92b98a61d5dedbafc23408ab8f43511d038744",
+      "sha256": "566cf6fbe297995cc59a357985bc956dbd0ceeb384bb56e970ef866c69205653",
       "dimensions": [860, 640]
     },
     "minimal:dark-high-contrast": {
       "path": "minimal-dark-high-contrast.png",
-      "sha256": "5810093f9455d9a74ca13387adc70e7d9ed758f1d1a4e3eb72f971a74fc2f126",
+      "sha256": "9b5874c4f009cca856a32f0dc547079d027bddacef0eb66c22099592e7d5a02c",
       "dimensions": [1180, 820]
     },
     "minimal:light-high-contrast": {
-      "pending": "dynamic-renderer-proof",
+      "path": "minimal-light-high-contrast.png",
+      "sha256": "009ab1848a57e263ab3b0e83e9a174aa2bd040ee78eb0b3e08aa85fb7f4d9383",
       "dimensions": [1180, 820]
     },
     "wikipedia:dark-laptop": {
