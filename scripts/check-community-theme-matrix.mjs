@@ -1702,7 +1702,8 @@ function assertStaticColourControls(manifest) {
     `COMMUNITY_THEME_STATIC_THIN_PASS PASS ${JSON.stringify(thinWithCueResult.thinPasses[0])}\n`,
   );
 
-  // Three independent red controls, one per failure tier the gate can produce.
+  // Four independent red controls: one per failure tier the gate can produce,
+  // plus the unpainted-cue validity check inside the thin tier.
   const rejectedCases = {
     "categorical below 7": {
       categorical: [

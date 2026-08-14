@@ -106,7 +106,7 @@ nothing is actually painted, so a cue that carries border geometry is rejected u
 
 **Recorded case: Minimal, dark laptop.** `active-file-background` vs `inactive-file-background`
 measures CIEDE2000 8.73 for Minimal's dark scheme (inside the thin band). This number is
-**theme-invariant in dark scheme**, not a consequence of Minimal's low-chroma accent: Wikipedia,
+**theme-invariant across themes for this case**, not a consequence of Minimal's low-chroma accent: Wikipedia,
 whose `theme.css` defines no accent override at all, measures the identical 8.73 (and an identical
 15.04 redundant cue) for the same pair in dark scheme, and Sanctum's dark-laptop case measures the
 same 8.73/15.04 again (see the Sanctum finding below). All three themes are exercising Threadleaf's
@@ -118,7 +118,7 @@ dE=8.73 redundantCue=active-file-border/active-file-background redundantDe=15.04
 Minimal's cases pass this way or clear the tier outright; see
 [Live verification status](#live-verification-status) for the full receipt block. Light scheme, by
 contrast, is not theme-invariant: it depends on each theme's own `--interactive-accent` and
-`--background-primary`, which is exactly why Minimal's light cases (7.02-7.53) and Wikipedia's
+`--background-primary`, which is exactly why Minimal's light cases (7.02, two hundredths above the hard-fail floor) and Wikipedia's
 light-laptop case (6.65, below) land on different sides of the hard-fail floor.
 
 **Recorded finding: Wikipedia, light laptop, below the hard floor.** Not every failure lands in
