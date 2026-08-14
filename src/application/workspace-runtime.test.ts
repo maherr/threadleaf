@@ -166,9 +166,22 @@ class BlockingWorkspaceStateStore implements WorkspaceStateStore {
     if (this.#saveCount >= target) {
       return;
     }
-    await new Promise<void>((resolve) => {
+    // Bounded and rejecting: an unbounded wait made every race test that
+    // uses this store fail at vitest's global default under machine load,
+    // with the timeout blamed on whichever assertion happened to be next.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `waitForSaveCount(${target}) still at ${this.#saveCount} after 15000ms`,
+          ),
+        );
+      }, 15_000);
       const waiters = this.#saveCountWaiters.get(target) ?? [];
-      waiters.push(resolve);
+      waiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
       this.#saveCountWaiters.set(target, waiters);
     });
   }

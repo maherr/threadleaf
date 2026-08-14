@@ -49,4 +49,25 @@ describe("unavailableNoticeText", () => {
     });
     expect(notePath.textContent).toBe("Waiting for Syncing.md");
   });
+
+  it("resolves the toolbar label by precedence: plugin, waiting, path, fallback", () => {
+    const notePath: { textContent: string | null } = { textContent: null };
+    const unavailable = { path: "Syncing.md", title: "Syncing" };
+
+    renderDocumentViewToolbarLabel(notePath, {
+      loadedPath: "Loaded.md",
+      unavailable,
+      pluginLabel: "Calendar settings",
+    });
+    expect(notePath.textContent).toBe("Calendar settings");
+
+    renderDocumentViewToolbarLabel(notePath, { loadedPath: "Loaded.md", unavailable });
+    expect(notePath.textContent).toBe("Waiting for Syncing.md");
+
+    renderDocumentViewToolbarLabel(notePath, { loadedPath: "Loaded.md", unavailable: null });
+    expect(notePath.textContent).toBe("Loaded.md");
+
+    renderDocumentViewToolbarLabel(notePath, { loadedPath: null, unavailable: null });
+    expect(notePath.textContent).toBe("No note selected");
+  });
 });

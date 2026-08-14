@@ -2049,6 +2049,8 @@ export class WorkspaceRuntime {
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
     this.#retainedCanvases.clear();
+    this.#confirmedRemovalVersions.clear();
+    this.#presenceJustificationVersions.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
     for (const release of this.#releaseActions.reverse()) {
       release();
@@ -2067,10 +2069,21 @@ export class WorkspaceRuntime {
   }
 
   private justifyWorkspacePathPresence(filePath: string): void {
-    const confirmedRemovalVersion = this.#confirmedRemovalVersions.get(filePath);
-    if (confirmedRemovalVersion !== undefined) {
-      this.#presenceJustificationVersions.set(filePath, confirmedRemovalVersion);
+    // Absent entries mean justified: a later genuine removal re-arms the pair
+    // with a strictly higher version, so deleting here is behavior-identical
+    // to storing j = v while keeping both maps bounded by live removals.
+    if (this.#confirmedRemovalVersions.delete(filePath)) {
+      this.#presenceJustificationVersions.delete(filePath);
     }
+  }
+
+  private workspacePathIsStale(filePath: string): boolean {
+    const confirmedRemovalVersion = this.#confirmedRemovalVersions.get(filePath);
+    if (confirmedRemovalVersion === undefined) {
+      return false;
+    }
+    const presenceJustificationVersion = this.#presenceJustificationVersions.get(filePath) ?? 0;
+    return confirmedRemovalVersion > presenceJustificationVersion;
   }
 
   private scrubConfirmedRemovals(state: PersistedWorkspaceState): PersistedWorkspaceState {
@@ -2084,12 +2097,23 @@ export class WorkspaceRuntime {
         ...(navigationHistory ? { navigationHistory } : {}),
       };
     });
-    let changed = false;
-    for (const [filePath, confirmedRemovalVersion] of this.#confirmedRemovalVersions) {
-      const presenceJustificationVersion = this.#presenceJustificationVersions.get(filePath) ?? 0;
-      if (confirmedRemovalVersion > presenceJustificationVersion) {
-        changed = removeWorkspacePath(panes, filePath) || changed;
+    const stalePaths = new Set<string>();
+    for (const pane of panes) {
+      for (const filePath of [
+        ...pane.openPaths,
+        ...pane.pinnedPaths,
+        ...(pane.activePath ? [pane.activePath] : []),
+        ...(pane.navigationHistory?.back ?? []),
+        ...(pane.navigationHistory?.forward ?? []),
+      ]) {
+        if (!stalePaths.has(filePath) && this.workspacePathIsStale(filePath)) {
+          stalePaths.add(filePath);
+        }
       }
+    }
+    let changed = false;
+    for (const filePath of stalePaths) {
+      changed = removeWorkspacePath(panes, filePath) || changed;
     }
     return changed
       ? createWorkspaceLayout(state.vaultId, panes, state.activePaneId, state.splitDirection)
