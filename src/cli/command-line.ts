@@ -3446,6 +3446,7 @@ async function executeCommand(
         caseSensitive: command.caseSensitive,
         folder,
         maxContexts: command.id === "search.context" ? 100 : 3,
+        exactContext: command.id === "search.context",
       });
       return {
         ...page,

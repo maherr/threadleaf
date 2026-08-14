@@ -2411,6 +2411,32 @@ describe("Threadleaf CLI read-only workflows", () => {
     expect(caseSensitive.stdout).toBe("0\n");
   });
 
+  it("preserves exact source whitespace and long lines in unclipped search:context output", async () => {
+    const indented = "    const needle = true;   ";
+    const long = `${"padding word ".repeat(20)}needle exact suffix`;
+    await fs.writeFile(path.join(vaultPath, "Whitespace.md"), `before\n${indented}\nafter`, "utf8");
+    await fs.writeFile(path.join(vaultPath, "Long.md"), long, "utf8");
+
+    const json = await invoke([
+      "--vault",
+      vaultPath,
+      "search:context",
+      "query=needle",
+      "format=json",
+    ]);
+    const entries = JSON.parse(json.stdout) as Array<{ path: string; line: number; text: string }>;
+
+    // docs/cli.md: "Context lines are sliced from the exact saved source
+    // rather than a folded key." That must hold for whitespace and length,
+    // not only case and diacritics.
+    expect(entries.find((entry) => entry.path === "Whitespace.md")?.text).toBe(indented);
+    expect(entries.find((entry) => entry.path === "Long.md")?.text).toBe(long);
+
+    const human = await invoke(["--vault", vaultPath, "search:context", "query=needle"]);
+    expect(human.stdout).toContain(`Whitespace.md:2: ${indented}\n`);
+    expect(human.stdout).toContain(`Long.md:1: ${long}\n`);
+  });
+
   it("searches Latin diacritics through native search and context compatibility output", async () => {
     const folder = path.join(vaultPath, "Français");
     await fs.mkdir(folder, { recursive: true });

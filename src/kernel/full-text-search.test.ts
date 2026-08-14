@@ -111,6 +111,36 @@ describe("FullTextSearchIndex", () => {
     expect(index.search("CAFE", 50, { caseSensitive: true }).total).toBe(0);
   });
 
+  it("finds a Greek word by any sigma form and keeps German sharp S distinct from ss", () => {
+    const index = new FullTextSearchIndex();
+    index.replace([
+      document("Greek/Logos.md", "Μια αναφορά στον λόγος και τη λογική.\nΛΟΓΟΣ σε κεφαλαία."),
+      document("German/Weather Note.md", "Die Straße ist ruhig heute Abend."),
+    ]);
+
+    // "λόγος" is correctly saved with word-final sigma (U+03C2). Common
+    // status case folds both sigma forms to the same key (U+03C3), so a
+    // query using the ordinary medial form still finds it -- unlike
+    // `String.prototype.toLowerCase`, whose Final_Sigma rule would leave the
+    // saved word and a plain-sigma query on different folded values.
+    for (const query of ["λόγος", "λόγοσ", "ΛΟΓΟΣ", "λογοσ"]) {
+      expect(index.search(query).results.map((result) => result.path)).toContain("Greek/Logos.md");
+    }
+    expect(index.search("λόγοσ").results[0]?.contexts).toContainEqual({
+      kind: "content",
+      line: 1,
+      text: "Μια αναφορά στον λόγος και τη λογική.",
+    });
+
+    expect(index.search("straße").results.map((result) => result.path)).toContain(
+      "German/Weather Note.md",
+    );
+    expect(index.search("strasse").total).toBe(0);
+    expect(index.search("STRASSE").total).toBe(0);
+    expect(index.search("straße", 50, { caseSensitive: true }).total).toBe(0);
+    expect(index.search("Straße", 50, { caseSensitive: true }).total).toBe(1);
+  });
+
   it("keeps non-Latin mark-bearing text distinct while retaining exact source context", () => {
     const index = new FullTextSearchIndex();
     const arabic = "عَرَبِيّ";
@@ -306,6 +336,34 @@ describe("FullTextSearchIndex", () => {
     expect(
       longLineIndex.search("Needle", 50, { caseSensitive: true }).results[0]?.contexts[0]?.text,
     ).toContain("Needle exact");
+  });
+
+  it("preserves exact source whitespace and long lines in unclipped search:context output", () => {
+    const whitespaceIndex = new FullTextSearchIndex();
+    const indented = "    const needle = true;   ";
+    whitespaceIndex.upsert(document("Whitespace.md", `before\n${indented}\nafter`));
+
+    // Default (clipped) mode trims the line for compact display.
+    expect(whitespaceIndex.search("needle").results[0]?.contexts[0]?.text).toBe(indented.trim());
+
+    // exactContext returns the saved line verbatim, including leading and
+    // trailing whitespace, matching docs/cli.md: "Context lines are sliced
+    // from the exact saved source rather than a folded key."
+    expect(
+      whitespaceIndex.search("needle", 50, { exactContext: true }).results[0]?.contexts[0]?.text,
+    ).toBe(indented);
+
+    const longIndex = new FullTextSearchIndex();
+    const long = `${"padding word ".repeat(20)}needle exact suffix`;
+    longIndex.upsert(document("Long.md", long));
+
+    const clippedLong = longIndex.search("needle").results[0]?.contexts[0]?.text;
+    expect(clippedLong?.length).toBeLessThan(long.length);
+    expect(clippedLong).toContain("needle exact");
+
+    expect(
+      longIndex.search("needle", 50, { exactContext: true }).results[0]?.contexts[0]?.text,
+    ).toBe(long);
   });
 
   it("keeps long decomposed snippets exact and grapheme-safe after folded length changes", () => {

@@ -57,6 +57,15 @@ export interface FullTextSearchOptions {
   caseSensitive?: boolean;
   folder?: string;
   maxContexts?: number;
+  /**
+   * Return "content" contexts as an exact, unclipped slice of the saved
+   * source line instead of a trimmed, length-bounded snippet. Used by the
+   * grep-style `search:context` CLI surface, which documents its contexts as
+   * "sliced from the exact saved source rather than a folded key" (see
+   * docs/cli.md). Ranked "search" results keep the trimmed, anchored
+   * snippet for compact display.
+   */
+  exactContext?: boolean;
 }
 
 interface IndexedLine {
@@ -438,6 +447,7 @@ function contextCandidates(
   document: IndexedSearchDocument,
   terms: string[],
   caseSensitive: boolean,
+  exactContext: boolean,
 ): ContextCandidate[] {
   const candidates: ContextCandidate[] = [];
   for (const line of document.lines) {
@@ -449,7 +459,7 @@ function contextCandidates(
     candidates.push({
       kind: "content",
       line: line.line,
-      text: snippetAround(line.text, terms, caseSensitive),
+      text: exactContext ? line.text : snippetAround(line.text, terms, caseSensitive),
       coverage,
       occurrences: terms.reduce(
         (count, term) => count + countOccurrences(comparison, term, line.simple),
@@ -524,11 +534,12 @@ function searchDocument(
   terms: string[],
   caseSensitive: boolean,
   maxContexts: number,
+  exactContext: boolean,
 ): FullTextSearchHit | null {
   if (!terms.every((term) => containsTerm(document, term, caseSensitive))) {
     return null;
   }
-  const candidates = contextCandidates(document, terms, caseSensitive).sort(
+  const candidates = contextCandidates(document, terms, caseSensitive, exactContext).sort(
     (left, right) =>
       right.coverage - left.coverage ||
       right.occurrences - left.occurrences ||
@@ -603,6 +614,7 @@ export class FullTextSearchIndex {
     if (!Number.isInteger(maxContexts) || maxContexts < 1 || maxContexts > 100) {
       throw new Error("Search context limits must be between 1 and 100.");
     }
+    const exactContext = options.exactContext ?? false;
     const terms = parseTerms(query, caseSensitive);
     if (terms.length === 0) {
       return { query, terms, total: 0, truncated: false, results: [] };
@@ -613,7 +625,7 @@ export class FullTextSearchIndex {
       if (folderPrefix && !document.path.startsWith(folderPrefix)) {
         continue;
       }
-      const match = searchDocument(document, terms, caseSensitive, maxContexts);
+      const match = searchDocument(document, terms, caseSensitive, maxContexts, exactContext);
       if (match) {
         matches.push(match);
       }
