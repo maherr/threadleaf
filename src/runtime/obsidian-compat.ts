@@ -1080,7 +1080,7 @@ export function getLinkpath(linktext: string): string {
 }
 
 export function stringifyYaml(value: unknown): string {
-  return yamlStringify(value, { lineWidth: 0 });
+  return yamlStringify(value, { aliasDuplicateObjects: false, lineWidth: 0, nullStr: "" });
 }
 
 function cacheLocation(content: string, offset: number): CacheLocation {
@@ -1185,10 +1185,51 @@ export class MetadataCache {
     for (const file of this.vault.getMarkdownFiles()) {
       const tags = getAllTags(this.getFileCache(file) ?? {});
       for (const tag of tags ?? []) {
-        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+        const normalized = tag.replace(/\/+$/u, "");
+        if (normalized === "#" || /^#\d+$/u.test(normalized)) {
+          continue;
+        }
+        const parts = normalized.slice(1).split("/");
+        for (let length = 1; length <= parts.length; length += 1) {
+          const parent = `#${parts.slice(0, length).join("/")}`;
+          if (parent !== "#") {
+            counts.set(parent, (counts.get(parent) ?? 0) + 1);
+          }
+        }
       }
     }
-    return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
+    const consolidated = new Map<
+      string,
+      { count: number; firstSeen: number; representative: string; representativeCount: number }
+    >();
+    let firstSeen = 0;
+    for (const [tag, count] of counts) {
+      const key = tag.toLowerCase();
+      const existing = consolidated.get(key);
+      if (!existing) {
+        consolidated.set(key, {
+          count,
+          firstSeen: firstSeen++,
+          representative: tag,
+          representativeCount: count,
+        });
+      } else {
+        existing.count += count;
+        if (count > existing.representativeCount) {
+          existing.representative = tag;
+          existing.representativeCount = count;
+        }
+      }
+    }
+    return Object.fromEntries(
+      [...consolidated.values()]
+        .sort(
+          (left, right) =>
+            left.representative.localeCompare(right.representative) ||
+            left.firstSeen - right.firstSeen,
+        )
+        .map(({ count, representative }) => [representative, count]),
+    );
   }
 
   getFirstLinkpathDest(linkpath: string, sourcePath: string): TFile | null {
@@ -2108,40 +2149,24 @@ function fuzzyRanges(
   return ranges;
 }
 
-function foldSimpleSearchText(value: string): {
-  folded: string;
-  sourceRanges: SearchMatchPart[];
-} {
-  const folded = value.toLocaleLowerCase("en-US");
-  const sourceRanges: SearchMatchPart[] = [];
-  for (const character of fuzzyCharacters(value)) {
-    for (let offset = 0; offset < character.folded.length; offset += 1) {
-      sourceRanges.push([character.start, character.end]);
-    }
-  }
-  return { folded, sourceRanges };
-}
-
 export function prepareSimpleSearch(query: string): (text: string) => SearchResult | null {
-  const words = query.trim().split(/\s+/u).filter(Boolean);
+  const words = [...new Set(query.toLowerCase().split(" ").filter(Boolean))];
   if (words.length === 0) {
     return () => ({ score: 0, matches: [] });
   }
-  const foldedWords = words.map((word) => foldSimpleSearchText(word).folded);
 
   return (text: string): SearchResult | null => {
-    const { folded: foldedText, sourceRanges } = foldSimpleSearchText(text);
+    const loweredText = text.toLowerCase();
     const matches: SearchMatchPart[] = [];
-    let positionCost = 0;
-    for (const word of foldedWords) {
-      const foldedStart = foldedText.indexOf(word);
-      const sourceStart = sourceRanges[foldedStart];
-      const sourceEnd = sourceRanges[foldedStart + word.length - 1];
-      if (foldedStart === -1 || !sourceStart || !sourceEnd) {
+    for (const word of words) {
+      let start = loweredText.indexOf(word);
+      if (start === -1) {
         return null;
       }
-      matches.push([sourceStart[0], sourceEnd[1]]);
-      positionCost += sourceStart[0];
+      while (start !== -1) {
+        matches.push([start, start + word.length]);
+        start = loweredText.indexOf(word, start + word.length + 1);
+      }
     }
     matches.sort(([left], [right]) => left - right);
     const merged: SearchMatchPart[] = [];
@@ -2153,8 +2178,20 @@ export function prepareSimpleSearch(query: string): (text: string) => SearchResu
         merged.push([...match]);
       }
     }
+    let score = query.length / 100 - text.length / 10_000;
+    for (const [index, match] of merged.entries()) {
+      const [start, end] = match;
+      if (index === 0) {
+        score -=
+          (end - start + (words.length === 1 || merged.length === 1 || end - start === 1 ? 1 : 0)) /
+            100 +
+          start / 1_000;
+      } else {
+        score -= 1 + start / 100;
+      }
+    }
     return {
-      score: positionCost === 0 ? 0 : -positionCost / Math.max(text.length, 1),
+      score,
       matches: merged,
     };
   };

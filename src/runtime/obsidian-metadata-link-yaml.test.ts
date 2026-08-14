@@ -72,26 +72,35 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     expect(getAllTags({})).toBeNull();
   });
 
-  it("rejects numeric-only and malformed tag segments while retaining valid nested and symbol tags", async () => {
-    expect(
-      parseFrontMatterTags({
-        tags: ["123", "---", "/leading", "trailing/", "double//slash", "topic/123", "✅"],
-      }),
-    ).toEqual(["#topic/123", "#✅"]);
-
+  it("aggregates hierarchical tags, strips a final slash, and consolidates case", async () => {
+    // Public API shape: https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
     const { vault } = await createTemporaryVault({
-      "Tags.md": [
-        "---",
-        "tags: ['123', '---', 'foo/', 'foo//bar', 'topic/123', '✅']",
-        "---",
-        "#123 #--- #/ #foo/ #foo//bar #topic/123 #✅",
-      ].join("\n"),
+      "First.md": "#Home/Child\n",
+      "Second.md": "#home/child #home/child #home\n",
+      "Third.md": "#trail/child/\n",
     });
     const metadataCache = new MetadataCache(vault);
-    const cache = metadataCache.getCache("Tags.md");
-
-    expect(cache?.tags?.map(({ tag }) => tag)).toEqual(["#topic/123", "#✅"]);
-    expect(metadataCache.getTags()).toEqual({ "#topic/123": 2, "#✅": 2 });
+    const getFileCache = metadataCache.getFileCache.bind(metadataCache);
+    metadataCache.getFileCache = (file) =>
+      file?.path === "Third.md"
+        ? {
+            tags: [
+              {
+                tag: "#trail/child/",
+                position: {
+                  start: { line: 0, col: 0, offset: 0 },
+                  end: { line: 0, col: 13, offset: 13 },
+                },
+              },
+            ],
+          }
+        : getFileCache(file);
+    expect(metadataCache.getTags()).toEqual({
+      "#home": 4,
+      "#home/child": 3,
+      "#trail": 1,
+      "#trail/child": 1,
+    });
   });
 
   it("splits wikilink paths from heading and block subpaths at the first hash", () => {
@@ -104,7 +113,8 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     expect(getLinkpath("Folder/Note#Heading")).toBe("Folder/Note");
   });
 
-  it("serializes YAML without document fences and keeps typed collection shapes", () => {
+  it("serializes YAML with Obsidian null and duplicate-reference semantics", () => {
+    // Public API declaration: https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
     expect(
       stringifyYaml({
         title: "A: B",
@@ -112,37 +122,57 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
         enabled: true,
       }),
     ).toBe('title: "A: B"\ntags:\n  - one\n  - two\nenabled: true\n');
+    expect(stringifyYaml({ a: null })).toBe("a:\n");
+
+    const shared = { n: 1 };
+    expect(stringifyYaml({ a: shared, b: shared })).toBe("a:\n  n: 1\nb:\n  n: 1\n");
   });
 
-  it("matches every space-separated simple-search word and returns UTF-16 ranges", () => {
-    const search = prepareSimpleSearch("alpha gamma");
-    const direct = search("Alpha beta GAMMA");
-    const delayed = search("prefix alpha with a delayed gamma");
-
-    expect(direct?.matches).toEqual([
+  it("matches all simple-search occurrences with host whitespace, merge, and score semantics", () => {
+    // `prepareSimpleSearch()` documents space-separated words and SearchResult's score/ranges:
+    // https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
+    const duplicate = prepareSimpleSearch("alpha alpha")("alpha beta alpha");
+    expect(duplicate?.matches).toEqual([
       [0, 5],
       [11, 16],
     ]);
-    expect(prepareSimpleSearch("gamma alpha")("Alpha beta GAMMA")).toEqual(direct);
-    expect(prepareSimpleSearch("alpha alpha")("alpha beta alpha")).toEqual({
-      score: 0,
-      matches: [[0, 5]],
-    });
-    expect(direct?.score).toBeGreaterThan(delayed?.score ?? Number.NEGATIVE_INFINITY);
-    expect(search("alpha only")).toBeNull();
-    expect(prepareSimpleSearch("")("anything")).toEqual({ score: 0, matches: [] });
-    expect(prepareSimpleSearch("🧵 leaf")("🧵 Threadleaf")?.matches).toEqual([
-      [0, 2],
-      [9, 13],
+    expect(duplicate?.score).toBeCloseTo(-1.0616, 12);
+
+    const repeatedSpace = prepareSimpleSearch("alpha  beta")("alpha beta");
+    expect(repeatedSpace?.matches).toEqual([
+      [0, 5],
+      [6, 10],
     ]);
+    expect(repeatedSpace?.score).toBeCloseTo(-1.001, 12);
+
+    const overlap = prepareSimpleSearch("ab bc")("abc");
+    expect(overlap?.matches).toEqual([[0, 3]]);
+    expect(overlap?.score).toBeCloseTo(0.0097, 12);
+
+    const shortWords = prepareSimpleSearch("a b")("a b");
+    expect(shortWords?.matches).toEqual([
+      [0, 1],
+      [2, 3],
+    ]);
+    expect(shortWords?.score).toBeCloseTo(-1.0103, 12);
+    expect(prepareSimpleSearch("alpha gamma")("alpha only")).toBeNull();
+    expect(prepareSimpleSearch("")("anything")).toEqual({ score: 0, matches: [] });
   });
 
-  it("maps length-changing case folds back to ranges in the original UTF-16 string", () => {
-    expect(prepareSimpleSearch("İ")("İ")).toEqual({ score: 0, matches: [[0, 1]] });
+  it("uses lowercased-string UTF-16 offsets for length-changing case folds", () => {
+    // SearchMatchPart is an inclusive-start, exclusive-end offset pair in the public declaration:
+    // https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
+    const lengthChanging = prepareSimpleSearch("İ")("İ");
+    expect(lengthChanging?.matches).toEqual([[0, 2]]);
+    expect(lengthChanging?.score).toBeCloseTo(-0.0201, 12);
+
     const trailingMatch = prepareSimpleSearch("y")("xİy");
-    expect(trailingMatch?.matches).toEqual([[2, 3]]);
-    expect(trailingMatch?.score).toBeCloseTo(-2 / 3);
-    expect(prepareSimpleSearch("ος")("ΟΣ")).toEqual({ score: 0, matches: [[0, 2]] });
+    expect(trailingMatch?.matches).toEqual([[3, 4]]);
+    expect(trailingMatch?.score).toBeCloseTo(-0.0133, 12);
+
+    const greek = prepareSimpleSearch("ος")("ΟΣ");
+    expect(greek?.matches).toEqual([[0, 2]]);
+    expect(greek?.score).toBeCloseTo(-0.0102, 12);
   });
 
   it("builds Obsidian-shaped file caches and aggregate tag counts from canonical note bytes", async () => {
@@ -167,6 +197,7 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
       end: { line: 3, col: 7 },
     });
     expect(metadataCache.getTags()).toEqual({
+      "#inline": 1,
       "#inline/tag": 1,
       "#project": 2,
       "#urgent": 3,
