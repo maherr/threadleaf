@@ -79,7 +79,7 @@
     "test:performance-seams-cleanup": "node scripts/check-performance-seams-cleanup.mjs",
     "test:performance-seams-logic": "node scripts/check-performance-seam-logic.mjs",
     "test:obsidian-behavior-lab": "node --test scripts/obsidian-behavior-lab/*.test.mjs && python3 -B scripts/obsidian-behavior-lab/sandbox-supervisor.test.py",
-    "obsidian:behavior-lab": "node scripts/check-obsidian-behavior-lab.mjs",
+    "obsidian:behavior-lab": "pnpm run build && node scripts/check-obsidian-behavior-lab.mjs",
     "test:linux-packages": "node scripts/check-linux-packages.mjs",
     "test:live-preview": "pnpm run build && node scripts/check-live-preview.mjs",
     "test:excalidraw-roundtrip": "pnpm run build && node scripts/check-excalidraw-roundtrip.mjs",

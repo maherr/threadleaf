@@ -22,6 +22,12 @@ import {
   waitForExit,
   writeHelperScript,
 } from "./process.mjs";
+import {
+  assertThreadleafLaunchArgs,
+  assertThreadleafReceipt,
+  threadleafBehaviorMatch,
+  threadleafLaunchArgs,
+} from "./threadleaf.mjs";
 
 const roots = [];
 const scratchRoot = path.join(os.tmpdir(), "threadleaf-obsidian-lab");
@@ -432,5 +438,155 @@ describe("profile and process containment", () => {
         `red control did not reject ${label}`,
       );
     }
+  });
+});
+
+describe("Threadleaf external-oracle candidate", () => {
+  function candidateReceipt(runRoot, vaultPath) {
+    const profilePath = path.join(runRoot, "threadleaf-profile");
+    return {
+      status: "observed",
+      paths: {
+        runRoot,
+        vault: vaultPath,
+        profile: profilePath,
+        home: path.join(runRoot, "threadleaf-home"),
+        xdgConfig: path.join(runRoot, "threadleaf-xdg-config"),
+        xdgCache: path.join(runRoot, "threadleaf-xdg-cache"),
+        xdgData: path.join(runRoot, "threadleaf-xdg-data"),
+        temporary: path.join(runRoot, "threadleaf-tmp"),
+      },
+      launches: [
+        { exit: { code: 0, signal: null }, target: { address: "127.0.0.1" } },
+        { exit: { code: 0, signal: null }, target: { address: "127.0.0.1" } },
+      ],
+      roundtrip: {
+        exact: true,
+        reopenedSha256: "m".repeat(64),
+        mutatedSha256: "m".repeat(64),
+        expectedMutatedSha256: "m".repeat(64),
+      },
+      vaultRoundtrip: { equal: true, changedPaths: ["00 Overview.md"] },
+      visible: {
+        initial: {
+          visibleText: "THREADLEAF_OBSIDIAN_LAB_FIXTURE_V1",
+          viewport: { width: 800, height: 650, deviceScaleFactor: 1, pageScale: 1 },
+        },
+        reopened: {
+          visibleText: "THREADLEAF_OBSIDIAN_LAB_CANDIDATE_EDIT_V1",
+          viewport: { width: 800, height: 650, deviceScaleFactor: 1, pageScale: 1 },
+        },
+      },
+      screenshot: {
+        fromSurface: true,
+        captureBeyondViewport: false,
+        pngWidth: 800,
+        pngHeight: 650,
+        path: "ui/THREADLEAF-01.png",
+        sha256: "a".repeat(64),
+      },
+      cleanup: { clean: true, finalMarked: [], temporary: { removed: true } },
+    };
+  }
+
+  it("keeps the Threadleaf production launch on Xvfb, loopback CDP, and a private run root", () => {
+    const runRoot = "/tmp/threadleaf-obsidian-lab-scratch/run-1";
+    const electronPath = "/repo/node_modules/.bin/electron";
+    const userDataPath = path.join(runRoot, "threadleaf-profile");
+    const cdpPort = 43117;
+    const safe = threadleafLaunchArgs({ electronPath, userDataPath, cdpPort });
+    assert.equal(
+      assertThreadleafLaunchArgs(safe, { runRoot, electronPath, userDataPath, cdpPort }),
+      true,
+    );
+
+    const controls = [
+      [
+        "remote debugger address",
+        safe.map((value) =>
+          value === "--remote-debugging-address=127.0.0.1"
+            ? "--remote-debugging-address=0.0.0.0"
+            : value,
+        ),
+      ],
+      ["extra sandbox escape", [...safe, "--no-sandbox"]],
+      [
+        "missing Xvfb display policy",
+        safe.map((value) =>
+          value === "-screen 0 1440x840x24 -nolisten tcp" ? "-screen 0 1440x840x24" : value,
+        ),
+      ],
+    ];
+    for (const [label, unsafe] of controls) {
+      assert.throws(
+        () =>
+          assertThreadleafLaunchArgs(unsafe, {
+            runRoot,
+            electronPath,
+            userDataPath,
+            cdpPort,
+          }),
+        undefined,
+        `Threadleaf launch control did not reject ${label}`,
+      );
+    }
+    assert.throws(
+      () =>
+        assertThreadleafLaunchArgs(safe, {
+          runRoot,
+          electronPath,
+          userDataPath: "/tmp/escaped-profile",
+          cdpPort,
+        }),
+      /escaped/u,
+    );
+  });
+
+  it("red-controls the exact Threadleaf receipt and the Obsidian comparison seam", () => {
+    const runRoot = "/tmp/threadleaf-obsidian-lab-scratch/run-2";
+    const vaultPath = path.join(runRoot, "threadleaf-vault-data");
+    const valid = candidateReceipt(runRoot, vaultPath);
+    assert.doesNotThrow(() => assertThreadleafReceipt(valid, { runRoot, vaultPath }));
+
+    const controls = [
+      ["extra fixture path", (value) => (value.vaultRoundtrip.equal = false)],
+      ["partial surface", (value) => (value.screenshot.pngWidth = 799)],
+      ["orphaned candidate", (value) => value.cleanup.finalMarked.push({ pid: 99 })],
+      ["leftover temporary path", (value) => (value.cleanup.temporary.removed = false)],
+      ["reopen bytes", (value) => (value.roundtrip.reopenedSha256 = "b".repeat(64))],
+    ];
+    for (const [label, mutate] of controls) {
+      const unsafe = structuredClone(valid);
+      mutate(unsafe);
+      assert.throws(
+        () => assertThreadleafReceipt(unsafe, { runRoot, vaultPath }),
+        undefined,
+        `Threadleaf receipt control did not reject ${label}`,
+      );
+    }
+
+    const reference = {
+      status: "observed",
+      observed: {
+        roundtrip: {
+          status: "observed",
+          exact: true,
+          reopenedSha256: "obsidian-edit",
+          mutatedSha256: "obsidian-edit",
+        },
+      },
+    };
+    assert.deepEqual(threadleafBehaviorMatch(reference, valid), {
+      behavior: "open fixture note, append a synthetic UTF-8 marker, save, exit, reopen",
+      referenceCell: "FILE-01",
+      candidateCell: "THREADLEAF-01",
+      referenceExactReopen: true,
+      candidateExactReopen: true,
+      candidatePreservedEveryOtherVaultPath: true,
+    });
+
+    const failedCandidate = structuredClone(valid);
+    failedCandidate.status = "blocked";
+    assert.throws(() => threadleafBehaviorMatch(reference, failedCandidate), /not observed/u);
   });
 });

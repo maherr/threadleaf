@@ -34,6 +34,11 @@ import {
   writeReceipt,
   writeRunManifest,
 } from "./obsidian-behavior-lab/receipts.mjs";
+import {
+  runThreadleafRoundtrip,
+  THREADLEAF_CELL_ID,
+  threadleafBehaviorMatch,
+} from "./obsidian-behavior-lab/threadleaf.mjs";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const flatpakId = "md.obsidian.Obsidian";
@@ -50,12 +55,18 @@ const sourceEvidencePaths = [
   "scripts/obsidian-behavior-lab/receipts.mjs",
   "scripts/obsidian-behavior-lab/sandbox-supervisor.py",
   "scripts/obsidian-behavior-lab/sandbox-supervisor.test.py",
+  "scripts/obsidian-behavior-lab/threadleaf.mjs",
   "compatibility/obsidian-lab-fixture.v1.json",
   "package.json",
 ];
 const args = new Set(process.argv.slice(2));
 const redControl = args.has("--red-control");
+const threadleafRedControl = args.has("--threadleaf-red-control");
 const keepRun = !args.has("--cleanup");
+assert(
+  !(redControl && threadleafRedControl),
+  "--red-control and --threadleaf-red-control exercise different failure paths and cannot be combined.",
+);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -772,6 +783,8 @@ async function run() {
   const vaultPath = path.join(runRoot, "vault-data");
   const profilePath = path.join(runRoot, "profile-data");
   const fixtureManifestPath = path.join(runRoot, "fixture-manifest.v1.json");
+  const threadleafVaultPath = path.join(runRoot, "threadleaf-vault-data");
+  const threadleafFixtureManifestPath = path.join(runRoot, "threadleaf-fixture-manifest.v1.json");
   const committedFixtureManifestPath = path.join(
     appRoot,
     "compatibility",
@@ -834,6 +847,24 @@ async function run() {
     return;
   }
 
+  const threadleafGenerated = await generateFixture(threadleafVaultPath, {
+    manifestPath: threadleafFixtureManifestPath,
+  });
+  assert(
+    JSON.stringify(threadleafGenerated.manifest) === JSON.stringify(fixtureManifest),
+    "Threadleaf candidate fixture does not match the committed fixture manifest.",
+  );
+  await verifyFixtureManifest(threadleafVaultPath, fixtureManifest);
+  assertRunPathContainment(
+    {
+      scratchRoot: labScratchRoot,
+      runRoot,
+      profilePath: path.join(runRoot, "threadleaf-profile"),
+      vaultPath: threadleafVaultPath,
+    },
+    "Threadleaf candidate run",
+  );
+
   const referenceMetadata = await flatpakReference();
   const referenceVersion = referenceMetadata?.version ?? null;
   const referenceRuntime = referenceMetadata?.runtime ?? null;
@@ -859,6 +890,7 @@ async function run() {
       network: "denied by Flatpak --unshare=network",
       fixtureId: FIXTURE_ID,
       profile: "fresh-per-run",
+      candidate: "current built Threadleaf production Electron, fresh profile and fixture per run",
       scratchRoot: labScratchRoot,
       memoryFloor: "free -k MemAvailable >= 8388608 KiB immediately before every dynamic launch",
     },
@@ -1178,6 +1210,96 @@ async function run() {
     threadleafSeam: ["visual/matrix.v1.json", "scripts/check-visual-regression.mjs"],
   });
   receipts.push(uiReceipt);
+
+  const threadleafMemory = await memorySnapshot();
+  memoryGates.push({ launch: "Threadleaf production Electron candidate", ...threadleafMemory });
+  const threadleafCandidate = !threadleafMemory.sufficient
+    ? {
+        status: "blocked",
+        reason:
+          "Available memory is below the 8 GiB Electron launch floor; Threadleaf production was not attempted.",
+        memory: threadleafMemory,
+      }
+    : await runThreadleafRoundtrip({
+        appRoot,
+        runRoot,
+        vaultPath: threadleafVaultPath,
+        marker,
+        mutation: threadleafRedControl,
+      }).catch((error) => ({
+        status: "blocked",
+        reason: String(error),
+      }));
+  const threadleafArtifacts = [
+    "threadleaf-fixture-manifest.v1.json",
+    ...(threadleafCandidate.launches ?? []).flatMap((launch) => launch.artifacts ?? []),
+    threadleafCandidate.screenshot?.path,
+  ].filter(Boolean);
+  const threadleafReceipt = receiptFor(THREADLEAF_CELL_ID, threadleafCandidate.status, {
+    reason: threadleafCandidate.reason,
+    input: {
+      fixtureId: FIXTURE_ID,
+      predicate: FIXTURE_PREDICATE,
+      action: "open the visible fixture note, append a synthetic UTF-8 marker, save, exit, reopen",
+      executable: "current built Threadleaf production Electron",
+      profile: "fresh private run-root profile",
+    },
+    output: threadleafCandidate,
+    artifacts: [...new Set(threadleafArtifacts)].sort(),
+    tolerance: {
+      vault: "exactly the one synthetic note delta; no Threadleaf .obsidian write is tolerated",
+      persistence: "exact bytes after a fresh production-process reopen",
+      surface: "private Xvfb PNG matching Threadleaf's measured renderer viewport",
+    },
+    redControl: {
+      id: "RC-THREADLEAF-01",
+      expected:
+        "removing the live disposable production CodeMirror editor blocks real input and makes the lab exit nonzero",
+    },
+    threadleafSeam: ["src/main", "src/renderer", "src/kernel"],
+  });
+  receipts.push(threadleafReceipt);
+
+  let matchStatus = "blocked";
+  let matchOutput = {
+    referenceCellStatus: fileReceipt.status,
+    candidateCellStatus: threadleafReceipt.status,
+  };
+  let matchReason;
+  try {
+    assert(
+      fileReceipt.status === "observed",
+      "Obsidian external-oracle FILE-01 cell was not observed.",
+    );
+    matchOutput = {
+      ...matchOutput,
+      ...(threadleafBehaviorMatch(referenceReceipt, threadleafCandidate) ?? {}),
+    };
+    matchStatus = "observed";
+  } catch (error) {
+    matchReason = String(error);
+  }
+  const matchReceipt = receiptFor("MATCH-01", matchStatus, {
+    reason: matchReason,
+    input: {
+      referenceCell: "FILE-01",
+      candidateCell: THREADLEAF_CELL_ID,
+      behavior: "open fixture note, append a synthetic UTF-8 marker, save, exit, reopen",
+    },
+    output: matchOutput,
+    artifacts: ["receipts/FILE-01.v1.json", `receipts/${THREADLEAF_CELL_ID}.v1.json`],
+    tolerance: {
+      comparison:
+        "both independent runs retain their exact synthetic edit through reopen; Threadleaf must change no other fixture path",
+    },
+    redControl: {
+      id: "RC-MATCH-01",
+      expected:
+        "a blocked disposable Threadleaf production exercise blocks this comparison and makes the lab exit nonzero",
+    },
+    threadleafSeam: ["src/main", "src/renderer", "src/kernel"],
+  });
+  receipts.push(matchReceipt);
 
   for (const receipt of receipts) {
     await writeReceipt(runRoot, receipt);
