@@ -133,21 +133,47 @@ export interface WorkspaceRuntimeOptions {
    * window it opens. Production callers leave it unset.
    */
   faultInjector?: KernelFaultInjector;
+  /**
+   * Test seam. Reads the wall clock the absence settle windows are measured
+   * against, so a test can prove either side of a window without waiting for it
+   * and without its result depending on how loaded the machine is. Production
+   * callers leave it unset.
+   */
+  now?: () => number;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
 
 /**
- * Confirmed-absent re-reads a tracked path needs before its tab may close. The
- * watcher's own diff is not one of them: it reports what was true when the scan
- * listed the directory, which is the instant an atomic replace hides in.
+ * Consecutive confirmed-absent re-reads a tracked path needs before its tab may
+ * close. The watcher's own diff is not one of them: it reports what was true
+ * when the scan listed the directory, which is the instant an atomic replace
+ * hides in. A re-read that could not answer breaks the run rather than counting
+ * toward it, because an unreadable filesystem is not evidence of a deletion.
  */
-const confirmedAbsenceObservations = 1;
+const confirmedAbsenceObservations = 2;
+
+/**
+ * How long a path first missed mid-session must stay missing before its tab may
+ * close.
+ *
+ * Nothing in this process attributes an outside writer's replace: a second
+ * Threadleaf, a Syncthing conflict resolution, and an editor that unlinks
+ * before rewriting all leave the file genuinely absent for the width of their
+ * own gap, and the kernel's claim registry knows nothing about any of them. The
+ * only thing that separates that gap from a deletion is whether the file comes
+ * back, so the answer is a window wide enough to contain a replace and narrow
+ * enough that a real deletion still closes its tab while the user is watching.
+ * Both boundaries are asserted: a replace up to this wide keeps the tab, and a
+ * genuine deletion closes within roughly this plus one debounce.
+ */
+export const transientAbsenceSettleMs = 1500;
 
 /**
  * Follow-up scans one unconfirmed absence may ask for. Confirmation normally
  * needs one, so the cap only bounds the pathological case where a long write
- * holds a file aside: those resolve from the write's own install event instead
+ * holds a file aside, or a filesystem that cannot answer at all: those resolve
+ * from the write's own install event, or from the deferred wake below, instead
  * of from a scan loop running at the debounce rate for the whole hold.
  */
 const maximumAbsenceFollowUpScans = 8;
@@ -156,12 +182,16 @@ const maximumAbsenceFollowUpScans = 8;
 interface UnconfirmedAbsence {
   /** Reconcile pass that first observed it; confirmation waits for a later one. */
   pass: number;
-  /** Re-reads that found the path genuinely absent. */
+  /** Consecutive re-reads that found the path genuinely absent. */
   absentObservations: number;
   /** Re-reads that could not tell, which never count toward confirmation. */
   indeterminateObservations: number;
+  /** Whether the last re-read failed to answer, so the run has to start over. */
+  lastReadIndeterminate: boolean;
   /** Follow-up scans requested so far, against the cap. */
   followUpScans: number;
+  /** Clock reading before which this absence may not close a tab. */
+  settleUntil: number;
 }
 
 interface WorkspaceIndexProjection {
@@ -792,6 +822,15 @@ export class WorkspaceRuntime {
    */
   readonly #retainedNotes = new Map<string, WorkspaceNoteSnapshot>();
   #reconcilePass = 0;
+  readonly #now: () => number;
+  /**
+   * One timer for the whole runtime, set for the earliest settle window still
+   * running. The follow-up budget only reaches a few hundred milliseconds past
+   * an absence, so without this a window wider than the budget would be waiting
+   * on unrelated vault activity to be looked at again - which for a deletion on
+   * an otherwise idle vault never arrives.
+   */
+  #absenceWake: { at: number; timer: ReturnType<typeof setTimeout> } | null = null;
   readonly #listeners = new Set<SnapshotListener>();
   readonly #releaseActions: Array<() => void> = [];
 
@@ -822,7 +861,9 @@ export class WorkspaceRuntime {
     workspacePersistedState: PersistedWorkspaceState | null | undefined,
     workspaceLoadWarning: string | null,
     workspaceSettings: VaultWorkspaceSettings,
+    now: () => number = Date.now,
   ) {
+    this.#now = now;
     this.actions = actions;
     this.kernel = kernel;
     this.watcher = watcher;
@@ -1013,6 +1054,7 @@ export class WorkspaceRuntime {
       workspaceStateReadable ? persistedWorkspace : undefined,
       workspaceLoadWarning,
       workspaceSettings,
+      options.now ?? Date.now,
     );
 
     if (restoredWorkspace) {
@@ -1896,6 +1938,7 @@ export class WorkspaceRuntime {
   }
 
   async close(): Promise<void> {
+    this.clearAbsenceWake();
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
@@ -2941,8 +2984,16 @@ export class WorkspaceRuntime {
    * the projection decides from the index; and a failed stat on this path would
    * reject the whole batch. Confirmation belongs on a later pass, alone, where
    * settling also drops whatever the workspace has stopped tracking.
+   *
+   * `settleMs` carries which kind of absence this is, because that is decided by
+   * whoever noticed and cannot be recovered later: a path the vault was observed
+   * losing gets the replace window, and a path that was already missing when the
+   * session opened gets the wider one.
    */
-  private recordUnconfirmedAbsence(filePath: string): boolean {
+  private recordUnconfirmedAbsence(
+    filePath: string,
+    settleMs: number = transientAbsenceSettleMs,
+  ): boolean {
     if (this.#unconfirmedAbsences.has(filePath)) {
       return false;
     }
@@ -2950,7 +3001,9 @@ export class WorkspaceRuntime {
       pass: this.#reconcilePass,
       absentObservations: 0,
       indeterminateObservations: 0,
+      lastReadIndeterminate: false,
       followUpScans: 0,
+      settleUntil: this.#now() + settleMs,
     });
     return true;
   }
@@ -2965,12 +3018,61 @@ export class WorkspaceRuntime {
   }
 
   /**
+   * Keep one timer set for the earliest settle window still running.
+   *
+   * The look that closes a tab has to happen after the window, and the follow-up
+   * budget is spent long before a wide one ends. A vault with nothing happening
+   * on it produces no batches of its own, so this is the only thing that brings
+   * a confirmed deletion to an end there.
+   */
+  private armAbsenceWake(): void {
+    let earliest: number | null = null;
+    const now = this.#now();
+    for (const absence of this.#unconfirmedAbsences.values()) {
+      if (absence.settleUntil > now && (earliest === null || absence.settleUntil < earliest)) {
+        earliest = absence.settleUntil;
+      }
+    }
+    if (earliest === null) {
+      this.clearAbsenceWake();
+      return;
+    }
+    if (this.#absenceWake && this.#absenceWake.at <= earliest) {
+      return;
+    }
+    this.clearAbsenceWake();
+    const timer = setTimeout(
+      () => {
+        this.#absenceWake = null;
+        this.watcher.requestFollowUpScan();
+      },
+      Math.max(1, earliest - now),
+    );
+    timer.unref?.();
+    this.#absenceWake = { at: earliest, timer };
+  }
+
+  private clearAbsenceWake(): void {
+    if (this.#absenceWake) {
+      clearTimeout(this.#absenceWake.timer);
+      this.#absenceWake = null;
+    }
+  }
+
+  /**
    * Close tabs for absences that are now confirmed.
    *
-   * Confirmation costs one further reconcile pass, which is what bounds the extra
-   * latency a real deletion pays. An absence a write transaction still owns is
-   * not eligible at all: its file is coming back by construction. A re-read that
-   * fails is not evidence of anything, so it keeps the protection and retries.
+   * An absence a write transaction still owns is not eligible at all: its file is
+   * coming back by construction. A re-read that fails is not evidence of
+   * anything, so it keeps the protection and retries. Everything else has to
+   * clear two independent bars before a tab may close: a run of consecutive
+   * re-reads that all found the path gone, and a settle window measured on the
+   * clock rather than in passes.
+   *
+   * The window is what covers the writers this process cannot attribute. Passes
+   * alone cannot: how many of them fit inside an outside writer's replace depends
+   * on how loaded the machine is, so a pass count that survives a replace on an
+   * idle machine closes the tab on a busy one. The clock does not move with load.
    */
   private async settleUnconfirmedAbsences(): Promise<boolean> {
     if (this.#unconfirmedAbsences.size === 0) {
@@ -3000,17 +3102,31 @@ export class WorkspaceRuntime {
       } catch {
         // Indeterminate, not absent. Dropping the protection here would close the
         // tab, because the index has already lost the path, so an unreadable
-        // filesystem would decide something it has no answer for.
+        // filesystem would decide something it has no answer for. It also breaks
+        // the run: reads that could not answer are not a reason to believe the
+        // ones around them were about the same state.
         absence.indeterminateObservations += 1;
+        absence.absentObservations = 0;
+        absence.lastReadIndeterminate = true;
         followUp = this.requestAbsenceFollowUp(absence) || followUp;
         continue;
+      }
+      if (absence.lastReadIndeterminate) {
+        // The filesystem answered again after failing to. That is the one thing
+        // that makes more scans worth asking for, so the budget starts over
+        // rather than leaving a healed absence stranded on a spent one.
+        absence.lastReadIndeterminate = false;
+        absence.followUpScans = 0;
       }
       if (present) {
         this.#unconfirmedAbsences.delete(filePath);
         continue;
       }
       absence.absentObservations += 1;
-      if (absence.absentObservations >= confirmedAbsenceObservations) {
+      if (
+        absence.absentObservations >= confirmedAbsenceObservations &&
+        this.#now() >= absence.settleUntil
+      ) {
         this.#unconfirmedAbsences.delete(filePath);
         changed = this.removeOpenPath(filePath) || changed;
         continue;
@@ -3020,6 +3136,7 @@ export class WorkspaceRuntime {
     if (followUp) {
       this.watcher.requestFollowUpScan();
     }
+    this.armAbsenceWake();
     return changed;
   }
 
@@ -3090,6 +3207,7 @@ export class WorkspaceRuntime {
     if (armFollowUpScan) {
       this.watcher.requestFollowUpScan();
     }
+    this.armAbsenceWake();
     const retainedPaths =
       trackedMissing.length === 0
         ? availablePaths
