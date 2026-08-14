@@ -44,7 +44,7 @@
   --line-strong: var(--background-modifier-border-hover);
   --accent: var(--interactive-accent);
   --accent-strong: var(--text-accent);
-  --accent-soft: color-mix(in srgb, var(--interactive-accent) 25%, var(--background-primary));
+  --accent-soft: color-mix(in srgb, var(--accent) 25%, var(--background-primary));
   --signal: var(--text-error);
   --signal-soft: var(--background-modifier-error);
   --shadow-small: 0 8px 24px rgb(35 41 48 / 10%);
@@ -91,8 +91,37 @@
  * invalid value. Re-declaring the same formulas here re-evaluates each one at body,
  * where a theme's own tokens reliably reach, instead of leaving them inherited-only
  * from a root scope a theme was never written to support.
+ *
+ * --accent and --accent-strong are deliberately NOT re-declared here. The accessibility
+ * "Accent" preference pins --interactive-accent (and therefore --accent/--accent-strong)
+ * with !important on :root, which :root's own selector syntax can never match on body --
+ * so a theme that sets --interactive-accent directly on body.theme-light/body.theme-dark
+ * (Minimal does; Sanctum and Wikipedia do not) silently wins the accessibility pin's
+ * intended authority the moment --accent/--accent-strong are re-evaluated here,
+ * replacing an accessibility-chosen ink with the theme's own -- and measurably shrinks
+ * the active-row's own border-vs-background redundant cue when both derive from the
+ * same accent. Leaving --accent/--accent-strong inherited-only from :root keeps the
+ * accessibility pin authoritative for every theme, matching its pre-existing behavior.
+ * --accent-soft and --interactive have the identical exposure through their own
+ * var(--interactive-accent): both stay re-declared here (--accent-soft's
+ * --background-primary half genuinely needs to be theme-aware, which is the entire
+ * Sanctum fix below, and --interactive is this file's own compat mapping), but both
+ * read var(--accent) instead of var(--interactive-accent) so their accent half
+ * inherits the same pinned value --accent itself would, rather than re-opening the
+ * same leak one property over.
+ *
+ * The same shape of conflict applies to the accessibility "High contrast" preference,
+ * which pins this same set of canvas, surface, ink, line, and signal tokens with
+ * !important on :root[data-threadleaf-high-contrast="true"] using literal, theme-
+ * independent colours. Because :root can only ever match html, a plain `body {}`
+ * re-declaration of those same names would win on body regardless of that
+ * !important, the same direct-declaration-beats-inheritance gap as above, silently
+ * replacing a carefully chosen stark colour with an ordinary themed one. High
+ * contrast's own values never depend on a theme's variables, so they carry no
+ * poisoning risk to begin with; gate this block to stand down whenever high
+ * contrast is active and let its :root values inherit through undisturbed.
  */
-body {
+html:not([data-threadleaf-high-contrast="true"]) body {
   --icon-color: var(--text-muted);
   --canvas: var(--background-secondary);
   --surface: var(--background-primary);
@@ -103,10 +132,8 @@ body {
   --ink-muted: var(--text-faint);
   --line: var(--background-modifier-border);
   --line-strong: var(--background-modifier-border-hover);
-  --accent: var(--interactive-accent);
-  --accent-strong: var(--text-accent);
-  --accent-soft: color-mix(in srgb, var(--interactive-accent) 25%, var(--background-primary));
-  --interactive: var(--interactive-accent);
+  --accent-soft: color-mix(in srgb, var(--accent) 25%, var(--background-primary));
+  --interactive: var(--accent);
   --signal: var(--text-error);
   --signal-soft: var(--background-modifier-error);
   --mono: var(--font-monospace);
