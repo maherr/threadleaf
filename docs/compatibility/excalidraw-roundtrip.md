@@ -75,16 +75,29 @@ the authority grant from Threadleaf's own catalog, then exercises:
 3. new drawing creation and Markdown embed insertion;
 4. the unchanged plugin's SVG and PNG vault-export controls plus byte checks;
 5. note switching;
-6. plugin unload and reload;
-7. clean application restart; and
-8. source-byte and attachment-manifest checks after restart.
+6. application settings open and close while the drawing is active, followed by the unchanged
+   plugin's own options page;
+7. native pop-out detach and reattach, including main and detached renderer responsiveness and
+   toolbar/chrome ownership;
+8. a forced pop-out renderer crash, degraded-state recovery, and stale pop-out cleanup;
+9. a vault switch from a detached drawing and return to the original vault;
+10. plugin unload and reload;
+11. clean application restart; and
+12. source-byte and attachment-manifest checks after restart.
 
 The draw/edit step sends a real canvas gesture through CDP and then uses the deterministic source
-save to set the expected text element. The export step invokes the unchanged plugin's public
+save to set the expected text element. Settings, pop-out, vault-switch, and reattach controls use
+real CDP pointer and keyboard events. The export step invokes the unchanged plugin's public
 `export-image` command, selects its `PNG to Vault` and `SVG to Vault` controls, and validates the
 resulting public-format bytes in the copied vault. Dark and light screenshots are captured from
-both the native renderer and the plugin renderer. A magenta outline positive control must change
-captured pixels before the screenshots are considered instrumented.
+the native renderer and both attached and detached plugin renderers. Main and detached surfaces
+each have an independent visual positive control that must change captured pixels before the
+screenshots are considered instrumented. The gate records requestAnimationFrame response times
+and fails any surface that does not respond within one second.
+
+Chromium's optional CDP `Page.crash` command is attempted for the compatibility renderer. When it
+does not expose a failed plugin state safely, the gate records that limitation and continues after
+an ordinary plugin reload; the native pop-out crash and degraded recovery remain mandatory.
 Set `THREADLEAF_EXCALIDRAW_SCREENSHOT_DIR` to retain the PNG evidence.
 
 The unchanged 2.25.3 plugin now passes this complete packaged workflow on the Linux gate. The host
