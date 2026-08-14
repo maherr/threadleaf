@@ -854,6 +854,7 @@ async function runElectron(fixture, mode, index, userDataPath, resetUserData = f
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
+      "--password-store=basic",
       ".",
     ],
     {

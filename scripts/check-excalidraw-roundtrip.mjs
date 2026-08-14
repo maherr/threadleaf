@@ -384,6 +384,7 @@ async function startApp(port, pluginState) {
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
+      "--password-store=basic",
       ".",
     ],
     {

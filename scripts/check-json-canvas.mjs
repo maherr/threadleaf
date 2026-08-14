@@ -160,6 +160,7 @@ async function launch() {
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
+      "--password-store=basic",
       ".",
     ],
     {

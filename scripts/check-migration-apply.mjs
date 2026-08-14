@@ -296,6 +296,7 @@ async function launchApplication(options = {}) {
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${profilePath}`,
       "--disable-gpu",
+      "--password-store=basic",
       ".",
     ],
     {

@@ -112,6 +112,7 @@ try {
       ...(targetPlatform === "linux"
         ? ["--no-sandbox", "--disable-gpu", "--ozone-platform=x11"]
         : []),
+      "--password-store=basic",
       probePath,
     ];
     const child = spawn(electron, electronArguments, {

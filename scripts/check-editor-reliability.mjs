@@ -366,6 +366,7 @@ try {
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
+      "--password-store=basic",
       ".",
     ],
     {
