@@ -38,7 +38,7 @@
     },
     "sanctum": {
       "status": "pending",
-      "reason": "Untested: the live runner aborts per-theme on the first failure, and Wikipedia (processed before Sanctum in manifest theme order) already fails, so Sanctum has never been reached by a live run against current main."
+      "reason": "Blocked on its own product finding: section-heading vs signal-accent measures CIEDE2000 0.00 under Machado deuteranomaly (light-laptop case), both colours [0,0,0]. Sanctum sets --color-accent: var(--interactive), and --interactive does not resolve in Threadleaf's light cascade, so every accent-derived colour collapses to black. This is unrelated to Wikipedia (a separate, independent finding, not a downstream effect of it) and unrelated to the accent-soft light-scheme fix: Sanctum additionally needs the --interactive compatibility variable resolved before it can be re-shot."
     }
   },
   "cases": {

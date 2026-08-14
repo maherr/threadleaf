@@ -1,6 +1,6 @@
 # Community theme visual matrix v1
 
-**Last updated:** 2026-08-14T07:55:34-04:00
+**Last updated:** 2026-08-14T08:23:15-04:00
 
 This is a contained-loader compatibility fixture, not a theme store. The matrix uses three
 permissively licensed, open community themes that exercise different CSS shapes. The raw CSS,
@@ -100,19 +100,26 @@ redundantDe=<value>` and folded into that case's `deutan` audit JSON in the run 
 **The declared redundant cue.** For `active-file-background`/`inactive-file-background`, the
 redundant cue is the active row's own border colour against its own background
 (`active-file-border`/`active-file-background`), the row's real accent-mixed distinguishing
-signal.
+signal. A border still computes a colour under `border-style: none` or a zero width even though
+nothing is actually painted, so a cue that carries border geometry is rejected unless
+`borderStyle !== "none"` and `borderWidth > 0`: an invisible border can never rescue a thin pair.
 
-**Recorded case: Minimal, dark laptop.** Minimal's own upstream default accent (`hue 201° /
-saturation 17% / lightness 50%`, unmodified) is deliberately low-chroma, part of the theme's own
-minimalist design, not a Threadleaf or loader defect. Threadleaf's `--accent-soft` token blends
-only 14% of that already-low-chroma accent into the background, so `active-file-background` vs
-`inactive-file-background` measures CIEDE2000 8.73 for Minimal's dark scheme (inside the thin
-band). The declared redundant cue (the active row's border against its own background) measures
-15.04, clearing 11, so the case passes and is recorded as a thin-pass in the run receipt:
+**Recorded case: Minimal, dark laptop.** `active-file-background` vs `inactive-file-background`
+measures CIEDE2000 8.73 for Minimal's dark scheme (inside the thin band). This number is
+**theme-invariant in dark scheme**, not a consequence of Minimal's low-chroma accent: Wikipedia,
+whose `theme.css` defines no accent override at all, measures the identical 8.73 (and an identical
+15.04 redundant cue) for the same pair in dark scheme, and Sanctum's dark-laptop case measures the
+same 8.73/15.04 again (see the Sanctum finding below). All three themes are exercising Threadleaf's
+own dark-scheme `--accent-soft` baseline unchanged. The declared redundant cue (the active row's
+border against its own background) measures 15.04, clearing 11, so the case passes and is recorded
+as a thin-pass in the run receipt:
 `COMMUNITY_THEME_THIN_PASS minimal dark-laptop pair=active-file-background/inactive-file-background
 dE=8.73 redundantCue=active-file-border/active-file-background redundantDe=15.04`. All five of
 Minimal's cases pass this way or clear the tier outright; see
-[Live verification status](#live-verification-status) for the full receipt block.
+[Live verification status](#live-verification-status) for the full receipt block. Light scheme, by
+contrast, is not theme-invariant: it depends on each theme's own `--interactive-accent` and
+`--background-primary`, which is exactly why Minimal's light cases (7.02-7.53) and Wikipedia's
+light-laptop case (6.65, below) land on different sides of the hard-fail floor.
 
 **Recorded finding: Wikipedia, light laptop, below the hard floor.** Not every failure lands in
 the thin band. Wikipedia's `light-laptop` case measures CIEDE2000 6.65 for the same pair, under
@@ -123,12 +130,23 @@ so this is not a Wikipedia-specific quirk: it is Threadleaf's own default, unthe
 measured colours, same CIEDE2000) across two independent live runs. See
 [Live verification status](#live-verification-status).
 
+**Recorded finding: Sanctum, light laptop, a second and unrelated categorical collapse.**
+Sanctum's `light-laptop` case fails independently of Wikipedia's finding above, on a different
+pair and a different root cause: `section-heading` vs `signal-accent` measures CIEDE2000 0.00,
+both colours read as `[0,0,0]`. Sanctum's `theme.css` sets `--color-accent: var(--interactive)`,
+and `--interactive` is not a variable Threadleaf's compatibility layer publishes, so it never
+resolves; every colour derived from it collapses to black in Threadleaf's light cascade. This is
+not a downstream effect of the Wikipedia finding and not fixed by the same accent-soft change: it
+needs the `--interactive` compatibility variable resolved, a distinct product fix. See
+[Live verification status](#live-verification-status).
+
 **Known limitation, not fixed here.** `--accent-soft`'s fixed 14% mix is a single token used
 across roughly five dozen places in `src/renderer/styles.css`; strengthening it app-wide for
 low-chroma accents and thin light-scheme contrast is a design decision outside this compatibility
-matrix's scope. A separate lane, landing after this one, owns that product fix together with
-adding the default (no community theme) appearance as a first-class matrix subject so a gap like
-this cannot hide again.
+matrix's scope. That fix alone does not complete this matrix: Sanctum's finding is a separate gap
+(the unresolved `--interactive` compatibility variable) requiring its own fix. Both land in a
+separate lane after this one, together with adding the default (no community theme) appearance as
+a first-class matrix subject so a gap like either of these cannot hide again.
 
 The offline integrity route does not inspect the developer cache or require Xvfb:
 
@@ -159,7 +177,7 @@ structural validity does not depend on live-capture status.
 | --- | --- | --- |
 | Minimal | **Verified** | All five cases pass against current main; see the receipt block and stability evidence below. |
 | Wikipedia | **Pending** | Blocked on the recorded product finding above (CIEDE2000 6.65, light-laptop, under the 7 hard-fail floor). Not a Wikipedia-specific defect: its `theme.css` sets neither `--interactive-accent` nor `--background-primary`. Its four existing baseline PNGs (from the prior salvage snapshot) are structurally valid and hash-checked, but not proven against current main's live rendering. |
-| Sanctum | **Pending** | Untested. The live runner aborts per-theme on the first failure; Wikipedia is processed before Sanctum in manifest theme order and already fails, so Sanctum has never been reached by a live run against current main. Its existing baseline PNGs are likewise structurally valid but unproven. |
+| Sanctum | **Pending** | Blocked on its own recorded product finding above (CIEDE2000 0.00, `section-heading` vs `signal-accent`, light-laptop): `--color-accent: var(--interactive)` never resolves in Threadleaf's light cascade. Independent of the Wikipedia finding, not fixed by the same accent-soft change. Its four existing baseline PNGs (from the prior salvage snapshot) are structurally valid and hash-checked, but not proven against current main's live rendering. |
 
 Minimal's five-case receipt, identical across the two independent live runs described below:
 

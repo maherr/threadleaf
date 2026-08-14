@@ -633,11 +633,26 @@ function iteratePairs(pairs, category) {
   return entries;
 }
 
+// A CSS border-color still computes to a real value under border-style: none or a zero width; the
+// colour exists but nothing is actually painted. Any cue member that declares border geometry must
+// prove it is visible before its colour can count as a redundant cue.
+function assertCuePainted(member, forPairLabel) {
+  if (member.borderStyle === undefined && member.borderWidth === undefined) return;
+  assert(
+    member.borderStyle !== "none" && Number.parseFloat(member.borderWidth) > 0,
+    `Thin pair ${forPairLabel} declared a redundant cue member ${member.label} with no painted ` +
+      `border (borderStyle=${JSON.stringify(member.borderStyle)}, ` +
+      `borderWidth=${JSON.stringify(member.borderWidth)}); an invisible border cannot rescue a thin pair.`,
+  );
+}
+
 function evaluateRedundantCue(cue, forPairLabel) {
   assert(
     cue?.left?.label && cue?.right?.label && cue.left.colour && cue.right.colour,
     `Thin pair ${forPairLabel} declared a redundant cue with no labelled colours.`,
   );
+  assertCuePainted(cue.left, forPairLabel);
+  assertCuePainted(cue.right, forPairLabel);
   const distances = pairwiseDeutanDistance(cue.left.colour, cue.right.colour);
   const measuredDe = Math.min(...Object.values(distances));
   return { pair: `${cue.left.label}/${cue.right.label}`, measuredDe };
@@ -1145,7 +1160,12 @@ async function probeCues() {
       ],
       redundantCues: {
         'active-file-background/inactive-file-background': {
-          left: { label: 'active-file-border', colour: activeStyle.borderColor },
+          left: {
+            label: 'active-file-border',
+            colour: activeStyle.borderColor,
+            borderStyle: activeStyle.borderStyle,
+            borderWidth: activeStyle.borderWidth,
+          },
           right: { label: 'active-file-background', colour: activeStyle.backgroundColor },
         },
       },
@@ -1662,7 +1682,12 @@ function assertStaticColourControls(manifest) {
     ],
     redundantCues: {
       [thinPairLabel]: {
-        left: { label: "community:thin-border", colour: [0.05, 0.05, 0.05] },
+        left: {
+          label: "community:thin-border",
+          colour: [0.05, 0.05, 0.05],
+          borderStyle: "solid",
+          borderWidth: "3px",
+        },
         right: { label: "community:thin-active", colour: [0.95, 0.95, 0.95] },
       },
     },
@@ -1697,6 +1722,23 @@ function assertStaticColourControls(manifest) {
       categorical: validColours.categorical,
       thinState: thinWithCue.thinState,
       // redundantCues intentionally omitted: the ~9.0 measurement must fail closed.
+    },
+    "thin-state 7-11 with an unpainted cue": {
+      categorical: validColours.categorical,
+      thinState: thinWithCue.thinState,
+      redundantCues: {
+        [thinPairLabel]: {
+          // Same colours as the accepted positive-control cue (~92.0 separation), but
+          // border-style: none: nothing is actually painted, so this must still fail closed.
+          left: {
+            label: "community:thin-border",
+            colour: [0.05, 0.05, 0.05],
+            borderStyle: "none",
+            borderWidth: "3px",
+          },
+          right: { label: "community:thin-active", colour: [0.95, 0.95, 0.95] },
+        },
+      },
     },
   };
   for (const [label, rejected] of Object.entries(rejectedCases)) {
