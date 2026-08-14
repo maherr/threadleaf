@@ -112,14 +112,19 @@ describe("search text projection scale", () => {
     expect(long).toBeLessThan(Math.max(short * 4, 50));
   });
 
-  it("keeps foldSearchText near-linear at 16k/32k/64k character scales", () => {
+  it("keeps foldSearchText near-linear at 16k/64k character scales", () => {
     // Every grapheme here does a pinned case-folding table lookup (and, for
     // É, Latin-diacritic stripping); a per-character Map lookup keeps
     // this linear, but an accidental O(n^2) scan (e.g. repeated string
     // concatenation or a rescan per grapheme) would show up as a growing
-    // per-unit cost well before one million units.
-    measureFoldSearchText(16_384);
-    const shortRuns = Array.from({ length: 3 }, () => measureFoldSearchText(32_768));
+    // per-unit cost well before one million units. The short/long sizes
+    // below are a 4x step (16k vs 64k, after a smaller untimed warmup), so
+    // a quadratic cost predicts roughly a 16x increase -- clearly over the
+    // 4x ceiling. A 2x step (e.g. 32k vs 64k) only predicts a ~4x increase
+    // for a quadratic, which is indistinguishable from the ceiling itself
+    // under ordinary timing noise.
+    measureFoldSearchText(4_096);
+    const shortRuns = Array.from({ length: 3 }, () => measureFoldSearchText(16_384));
     const longRuns = Array.from({ length: 3 }, () => measureFoldSearchText(65_536));
     const short = Math.min(...shortRuns);
     const long = Math.min(...longRuns);
@@ -127,9 +132,12 @@ describe("search text projection scale", () => {
     expect(long).toBeLessThan(Math.max(short * 4, 50));
   });
 
-  it("keeps projectSearchText's per-grapheme case folding near-linear at 16k/32k/64k character scales", () => {
-    measureCaseFoldingProjection(16_384);
-    const shortRuns = Array.from({ length: 3 }, () => measureCaseFoldingProjection(32_768));
+  it("keeps projectSearchText's per-grapheme case folding near-linear at 16k/64k character scales", () => {
+    // Same 4x short/long step as the foldSearchText scale test above, for the same reason: a
+    // quadratic cost predicts roughly a 16x increase against these sizes, clearly over the 4x
+    // ceiling, where a 2x step would not reliably distinguish it from noise.
+    measureCaseFoldingProjection(4_096);
+    const shortRuns = Array.from({ length: 3 }, () => measureCaseFoldingProjection(16_384));
     const longRuns = Array.from({ length: 3 }, () => measureCaseFoldingProjection(65_536));
     const short = Math.min(...shortRuns);
     const long = Math.min(...longRuns);
