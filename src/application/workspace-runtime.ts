@@ -1,7 +1,11 @@
 import moment, { type Moment } from "moment";
 import { SearchQueryError } from "../kernel/full-text-search";
 import { type DocumentMetadataSnapshot, VaultIndexReactor } from "../kernel/metadata-index";
-import { captureVaultBootstrap, NodeVaultWatcher } from "../kernel/node-vault-watcher";
+import {
+  captureVaultBootstrap,
+  NodeVaultWatcher,
+  watchedPathExists,
+} from "../kernel/node-vault-watcher";
 import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
 import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
 import type {
@@ -10,7 +14,7 @@ import type {
   VaultRenameResult,
   VaultWriteResult,
 } from "../kernel/ports";
-import { VaultKernel } from "../kernel/vault-kernel";
+import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
@@ -123,6 +127,12 @@ export interface WorkspaceRuntimeOptions {
   beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>;
   workspaceSettings?: VaultWorkspaceSettings;
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings;
+  /**
+   * Test seam. Forwarded verbatim to the vault kernel so a test can suspend a
+   * write transaction at a named fault point and drive the watcher through the
+   * window it opens. Production callers leave it unset.
+   */
+  faultInjector?: KernelFaultInjector;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -740,6 +750,15 @@ export class WorkspaceRuntime {
   #lastRescanReason: string | null = null;
   #indexProjection: WorkspaceIndexProjection | null = null;
   #visibleVaultFiles: { sequence: number; promise: Promise<readonly string[]> } | null = null;
+  /**
+   * Paths the watcher reported missing that the workspace has not yet accepted
+   * as gone, each against the reconcile pass that observed it. Closing a tab is
+   * not reversible, and both the kernel and outside writers replace a file by
+   * renaming it aside and renaming a replacement in, so an observed deletion has
+   * to survive a later look before it may close anything.
+   */
+  readonly #unconfirmedAbsences = new Map<string, number>();
+  #reconcilePass = 0;
   readonly #listeners = new Set<SnapshotListener>();
   readonly #releaseActions: Array<() => void> = [];
 
@@ -905,12 +924,14 @@ export class WorkspaceRuntime {
     const kernel = await VaultKernel.open({
       vaultRoot: options.vaultRoot,
       stateRoot: options.stateRoot,
+      ...(options.faultInjector ? { faultInjector: options.faultInjector } : {}),
     });
     await options.beforeWorkspaceStateRestore?.(kernel.vaultId);
     let runtime: WorkspaceRuntime | undefined;
     const bootstrap = await captureVaultBootstrap(kernel.paths);
     const watcher = NodeVaultWatcher.fromSnapshot(kernel.paths, bootstrap.snapshot, {
       onError: (error) => runtime?.recordWatcherError(error),
+      transientAbsences: kernel.transientAbsences,
     });
     const indexReactor = await VaultIndexReactor.fromSnapshotsAsync(kernel, bootstrap.documents);
     bootstrap.documents.length = 0;
@@ -1825,6 +1846,13 @@ export class WorkspaceRuntime {
     const batch = await this.watcher.scanNow();
     if (batch) {
       await this.handleWatchBatch(batch, false);
+    } else {
+      // A scan with nothing to report is still a look at the vault, and it is the
+      // look that confirms an absence observed on the pass before it.
+      this.#reconcilePass += 1;
+      if (await this.settleUnconfirmedAbsences()) {
+        await this.persistWorkspaceStateBestEffort();
+      }
     }
     return this.getSnapshot();
   }
@@ -1835,6 +1863,7 @@ export class WorkspaceRuntime {
   }
 
   async close(): Promise<void> {
+    this.#unconfirmedAbsences.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
     for (const release of this.#releaseActions.reverse()) {
       release();
@@ -2803,17 +2832,31 @@ export class WorkspaceRuntime {
 
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
     this.#visibleVaultFiles = null;
+    this.#reconcilePass += 1;
+    // The metadata index keeps applying deletions as they are observed. During a
+    // transient absence the file really is missing, so removing it keeps the
+    // index honest about the vault, and the upsert that follows refreshes it. The
+    // opposite choice would leave the index claiming a document whose bytes
+    // cannot be read, which turns a lost tab into a failing snapshot.
     const result = await this.indexReactor.accept(batch);
     let workspaceChanged = false;
     if (result.mode === "incremental") {
       for (const change of batch.changes) {
         if (change.kind === "move") {
+          this.#unconfirmedAbsences.delete(change.from);
+          this.#unconfirmedAbsences.delete(change.to);
           workspaceChanged = this.moveOpenPath(change.from, change.to) || workspaceChanged;
-        } else if (change.kind === "delete") {
-          workspaceChanged = this.removeOpenPath(change.path) || workspaceChanged;
+        } else if (change.kind === "upsert") {
+          this.#unconfirmedAbsences.delete(change.state.path);
+        } else {
+          workspaceChanged = (await this.deferOrCloseAbsentPath(change)) || workspaceChanged;
         }
       }
     }
+    // A rebuild carries no per-path deletions, so it records nothing new. What it
+    // does not do is settle an absence already outstanding: that still resolves
+    // below, by the same re-read every other absence goes through.
+    workspaceChanged = (await this.settleUnconfirmedAbsences()) || workspaceChanged;
     if (workspaceChanged) {
       await this.persistWorkspaceStateBestEffort();
     }
@@ -2822,6 +2865,94 @@ export class WorkspaceRuntime {
     if (publish) {
       await this.publishSnapshot();
     }
+  }
+
+  /** Whether any pane holds this path as a tab or in its navigation history. */
+  private tracksWorkspacePath(filePath: string): boolean {
+    return this.#panes.some(
+      (pane) =>
+        pane.openPaths.includes(filePath) ||
+        pane.navigationHistory?.back.includes(filePath) === true ||
+        pane.navigationHistory?.forward.includes(filePath) === true,
+    );
+  }
+
+  private vaultPathExists(filePath: string): Promise<boolean> {
+    return watchedPathExists(this.kernel.paths, filePath);
+  }
+
+  /**
+   * Record an observed deletion instead of acting on it.
+   *
+   * Nothing reopens a tab when the replacement lands one scan later, so a path
+   * this workspace is tracking may not be closed on a single observation. A path
+   * it does not track needs no protection: removing it would be a no-op.
+   */
+  private async deferOrCloseAbsentPath(change: {
+    path: string;
+    transientOperationId?: string;
+  }): Promise<boolean> {
+    const filePath = change.path;
+    if (!this.tracksWorkspacePath(filePath)) {
+      this.#unconfirmedAbsences.delete(filePath);
+      return false;
+    }
+    if (change.transientOperationId === undefined && (await this.vaultPathExists(filePath))) {
+      // The replacement already landed; the scan had simply caught the seam of
+      // an atomic replace. There is nothing to reconcile and nothing to wait for.
+      // An attributed absence skips the question: its transaction is still
+      // holding the file aside, so the answer is known.
+      this.#unconfirmedAbsences.delete(filePath);
+      return false;
+    }
+    this.#unconfirmedAbsences.set(filePath, this.#reconcilePass);
+    this.watcher.requestFollowUpScan();
+    return false;
+  }
+
+  /**
+   * Close tabs for absences that are now confirmed.
+   *
+   * Confirmation costs one further reconcile pass, which is what bounds the extra
+   * latency a real deletion pays. An absence a write transaction still owns is
+   * not eligible at all: its file is coming back by construction.
+   */
+  private async settleUnconfirmedAbsences(): Promise<boolean> {
+    if (this.#unconfirmedAbsences.size === 0) {
+      return false;
+    }
+    let changed = false;
+    let stillUnconfirmed = false;
+    for (const [filePath, observedPass] of [...this.#unconfirmedAbsences]) {
+      if (observedPass >= this.#reconcilePass) {
+        stillUnconfirmed = true;
+        continue;
+      }
+      if (this.kernel.transientAbsences.operationFor(filePath) !== undefined) {
+        // A write transaction is holding this path aside right now, so its file
+        // is coming back by construction. Whether that is the transaction which
+        // opened the absence or a later one does not change the answer.
+        stillUnconfirmed = true;
+        continue;
+      }
+      let present: boolean;
+      try {
+        present = await this.vaultPathExists(filePath);
+      } catch {
+        // The path can be neither confirmed nor denied. Drop the protection and
+        // leave the outcome to the snapshot reconciliation, as before this guard.
+        this.#unconfirmedAbsences.delete(filePath);
+        continue;
+      }
+      this.#unconfirmedAbsences.delete(filePath);
+      if (!present) {
+        changed = this.removeOpenPath(filePath) || changed;
+      }
+    }
+    if (stillUnconfirmed) {
+      this.watcher.requestFollowUpScan();
+    }
+    return changed;
   }
 
   private recordWatcherError(error: unknown): void {
@@ -2872,33 +3003,60 @@ export class WorkspaceRuntime {
     }
     const { documents, backlinks, files } = projection;
     const availablePaths = new Set([...documents.keys(), ...canvasPaths]);
-    const reconciledPanes = this.#panes.map((pane) => {
-      const openPaths = pane.openPaths.filter((filePath) => availablePaths.has(filePath));
-      const activePath =
-        pane.activePath && openPaths.includes(pane.activePath)
-          ? pane.activePath
-          : (openPaths.at(-1) ?? null);
-      const navigationHistory = navigationHistoryForPaths(
-        pane.navigationHistory,
-        availablePaths,
-        activePath,
-      );
-      return {
-        id: pane.id,
-        openPaths,
-        pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
-        activePath,
-        ...(navigationHistory ? { navigationHistory } : {}),
-      };
-    });
+    const projectPanes = (available: ReadonlySet<string>) =>
+      this.#panes.map((pane) => {
+        const openPaths = pane.openPaths.filter((filePath) => available.has(filePath));
+        const activePath =
+          pane.activePath && openPaths.includes(pane.activePath)
+            ? pane.activePath
+            : (openPaths.at(-1) ?? null);
+        const navigationHistory = navigationHistoryForPaths(
+          pane.navigationHistory,
+          available,
+          activePath,
+        );
+        return {
+          id: pane.id,
+          openPaths,
+          pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
+          activePath,
+          ...(navigationHistory ? { navigationHistory } : {}),
+        };
+      });
+    // An unconfirmed absence pulls the two projections apart. The published one
+    // drops the path because its bytes genuinely cannot be read yet, and index
+    // membership is no proof otherwise: a committed write refreshes the index
+    // directly, so a document can be listed while a later write holds its file
+    // aside. The written-back one keeps the path, because this write back is what
+    // makes a dropped tab permanent and the file has not been confirmed gone.
+    const reconciledPanes = projectPanes(
+      this.#unconfirmedAbsences.size === 0
+        ? availablePaths
+        : new Set(
+            [...availablePaths].filter((filePath) => !this.#unconfirmedAbsences.has(filePath)),
+          ),
+    );
+    const retainedPanes =
+      this.#unconfirmedAbsences.size === 0
+        ? reconciledPanes
+        : projectPanes(new Set([...availablePaths, ...this.#unconfirmedAbsences.keys()]));
     const reconciledState = createWorkspaceLayout(
       this.kernel.vaultId,
       reconciledPanes,
       this.#activePaneId,
       this.#splitDirection,
     );
-    if (!workspaceStatesEqual(this.currentWorkspaceState(), reconciledState)) {
-      this.applyWorkspaceState(reconciledState);
+    const retainedState =
+      retainedPanes === reconciledPanes
+        ? reconciledState
+        : createWorkspaceLayout(
+            this.kernel.vaultId,
+            retainedPanes,
+            this.#activePaneId,
+            this.#splitDirection,
+          );
+    if (!workspaceStatesEqual(this.currentWorkspaceState(), retainedState)) {
+      this.applyWorkspaceState(retainedState);
       await this.persistWorkspaceStateBestEffort();
     }
 
