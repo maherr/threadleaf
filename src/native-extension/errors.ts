@@ -8,6 +8,7 @@ export const nativeExtensionErrorCodes = [
   "stale-grant",
   "capability-denied",
   "capability-unavailable",
+  "rate-limited",
   "undeclared-capability",
   "cross-vault",
   "safe-mode",

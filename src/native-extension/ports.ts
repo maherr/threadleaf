@@ -1,5 +1,13 @@
 import type { VaultMutationPort } from "../kernel/ports";
 import { NativeExtensionError } from "./errors";
+import type { NativeNotificationPort } from "./notifications";
+
+export {
+  bindNativeNotificationPort,
+  type NativeNotificationPort,
+  type NativeNotificationSink,
+  nativeNotificationLimits,
+} from "./notifications";
 
 export interface NativeVaultListRequest {
   vaultId: string;
@@ -116,6 +124,7 @@ export interface NativeExtensionPortSet {
   navigation?: NativeExternalNavigationPort;
   editor?: NativeEditorPort;
   workspace?: NativeWorkspacePort;
+  notifications?: NativeNotificationPort;
   subprocess?: NativeSubprocessPort;
   secrets?: NativeSecretsPort;
   dynamicCode?: NativeDynamicCodePort;

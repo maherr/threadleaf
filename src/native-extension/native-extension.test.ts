@@ -9,13 +9,19 @@ import {
   unavailableNetwork,
   undeclaredNetwork,
 } from "../../fixtures/native-extensions/malicious/index";
+import { notificationFixture } from "../../fixtures/native-extensions/notifications/index";
 import { portableSummaryFixture } from "../../fixtures/native-extensions/portable-summary/index";
 import type { VaultMutationPort } from "../kernel/ports";
 import type { NativeExtensionError } from "./errors";
 import { FileNativeExtensionGrantStore, InMemoryNativeExtensionGrantStore } from "./grants";
 import type { NativeExtensionHost } from "./host";
 import { nativeExtensionCapabilityDefinitions, parseNativeExtensionManifest } from "./manifest";
-import { bindNativeVaultPort, type NativeVaultPort } from "./ports";
+import {
+  bindNativeNotificationPort,
+  bindNativeVaultPort,
+  type NativeVaultPort,
+  nativeNotificationLimits,
+} from "./ports";
 import {
   createNativeExtensionTestHost,
   defineNativeExtensionForTest,
@@ -132,6 +138,109 @@ describe("native extension manifest and capability host", () => {
       boundary: "capability-governed",
       grantedCapabilities: ["vault.read", "vault.write"],
     });
+    await host.close();
+  });
+
+  it("delivers the notification fixture only after its exact capability grant", async () => {
+    const fake = fakeVault();
+    const messages: string[] = [];
+    const host = createNativeExtensionTestHost({
+      ports: {
+        vault: fake.port,
+        notifications: bindNativeNotificationPort((message) => {
+          messages.push(message);
+        }),
+      },
+    });
+    const review = host.register(notificationFixture);
+
+    expect(review.capabilities).toEqual(["notifications"]);
+    expect(review.boundaries.notifications).toBe("capability-governed");
+    await expectCode(
+      host.execute(vaultId, "threadleaf.notifications", "Indexed 12 notes."),
+      "grant-required",
+    );
+    await host.grant(vaultId, "threadleaf.notifications");
+    await expect(
+      host.execute(vaultId, "threadleaf.notifications", "Indexed 12 notes."),
+    ).resolves.toEqual({ status: "shown" });
+    expect(messages).toEqual(["Indexed 12 notes."]);
+    await host.close();
+  });
+
+  it("fails closed for undeclared, unavailable, malformed, and rate-limited notifications", async () => {
+    const fake = fakeVault();
+    const unavailableHost = hostWith(fake.port);
+    const unavailable = bundle("notification-unavailable", ["notifications"], async (context) =>
+      context.notifications.show("This must not be delivered."),
+    );
+    unavailableHost.register(unavailable);
+    await unavailableHost.grant(vaultId, "notification-unavailable");
+    await expectCode(
+      unavailableHost.execute(vaultId, "notification-unavailable", undefined),
+      "capability-unavailable",
+    );
+
+    const messages: string[] = [];
+    const host = createNativeExtensionTestHost({
+      ports: {
+        vault: fake.port,
+        notifications: bindNativeNotificationPort((message) => {
+          messages.push(message);
+        }),
+      },
+    });
+    const undeclared = bundle("notification-undeclared", [], async (context) =>
+      context.notifications.show("This must not be delivered."),
+    );
+    host.register(undeclared);
+    await host.grant(vaultId, "notification-undeclared");
+    await expectCode(
+      host.execute(vaultId, "notification-undeclared", undefined),
+      "undeclared-capability",
+    );
+
+    const malformed = bundle("notification-malformed", ["notifications"], async (context) =>
+      context.notifications.show("   "),
+    );
+    host.register(malformed);
+    await host.grant(vaultId, "notification-malformed");
+    await expectCode(host.execute(vaultId, "notification-malformed", undefined), "invalid-request");
+    expect(messages).toEqual([]);
+
+    const perInvocation = bundle(
+      "notification-per-invocation",
+      ["notifications"],
+      async (context) => {
+        for (let index = 0; index < nativeNotificationLimits.maxPerInvocation + 1; index += 1) {
+          await context.notifications.show(`Invocation ${index}`);
+        }
+      },
+    );
+    host.register(perInvocation);
+    await host.grant(vaultId, "notification-per-invocation");
+    await expectCode(
+      host.execute(vaultId, "notification-per-invocation", undefined),
+      "rate-limited",
+    );
+    expect(messages).toHaveLength(nativeNotificationLimits.maxPerInvocation);
+
+    const perWindow = bundle("notification-per-window", ["notifications"], async (context) =>
+      context.notifications.show("Window limited"),
+    );
+    host.register(perWindow);
+    await host.grant(vaultId, "notification-per-window");
+    for (let index = 0; index < nativeNotificationLimits.maxPerWindow; index += 1) {
+      await expect(
+        host.execute(vaultId, "notification-per-window", undefined),
+      ).resolves.toBeUndefined();
+    }
+    await expectCode(host.execute(vaultId, "notification-per-window", undefined), "rate-limited");
+    expect(messages).toHaveLength(
+      nativeNotificationLimits.maxPerInvocation + nativeNotificationLimits.maxPerWindow,
+    );
+
+    await unavailableHost.close();
     await host.close();
   });
 
@@ -436,6 +545,7 @@ describe("native extension capability vocabulary", () => {
       "editor-ui",
       "external-navigation",
       "network",
+      "notifications",
       "secrets",
       "subprocess",
       "vault.read",

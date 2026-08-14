@@ -29,6 +29,7 @@ import {
   verifyNativeExtensionBundle,
   verifyNativeExtensionMarketplaceCatalog,
 } from "./marketplace-trust";
+import { type NativeNotificationPort, nativeNotificationLimits } from "./notifications";
 import type {
   NativeClipboardPort,
   NativeDynamicCodePort,
@@ -116,6 +117,7 @@ export interface NativeExtensionHostPorts {
   navigation?: NativeExternalNavigationPort;
   editor?: NativeEditorPort;
   workspace?: NativeWorkspacePort;
+  notifications?: NativeNotificationPort;
   subprocess?: NativeSubprocessPort;
   secrets?: NativeSecretsPort;
   dynamicCode?: NativeDynamicCodePort;
@@ -330,6 +332,7 @@ export class NativeExtensionHost {
   readonly #safeModes = new Set<string>();
   readonly #active = new Map<string, ActiveInvocation>();
   readonly #diagnostics = new Map<string, string[]>();
+  readonly #notificationHistory = new Map<string, number[]>();
   #closed = false;
 
   constructor(options: NativeExtensionHostOptions) {
@@ -581,6 +584,7 @@ export class NativeExtensionHost {
     };
     this.#registrations.set(manifest.id, registration);
     this.#diagnostics.delete(manifest.id);
+    this.clearNotificationHistory(manifest.id);
     return cloneReview(review);
   }
 
@@ -593,6 +597,7 @@ export class NativeExtensionHost {
       }
     }
     this.#registrations.delete(id);
+    this.clearNotificationHistory(id);
   }
 
   review(extensionId: string): NativeExtensionReview {
@@ -986,6 +991,7 @@ export class NativeExtensionHost {
       ),
     );
     this.#active.clear();
+    this.#notificationHistory.clear();
   }
 
   private assertCurrentDistribution(
@@ -1079,6 +1085,37 @@ export class NativeExtensionHost {
     }
   }
 
+  private clearNotificationHistory(extensionId: string): void {
+    const suffix = `\u0000${extensionId}`;
+    for (const key of this.#notificationHistory.keys()) {
+      if (key.endsWith(suffix)) {
+        this.#notificationHistory.delete(key);
+      }
+    }
+  }
+
+  private consumeNotificationBudget(vaultId: string, extensionId: string): void {
+    const key = this.invocationKey(vaultId, extensionId);
+    const now = Date.now();
+    const recent = (this.#notificationHistory.get(key) ?? []).filter(
+      (timestamp) => now - timestamp < nativeNotificationLimits.windowMs,
+    );
+    if (recent.length >= nativeNotificationLimits.maxPerWindow) {
+      this.#notificationHistory.set(key, recent);
+      throw new NativeExtensionError(
+        "rate-limited",
+        `Native extension notifications are limited to ${nativeNotificationLimits.maxPerWindow} per ${nativeNotificationLimits.windowMs / 1_000} seconds.`,
+        {
+          capability: "notifications",
+          operation: "notifications.show",
+          vaultId,
+        },
+      );
+    }
+    recent.push(now);
+    this.#notificationHistory.set(key, recent);
+  }
+
   private createContext(
     registration: Registration,
     vaultId: string,
@@ -1087,6 +1124,7 @@ export class NativeExtensionHost {
     isTerminated: () => boolean,
   ): NativeExtensionContext {
     const manifest = cloneManifest(registration.bundle.manifest);
+    let notificationsThisInvocation = 0;
     const requireCapability = async (
       capability: NativeExtensionCapabilityId,
       operation: string,
@@ -1409,6 +1447,55 @@ export class NativeExtensionHost {
         return this.#ports.workspace.openFile(vaultId, relativePath);
       },
     };
+    const guardedNotifications: NativeNotificationPort = {
+      show: async (message: string) => {
+        assertLive("notifications.show");
+        await requireCapability("notifications", "notifications.show");
+        if (typeof message !== "string" || message.trim().length === 0) {
+          throw new NativeExtensionError(
+            "invalid-request",
+            "Native notification message must not be empty.",
+            {
+              capability: "notifications",
+              operation: "notifications.show",
+              vaultId,
+            },
+          );
+        }
+        assertBoundedText(
+          message,
+          nativeNotificationLimits.maxMessageLength,
+          "notifications",
+          "notifications.show",
+          vaultId,
+        );
+        if (!this.#ports.notifications) {
+          throw new NativeExtensionError(
+            "capability-unavailable",
+            "Notification port is unavailable.",
+            {
+              capability: "notifications",
+              operation: "notifications.show",
+              vaultId,
+            },
+          );
+        }
+        if (notificationsThisInvocation >= nativeNotificationLimits.maxPerInvocation) {
+          throw new NativeExtensionError(
+            "rate-limited",
+            `Native extension invocations are limited to ${nativeNotificationLimits.maxPerInvocation} notifications per invocation.`,
+            {
+              capability: "notifications",
+              operation: "notifications.show",
+              vaultId,
+            },
+          );
+        }
+        this.consumeNotificationBudget(vaultId, manifest.id);
+        notificationsThisInvocation += 1;
+        return this.#ports.notifications.show(message);
+      },
+    };
     const guardedSubprocess: NativeSubprocessPort = {
       run: async (
         request: NativeSubprocessRequest,
@@ -1492,6 +1579,7 @@ export class NativeExtensionHost {
       navigation: guardedNavigation,
       editor: guardedEditor,
       workspace: guardedWorkspace,
+      notifications: guardedNotifications,
       subprocess: guardedSubprocess,
       secrets: guardedSecrets,
       dynamicCode: guardedDynamicCode,

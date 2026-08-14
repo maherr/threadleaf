@@ -47,6 +47,7 @@ is included in that grant. A label or `reason` cannot satisfy any of these check
 | `external-navigation` | validated HTTP(S) open request | no | trusted desktop escape |
 | `editor-ui` | selection and replacement | yes | capability-governed |
 | `workspace-ui` | notice and vault-relative open | yes | capability-governed |
+| `notifications` | bounded in-app notice delivery | yes | capability-governed |
 | `subprocess` | host process adapter | no | trusted desktop escape |
 | `secrets` | named secret provider | no | trusted desktop escape |
 | `dynamic-code` | host-provided evaluator | no | trusted desktop escape |
@@ -56,6 +57,16 @@ grant, safe mode, undeclared call, and cross-vault identity are distinct typed f
 runtime rejects desktop-only manifests and capabilities before an adapter is called. URL and secret
 name inputs are validated at the public boundary. Vault writes still require the caller's revision
 choice and are delegated to the host's recoverable writer.
+
+`notifications` is deliberately separate from `workspace-ui`:
+`NativeNotificationPort.show(message)` accepts a non-empty message of at most 4,096 UTF-16 code
+units, allows at most eight messages per invocation, and allows at most 20 messages per extension
+and vault in a rolling 60-second window. A missing notification adapter returns
+`capability-unavailable` without calling any fallback. The `bindNativeNotificationPort` helper
+connects the port to a host-owned callback such as the application's existing visible notice or
+toast bus. The callback receives text only. Extensions never receive Electron, DOM, BrowserWindow,
+or operating-system notification authority. This is an in-app notice surface, not a durable queue,
+background delivery service, or OS notification API.
 
 ## Lifecycle and trust
 

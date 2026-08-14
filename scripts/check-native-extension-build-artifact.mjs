@@ -83,6 +83,7 @@ async function main() {
     "src/native-extension/internal-registry.ts",
     "src/native-extension/manifest.ts",
     "src/native-extension/marketplace-trust.ts",
+    "src/native-extension/notifications.ts",
     "src/native-extension/ports.ts",
     "src/native-extension/sdk.ts",
   ];

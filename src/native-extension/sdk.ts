@@ -4,6 +4,7 @@ import {
   type NativeExtensionRuntime,
   parseNativeExtensionManifest,
 } from "./manifest";
+import type { NativeNotificationPort } from "./notifications";
 import type {
   NativeClipboardPort,
   NativeDynamicCodePort,
@@ -28,6 +29,7 @@ export interface NativeExtensionContext {
   readonly navigation: NativeExternalNavigationPort;
   readonly editor: NativeEditorPort;
   readonly workspace: NativeWorkspacePort;
+  readonly notifications: NativeNotificationPort;
   readonly subprocess: NativeSubprocessPort;
   readonly secrets: NativeSecretsPort;
   readonly dynamicCode: NativeDynamicCodePort;
