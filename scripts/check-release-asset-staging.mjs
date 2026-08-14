@@ -219,6 +219,29 @@ try {
       "Staging the same exact input produced a different manifest.",
     );
     checks.push("positive deterministic staging");
+
+    const separatorOutputPath = path.join(positive.root, "output-separator");
+    const separator = await stage([
+      "--",
+      "--lane",
+      "linux-x64-unsigned",
+      "--input",
+      positive.inputPath,
+      "--receipt",
+      positive.receiptPath,
+      "--output",
+      separatorOutputPath,
+    ]);
+    assert(
+      separator.code === 0,
+      `Documented pnpm run separator form failed: ${separator.stderr}`,
+    );
+    assert(
+      (await fs.readFile(firstManifestPath, "utf8")) ===
+        (await fs.readFile(path.join(separatorOutputPath, manifestName), "utf8")),
+      "The pnpm run separator form produced a different manifest.",
+    );
+    checks.push("pnpm run separator form");
   } finally {
     await releaseFixture(positive.root);
   }

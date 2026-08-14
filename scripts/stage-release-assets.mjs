@@ -76,13 +76,14 @@ function filename(value, label) {
 
 function parseArguments(argv) {
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
+  const tokens = argv[0] === "--" ? argv.slice(1) : argv;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const flag = tokens[index];
     assert(
       flag === "--lane" || flag === "--input" || flag === "--receipt" || flag === "--output",
       `Unsupported argument: ${flag}.`,
     );
-    const value = argv[index + 1];
+    const value = tokens[index + 1];
     assert(typeof value === "string" && value.length > 0, `${flag} requires a value.`);
     assert(!values.has(flag), `${flag} may be supplied only once.`);
     values.set(flag, value);
