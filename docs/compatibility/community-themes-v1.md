@@ -1,6 +1,6 @@
 # Community theme visual matrix v1
 
-**Last updated:** 2026-08-14T07:13:17-04:00
+**Last updated:** 2026-08-14T07:55:34-04:00
 
 This is a contained-loader compatibility fixture, not a theme store. The matrix uses three
 permissively licensed, open community themes that exercise different CSS shapes. The raw CSS,
@@ -110,13 +110,25 @@ only 14% of that already-low-chroma accent into the background, so `active-file-
 band). The declared redundant cue (the active row's border against its own background) measures
 15.04, clearing 11, so the case passes and is recorded as a thin-pass in the run receipt:
 `COMMUNITY_THEME_THIN_PASS minimal dark-laptop pair=active-file-background/inactive-file-background
-dE=8.73 redundantCue=active-file-border/active-file-background redundantDe=15.04`. Wikipedia and
-Sanctum do not override the accent colour at all and are not observed in the thin band.
+dE=8.73 redundantCue=active-file-border/active-file-background redundantDe=15.04`. All five of
+Minimal's cases pass this way or clear the tier outright; see
+[Live verification status](#live-verification-status) for the full receipt block.
+
+**Recorded finding: Wikipedia, light laptop, below the hard floor.** Not every failure lands in
+the thin band. Wikipedia's `light-laptop` case measures CIEDE2000 6.65 for the same pair, under
+the 7 hard-fail floor, so no redundant cue can rescue it: the doctrine treats under-7 as failed,
+full stop. Wikipedia's `theme.css` sets neither `--interactive-accent` nor `--background-primary`,
+so this is not a Wikipedia-specific quirk: it is Threadleaf's own default, unthemed light-scheme
+`--accent-soft` contrast failing the workspace's own standard. Reproduced identically (same
+measured colours, same CIEDE2000) across two independent live runs. See
+[Live verification status](#live-verification-status).
 
 **Known limitation, not fixed here.** `--accent-soft`'s fixed 14% mix is a single token used
-across roughly five dozen places in `src/renderer/styles.css`; whether to strengthen it app-wide
-for low-chroma community accents is a design decision outside this compatibility matrix's scope.
-It is tracked as a follow-up, not resolved by this gate.
+across roughly five dozen places in `src/renderer/styles.css`; strengthening it app-wide for
+low-chroma accents and thin light-scheme contrast is a design decision outside this compatibility
+matrix's scope. A separate lane, landing after this one, owns that product fix together with
+adding the default (no community theme) appearance as a first-class matrix subject so a gap like
+this cannot hide again.
 
 The offline integrity route does not inspect the developer cache or require Xvfb:
 
@@ -128,6 +140,40 @@ It validates the manifest, receipt hashes, PNGs, static positive/red controls, a
 containment primitives. Baseline updates are refused whenever CI is detected. Use
 `pnpm run community-theme:update` only when intentionally regenerating derived PNGs on a local
 renderer with the complete cache.
+
+## Live verification status
+
+`visual/community-baselines/manifest.v1.json` carries an explicit `liveVerification` status per
+theme, structurally validated (a missing or malformed declaration fails loudly, never silently
+defaults). The live runner reads it before attempting a capture: a `verified` theme runs the full
+live capture and compare; a `pending` theme is skipped outright, with its declared reason printed
+as `COMMUNITY_THEME_LIVE_PENDING <theme>: <reason>` rather than being attempted and left to fail.
+Every run ends with either `COMMUNITY_THEME_LIVE_COMPLETE verified=<themes>` or, whenever any theme
+is pending, `COMMUNITY_THEME_LIVE_INCOMPLETE verified=<themes> pending=<themes>` on **exit code
+2**, kept distinct from exit code 1 (an actual thrown failure) so a known, tracked gap can never
+read as either a clean pass or an unexplained crash. `--integrity-only` reports the same verified
+and pending lists on `COMMUNITY_THEME_LIVE_STATUS` without affecting its own exit code, since
+structural validity does not depend on live-capture status.
+
+| Theme | Status | Detail |
+| --- | --- | --- |
+| Minimal | **Verified** | All five cases pass against current main; see the receipt block and stability evidence below. |
+| Wikipedia | **Pending** | Blocked on the recorded product finding above (CIEDE2000 6.65, light-laptop, under the 7 hard-fail floor). Not a Wikipedia-specific defect: its `theme.css` sets neither `--interactive-accent` nor `--background-primary`. Its four existing baseline PNGs (from the prior salvage snapshot) are structurally valid and hash-checked, but not proven against current main's live rendering. |
+| Sanctum | **Pending** | Untested. The live runner aborts per-theme on the first failure; Wikipedia is processed before Sanctum in manifest theme order and already fails, so Sanctum has never been reached by a live run against current main. Its existing baseline PNGs are likewise structurally valid but unproven. |
+
+Minimal's five-case receipt, identical across the two independent live runs described below:
+
+```
+minimal dark-laptop         dE=8.73 redundantCue=active-file-border/active-file-background redundantDe=15.04
+minimal light-laptop        dE=7.02 redundantCue=active-file-border/active-file-background redundantDe=86.92
+minimal light-minimum       dE=7.02 redundantCue=active-file-border/active-file-background redundantDe=86.92
+minimal dark-high-contrast  dE=7.53 redundantCue=active-file-border/active-file-background redundantDe=83.09
+minimal light-high-contrast dE=7.02 redundantCue=active-file-border/active-file-background redundantDe=76.07
+```
+
+Stability evidence: `community-theme:update` (writes fresh baselines), then a real, non-update
+`community-theme:check` comparing an independent fresh capture against those committed baselines
+through the actual perceptual-diff gate. Both runs produced the exact figures above for every case.
 
 ## Deliberate limits
 

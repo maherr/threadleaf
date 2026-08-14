@@ -28,6 +28,19 @@
       "LICENSE": "e47f41c970543cabb188965952eecb4050719352912c77131a0f9fd9d96f47e3"
     }
   },
+  "liveVerification": {
+    "minimal": {
+      "status": "verified"
+    },
+    "wikipedia": {
+      "status": "pending",
+      "reason": "Blocked on a product finding: active-file-background vs inactive-file-background measures CIEDE2000 6.65 under Machado deuteranomaly (light-laptop case), below the 7 hard-fail floor and not rescuable by a redundant cue. Reproduced identically across two independent live runs. Wikipedia's theme.css sets neither --interactive-accent nor --background-primary, so this measurement reflects Threadleaf's own default light-scheme --accent-soft baseline, not a Wikipedia-specific defect. The product fix (light-scheme accent-soft separation) lands in a separate lane after this one."
+    },
+    "sanctum": {
+      "status": "pending",
+      "reason": "Untested: the live runner aborts per-theme on the first failure, and Wikipedia (processed before Sanctum in manifest theme order) already fails, so Sanctum has never been reached by a live run against current main."
+    }
+  },
   "cases": {
     "minimal:dark-laptop": {
       "path": "minimal-dark-laptop.png",

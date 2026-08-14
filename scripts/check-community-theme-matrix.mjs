@@ -1598,6 +1598,44 @@ async function assertBaselineIntegrity(manifest, baselineManifest, actualFixture
   }
 }
 
+// Every theme in the matrix must carry an explicit, structurally-validated live-verification
+// status: "verified" (its baselines are proven against a live capture on current main) or
+// "pending" with a non-empty reason (a named, tracked gap). This is a distinct axis from
+// per-case baseline "pending": a theme can have real, hash-verified PNGs from an earlier capture
+// while its live-verification status is still "pending" because nothing has re-proven them
+// against the current renderer. An undeclared or malformed status fails loudly rather than
+// silently defaulting either way.
+function assertLiveVerificationStatus(manifest, baselineManifest) {
+  const declared = baselineManifest.liveVerification;
+  assert(
+    declared && typeof declared === "object" && !Array.isArray(declared),
+    "Baseline manifest has no liveVerification status.",
+  );
+  const verified = [];
+  const pending = [];
+  for (const theme of manifest.themes) {
+    const entry = declared[theme.id];
+    assert(
+      entry && typeof entry === "object" && !Array.isArray(entry),
+      `Theme ${theme.id} has no declared live verification status.`,
+    );
+    if (entry.status === "verified") {
+      verified.push(theme.id);
+    } else if (entry.status === "pending") {
+      assert(
+        typeof entry.reason === "string" && entry.reason.trim().length > 0,
+        `Theme ${theme.id} is pending live verification with no reason.`,
+      );
+      pending.push(theme.id);
+    } else {
+      throw new Error(
+        `Theme ${theme.id} has an unknown live verification status: ${JSON.stringify(entry.status)}.`,
+      );
+    }
+  }
+  return { verified, pending, declared };
+}
+
 function assertStaticColourControls(manifest) {
   const validColours = {
     categorical: [
@@ -1861,6 +1899,7 @@ async function main() {
           Object.fromEntries(theme.files.map((file) => [file.path, file.sha256])),
         ]),
       ),
+      liveVerification: {},
       cases: {},
     };
   }
@@ -1869,10 +1908,15 @@ async function main() {
   } else if (integrityOnly || !updateRequested) {
     throw new Error("Community theme baseline manifest is missing its declared cases.");
   }
+  const liveStatus = assertLiveVerificationStatus(currentManifest, baselineManifest);
   if (integrityOnly) {
     process.stdout.write(
       `COMMUNITY_THEME_INTEGRITY PASS cases=${currentManifest.cases.length} ` +
         `pending=${Object.values(baselineManifest.cases ?? {}).filter((entry) => entry.pending).length}\n`,
+    );
+    process.stdout.write(
+      `COMMUNITY_THEME_LIVE_STATUS verified=${liveStatus.verified.join(",")} ` +
+        `pending=${liveStatus.pending.join(",")}\n`,
     );
     if (positiveControl || redControl) await runCommunityPositiveControl(baselineManifest);
     if (redControl) {
@@ -1908,11 +1952,19 @@ async function main() {
     return;
   }
   assert(await fs.stat(electronPath), "Electron executable is missing; run pnpm install.");
+  const capturedThemes = [];
   for (const theme of currentManifest.themes) {
+    if (liveStatus.pending.includes(theme.id)) {
+      process.stdout.write(
+        `COMMUNITY_THEME_LIVE_PENDING ${theme.id}: ${liveStatus.declared[theme.id].reason}\n`,
+      );
+      continue;
+    }
     const result = await runTheme(theme, verification, baselineManifest);
     process.stdout.write(
       `COMMUNITY_THEME_VISUAL_PASS ${theme.id} cases=${result.captures} deutan=${JSON.stringify(result.audits)}\n`,
     );
+    capturedThemes.push(theme.id);
   }
   if (updateRequested) {
     await fs.mkdir(baselineRoot, { recursive: true });
@@ -1922,6 +1974,19 @@ async function main() {
       "utf8",
     );
     process.stdout.write(`COMMUNITY_THEME_VISUAL_BASELINES_UPDATED ${baselineManifestPath}\n`);
+  }
+  // A run with any pending theme is never a full pass, even though every theme it actually
+  // attempted succeeded: exit code 2 is reserved for this known, tracked, non-silent gap, kept
+  // distinct from exit code 1 (an actual thrown failure via the top-level catch below) so
+  // automation can tell "incomplete by design" apart from "broken."
+  if (liveStatus.pending.length > 0) {
+    process.stdout.write(
+      `COMMUNITY_THEME_LIVE_INCOMPLETE verified=${capturedThemes.join(",")} ` +
+        `pending=${liveStatus.pending.join(",")}\n`,
+    );
+    process.exitCode = 2;
+  } else {
+    process.stdout.write(`COMMUNITY_THEME_LIVE_COMPLETE verified=${capturedThemes.join(",")}\n`);
   }
 }
 
