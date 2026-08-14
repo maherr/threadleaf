@@ -1,0 +1,597 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:threadleaf:spec:v1:extension-porting-report",
+  "title": "Threadleaf extension porting report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "tool",
+    "input",
+    "packageInspection",
+    "authorityReceipt",
+    "compatibility",
+    "api",
+    "authority",
+    "ci",
+    "diagnostics",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "tool": { "$ref": "#/$defs/tool" },
+    "input": { "$ref": "#/$defs/input" },
+    "packageInspection": { "$ref": "#/$defs/packageInspection" },
+    "authorityReceipt": {
+      "anyOf": [{ "$ref": "#/$defs/receipt" }, { "type": "null" }]
+    },
+    "compatibility": { "$ref": "#/$defs/compatibility" },
+    "api": { "$ref": "#/$defs/api" },
+    "authority": { "$ref": "#/$defs/authority" },
+    "ci": { "$ref": "#/$defs/ci" },
+    "diagnostics": { "$ref": "#/$defs/diagnostics" },
+    "limitations": { "$ref": "#/$defs/limitations" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "shortString": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "identifier": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "status": { "enum": ["pass", "fail", "blocked", "not-run"] },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "pluginId",
+        "version",
+        "releaseTag",
+        "sourceUrl",
+        "releaseUrl",
+        "indexUrl",
+        "indexSha256"
+      ],
+      "properties": {
+        "kind": { "enum": ["fixture", "local", "release"] },
+        "pluginId": { "$ref": "#/$defs/identifier" },
+        "version": { "$ref": "#/$defs/identifier" },
+        "releaseTag": { "$ref": "#/$defs/identifier" },
+        "sourceUrl": { "type": ["string", "null"], "maxLength": 500 },
+        "releaseUrl": { "type": ["string", "null"], "maxLength": 500 },
+        "indexUrl": { "type": ["string", "null"], "maxLength": 500 },
+        "indexSha256": {
+          "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "size", "sha256"],
+      "properties": {
+        "name": { "enum": ["manifest.json", "main.js", "styles.css"] },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "receiptAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "size", "sha256"],
+      "properties": {
+        "filename": { "enum": ["manifest.json", "main.js", "styles.css"] },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "staticAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scannerVersion", "bundleSha256", "capabilities", "findings", "staticOnly"],
+      "properties": {
+        "scannerVersion": { "const": 1 },
+        "bundleSha256": { "$ref": "#/$defs/sha256" },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "enum": [
+              "vault-read",
+              "vault-write",
+              "network",
+              "filesystem",
+              "subprocess",
+              "host-environment",
+              "clipboard",
+              "external-navigation",
+              "editor-extension",
+              "workspace-ui",
+              "dynamic-code"
+            ]
+          }
+        },
+        "findings": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["capability", "evidence"],
+            "properties": {
+              "capability": { "$ref": "#/$defs/staticCapability" },
+              "evidence": {
+                "type": "array",
+                "uniqueItems": true,
+                "maxItems": 64,
+                "items": { "$ref": "#/$defs/shortString" }
+              }
+            }
+          }
+        },
+        "staticOnly": { "const": true }
+      }
+    },
+    "staticCapability": {
+      "enum": [
+        "vault-read",
+        "vault-write",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment",
+        "clipboard",
+        "external-navigation",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code"
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "const": "threadleaf-extension-porting" },
+        "version": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "manifest", "provenance", "assets", "packageEntryCount", "contained"],
+      "properties": {
+        "kind": { "const": "unpacked-obsidian-plugin" },
+        "manifest": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "name", "version", "isDesktopOnly"],
+              "properties": {
+                "id": { "$ref": "#/$defs/identifier" },
+                "name": { "$ref": "#/$defs/identifier" },
+                "version": { "$ref": "#/$defs/identifier" },
+                "isDesktopOnly": { "type": "boolean" }
+              }
+            }
+          ]
+        },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "assets": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/asset" }
+        },
+        "packageEntryCount": { "type": "integer", "minimum": 0, "maximum": 2048 },
+        "contained": { "const": true }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "tool",
+        "overall",
+        "exactPackage",
+        "assets",
+        "staticAuthority",
+        "compatibilityLevel",
+        "limitations"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "tool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "const": "threadleaf-plugin-package-inspector" },
+            "version": { "$ref": "#/$defs/identifier" }
+          }
+        },
+        "overall": { "enum": ["pass", "fail", "blocked"] },
+        "exactPackage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "bundleSha256",
+            "manifestSha256",
+            "stylesSha256",
+            "provenance"
+          ],
+          "properties": {
+            "id": { "$ref": "#/$defs/identifier" },
+            "version": { "$ref": "#/$defs/identifier" },
+            "bundleSha256": { "$ref": "#/$defs/sha256" },
+            "manifestSha256": { "$ref": "#/$defs/sha256" },
+            "stylesSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+            "provenance": { "$ref": "#/$defs/provenance" }
+          }
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/receiptAsset" }
+        },
+        "staticAuthority": { "$ref": "#/$defs/staticAuthority" },
+        "compatibilityLevel": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "limitations": { "$ref": "#/$defs/receiptLimitations" }
+      }
+    },
+    "packageInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "overall",
+        "provenance",
+        "assets",
+        "entries",
+        "unexpectedEntries",
+        "platform",
+        "stages",
+        "staticAuthority",
+        "receipt",
+        "limitations"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "overall": { "enum": ["pass", "fail", "blocked"] },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "assets": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/asset" }
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "kind"],
+            "properties": {
+              "path": { "$ref": "#/$defs/identifier" },
+              "kind": { "enum": ["file", "directory", "symlink"] }
+            }
+          }
+        },
+        "unexpectedEntries": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["appVersion", "platform", "workflowEvidence"],
+          "properties": {
+            "appVersion": { "$ref": "#/$defs/identifier" },
+            "platform": { "$ref": "#/$defs/identifier" },
+            "workflowEvidence": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "status", "evidencePaths"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/identifier" },
+                  "status": { "$ref": "#/$defs/status" },
+                  "evidencePaths": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "maxItems": 16,
+                    "items": { "$ref": "#/$defs/identifier" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "stages": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status", "diagnostics"],
+            "properties": {
+              "id": { "$ref": "#/$defs/identifier" },
+              "status": { "$ref": "#/$defs/status" },
+              "diagnostics": { "$ref": "#/$defs/diagnostics" }
+            }
+          }
+        },
+        "staticAuthority": { "anyOf": [{ "$ref": "#/$defs/staticAuthority" }, { "type": "null" }] },
+        "receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "source", "exactPackage", "compatibilityLevel"],
+          "properties": {
+            "status": { "enum": ["self-checked", "verified", "invalid", "unavailable"] },
+            "source": { "enum": ["generated", "provided", "none"] },
+            "exactPackage": {
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "version",
+                    "bundleSha256",
+                    "manifestSha256",
+                    "stylesSha256",
+                    "provenance"
+                  ],
+                  "properties": {
+                    "id": { "$ref": "#/$defs/identifier" },
+                    "version": { "$ref": "#/$defs/identifier" },
+                    "bundleSha256": { "$ref": "#/$defs/sha256" },
+                    "manifestSha256": { "$ref": "#/$defs/sha256" },
+                    "stylesSha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+                    "provenance": { "$ref": "#/$defs/provenance" }
+                  }
+                }
+              ]
+            },
+            "compatibilityLevel": { "type": "integer", "minimum": 0, "maximum": 3 }
+          }
+        },
+        "limitations": { "$ref": "#/$defs/limitations" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "evidencePath"],
+      "properties": {
+        "code": { "$ref": "#/$defs/identifier" },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message": { "$ref": "#/$defs/shortString" },
+        "evidencePath": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "limitations": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/shortString" }
+    },
+    "receiptLimitations": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 64,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    },
+    "apiDifference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "evidencePath", "member"],
+      "properties": {
+        "code": { "const": "unmeasured-api" },
+        "severity": { "const": "warning" },
+        "message": { "$ref": "#/$defs/shortString" },
+        "evidencePath": { "$ref": "#/$defs/identifier" },
+        "member": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "authorityDifference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "evidencePath",
+        "sourceCapability",
+        "nativeCapability"
+      ],
+      "properties": {
+        "code": { "enum": ["unmapped-authority", "desktop-authority"] },
+        "severity": { "enum": ["error", "warning"] },
+        "message": { "$ref": "#/$defs/shortString" },
+        "evidencePath": { "$ref": "#/$defs/identifier" },
+        "sourceCapability": { "$ref": "#/$defs/staticCapability" },
+        "nativeCapability": {
+          "anyOf": [{ "$ref": "#/$defs/nativeCapability" }, { "type": "null" }]
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "level",
+        "testedVersion",
+        "testedThreadleafVersion",
+        "lastTested",
+        "evidenceMode",
+        "summary"
+      ],
+      "properties": {
+        "status": { "enum": ["verified", "different-version", "different-bundle", "unverified"] },
+        "level": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "testedVersion": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+        "testedThreadleafVersion": {
+          "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }]
+        },
+        "lastTested": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+        "evidenceMode": { "anyOf": [{ "enum": ["direct", "composed"] }, { "type": "null" }] },
+        "summary": { "$ref": "#/$defs/shortString" }
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryVersion",
+        "source",
+        "observed",
+        "differences",
+        "notObserved",
+        "limitations"
+      ],
+      "properties": {
+        "registryVersion": { "const": 1 },
+        "source": { "$ref": "#/$defs/identifier" },
+        "observed": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["member", "status", "contract", "evidencePath"],
+            "properties": {
+              "member": { "$ref": "#/$defs/identifier" },
+              "status": { "enum": ["measured", "unmeasured"] },
+              "contract": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+              "evidencePath": { "$ref": "#/$defs/identifier" }
+            }
+          }
+        },
+        "differences": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/apiDifference" }
+        },
+        "notObserved": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "limitations": { "$ref": "#/$defs/limitations" }
+      }
+    },
+    "nativeCapability": {
+      "enum": [
+        "vault.read",
+        "vault.write",
+        "network",
+        "clipboard",
+        "external-navigation",
+        "editor-ui",
+        "workspace-ui",
+        "subprocess",
+        "secrets",
+        "dynamic-code"
+      ]
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryVersion",
+        "source",
+        "observed",
+        "differences",
+        "suggestedNativeRuntime",
+        "suggestedCapabilities",
+        "limitations"
+      ],
+      "properties": {
+        "registryVersion": { "const": 1 },
+        "source": { "$ref": "#/$defs/identifier" },
+        "observed": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sourceCapability",
+              "nativeCapability",
+              "availability",
+              "boundary",
+              "evidence"
+            ],
+            "properties": {
+              "sourceCapability": { "$ref": "#/$defs/staticCapability" },
+              "nativeCapability": {
+                "anyOf": [{ "$ref": "#/$defs/nativeCapability" }, { "type": "null" }]
+              },
+              "availability": { "enum": ["portable", "desktop-only", "unmapped"] },
+              "boundary": { "enum": ["capability-governed", "trusted-desktop-escape", "unmapped"] },
+              "evidence": {
+                "type": "array",
+                "uniqueItems": true,
+                "maxItems": 64,
+                "items": { "$ref": "#/$defs/shortString" }
+              }
+            }
+          }
+        },
+        "differences": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/authorityDifference" }
+        },
+        "suggestedNativeRuntime": { "enum": ["portable", "desktop-trusted"] },
+        "suggestedCapabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/nativeCapability" }
+        },
+        "limitations": { "$ref": "#/$defs/limitations" }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "variables", "limitations"],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/shortString" }
+        },
+        "variables": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pluginDirectory"],
+          "properties": { "pluginDirectory": { "const": "PLUGIN_DIR" } }
+        },
+        "limitations": { "$ref": "#/$defs/limitations" }
+      }
+    }
+  }
+}

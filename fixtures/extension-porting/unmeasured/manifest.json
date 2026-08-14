@@ -1,0 +1,7 @@
+{
+  "id": "threadleaf-porting-unmeasured",
+  "name": "Threadleaf Unmeasured Porting Fixture",
+  "version": "0.1.0",
+  "description": "A negative fixture for static API and authority differences.",
+  "isDesktopOnly": true
+}

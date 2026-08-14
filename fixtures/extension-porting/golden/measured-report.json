@@ -1,0 +1,370 @@
+{
+  "schemaVersion": 1,
+  "tool": {
+    "id": "threadleaf-extension-porting",
+    "version": "1.0.0"
+  },
+  "input": {
+    "kind": "unpacked-obsidian-plugin",
+    "manifest": {
+      "id": "threadleaf-porting-fixture",
+      "name": "Threadleaf Porting Fixture",
+      "version": "0.1.0",
+      "isDesktopOnly": false
+    },
+    "provenance": {
+      "kind": "local",
+      "pluginId": "threadleaf-porting-fixture",
+      "version": "0.1.0",
+      "releaseTag": "0.1.0",
+      "sourceUrl": null,
+      "releaseUrl": null,
+      "indexUrl": null,
+      "indexSha256": null
+    },
+    "assets": [
+      {
+        "name": "manifest.json",
+        "size": 205,
+        "sha256": "a9c18b4cbc42a6905348a2f4d7c499cda0accabd55b2291d26a2694f38be3625"
+      },
+      {
+        "name": "main.js",
+        "size": 646,
+        "sha256": "be2b389a609a5fa9259a948332fb421fae7f5246d3cb6844afbcd3355f04843e"
+      }
+    ],
+    "packageEntryCount": 2,
+    "contained": true
+  },
+  "packageInspection": {
+    "schemaVersion": 1,
+    "overall": "blocked",
+    "provenance": {
+      "kind": "local",
+      "pluginId": "threadleaf-porting-fixture",
+      "version": "0.1.0",
+      "releaseTag": "0.1.0",
+      "sourceUrl": null,
+      "releaseUrl": null,
+      "indexUrl": null,
+      "indexSha256": null
+    },
+    "assets": [
+      {
+        "name": "manifest.json",
+        "size": 205,
+        "sha256": "a9c18b4cbc42a6905348a2f4d7c499cda0accabd55b2291d26a2694f38be3625"
+      },
+      {
+        "name": "main.js",
+        "size": 646,
+        "sha256": "be2b389a609a5fa9259a948332fb421fae7f5246d3cb6844afbcd3355f04843e"
+      }
+    ],
+    "entries": [
+      {
+        "path": "main.js",
+        "kind": "file"
+      },
+      {
+        "path": "manifest.json",
+        "kind": "file"
+      }
+    ],
+    "unexpectedEntries": [],
+    "platform": {
+      "appVersion": "0.1.0-beta.3",
+      "platform": "linux-x64-electron",
+      "workflowEvidence": [
+        {
+          "id": "activation",
+          "status": "blocked",
+          "evidencePaths": []
+        },
+        {
+          "id": "registration-snapshot",
+          "status": "blocked",
+          "evidencePaths": []
+        },
+        {
+          "id": "cleanup",
+          "status": "blocked",
+          "evidencePaths": ["runtime/cleanup.json", "runtime/disposable-vault.json"]
+        },
+        {
+          "id": "timeout",
+          "status": "blocked",
+          "evidencePaths": []
+        }
+      ]
+    },
+    "stages": [
+      {
+        "id": "package-shape",
+        "status": "pass",
+        "diagnostics": []
+      },
+      {
+        "id": "manifest-schema",
+        "status": "pass",
+        "diagnostics": []
+      },
+      {
+        "id": "dependency-model",
+        "status": "pass",
+        "diagnostics": []
+      },
+      {
+        "id": "minimum-app-platform",
+        "status": "pass",
+        "diagnostics": []
+      },
+      {
+        "id": "static-authority",
+        "status": "pass",
+        "diagnostics": []
+      },
+      {
+        "id": "banned-private-primitives",
+        "status": "pass",
+        "diagnostics": []
+      },
+      {
+        "id": "activation",
+        "status": "blocked",
+        "diagnostics": []
+      },
+      {
+        "id": "registration-snapshot",
+        "status": "blocked",
+        "diagnostics": []
+      },
+      {
+        "id": "cleanup",
+        "status": "blocked",
+        "diagnostics": []
+      },
+      {
+        "id": "timeout",
+        "status": "blocked",
+        "diagnostics": []
+      }
+    ],
+    "staticAuthority": {
+      "scannerVersion": 1,
+      "bundleSha256": "be2b389a609a5fa9259a948332fb421fae7f5246d3cb6844afbcd3355f04843e",
+      "capabilities": ["workspace-ui"],
+      "findings": [
+        {
+          "capability": "workspace-ui",
+          "evidence": ["Workspace contribution API"]
+        }
+      ],
+      "staticOnly": true
+    },
+    "receipt": {
+      "status": "self-checked",
+      "source": "generated",
+      "exactPackage": {
+        "id": "threadleaf-porting-fixture",
+        "version": "0.1.0",
+        "bundleSha256": "be2b389a609a5fa9259a948332fb421fae7f5246d3cb6844afbcd3355f04843e",
+        "manifestSha256": "a9c18b4cbc42a6905348a2f4d7c499cda0accabd55b2291d26a2694f38be3625",
+        "stylesSha256": null,
+        "provenance": {
+          "kind": "local",
+          "pluginId": "threadleaf-porting-fixture",
+          "version": "0.1.0",
+          "releaseTag": "0.1.0",
+          "sourceUrl": null,
+          "releaseUrl": null,
+          "indexUrl": null,
+          "indexSha256": null
+        }
+      },
+      "compatibilityLevel": 0
+    },
+    "limitations": [
+      "No live release network request is made by this offline inspection pipeline.",
+      "Port inspection selects static-only canonical inspection; activation and workflow execution are not run.",
+      "Runtime global checks compare namespace keys only; mutations to existing objects and process-backed code outside this inspection remain outside coverage.",
+      "Static inspection and trusted compatibility execution are review evidence, not a sandbox or proof of safety.",
+      "Static primitive matching is conservative and cannot prove that a bundle is safe or that an unobserved code path is absent.",
+      "The disposable diff observes files inside the temporary inspection root; writes to unrelated host paths are outside this report and require a process-backed san",
+      "The static capability report records observed authority classes only; it is not a sandbox and does not prove safety."
+    ]
+  },
+  "authorityReceipt": {
+    "schemaVersion": 1,
+    "tool": {
+      "id": "threadleaf-plugin-package-inspector",
+      "version": "1.0.0"
+    },
+    "overall": "blocked",
+    "exactPackage": {
+      "id": "threadleaf-porting-fixture",
+      "version": "0.1.0",
+      "bundleSha256": "be2b389a609a5fa9259a948332fb421fae7f5246d3cb6844afbcd3355f04843e",
+      "manifestSha256": "a9c18b4cbc42a6905348a2f4d7c499cda0accabd55b2291d26a2694f38be3625",
+      "stylesSha256": null,
+      "provenance": {
+        "kind": "local",
+        "pluginId": "threadleaf-porting-fixture",
+        "version": "0.1.0",
+        "releaseTag": "0.1.0",
+        "sourceUrl": null,
+        "releaseUrl": null,
+        "indexUrl": null,
+        "indexSha256": null
+      }
+    },
+    "assets": [
+      {
+        "filename": "manifest.json",
+        "size": 205,
+        "sha256": "a9c18b4cbc42a6905348a2f4d7c499cda0accabd55b2291d26a2694f38be3625"
+      },
+      {
+        "filename": "main.js",
+        "size": 646,
+        "sha256": "be2b389a609a5fa9259a948332fb421fae7f5246d3cb6844afbcd3355f04843e"
+      }
+    ],
+    "staticAuthority": {
+      "scannerVersion": 1,
+      "bundleSha256": "be2b389a609a5fa9259a948332fb421fae7f5246d3cb6844afbcd3355f04843e",
+      "capabilities": ["workspace-ui"],
+      "findings": [
+        {
+          "capability": "workspace-ui",
+          "evidence": ["Workspace contribution API"]
+        }
+      ],
+      "staticOnly": true
+    },
+    "compatibilityLevel": 0,
+    "limitations": [
+      "Exact-package inspection did not pass all required gates (blocked); no compatibility level is claimed.",
+      "Inspection stage activation did not pass.",
+      "Inspection stage cleanup did not pass.",
+      "Inspection stage registration-snapshot did not pass.",
+      "Inspection stage timeout did not pass.",
+      "No live release network request is made by this offline inspection pipeline.",
+      "Runtime global checks compare namespace keys only; mutations to existing objects and process-backed code outside this inspection remain outside coverage.",
+      "Static inspection and trusted compatibility execution are review evidence, not a sandbox or proof of safety.",
+      "Static primitive matching is conservative and cannot prove that a bundle is safe or that an unobserved code path is absent.",
+      "The disposable diff observes files inside the temporary inspection root; writes to unrelated host paths are outside this report and require a process-backed sandbox to constrain.",
+      "The static capability report records observed authority classes only; it is not a sandbox and does not prove safety."
+    ]
+  },
+  "compatibility": {
+    "status": "unverified",
+    "level": 0,
+    "testedVersion": null,
+    "testedThreadleafVersion": null,
+    "lastTested": null,
+    "evidenceMode": null,
+    "summary": "No production-path workflow is verified for this exact plugin version."
+  },
+  "api": {
+    "registryVersion": 1,
+    "source": "docs/compatibility/open-plugin-api.md",
+    "observed": [
+      {
+        "member": "MarkdownPostProcessorContext",
+        "status": "measured",
+        "contract": "docs/compatibility/open-plugin-api.md#public-signatures",
+        "evidencePath": "main.js:1"
+      },
+      {
+        "member": "MarkdownRenderChild",
+        "status": "measured",
+        "contract": "docs/compatibility/open-plugin-api.md#public-signatures",
+        "evidencePath": "main.js:1"
+      },
+      {
+        "member": "Notice",
+        "status": "measured",
+        "contract": "docs/compatibility/contract.md#phase-0-fixture",
+        "evidencePath": "main.js:1"
+      },
+      {
+        "member": "Plugin",
+        "status": "measured",
+        "contract": "docs/compatibility/contract.md#phase-0-fixture",
+        "evidencePath": "main.js:1"
+      },
+      {
+        "member": "Plugin.addCommand",
+        "status": "measured",
+        "contract": "docs/compatibility/contract.md#phase-0-fixture",
+        "evidencePath": "main.js:7"
+      },
+      {
+        "member": "Plugin.registerMarkdownPostProcessor",
+        "status": "measured",
+        "contract": "docs/compatibility/open-plugin-api.md#public-signatures",
+        "evidencePath": "main.js:12"
+      }
+    ],
+    "differences": [],
+    "notObserved": ["Plugin.registerMarkdownCodeBlockProcessor"],
+    "limitations": [
+      "API detection is lexical and conservative; comments, generated code, and dynamic property selection are not resolved.",
+      "An unmeasured reference is a review difference, not proof that the corresponding API is absent."
+    ]
+  },
+  "authority": {
+    "registryVersion": 1,
+    "source": "src/shared/plugins.ts#pluginCapabilityIds",
+    "observed": [
+      {
+        "sourceCapability": "workspace-ui",
+        "nativeCapability": "workspace-ui",
+        "availability": "portable",
+        "boundary": "capability-governed",
+        "evidence": ["Workspace contribution API"]
+      }
+    ],
+    "differences": [],
+    "suggestedNativeRuntime": "portable",
+    "suggestedCapabilities": ["workspace-ui"],
+    "limitations": [
+      "Static authority classes are conservative observations, not a sandbox or proof of safety.",
+      "An unmapped source capability needs an independently authored native design or remains in the trusted compatibility host."
+    ]
+  },
+  "ci": {
+    "commands": [
+      "pnpm cli port inspect \"$PLUGIN_DIR\" --json",
+      "pnpm cli port ci \"$PLUGIN_DIR\" --json",
+      "pnpm exec vitest run src/extension-porting/porting-toolkit.test.ts",
+      "pnpm run test:extension-porting-contract",
+      "pnpm run typecheck",
+      "pnpm check"
+    ],
+    "variables": {
+      "pluginDirectory": "PLUGIN_DIR"
+    },
+    "limitations": [
+      "These commands inspect exact local bytes and run Threadleaf's offline gates; they do not execute the inspected plugin.",
+      "A compatibility fixture needs a named workflow test before any compatibility level above discovery is claimed."
+    ]
+  },
+  "diagnostics": [],
+  "limitations": [
+    "A compatibility level is inherited only when measured workflow evidence and a verified receipt bind the exact package.",
+    "An unmapped source capability needs an independently authored native design or remains in the trusted compatibility host.",
+    "Inspection is read-only and never imports, evaluates, or activates the inspected bundle.",
+    "No live release network request is made by this offline inspection pipeline.",
+    "Port inspection selects static-only canonical inspection; activation and workflow execution are not run.",
+    "Runtime global checks compare namespace keys only; mutations to existing objects and process-backed code outside this inspection remain outside coverage.",
+    "Static API, authority, and package-inspection reports are review evidence, not a security sandbox or universal compatibility claim.",
+    "Static authority classes are conservative observations, not a sandbox or proof of safety.",
+    "Static inspection and trusted compatibility execution are review evidence, not a sandbox or proof of safety.",
+    "Static primitive matching is conservative and cannot prove that a bundle is safe or that an unobserved code path is absent.",
+    "The disposable diff observes files inside the temporary inspection root; writes to unrelated host paths are outside this report and require a process-backed san",
+    "The static capability report records observed authority classes only; it is not a sandbox and does not prove safety."
+  ]
+}
