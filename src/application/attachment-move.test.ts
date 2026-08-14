@@ -1,7 +1,9 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import MarkdownIt from "markdown-it";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseMarkdownLinks, parseMarkdownReferenceUsages } from "../kernel/markdown-links";
 import { FixedStateRoot } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
 import { moveBinaryAttachment, planBinaryAttachmentMove } from "./attachment-move";
@@ -3262,6 +3264,176 @@ describe("attachment move planning", () => {
         content: note.after,
       });
     }
+  });
+
+  it("rewrites every renderer-live hard-wrapped reference usage exactly once without rewriting its usage syntax", async () => {
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const sourceTarget = "../Assets/report.pdf";
+    const replacementTarget = "../Archive/hard-wrapped-reference.pdf";
+    const forms = [
+      { name: "ordinary-full", lines: ["[visible alias][asset", "]"], embed: false },
+      { name: "ordinary-collapsed", lines: ["[asset", "][]"], embed: false },
+      { name: "ordinary-shortcut", lines: ["[asset", "]"], embed: false },
+      { name: "image-full", lines: ["![image alt][asset", "]"], embed: true },
+      { name: "image-collapsed", lines: ["![asset", "][]"], embed: true },
+      { name: "image-shortcut", lines: ["![asset", "]"], embed: true },
+    ];
+    const contexts = [
+      {
+        name: "top-level",
+        lines: (usage: readonly string[]) => [...usage, "", `[asset]: ${sourceTarget}`],
+      },
+      {
+        name: "blockquote",
+        lines: (usage: readonly string[]) => [
+          ...usage.map((line) => `> ${line}`),
+          ">",
+          `> [asset]: ${sourceTarget}`,
+        ],
+      },
+      {
+        name: "nested-list-blockquote",
+        lines: (usage: readonly string[]) => [
+          `- > ${usage[0] ?? ""}`,
+          ...usage.slice(1).map((line) => `  > ${line}`),
+          "  >",
+          `  > [asset]: ${sourceTarget}`,
+        ],
+      },
+    ];
+    const notes: Array<{
+      path: string;
+      before: string;
+      after: string;
+      embed: boolean;
+      label: string;
+    }> = [];
+
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const context of contexts) {
+        for (const form of forms) {
+          const suffix = ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr";
+          const label = `${context.name} ${form.name} ${suffix}`;
+          const before = context.lines(form.lines).join(ending);
+          const after = before.replace(sourceTarget, replacementTarget);
+          const note = {
+            path: `Notes/Hard wrapped ${context.name}-${form.name}-${suffix}.md`,
+            before,
+            after,
+            embed: form.embed,
+            label,
+          };
+          notes.push(note);
+          await fs.writeFile(path.join(vaultPath, note.path), before, "utf8");
+
+          const targetAttribute = form.embed ? "src" : "href";
+          expect(renderer.render(before), label).toContain(`${targetAttribute}="${sourceTarget}"`);
+          expect(parseMarkdownReferenceUsages(before), label).toEqual([
+            expect.objectContaining({ label: "asset", embed: form.embed, line: 1 }),
+          ]);
+          expect(parseMarkdownLinks(before), label).toEqual([
+            expect.objectContaining({ target: sourceTarget, syntax: "markdown" }),
+          ]);
+        }
+      }
+    }
+
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready")
+      throw new Error("Expected hard-wrapped reference source fixture.");
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/hard-wrapped-reference.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned", blockers: [] });
+    if (plan.status !== "planned")
+      throw new Error("Expected hard-wrapped reference publication plan.");
+    expect(plan.rewrites).toHaveLength(notes.length);
+    expect(plan.writes).toHaveLength(notes.length);
+    for (const note of notes) {
+      const targetStart = note.before.indexOf(sourceTarget);
+      const targetAttribute = note.embed ? "src" : "href";
+      expect(
+        plan.rewrites.filter((rewrite) => rewrite.documentPath === note.path),
+        note.label,
+      ).toEqual([
+        expect.objectContaining({
+          syntax: "markdown",
+          embed: false,
+          beforeTarget: sourceTarget,
+          afterTarget: replacementTarget,
+        }),
+      ]);
+      expect(plan.writes, note.label).toContainEqual(
+        expect.objectContaining({ path: note.path, content: note.after }),
+      );
+      expect(note.after.slice(0, targetStart), note.label).toBe(note.before.slice(0, targetStart));
+      expect(note.after.slice(targetStart + replacementTarget.length), note.label).toBe(
+        note.before.slice(targetStart + sourceTarget.length),
+      );
+      expect(parseMarkdownReferenceUsages(note.after), note.label).toEqual([
+        expect.objectContaining({ label: "asset", embed: note.embed, line: 1 }),
+      ]);
+      expect(parseMarkdownLinks(note.after), note.label).toEqual([
+        expect.objectContaining({ target: replacementTarget, syntax: "markdown" }),
+      ]);
+      expect(renderer.render(note.after), note.label).toContain(
+        `${targetAttribute}="${replacementTarget}"`,
+      );
+    }
+  });
+
+  it("blocks neutral-label unmappable reference evidence only when its definition may name the source", async () => {
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes),
+      fs.writeFile(path.join(vaultPath, "Assets", "other.pdf"), pdfBytes),
+    ]);
+    const sourceRelatedPath = "Notes/Unmappable neutral source evidence.md";
+    const unrelatedPath = "Notes/Unmappable neutral unrelated evidence.md";
+    const sourceRelated = ["\\[[asset]] [asset", "][]", "", "[asset]: ../Assets/report.pdf"].join(
+      "\n",
+    );
+    const unrelated = ["\\[[asset]] [asset", "][]", "", "[asset]: ../Assets/other.pdf"].join("\n");
+    await Promise.all([
+      fs.writeFile(path.join(vaultPath, sourceRelatedPath), sourceRelated, "utf8"),
+      fs.writeFile(path.join(vaultPath, unrelatedPath), unrelated, "utf8"),
+    ]);
+    const source = await kernel.readBinary("Assets/report.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected neutral-label source fixture.");
+
+    const plan = await planBinaryAttachmentMove(
+      kernel,
+      "Assets/report.pdf",
+      "Archive/unmappable-neutral.pdf",
+      source.snapshot.revision,
+    );
+
+    expect(plan).toMatchObject({ status: "planned" });
+    if (plan.status !== "planned") throw new Error("Expected neutral-label planner output.");
+    expect(plan.blockers.filter((blocker) => blocker.documentPath === sourceRelatedPath)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          line: 1,
+          target: "[asset][]",
+          syntax: "markdown",
+          reason: "unsupported",
+        }),
+      ]),
+    );
+    expect(plan.blockers.some((blocker) => blocker.documentPath === unrelatedPath)).toBe(false);
+    expect(plan.rewrites.some((rewrite) => rewrite.documentPath === sourceRelatedPath)).toBe(false);
+    expect(plan.writes.some((write) => write.path === sourceRelatedPath)).toBe(false);
+    expect(plan.rewrites.some((rewrite) => rewrite.documentPath === unrelatedPath)).toBe(false);
+    expect(plan.writes.some((write) => write.path === unrelatedPath)).toBe(false);
   });
 
   it("blocks source-only attachment definitions inside renderer-recognized trimmed frontmatter", async () => {

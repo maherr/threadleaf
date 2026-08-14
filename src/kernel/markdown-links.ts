@@ -1,7 +1,7 @@
-import MarkdownIt, { type Env, type StateBlock } from "markdown-it";
+import MarkdownIt, { type Env, type StateBlock, type StateInline } from "markdown-it";
 import { scanFrontmatter } from "./markdown-frontmatter";
 
-export interface ParsedMarkdownLink {
+interface ParsedMarkdownLinkBase {
   target: string;
   subpath: string | null;
   alias: string | null;
@@ -13,6 +13,15 @@ export interface ParsedMarkdownLink {
   targetEnd: number;
   line: number;
 }
+
+/**
+ * Parser-only source semantics. The public metadata snapshot intentionally
+ * retains its stable `wiki` / `markdown` syntax contract.
+ */
+export type ParsedMarkdownLink =
+  | (ParsedMarkdownLinkBase & { sourceKind: "wiki" })
+  | (ParsedMarkdownLinkBase & { sourceKind: "markdown-inline" })
+  | (ParsedMarkdownLinkBase & { sourceKind: "markdown-reference-definition" });
 
 export interface MarkdownDestinationTarget {
   path: string;
@@ -33,6 +42,12 @@ export interface ParsedMarkdownReferenceUsage {
   position: number;
   end: number;
   line: number;
+  /** Exact source fragments for a renderer-derived, multi-line usage. */
+  sourceRanges?: MaskRange[];
+  /** Exact source fragments that supply the normalized reference label. */
+  labelSourceRanges?: MaskRange[];
+  /** False when a renderer-live usage has no reliable source-fragment map. */
+  sourceMappable?: boolean;
 }
 
 /** A visible reference definition and whether its destination is syntactically usable. */
@@ -430,6 +445,7 @@ function parseWikiLinks(
       alias: aliasAt === -1 ? null : inner.slice(aliasAt + 1).trim() || null,
       embed,
       syntax: "wiki",
+      sourceKind: "wiki",
       position,
       end: lineStart + close + 2,
       targetStart: innerStart + targetRange.start,
@@ -475,6 +491,7 @@ function parseReferenceDefinition(
     alias: null,
     embed: false,
     syntax: "markdown",
+    sourceKind: "markdown-reference-definition",
     position: definition.position,
     end,
     targetStart: definition.targetStart,
@@ -528,6 +545,7 @@ function parseInlineLinks(
       alias: null,
       embed,
       syntax: "markdown",
+      sourceKind: "markdown-inline",
       position: lineStart + position,
       end: lineStart + destination.end,
       targetStart: lineStart + destination.targetStart + targetRange.start,
@@ -722,20 +740,45 @@ markdownMathBlockClassifier.block.ruler.before(
   classifyThreadleafMathBlock,
 );
 
-interface RendererReferenceDefinitionContext {
-  /** Physical source line where MarkdownIt's reference rule began. */
+interface RendererReferenceContext {
+  /** Physical source line where MarkdownIt's renderer rule began. */
   line: number;
-  /** Exclusive physical source line after MarkdownIt's accepted definition. */
+  /** Exclusive physical source line after MarkdownIt's accepted construct. */
   endLine: number;
-  /** Exact original-source range for the first logical definition line. */
+  /** Exact original-source range for the first logical source segment. */
   start: number;
+  /** Exact original-source range for the last logical source segment. */
   end: number;
-  /** Logical source segments consumed by MarkdownIt's reference rule. */
+  /** Logical source segments consumed by MarkdownIt's renderer rule. */
   segments: MaskRange[];
+}
+
+interface RendererReferenceDefinitionContext extends RendererReferenceContext {}
+
+interface RendererReferenceUsageToken {
+  label: string;
+  embed: boolean;
+}
+
+interface RendererReferenceUsageContext extends RendererReferenceContext {
+  /** Final inline source accepted by MarkdownIt's core inline pass. */
+  content: string;
+  usages: RendererReferenceUsageToken[];
+}
+
+interface RendererReferenceUsageCandidateContext extends RendererReferenceContext {
+  /** The block-stage inline token; core `inline` fills its children later. */
+  token: {
+    type: string;
+    content: string;
+    children?: readonly { type: string; meta?: unknown }[] | null;
+  };
 }
 
 interface RendererReferenceDefinitionEnvironment extends Env {
   threadleafReferenceDefinitionContexts: RendererReferenceDefinitionContext[];
+  threadleafReferenceUsageCandidateContexts: RendererReferenceUsageCandidateContext[];
+  threadleafReferenceUsageContexts: RendererReferenceUsageContext[];
   /** Maps a MarkdownIt-normalized source boundary back to the original source. */
   threadleafReferenceSourceOffsets: readonly number[];
 }
@@ -769,6 +812,25 @@ function normalizeReferenceSource(content: string): NormalizedReferenceSource {
   return { content: normalized, sourceOffsets };
 }
 
+function rendererSourceSegments(
+  state: StateBlock,
+  startLine: number,
+  endLine: number,
+  sourceOffsets: readonly number[],
+): MaskRange[] {
+  const segments: MaskRange[] = [];
+  for (let line = startLine; line < endLine; line += 1) {
+    const normalizedStart = state.bMarks[line];
+    const normalizedEnd = state.eMarks[line];
+    if (normalizedStart === undefined || normalizedEnd === undefined) continue;
+    const start = sourceOffsets[normalizedStart];
+    const end = sourceOffsets[normalizedEnd];
+    if (start === undefined || end === undefined) continue;
+    segments.push({ start, end });
+  }
+  return segments;
+}
+
 /**
  * This classifier deliberately wraps MarkdownIt's own reference block rule
  * instead of recognizing definitions from isolated physical lines.  The
@@ -789,6 +851,30 @@ markdownReferenceDefinitionClassifier.block.ruler.before(
   classifyThreadleafMathBlock,
 );
 
+/**
+ * Keep the parser-side renderer probe aligned with Reading view: a complete,
+ * unescaped one-line wiki span is consumed before MarkdownIt's reference-link
+ * rule has a chance to reinterpret its inner brackets.
+ */
+function classifyThreadleafWikiLink(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  const embed = state.src[start] === "!";
+  const markerStart = embed ? start + 1 : start;
+  if (state.src.slice(markerStart, markerStart + 2) !== "[[") return false;
+  const close = state.src.indexOf("]]", markerStart + 2);
+  if (close === -1 || state.src.slice(markerStart + 2, close).includes("\n")) return false;
+  if (!state.src.slice(markerStart + 2, close).trim()) return false;
+  if (!silent) state.push("threadleaf_wikilink", "a", 0);
+  state.pos = close + 2;
+  return true;
+}
+
+markdownReferenceDefinitionClassifier.inline.ruler.before(
+  "image",
+  "threadleaf_wikilink",
+  classifyThreadleafWikiLink,
+);
+
 const markdownReferenceRule = markdownReferenceDefinitionClassifier.block.ruler.__rules__.find(
   (rule) => rule.name === "reference",
 );
@@ -806,16 +892,7 @@ markdownReferenceDefinitionClassifier.block.ruler.at(
     const contexts = environment.threadleafReferenceDefinitionContexts;
     if (!Array.isArray(contexts) || state.line <= startLine) return accepted;
     const sourceOffsets = environment.threadleafReferenceSourceOffsets;
-    const segments: MaskRange[] = [];
-    for (let line = startLine; line < state.line; line += 1) {
-      const normalizedStart = state.bMarks[line];
-      const normalizedEnd = state.eMarks[line];
-      if (normalizedStart === undefined || normalizedEnd === undefined) continue;
-      const start = sourceOffsets[normalizedStart];
-      const end = sourceOffsets[normalizedEnd];
-      if (start === undefined || end === undefined) continue;
-      segments.push({ start, end });
-    }
+    const segments = rendererSourceSegments(state, startLine, state.line, sourceOffsets);
     const first = segments[0];
     if (first) {
       contexts.push({
@@ -831,6 +908,61 @@ markdownReferenceDefinitionClassifier.block.ruler.at(
   { alt: markdownReferenceRule.alt },
 );
 
+const markdownParagraphRule = markdownReferenceDefinitionClassifier.block.ruler.__rules__.find(
+  (rule) => rule.name === "paragraph",
+);
+if (!markdownParagraphRule) {
+  throw new Error("MarkdownIt paragraph block rule is unavailable.");
+}
+
+function rendererReferenceUsageTokens(
+  children: readonly { type: string; meta?: unknown }[] | null | undefined,
+): RendererReferenceUsageToken[] {
+  const usages: RendererReferenceUsageToken[] = [];
+  for (const child of children ?? []) {
+    if (child.type !== "link_open" && child.type !== "image") continue;
+    if (!child.meta || typeof child.meta !== "object") continue;
+    const label = (child.meta as { label?: unknown }).label;
+    if (typeof label !== "string") continue;
+    const normalized = normalizeMarkdownReferenceLabel(label);
+    if (normalized) usages.push({ label: normalized, embed: child.type === "image" });
+  }
+  return usages;
+}
+
+const markdownParagraphRuleFunction = markdownParagraphRule.fn;
+markdownReferenceDefinitionClassifier.block.ruler.at(
+  "paragraph",
+  (state, startLine, endLine, silent) => {
+    const tokenStart = state.tokens.length;
+    const accepted = markdownParagraphRuleFunction(state, startLine, endLine, silent);
+    if (!accepted || silent) return accepted;
+    const environment = state.env as RendererReferenceDefinitionEnvironment;
+    const candidates = environment.threadleafReferenceUsageCandidateContexts;
+    const sourceOffsets = environment.threadleafReferenceSourceOffsets;
+    if (!Array.isArray(candidates) || !Array.isArray(sourceOffsets)) return accepted;
+    for (const token of state.tokens.slice(tokenStart)) {
+      if (token.type !== "inline" || !token.map) continue;
+      const [tokenStartLine, tokenEndLine] = token.map;
+      if (tokenStartLine === undefined || tokenEndLine === undefined) continue;
+      const segments = rendererSourceSegments(state, tokenStartLine, tokenEndLine, sourceOffsets);
+      const first = segments[0];
+      const last = segments.at(-1);
+      if (!first || !last) continue;
+      candidates.push({
+        line: tokenStartLine + 1,
+        endLine: tokenEndLine + 1,
+        start: first.start,
+        end: last.end,
+        segments,
+        token,
+      });
+    }
+    return accepted;
+  },
+  { alt: markdownParagraphRule.alt },
+);
+
 function rendererReferenceDefinitionContexts(
   content: string,
   frontmatterRanges: readonly MaskRange[],
@@ -842,10 +974,39 @@ function rendererReferenceDefinitionContexts(
   const normalizedSource = normalizeReferenceSource(rendererSource);
   const environment: RendererReferenceDefinitionEnvironment = {
     threadleafReferenceDefinitionContexts: [],
+    threadleafReferenceUsageCandidateContexts: [],
+    threadleafReferenceUsageContexts: [],
     threadleafReferenceSourceOffsets: normalizedSource.sourceOffsets,
   };
   markdownReferenceDefinitionClassifier.parse(normalizedSource.content, environment);
   return environment.threadleafReferenceDefinitionContexts;
+}
+
+function rendererReferenceUsageContexts(maskedContent: string): RendererReferenceUsageContext[] {
+  // The physical scanner's opaque mask is source-offset preserving. Reuse it
+  // exactly so MarkdownIt cannot surface references inside code, raw HTML,
+  // comments, frontmatter, or recognized math blocks that Reading view treats
+  // as non-link source.
+  const normalizedSource = normalizeReferenceSource(maskedContent);
+  const environment: RendererReferenceDefinitionEnvironment = {
+    threadleafReferenceDefinitionContexts: [],
+    threadleafReferenceUsageCandidateContexts: [],
+    threadleafReferenceUsageContexts: [],
+    threadleafReferenceSourceOffsets: normalizedSource.sourceOffsets,
+  };
+  markdownReferenceDefinitionClassifier.parse(normalizedSource.content, environment);
+  for (const candidate of environment.threadleafReferenceUsageCandidateContexts) {
+    const usages = rendererReferenceUsageTokens(candidate.token.children);
+    if (usages.length > 0) {
+      const { token: _token, ...context } = candidate;
+      environment.threadleafReferenceUsageContexts.push({
+        ...context,
+        content: candidate.token.content,
+        usages,
+      });
+    }
+  }
+  return environment.threadleafReferenceUsageContexts;
 }
 
 /**
@@ -1027,9 +1188,9 @@ interface LogicalReferenceDefinitionSource {
  * with normalized line breaks, then map only ranges wholly owned by a source
  * segment back to UTF-16 source offsets.
  */
-function logicalRendererReferenceDefinitionSource(
+function logicalRendererReferenceSource(
   source: string,
-  context: RendererReferenceDefinitionContext,
+  context: RendererReferenceContext,
 ): LogicalReferenceDefinitionSource {
   let content = "";
   const segments: LogicalReferenceDefinitionSegment[] = [];
@@ -1059,11 +1220,258 @@ function originalOffsetForLogicalOffset(
   return segment.start + offset - segment.logicalStart;
 }
 
+function originalSourceRangesForLogicalRange(
+  segments: readonly LogicalReferenceDefinitionSegment[],
+  logicalStart: number,
+  logicalEnd: number,
+): MaskRange[] | null {
+  if (logicalStart < 0 || logicalEnd < logicalStart) return null;
+  const ranges: MaskRange[] = [];
+  let mappedLength = 0;
+  for (const segment of segments) {
+    const start = Math.max(logicalStart, segment.logicalStart);
+    const end = Math.min(logicalEnd, segment.logicalEnd);
+    if (end <= start) continue;
+    ranges.push({
+      start: originalOffsetForLogicalOffset(segment, start),
+      end: originalOffsetForLogicalOffset(segment, end),
+    });
+    mappedLength += end - start;
+  }
+  // Every segment join adds exactly one logical LF. That LF represents the
+  // original line boundary but must not be stretched across a blockquote/list
+  // prefix when we report exact source fragments.
+  const joinedLineBreaks = segments.slice(1).filter((segment) => {
+    const separator = segment.logicalStart - 1;
+    return logicalStart <= separator && separator < logicalEnd;
+  }).length;
+  return mappedLength + joinedLineBreaks === logicalEnd - logicalStart ? ranges : null;
+}
+
+function logicalRangeSpansRendererSegments(
+  segments: readonly LogicalReferenceDefinitionSegment[],
+  logicalStart: number,
+  logicalEnd: number,
+): boolean {
+  return (
+    segments.filter(
+      (segment) =>
+        Math.max(logicalStart, segment.logicalStart) < Math.min(logicalEnd, segment.logicalEnd),
+    ).length > 1
+  );
+}
+
+function sourceLineForOffset(content: string, offset: number): number {
+  let line = 1;
+  for (let cursor = 0; cursor < offset; cursor += 1) {
+    const character = content[cursor];
+    if (character === "\r") {
+      line += 1;
+      if (content[cursor + 1] === "\n") cursor += 1;
+    } else if (character === "\n") {
+      line += 1;
+    }
+  }
+  return line;
+}
+
+interface ReferenceUsageCandidate {
+  label: string;
+  embed: boolean;
+  position: number;
+  end: number;
+  labelStart: number;
+  labelEnd: number;
+}
+
+/**
+ * Parses one exact source segment with the same malformed, escaped, angle,
+ * and wiki policy used by physical-line reference scanning. Callers keep the
+ * source and opaque-mask strings offset-aligned, then choose whether returned
+ * positions are physical or logical.
+ */
+function parseReferenceUsageCandidates(
+  source: string,
+  maskedSource: string,
+): ReferenceUsageCandidate[] {
+  const angleMasked = maskInlineAngleTokens(maskedSource);
+  const wikiLinks = parseWikiLinks(source, angleMasked, 0, 1);
+  const searchable = maskParsedLinkRanges(angleMasked, wikiLinks, 0);
+  const usages: ReferenceUsageCandidate[] = [];
+  let cursor = 0;
+  while (cursor < searchable.length) {
+    const bracket = searchable.indexOf("[", cursor);
+    if (bracket === -1) break;
+    const beforeBracket = bracket - 1;
+    const possibleImage =
+      searchable[beforeBracket] === "!" && !hasOddBackslashEscape(searchable, beforeBracket);
+    const marker = possibleImage ? beforeBracket : bracket;
+    if (hasOddBackslashEscape(searchable, marker)) {
+      const escapedPseudoWikiClose =
+        searchable[bracket + 1] === "[" ? findClosingReferenceLabel(searchable, bracket + 2) : -1;
+      cursor = escapedPseudoWikiClose === -1 ? bracket + 1 : escapedPseudoWikiClose + 1;
+      continue;
+    }
+    if (searchable[bracket + 1] === "[") {
+      cursor = bracket + 2;
+      continue;
+    }
+    const inlineClose = findClosingInlineBracket(searchable, bracket + 1);
+    if (inlineClose === -1) {
+      cursor = bracket + 1;
+      continue;
+    }
+    if (searchable[inlineClose + 1] === "(") {
+      const destination = scanInlineDestination(searchable, inlineClose + 1);
+      cursor = destination ? destination.end : bracket + 1;
+      continue;
+    }
+    if (searchable[inlineClose + 1] !== "[") {
+      const close = findClosingReferenceLabel(searchable, bracket + 1);
+      if (close === -1) {
+        cursor = bracket + 1;
+        continue;
+      }
+      const label = normalizeMarkdownReferenceLabel(source.slice(bracket + 1, close));
+      if (label) {
+        usages.push({
+          label,
+          embed: possibleImage,
+          position: marker,
+          end: close + 1,
+          labelStart: bracket + 1,
+          labelEnd: close,
+        });
+      }
+      cursor = close + 1;
+      continue;
+    }
+    const referenceClose = findClosingReferenceLabel(searchable, inlineClose + 2);
+    if (referenceClose === -1) {
+      cursor = bracket + 1;
+      continue;
+    }
+    const explicit = source.slice(inlineClose + 2, referenceClose);
+    const flatOuterClose = findClosingReferenceLabel(searchable, bracket + 1);
+    if (!explicit && flatOuterClose !== inlineClose) {
+      cursor = bracket + 1;
+      continue;
+    }
+    const labelStart = explicit ? inlineClose + 2 : bracket + 1;
+    const labelEnd = explicit ? referenceClose : inlineClose;
+    const label = normalizeMarkdownReferenceLabel(source.slice(labelStart, labelEnd));
+    if (label) {
+      usages.push({
+        label,
+        embed: possibleImage,
+        position: marker,
+        end: referenceClose + 1,
+        labelStart,
+        labelEnd,
+      });
+    }
+    cursor = referenceClose + 1;
+  }
+  return usages;
+}
+
+function rendererMappedReferenceUsages(
+  content: string,
+  maskedContent: string,
+  contexts: readonly RendererReferenceUsageContext[],
+): ParsedMarkdownReferenceUsage[] {
+  const usages: ParsedMarkdownReferenceUsage[] = [];
+  for (const context of contexts) {
+    const logical = logicalRendererReferenceSource(content, context);
+    const logicalMasked = logicalRendererReferenceSource(maskedContent, context);
+    const logicalUsages =
+      logical.content.length === logicalMasked.content.length
+        ? parseReferenceUsageCandidates(logical.content, logicalMasked.content)
+        : [];
+    const hasLogicalMultilineUsage = logicalUsages.some((usage) =>
+      logicalRangeSpansRendererSegments(logical.segments, usage.position, usage.end),
+    );
+    const tokenContentMatches = logicalMasked.content === context.content;
+    const exactRendererSequence =
+      tokenContentMatches &&
+      logicalUsages.length === context.usages.length &&
+      logicalUsages.every(
+        (usage, index) =>
+          usage.label === context.usages[index]?.label &&
+          usage.embed === context.usages[index]?.embed,
+      );
+    if (!exactRendererSequence) {
+      // Do not let a same-label lookalike steal a later renderer token. An
+      // unmatched renderer-visible hard-wrapped reference is explicit source
+      // evidence, and the attachment planner blocks source-related instances
+      // below. A paragraph that contains only physical-line candidates must
+      // stay out of this renderer-only path.
+      if (hasLogicalMultilineUsage) {
+        usages.push(
+          ...context.usages.map((expected) => ({
+            label: expected.label,
+            embed: expected.embed,
+            position: context.start,
+            end: context.end,
+            line: context.line,
+            sourceMappable: false,
+          })),
+        );
+      }
+      continue;
+    }
+    for (const usage of logicalUsages) {
+      if (!logicalRangeSpansRendererSegments(logical.segments, usage.position, usage.end)) {
+        // Existing physical-line scanning owns ordinary source ranges. This
+        // path is deliberately only the renderer-derived multiline extension.
+        continue;
+      }
+      const sourceRanges = originalSourceRangesForLogicalRange(
+        logical.segments,
+        usage.position,
+        usage.end,
+      );
+      const labelSourceRanges = originalSourceRangesForLogicalRange(
+        logical.segments,
+        usage.labelStart,
+        usage.labelEnd,
+      );
+      if (
+        !sourceRanges ||
+        sourceRanges.length === 0 ||
+        !labelSourceRanges ||
+        labelSourceRanges.length === 0
+      ) {
+        usages.push({
+          label: usage.label,
+          embed: usage.embed,
+          position: context.start,
+          end: context.end,
+          line: context.line,
+          sourceMappable: false,
+        });
+        continue;
+      }
+      usages.push({
+        label: usage.label,
+        embed: usage.embed,
+        position: sourceRanges[0]?.start ?? context.start,
+        end: sourceRanges.at(-1)?.end ?? context.end,
+        line: sourceLineForOffset(content, sourceRanges[0]?.start ?? context.start),
+        sourceRanges,
+        labelSourceRanges,
+        sourceMappable: true,
+      });
+    }
+  }
+  return usages;
+}
+
 function rendererDefinitionCandidate(
   content: string,
   context: RendererReferenceDefinitionContext,
 ): ParsedMarkdownReferenceDefinitionCandidate | null {
-  const logical = logicalRendererReferenceDefinitionSource(content, context);
+  const logical = logicalRendererReferenceSource(content, context);
   const leading = logical.content.match(/^ {0,3}/u)?.[0].length ?? 0;
   const close =
     logical.content[leading] === "[" ? findClosingReferenceLabel(logical.content, leading + 1) : -1;
@@ -1257,100 +1665,26 @@ export function parseMarkdownReferenceUsages(
       continue;
     }
     const sourceLine = full.replace(/\r\n$|[\r\n]$/u, "");
-    const angleMaskedLine = maskInlineAngleTokens(
-      (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, ""),
-    );
-    const wikiLinks = parseWikiLinks(sourceLine, angleMaskedLine, offset, index + 1);
-    const searchableLine = maskParsedLinkRanges(angleMaskedLine, wikiLinks, offset);
-    let cursor = 0;
-    while (cursor < searchableLine.length) {
-      const bracket = searchableLine.indexOf("[", cursor);
-      if (bracket === -1) break;
-      const beforeBracket = bracket - 1;
-      const possibleImage =
-        searchableLine[beforeBracket] === "!" &&
-        !hasOddBackslashEscape(searchableLine, beforeBracket);
-      const marker = possibleImage ? beforeBracket : bracket;
-      if (hasOddBackslashEscape(searchableLine, marker)) {
-        // One escaped `[[` is not a wiki span. MarkdownIt's escape rule
-        // literalizes the opener and consumes its first bracketed fragment,
-        // then resumes generic inline parsing. Do not skip through a raw
-        // trailing `]]`: a later `[report]` can still be live, while the
-        // immediate pseudo-wiki body remains opaque. Even escapes and actual
-        // wiki spans remain masked by the parsed-wiki range above.
-        const escapedPseudoWikiClose =
-          searchableLine[bracket + 1] === "["
-            ? findClosingReferenceLabel(searchableLine, bracket + 2)
-            : -1;
-        cursor = escapedPseudoWikiClose === -1 ? bracket + 1 : escapedPseudoWikiClose + 1;
-        continue;
-      }
-      const embed = possibleImage;
-      // Obsidian wiki links and embeds begin with `[[` / `![[`; they are
-      // parsed by the wiki scanner rather than as Markdown reference usages.
-      if (searchableLine[bracket + 1] === "[") {
-        cursor = bracket + 2;
-        continue;
-      }
-      const inlineClose = findClosingInlineBracket(searchableLine, bracket + 1);
-      if (inlineClose === -1) {
-        cursor = bracket + 1;
-        continue;
-      }
-      if (searchableLine[inlineClose + 1] === "(") {
-        const destination = scanInlineDestination(searchableLine, inlineClose + 1);
-        // Threadleaf's evidence grammar remains conservative for malformed
-        // inline syntax: a failed outer parse does not hide an inner visible
-        // source-related reference label.
-        cursor = destination ? destination.end : bracket + 1;
-        continue;
-      }
-      if (searchableLine[inlineClose + 1] !== "[") {
-        const close = findClosingReferenceLabel(searchableLine, bracket + 1);
-        if (close === -1) {
-          cursor = bracket + 1;
-          continue;
-        }
-        const label = normalizeMarkdownReferenceLabel(sourceLine.slice(bracket + 1, close));
-        if (label) {
-          usages.push({
-            label,
-            embed,
-            position: offset + marker,
-            end: offset + close + 1,
-            line: index + 1,
-          });
-        }
-        cursor = close + 1;
-        continue;
-      }
-      const referenceClose = findClosingReferenceLabel(searchableLine, inlineClose + 2);
-      if (referenceClose === -1) {
-        cursor = bracket + 1;
-        continue;
-      }
-      const explicit = sourceLine.slice(inlineClose + 2, referenceClose);
-      const flatOuterClose = findClosingReferenceLabel(searchableLine, bracket + 1);
-      if (!explicit && flatOuterClose !== inlineClose) {
-        cursor = bracket + 1;
-        continue;
-      }
-      const alt = sourceLine.slice(bracket + 1, inlineClose);
-      const label = normalizeMarkdownReferenceLabel(explicit || alt);
-      if (label) {
-        usages.push({
-          label,
-          embed,
-          position: offset + marker,
-          end: offset + referenceClose + 1,
-          line: index + 1,
-        });
-      }
-      cursor = referenceClose + 1;
+    const searchableLine = (searchableLines[index] ?? "").replace(/\r\n$|[\r\n]$/u, "");
+    for (const usage of parseReferenceUsageCandidates(sourceLine, searchableLine)) {
+      usages.push({
+        label: usage.label,
+        embed: usage.embed,
+        position: offset + usage.position,
+        end: offset + usage.end,
+        line: index + 1,
+      });
     }
     offset += full.length;
   }
-  return usages;
+  usages.push(
+    ...rendererMappedReferenceUsages(
+      content,
+      maskedContent,
+      rendererReferenceUsageContexts(maskedContent),
+    ),
+  );
+  return usages.sort((left, right) => left.position - right.position || left.end - right.end);
 }
 
 export function parseMarkdownLinks(

@@ -126,6 +126,19 @@ function renderedLink(
   replacementEnd: number;
   replacementText: string;
 } {
+  // A reference definition is renderer-live Markdown syntax, not an inline
+  // Markdown occurrence. Its label, title, container prefix, and line ending
+  // must survive every workspace style preference.
+  if (parsedLink.sourceKind === "markdown-reference-definition") {
+    const target = replacementTarget("markdown", resultPath, resolvedTargetPath);
+    return {
+      target,
+      syntax: "markdown",
+      replacementStart: parsedLink.targetStart,
+      replacementEnd: parsedLink.targetEnd,
+      replacementText: target,
+    };
+  }
   const requestedSyntax = style === "wikilink" ? "wiki" : "markdown";
   if (style === "preserve" || parsedLink.syntax === requestedSyntax) {
     const target = replacementTarget(parsedLink.syntax, resultPath, resolvedTargetPath);

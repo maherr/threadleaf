@@ -1,7 +1,9 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import MarkdownIt from "markdown-it";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parseMarkdownLinks, parseMarkdownReferenceUsages } from "../kernel/markdown-links";
 import { MetadataIndex } from "../kernel/metadata-index";
 import { FixedStateRoot, type VaultMutationPort, type VaultReadPort } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
@@ -199,6 +201,129 @@ describe("link-safe note moves", () => {
       afterTarget: "./Renamed.md",
     });
     expect(plan.writes[0]?.content).toBe("[keep this label](./Renamed.md)\n");
+  });
+
+  it("keeps renderer-live reference definitions in Markdown grammar for every requested link style", async () => {
+    await fs.writeFile(path.join(vaultPath, "Target.md"), "# Target\n", "utf8");
+    const moveKernel = await openKernel();
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const forms = [
+      { name: "ordinary alias", usage: "[visible alias][asset]", embed: false },
+      { name: "image embed", usage: "![image alt][asset]", embed: true },
+    ];
+    const definitions = [
+      {
+        name: "one-line",
+        lines: (target: string) => [`[asset]: ${target}#Section "keep title"`],
+      },
+      {
+        name: "wrapped-label",
+        lines: (target: string) => ["[asset", `]: ${target}#Section "keep title"`],
+      },
+      {
+        name: "title-continuation",
+        lines: (target: string) => [`[asset]: ${target}#Section`, '  "keep title"'],
+      },
+    ];
+    const contexts = [
+      {
+        name: "top-level",
+        lines: (usage: string, definition: readonly string[]) => [usage, "", ...definition],
+      },
+      {
+        name: "blockquote",
+        lines: (usage: string, definition: readonly string[]) => [
+          `> ${usage}`,
+          ">",
+          ...definition.map((line) => `> ${line}`),
+        ],
+      },
+      {
+        name: "nested-list-blockquote",
+        lines: (usage: string, definition: readonly string[]) => [
+          `- > ${usage}`,
+          "  >",
+          ...definition.map((line) => `  > ${line}`),
+        ],
+      },
+    ];
+
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const context of contexts) {
+        for (const definition of definitions) {
+          for (const form of forms) {
+            for (const linkStyle of ["preserve", "markdown", "wikilink"] as const) {
+              const before = context.lines(form.usage, definition.lines("Target.md")).join(ending);
+              const afterTarget = "./Renamed.md";
+              const after = before.replace("Target.md", afterTarget);
+              const noteName = [
+                context.name,
+                definition.name,
+                form.name,
+                linkStyle,
+                ending === "\n" ? "lf" : ending === "\r\n" ? "crlf" : "cr",
+              ]
+                .join("-")
+                .replaceAll(" ", "-");
+              const notePath = `${noteName}.md`;
+              const noteFile = path.join(vaultPath, notePath);
+              await fs.writeFile(noteFile, before, "utf8");
+
+              const plan = await planMarkdownNoteMove(
+                moveKernel,
+                "Target.md",
+                "Renamed.md",
+                undefined,
+                undefined,
+                { linkStyle },
+              );
+              const label = `${noteName} ${JSON.stringify(ending)}`;
+              if (plan.status !== "planned") {
+                throw new Error(`Expected a planned reference-definition move for ${label}.`);
+              }
+
+              expect(plan.blockers, label).toEqual([]);
+              expect(plan.rewrites, label).toHaveLength(1);
+              expect(plan.rewrites[0], label).toMatchObject({
+                documentPath: notePath,
+                syntax: "markdown",
+                beforeTarget: "Target.md",
+                afterTarget,
+              });
+              expect(plan.writes, label).toEqual([
+                expect.objectContaining({ path: notePath, resultPath: notePath, content: after }),
+              ]);
+              const targetStart = before.indexOf("Target.md");
+              expect(after.slice(0, targetStart), label).toBe(before.slice(0, targetStart));
+              expect(after.slice(targetStart + afterTarget.length), label).toBe(
+                before.slice(targetStart + "Target.md".length),
+              );
+              expect(parseMarkdownReferenceUsages(after), label).toEqual([
+                expect.objectContaining({ label: "asset", embed: form.embed, line: 1 }),
+              ]);
+              expect(parseMarkdownLinks(after), label).toEqual([
+                expect.objectContaining({
+                  target: afterTarget,
+                  subpath: "#Section",
+                  syntax: "markdown",
+                  sourceKind: "markdown-reference-definition",
+                }),
+              ]);
+              const targetAttribute = form.embed ? "src" : "href";
+              expect(renderer.render(after), label).toContain(
+                `${targetAttribute}="${afterTarget}#Section"`,
+              );
+              await fs.rm(noteFile);
+            }
+          }
+        }
+      }
+    }
   });
 
   it("skips backlink writes when automatic updates are disabled", async () => {

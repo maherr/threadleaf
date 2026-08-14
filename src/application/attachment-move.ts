@@ -391,6 +391,56 @@ function referenceDefinitionSafety(
   visibleFiles: readonly string[],
 ): ReferenceDefinitionSafety {
   const relevantDefinitions = definitions.filter((definition) => definition.label === usage.label);
+  const evidence = relevantDefinitions.flatMap((definition) => {
+    const result = referenceDefinitionEvidence(documentPath, definition, sourcePath, resolver);
+    return result ? [{ definition, result }] : [];
+  });
+  if (usage.sourceMappable === false) {
+    const definitionsAreDefinitelyUnrelated = relevantDefinitions.every((definition) => {
+      if (definition.external) return true;
+      if (!definition.valid || !definition.target) {
+        const opaque = opaqueDefinitionSourceEvidence(documentPath, definition, sourcePath);
+        return opaque === "external" || opaque === "unrelated";
+      }
+      const resolution = resolveAttachmentLink(documentPath, definition.rawTarget, resolver);
+      if (resolution.status === "resolved") {
+        return (
+          resolution.path !== undefined &&
+          normalizedVaultPathIdentity(resolution.path) !== normalizedVaultPathIdentity(sourcePath)
+        );
+      }
+      if (resolution.status === "ambiguous") {
+        return !resolution.candidates?.some(
+          (candidate) =>
+            normalizedVaultPathIdentity(candidate) === normalizedVaultPathIdentity(sourcePath),
+        );
+      }
+      return false;
+    });
+    if (
+      referenceLabelMayIdentifySource(usage.label, sourcePath) ||
+      evidence.length > 0 ||
+      !definitionsAreDefinitelyUnrelated
+    ) {
+      return {
+        blocker: {
+          documentPath,
+          line: usage.line,
+          target: referenceUsageTarget(usage),
+          syntax: "markdown",
+          reason: "unsupported",
+          candidates:
+            evidence.length > 0
+              ? evidence.map(({ definition }) =>
+                  referenceDefinitionCandidateId(documentPath, definition),
+                )
+              : sourceCandidatePaths(visibleFiles, sourcePath),
+        },
+        rewriteDefinition: null,
+      };
+    }
+    return { blocker: null, rewriteDefinition: null };
+  }
   if (relevantDefinitions.length === 0) {
     if (!referenceLabelMayIdentifySource(usage.label, sourcePath)) {
       return { blocker: null, rewriteDefinition: null };
@@ -407,10 +457,6 @@ function referenceDefinitionSafety(
       rewriteDefinition: null,
     };
   }
-  const evidence = relevantDefinitions.flatMap((definition) => {
-    const result = referenceDefinitionEvidence(documentPath, definition, sourcePath, resolver);
-    return result ? [{ definition, result }] : [];
-  });
   if (evidence.length === 0) return { blocker: null, rewriteDefinition: null };
   const candidates = evidence.map(({ definition }) =>
     referenceDefinitionCandidateId(documentPath, definition),
@@ -764,7 +810,7 @@ export async function planBinaryAttachmentMove(
       const rawTarget = snapshot.content.slice(link.targetStart, link.targetEnd);
       const resolution = resolveAttachmentLink(documentPath, rawTarget, resolver);
       const isReferencedDefinition =
-        link.syntax === "markdown" &&
+        link.sourceKind === "markdown-reference-definition" &&
         referenceDefinitionTargetRanges.has(`${link.targetStart}:${link.targetEnd}`);
       const isSafeReferencedDefinition =
         isReferencedDefinition &&

@@ -348,6 +348,7 @@ describe("Markdown link source parser", () => {
             expect.objectContaining({
               target: "../Assets/report.pdf",
               syntax: "markdown",
+              sourceKind: "markdown-reference-definition",
               line: 3,
             }),
           ]);
@@ -894,6 +895,117 @@ describe("Markdown link source parser", () => {
         expect(content).toBe(before);
       }
     }
+  });
+
+  it("maps renderer-live hard-wrapped reference usages across forms, containers, and endings", () => {
+    const renderer = new MarkdownIt({
+      breaks: false,
+      html: true,
+      linkify: false,
+      typographer: false,
+    });
+    const forms = [
+      { name: "ordinary full", lines: ["[visible alias][asset", "]"], embed: false },
+      { name: "ordinary collapsed", lines: ["[asset", "][]"], embed: false },
+      { name: "ordinary shortcut", lines: ["[asset", "]"], embed: false },
+      { name: "image full", lines: ["![image alt][asset", "]"], embed: true },
+      { name: "image collapsed", lines: ["![asset", "][]"], embed: true },
+      { name: "image shortcut", lines: ["![asset", "]"], embed: true },
+    ];
+    const contexts = [
+      {
+        name: "top-level",
+        lines: (usage: readonly string[]) => [...usage, "", "[asset]: ../Assets/report.pdf"],
+      },
+      {
+        name: "blockquote",
+        lines: (usage: readonly string[]) => [
+          ...usage.map((line) => `> ${line}`),
+          ">",
+          "> [asset]: ../Assets/report.pdf",
+        ],
+      },
+      {
+        name: "nested-list-blockquote",
+        lines: (usage: readonly string[]) => [
+          `- > ${usage[0] ?? ""}`,
+          ...usage.slice(1).map((line) => `  > ${line}`),
+          "  >",
+          "  > [asset]: ../Assets/report.pdf",
+        ],
+      },
+    ];
+
+    for (const ending of ["\n", "\r\n", "\r"] as const) {
+      for (const context of contexts) {
+        for (const form of forms) {
+          const source = context.lines(form.lines).join(ending);
+          const targetAttribute = form.embed ? "src" : "href";
+          const label = `${context.name} ${form.name} ${JSON.stringify(ending)}`;
+
+          expect(renderer.render(source), label).toContain(
+            `${targetAttribute}="../Assets/report.pdf"`,
+          );
+          const usages = parseMarkdownReferenceUsages(source);
+          expect(usages, label).toEqual([
+            expect.objectContaining({ label: "asset", embed: form.embed, line: 1 }),
+          ]);
+          const usage = usages[0];
+          if (!usage?.sourceRanges || !usage.labelSourceRanges) {
+            throw new Error(`Expected source-mapped renderer usage for ${label}.`);
+          }
+          expect(
+            usage.sourceRanges.map((range) => source.slice(range.start, range.end)).join("\n"),
+            label,
+          ).toBe(form.lines.join("\n"));
+          expect(
+            usage.labelSourceRanges
+              .map((range) => source.slice(range.start, range.end))
+              .join("\n")
+              .replace(/\s+/gu, " ")
+              .trim(),
+            label,
+          ).toBe("asset");
+          expect(usage.sourceMappable, label).toBe(true);
+          expect(parseMarkdownLinks(source), label).toEqual([
+            expect.objectContaining({
+              target: "../Assets/report.pdf",
+              syntax: "markdown",
+              sourceKind: "markdown-reference-definition",
+            }),
+          ]);
+        }
+      }
+    }
+  });
+
+  it("keeps odd-escaped and opaque hard-wrapped reference lookalikes out of renderer usage mapping", () => {
+    const cases = [
+      ["\\[asset", "][]", "", "[asset]: ../Assets/report.pdf"].join("\n"),
+      ["[[asset]]", "continued paragraph", "", "[asset]: ../Assets/report.pdf"].join("\n"),
+      ["![[asset]]", "continued paragraph", "", "[asset]: ../Assets/report.pdf"].join("\n"),
+      ["\\![[asset]]", "continued paragraph", "", "[asset]: ../Assets/report.pdf"].join("\n"),
+      ["[[a] [asset] tail]]", "continued paragraph", "", "[asset]: ../Assets/report.pdf"].join(
+        "\n",
+      ),
+      ["    [asset", "    ][]", "", "[asset]: ../Assets/report.pdf"].join("\r\n"),
+      ["<div>", "[asset", "][]", "</div>", "", "[asset]: ../Assets/report.pdf"].join("\r"),
+      ["<!--", "[asset", "][]", "-->", "", "[asset]: ../Assets/report.pdf"].join("\n"),
+      ["$$", "[asset", "][]", "$$", "", "[asset]: ../Assets/report.pdf"].join("\n"),
+    ];
+
+    for (const source of cases) {
+      expect(parseMarkdownReferenceUsages(source)).toEqual([]);
+    }
+  });
+
+  it("fails closed when renderer token order cannot be mapped to logical source evidence", () => {
+    const source = ["\\[[asset]] [asset", "][]", "", "[asset]: ../Assets/report.pdf"].join("\n");
+
+    expect(parseMarkdownReferenceUsages(source)).toEqual([
+      expect.objectContaining({ label: "asset", embed: false, sourceMappable: false, line: 1 }),
+      expect.objectContaining({ label: "asset", embed: false, sourceMappable: false, line: 1 }),
+    ]);
   });
 
   it("maps renderer-live wrapped reference labels when their target shares the definition segment", () => {
