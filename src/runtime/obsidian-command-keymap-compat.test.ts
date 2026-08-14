@@ -353,7 +353,7 @@ describe("Obsidian keymap and scope compatibility", () => {
     }
   });
 
-  it("registers command hotkeys, resolves collisions, and removes handlers with commands", async () => {
+  it("registers command hotkeys, looks up live commands, resolves collisions, and cleans up", async () => {
     const { dom, restore } = installDom();
     try {
       const app = createApp();
@@ -362,25 +362,30 @@ describe("Obsidian keymap and scope compatibility", () => {
       const second = new Plugin(app, { id: "second", name: "Second", version: "0.1.0" });
       const firstCallback = vi.fn();
       const secondCallback = vi.fn();
+      const liveSecondCallback = vi.fn();
       first.addCommand({
         id: "run",
         name: "Run",
         callback: firstCallback,
         hotkeys: [{ modifiers: ["Mod"], key: "k" }],
       });
-      second.addCommand({
+      const secondCommand = second.addCommand({
         id: "run",
         name: "Run",
         callback: secondCallback,
         hotkeys: [{ modifiers: ["Mod"], key: "k" }],
       });
+      const liveSecondCommand = app.commands.commands[secondCommand.id];
+      if (!liveSecondCommand) throw new Error("Expected the qualified hotkey command to be live.");
+      liveSecondCommand.callback = liveSecondCallback;
 
       const collisionEvent = new dom.window.KeyboardEvent("keydown", {
         key: "k",
         ...modEventInit(),
       });
       dom.window.document.dispatchEvent(collisionEvent);
-      expect(secondCallback).toHaveBeenCalledOnce();
+      expect(liveSecondCallback).toHaveBeenCalledOnce();
+      expect(secondCallback).not.toHaveBeenCalled();
       expect(firstCallback).not.toHaveBeenCalled();
       expect(collisionEvent.defaultPrevented).toBe(true);
 
