@@ -2,7 +2,7 @@
 export const pluginCompatibilityRegistry = {
   "schemaVersion": 1,
   "generatedBy": "scripts/generate-plugin-compatibility-registry.mjs",
-  "threadleafVersion": "0.1.0-beta.4",
+  "threadleafVersion": "0.1.0-beta.5",
   "entries": [
     {
       "plugin": {
@@ -13,8 +13,8 @@ export const pluginCompatibilityRegistry = {
         "license": "AGPL-3.0",
         "bundleSha256": "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6"
       },
-      "threadleafVersion": "0.1.0-beta.4",
-      "lastTested": "2026-08-14",
+      "threadleafVersion": "0.1.0-beta.5",
+      "lastTested": "2026-08-15",
       "compatibilityLevel": 4,
       "summary": "Open, create, embed, SVG and PNG export, unload, reload, and plugin-owned settings workflows passed for this exact plugin release.",
       "evidenceMode": "composed",
@@ -126,8 +126,8 @@ export const pluginCompatibilityRegistry = {
         "license": "AGPL-3.0-or-later",
         "bundleSha256": "8450949c0c1989d68810b8e4d70c79bfd3e80cbf590785154a80baedd3860788"
       },
-      "threadleafVersion": "0.1.0-beta.4",
-      "lastTested": "2026-08-14",
+      "threadleafVersion": "0.1.0-beta.5",
+      "lastTested": "2026-08-15",
       "compatibilityLevel": 4,
       "summary": "Activation, command execution, notice delivery, unload, reload, timeout isolation, and restart recovery passed for this exact fixture release.",
       "evidenceMode": "direct",

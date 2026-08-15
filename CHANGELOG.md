@@ -7,6 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.0-beta.5]
+
+### Added
+
+- Navigator folder tree with a virtualized tree from the workspace index, WAI-ARIA semantics and
+  keyboard navigation, per-vault expansion persistence, reveal-active behavior, and guarded folder
+  creation.
+
+### Fixed
+
+- Dot-folder containment and bounded-cache fixes for workspace navigation.
+
 ### Added
 
 - Versioned main-process resource policy for compatibility renderers, with operation-specific
