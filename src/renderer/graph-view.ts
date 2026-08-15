@@ -522,15 +522,18 @@ export class GraphViewController {
     fragment.append(nodes);
     this.#elements.scene.replaceChildren(fragment);
     this.#renderNodeList(positioned);
+    const censusState = response.census.state;
+    const censusCurrent = censusState === "current";
     this.#elements.empty.hidden = positioned.length > 0;
-    this.#elements.empty.textContent =
-      response.query.trim() === ""
+    this.#elements.empty.textContent = !censusCurrent
+      ? censusState === "degraded"
+        ? "The index census is degraded, so this graph may be incomplete."
+        : "The index is still warming, so this graph will update when ready."
+      : response.query.trim() === ""
         ? "No linked notes match these options."
         : "No notes match this filter.";
     const shown = `${positioned.length} of ${response.totalNodes} note${response.totalNodes === 1 ? "" : "s"}`;
     const edgesShown = `${response.edges.length} of ${response.totalEdges} link${response.totalEdges === 1 ? "" : "s"}`;
-    const censusState = response.census.state;
-    const censusCurrent = censusState === "current";
     this.#elements.status.dataset.state = !censusCurrent
       ? censusState === "degraded"
         ? "degraded"
