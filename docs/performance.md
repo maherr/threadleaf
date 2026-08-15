@@ -220,11 +220,15 @@ vault in the background. Initial activation reads every visible Markdown file on
 state and the metadata index from the same stable byte snapshots, reuses generation-bound snapshot
 projections, and virtualizes the file navigator. On the measured 200K corpus, interactive kernel
 open moved from 56,325.8 ms to 38.6 ms. That is kernel-only evidence, not Electron or renderer
-time: the real TTUS was about 4.83 seconds, still within the 5-second opening budget. The IPC
+time: the performance-acceptance harness measured time to usable shell at 4,830.8 ms on the full
+207,726-file corpus, within the 5-second opening budget. That figure matches the small-fixture
+Electron cold-start floor on the same host (~4.6-4.8 s) because deferral makes the usable shell
+corpus-independent by design; it is dominated by Electron startup, not vault size. The IPC
 snapshot payload fell from 28,347,616 bytes to 38,658 bytes (733x), with `payloadObjects` falling
 from 200,023 to 281.
 
-The census completed in about 79.8 seconds on that corpus. There is deliberately no baseline-census
+The census completed in about 79.8 seconds on that corpus (200K uniform ~94-byte notes — a
+parse-light shape; the 897 MB acceptance corpus takes several times longer). There is deliberately no baseline-census
 comparison: the base did not expose `waitForCensusCompletion`, so the apparent 0.028 ms delta was
 not a census measurement. Likewise, the 1.84-second projection span covers a complete O(200K)
 snapshot rebuild, not a 256-row virtualized slice. The opening surface names the target, shows

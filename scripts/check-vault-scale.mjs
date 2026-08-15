@@ -640,6 +640,9 @@ async function waitForSearch(cdp, marker, predicate) {
           return {
             indexGeneration: response.indexGeneration ?? null,
             resultCount: response.results?.length ?? 0,
+            // results is capped at the search limit (50), so batch convergence
+            // must predicate on the un-truncated total.
+            total: response.total ?? 0,
           };
         })()`,
       ),
@@ -689,7 +692,7 @@ async function measureIncremental(cdp, vaultPath, manifest, variant, runIndex) {
     cdp,
     batchMarker,
     (value) =>
-      value.resultCount >= 100 && value.indexGeneration !== baseBeforeBatch.indexGeneration,
+      value.total >= 100 && value.indexGeneration !== baseBeforeBatch.indexGeneration,
   );
   const batch100Ms = performance.now() - batchStarted;
   await Promise.all(
