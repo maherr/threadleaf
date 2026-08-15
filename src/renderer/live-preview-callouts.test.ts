@@ -66,7 +66,9 @@ describe("Live Preview callout replacement", () => {
   });
 
   it("replaces an inactive callout whose body contains inline HTML", () => {
-    const { view, host } = editorFor("intro\n\n> [!note] Title\n> body <em>html</em> tail\n\nafter");
+    const { view, host } = editorFor(
+      "intro\n\n> [!note] Title\n> body <em>html</em> tail\n\nafter",
+    );
     expect(calloutWidgets(host)).toHaveLength(1);
     view.destroy();
   });
@@ -91,9 +93,7 @@ describe("Live Preview callout replacement", () => {
     view.destroy();
   });
   it("keeps task checkboxes inside a rendered callout inert until the source is revealed", () => {
-    const { view, host } = editorFor(
-      "intro\n\n> [!todo] List\n> - [ ] task in callout\n\nafter",
-    );
+    const { view, host } = editorFor("intro\n\n> [!todo] List\n> - [ ] task in callout\n\nafter");
     const rendered = calloutWidgets(host);
     expect(rendered).toHaveLength(1);
     const checkbox = host.querySelector(
