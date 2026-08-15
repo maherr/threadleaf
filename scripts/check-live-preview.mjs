@@ -34,8 +34,14 @@ Open [[Linked Note|linked note]], [Markdown link](Linked%20Note.md), and [the we
 - [ ] open task
 - [x] completed task
 
-> [!note]+ Source-backed callout
+> [!note]+ Source-backed **callout**
 > Exact Markdown returns when the cursor enters this line.
+>
+> > [!tip] Nested callout
+> > The nested body remains part of the outer callout.
+
+> [!warning]- Collapsed by default
+> This body is hidden until its title is activated.
 
 ![[pixel.png|fixture image]]
 
@@ -497,7 +503,28 @@ async function liveSurfaceState() {
     tags: document.querySelectorAll(".tl-live-tag").length,
     tasks: document.querySelectorAll(".tl-live-task").length,
     checkedTasks: document.querySelectorAll(".tl-live-task:checked").length,
-    callouts: document.querySelectorAll(".tl-live-callout").length,
+    callouts: document.querySelectorAll(".tl-live-callout-block .callout").length,
+    calloutState: (() => {
+      const outer = document.querySelector('.tl-live-callout-block .callout[data-callout="note"]');
+      const nested = document.querySelector('.tl-live-callout-block .callout[data-callout="tip"]');
+      const collapsed = document.querySelector('.tl-live-callout-block .callout[data-callout="warning"]');
+      const title = outer?.querySelector(".callout-title-inner");
+      const icon = outer?.querySelector(".callout-icon");
+      const collapsedContent = collapsed?.querySelector(".callout-content");
+      return {
+        outerDataCallout: outer instanceof HTMLElement ? outer.dataset.callout ?? "" : "",
+        titleText: title?.textContent?.replace(/\\s+/gu, " ").trim() ?? "",
+        icon: icon instanceof HTMLElement ? getComputedStyle(icon, "::before").content : "",
+        nested: nested instanceof HTMLElement,
+        outerCollapsed: outer instanceof HTMLElement && outer.classList.contains("is-collapsed"),
+        outerBodyHidden:
+          outer?.querySelector(".callout-content") instanceof HTMLElement &&
+          getComputedStyle(outer.querySelector(".callout-content")).display === "none",
+        collapsed: collapsed instanceof HTMLElement && collapsed.classList.contains("is-collapsed"),
+        collapsedBodyHidden:
+          collapsedContent instanceof HTMLElement && getComputedStyle(collapsedContent).display === "none",
+      };
+    })(),
     embeds: document.querySelectorAll(".tl-live-embed").length,
     embedState: (() => {
       const embed = document.querySelector(".tl-live-embed");
@@ -549,6 +576,88 @@ async function liveSurfaceState() {
       return shell instanceof HTMLElement ? shell.scrollWidth - shell.clientWidth : 0;
     })(),
   }))()`);
+}
+
+async function calloutContrastState(rootSelector) {
+  return evaluate(`(() => {
+    const root = document.querySelector(${JSON.stringify(rootSelector)});
+    const callout = root?.querySelector('.callout[data-callout="note"]');
+    const title = callout?.querySelector(".callout-title");
+    const icon = callout?.querySelector(".callout-icon");
+    if (!(title instanceof HTMLElement) || !(icon instanceof HTMLElement)) {
+      return { available: false };
+    }
+    const parse = (value) => {
+      const rgb = /^rgba?\\(\\s*([\\d.]+)[, ]+\\s*([\\d.]+)[, ]+\\s*([\\d.]+)(?:[, /]+\\s*([\\d.]+))?\\s*\\)$/u.exec(value);
+      if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), Number(rgb[4] ?? 1)];
+      const srgb = /^color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)(?:\\s*\\/\\s*([\\d.]+))?\\)$/u.exec(value);
+      if (srgb) return [Number(srgb[1]) * 255, Number(srgb[2]) * 255, Number(srgb[3]) * 255, Number(srgb[4] ?? 1)];
+      return null;
+    };
+    const luminance = (channels) => {
+      const linear = channels.slice(0, 3).map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+    };
+    const ratio = (foreground, background) => {
+      if (!foreground || !background || foreground[3] !== 1 || background[3] !== 1) return null;
+      const left = luminance(foreground);
+      const right = luminance(background);
+      return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
+    };
+    const contrast = (current) => {
+      const currentTitle = current.querySelector(".callout-title");
+      const currentIcon = current.querySelector(".callout-icon");
+      if (!(currentTitle instanceof HTMLElement) || !(currentIcon instanceof HTMLElement)) return null;
+      const style = getComputedStyle(currentTitle);
+      const iconStyle = getComputedStyle(currentIcon);
+      return {
+        titleContrast: ratio(parse(style.color), parse(style.backgroundColor)),
+        iconContrast: ratio(parse(iconStyle.color), parse(style.backgroundColor)),
+        titleColor: style.color,
+        titleBackground: style.backgroundColor,
+        iconColor: iconStyle.color,
+      };
+    };
+    const note = contrast(callout);
+    const probe = document.createElement("div");
+    probe.setAttribute("aria-hidden", "true");
+    probe.style.cssText = "position: fixed; left: -10000px; top: 0; width: 1px; pointer-events: none;";
+    const types = ["note", "abstract", "info", "todo", "tip", "success", "question", "warning", "failure", "danger", "bug", "example", "quote"];
+    for (const type of types) {
+      const item = document.createElement("div");
+      item.className = "callout";
+      item.dataset.callout = type;
+      item.dataset.calloutStyle = type;
+      item.innerHTML = '<div class="callout-title"><div class="callout-icon"></div><div class="callout-title-inner">' + type + '</div></div>';
+      probe.append(item);
+    }
+    root.append(probe);
+    const byType = Object.fromEntries(
+      [...probe.querySelectorAll(".callout")].map((item) => [item.dataset.calloutStyle, contrast(item)]),
+    );
+    probe.remove();
+    return {
+      available: true,
+      ...note,
+      byType,
+    };
+  })()`);
+}
+
+function hasAccessibleCalloutContrast(state) {
+  return (
+    state.available &&
+    state.titleContrast >= 4.5 &&
+    state.iconContrast >= 3 &&
+    Object.values(state.byType ?? {}).every(
+      (contrast) => contrast?.titleContrast >= 4.5 && contrast?.iconContrast >= 3,
+    )
+  );
 }
 
 try {
@@ -621,7 +730,7 @@ try {
         candidate.tags === 2 &&
         candidate.tasks === 2 &&
         candidate.checkedTasks === 1 &&
-        candidate.callouts === 1 &&
+        candidate.callouts === 3 &&
         candidate.embeds === 1 &&
         candidate.embedState?.status === "ready" &&
         candidate.embedState.owner === "Showcase.md" &&
@@ -652,6 +761,142 @@ try {
   assert(
     surface.tableText.includes("modelive") || surface.tableText.includes("mode live"),
     "Live table body text was not visible.",
+  );
+  assert(
+    surface.calloutState?.outerDataCallout === "note" &&
+      surface.calloutState.titleText.includes("Source-backed callout") &&
+      surface.calloutState.icon.length > 0 &&
+      surface.calloutState.nested &&
+      surface.calloutState.collapsed &&
+      surface.calloutState.collapsedBodyHidden,
+    `Live Preview callout contract was incomplete: ${JSON.stringify(surface.calloutState)}`,
+  );
+
+  phase = "callouts in Reading view";
+  await clickSelector("#read-view");
+  await waitFor(async () => {
+    const candidate = await evaluate(`(() => {
+      const root = document.querySelector("#note-preview");
+      const outer = root?.querySelector('.callout[data-callout="note"]');
+      const nested = root?.querySelector('.callout[data-callout="tip"]');
+      const collapsed = root?.querySelector('.callout[data-callout="warning"]');
+      const title = outer?.querySelector(".callout-title-inner");
+      return {
+        mode: document.querySelector("#note-view")?.dataset.view ?? "",
+        count: root?.querySelectorAll(".callout").length ?? 0,
+        outer: outer instanceof HTMLElement ? outer.dataset.callout ?? "" : "",
+        title: title?.textContent?.replace(/\\s+/gu, " ").trim() ?? "",
+        nested: nested instanceof HTMLElement,
+        collapsed: collapsed instanceof HTMLElement && collapsed.classList.contains("is-collapsed"),
+      };
+    })()`);
+    return candidate.mode === "reading" &&
+      candidate.count === 3 &&
+      candidate.outer === "note" &&
+      candidate.title.includes("Source-backed callout") &&
+      candidate.nested &&
+      candidate.collapsed
+      ? candidate
+      : null;
+  }, "Reading view did not render the full nested callout contract");
+  await captureScreenshot("callouts-reading-dark-expanded");
+  await clickSelector(
+    '#note-preview .callout[data-callout="note"] .callout-title',
+    0,
+    "#note-preview",
+  );
+  await waitFor(async () => {
+    const candidate = await evaluate(`(() => {
+      const callout = document.querySelector('#note-preview .callout[data-callout="note"]');
+      const title = callout?.querySelector(".callout-title");
+      return {
+        collapsed: callout instanceof HTMLElement && callout.classList.contains("is-collapsed"),
+        expanded: title instanceof HTMLElement ? title.getAttribute("aria-expanded") : null,
+      };
+    })()`);
+    return candidate.collapsed && candidate.expanded === "false" ? candidate : null;
+  }, "Reading callout title did not toggle its view-only fold state");
+  const darkCalloutContrast = await calloutContrastState("#note-preview");
+  assert(
+    hasAccessibleCalloutContrast(darkCalloutContrast),
+    `Dark Reading callout contrast was insufficient: ${JSON.stringify(darkCalloutContrast)}`,
+  );
+  await captureScreenshot("callouts-reading-dark");
+  await clickSelector("#theme-toggle");
+  await waitFor(
+    async () => (await evaluate("document.documentElement.dataset.theme")) === "light",
+    "The isolated surface did not switch to light for Reading callout verification",
+  );
+  const lightCalloutContrast = await calloutContrastState("#note-preview");
+  assert(
+    hasAccessibleCalloutContrast(lightCalloutContrast),
+    `Light Reading callout contrast was insufficient: ${JSON.stringify(lightCalloutContrast)}`,
+  );
+  await captureScreenshot("callouts-reading-light");
+  await clickSelector("#theme-toggle");
+  await waitFor(
+    async () => (await evaluate("document.documentElement.dataset.theme")) === "dark",
+    "The isolated surface did not restore dark mode after Reading callout verification",
+  );
+  await clickSelector("#edit-view");
+  surface = await waitFor(async () => {
+    const candidate = await liveSurfaceState();
+    return candidate.mode === "live" && candidate.callouts === 3 ? candidate : null;
+  }, "Live Preview did not return after Reading callout verification");
+
+  phase = "callouts in Live Preview";
+  await clickSelector(
+    '.tl-live-callout-block .callout[data-callout="note"] .callout-title',
+    0,
+    "#note-editor .cm-scroller",
+  );
+  surface = await waitFor(async () => {
+    const candidate = await liveSurfaceState();
+    return candidate.calloutState?.outerCollapsed === true &&
+      candidate.calloutState?.outerBodyHidden
+      ? candidate
+      : null;
+  }, "Live Preview callout title did not toggle collapse without revealing source");
+  await clickSelector(
+    '.tl-live-callout-block .callout[data-callout="note"] .callout-title',
+    0,
+    "#note-editor .cm-scroller",
+  );
+  await waitFor(async () => {
+    const candidate = await evaluate(`(() => {
+      const callout = document.querySelector('.tl-live-callout-block .callout[data-callout="note"]');
+      const title = callout?.querySelector(".callout-title");
+      return {
+        collapsed: callout instanceof HTMLElement && callout.classList.contains("is-collapsed"),
+        expanded: title instanceof HTMLElement ? title.getAttribute("aria-expanded") : null,
+      };
+    })()`);
+    return !candidate.collapsed && candidate.expanded === "true" ? candidate : null;
+  }, "Live Preview callout did not expand again");
+  await captureScreenshot("live-preview-dark-rendered-callouts");
+  assert(
+    await evaluate(`(() => {
+      const content = document.querySelector('.tl-live-callout-block .callout[data-callout="note"] .callout-content');
+      if (!(content instanceof HTMLElement)) return false;
+      content.scrollIntoView({ block: "center", inline: "nearest" });
+      return true;
+    })()`),
+    "The rendered Live Preview callout body was unavailable for source-reveal verification.",
+  );
+  await delay(100);
+  await clickSelector(
+    '.tl-live-callout-block .callout[data-callout="note"] .callout-content',
+    0,
+    "#note-editor .cm-scroller",
+  );
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector(".cm-activeLine")?.textContent ?? ""')).includes(
+        "[!note]+ Source-backed",
+      )
+        ? true
+        : null,
+    "Clicking a rendered Live Preview callout did not reveal its exact source line",
   );
   const darkBaseline = await captureScreenshot("live-preview-dark");
   assert(

@@ -1,5 +1,11 @@
 import { syntaxTree } from "@codemirror/language";
-import { type Extension, type Range, StateEffect } from "@codemirror/state";
+import {
+  type EditorState,
+  type Extension,
+  type Range,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -14,6 +20,7 @@ import type {
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
 } from "../shared/contracts";
+import { parseCalloutSourceLine } from "./callouts";
 import {
   collectFootnotes,
   createSafeMathElement,
@@ -25,6 +32,7 @@ import {
   sourceLineStarts,
   splitSourceLines,
 } from "./markdown-extensions";
+import { renderMarkdownPreview } from "./markdown-preview";
 
 export type LivePreviewLinkSyntax = "wiki" | "markdown";
 
@@ -431,16 +439,18 @@ export function parseLivePreviewLine(
     occupied.push(token);
   };
 
-  const callout = /^\s*>\s*\[!([a-z0-9_-]+)\](?:[+-])?/iu.exec(text);
-  if (callout?.[0] && callout[1]) {
-    const markerAt = callout[0].indexOf("[!");
-    const marker = callout[0].slice(markerAt);
-    add({
-      from: lineFrom + markerAt,
-      to: lineFrom + markerAt + marker.length,
-      kind: "callout",
-      label: callout[1].replaceAll(/[-_]+/gu, " "),
-    });
+  const callout = parseCalloutSourceLine(text);
+  if (callout) {
+    const marker = /\[![a-z0-9_-]+\][+-]?/iu.exec(text);
+    const markerAt = marker?.index ?? -1;
+    if (markerAt >= 0 && marker?.[0]) {
+      add({
+        from: lineFrom + markerAt,
+        to: lineFrom + markerAt + marker[0].length,
+        kind: "callout",
+        label: callout.type.replaceAll(/[-_]+/gu, " "),
+      });
+    }
   }
 
   for (const match of text.matchAll(/(!?)\[\[([^\]\n]+)\]\]/gu)) {
@@ -2107,26 +2117,50 @@ class CalloutWidget extends WidgetType {
   constructor(
     readonly from: number,
     readonly to: number,
-    readonly label: string,
+    readonly source: string,
   ) {
     super();
   }
 
   eq(other: CalloutWidget): boolean {
-    return this.from === other.from && this.to === other.to && this.label === other.label;
+    return this.from === other.from && this.to === other.to && this.source === other.source;
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const badge = document.createElement("span");
-    badge.className = "tl-live-callout";
-    badge.textContent = this.label;
-    sourceMetadata(badge, this.from, this.to, "callout");
-    badge.addEventListener("mousedown", (event) => {
-      if (event.button === 0) {
-        revealSource(view, this.from, event);
+    const frame = document.createElement("div");
+    frame.className = "tl-live-callout-block";
+    frame.tabIndex = 0;
+    frame.setAttribute("role", "group");
+    frame.ariaLabel = "Callout. Click to edit the exact Markdown source.";
+    sourceMetadata(frame, this.from, this.to, "callout");
+    frame.append(renderMarkdownPreview(this.source));
+    const reveal = (event: MouseEvent | KeyboardEvent): void => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".callout.is-collapsible .callout-title")
+      ) {
+        return;
+      }
+      revealSource(view, this.from, event);
+    };
+    frame.addEventListener("mousedown", (event) => {
+      if (event.button === 0) reveal(event);
+    });
+    frame.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") reveal(event);
+    });
+    // Task checkboxes render live inside the callout preview, but toggling
+    // happens in the revealed source; suppress the browser's phantom flip so
+    // a click resolves to the reveal alone.
+    frame.addEventListener("click", (event) => {
+      if (
+        event.target instanceof HTMLInputElement &&
+        event.target.classList.contains("task-list-item-checkbox")
+      ) {
+        event.preventDefault();
       }
     });
-    return badge;
+    return frame;
   }
 }
 
@@ -2304,6 +2338,13 @@ function activeLineRanges(view: EditorView): SourceRange[] {
     ranges.push({ from: line.from, to: line.to });
   }
   return ranges;
+}
+
+function selectedLineRanges(state: EditorState): SourceRange[] {
+  return state.selection.ranges.map((selection) => ({
+    from: state.doc.lineAt(selection.from).from,
+    to: state.doc.lineAt(selection.to).to,
+  }));
 }
 
 function sameInactiveLine(
@@ -2487,6 +2528,51 @@ function collectSourceOnlyLineNumbers(
   return sourceOnly;
 }
 
+interface LiveCalloutBlock extends SourceRange {
+  source: string;
+}
+
+function collectLiveCalloutBlocks(
+  state: EditorState,
+  active: readonly SourceRange[],
+  protectedRanges: readonly SourceRange[],
+): LiveCalloutBlock[] {
+  const candidates: LiveCalloutBlock[] = [];
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (node.name !== "Blockquote") return;
+      const firstLine = state.doc.lineAt(node.from);
+      if (!parseCalloutSourceLine(firstLine.text)) return;
+      const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1));
+      const range = { from: firstLine.from, to: lastLine.to };
+      // A protected range fully inside the callout body (an inline code span, a
+      // fenced block, inline HTML) is ordinary content; only a range crossing
+      // the block boundary indicates renderer disagreement about the block.
+      const straddles = protectedRanges.some(
+        (protectedRange) =>
+          rangesIntersect(range, protectedRange) &&
+          !(range.from <= protectedRange.from && protectedRange.to <= range.to),
+      );
+      if (intersectsAny(range, active) || straddles) return;
+      candidates.push({
+        ...range,
+        source: state.doc.sliceString(range.from, range.to),
+      });
+    },
+  });
+  candidates.sort((left, right) => left.from - right.from || right.to - left.to);
+  return candidates.filter(
+    (candidate) =>
+      !candidates.some(
+        (other) =>
+          other !== candidate &&
+          other.from <= candidate.from &&
+          other.to >= candidate.to &&
+          (other.from < candidate.from || other.to > candidate.to),
+      ),
+  );
+}
+
 type LiveTableRowKind = "header" | "separator" | "body";
 
 class TableRowWidget extends WidgetType {
@@ -2652,12 +2738,22 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
     );
     replacedRanges.push(marker);
   }
-  const mathBlocks = collectVisibleMathBlocks(view, protectedRanges);
+  const calloutBlocks = collectLiveCalloutBlocks(view.state, active, protectedRanges);
+  const calloutRanges: SourceRange[] = calloutBlocks.map(({ from, to }) => ({ from, to }));
+  const visibleTableRanges = tableRanges.filter((range) => !intersectsAny(range, calloutRanges));
+  tableRanges.length = 0;
+  tableRanges.push(...visibleTableRanges);
+  const mathBlocks = collectVisibleMathBlocks(view, protectedRanges).filter(
+    (block) => !intersectsAny(block, calloutRanges),
+  );
   const orderedProtectedRanges = mergeSourceRanges([
     ...subtractSourceRanges(protectedRanges, htmlRanges),
     ...htmlRanges,
   ]);
   const lineProtectedCursor: SourceRangeCursor = { index: 0 };
+  for (const callout of calloutBlocks) {
+    replacedRanges.push(callout);
+  }
   for (const range of tableRanges) {
     const source = view.state.doc.sliceString(range.from, range.to);
     const data = parseLiveTable(source);
@@ -2693,6 +2789,9 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
   }
 
   for (const line of visibleLines(view)) {
+    if (calloutRanges.some((range) => rangesIntersect(range, { from: line.from, to: line.to }))) {
+      continue;
+    }
     if (tableRanges.some((range) => rangesIntersect(range, { from: line.from, to: line.to }))) {
       continue;
     }
@@ -2777,10 +2876,7 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
         continue;
       }
       let widget: WidgetType;
-      if (token.kind === "callout") {
-        widget = new CalloutWidget(token.from, token.to, token.label);
-        addLineClass(token.from, "tl-live-callout-line");
-      } else if (token.kind === "image" && token.link) {
+      if (token.kind === "image" && token.link) {
         widget = new ImageWidget(token.from, token.to, token.link, options);
       } else if (token.kind === "embed" && token.link) {
         widget = new EmbedWidget(token.from, token.to, token.link, options);
@@ -2942,8 +3038,52 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
 
 const refreshLivePreview = StateEffect.define<null>();
 
+function buildCalloutDecorations(state: EditorState): DecorationSet {
+  const source = state.doc.toString();
+  const frontmatter = scanFrontmatter(source);
+  if (frontmatter.status === "unresolved") {
+    return Decoration.none;
+  }
+  const protectedRanges = markdownHtmlRanges(source);
+  if (frontmatter.status === "resolved" && frontmatter.closingLine !== null) {
+    protectedRanges.push({ from: 0, to: state.doc.line(frontmatter.closingLine).to });
+  }
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (["InlineCode", "FencedCode", "CodeText", "HTMLBlock", "HTMLTag"].includes(node.name)) {
+        protectedRanges.push({ from: node.from, to: node.to });
+      }
+    },
+  });
+  const blocks = collectLiveCalloutBlocks(state, selectedLineRanges(state), protectedRanges);
+  return Decoration.set(
+    blocks.map((block) =>
+      Decoration.replace({
+        widget: new CalloutWidget(block.from, block.to, block.source),
+        block: true,
+        inclusive: true,
+      }).range(block.from, block.to),
+    ),
+    true,
+  );
+}
+
+const liveCalloutDecorations = StateField.define<DecorationSet>({
+  create(state) {
+    return buildCalloutDecorations(state);
+  },
+  update(decorations, transaction) {
+    if (transaction.docChanged || transaction.selection !== undefined) {
+      return buildCalloutDecorations(transaction.state);
+    }
+    return decorations.map(transaction.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
 export function createLivePreviewExtension(options: LivePreviewOptions): Extension {
   return [
+    liveCalloutDecorations,
     ViewPlugin.fromClass(
       class {
         decorations: DecorationSet;

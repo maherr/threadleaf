@@ -9,6 +9,7 @@ import type {
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
 } from "../shared/contracts";
+import { upgradeRenderedCallouts } from "./callouts";
 import {
   collectFootnotes,
   type FootnoteCollection,
@@ -530,6 +531,20 @@ markdown.renderer.rules.list_item_open = (tokens, index, options, env, renderer)
     ? defaultListItemOpen(tokens, index, options, env, renderer)
     : renderer.renderToken(tokens, index, options);
   return `${opened}${renderTaskCheckbox(task, environment?.threadleafRenderToken)}`;
+};
+
+const defaultBlockquoteOpen = markdown.renderer.rules.blockquote_open;
+markdown.renderer.rules.blockquote_open = (tokens, index, options, env, renderer) => {
+  const token = tokens[index];
+  if (!token) return "";
+  if (token.map) {
+    token.attrSet("data-source-line", String(token.map[0] + 1));
+  }
+  const renderToken = previewEnvironment(env)?.threadleafRenderToken;
+  if (renderToken) token.attrSet("data-threadleaf-render-token", renderToken);
+  return defaultBlockquoteOpen
+    ? defaultBlockquoteOpen(tokens, index, options, env, renderer)
+    : renderer.renderToken(tokens, index, options);
 };
 
 markdown.renderer.rules.threadleaf_wikilink = (tokens, index, _options, env) => {
@@ -1370,6 +1385,11 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
   const bodyHtml = markdown.render(environment.threadleafSourceText, environment);
   const html = bodyHtml + renderFootnoteSection(footnotes, environment);
   const fragment = DOMPurify.sanitize(html, sanitizeConfig);
+  upgradeRenderedCallouts(
+    fragment,
+    environment.threadleafSourceText,
+    environment.threadleafRenderToken,
+  );
   const privilegedClasses = new Set([
     "external-link",
     "internal-link",
