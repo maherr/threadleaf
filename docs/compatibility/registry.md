@@ -4,12 +4,12 @@ This document is generated from [`compatibility/plugin-evidence.v1.json`](../../
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 1. Threadleaf version: 0.1.0-beta.3.
+Registry schema: 1. Threadleaf version: 0.1.0-beta.4.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
-| [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.3 | 4 | composed | 2026-08-12 |
-| [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0-beta.3 | 4 | direct | 2026-08-12 |
+| [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.4 | 4 | composed | 2026-08-14 |
+| [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0-beta.4 | 4 | direct | 2026-08-14 |
 
 ## Excalidraw 2.25.3
 
