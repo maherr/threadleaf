@@ -1,0 +1,27 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "inspection-teardown-0.1.0",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "inspection-teardown",
+    "manifestVersion": "0.1.0",
+    "distributionTag": "0.1.0",
+    "manifestSha256": "39adddab9e21e7e5a5834ec0605a27efee7ba965407f8ba71fc9d40a71f71652",
+    "mainSha256": "78f0cc37011191fd09b0625048479b04747f1428e8f817e6b02e791f588746c6",
+    "stylesSha256": null,
+    "packageTreeSha256": "708b674f9fa7b562d33d8c6f7afc4da08b527d3f4447ae7ee195901899e33282"
+  },
+  "packageIdentityDigest": "219799b5af6eb5c1a2499056b83f94dfd8c1cd1f5b3e3bcfcf9c40c5b44a5078",
+  "expectedStaticCapabilities": [],
+  "requiredAuthorities": [
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "c2bb8aa4aa760dfb2c27e508dc61535b3e20ae16548cc7a234534d49f8c676a1"
+}

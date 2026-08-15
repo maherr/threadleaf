@@ -15,8 +15,8 @@ export const pluginCompatibilityRegistry = {
       },
       "threadleafVersion": "0.1.0-beta.6",
       "lastTested": "2026-08-16",
-      "compatibilityLevel": 4,
-      "summary": "Open, create, embed, SVG and PNG export, unload, reload, and plugin-owned settings workflows passed for this exact plugin release.",
+      "compatibilityLevel": 0,
+      "summary": "Historical workflow gates passed for this exact release, but no reviewed authority profile currently permits construction, so current compatibility evidence is Level 0.",
       "evidenceMode": "composed",
       "requiredCapabilities": [
         "vault-read",
@@ -112,6 +112,7 @@ export const pluginCompatibilityRegistry = {
       ],
       "failures": [],
       "limitations": [
+        "No reviewed authority profile currently binds this exact package identity; construction is denied with authority-profile-missing.",
         "Inline wiki-embed rendering and export formats beyond SVG and PNG are not verified.",
         "The official Obsidian to Threadleaf to Obsidian roundtrip is recorded as external evidence for one pinned Linux Flatpak and exact plugin release; it is not an executable registry gate.",
         "The exact release check and host workflow checks are composed gates, not one monolithic end-to-end command."
@@ -128,8 +129,8 @@ export const pluginCompatibilityRegistry = {
       },
       "threadleafVersion": "0.1.0-beta.6",
       "lastTested": "2026-08-15",
-      "compatibilityLevel": 4,
-      "summary": "Activation, command execution, notice delivery, unload, reload, timeout isolation, and restart recovery passed for this exact fixture release.",
+      "compatibilityLevel": 0,
+      "summary": "Historical fixture workflows passed, but no reviewed authority profile currently permits construction, so current compatibility evidence is Level 0.",
       "evidenceMode": "direct",
       "requiredCapabilities": [
         "workspace-ui"
@@ -183,6 +184,7 @@ export const pluginCompatibilityRegistry = {
       ],
       "failures": [],
       "limitations": [
+        "No reviewed authority profile currently binds this exact package identity; construction is denied with authority-profile-missing.",
         "This repository-owned fixture intentionally exercises a narrow API surface.",
         "It is not listed in the external community package directory."
       ]

@@ -3,8 +3,11 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ActionRegistry } from "../application/action-registry";
 import { parsePluginManifest } from "../shared/plugins";
+import { testPluginRuntimeFactory } from "../test-support/plugin-construction";
 import type { OpenPluginPackage, PluginPackageSource } from "./open-plugin-package-source";
+import { inspectPluginPackage } from "./plugin-package-inspection";
 import { PluginPackageManager } from "./plugin-package-manager";
 import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
 
@@ -89,7 +92,14 @@ async function exactFixturePackage(): Promise<OpenPluginPackage> {
 describe("managed plugin package inspection authority", () => {
   it("carries exact review authority through apply, grant, enablement, and drift rejection", async () => {
     const source = new ExactFixtureSource(await exactFixturePackage());
-    const manager = new PluginPackageManager(statePath, source);
+    const manager = new PluginPackageManager(statePath, source, () => new Date(), {
+      inspectPackage: (input) =>
+        inspectPluginPackage(input, {
+          networkMode: "deterministic-fixture",
+          runtimeFactory: (context) =>
+            testPluginRuntimeFactory(context.vaultPath, new ActionRegistry()),
+        }),
+    });
     await manager.initialize();
 
     const review = await manager.preview(vaultPath, vaultId, {

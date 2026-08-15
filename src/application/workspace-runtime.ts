@@ -86,6 +86,7 @@ import {
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
 import { isNativeExcalidrawPath, workspacePluginViewTypeForPath } from "../shared/plugin-document";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import { filterQuickSwitcherNotes } from "../shared/quick-switcher";
 import {
   measureSerializableValue,
@@ -152,7 +153,7 @@ import {
 export interface WorkspaceRuntimeOptions {
   vaultRoot: string;
   stateRoot: StateRootPort;
-  pluginDirectory?: string;
+  pluginConstructionRequest?: PluginConstructionRequest;
   pluginModuleResolver?: PluginModuleResolver;
   pluginRuntimeFactory?: PluginRuntimeFactory;
   selectionSource?: VaultSelectionSource;
@@ -1493,6 +1494,12 @@ export class WorkspaceRuntime {
         }
       }
     }
+    if (options.pluginConstructionRequest) {
+      await pluginHost.loadPlugin({
+        ...options.pluginConstructionRequest,
+        constructionPath: "app-restart-reconstruction",
+      });
+    }
     if (!runtime.readOnly) {
       if (deferredCensus) {
         runtime.startBackgroundCensus(options.beforeBackgroundCensus);
@@ -2805,17 +2812,12 @@ export class WorkspaceRuntime {
     return this.publishSnapshot(await this.pluginHost.closePluginView());
   }
 
-  async loadPlugin(
-    pluginDirectory: string,
-    expectedBundleSha256?: string,
-  ): Promise<RuntimeSnapshot> {
-    return this.publishSnapshot(
-      await this.pluginHost.loadPlugin(pluginDirectory, expectedBundleSha256),
-    );
+  async loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    return this.publishSnapshot(await this.pluginHost.loadPlugin(request));
   }
 
-  async reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    return this.publishSnapshot(await this.pluginHost.reloadPlugin(pluginId));
+  async reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    return this.publishSnapshot(await this.pluginHost.reloadPlugin(request));
   }
 
   async unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {

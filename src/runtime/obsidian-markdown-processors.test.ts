@@ -5,6 +5,7 @@ import path from "node:path";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import inventory from "../../compatibility/open-plugin-usage.v1.json";
+import { testConstructionDispatch } from "../test-support/plugin-construction";
 import {
   App,
   CommandRegistry,
@@ -22,6 +23,10 @@ import { PluginHost } from "./plugin-host";
 
 const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
 const temporaryDirectories: string[] = [];
+
+async function loadPlugin(host: PluginHost, pluginDirectory: string) {
+  return host.loadAuthorizedPlugin(await testConstructionDispatch(pluginDirectory));
+}
 
 function exposeDom(dom: JSDOM): void {
   for (const [name, value] of Object.entries({
@@ -205,12 +210,11 @@ describe("measured Markdown processor compatibility", () => {
     const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "markdown-processors-fixture");
     const bundlePath = path.join(pluginPath, "main.js");
     const before = await fs.readFile(bundlePath);
-    const digest = createHash("sha256").update(before).digest("hex");
     const host = new PluginHost(vaultPath);
     const component = new Component();
     component.load();
 
-    await host.loadPlugin(pluginPath, digest);
+    await loadPlugin(host, pluginPath);
     const element = dom.window.document.createElement("article");
     const markdown = "---\ntitle: Fixture\n---\n```ThReAdLeAf\nvalue\n```\n";
     await MarkdownRenderer.render(host.app, markdown, element, "Notes/Fixture.md", component);
@@ -275,7 +279,7 @@ describe("CITE settled Reading projection", () => {
     const dom = new JSDOM("<!doctype html><body></body>");
     exposeDom(dom);
     const host = new PluginHost(citeVaultPath);
-    await host.loadPlugin(citePluginPath);
+    await loadPlugin(host, citePluginPath);
 
     const content =
       "Grounded by prior work [cite: Doe 2024] and a second source [cite: Smith 2023].";
@@ -303,7 +307,7 @@ describe("CITE settled Reading projection", () => {
     const dom = new JSDOM("<!doctype html><body></body>");
     exposeDom(dom);
     const host = new PluginHost(citeVaultPath);
-    await host.loadPlugin(citePluginPath);
+    await loadPlugin(host, citePluginPath);
 
     const snapshot = await host.renderMarkdownProjection(
       "cite",
@@ -321,7 +325,7 @@ describe("CITE settled Reading projection", () => {
     const dom = new JSDOM("<!doctype html><body></body>");
     exposeDom(dom);
     const host = new PluginHost(citeVaultPath);
-    await host.loadPlugin(citePluginPath);
+    await loadPlugin(host, citePluginPath);
 
     // Each call's render-child is loaded and unloaded synchronously inside
     // renderMarkdownProjection itself (see PluginHost.renderMarkdownProjection). Nothing outside
@@ -367,7 +371,7 @@ describe("CITE settled Reading projection", () => {
     exposeDom(dom);
     const host = new PluginHost(citeVaultPath);
     const brokenPluginPath = path.join(citeVaultPath, ".obsidian", "plugins", "cite-broken");
-    await host.loadPlugin(brokenPluginPath);
+    await loadPlugin(host, brokenPluginPath);
 
     await expect(
       host.renderMarkdownProjection("cite-broken", "Citations.md", "[cite: Doe 2024]"),
@@ -386,7 +390,7 @@ describe("CITE settled Reading projection", () => {
     exposeDom(dom);
     const host = new PluginHost(citeVaultPath);
     const oversizedPluginPath = path.join(citeVaultPath, ".obsidian", "plugins", "cite-oversized");
-    await host.loadPlugin(oversizedPluginPath);
+    await loadPlugin(host, oversizedPluginPath);
 
     await expect(
       host.renderMarkdownProjection("cite-oversized", "Citations.md", "trigger"),

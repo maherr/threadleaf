@@ -1,0 +1,27 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "inspection-runaway-0.1.0",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "inspection-runaway",
+    "manifestVersion": "0.1.0",
+    "distributionTag": "0.1.0",
+    "manifestSha256": "e024554b28fcf8dde731e6aa1c75031c41388a9f7b953573228b6022acf261d2",
+    "mainSha256": "6ae990123c888a23d0a5d7eaa5924c22890c57716e8a60ec6f60ed1d859bf416",
+    "stylesSha256": null,
+    "packageTreeSha256": "dc7f5c1ffcd4e8371c65ac5a2a4f39699c63e3ea7bd6c075cfe2eb7372a95da1"
+  },
+  "packageIdentityDigest": "42e8559fd633666a8de25511281b0b6a21d834f6eed98e9f75d94efce4ac94a0",
+  "expectedStaticCapabilities": [],
+  "requiredAuthorities": [
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "219e7a91372cbf85b0aa60a3d2d5c4428992cc3d65085dfa67ff40c4f30c4a35"
+}

@@ -14,6 +14,7 @@ import type {
   PluginVaultWriteBinaryRequest,
   PluginVaultWriteRequest,
 } from "../shared/plugin-runtime-protocol";
+import { testConstructionDispatch } from "../test-support/plugin-construction";
 import { PluginRendererService } from "./plugin-renderer-service";
 
 const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
@@ -292,7 +293,9 @@ module.exports = class RendererFixture extends Plugin {
       expect(dom.window.eval("app.vault.getName()")).toBe("vault");
       expect(dom.window.eval("typeof moment")).toBe("function");
 
-      const loaded = await service.handle(request("load-plugin", { pluginDirectory: pluginPath }));
+      const loaded = await service.handle(
+        request("load-plugin", { dispatch: await testConstructionDispatch(pluginPath) }),
+      );
       expect(loaded?.plugin).toMatchObject({
         id: "renderer-fixture",
         state: "loaded",
@@ -451,7 +454,7 @@ module.exports = class RendererFixture extends Plugin {
         request("run-command", { commandId: "renderer-fixture:renderer-command" }),
       );
       expect(ran?.notices).toContain("Renderer command ran.");
-      expect(ran?.plugin?.compatibilityLevel).toBe(4);
+      expect(ran?.plugin?.compatibilityLevel).toBe(3);
 
       await service.handle(request("open-settings", { pluginId: "renderer-fixture" }));
       const unloaded = await service.handle(request("unload-all"));

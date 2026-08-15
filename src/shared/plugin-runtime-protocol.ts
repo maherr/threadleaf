@@ -1,4 +1,5 @@
 import type { PluginEditorContext, RuntimeSnapshot } from "./contracts";
+import type { PluginConstructionDispatch } from "./plugins";
 
 export interface PluginMutationWaitOptions {
   quietMs?: number;
@@ -177,6 +178,24 @@ export function parsePluginRendererResponse(value: unknown): PluginRendererRespo
     throw new Error("Plugin renderer failure response has no error message.");
   }
   return { id: candidate.id, ok: false, error: candidate.error };
+}
+
+export function requirePluginConstructionDispatch(
+  request: PluginRendererRequest,
+): PluginConstructionDispatch {
+  const value = request.payload?.dispatch;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    typeof (value as Record<string, unknown>).pluginDirectory !== "string" ||
+    !(value as Record<string, unknown>).policy ||
+    typeof (value as Record<string, unknown>).policy !== "object" ||
+    Array.isArray((value as Record<string, unknown>).policy)
+  ) {
+    throw new Error(`${request.operation} requires a main-process construction dispatch.`);
+  }
+  return structuredClone(value) as PluginConstructionDispatch;
 }
 
 export function parsePluginEditorContext(value: unknown): PluginEditorContext {

@@ -8,12 +8,12 @@ Registry schema: 1. Threadleaf version: 0.1.0-beta.6.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
-| [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.6 | 4 | composed | 2026-08-16 |
-| [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0-beta.6 | 4 | direct | 2026-08-15 |
+| [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.6 | 0 | composed | 2026-08-16 |
+| [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0-beta.6 | 0 | direct | 2026-08-15 |
 
 ## Excalidraw 2.25.3
 
-Open, create, embed, SVG and PNG export, unload, reload, and plugin-owned settings workflows passed for this exact plugin release.
+Historical workflow gates passed for this exact release, but no reviewed authority profile currently permits construction, so current compatibility evidence is Level 0.
 
 Bundle SHA-256: `684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6`. License: AGPL-3.0.
 
@@ -45,13 +45,14 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 
 ### Limitations
 
+- No reviewed authority profile currently binds this exact package identity; construction is denied with authority-profile-missing.
 - Inline wiki-embed rendering and export formats beyond SVG and PNG are not verified.
 - The official Obsidian to Threadleaf to Obsidian roundtrip is recorded as external evidence for one pinned Linux Flatpak and exact plugin release; it is not an executable registry gate.
 - The exact release check and host workflow checks are composed gates, not one monolithic end-to-end command.
 
 ## Threadleaf Compatibility Fixture 0.1.0
 
-Activation, command execution, notice delivery, unload, reload, timeout isolation, and restart recovery passed for this exact fixture release.
+Historical fixture workflows passed, but no reviewed authority profile currently permits construction, so current compatibility evidence is Level 0.
 
 Bundle SHA-256: `8450949c0c1989d68810b8e4d70c79bfd3e80cbf590785154a80baedd3860788`. License: AGPL-3.0-or-later.
 
@@ -76,6 +77,7 @@ Required static authority review: `workspace-ui`.
 
 ### Limitations
 
+- No reviewed authority profile currently binds this exact package identity; construction is denied with authority-profile-missing.
 - This repository-owned fixture intentionally exercises a narrow API surface.
 - It is not listed in the external community package directory.
 

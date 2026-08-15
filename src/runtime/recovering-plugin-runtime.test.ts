@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { PluginEditorContext, PluginSummary, RuntimeSnapshot } from "../shared/contracts";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import { FatalPluginRuntimeError, type PluginRuntimePort } from "./plugin-runtime-port";
 import { RecoveringPluginRuntime } from "./recovering-plugin-runtime";
 
@@ -23,6 +24,25 @@ function plugin(id: string, state: PluginSummary["state"] = "loaded"): PluginSum
     compatibilityLevel: state === "loaded" ? 3 : 0,
     stylesheetDiscovered: false,
     error: null,
+  };
+}
+
+function constructionRequest(pluginDirectory: string): PluginConstructionRequest {
+  const id = path.basename(pluginDirectory);
+  const digest = id.padEnd(64, "0").slice(0, 64);
+  return {
+    constructionPath: "first-load",
+    pluginDirectory,
+    packageIdentity: {
+      pluginId: id,
+      manifestVersion: "1.0.0",
+      distributionTag: "1.0.0",
+      manifestSha256: digest,
+      mainSha256: digest,
+      stylesSha256: null,
+      packageTreeSha256: digest,
+    },
+    packageIdentityDigest: digest,
   };
 }
 
@@ -51,8 +71,10 @@ class FakePluginRuntime implements PluginRuntimePort {
   });
   readonly loaded = new Map<string, PluginSummary>();
   fatalLoadId: string | null = null;
+  fatalLoadOperation = "load-plugin";
   fatalCommandId: string | null = null;
   ordinaryLoadError: Error | null = null;
+  readonly constructionPaths: string[] = [];
 
   closePluginView(): Promise<RuntimeSnapshot> {
     return this.getSnapshot();
@@ -62,13 +84,14 @@ class FakePluginRuntime implements PluginRuntimePort {
     return Promise.resolve(snapshot([...this.loaded.values()]));
   }
 
-  async loadPlugin(pluginDirectory: string): Promise<RuntimeSnapshot> {
-    const id = path.basename(pluginDirectory);
+  async loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    const id = request.packageIdentity.pluginId;
+    this.constructionPaths.push(request.constructionPath);
     if (this.ordinaryLoadError) {
       throw this.ordinaryLoadError;
     }
     if (this.fatalLoadId === id) {
-      throw new FatalPluginRuntimeError("load-plugin", `Timed out while loading ${id}.`);
+      throw new FatalPluginRuntimeError(this.fatalLoadOperation, `Timed out while loading ${id}.`);
     }
     const summary = plugin(id);
     this.loaded.set(id, summary);
@@ -87,8 +110,8 @@ class FakePluginRuntime implements PluginRuntimePort {
     return this.getSnapshot();
   }
 
-  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    return pluginId ? this.loadPlugin(`/vault/.obsidian/plugins/${pluginId}`) : this.getSnapshot();
+  reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    return request ? this.loadPlugin(request) : this.getSnapshot();
   }
 
   async runCommand(
@@ -142,17 +165,17 @@ describe("RecoveringPluginRuntime", () => {
       onRuntimeChange,
     });
 
-    await runtime.loadPlugin("/vault/.obsidian/plugins/good");
-    const recovered = await runtime.loadPlugin("/vault/.obsidian/plugins/bad");
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
+    const recovered = await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad"));
 
     expect(first.close).toHaveBeenCalledOnce();
     expect(onRuntimeChange).toHaveBeenCalledTimes(2);
-    expect(recovered.commands).toEqual([]);
-    expect(recovered.plugin).toMatchObject({ id: "bad", name: "Bad plugin", state: "failed" });
+    expect(recovered.commands.map(({ id }) => id)).toEqual(["good-command"]);
+    expect(recovered.plugin).toMatchObject({ id: "good", state: "loaded" });
     expect(recovered.plugins).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "bad", state: "failed" }),
-        expect.objectContaining({ id: "good", state: "failed" }),
+        expect.objectContaining({ id: "good", state: "loaded" }),
       ]),
     );
     expect(recovered.events.at(-1)).toMatchObject({
@@ -161,7 +184,10 @@ describe("RecoveringPluginRuntime", () => {
     });
     expect(recovered.notices.at(-1)).toContain("plugin operation was stopped");
 
-    const goodReloaded = await runtime.reloadPlugin("good");
+    expect(replacement.constructionPaths).toContain("automatic-recovery");
+    const goodReloaded = await runtime.reloadPlugin(
+      constructionRequest("/vault/.obsidian/plugins/good"),
+    );
     expect(goodReloaded.plugins).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "bad", state: "failed" }),
@@ -169,7 +195,9 @@ describe("RecoveringPluginRuntime", () => {
       ]),
     );
 
-    const bothReloaded = await runtime.reloadPlugin("bad");
+    const bothReloaded = await runtime.reloadPlugin(
+      constructionRequest("/vault/.obsidian/plugins/bad"),
+    );
     expect(bothReloaded.plugins).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "bad", state: "loaded" }),
@@ -188,19 +216,33 @@ describe("RecoveringPluginRuntime", () => {
     const runtime = await RecoveringPluginRuntime.open({
       create: async () => runtimes.shift() ?? replacement,
     });
-    await runtime.loadPlugin("/vault/.obsidian/plugins/first");
-    await runtime.loadPlugin("/vault/.obsidian/plugins/second");
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/first"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/second"));
 
     const recovered = await runtime.runCommand("second-command");
 
-    expect(recovered.plugin).toMatchObject({
-      id: "second",
-      state: "failed",
-      error: expect.stringContaining("[runtime-command-failed]."),
-    });
-    expect(recovered.plugins?.find(({ id }) => id === "first")?.error).toContain(
-      "Reload the plugin to reactivate it",
+    expect(recovered.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "first", state: "loaded" }),
+        expect.objectContaining({ id: "second", state: "loaded" }),
+      ]),
     );
+    expect(replacement.constructionPaths).toEqual(["automatic-recovery", "automatic-recovery"]);
+    await runtime.close();
+  });
+
+  it("labels renderer-exit reconstruction separately from ordinary automatic recovery", async () => {
+    const first = new FakePluginRuntime();
+    first.fatalLoadId = "bad";
+    first.fatalLoadOperation = "renderer-exit";
+    const replacement = new FakePluginRuntime();
+    const runtimes = [first, replacement];
+    const runtime = await RecoveringPluginRuntime.open({
+      create: async () => runtimes.shift() ?? replacement,
+    });
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad"));
+    expect(replacement.constructionPaths).toEqual(["renderer-death-restoration"]);
     await runtime.close();
   });
 
@@ -210,9 +252,9 @@ describe("RecoveringPluginRuntime", () => {
     const create = vi.fn(async () => current);
     const runtime = await RecoveringPluginRuntime.open({ create });
 
-    await expect(runtime.loadPlugin("/vault/.obsidian/plugins/ordinary")).rejects.toThrow(
-      "Plugin rejected its own configuration",
-    );
+    await expect(
+      runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/ordinary")),
+    ).rejects.toThrow("Plugin rejected its own configuration");
     expect(create).toHaveBeenCalledOnce();
     expect(current.close).not.toHaveBeenCalled();
     await runtime.close();

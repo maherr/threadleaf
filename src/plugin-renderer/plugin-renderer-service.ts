@@ -23,6 +23,7 @@ import {
   type PluginVaultWriteResponse,
   requirePayloadContent,
   requirePayloadString,
+  requirePluginConstructionDispatch,
 } from "../shared/plugin-runtime-protocol";
 
 export interface PluginRendererVaultMutations {
@@ -126,13 +127,12 @@ export class PluginRendererService {
         return this.requireHost().getSnapshot();
       case "load-plugin":
         await this.requireHost().closePluginView();
-        return this.requireHost().loadPlugin(
-          requirePayloadString(request, "pluginDirectory"),
-          optionalPayloadString(request, "expectedBundleSha256"),
-        );
+        return this.requireHost().loadAuthorizedPlugin(requirePluginConstructionDispatch(request));
       case "reload-plugin":
         await this.requireHost().closePluginView();
-        return this.requireHost().reloadPlugin(optionalPayloadString(request, "pluginId"));
+        return this.requireHost().reloadAuthorizedPlugin(
+          requirePluginConstructionDispatch(request),
+        );
       case "render-markdown":
         return this.requireHost().renderMarkdownProjection(
           requirePayloadString(request, "pluginId"),

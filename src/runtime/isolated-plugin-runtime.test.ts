@@ -6,6 +6,7 @@ import type {
   PluginSurfaceSnapshot,
   RuntimeSnapshot,
 } from "../shared/contracts";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import { IsolatedPluginRuntime } from "./isolated-plugin-runtime";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
@@ -31,10 +32,37 @@ function summary(id: string, state: PluginSummary["state"] = "loaded"): PluginSu
   };
 }
 
+function constructionRequest(
+  pluginDirectory: string,
+  digest = "a".repeat(64),
+  constructionPath: PluginConstructionRequest["constructionPath"] = "first-load",
+): PluginConstructionRequest {
+  const pluginId = path.basename(pluginDirectory);
+  const packageIdentity = {
+    pluginId,
+    manifestVersion: "1.0.0",
+    distributionTag: "1.0.0",
+    manifestSha256: digest,
+    mainSha256: digest,
+    stylesSha256: null,
+    packageTreeSha256: digest,
+  };
+  return {
+    constructionPath,
+    pluginDirectory,
+    packageIdentity,
+    packageIdentityDigest: digest,
+  };
+}
+
 class FakeIsolatedRuntime implements PluginRuntimePort {
   readonly close = vi.fn(async () => undefined);
   commandIdOverride: string | null = null;
-  readonly loadCalls: Array<{ directory: string; hash: string | undefined }> = [];
+  readonly loadCalls: Array<{
+    constructionPath: PluginConstructionRequest["constructionPath"];
+    directory: string;
+    hash: string | undefined;
+  }> = [];
   readonly markLayoutReady = vi.fn(async () => this.snapshot());
   readonly renderCalls: string[] = [];
   readonly runCalls: string[] = [];
@@ -52,13 +80,15 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
     return Promise.resolve(this.snapshot());
   }
 
-  async loadPlugin(
-    pluginDirectory: string,
-    expectedBundleSha256?: string,
-  ): Promise<RuntimeSnapshot> {
+  async loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    const pluginDirectory = request.pluginDirectory;
     this.pluginId = path.basename(pluginDirectory);
     this.pluginState = "loaded";
-    this.loadCalls.push({ directory: pluginDirectory, hash: expectedBundleSha256 });
+    this.loadCalls.push({
+      constructionPath: request.constructionPath,
+      directory: pluginDirectory,
+      hash: request.packageIdentity.mainSha256,
+    });
     return this.snapshot();
   }
 
@@ -181,12 +211,16 @@ describe("IsolatedPluginRuntime", () => {
     });
 
     expect(created).toHaveLength(1);
-    await runtime.loadPlugin("/vault/.obsidian/plugins/alpha", "a".repeat(64));
-    const loaded = await runtime.loadPlugin("/vault/.obsidian/plugins/beta", "b".repeat(64));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/alpha"));
+    const loaded = await runtime.loadPlugin(
+      constructionRequest("/vault/.obsidian/plugins/beta", "b".repeat(64)),
+    );
 
     expect(created).toHaveLength(2);
     expect(created[0]?.pluginId).toBe("alpha");
     expect(created[1]?.pluginId).toBe("beta");
+    expect(created[0]?.loadCalls[0]?.constructionPath).toBe("first-load");
+    expect(created[1]?.loadCalls[0]?.constructionPath).toBe("first-load");
     expect(loaded.plugins).toMatchObject([
       { id: "alpha", state: "loaded" },
       { id: "beta", state: "loaded" },
@@ -211,11 +245,17 @@ describe("IsolatedPluginRuntime", () => {
     expect(created[0]?.markLayoutReady).toHaveBeenCalledOnce();
     expect(created[1]?.markLayoutReady).toHaveBeenCalledOnce();
 
-    const reloaded = await runtime.reloadPlugin("alpha");
+    const reloaded = await runtime.reloadPlugin(
+      constructionRequest("/vault/.obsidian/plugins/alpha"),
+    );
     expect(created).toHaveLength(3);
     expect(created[0]?.close).toHaveBeenCalledOnce();
     expect(created[2]?.loadCalls).toEqual([
-      { directory: "/vault/.obsidian/plugins/alpha", hash: "a".repeat(64) },
+      {
+        constructionPath: "explicit-reload",
+        directory: "/vault/.obsidian/plugins/alpha",
+        hash: "a".repeat(64),
+      },
     ]);
     expect(created[2]?.markLayoutReady).toHaveBeenCalledOnce();
     expect(reloaded.plugins?.find(({ id }) => id === "beta")?.state).toBe("loaded");
@@ -241,8 +281,8 @@ describe("IsolatedPluginRuntime", () => {
         return instance;
       },
     });
-    await runtime.loadPlugin("/vault/.obsidian/plugins/alpha");
-    await runtime.loadPlugin("/vault/.obsidian/plugins/beta");
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/alpha"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/beta"));
     const snapshot = await runtime.getSnapshot();
     const alpha = snapshot.commands.find(({ ownerId }) => ownerId === "alpha");
     if (!alpha) {
@@ -264,8 +304,8 @@ describe("IsolatedPluginRuntime", () => {
         return instance;
       },
     });
-    await runtime.loadPlugin("/vault/.obsidian/plugins/alpha", "a".repeat(64));
-    await runtime.loadPlugin("/vault/.obsidian/plugins/cite", "b".repeat(64));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/alpha"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/cite", "b".repeat(64)));
 
     // A deliberate user action naming "alpha" is the last thing that should determine a later
     // no-arg target.

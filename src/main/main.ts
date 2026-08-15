@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
 import { release as osRelease } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -77,7 +79,9 @@ import {
 import {
   type CompatibilityMode,
   compatibilityModes,
+  isPluginConstructionRefusal,
   type PluginCatalogResponse,
+  type PluginConstructionPath,
   parsePluginId,
   pluginCapabilityGrantMatches,
 } from "../shared/plugins";
@@ -136,6 +140,11 @@ import {
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
 import { OpenAppearancePackageSource } from "./open-theme-package-source";
 import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
+import {
+  measureInstalledPluginConstructionRequest,
+  PluginConstructionPolicyResolver,
+} from "./plugin-construction-policy";
+import { assertMainRendererPluginIpcSender } from "./plugin-ipc-sender-guard";
 import { PluginPackageManager } from "./plugin-package-manager";
 import {
   ensureHtmlExtension,
@@ -1464,6 +1473,7 @@ async function reconcileCompatibilityPlugins(
   expectedVaultId: string,
   forceReload = false,
   reloadPluginId?: string,
+  requestedConstructionPath?: PluginConstructionPath,
 ) {
   if (workspaceController.vaultId !== expectedVaultId) {
     throw new Error("The active vault changed before plugin reconciliation.");
@@ -1521,8 +1531,20 @@ async function reconcileCompatibilityPlugins(
       continue;
     }
     try {
-      snapshot = await workspaceController.loadPlugin(installed.directoryPath, report.bundleSha256);
-    } catch {
+      const constructionPath =
+        requestedConstructionPath ?? (reloadThisPlugin ? "explicit-reload" : "first-load");
+      snapshot = await workspaceController.loadPlugin(
+        await measureInstalledPluginConstructionRequest(
+          installed,
+          report.bundleSha256,
+          constructionPath,
+        ),
+      );
+    } catch (error) {
+      const code = isPluginConstructionRefusal(error)
+        ? error.code
+        : (attachedPluginDiagnosticCode(error) ?? "runtime-load-failed");
+      console.error(`Plugin construction for ${pluginId} stopped [${code}].`);
       snapshot = await workspaceController.getSnapshot();
     }
   }
@@ -1579,12 +1601,40 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     workspaceSettingsForVault: (vaultId) => settingsController.getVaultWorkspaceSettings(vaultId),
     pluginRuntimeFactory: async (vaultPath) => {
       const pluginOperationTimeout = developmentPluginOperationTimeout();
+      const canonicalVaultPath = await fs.realpath(vaultPath);
+      const vaultIdentityPath =
+        process.platform === "win32" ? canonicalVaultPath.toLowerCase() : canonicalVaultPath;
+      const vaultId = createHash("sha256").update(vaultIdentityPath).digest("hex");
+      const constructionPolicyResolver = new PluginConstructionPolicyResolver({
+        readAuthoritySnapshot: async () => {
+          const safeMode = pluginSafeMode();
+          return {
+            vaultId,
+            vaultGeneration: 1,
+            policyEpoch: safeMode ? 2 : 1,
+            grantEpoch: 0,
+            safeMode,
+            safeModeEpoch: safeMode ? 2 : 1,
+            packageStoreEpoch: 0,
+            platform: process.platform as "linux" | "darwin" | "win32",
+            availableExecutionProfiles:
+              process.platform === "linux" ||
+              process.platform === "darwin" ||
+              process.platform === "win32"
+                ? ["trusted-node-renderer", "trusted-desktop-escape"]
+                : [],
+            grant: null,
+            sealedPackage: null,
+          };
+        },
+      });
       return IsolatedPluginRuntime.open({
         create: () =>
           RecoveringPluginRuntime.open({
             create: () =>
               ElectronPluginRuntime.open({
                 hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
+                constructionPolicyResolver,
                 onSurfaceVisibilityChange: setPluginViewVisibility,
                 packageJsonPath: join(app.getAppPath(), "package.json"),
                 vaultPath,
@@ -1642,7 +1692,12 @@ async function activateInitialWorkspace(): Promise<void> {
           (notice) => notice.status === "conflict",
         )
       ) {
-        await reconcileCompatibilityPlugins(expectedVaultId);
+        await reconcileCompatibilityPlugins(
+          expectedVaultId,
+          false,
+          undefined,
+          "app-restart-reconstruction",
+        );
       }
     } finally {
       initialWorkspaceRecoveryPending = false;
@@ -1928,18 +1983,17 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(ipcChannels.popOutPluginView, (event, expectedVaultId: unknown) => {
-    if (!isMainRendererSender(event.sender)) {
-      throw new Error("Plugin pop-outs require the active Threadleaf window.");
-    }
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin pop-outs");
     if (typeof expectedVaultId !== "string") {
       throw new Error("Popping out a plugin view requires a vault identity.");
     }
     return popOutPluginView(expectedVaultId);
   });
   ipcMain.handle(ipcChannels.reattachPluginView, (event, expectedVaultId: unknown) => {
-    if (!isMainRendererSender(event.sender)) {
-      throw new Error("Plugin pop-out reattachment requires the active Threadleaf window.");
-    }
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin pop-out reattachment",
+    );
     if (typeof expectedVaultId !== "string") {
       throw new Error("Reattaching a plugin view requires a vault identity.");
     }
@@ -2146,7 +2200,8 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(ipcChannels.plugins, (_event, expectedVaultId: unknown) => {
+  ipcMain.handle(ipcChannels.plugins, (event, expectedVaultId: unknown) => {
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin catalog loading");
     if (typeof expectedVaultId !== "string") {
       throw new Error("Plugin catalog loading requires a string vault identity.");
     }
@@ -2157,7 +2212,11 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle(
     ipcChannels.searchPluginPackages,
-    (_event, expectedVaultId: unknown, query: unknown) => {
+    (event, expectedVaultId: unknown, query: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin registry search",
+      );
       if (typeof expectedVaultId !== "string" || typeof query !== "string") {
         throw new Error("Plugin registry search requires a vault identity and string query.");
       }
@@ -2176,7 +2235,11 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     ipcChannels.previewPluginPackage,
-    (_event, expectedVaultId: unknown, requestValue: unknown) => {
+    (event, expectedVaultId: unknown, requestValue: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin package review",
+      );
       if (typeof expectedVaultId !== "string") {
         throw new Error("Plugin package review requires a vault identity.");
       }
@@ -2204,7 +2267,8 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     ipcChannels.applyPluginPackage,
-    (_event, expectedVaultId: unknown, reviewId: unknown): Promise<PluginPackageApplyResponse> => {
+    (event, expectedVaultId: unknown, reviewId: unknown): Promise<PluginPackageApplyResponse> => {
+      assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin package apply");
       if (typeof expectedVaultId !== "string" || typeof reviewId !== "string") {
         throw new Error("Plugin package apply requires a vault identity and review identity.");
       }
@@ -2240,7 +2304,11 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     ipcChannels.cancelPluginPackageReview,
-    (_event, expectedVaultId: unknown, reviewId: unknown) => {
+    (event, expectedVaultId: unknown, reviewId: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin package review cancellation",
+      );
       if (typeof expectedVaultId !== "string" || typeof reviewId !== "string") {
         throw new Error("Plugin package review cancellation requires string identities.");
       }
@@ -2252,7 +2320,11 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     ipcChannels.setCompatibilityMode,
-    (_event, expectedVaultId: unknown, mode: unknown) => {
+    (event, expectedVaultId: unknown, mode: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Compatibility mode changes",
+      );
       if (
         typeof expectedVaultId !== "string" ||
         typeof mode !== "string" ||
@@ -2276,12 +2348,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     ipcChannels.setPluginCapabilityGrant,
     (
-      _event,
+      event,
       expectedVaultId: unknown,
       pluginIdValue: unknown,
       expectedBundleSha256: unknown,
       granted: unknown,
     ) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin authority review",
+      );
       if (
         typeof expectedVaultId !== "string" ||
         typeof pluginIdValue !== "string" ||
@@ -2347,7 +2423,8 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     ipcChannels.setPluginEnabled,
-    (_event, expectedVaultId: unknown, pluginIdValue: unknown, enabled: unknown) => {
+    (event, expectedVaultId: unknown, pluginIdValue: unknown, enabled: unknown) => {
+      assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin enablement");
       if (
         typeof expectedVaultId !== "string" ||
         typeof pluginIdValue !== "string" ||
@@ -2403,7 +2480,8 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(ipcChannels.reloadPlugins, (_event, expectedVaultId: unknown) => {
+  ipcMain.handle(ipcChannels.reloadPlugins, (event, expectedVaultId: unknown) => {
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin catalog reload");
     if (typeof expectedVaultId !== "string") {
       throw new Error("Plugin reload requires a string vault identity.");
     }
@@ -2644,12 +2722,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     ipcChannels.renderPluginMarkdownProjection,
     (
-      _event,
+      event,
       pluginIdValue: unknown,
       sourceNotePath: unknown,
       content: unknown,
       expectedVaultId: unknown,
     ) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin Markdown projection",
+      );
       if (
         typeof pluginIdValue !== "string" ||
         typeof sourceNotePath !== "string" ||
@@ -3413,7 +3495,11 @@ function registerIpcHandlers(): void {
       } as const;
     },
   );
-  ipcMain.handle(ipcChannels.runCommand, (_event, commandId: unknown, editorContext: unknown) => {
+  ipcMain.handle(ipcChannels.runCommand, (event, commandId: unknown, editorContext: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin command execution",
+    );
     if (typeof commandId !== "string" || commandId.length === 0) {
       throw new Error("Run command requires a string identifier.");
     }
@@ -3427,13 +3513,15 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(ipcChannels.waitForPluginMutations, (event, optionsValue: unknown) => {
-    if (!isMainRendererSender(event.sender)) {
-      throw new Error("Waiting for plugin mutations requires the active Threadleaf window.");
-    }
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Waiting for plugin mutations",
+    );
     const options = parsePluginMutationWaitOptions(optionsValue);
     return serializePluginOperation(() => workspaceController.waitForPluginMutations(options));
   });
-  ipcMain.handle(ipcChannels.reloadPlugin, (_event, pluginId: unknown) => {
+  ipcMain.handle(ipcChannels.reloadPlugin, (event, pluginId: unknown) => {
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin reload");
     if (pluginId !== undefined && typeof pluginId !== "string") {
       throw new Error("Plugin reload requires an optional string identifier.");
     }
@@ -3446,7 +3534,8 @@ function registerIpcHandlers(): void {
       typeof pluginId === "string" ? { pluginId } : {},
     );
   });
-  ipcMain.handle(ipcChannels.unloadPlugin, (_event, pluginId: unknown) => {
+  ipcMain.handle(ipcChannels.unloadPlugin, (event, pluginId: unknown) => {
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin unload");
     if (pluginId !== undefined && typeof pluginId !== "string") {
       throw new Error("Plugin unload requires an optional string identifier.");
     }
@@ -3456,13 +3545,21 @@ function registerIpcHandlers(): void {
       typeof pluginId === "string" ? { pluginId } : {},
     );
   });
-  ipcMain.handle(ipcChannels.markPluginLayoutReady, () =>
-    serializePluginCatalogOperation(
+  ipcMain.handle(ipcChannels.markPluginLayoutReady, (event) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin layout readiness",
+    );
+    return serializePluginCatalogOperation(
       () => workspaceController.markPluginLayoutReady(),
       "runtime-load-failed",
-    ),
-  );
-  ipcMain.handle(ipcChannels.openPluginSettings, (_event, pluginId: unknown) => {
+    );
+  });
+  ipcMain.handle(ipcChannels.openPluginSettings, (event, pluginId: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Opening plugin settings",
+    );
     if (typeof pluginId !== "string" || pluginId.length === 0) {
       throw new Error("Opening plugin settings requires a plugin identifier.");
     }
@@ -3472,7 +3569,8 @@ function registerIpcHandlers(): void {
       { pluginId },
     );
   });
-  ipcMain.handle(ipcChannels.openPluginView, (_event, viewType: unknown, filePath: unknown) => {
+  ipcMain.handle(ipcChannels.openPluginView, (event, viewType: unknown, filePath: unknown) => {
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Opening a plugin view");
     if (
       typeof viewType !== "string" ||
       viewType.length === 0 ||
@@ -3486,15 +3584,17 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(ipcChannels.closePluginView, (event) => {
-    if (!isMainRendererSender(event.sender)) {
-      throw new Error("Closing a plugin view requires the active Threadleaf window.");
-    }
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Closing a plugin view");
     return serializePluginCatalogOperation(
       () => closeCompatibilityPluginView(),
       "runtime-unload-failed",
     );
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceBounds, (_event, value: unknown) => {
+  ipcMain.handle(ipcChannels.setPluginSurfaceBounds, (event, value: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin surface bounds updates",
+    );
     if (!value || typeof value !== "object") {
       throw new Error("Plugin surface bounds must be an object.");
     }
@@ -3515,19 +3615,31 @@ function registerIpcHandlers(): void {
     };
     updatePluginViewBounds();
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceVisible, (_event, visible: unknown) => {
+  ipcMain.handle(ipcChannels.setPluginSurfaceVisible, (event, visible: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin surface visibility updates",
+    );
     if (typeof visible !== "boolean") {
       throw new Error("Plugin surface visibility must be a boolean.");
     }
     setPluginSurfacePresentationVisible(visible);
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceTheme, async (_event, theme: unknown) => {
+  ipcMain.handle(ipcChannels.setPluginSurfaceTheme, async (event, theme: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin surface theme updates",
+    );
     if (theme !== "dark" && theme !== "light") {
       throw new Error("Plugin surface theme must be dark or light.");
     }
     await applyPluginSurfaceTheme(theme);
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceAccessibility, async (_event, value: unknown) => {
+  ipcMain.handle(ipcChannels.setPluginSurfaceAccessibility, async (event, value: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin surface accessibility updates",
+    );
     if (!value || typeof value !== "object") {
       throw new Error("Plugin surface accessibility state must be an object.");
     }

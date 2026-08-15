@@ -54,6 +54,10 @@ Do not model a receipt as SLSA provenance: a receipt records one controlled comp
 
 The local receipt restriction to strings, booleans, null, arrays, objects, and safe integers is stronger than generic JCS and should remain. In particular, reject floats even though JCS can represent them, and treat numeric values outside the safe-integer rule as strings before receipt construction.
 
+### Phase 0 named residual
+
+`receipt-strict-jcs` remains intentionally open. The authority-profile canonicalizers now reject `undefined`, but they are not an RFC 8785 receipt boundary: native `Date` and `Map` values collapse to empty objects, while non-finite numbers serialize as `null`. No receipt relies on these helpers in Phase 0. Before receipt implementation, add the strict plain-JSON and JCS adapter specified below and route signing and verification through that single boundary.
+
 ### Sources
 
 | Source and track | Pin, license, status | Claim boundary |
@@ -182,6 +186,10 @@ Use the wedge-5 qualified identity already being implemented as the canonical di
 - **Adapt:** namespacing, but strengthen it to Threadleaf's exact plugin identity and policy revision semantics.
 - **Reject:** raw unqualified IDs and last-registration-wins stacks. **Invariant:** qualified dispatch is bound to the reviewed identity/profile policy, and a command never supplies a separate authority path.
 - **Required local proof:** two plugins expose the same human command ID and dispatch only to their qualified owner; a duplicate qualified registration fails deterministically rather than shadows; reload/revocation invalidates stale command descriptors; a changed package tree under the same plugin ID cannot retain old dispatch; and malformed delimiter-like identifiers cannot collide with another typed pair.
+
+## Phase 0 UI residual
+
+`catalog-settings-authority-states` remains out of scope for this repair. Phase 0 preserves typed construction refusals in the main-process log and inspection diagnostics, but it does not yet render the frozen spec's five explicit catalog/settings states: exact-package host-process permission required, stale permission, revoked permission, scan/profile mismatch, and platform unavailability from `child_process`. No current UI is claimed to satisfy that requirement.
 
 ## Ranked, spec-compatible implementation refinements
 

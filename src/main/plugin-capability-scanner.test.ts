@@ -57,6 +57,16 @@ describe("plugin capability scanner", () => {
     expect(scan("require(moduleName);").capabilities).toEqual(["dynamic-code"]);
   });
 
+  it("reports ambient require aliases before reviewed capability equality is checked", () => {
+    for (const source of [
+      'window.require("node:child_process");',
+      'globalThis.require("node:child_process");',
+      'global.require("node:child_process");',
+    ]) {
+      expect(scan(source).capabilities).toEqual(["subprocess"]);
+    }
+  });
+
   it("binds grants to the exact bundle bytes, including a UTF-8 byte-order mark", () => {
     const source = encoder.encode("module.exports = class FixturePlugin {};");
     const bytes = new Uint8Array([0xef, 0xbb, 0xbf, ...source]);

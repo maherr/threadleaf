@@ -610,36 +610,37 @@ try {
     `document.querySelector(${JSON.stringify(installedRow)})?.textContent?.includes("Exact bundle granted")`,
     "The installed row did not expose its granted exact bundle.",
   );
-  const enabledAfterGrant = await evaluate(`(async () => {
+  await evaluate(`(() => {
     const row = document.querySelector(${JSON.stringify(installedRow)});
     const toggle = row?.querySelector('input[type="checkbox"]');
     if (!(toggle instanceof HTMLInputElement) || toggle.disabled) {
       throw new Error("The plugin toggle remained unreachable after an exact-bundle grant.");
     }
     toggle.click();
-    const deadline = Date.now() + 60000;
-    let snapshot = await window.threadleaf.getSnapshot();
-    while (Date.now() < deadline) {
-      snapshot = await window.threadleaf.getSnapshot();
-      if ((snapshot.plugins ?? []).some((plugin) =>
-        plugin.id === ${JSON.stringify(pluginId)} &&
-        plugin.state === "loaded" &&
-        plugin.compatibilityLevel >= 2
-      )) {
-        return { loaded: true, snapshot };
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+    return true;
+  })()`);
+  const profileRefusal = `Plugin construction for ${pluginId} stopped [authority-profile-missing].`;
+  const profileRefusalDeadline = Date.now() + 30_000;
+  while (Date.now() < profileRefusalDeadline && !output.join("").includes(profileRefusal)) {
+    await delay(50);
+  }
+  assert(
+    output.join("").includes(profileRefusal),
+    "An exact-bundle grant bypassed the reviewed authority-profile gate.",
+  );
+  const deniedAfterGrant = await evaluate(`(async () => {
+    const snapshot = await window.threadleaf.getSnapshot();
     return {
-      loaded: false,
-      snapshot,
+      loaded: (snapshot.plugins ?? []).some((plugin) =>
+        plugin.id === ${JSON.stringify(pluginId)} && plugin.state === "loaded"
+      ),
       rowText: document.querySelector(${JSON.stringify(installedRow)})?.textContent ?? "",
       status: document.querySelector("#plugin-status")?.textContent ?? "",
     };
   })()`);
   assert(
-    enabledAfterGrant.loaded === true,
-    `A granted exact bundle did not load through the real runtime: ${JSON.stringify(enabledAfterGrant)}`,
+    deniedAfterGrant.loaded === false,
+    `A package without a reviewed authority profile loaded through the real runtime: ${JSON.stringify(deniedAfterGrant)}`,
   );
   await waitFor(
     `(() => {
@@ -796,6 +797,7 @@ try {
       reviewAssets: review.assets.length,
       integrityRaceBlocked: true,
       authorityGateVerified: true,
+      authorityProfileDenialVerified: true,
       installedDisabled: true,
       uninstallRestored: true,
       liveThemeColors,

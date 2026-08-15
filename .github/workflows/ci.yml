@@ -58,6 +58,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build and verify Linux packages
         run: pnpm run release:linux
+      - name: Verify reviewed plugin package E2E
+        run: pnpm run test:plugin-packages-e2e:built
       - name: Check community theme integrity
         run: pnpm run community-theme:integrity
       - name: Run committed visual regression matrix

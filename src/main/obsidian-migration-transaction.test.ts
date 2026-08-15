@@ -100,7 +100,7 @@ function preview(vaultId: string): ObsidianMigrationPreview {
         packageState: "ready",
         authorityState: "granted",
         compatibility: {
-          level: 4,
+          level: 0,
           status: "verified",
           testedVersion: "1.0.0",
           testedThreadleafVersion: "0.1.0",

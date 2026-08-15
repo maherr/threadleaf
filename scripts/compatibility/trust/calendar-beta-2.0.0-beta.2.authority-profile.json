@@ -1,0 +1,29 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "calendar-beta-2.0.0-beta.2",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "calendar-beta",
+    "manifestVersion": "2.0.0",
+    "distributionTag": "2.0.0-beta.2",
+    "manifestSha256": "314fc17929a2270b17ea392538ee2d93330714800e244b2975b6c19f9b8dc689",
+    "mainSha256": "64d1c6c620803246724bc922c5c2e0a17c406ffc23f6bbcfbfb14c643958fbb7",
+    "stylesSha256": "486b450076f3439b9e40853665a3f51e5084caba60b882c285b60f4764c20852",
+    "packageTreeSha256": "ea2ca587640f57069cd31fbf6d89743d96711d8aa89e8b2d2874b5b7bd6b6b7c"
+  },
+  "packageIdentityDigest": "ef53629511acb80f97582533ee7a11c26dc6e233420b559ef7eded78e44dec01",
+  "expectedStaticCapabilities": ["vault-read", "host-environment", "workspace-ui"],
+  "requiredAuthorities": [
+    "vault-read",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "b9827a86d2b94f3b48559a53d3ef300d3d5e765ed46f3ed9f0073c825a3c5cae"
+}

@@ -8,7 +8,12 @@ import type {
   RuntimeSnapshot,
 } from "../shared/contracts";
 import { createPluginDiagnostic, type PluginDiagnosticCode } from "../shared/plugin-diagnostics";
-import { isFatalPluginRuntimeError, type PluginRuntimePort } from "./plugin-runtime-port";
+import type { PluginConstructionRequest } from "../shared/plugins";
+import {
+  FatalPluginRuntimeError,
+  isFatalPluginRuntimeError,
+  type PluginRuntimePort,
+} from "./plugin-runtime-port";
 
 export type PluginFailureDescriptor = Pick<
   PluginSummary,
@@ -22,7 +27,7 @@ interface RecoveringPluginRuntimeOptions<T extends PluginRuntimePort> {
 }
 
 interface TrackedPlugin {
-  directoryPath: string;
+  request: PluginConstructionRequest;
   summary: PluginSummary;
 }
 
@@ -82,8 +87,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   private lastFailureId: string | null = null;
   private lastPluginId: string | null = null;
   private lastSnapshot: RuntimeSnapshot | null = null;
-  private readonly knownBundleHashes = new Map<string, string>();
-  private readonly knownDirectories = new Map<string, string>();
+  private readonly knownRequests = new Map<string, PluginConstructionRequest>();
   private operationTail: Promise<void> = Promise.resolve();
   private readonly seenRuntimeEventSequences = new Set<number>();
 
@@ -116,21 +120,14 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     return this.runSnapshot({ operation: "close-view" }, (runtime) => runtime.closePluginView());
   }
 
-  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot> {
-    const fallback = fallbackDescriptor(pluginDirectory);
-    this.knownDirectories.set(fallback.id, pluginDirectory);
-    if (expectedBundleSha256) {
-      this.knownBundleHashes.set(fallback.id, expectedBundleSha256);
-    }
+  loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    const pluginDirectory = request.pluginDirectory;
+    this.knownRequests.set(request.packageIdentity.pluginId, structuredClone(request));
     return this.runSnapshot(
-      { operation: "load-plugin", pluginDirectory, pluginId: fallback.id },
-      (runtime) => runtime.loadPlugin(pluginDirectory, expectedBundleSha256),
+      { operation: "load-plugin", pluginDirectory, pluginId: request.packageIdentity.pluginId },
+      (runtime) => runtime.loadPlugin(request),
       (snapshot) => {
-        this.trackLoadedPlugin(snapshot, pluginDirectory);
-        const loadedId = snapshot.plugin?.id ?? path.basename(pluginDirectory);
-        if (expectedBundleSha256) {
-          this.knownBundleHashes.set(loadedId, expectedBundleSha256);
-        }
+        this.trackLoadedPlugin(snapshot, request);
       },
     );
   }
@@ -153,19 +150,25 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     );
   }
 
-  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    const targetId = pluginId ?? this.lastPluginId ?? undefined;
-    const knownDirectory = targetId ? this.knownDirectories.get(targetId) : undefined;
-    const knownBundleSha256 = targetId ? this.knownBundleHashes.get(targetId) : undefined;
+  reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    const targetId = request?.packageIdentity.pluginId ?? this.lastPluginId ?? undefined;
+    const knownRequest = request ?? (targetId ? this.knownRequests.get(targetId) : undefined);
+    const reloadRequest = knownRequest
+      ? { ...knownRequest, constructionPath: "explicit-reload" as const }
+      : undefined;
     return this.runSnapshot(
       { operation: "reload-plugin", ...(targetId ? { pluginId: targetId } : {}) },
-      (runtime) =>
-        targetId && !this.activePlugins.has(targetId) && knownDirectory
-          ? runtime.loadPlugin(knownDirectory, knownBundleSha256)
-          : runtime.reloadPlugin(targetId),
+      (runtime) => {
+        if (!reloadRequest) {
+          throw new Error("Plugin reload requires an exact package construction request.");
+        }
+        return targetId && !this.activePlugins.has(targetId)
+          ? runtime.loadPlugin(reloadRequest)
+          : runtime.reloadPlugin(reloadRequest);
+      },
       (snapshot) => {
-        if (knownDirectory) {
-          this.trackLoadedPlugin(snapshot, knownDirectory);
+        if (reloadRequest) {
+          this.trackLoadedPlugin(snapshot, reloadRequest);
         } else {
           this.rememberRuntimePlugins(snapshot);
         }
@@ -304,7 +307,6 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
       culpritDescriptor =
         (await this.options.describePlugin?.(context.pluginDirectory).catch(() => null)) ??
         fallbackDescriptor(context.pluginDirectory);
-      this.knownDirectories.set(culpritDescriptor.id, context.pluginDirectory);
       context.pluginId = culpritDescriptor.id;
     }
 
@@ -367,7 +369,20 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     const recoveryNotice =
       "The plugin operation was stopped. The compatibility renderer recovered; reload plugins to reactivate them.";
     try {
-      return this.rememberSnapshot(await replacement.getSnapshot(), recoveryNotice);
+      let recoveredSnapshot = await replacement.getSnapshot();
+      const recoveryPath =
+        failure instanceof FatalPluginRuntimeError && failure.operation === "renderer-exit"
+          ? "renderer-death-restoration"
+          : "automatic-recovery";
+      for (const tracked of activeBeforeRecovery) {
+        const recoveryRequest = {
+          ...tracked.request,
+          constructionPath: recoveryPath as "automatic-recovery" | "renderer-death-restoration",
+        };
+        recoveredSnapshot = await replacement.loadPlugin(recoveryRequest);
+        this.trackLoadedPlugin(recoveredSnapshot, recoveryRequest);
+      }
+      return this.rememberSnapshot(recoveredSnapshot, recoveryNotice);
     } catch (recoveryError) {
       await replacement.close().catch(() => undefined);
       this.closed = true;
@@ -378,17 +393,20 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     }
   }
 
-  private trackLoadedPlugin(snapshot: RuntimeSnapshot, directoryPath: string): void {
-    const fallbackId = path.basename(directoryPath);
+  private trackLoadedPlugin(snapshot: RuntimeSnapshot, request: PluginConstructionRequest): void {
+    const fallbackId = request.packageIdentity.pluginId;
     const summary = snapshot.plugin ?? pluginList(snapshot).find(({ id }) => id === fallbackId);
     if (!summary) {
       return;
     }
     this.lastPluginId = summary.id;
-    this.knownDirectories.set(summary.id, directoryPath);
+    this.knownRequests.set(summary.id, structuredClone(request));
     this.failedPlugins.delete(summary.id);
     if (summary.state === "loaded") {
-      this.activePlugins.set(summary.id, { directoryPath, summary: { ...summary } });
+      this.activePlugins.set(summary.id, {
+        request: structuredClone(request),
+        summary: { ...summary },
+      });
     } else {
       this.activePlugins.delete(summary.id);
     }

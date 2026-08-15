@@ -68,7 +68,7 @@ describe("plugin compatibility settings", () => {
     expect(
       createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.25.3" }),
     ).toMatchObject({
-      level: 4,
+      level: 0,
       status: "verified",
       testedVersion: "2.25.3",
       testedThreadleafVersion: "0.1.0-beta.6",

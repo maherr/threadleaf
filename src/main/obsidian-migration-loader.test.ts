@@ -162,7 +162,7 @@ describe("Obsidian migration preview", () => {
       enabledInObsidian: true,
       selectedInThreadleaf: true,
       packageState: "ready",
-      compatibility: { status: "verified", level: 4, testedVersion: "0.1.0" },
+      compatibility: { status: "verified", level: 0, testedVersion: "0.1.0" },
       settings: { state: "shared", rootKind: "object", topLevelEntryCount: 3 },
     });
     expect(preview.plugins[1]).toMatchObject({

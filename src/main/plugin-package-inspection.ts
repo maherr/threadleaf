@@ -8,17 +8,27 @@ import { performance } from "node:perf_hooks";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
 import { PluginHost } from "../runtime/plugin-host";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
+import { authorityJsonSha256 } from "../shared/authority-json";
 import type { PluginIntegrationSnapshot, RuntimeSnapshot } from "../shared/contracts";
 import type { PluginPackageInspectionReceipt } from "../shared/plugin-packages";
 import {
+  type CommunityPluginGrantV2,
+  isPluginConstructionRefusal,
   maxPluginBundleBytes,
   type PluginCapabilityReport,
+  type PluginConstructionRequest,
   type PluginManifestData,
   parsePluginId,
   parsePluginManifest,
 } from "../shared/plugins";
 import { scanPluginCapabilities } from "./plugin-capability-scanner";
+import {
+  inspectSealedPluginPackage,
+  PluginConstructionPolicyResolver,
+} from "./plugin-construction-policy";
 import { parsePluginPackageInspectionReceipt } from "./plugin-inspection-receipt";
+import { PolicyEnforcingPluginHost } from "./policy-enforcing-plugin-host";
+import { reviewedAuthorityProfileByIdentity } from "./reviewed-authority-profiles";
 
 /** Bumped when the machine-readable inspection report changes shape or meaning. */
 export const pluginPackageInspectionSchemaVersion = 1 as const;
@@ -42,6 +52,11 @@ const compatibilityHostModules = [
   "react",
   "react-dom",
 ] as const;
+const diagnosticGrantPluginIds = new Set([
+  "inspection-runaway",
+  "inspection-safe",
+  "inspection-teardown",
+]);
 
 export type InspectionStageStatus = "pass" | "fail" | "blocked" | "not-run";
 export type InspectionOverallStatus = "pass" | "fail" | "blocked";
@@ -126,7 +141,7 @@ export interface PluginPackageInspectionOptions {
 export interface PluginInspectionRuntimeContext {
   vaultPath: string;
   pluginDirectory: string;
-  expectedBundleSha256: string;
+  constructionRequest: PluginConstructionRequest;
   networkMode: "denied" | "deterministic-fixture";
 }
 
@@ -1153,11 +1168,66 @@ function globalKeys(): Set<string> {
   return new Set(Object.getOwnPropertyNames(globalThis));
 }
 
+function activationFailureCode(error: unknown): string {
+  return isPluginConstructionRefusal(error) ? error.code : "activation-crash";
+}
+
 async function defaultRuntimeFactory(
   context: PluginInspectionRuntimeContext,
 ): Promise<PluginRuntimePort> {
+  const profile = reviewedAuthorityProfileByIdentity(
+    context.constructionRequest.packageIdentityDigest,
+  );
+  const vaultId = authorityJsonSha256(context.vaultPath);
+  const grant: CommunityPluginGrantV2 | null =
+    profile && diagnosticGrantPluginIds.has(profile.packageIdentity.pluginId)
+      ? {
+          schemaVersion: 2,
+          grantId: `diagnostic-${profile.packageIdentityDigest}`,
+          vaultId,
+          packageIdentity: { ...profile.packageIdentity },
+          packageIdentityDigest: profile.packageIdentityDigest,
+          authorityProfileId: profile.profileId,
+          authorityProfileRevision: profile.profileRevision,
+          authorityDigest: profile.authorityDigest,
+          grantedAuthorities: [...profile.requiredAuthorities],
+          provenance: {
+            kind: "content-addressed-unsigned",
+            sourceDescriptorDigest: authorityJsonSha256({
+              kind: "diagnostic-inspection",
+              packageIdentityDigest: profile.packageIdentityDigest,
+            }),
+          },
+          grantRevision: 1,
+          grantEpoch: 1,
+          issuedAt: "1970-01-01T00:00:00.000Z",
+          revokedAt: null,
+          revocationReason: null,
+        }
+      : null;
+  const sealedPackage = {
+    sealedPackageRootId: `diagnostic-${context.constructionRequest.packageIdentityDigest}`,
+    sealedPackageRootPath: context.pluginDirectory,
+    packageIdentityDigest: context.constructionRequest.packageIdentityDigest,
+    packageTreeSha256: context.constructionRequest.packageIdentity.packageTreeSha256,
+  };
+  const resolver = new PluginConstructionPolicyResolver({
+    readAuthoritySnapshot: async () => ({
+      vaultId,
+      vaultGeneration: 1,
+      policyEpoch: 1,
+      grantEpoch: grant?.grantEpoch ?? 0,
+      safeMode: false,
+      safeModeEpoch: 1,
+      packageStoreEpoch: 1,
+      platform: process.platform as "linux" | "darwin" | "win32",
+      availableExecutionProfiles: ["trusted-node-renderer", "trusted-desktop-escape"],
+      grant,
+      sealedPackage,
+    }),
+  });
   return IsolatedPluginRuntime.open({
-    create: async () => new PluginHost(context.vaultPath),
+    create: async () => new PolicyEnforcingPluginHost(new PluginHost(context.vaultPath), resolver),
   });
 }
 
@@ -1170,10 +1240,24 @@ async function runTrustedRuntime(
 ): Promise<RuntimeRun> {
   const beforeGlobalKeys = globalKeys();
   const factory = options.runtimeFactory ?? defaultRuntimeFactory;
+  const inspected = await inspectSealedPluginPackage(
+    {
+      sealedPackageRootId: "diagnostic-input",
+      sealedPackageRootPath: materialized.pluginDirectory,
+      packageIdentityDigest: "0".repeat(64),
+      packageTreeSha256: "0".repeat(64),
+    },
+    packageInput.provenance.releaseTag,
+  );
   const context: PluginInspectionRuntimeContext = {
     vaultPath: materialized.vaultPath,
     pluginDirectory: materialized.pluginDirectory,
-    expectedBundleSha256: sha256(packageInput.assets.main),
+    constructionRequest: {
+      constructionPath: "diagnostic-execution",
+      pluginDirectory: materialized.pluginDirectory,
+      packageIdentity: inspected.identity,
+      packageIdentityDigest: inspected.identityDigest,
+    },
     networkMode: options.networkMode,
   };
   let runtime: PluginRuntimePort | null = null;
@@ -1185,11 +1269,7 @@ async function runTrustedRuntime(
   try {
     runtime = await runWithTimeout(() => factory(context), options.timeoutMs);
     activationSnapshot = await runWithTimeout(
-      () =>
-        runtime?.loadPlugin(
-          materialized.pluginDirectory,
-          context.expectedBundleSha256,
-        ) as Promise<RuntimeSnapshot>,
+      () => runtime?.loadPlugin(context.constructionRequest) as Promise<RuntimeSnapshot>,
       options.timeoutMs,
     );
   } catch (error) {
@@ -1434,11 +1514,15 @@ export async function inspectPluginPackage(
       } else if (!runtimeRun.activationSnapshot) {
         activationStage.addDiagnostic(
           diagnostic(
-            runtimeRun.activationError ? "activation-crash" : "activation-failed",
-            "error",
             runtimeRun.activationError
-              ? "Trusted compatibility runtime crashed or rejected the exact package during activation."
-              : "Trusted compatibility activation failed without a snapshot.",
+              ? activationFailureCode(runtimeRun.activationError)
+              : "activation-failed",
+            "error",
+            isPluginConstructionRefusal(runtimeRun.activationError)
+              ? "Trusted compatibility construction denied the exact package before activation."
+              : runtimeRun.activationError
+                ? "Trusted compatibility runtime crashed or rejected the exact package during activation."
+                : "Trusted compatibility activation failed without a snapshot.",
             "runtime/activation.json",
           ),
         );
@@ -1448,7 +1532,9 @@ export async function inspectPluginPackage(
         if (summary?.state !== "loaded" || summary.error) {
           activationStage.addDiagnostic(
             diagnostic(
-              runtimeRun.activationError ? "activation-crash" : "activation-not-loaded",
+              runtimeRun.activationError
+                ? activationFailureCode(runtimeRun.activationError)
+                : "activation-not-loaded",
               "error",
               runtimeRun.activationError
                 ? "Trusted compatibility runtime crashed or rejected the exact package during activation."

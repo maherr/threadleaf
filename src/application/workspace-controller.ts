@@ -47,6 +47,7 @@ import type {
   WorkspaceTreePathResponse,
 } from "../shared/contracts";
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import type { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import type { RenderedNoteTemplate } from "./note-template";
@@ -280,8 +281,8 @@ export interface WorkspaceRuntimePort {
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
   closePluginView(): Promise<RuntimeSnapshot>;
-  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot>;
-  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
+  loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot>;
+  reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
@@ -296,9 +297,9 @@ export interface WorkspaceControllerOptions {
   stateRoot: StateRootPort;
   selectionStore: VaultSelectionStore;
   fixtureVaultPath: string;
-  fixturePluginDirectory?: string;
+  fixturePluginConstructionRequest?: PluginConstructionRequest;
   configuredVaultPath?: string;
-  configuredPluginDirectory?: string;
+  configuredPluginConstructionRequest?: PluginConstructionRequest;
   deferInitialVault?: boolean;
   pluginModuleResolver?: PluginModuleResolver;
   pluginRuntimeFactory?: PluginRuntimeFactory;
@@ -312,7 +313,7 @@ export interface WorkspaceControllerOptions {
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
 
 interface DeferredInitialVault {
-  pluginDirectory?: string;
+  pluginConstructionRequest?: PluginConstructionRequest;
   source: Extract<VaultSelectionSource, "environment" | "restored">;
   vaultPath: string;
 }
@@ -331,7 +332,7 @@ function runtimeOptions(
   selectionSource: VaultSelectionSource,
   warning: string | null,
   workspaceStateStore?: WorkspaceStateStore,
-  pluginDirectory?: string,
+  pluginConstructionRequest?: PluginConstructionRequest,
   pluginModuleResolver?: PluginModuleResolver,
   pluginRuntimeFactory?: PluginRuntimeFactory,
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings,
@@ -344,7 +345,7 @@ function runtimeOptions(
     selectionSource,
     warning,
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
-    ...(pluginDirectory ? { pluginDirectory } : {}),
+    ...(pluginConstructionRequest ? { pluginConstructionRequest } : {}),
     ...(pluginModuleResolver ? { pluginModuleResolver } : {}),
     ...(pluginRuntimeFactory ? { pluginRuntimeFactory } : {}),
     ...(workspaceSettingsForVault ? { workspaceSettingsForVault } : {}),
@@ -413,8 +414,8 @@ export class WorkspaceController {
         return new WorkspaceController(runtime, options, runtimeFactory, {
           vaultPath: options.configuredVaultPath,
           source: "environment",
-          ...(options.configuredPluginDirectory
-            ? { pluginDirectory: options.configuredPluginDirectory }
+          ...(options.configuredPluginConstructionRequest
+            ? { pluginConstructionRequest: options.configuredPluginConstructionRequest }
             : {}),
         });
       }
@@ -425,7 +426,7 @@ export class WorkspaceController {
           "environment",
           null,
           options.workspaceStateStore,
-          options.configuredPluginDirectory,
+          options.configuredPluginConstructionRequest,
           options.pluginModuleResolver,
           options.pluginRuntimeFactory,
           options.workspaceSettingsForVault,
@@ -495,7 +496,7 @@ export class WorkspaceController {
         "bundled",
         restoreWarning,
         options.workspaceStateStore,
-        options.fixturePluginDirectory,
+        options.fixturePluginConstructionRequest,
         options.pluginModuleResolver,
         options.pluginRuntimeFactory,
         options.workspaceSettingsForVault,
@@ -591,7 +592,7 @@ export class WorkspaceController {
           target.source,
           null,
           this.#workspaceStateStore,
-          target.pluginDirectory,
+          target.pluginConstructionRequest,
           this.#pluginModuleResolver,
           this.#pluginRuntimeFactory,
           this.#workspaceSettingsForVault,
@@ -1198,12 +1199,12 @@ export class WorkspaceController {
     return this.activeRuntime("close a plugin view").closePluginView();
   }
 
-  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot> {
-    return this.activeRuntime("load a plugin").loadPlugin(pluginDirectory, expectedBundleSha256);
+  loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("load a plugin").loadPlugin(request);
   }
 
-  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    return this.activeRuntime("reload a plugin").reloadPlugin(pluginId);
+  reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    return this.activeRuntime("reload a plugin").reloadPlugin(request);
   }
 
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {

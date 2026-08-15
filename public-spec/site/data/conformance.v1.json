@@ -379,13 +379,13 @@
       "id": "obsidian-excalidraw-plugin",
       "version": "2.25.3",
       "threadleafVersion": "0.1.0-beta.6",
-      "compatibilityLevel": 4
+      "compatibilityLevel": 0
     },
     {
       "id": "threadleaf-fixture",
       "version": "0.1.0",
       "threadleafVersion": "0.1.0-beta.6",
-      "compatibilityLevel": 4
+      "compatibilityLevel": 0
     }
   ]
 }

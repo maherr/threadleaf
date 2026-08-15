@@ -1,0 +1,28 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "obsidian-style-settings-1.0.9",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "obsidian-style-settings",
+    "manifestVersion": "1.0.9",
+    "distributionTag": "1.0.9",
+    "manifestSha256": "9cffdc20cf2aa1354820e0050b694b0f9b576446e3d5d44a36ae8b0187e5bfb8",
+    "mainSha256": "1828abaacdab4c5578b705a625c585b30512f8efad4c7cfc5a18e70cc3557468",
+    "stylesSha256": "ee7937d2be50653a89ccb30ae5f0572b23507d5b7f1328d005271a363075bfd8",
+    "packageTreeSha256": "cb7fba90b18eb72a7c2b974dc3e305601c19083ed2b38e078593d528675804f5"
+  },
+  "packageIdentityDigest": "02d8e891afdc478abc2bc8590e4414e325e49e76a37ec874298e1fdb7ed50774",
+  "expectedStaticCapabilities": ["workspace-ui", "dynamic-code"],
+  "requiredAuthorities": [
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "7c2c283ad6bb222c659996a7a7bd457894deea4a542a49a6355972a5ded16e40"
+}

@@ -33,6 +33,7 @@ import type {
   WorkspaceTreePathRequest,
   WorkspaceTreePathResponse,
 } from "../shared/contracts";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import {
   createDefaultVaultWorkspaceSettings,
   type VaultWorkspaceSettings,
@@ -45,6 +46,25 @@ import {
 } from "./workspace-controller";
 import type { WorkspaceRuntimeOptions } from "./workspace-runtime";
 import type { WorkspaceStateStore } from "./workspace-state";
+
+function constructionRequest(pluginDirectory: string): PluginConstructionRequest {
+  const pluginId = path.basename(pluginDirectory);
+  const digest = "a".repeat(64);
+  return {
+    constructionPath: "test-execution",
+    pluginDirectory,
+    packageIdentity: {
+      pluginId,
+      manifestVersion: "1.0.0",
+      distributionTag: "1.0.0",
+      manifestSha256: digest,
+      mainSha256: digest,
+      stylesSha256: null,
+      packageTreeSha256: digest,
+    },
+    packageIdentityDigest: digest,
+  };
+}
 
 class MemorySelectionStore implements VaultSelectionStore {
   value: string | null;
@@ -791,9 +811,13 @@ describe("WorkspaceController", () => {
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
-      fixturePluginDirectory: "/fixtures/basic/.obsidian/plugins/fixture",
+      fixturePluginConstructionRequest: constructionRequest(
+        "/fixtures/basic/.obsidian/plugins/fixture",
+      ),
       configuredVaultPath: "/configured/vault",
-      configuredPluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+      configuredPluginConstructionRequest: constructionRequest(
+        "/configured/vault/.obsidian/plugins/fixture",
+      ),
       deferInitialVault: true,
       pluginRuntimeFactory,
       beforeWorkspaceStateRestore,
@@ -807,7 +831,7 @@ describe("WorkspaceController", () => {
       vaultRoot: fixtureVaultPath,
       selectionSource: "bundled",
     });
-    expect(harness.optionsSeen[0]?.pluginDirectory).toBeUndefined();
+    expect(harness.optionsSeen[0]?.pluginConstructionRequest).toBeUndefined();
     expect(harness.optionsSeen[0]?.pluginRuntimeFactory).toBeUndefined();
     expect(harness.optionsSeen[0]?.beforeWorkspaceStateRestore).toBeUndefined();
     expect(await controller.getSnapshot()).toMatchObject({
@@ -836,7 +860,9 @@ describe("WorkspaceController", () => {
     expect(harness.optionsSeen[1]).toMatchObject({
       vaultRoot: "/configured/vault",
       selectionSource: "environment",
-      pluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+      pluginConstructionRequest: expect.objectContaining({
+        pluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+      }),
     });
     expect(harness.optionsSeen[1]?.pluginRuntimeFactory).toBe(pluginRuntimeFactory);
     expect(harness.optionsSeen[1]?.beforeWorkspaceStateRestore).toBe(beforeWorkspaceStateRestore);
@@ -931,9 +957,13 @@ describe("WorkspaceController", () => {
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
-      fixturePluginDirectory: "/fixtures/basic/.obsidian/plugins/fixture",
+      fixturePluginConstructionRequest: constructionRequest(
+        "/fixtures/basic/.obsidian/plugins/fixture",
+      ),
       configuredVaultPath: "/configured/vault",
-      configuredPluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+      configuredPluginConstructionRequest: constructionRequest(
+        "/configured/vault/.obsidian/plugins/fixture",
+      ),
       runtimeFactory: harness.runtimeFactory,
     });
 
@@ -942,7 +972,9 @@ describe("WorkspaceController", () => {
     expect(harness.optionsSeen[0]).toMatchObject({
       vaultRoot: "/configured/vault",
       selectionSource: "environment",
-      pluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+      pluginConstructionRequest: expect.objectContaining({
+        pluginDirectory: "/configured/vault/.obsidian/plugins/fixture",
+      }),
     });
     expect((await controller.getSnapshot()).vault.source).toBe("environment");
     await controller.close();
@@ -955,7 +987,9 @@ describe("WorkspaceController", () => {
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
-      fixturePluginDirectory: "/fixtures/basic/.obsidian/plugins/fixture",
+      fixturePluginConstructionRequest: constructionRequest(
+        "/fixtures/basic/.obsidian/plugins/fixture",
+      ),
       runtimeFactory: harness.runtimeFactory,
     });
 
@@ -963,7 +997,7 @@ describe("WorkspaceController", () => {
       vaultRoot: "/restored/vault",
       selectionSource: "restored",
     });
-    expect(harness.optionsSeen[0]?.pluginDirectory).toBeUndefined();
+    expect(harness.optionsSeen[0]?.pluginConstructionRequest).toBeUndefined();
     expect((await controller.getSnapshot()).vault.warning).toBeNull();
     await controller.close();
   });
@@ -975,7 +1009,9 @@ describe("WorkspaceController", () => {
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
-      fixturePluginDirectory: "/fixtures/basic/.obsidian/plugins/fixture",
+      fixturePluginConstructionRequest: constructionRequest(
+        "/fixtures/basic/.obsidian/plugins/fixture",
+      ),
       runtimeFactory: harness.runtimeFactory,
     });
 
@@ -998,7 +1034,9 @@ describe("WorkspaceController", () => {
       stateRoot,
       selectionStore: store,
       fixtureVaultPath,
-      fixturePluginDirectory: "/fixtures/basic/.obsidian/plugins/fixture",
+      fixturePluginConstructionRequest: constructionRequest(
+        "/fixtures/basic/.obsidian/plugins/fixture",
+      ),
       runtimeFactory: harness.runtimeFactory,
     });
 

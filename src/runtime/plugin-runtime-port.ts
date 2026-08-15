@@ -5,6 +5,7 @@ import type {
   PluginResourceDiagnostic,
   RuntimeSnapshot,
 } from "../shared/contracts";
+import type { PluginConstructionDispatch, PluginConstructionRequest } from "../shared/plugins";
 
 export class FatalPluginRuntimeError extends Error {
   readonly operation: string;
@@ -29,11 +30,11 @@ export function isFatalPluginRuntimeError(error: unknown): error is FatalPluginR
 export interface PluginRuntimePort {
   closePluginView(): Promise<RuntimeSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
-  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot>;
+  loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot>;
   markLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
   openPluginView(viewType: string, filePath?: string): Promise<RuntimeSnapshot>;
-  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
+  reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot>;
   /**
    * Render `content` through exactly `pluginId`'s currently registered Markdown post processors
    * inside the trusted compatibility renderer and return the settled (already-awaited, non-live)
@@ -55,6 +56,10 @@ export interface PluginRuntimePort {
   unloadAllPlugins(): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   close(): Promise<void>;
+}
+
+export interface PluginConstructionPolicyResolverPort {
+  resolveAndConsume(request: PluginConstructionRequest): Promise<PluginConstructionDispatch>;
 }
 
 export type PluginRuntimeFactory = (

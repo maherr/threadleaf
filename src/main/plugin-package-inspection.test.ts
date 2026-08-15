@@ -276,7 +276,10 @@ describe("exact plugin package inspection", () => {
       isDesktopOnly: false,
     });
 
-    const report = await inspectPluginPackage(input, { appVersion: "0.1.0-beta.3" });
+    const report = await inspectPluginPackage(input, {
+      appVersion: "0.1.0-beta.3",
+      runtimeFactory: await runtimeFor("normal"),
+    });
 
     expect(report.overall).toBe("pass");
     expect(report.manifest).toEqual({
@@ -344,9 +347,17 @@ describe("exact plugin package inspection", () => {
 
   it("produces all-gates-passed evidence and an exact registry candidate for a fixture", async () => {
     const input = await fixtureInput("inspection-safe");
-    const report = await inspectPluginPackage(input, { timeoutMs: 1_000 });
+    let observedConstructionPath: string | null = null;
+    const report = await inspectPluginPackage(input, {
+      timeoutMs: 1_000,
+      runtimeFactory: async (context) => {
+        observedConstructionPath = context.constructionRequest.constructionPath;
+        return fakeRuntime("inspection-safe", "normal", context);
+      },
+    });
 
     expect(report.overall).toBe("pass");
+    expect(observedConstructionPath).toBe("diagnostic-execution");
     expect(report.candidate).toMatchObject({
       exactPackage: { id: "inspection-safe", version: "0.1.0" },
       compatibilityLevel: 3,
@@ -361,8 +372,8 @@ describe("exact plugin package inspection", () => {
       }),
     ).toBe(true);
     expect(report.registrations).toMatchObject({
-      commands: [{ id: "inspection-safe:inspection-safe-command" }],
-      viewTypes: ["inspection-safe-view"],
+      commands: [{ id: "inspection-safe:command" }],
+      viewTypes: ["inspection-view"],
       markdownPostProcessors: 1,
     });
     expect(JSON.stringify(report)).not.toContain("private-host-path");
@@ -395,8 +406,27 @@ describe("exact plugin package inspection", () => {
     expect(report.registrations).toBeNull();
     expect(report.candidate).toBeNull();
 
-    const activated = await inspectPluginPackage(input, { timeoutMs: 1_000 });
+    const activated = await inspectPluginPackage(input, {
+      timeoutMs: 1_000,
+      runtimeFactory: await runtimeFor("normal"),
+    });
     expect(activated.stages.find((stage) => stage.id === "activation")?.status).toBe("pass");
+  });
+
+  it("preserves an unprofiled exact package's construction denial code", async () => {
+    const input = withManifest(await fixtureInput("inspection-safe"), {
+      id: "inspection-unprofiled",
+      name: "Inspection Unprofiled Fixture",
+      version: "0.1.0",
+      isDesktopOnly: false,
+    });
+    const report = await inspectPluginPackage(input);
+
+    expect(report.overall).toBe("fail");
+    expect(report.stages.find((stage) => stage.id === "activation")?.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "authority-profile-missing" })]),
+    );
+    expect(JSON.stringify(report)).not.toContain("Community plugin construction was denied");
   });
 
   it("binds every result to exact bytes and refuses floating or tampered inputs", async () => {
@@ -582,8 +612,9 @@ describe("exact plugin package inspection", () => {
 
   it("does not leave the materialized disposable package on disk", async () => {
     const input = await fixtureInput("inspection-safe");
+    const runtimeFactory = await runtimeFor("normal");
     const { outcome: report, rootPaths } = await withCapturedMaterializedRoot(() =>
-      inspectPluginPackage(input),
+      inspectPluginPackage(input, { runtimeFactory }),
     );
     expect(report.overall).toBe("pass");
     // A single inspection run must materialize exactly one temporary root. Asserting the
@@ -600,7 +631,9 @@ describe("exact plugin package inspection", () => {
     const realMkdtemp = fs.mkdtemp.bind(fs);
     let foreignSibling = "";
     const { outcome: report, rootPaths } = await withCapturedMaterializedRoot(async () => {
-      const inspectionPromise = inspectPluginPackage(input);
+      const inspectionPromise = inspectPluginPackage(input, {
+        runtimeFactory: await runtimeFor("normal"),
+      });
       // Simulate a genuinely parallel, unrelated run whose own uniquely mkdtemp'd root lands in
       // the same shared `threadleaf-plugin-inspection-*` namespace while this run is in flight.
       // A namespace scan taken before and after this call would see this directory appear in
@@ -652,7 +685,9 @@ describe("exact plugin package inspection", () => {
       return realRm(target as Parameters<typeof fs.rm>[0], options as Parameters<typeof fs.rm>[1]);
     });
     try {
-      const report = await inspectPluginPackage(input);
+      const report = await inspectPluginPackage(input, {
+        runtimeFactory: await runtimeFor("normal"),
+      });
       expect(report.overall).toBe("pass");
       expect(capturedRoot).toBeDefined();
       // A genuine leak of this run's own root remains observable: a residue check would
@@ -678,7 +713,7 @@ describe("exact plugin package inspection", () => {
       // `inspectPluginPackage` uses, before its own call, and never clean it up here -- this
       // stands in for a second, genuinely leaked temporary root.
       plantedLeak = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-inspection-"));
-      return inspectPluginPackage(input);
+      return inspectPluginPackage(input, { runtimeFactory: await runtimeFor("normal") });
     });
     try {
       expect(report.overall).toBe("pass");

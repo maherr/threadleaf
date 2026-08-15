@@ -6,7 +6,11 @@ import {
   type RenderProcessGoneDetails,
   WebContentsView,
 } from "electron";
-import { FatalPluginRuntimeError, type PluginRuntimePort } from "../runtime/plugin-runtime-port";
+import {
+  FatalPluginRuntimeError,
+  type PluginConstructionPolicyResolverPort,
+  type PluginRuntimePort,
+} from "../runtime/plugin-runtime-port";
 import type {
   PluginEditorContext,
   PluginMutationWaitOptions,
@@ -27,6 +31,7 @@ import {
   parsePluginRendererResponse,
   pluginRendererChannels,
 } from "../shared/plugin-runtime-protocol";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import {
   type PluginRendererMetrics,
   type PluginResourceClock,
@@ -36,6 +41,7 @@ import {
 } from "./plugin-resource-policy";
 
 export interface ElectronPluginRuntimeOptions {
+  constructionPolicyResolver?: PluginConstructionPolicyResolverPort;
   hostHtmlPath: string;
   onSurfaceVisibilityChange?(view: WebContentsView, visible: boolean): void;
   operationTimeoutMs?: number;
@@ -146,6 +152,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   private readonly resourceDiagnostics: PluginResourceDiagnostic[] = [];
   private activePluginId: string | undefined;
   private lastFatalError: FatalPluginRuntimeError | null = null;
+  private readonly constructionPolicyResolver: PluginConstructionPolicyResolverPort;
 
   private constructor(
     view: WebContentsView,
@@ -153,6 +160,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     policy = createPluginResourcePolicy(),
     metricsProvider = defaultMetricsProvider(),
     clock?: PluginResourceClock,
+    constructionPolicyResolver?: PluginConstructionPolicyResolverPort,
   ) {
     this.view = view;
     this.onSurfaceVisibilityChange = onSurfaceVisibilityChange;
@@ -180,6 +188,13 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
         onBreach: (diagnostic) => this.handleResourceBreach(diagnostic),
       },
     );
+    this.constructionPolicyResolver =
+      constructionPolicyResolver ??
+      ({
+        resolveAndConsume: async () => {
+          throw new Error("Electron plugin runtime has no main-process construction resolver.");
+        },
+      } satisfies PluginConstructionPolicyResolverPort);
     view.webContents.on("ipc-message", this.handleIpcMessage);
     view.webContents.on("render-process-gone", this.handleRendererGone);
   }
@@ -215,6 +230,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
       resolvePolicy(options.resourcePolicy, options.operationTimeoutMs),
       options.metricsProvider,
       options.clock,
+      options.constructionPolicyResolver,
     );
     try {
       const ready = runtime.waitUntilReady();
@@ -239,15 +255,19 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     return this.requestSnapshot("close-view");
   }
 
-  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot> {
+  async loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    const dispatch = await this.constructionPolicyResolver.resolveAndConsume(request);
     return this.requestSnapshot("load-plugin", {
-      pluginDirectory,
-      ...(expectedBundleSha256 ? { expectedBundleSha256 } : {}),
+      dispatch,
     });
   }
 
-  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    return this.requestSnapshot("reload-plugin", pluginId ? { pluginId } : undefined);
+  async reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    if (!request) {
+      throw new Error("Plugin reload requires an exact package construction request.");
+    }
+    const dispatch = await this.constructionPolicyResolver.resolveAndConsume(request);
+    return this.requestSnapshot("reload-plugin", { dispatch });
   }
 
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot> {

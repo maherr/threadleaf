@@ -1,0 +1,42 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "templater-obsidian-2.25.0",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "templater-obsidian",
+    "manifestVersion": "2.25.0",
+    "distributionTag": "2.25.0",
+    "manifestSha256": "75985188fac8b518eebb791370a24dae1a2476cce3912de4709778dbde0171e4",
+    "mainSha256": "6a29790e8ad3bb3de5bcc7381588f20093b2dbecc1ff27d8a5d7ed3fcebbdf4e",
+    "stylesSha256": "eb94063be602679f397e3e35fcb7f6a4b027da82e17c213bb44a267c6b45d8de",
+    "packageTreeSha256": "a463605532dcd2a22e174c8f40ef5fc1bdf1d428ef1662753ed3a35a8b5c5e23"
+  },
+  "packageIdentityDigest": "6393afa53f71d9a9131f92b1cf196f00b33cec2e2c9b024a9c5ff25c7ac06645",
+  "expectedStaticCapabilities": [
+    "vault-read",
+    "vault-write",
+    "network",
+    "subprocess",
+    "host-environment",
+    "clipboard",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "requiredAuthorities": [
+    "vault-read",
+    "vault-write",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "clipboard",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-desktop-escape",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "a9158c55d9312c6dcaeac30afedc978db8747d7be8387ab4beee2cfa73f35501"
+}

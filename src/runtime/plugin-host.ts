@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
-import { createRequire } from "node:module";
+import { promises as fs, readFileSync, realpathSync, statSync } from "node:fs";
+import { createRequire, isBuiltin } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ActionRegistry } from "../application/action-registry";
 import { isPathInside } from "../kernel/path-policy";
 import type { VaultReadPort } from "../kernel/ports";
+import { authorityJsonSha256 } from "../shared/authority-json";
 import type {
   PluginEditorContext,
   PluginEditorUpdate,
@@ -21,7 +22,16 @@ import {
   pluginDiagnosticError,
   withPluginDiagnosticCode,
 } from "../shared/plugin-diagnostics";
-import { maxPluginBundleBytes, parsePluginManifest } from "../shared/plugins";
+import {
+  type ExactPluginPackageIdentity,
+  isPluginConstructionRefusal,
+  maxPluginBundleBytes,
+  type PluginCapabilityId,
+  type PluginConstructionDispatch,
+  PluginConstructionRefusal,
+  type PluginConstructionRequest,
+  parsePluginManifest,
+} from "../shared/plugins";
 import {
   App,
   CommandRegistry,
@@ -48,7 +58,6 @@ type PluginConstructor = new (app: App, manifest: PluginManifest) => Plugin;
 
 interface LoadedPluginRecord {
   directoryPath: string;
-  expectedBundleSha256: string | undefined;
   instance: Plugin | null;
   summary: PluginSummary;
 }
@@ -81,6 +90,35 @@ const compatibilityHostModuleRoots = [
 
 export type PluginModuleResolver = NodeJS.Require;
 
+export const maxConsumedPluginConstructionAttempts = 4_096;
+
+const networkBuiltinRoots = new Set(["dgram", "dns", "http", "http2", "https", "net", "tls"]);
+const subprocessBuiltinRoots = new Set(["child_process", "cluster", "worker_threads"]);
+const dynamicCodeBuiltinRoots = new Set(["inspector", "module", "repl", "v8", "vm"]);
+
+// Every reviewed Phase 0 profile discloses all authorities mapped here. This is forward-looking
+// enforcement for narrower profiles, not an active discriminator among the current profiles.
+function builtinAuthority(request: string): PluginCapabilityId | null {
+  const normalized = request.startsWith("node:") ? request.slice(5) : request;
+  if (!isBuiltin(request)) {
+    return null;
+  }
+  const root = normalized.split("/", 1)[0] ?? normalized;
+  if (root === "fs" || root === "sqlite") {
+    return "filesystem";
+  }
+  if (networkBuiltinRoots.has(root)) {
+    return "network";
+  }
+  if (subprocessBuiltinRoots.has(root)) {
+    return "subprocess";
+  }
+  if (dynamicCodeBuiltinRoots.has(root)) {
+    return "dynamic-code";
+  }
+  return "host-environment";
+}
+
 function isCompatibilityHostModule(request: string): boolean {
   return compatibilityHostModuleRoots.some(
     (moduleRoot) => request === moduleRoot || request.startsWith(`${moduleRoot}/`),
@@ -105,6 +143,7 @@ export class PluginHost implements PluginRuntimePort {
   private nativeMarkdownLeaf: WorkspaceLeaf | null = null;
   private nativeMarkdownView: MarkdownView | null = null;
   private readonly pluginModuleResolver: PluginModuleResolver | undefined;
+  private readonly consumedConstructionAttempts = new Set<string>();
 
   constructor(
     vaultPath: string,
@@ -125,34 +164,35 @@ export class PluginHost implements PluginRuntimePort {
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
   }
 
-  async loadPlugin(
-    pluginDirectory: string,
-    expectedBundleSha256?: string,
-  ): Promise<RuntimeSnapshot> {
+  loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    return Promise.reject(new PluginConstructionRefusal(this.directLoadRefusalPolicy(request)));
+  }
+
+  async loadAuthorizedPlugin(dispatch: PluginConstructionDispatch): Promise<RuntimeSnapshot> {
     try {
-      return await this.loadPluginUnsafe(pluginDirectory, expectedBundleSha256);
+      return await this.loadPluginUnsafe(dispatch);
     } catch (error) {
-      const pluginId = path.basename(pluginDirectory);
+      if (isPluginConstructionRefusal(error)) {
+        throw error;
+      }
+      const pluginId = dispatch?.policy?.packageIdentity?.pluginId ?? "unknown-plugin";
       const code = attachedPluginDiagnosticCode(error) ?? "runtime-load-failed";
       throw pluginDiagnosticError(code, { pluginId }, error);
     }
   }
 
-  private async loadPluginUnsafe(
-    pluginDirectory: string,
-    expectedBundleSha256?: string,
-  ): Promise<RuntimeSnapshot> {
-    if (expectedBundleSha256 && !/^[a-f0-9]{64}$/u.test(expectedBundleSha256)) {
-      throw new Error("Plugin execution requires a lowercase SHA-256 bundle digest.");
-    }
-    const resolvedDirectory = await this.assertInsideVault(pluginDirectory);
+  private async loadPluginUnsafe(dispatch: PluginConstructionDispatch): Promise<RuntimeSnapshot> {
+    this.assertConstructionDispatch(dispatch);
+    const { pluginDirectory, policy } = dispatch;
+    const resolvedDirectory = await this.assertSealedPackageRoot(pluginDirectory);
     const manifestPath = await this.canonicalPluginFile(resolvedDirectory, "manifest.json");
     const entryPath = await this.canonicalPluginFile(resolvedDirectory, "main.js");
     const manifest = await this.readManifest(manifestPath);
-    if (manifest.id !== path.basename(resolvedDirectory)) {
-      throw new Error(
-        `Plugin manifest id ${manifest.id} does not match folder ${path.basename(resolvedDirectory)}.`,
-      );
+    if (
+      manifest.id !== policy.packageIdentity.pluginId ||
+      manifest.version !== policy.packageIdentity.manifestVersion
+    ) {
+      throw new PluginConstructionRefusal(this.identityMismatchPolicy(policy));
     }
     const stylesheetDiscovered = await this.fileExists(
       path.join(resolvedDirectory, "styles.css"),
@@ -164,7 +204,6 @@ export class PluginHost implements PluginRuntimePort {
 
     const record: LoadedPluginRecord = {
       directoryPath: resolvedDirectory,
-      expectedBundleSha256,
       instance: null,
       summary: {
         id: manifest.id,
@@ -183,7 +222,8 @@ export class PluginHost implements PluginRuntimePort {
 
     let instance: Plugin | null = null;
     try {
-      const PluginClass = await this.evaluatePlugin(entryPath, expectedBundleSha256);
+      await this.verifyPackageIdentity(resolvedDirectory, policy);
+      const PluginClass = await this.evaluatePlugin(entryPath, resolvedDirectory, policy);
       instance = new PluginClass(this.app, manifest);
       if (!(instance instanceof Plugin)) {
         throw new Error("Plugin export does not extend the compatibility Plugin class.");
@@ -214,6 +254,13 @@ export class PluginHost implements PluginRuntimePort {
       await instance?.__unload().catch(() => undefined);
       this.app.plugins.unregister(manifest.id);
       record.instance = null;
+      if (isPluginConstructionRefusal(error)) {
+        this.plugins.delete(manifest.id);
+        if (this.lastPluginId === manifest.id) {
+          this.lastPluginId = null;
+        }
+        throw error;
+      }
       const diagnosticCode = attachedPluginDiagnosticCode(error) ?? "runtime-load-failed";
       record.summary = {
         ...record.summary,
@@ -257,7 +304,6 @@ export class PluginHost implements PluginRuntimePort {
       this.record("command", `Ran command: ${command.name}.`);
       const record = ownerId ? this.plugins.get(ownerId) : undefined;
       if (record) {
-        record.summary = { ...record.summary, compatibilityLevel: 4 };
         this.lastPluginId = ownerId ?? this.lastPluginId;
       }
       return this.getSnapshot();
@@ -586,13 +632,20 @@ export class PluginHost implements PluginRuntimePort {
     await this.unloadAllPlugins();
   }
 
-  async reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
-    const targetId = pluginId ?? this.lastPluginId;
+  reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
+    if (!request) {
+      return Promise.reject(new Error("Plugin reload requires an exact construction request."));
+    }
+    return Promise.reject(new PluginConstructionRefusal(this.directLoadRefusalPolicy(request)));
+  }
+
+  async reloadAuthorizedPlugin(dispatch: PluginConstructionDispatch): Promise<RuntimeSnapshot> {
+    const targetId = dispatch.policy.packageIdentity.pluginId;
     const record = targetId ? this.plugins.get(targetId) : undefined;
     if (!record) {
       throw new Error("No plugin has been loaded yet.");
     }
-    return this.loadPlugin(record.directoryPath, record.expectedBundleSha256);
+    return this.loadAuthorizedPlugin(dispatch);
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
@@ -646,72 +699,162 @@ export class PluginHost implements PluginRuntimePort {
 
   private async evaluatePlugin(
     entryPath: string,
-    expectedBundleSha256?: string,
+    sealedPackageRoot: string,
+    policy: PluginConstructionDispatch["policy"],
   ): Promise<PluginConstructor> {
     const bundleBytes = await this.readBoundedBytes(entryPath, maxPluginBundleBytes);
-    if (expectedBundleSha256) {
-      const actualBundleSha256 = createHash("sha256").update(bundleBytes).digest("hex");
-      if (actualBundleSha256 !== expectedBundleSha256) {
-        throw withPluginDiagnosticCode(
-          new Error(
-            "Plugin main.js changed after authority review and was blocked before execution.",
-          ),
-          "managed-package-changed",
-        );
-      }
+    const actualBundleSha256 = createHash("sha256").update(bundleBytes).digest("hex");
+    if (actualBundleSha256 !== policy.packageIdentity.mainSha256) {
+      throw withPluginDiagnosticCode(
+        new Error(
+          "Plugin main.js changed after authority review and was blocked before execution.",
+        ),
+        "managed-package-changed",
+      );
     }
-    const source = new TextDecoder("utf-8", { fatal: true }).decode(bundleBytes);
-    const nativeRequire = createRequire(entryPath);
     const compatibilityModule = createObsidianCompatibilityModule(this.app);
-    const moduleRecord: CommonJsModuleRecord = { exports: {} };
-
-    const pluginRequire = ((request: string) => {
-      if (request === "obsidian") {
-        return compatibilityModule;
+    const moduleCache = new Map<string, CommonJsModuleRecord>();
+    const loadSealedModule = (modulePath: string, knownBytes?: Uint8Array): unknown => {
+      const cached = moduleCache.get(modulePath);
+      if (cached) {
+        return cached.exports;
       }
-      if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
-        return this.pluginModuleResolver(request);
-      }
-      return nativeRequire(request);
-    }) as NodeJS.Require;
+      const moduleRecord: CommonJsModuleRecord = { exports: {} };
+      moduleCache.set(modulePath, moduleRecord);
+      try {
+        const nativeRequire = createRequire(modulePath);
+        const pluginRequire = ((request: string) => {
+          if (request === "obsidian") {
+            return compatibilityModule;
+          }
+          if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
+            return this.pluginModuleResolver(request);
+          }
+          const resolved = this.resolveSealedPluginModule(
+            nativeRequire,
+            request,
+            undefined,
+            sealedPackageRoot,
+            policy,
+          );
+          return resolved.builtin ? nativeRequire(request) : loadSealedModule(resolved.path);
+        }) as NodeJS.Require;
 
-    pluginRequire.resolve = ((request: string, options?: { paths?: string[] }) => {
-      if (request === "obsidian") {
-        return "obsidian";
-      }
-      if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
-        return this.pluginModuleResolver.resolve(request, options);
-      }
-      return nativeRequire.resolve(request, options);
-    }) as NodeJS.RequireResolve;
-    pluginRequire.cache = nativeRequire.cache;
-    pluginRequire.extensions = nativeRequire.extensions;
-    pluginRequire.main = nativeRequire.main;
+        pluginRequire.resolve = ((request: string, options?: { paths?: string[] }) => {
+          if (request === "obsidian") {
+            return "obsidian";
+          }
+          if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
+            return this.pluginModuleResolver.resolve(request, options);
+          }
+          const resolved = this.resolveSealedPluginModule(
+            nativeRequire,
+            request,
+            options,
+            sealedPackageRoot,
+            policy,
+          );
+          return resolved.builtin ? nativeRequire.resolve(request, options) : resolved.path;
+        }) as NodeJS.RequireResolve;
+        pluginRequire.cache = nativeRequire.cache;
+        pluginRequire.extensions = nativeRequire.extensions;
+        pluginRequire.main = nativeRequire.main;
 
-    const sourceUrl = pathToFileURL(entryPath).href;
-    const compiled = new Function(
-      "exports",
-      "require",
-      "module",
-      "__filename",
-      "__dirname",
-      "sleep",
-      `${source}\n//# sourceURL=${sourceUrl}`,
-    );
-    compiled(
-      moduleRecord.exports,
-      pluginRequire,
-      moduleRecord,
-      entryPath,
-      path.dirname(entryPath),
-      sleep,
-    );
+        if (path.extname(modulePath) === ".node") {
+          moduleRecord.exports = nativeRequire(modulePath);
+          return moduleRecord.exports;
+        }
+        const bytes = knownBytes ?? this.readBoundedModuleBytes(modulePath);
+        if (path.extname(modulePath) === ".json") {
+          moduleRecord.exports = JSON.parse(
+            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+          );
+          return moduleRecord.exports;
+        }
+        const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        const sourceUrl = pathToFileURL(modulePath).href;
+        const compiled = new Function(
+          "exports",
+          "require",
+          "module",
+          "__filename",
+          "__dirname",
+          "sleep",
+          `${source}\n//# sourceURL=${sourceUrl}`,
+        );
+        compiled(
+          moduleRecord.exports,
+          pluginRequire,
+          moduleRecord,
+          modulePath,
+          path.dirname(modulePath),
+          sleep,
+        );
+        return moduleRecord.exports;
+      } catch (error) {
+        moduleCache.delete(modulePath);
+        throw error;
+      }
+    };
 
-    const candidate = this.resolvePluginConstructor(moduleRecord.exports);
+    const candidate = this.resolvePluginConstructor(loadSealedModule(entryPath, bundleBytes));
     if (typeof candidate !== "function") {
       throw new Error("Plugin bundle does not export a constructor.");
     }
     return candidate as PluginConstructor;
+  }
+
+  private readBoundedModuleBytes(filePath: string): Buffer {
+    const stat = statSync(filePath);
+    if (!stat.isFile() || stat.size > maxPluginBundleBytes) {
+      throw new Error("Plugin dependency is not a bounded regular file.");
+    }
+    const bytes = readFileSync(filePath);
+    if (bytes.byteLength > maxPluginBundleBytes) {
+      throw new Error("Plugin dependency grew beyond its size limit while reading.");
+    }
+    return bytes;
+  }
+
+  private resolveSealedPluginModule(
+    nativeRequire: NodeJS.Require,
+    request: string,
+    options: { paths?: string[] } | undefined,
+    sealedPackageRoot: string,
+    policy: PluginConstructionDispatch["policy"],
+  ): { builtin: true; path: string } | { builtin: false; path: string } {
+    const authority = builtinAuthority(request);
+    if (authority) {
+      if (!policy.requiredAuthorities.includes(authority)) {
+        throw new PluginConstructionRefusal(this.authorityMismatchPolicy(policy));
+      }
+      return { builtin: true, path: request };
+    }
+
+    let canonicalResolved: string;
+    try {
+      canonicalResolved = realpathSync(nativeRequire.resolve(request, options));
+    } catch (error) {
+      throw withPluginDiagnosticCode(
+        new Error("Plugin module resolution failed inside the sealed package root.", {
+          cause: error,
+        }),
+        "package-path-escape",
+      );
+    }
+    if (!isPathInside(sealedPackageRoot, canonicalResolved)) {
+      throw withPluginDiagnosticCode(
+        new Error("Plugin module resolution escaped the sealed package root."),
+        "package-path-escape",
+      );
+    }
+    if (
+      path.extname(canonicalResolved) === ".node" &&
+      !policy.requiredAuthorities.includes("dynamic-code")
+    ) {
+      throw new PluginConstructionRefusal(this.authorityMismatchPolicy(policy));
+    }
+    return { builtin: false, path: canonicalResolved };
   }
 
   private resolvePluginConstructor(moduleExports: unknown): unknown {
@@ -722,6 +865,182 @@ export class PluginHost implements PluginRuntimePort {
       return moduleExports.default;
     }
     return null;
+  }
+
+  private assertConstructionDispatch(dispatch: PluginConstructionDispatch): void {
+    const policy = dispatch?.policy;
+    if (
+      !dispatch ||
+      typeof dispatch.pluginDirectory !== "string" ||
+      !path.isAbsolute(dispatch.pluginDirectory) ||
+      !policy ||
+      policy.decision !== "allow" ||
+      policy.denialCode !== null ||
+      policy.sealedPackageRootId === null ||
+      policy.stagedPackageTreeSha256 === null ||
+      policy.boundary === null ||
+      policy.authorityProfileId === null ||
+      policy.authorityDigest === null ||
+      !policy.constructionAttemptId ||
+      policy.packageIdentityDigest !== authorityJsonSha256(policy.packageIdentity) ||
+      policy.stagedPackageTreeSha256 !== policy.packageIdentity.packageTreeSha256
+    ) {
+      throw new Error("Plugin construction requires a complete main-process allow dispatch.");
+    }
+    const { policyDigest: _policyDigest, ...payload } = policy;
+    if (policy.policyDigest !== authorityJsonSha256(payload)) {
+      throw new PluginConstructionRefusal(this.stalePolicy(policy));
+    }
+    if (this.consumedConstructionAttempts.size >= maxConsumedPluginConstructionAttempts) {
+      throw new PluginConstructionRefusal(this.replayLedgerExhaustedPolicy(policy));
+    }
+    if (this.consumedConstructionAttempts.has(policy.constructionAttemptId)) {
+      throw new PluginConstructionRefusal(this.stalePolicy(policy));
+    }
+    this.consumedConstructionAttempts.add(policy.constructionAttemptId);
+  }
+
+  private directLoadRefusalPolicy(
+    request: PluginConstructionRequest,
+  ): PluginConstructionDispatch["policy"] {
+    const denied = {
+      constructionAttemptId: "unresolved-direct-load",
+      constructionPath: request.constructionPath,
+      vaultId: "unresolved",
+      vaultGeneration: 0,
+      epoch: {
+        policyEpoch: 0,
+        grantEpoch: 0,
+        grantRevision: 0,
+        safeModeEpoch: 0,
+        packageStoreEpoch: 0,
+        authorityProfileRevision: 0,
+      },
+      packageIdentity: { ...request.packageIdentity },
+      packageIdentityDigest: request.packageIdentityDigest,
+      sealedPackageRootId: null,
+      stagedPackageTreeSha256: null,
+      authorityProfileId: null,
+      authorityDigest: null,
+      staticScanDigest: null,
+      expectedStaticCapabilities: [],
+      requiredAuthorities: [],
+      boundary: null,
+      decision: "deny" as const,
+      denialCode: "authority-profile-missing" as const,
+      issuedAt: "1970-01-01T00:00:00.000Z",
+    };
+    return { ...denied, policyDigest: authorityJsonSha256(denied) };
+  }
+
+  private stalePolicy(
+    policy: PluginConstructionDispatch["policy"],
+  ): PluginConstructionDispatch["policy"] {
+    const { policyDigest: _policyDigest, ...payload } = policy;
+    const denied = {
+      ...payload,
+      sealedPackageRootId: null,
+      stagedPackageTreeSha256: null,
+      decision: "deny" as const,
+      denialCode: "policy-epoch-stale" as const,
+    };
+    return { ...denied, policyDigest: authorityJsonSha256(denied) };
+  }
+
+  private replayLedgerExhaustedPolicy(
+    policy: PluginConstructionDispatch["policy"],
+  ): PluginConstructionDispatch["policy"] {
+    const { policyDigest: _policyDigest, ...payload } = policy;
+    const denied = {
+      ...payload,
+      sealedPackageRootId: null,
+      stagedPackageTreeSha256: null,
+      decision: "deny" as const,
+      denialCode: "replay-ledger-exhausted" as const,
+    };
+    return { ...denied, policyDigest: authorityJsonSha256(denied) };
+  }
+
+  private identityMismatchPolicy(
+    policy: PluginConstructionDispatch["policy"],
+  ): PluginConstructionDispatch["policy"] {
+    const { policyDigest: _policyDigest, ...payload } = policy;
+    const denied = {
+      ...payload,
+      sealedPackageRootId: null,
+      stagedPackageTreeSha256: null,
+      decision: "deny" as const,
+      denialCode: "package-identity-mismatch" as const,
+    };
+    return { ...denied, policyDigest: authorityJsonSha256(denied) };
+  }
+
+  private authorityMismatchPolicy(
+    policy: PluginConstructionDispatch["policy"],
+  ): PluginConstructionDispatch["policy"] {
+    const { policyDigest: _policyDigest, ...payload } = policy;
+    const denied = {
+      ...payload,
+      sealedPackageRootId: null,
+      stagedPackageTreeSha256: null,
+      decision: "deny" as const,
+      denialCode: "authority-profile-mismatch" as const,
+    };
+    return { ...denied, policyDigest: authorityJsonSha256(denied) };
+  }
+
+  private async verifyPackageIdentity(
+    rootPath: string,
+    policy: PluginConstructionDispatch["policy"],
+  ): Promise<void> {
+    const expected: ExactPluginPackageIdentity = policy.packageIdentity;
+    const files: Array<{ path: string; sha256: string; size: number }> = [];
+    let aggregateBytes = 0;
+    const visit = async (directoryPath: string, relativeDirectory: string): Promise<void> => {
+      const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+      entries.sort((left, right) => left.name.localeCompare(right.name, "en-US"));
+      for (const entry of entries) {
+        const relativePath = path.posix.join(relativeDirectory, entry.name);
+        if (entry.isSymbolicLink() || path.isAbsolute(relativePath)) {
+          throw new PluginConstructionRefusal(this.identityMismatchPolicy(policy));
+        }
+        const absolutePath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+          await visit(absolutePath, relativePath);
+          continue;
+        }
+        if (!entry.isFile()) {
+          throw new Error("Sealed plugin package contains a non-regular entry.");
+        }
+        const bytes = await this.readBoundedBytes(absolutePath, 64 * 1024 * 1024);
+        aggregateBytes += bytes.byteLength;
+        if (files.length >= 4_096 || aggregateBytes > 64 * 1024 * 1024) {
+          throw new Error("Sealed plugin package exceeds its bounded closure budget.");
+        }
+        files.push({
+          path: relativePath,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          size: bytes.byteLength,
+        });
+      }
+    };
+    await visit(rootPath, "");
+    files.sort((left, right) => left.path.localeCompare(right.path, "en-US"));
+    const byPath = new Map(files.map((file) => [file.path, file]));
+    const actual = {
+      manifestSha256: byPath.get("manifest.json")?.sha256,
+      mainSha256: byPath.get("main.js")?.sha256,
+      stylesSha256: byPath.get("styles.css")?.sha256 ?? null,
+      packageTreeSha256: authorityJsonSha256({ schemaVersion: 1, files }),
+    };
+    if (
+      actual.manifestSha256 !== expected.manifestSha256 ||
+      actual.mainSha256 !== expected.mainSha256 ||
+      actual.stylesSha256 !== expected.stylesSha256 ||
+      actual.packageTreeSha256 !== expected.packageTreeSha256
+    ) {
+      throw new PluginConstructionRefusal(this.identityMismatchPolicy(policy));
+    }
   }
 
   private async readManifest(manifestPath: string): Promise<PluginManifest> {
@@ -740,23 +1059,12 @@ export class PluginHost implements PluginRuntimePort {
     };
   }
 
-  private async assertInsideVault(candidatePath: string): Promise<string> {
-    const resolved = path.resolve(candidatePath);
-    const [canonicalVault, canonicalPluginRoot, canonicalCandidate] = await Promise.all([
-      fs.realpath(this.vault.rootPath),
-      fs.realpath(path.join(this.vault.rootPath, ".obsidian", "plugins")),
-      fs.realpath(resolved),
-    ]);
-    const stat = await fs.stat(canonicalCandidate);
-    if (
-      !stat.isDirectory() ||
-      !isPathInside(canonicalVault, canonicalPluginRoot) ||
-      path.dirname(canonicalCandidate) !== canonicalPluginRoot
-    ) {
+  private async assertSealedPackageRoot(candidatePath: string): Promise<string> {
+    const stat = await fs.lstat(candidatePath);
+    const canonicalCandidate = await fs.realpath(candidatePath);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || canonicalCandidate !== candidatePath) {
       throw withPluginDiagnosticCode(
-        new Error(
-          "Plugin directory must be an immediate child of .obsidian/plugins in the active vault.",
-        ),
+        new Error("Plugin execution requires an exact canonical sealed package root."),
         "package-path-escape",
       );
     }

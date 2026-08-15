@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { authorityJsonSha256 } from "../src/shared/authority-json-runtime.mjs";
 
 const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(rootPath, "compatibility", "plugin-evidence.v1.json");
@@ -13,6 +14,7 @@ const generatedTypeScriptPath = path.join(
   "plugin-compatibility-registry.ts",
 );
 const generatedMarkdownPath = path.join(rootPath, "docs", "compatibility", "registry.md");
+const reviewedAuthorityDirectory = path.join(rootPath, "scripts", "compatibility", "trust");
 const checkOnly = process.argv.includes("--check");
 const pluginIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const versionPattern = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$/u;
@@ -104,7 +106,67 @@ async function validateGate(value, label) {
   return { path: gatePath, command };
 }
 
-async function validateEntry(value, index, packageVersion) {
+function reviewedAuthorityPayload(profile) {
+  return {
+    schemaVersion: profile.schemaVersion,
+    profileId: profile.profileId,
+    profileRevision: profile.profileRevision,
+    packageIdentity: profile.packageIdentity,
+    packageIdentityDigest: profile.packageIdentityDigest,
+    expectedStaticCapabilities: profile.expectedStaticCapabilities,
+    requiredAuthorities: profile.requiredAuthorities,
+    executionProfile: profile.executionProfile,
+    allowedPlatforms: profile.allowedPlatforms,
+  };
+}
+
+async function reviewedAuthorityIdentities() {
+  const names = (await fs.readdir(reviewedAuthorityDirectory))
+    .filter((name) => name.endsWith(".authority-profile.json"))
+    .sort();
+  const identities = [];
+  for (const name of names) {
+    const profile = await readJson(
+      path.join(reviewedAuthorityDirectory, name),
+      `reviewed authority profile ${name}`,
+    );
+    if (
+      !isRecord(profile) ||
+      profile.schemaVersion !== 1 ||
+      !isRecord(profile.packageIdentity) ||
+      typeof profile.packageIdentity.pluginId !== "string" ||
+      typeof profile.packageIdentity.manifestVersion !== "string" ||
+      typeof profile.packageIdentity.mainSha256 !== "string" ||
+      typeof profile.packageIdentityDigest !== "string" ||
+      typeof profile.authorityDigest !== "string" ||
+      !sha256Pattern.test(profile.packageIdentity.mainSha256) ||
+      !sha256Pattern.test(profile.packageIdentityDigest) ||
+      !sha256Pattern.test(profile.authorityDigest)
+    ) {
+      fail(`reviewed authority profile ${name} has no complete validated identity tuple.`);
+    }
+    const expectedIdentityDigest = authorityJsonSha256(profile.packageIdentity);
+    if (profile.packageIdentityDigest !== expectedIdentityDigest) {
+      fail(
+        `reviewed authority profile ${name} packageIdentityDigest is stale; expected ${expectedIdentityDigest}.`,
+      );
+    }
+    const expectedAuthorityDigest = authorityJsonSha256(reviewedAuthorityPayload(profile));
+    if (profile.authorityDigest !== expectedAuthorityDigest) {
+      fail(
+        `reviewed authority profile ${name} authorityDigest is stale; expected ${expectedAuthorityDigest}.`,
+      );
+    }
+    identities.push({
+      pluginId: profile.packageIdentity.pluginId,
+      manifestVersion: profile.packageIdentity.manifestVersion,
+      mainSha256: profile.packageIdentity.mainSha256,
+    });
+  }
+  return identities;
+}
+
+async function validateEntry(value, index, packageVersion, reviewedIdentities) {
   const label = `entries[${index}]`;
   if (!isRecord(value) || !isRecord(value.plugin)) {
     fail(`${label} and its plugin field must be objects.`);
@@ -151,6 +213,19 @@ async function validateEntry(value, index, packageVersion) {
     value.compatibilityLevel > 4
   ) {
     fail(`${label}.compatibilityLevel must be an integer from 0 through 4.`);
+  }
+  if (
+    value.compatibilityLevel === 4 &&
+    !reviewedIdentities.some(
+      (identity) =>
+        identity.pluginId === plugin.id &&
+        identity.manifestVersion === plugin.version &&
+        identity.mainSha256 === plugin.bundleSha256,
+    )
+  ) {
+    fail(
+      `${label}.compatibilityLevel 4 requires a reviewed authority profile for the exact plugin ID, manifest version, and main bundle digest.`,
+    );
   }
   const requiredCapabilities = stringList(
     value.requiredCapabilities,
@@ -300,6 +375,7 @@ async function assertCurrent(filePath, expected) {
 
 const packageJson = await readJson(path.join(rootPath, "package.json"), "package.json");
 const source = await readJson(sourcePath, "plugin evidence source");
+const reviewedIdentities = await reviewedAuthorityIdentities();
 if (!isRecord(packageJson) || !versionPattern.test(packageJson.version)) {
   fail("package.json has an invalid version.");
 }
@@ -308,7 +384,7 @@ if (!isRecord(source) || source.schemaVersion !== 1 || !Array.isArray(source.ent
 }
 const entries = [];
 for (const [index, entry] of source.entries.entries()) {
-  entries.push(await validateEntry(entry, index, packageJson.version));
+  entries.push(await validateEntry(entry, index, packageJson.version, reviewedIdentities));
 }
 entries.sort((left, right) =>
   `${left.plugin.id}\0${left.plugin.version}`.localeCompare(

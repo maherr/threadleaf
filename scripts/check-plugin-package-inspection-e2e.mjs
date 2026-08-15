@@ -67,11 +67,15 @@ try {
     version: "0.1.2",
     releaseTag: "0.1.2",
   };
-  const citeReport = await inspector.inspectPluginPackage(cite, { appVersion: "0.1.0-beta.3" });
+  const citeReport = await inspector.inspectPluginPackage(cite, {
+    appVersion: "0.1.0-beta.3",
+    runActivation: false,
+  });
   assert(
-    citeReport.overall === "pass" &&
+    citeReport.overall === "blocked" &&
       citeReport.manifest?.minAppVersion === "1.12.7" &&
-      citeReport.stages.find(({ id }) => id === "minimum-app-platform")?.status === "pass",
+      citeReport.stages.find(({ id }) => id === "minimum-app-platform")?.status === "pass" &&
+      citeReport.stages.find(({ id }) => id === "activation")?.status === "blocked",
     "CITE's declared minimum Obsidian version was treated as a Threadleaf version requirement.",
   );
 

@@ -11,6 +11,10 @@ import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows
 import { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import {
+  testConstructionRequest,
+  testPluginRuntimeFactory,
+} from "../test-support/plugin-construction";
+import {
   absenceConfirmationIntervalMs,
   maximumAbsenceConfirmationAttempts,
   startupAbsenceMaximumSettleMs,
@@ -241,10 +245,12 @@ async function openRuntime(
   faultInjector?: KernelFaultInjector,
   now?: () => number,
 ): Promise<WorkspaceRuntime> {
+  const pluginDirectory = path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture");
   runtime = await WorkspaceRuntime.open({
     vaultRoot: vaultPath,
     stateRoot: new FixedStateRoot(statePath),
-    pluginDirectory: path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"),
+    pluginConstructionRequest: await testConstructionRequest(pluginDirectory),
+    pluginRuntimeFactory: testPluginRuntimeFactory,
     ...(workspaceStateStore ? { workspaceStateStore } : {}),
     ...(beforeWorkspaceStateRestore ? { beforeWorkspaceStateRestore } : {}),
     ...(faultInjector ? { faultInjector } : {}),
@@ -1403,7 +1409,28 @@ describe("WorkspaceRuntime", () => {
       "threadleaf-fixture:threadleaf-fixture-confirm",
     );
     expect(commanded.notices).toContain("Fixture command crossed the compatibility bridge.");
-    expect(commanded.plugin?.compatibilityLevel).toBe(4);
+    expect(commanded.plugin?.compatibilityLevel).toBe(3);
+  });
+
+  it("re-resolves the configured plugin as app-restart reconstruction", async () => {
+    const constructionPaths: string[] = [];
+    const pluginDirectory = path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture");
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      pluginConstructionRequest: await testConstructionRequest(pluginDirectory, "first-load"),
+      pluginRuntimeFactory: async (runtimeVaultPath, actions) => {
+        const delegate = await testPluginRuntimeFactory(runtimeVaultPath, actions);
+        const loadPlugin = delegate.loadPlugin.bind(delegate);
+        delegate.loadPlugin = async (request) => {
+          constructionPaths.push(request.constructionPath);
+          return loadPlugin(request);
+        };
+        return delegate;
+      },
+    });
+
+    expect(constructionPaths).toEqual(["app-restart-reconstruction"]);
   });
 
   it("applies private workspace defaults to native creation and background tabs", async () => {
@@ -1471,7 +1498,7 @@ describe("WorkspaceRuntime", () => {
   });
 
   it("merges actions and command workflows from an external plugin runtime", async () => {
-    let compatibilityLevel: 0 | 1 | 2 | 3 | 4 = 3;
+    let commandRan = false;
     let closed = false;
     const pluginSnapshot = (): RuntimeSnapshot => ({
       vault: {
@@ -1488,14 +1515,14 @@ describe("WorkspaceRuntime", () => {
         name: "External fixture",
         version: "0.1.0",
         state: "loaded",
-        compatibilityLevel,
+        compatibilityLevel: 3,
         stylesheetDiscovered: false,
         error: null,
       },
       plugins: [],
       commands: [{ id: "external-command", name: "External command", ownerId: "external-fixture" }],
       actions: [{ id: "external-command", name: "External command", source: "plugin" }],
-      notices: compatibilityLevel === 4 ? ["External command ran."] : [],
+      notices: commandRan ? ["External command ran."] : [],
       events: [],
     });
     const externalRuntime: PluginRuntimePort = {
@@ -1510,7 +1537,7 @@ describe("WorkspaceRuntime", () => {
       openPluginView: async () => pluginSnapshot(),
       reloadPlugin: async () => pluginSnapshot(),
       runCommand: async () => {
-        compatibilityLevel = 4;
+        commandRan = true;
         return pluginSnapshot();
       },
       waitForPluginMutations: async () => pluginSnapshot(),
@@ -1536,7 +1563,7 @@ describe("WorkspaceRuntime", () => {
     });
 
     const commanded = await runtime.runPluginCommand("external-command");
-    expect(commanded.plugin?.compatibilityLevel).toBe(4);
+    expect(commanded.plugin?.compatibilityLevel).toBe(3);
     expect(commanded.notices).toEqual(["External command ran."]);
 
     await runtime.close();
@@ -1604,7 +1631,8 @@ module.exports = class ActionCollisionFixture extends Plugin {
     runtime = await WorkspaceRuntime.open({
       vaultRoot: vaultPath,
       stateRoot: new FixedStateRoot(statePath),
-      pluginDirectory,
+      pluginConstructionRequest: await testConstructionRequest(pluginDirectory),
+      pluginRuntimeFactory: testPluginRuntimeFactory,
     });
 
     const qualifiedId = "action-collision-fixture:workspace.open-note";

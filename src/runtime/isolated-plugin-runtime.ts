@@ -1,4 +1,3 @@
-import path from "node:path";
 import type {
   PluginEditorContext,
   PluginIntegrationSnapshot,
@@ -8,7 +7,7 @@ import type {
   RuntimeEvent,
   RuntimeSnapshot,
 } from "../shared/contracts";
-import { parsePluginId } from "../shared/plugins";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
 interface IsolatedPluginRuntimeOptions<T extends PluginRuntimePort> {
@@ -21,8 +20,7 @@ interface IdleRuntime<T extends PluginRuntimePort> {
 }
 
 interface PluginRuntimeSlot<T extends PluginRuntimePort> {
-  directoryPath: string;
-  expectedBundleSha256: string | undefined;
+  request: PluginConstructionRequest;
   generation: number;
   runtime: T;
   snapshot: RuntimeSnapshot;
@@ -100,18 +98,18 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     return this.enqueue(async () => this.mergeSnapshot());
   }
 
-  loadPlugin(pluginDirectory: string, expectedBundleSha256?: string): Promise<RuntimeSnapshot> {
+  loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
-      const pluginId = parsePluginId(path.basename(pluginDirectory));
+      const pluginId = request.packageIdentity.pluginId;
       await this.retireSlot(pluginId, false);
       this.inactivePlugins.delete(pluginId);
-      return this.loadFreshSlot(pluginId, pluginDirectory, expectedBundleSha256);
+      return this.loadFreshSlot(pluginId, request);
     });
   }
 
-  reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
+  reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
-      const targetId = pluginId ?? this.lastPluginId;
+      const targetId = request?.packageIdentity.pluginId ?? this.lastPluginId;
       if (!targetId) {
         throw new Error("No plugin has been loaded yet.");
       }
@@ -119,9 +117,12 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       if (!slot) {
         throw new Error(`Plugin ${targetId} is not active.`);
       }
-      const { directoryPath, expectedBundleSha256 } = slot;
+      const reloadRequest = {
+        ...(request ?? slot.request),
+        constructionPath: "explicit-reload" as const,
+      };
       await this.retireSlot(targetId, false);
-      return this.loadFreshSlot(targetId, directoryPath, expectedBundleSha256);
+      return this.loadFreshSlot(targetId, reloadRequest);
     });
   }
 
@@ -314,13 +315,11 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
 
   private async loadFreshSlot(
     pluginId: string,
-    pluginDirectory: string,
-    expectedBundleSha256?: string,
+    request: PluginConstructionRequest,
   ): Promise<RuntimeSnapshot> {
     const idle = await this.takeRuntime();
     const slot: PluginRuntimeSlot<T> = {
-      directoryPath: pluginDirectory,
-      expectedBundleSha256,
+      request: structuredClone(request),
       generation: ++this.nextGeneration,
       runtime: idle.runtime,
       snapshot: idle.snapshot,
@@ -328,7 +327,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     this.slots.set(pluginId, slot);
     this.lastPluginId = pluginId;
     try {
-      let snapshot = await slot.runtime.loadPlugin(pluginDirectory, expectedBundleSha256);
+      let snapshot = await slot.runtime.loadPlugin(request);
       this.rememberSlotSnapshot(pluginId, snapshot);
       if (this.layoutReady) {
         snapshot = await slot.runtime.markLayoutReady();

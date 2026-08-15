@@ -16,9 +16,172 @@ export const pluginCapabilityIds = [
   "workspace-ui",
   "dynamic-code",
 ] as const;
+export const reviewedAuthorityProfileSchemaVersion = 1 as const;
+export const reviewedAuthorityExecutionProfiles = [
+  "trusted-node-renderer",
+  "trusted-desktop-escape",
+] as const;
+export const reviewedAuthorityPlatforms = ["linux", "darwin", "win32"] as const;
 
 export type CompatibilityMode = (typeof compatibilityModes)[number];
 export type PluginCapabilityId = (typeof pluginCapabilityIds)[number];
+export type ReviewedAuthorityExecutionProfile = (typeof reviewedAuthorityExecutionProfiles)[number];
+export type ReviewedAuthorityPlatform = (typeof reviewedAuthorityPlatforms)[number];
+
+export interface ExactPluginPackageIdentity {
+  pluginId: string;
+  manifestVersion: string;
+  distributionTag: string;
+  manifestSha256: string;
+  mainSha256: string;
+  stylesSha256: string | null;
+  packageTreeSha256: string;
+}
+
+export interface ReviewedAuthorityProfile {
+  $schema: "./reviewed-authority-profile.v1.schema.json";
+  schemaVersion: typeof reviewedAuthorityProfileSchemaVersion;
+  profileId: string;
+  profileRevision: number;
+  packageIdentity: ExactPluginPackageIdentity;
+  packageIdentityDigest: string;
+  expectedStaticCapabilities: PluginCapabilityId[];
+  requiredAuthorities: PluginCapabilityId[];
+  executionProfile: ReviewedAuthorityExecutionProfile;
+  allowedPlatforms: ReviewedAuthorityPlatform[];
+  authorityDigest: string;
+}
+
+export const pluginConstructionPaths = [
+  "first-load",
+  "explicit-reload",
+  "automatic-recovery",
+  "renderer-death-restoration",
+  "app-restart-reconstruction",
+  "diagnostic-execution",
+  "test-execution",
+] as const;
+
+export const pluginConstructionDenialCodes = [
+  "authority-profile-missing",
+  "authority-profile-mismatch",
+  "package-identity-mismatch",
+  "package-stage-invalid",
+  "grant-required",
+  "grant-stale",
+  "grant-revoked",
+  "safe-mode-blocked",
+  "capability-unavailable",
+  "policy-epoch-stale",
+  "replay-ledger-exhausted",
+] as const;
+
+export type PluginConstructionPath = (typeof pluginConstructionPaths)[number];
+export type PluginConstructionDenialCode = (typeof pluginConstructionDenialCodes)[number];
+
+export interface ConstructionPolicyEpoch {
+  policyEpoch: number;
+  grantEpoch: number;
+  grantRevision: number;
+  safeModeEpoch: number;
+  packageStoreEpoch: number;
+  authorityProfileRevision: number;
+}
+
+export interface CommunityPluginGrantV2 {
+  schemaVersion: 2;
+  grantId: string;
+  vaultId: string;
+  packageIdentity: ExactPluginPackageIdentity;
+  packageIdentityDigest: string;
+  authorityProfileId: string;
+  authorityProfileRevision: number;
+  authorityDigest: string;
+  grantedAuthorities: PluginCapabilityId[];
+  provenance:
+    | {
+        kind: "signed-distribution";
+        releaseDigest: string;
+        signerKeyId: string;
+        signatureDigest: string;
+      }
+    | { kind: "content-addressed-unsigned"; sourceDescriptorDigest: string };
+  grantRevision: number;
+  grantEpoch: number;
+  issuedAt: string;
+  revokedAt: string | null;
+  revocationReason: string | null;
+}
+
+export interface PluginConstructionPolicy {
+  constructionAttemptId: string;
+  constructionPath: PluginConstructionPath;
+  vaultId: string;
+  vaultGeneration: number;
+  epoch: ConstructionPolicyEpoch;
+  packageIdentity: ExactPluginPackageIdentity;
+  packageIdentityDigest: string;
+  sealedPackageRootId: string | null;
+  stagedPackageTreeSha256: string | null;
+  authorityProfileId: string | null;
+  authorityDigest: string | null;
+  staticScanDigest: string | null;
+  expectedStaticCapabilities: PluginCapabilityId[];
+  requiredAuthorities: PluginCapabilityId[];
+  boundary: ReviewedAuthorityExecutionProfile | null;
+  decision: "allow" | "deny";
+  denialCode: PluginConstructionDenialCode | null;
+  issuedAt: string;
+  policyDigest: string;
+}
+
+export interface PluginConstructionRequest {
+  constructionPath: PluginConstructionPath;
+  pluginDirectory: string;
+  packageIdentity: ExactPluginPackageIdentity;
+  packageIdentityDigest: string;
+}
+
+export interface PluginConstructionDispatch {
+  pluginDirectory: string;
+  policy: PluginConstructionPolicy;
+}
+
+export interface SealedPluginPackageRecord {
+  sealedPackageRootId: string;
+  sealedPackageRootPath: string;
+  packageIdentityDigest: string;
+  packageTreeSha256: string;
+}
+
+export class PluginConstructionRefusal extends Error {
+  readonly code: PluginConstructionDenialCode;
+  readonly policy: PluginConstructionPolicy;
+
+  constructor(policy: PluginConstructionPolicy, cause?: unknown) {
+    const code = policy.denialCode ?? "policy-epoch-stale";
+    super(
+      `Community plugin construction was denied [${code}].`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "PluginConstructionRefusal";
+    this.code = code;
+    this.policy = policy;
+  }
+}
+
+export function isPluginConstructionRefusal(value: unknown): value is PluginConstructionRefusal {
+  return (
+    value instanceof PluginConstructionRefusal ||
+    (typeof value === "object" &&
+      value !== null &&
+      "name" in value &&
+      value.name === "PluginConstructionRefusal" &&
+      "code" in value &&
+      typeof value.code === "string" &&
+      pluginConstructionDenialCodes.includes(value.code as PluginConstructionDenialCode))
+  );
+}
 
 export interface PluginCapabilityDefinition {
   label: string;
@@ -114,7 +277,7 @@ export interface PluginManifestData {
 export type PluginCompatibilityEvidenceStatus = "verified" | "different-version" | "unverified";
 
 export interface PluginCompatibilityReport {
-  level: 0 | 4;
+  level: 0;
   status: PluginCompatibilityEvidenceStatus;
   testedVersion: string | null;
   testedThreadleafVersion: string | null;

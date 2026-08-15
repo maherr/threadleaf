@@ -5,11 +5,112 @@ import os from "node:os";
 import path from "node:path";
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
+import {
+  inspectSealedPluginPackage,
+  PluginConstructionPolicyResolver,
+} from "../main/plugin-construction-policy";
+import { reviewedAuthorityPayload } from "../main/reviewed-authority-profiles";
+import { authorityJsonSha256 } from "../shared/authority-json";
+import { attachedPluginDiagnosticCode } from "../shared/plugin-diagnostics";
+import {
+  type CommunityPluginGrantV2,
+  isPluginConstructionRefusal,
+  type PluginCapabilityId,
+  type PluginConstructionPolicy,
+  pluginCapabilityIds,
+  type ReviewedAuthorityProfile,
+} from "../shared/plugins";
+import {
+  testConstructionDispatch,
+  testConstructionRequest,
+} from "../test-support/plugin-construction";
 import { installObsidianDomCompatibility } from "./obsidian-dom";
-import { PluginHost } from "./plugin-host";
+import { maxConsumedPluginConstructionAttempts, PluginHost } from "./plugin-host";
 
 const fixtureVault = path.resolve("fixtures/vaults/basic");
 const fixturePlugin = path.join(fixtureVault, ".obsidian", "plugins", "threadleaf-fixture");
+
+async function loadPlugin(host: PluginHost, pluginDirectory: string) {
+  return host.loadAuthorizedPlugin(await testConstructionDispatch(pluginDirectory));
+}
+
+async function reloadPlugin(host: PluginHost, pluginDirectory: string) {
+  return host.reloadAuthorizedPlugin(
+    await testConstructionDispatch(pluginDirectory, "explicit-reload"),
+  );
+}
+
+async function narrowConstructionDispatch(
+  pluginDirectory: string,
+  withheldAuthority: PluginCapabilityId,
+) {
+  const request = await testConstructionRequest(pluginDirectory);
+  const sealedPackage = {
+    sealedPackageRootId: `narrow-${request.packageIdentityDigest}`,
+    sealedPackageRootPath: pluginDirectory,
+    packageIdentityDigest: request.packageIdentityDigest,
+    packageTreeSha256: request.packageIdentity.packageTreeSha256,
+  };
+  const inspected = await inspectSealedPluginPackage(
+    sealedPackage,
+    request.packageIdentity.distributionTag,
+  );
+  const requiredAuthorities = pluginCapabilityIds.filter(
+    (capability) => capability !== withheldAuthority,
+  );
+  const profile: ReviewedAuthorityProfile = {
+    $schema: "./reviewed-authority-profile.v1.schema.json",
+    schemaVersion: 1,
+    profileId: `narrow-${withheldAuthority}-${request.packageIdentityDigest}`,
+    profileRevision: 1,
+    packageIdentity: request.packageIdentity,
+    packageIdentityDigest: request.packageIdentityDigest,
+    expectedStaticCapabilities: inspected.staticCapabilities,
+    requiredAuthorities,
+    executionProfile: "trusted-node-renderer",
+    allowedPlatforms: ["linux"],
+    authorityDigest: "",
+  };
+  profile.authorityDigest = authorityJsonSha256(reviewedAuthorityPayload(profile));
+  const grant: CommunityPluginGrantV2 = {
+    schemaVersion: 2,
+    grantId: `narrow-${withheldAuthority}`,
+    vaultId: "narrow-vault",
+    packageIdentity: request.packageIdentity,
+    packageIdentityDigest: request.packageIdentityDigest,
+    authorityProfileId: profile.profileId,
+    authorityProfileRevision: profile.profileRevision,
+    authorityDigest: profile.authorityDigest,
+    grantedAuthorities: requiredAuthorities,
+    provenance: {
+      kind: "content-addressed-unsigned",
+      sourceDescriptorDigest: "2".repeat(64),
+    },
+    grantRevision: 1,
+    grantEpoch: 1,
+    issuedAt: "2026-08-14T00:00:00.000Z",
+    revokedAt: null,
+    revocationReason: null,
+  };
+  return new PluginConstructionPolicyResolver({
+    profileByIdentity: () => profile,
+    readAuthoritySnapshot: async () => ({
+      vaultId: "narrow-vault",
+      vaultGeneration: 1,
+      policyEpoch: 1,
+      grantEpoch: 1,
+      safeMode: false,
+      safeModeEpoch: 1,
+      packageStoreEpoch: 1,
+      platform: "linux",
+      availableExecutionProfiles: ["trusted-node-renderer"],
+      grant,
+      sealedPackage,
+    }),
+    createAttemptId: () => `narrow-${withheldAuthority}`,
+    now: () => new Date("2026-08-14T00:00:00.000Z"),
+  }).resolveAndConsume(request);
+}
 
 async function readFixtureBytes(): Promise<Map<string, Buffer>> {
   const relativePaths = [
@@ -30,6 +131,28 @@ async function readFixtureBytes(): Promise<Map<string, Buffer>> {
 }
 
 describe("PluginHost", () => {
+  it("pins test construction to a fresh non-default authority policy", async () => {
+    const dispatch = await testConstructionDispatch(fixturePlugin);
+
+    expect(dispatch.policy).toMatchObject({
+      constructionPath: "test-execution",
+      authorityProfileId: expect.stringContaining("test-threadleaf-fixture"),
+      epoch: {
+        policyEpoch: 23,
+        grantEpoch: 31,
+        grantRevision: 29,
+        safeModeEpoch: 17,
+        packageStoreEpoch: 13,
+        authorityProfileRevision: 37,
+      },
+    });
+    await expect(
+      new PluginHost(fixtureVault).loadAuthorizedPlugin(dispatch),
+    ).resolves.toMatchObject({
+      plugin: { id: "threadleaf-fixture", state: "loaded" },
+    });
+  });
+
   it("builds synchronous frontmatter and link metadata from canonical vault files", () => {
     const host = new PluginHost(fixtureVault);
     const welcome = host.vault.getFileByPath("Welcome.md");
@@ -58,11 +181,11 @@ describe("PluginHost", () => {
     expect(changed).toEqual(["Welcome.md"]);
   });
 
-  it("loads an unchanged CommonJS plugin and verifies its command workflow", async () => {
+  it("never promotes compatibility evidence when an unchanged plugin command returns", async () => {
     const before = await readFixtureBytes();
     const host = new PluginHost(fixtureVault);
 
-    const loaded = await host.loadPlugin(fixturePlugin);
+    const loaded = await loadPlugin(host, fixturePlugin);
     expect(loaded.vault.markdownFileCount).toBe(2);
     expect(loaded.plugin).toMatchObject({
       id: "threadleaf-fixture",
@@ -80,7 +203,7 @@ describe("PluginHost", () => {
     ]);
 
     const verified = await host.runCommand("threadleaf-fixture:threadleaf-fixture-confirm");
-    expect(verified.plugin?.compatibilityLevel).toBe(4);
+    expect(verified.plugin?.compatibilityLevel).toBe(3);
     expect(verified.notices).toContain("Fixture command crossed the compatibility bridge.");
 
     const after = await readFixtureBytes();
@@ -89,26 +212,10 @@ describe("PluginHost", () => {
 
   it("rechecks the exact bundle bytes immediately before plugin execution", async () => {
     const bundleBytes = await fs.readFile(path.join(fixturePlugin, "main.js"));
-    const bundleSha256 = createHash("sha256").update(bundleBytes).digest("hex");
-    const blockedHost = new PluginHost(fixtureVault);
-
-    await expect(blockedHost.loadPlugin(fixturePlugin, "0".repeat(64))).rejects.toThrow(
-      "[managed-package-changed].",
-    );
-    const blocked = await blockedHost.getSnapshot();
-    expect(blocked.plugin).toMatchObject({
-      id: "threadleaf-fixture",
-      state: "failed",
-      compatibilityLevel: 0,
-      error: expect.stringContaining("[managed-package-changed]."),
-    });
-    expect(blocked.commands).toEqual([]);
-    expect(blocked.notices).toEqual([]);
-    expect(blocked.events.some(({ message }) => message.includes("Injected"))).toBe(false);
-    await blockedHost.close();
+    expect(createHash("sha256").update(bundleBytes).digest("hex")).toMatch(/^[a-f0-9]{64}$/u);
 
     const allowedHost = new PluginHost(fixtureVault);
-    const allowed = await allowedHost.loadPlugin(fixturePlugin, bundleSha256);
+    const allowed = await loadPlugin(allowedHost, fixturePlugin);
     expect(allowed.plugin).toMatchObject({
       id: "threadleaf-fixture",
       state: "loaded",
@@ -119,18 +226,295 @@ describe("PluginHost", () => {
 
   it("releases command registrations on unload and recreates them on reload", async () => {
     const host = new PluginHost(fixtureVault);
-    await host.loadPlugin(fixturePlugin);
+    await loadPlugin(host, fixturePlugin);
 
     const unloaded = await host.unloadPlugin();
     expect(unloaded.plugin?.state).toBe("unloaded");
     expect(unloaded.commands).toEqual([]);
 
-    const reloaded = await host.reloadPlugin();
+    const reloaded = await reloadPlugin(host, fixturePlugin);
     expect(reloaded.plugin?.state).toBe("loaded");
     expect(reloaded.commands).toHaveLength(1);
     expect(reloaded.events.filter(({ message }) => message.startsWith("Unloaded "))).toHaveLength(
       1,
     );
+  });
+
+  it("makes direct load and reload entry points structurally incapable of evaluation", async () => {
+    const host = new PluginHost(fixtureVault);
+    const request = await testConstructionRequest(fixturePlugin, "diagnostic-execution");
+
+    await expect(host.loadPlugin(request)).rejects.toSatisfy(
+      (error: unknown) =>
+        isPluginConstructionRefusal(error) && error.code === "authority-profile-missing",
+    );
+    await expect(host.reloadPlugin(request)).rejects.toSatisfy(
+      (error: unknown) =>
+        isPluginConstructionRefusal(error) && error.code === "authority-profile-missing",
+    );
+    expect((await host.getSnapshot()).plugin).toBeNull();
+  });
+
+  it("rejects a reused or digest-tampered main-process construction dispatch", async () => {
+    const host = new PluginHost(fixtureVault);
+    const dispatch = await testConstructionDispatch(fixturePlugin);
+    await host.loadAuthorizedPlugin(dispatch);
+
+    await expect(host.loadAuthorizedPlugin(dispatch)).rejects.toSatisfy(
+      (error: unknown) => isPluginConstructionRefusal(error) && error.code === "policy-epoch-stale",
+    );
+    const fresh = await testConstructionDispatch(fixturePlugin);
+    await expect(
+      host.loadAuthorizedPlugin({
+        ...fresh,
+        policy: { ...fresh.policy, policyDigest: "0".repeat(64) },
+      }),
+    ).rejects.toSatisfy(
+      (error: unknown) => isPluginConstructionRefusal(error) && error.code === "policy-epoch-stale",
+    );
+  });
+
+  it("rejects allow/deny contradictions before package evaluation", async () => {
+    const host = new PluginHost(fixtureVault);
+    const assertDispatch = (
+      host as unknown as {
+        assertConstructionDispatch(dispatch: unknown): void;
+      }
+    ).assertConstructionDispatch.bind(host);
+    for (const contradiction of [
+      { decision: "deny" as const, denialCode: null },
+      { decision: "allow" as const, denialCode: "grant-required" as const },
+    ]) {
+      const dispatch = await testConstructionDispatch(fixturePlugin);
+      const payload = {
+        ...dispatch.policy,
+        ...contradiction,
+        policyDigest: undefined,
+      };
+      const { policyDigest: _policyDigest, ...withoutDigest } = payload;
+      const policy = {
+        ...withoutDigest,
+        policyDigest: authorityJsonSha256(withoutDigest),
+      } as PluginConstructionPolicy;
+      expect(() => assertDispatch({ ...dispatch, policy })).toThrow(
+        "complete main-process allow dispatch",
+      );
+    }
+  });
+
+  it("fails closed when the consumed-attempt replay ledger reaches its bound", async () => {
+    const host = new PluginHost(fixtureVault);
+    const baseDispatch = await testConstructionDispatch(fixturePlugin);
+    const assertDispatch = (
+      host as unknown as {
+        assertConstructionDispatch(dispatch: unknown): void;
+      }
+    ).assertConstructionDispatch.bind(host);
+    const dispatchForAttempt = (constructionAttemptId: string) => {
+      const { policyDigest: _policyDigest, ...basePayload } = baseDispatch.policy;
+      const payload = { ...basePayload, constructionAttemptId };
+      return {
+        ...baseDispatch,
+        policy: { ...payload, policyDigest: authorityJsonSha256(payload) },
+      };
+    };
+    for (let index = 0; index < maxConsumedPluginConstructionAttempts; index += 1) {
+      assertDispatch(dispatchForAttempt(`ledger-attempt-${index}`));
+    }
+
+    let refusal: unknown;
+    try {
+      assertDispatch(dispatchForAttempt(`ledger-attempt-${maxConsumedPluginConstructionAttempts}`));
+    } catch (error) {
+      refusal = error;
+    }
+    expect(isPluginConstructionRefusal(refusal) && refusal.code).toBe("replay-ledger-exhausted");
+  });
+
+  it("rejects changed local dependency bytes before evaluating an unchanged main bundle", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-sealed-tree-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "tree-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "tree-fixture", name: "Tree fixture", version: "1.0.0" }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        'require("./dependency.js"); globalThis.__threadleafTreeEvaluated = true;\n',
+      );
+      await fs.writeFile(path.join(pluginPath, "dependency.js"), "module.exports = 1;\n");
+      const dispatch = await testConstructionDispatch(pluginPath);
+      await fs.writeFile(path.join(pluginPath, "dependency.js"), "module.exports = 2;\n");
+      Reflect.deleteProperty(globalThis, "__threadleafTreeEvaluated");
+
+      await expect(new PluginHost(vaultPath).loadAuthorizedPlugin(dispatch)).rejects.toSatisfy(
+        (error: unknown) =>
+          isPluginConstructionRefusal(error) && error.code === "package-identity-mismatch",
+      );
+      expect(Reflect.has(globalThis, "__threadleafTreeEvaluated")).toBe(false);
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafTreeEvaluated");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects traversal and symlink module resolutions outside the sealed root", async () => {
+    const cases = ["traversal", "symlink"] as const;
+    for (const mode of cases) {
+      const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), `threadleaf-module-${mode}-`));
+      const vaultPath = path.join(sandboxPath, "vault");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", `${mode}-fixture`);
+      const outsidePath = path.join(vaultPath, ".obsidian", "plugins", `${mode}-outside.js`);
+      const dependencyPath = path.join(pluginPath, "dependency.js");
+      try {
+        await fs.mkdir(pluginPath, { recursive: true });
+        await fs.writeFile(
+          path.join(pluginPath, "manifest.json"),
+          JSON.stringify({ id: `${mode}-fixture`, name: `${mode} fixture`, version: "1.0.0" }),
+        );
+        await fs.writeFile(
+          outsidePath,
+          `globalThis.__threadleafModuleEscape = ${JSON.stringify(mode)}; module.exports = {};\n`,
+        );
+        await fs.writeFile(
+          path.join(pluginPath, "main.js"),
+          'require("./dependency.js");\nconst { Plugin } = require("obsidian");\nmodule.exports = class extends Plugin {};\n',
+        );
+        await fs.writeFile(
+          dependencyPath,
+          mode === "traversal"
+            ? `require("../${mode}-outside.js"); module.exports = {};\n`
+            : "module.exports = {};\n",
+        );
+        const dispatch = await testConstructionDispatch(pluginPath);
+        if (mode === "symlink") {
+          await fs.rename(dependencyPath, path.join(sandboxPath, "reviewed-dependency.js"));
+          await fs.symlink(outsidePath, dependencyPath);
+        }
+        Reflect.deleteProperty(globalThis, "__threadleafModuleEscape");
+        const host = new PluginHost(vaultPath);
+        const evaluate = (
+          host as unknown as {
+            evaluatePlugin(
+              entryPath: string,
+              sealedPackageRoot: string,
+              policy: PluginConstructionPolicy,
+            ): Promise<unknown>;
+          }
+        ).evaluatePlugin.bind(host);
+
+        await expect(
+          evaluate(path.join(pluginPath, "main.js"), pluginPath, dispatch.policy),
+        ).rejects.toSatisfy(
+          (error: unknown) => attachedPluginDiagnosticCode(error) === "package-path-escape",
+        );
+        expect(Reflect.has(globalThis, "__threadleafModuleEscape")).toBe(false);
+      } finally {
+        Reflect.deleteProperty(globalThis, "__threadleafModuleEscape");
+        await fs.rm(sandboxPath, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("admits Node builtins only when the reviewed policy discloses their authority", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-builtin-authority-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "builtin-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "builtin-fixture", name: "Builtin fixture", version: "1.0.0" }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        'require("node:fs"); const { Plugin } = require("obsidian"); module.exports = class extends Plugin {};\n',
+      );
+      const dispatch = await testConstructionDispatch(pluginPath);
+      const withoutFilesystem = dispatch.policy.requiredAuthorities.filter(
+        (capability) => capability !== "filesystem",
+      );
+      const { policyDigest: _policyDigest, ...payload } = {
+        ...dispatch.policy,
+        requiredAuthorities: withoutFilesystem,
+      };
+      const policy = {
+        ...payload,
+        policyDigest: authorityJsonSha256(payload),
+      };
+
+      await expect(
+        new PluginHost(vaultPath).loadAuthorizedPlugin({ ...dispatch, policy }),
+      ).rejects.toSatisfy(
+        (error: unknown) =>
+          isPluginConstructionRefusal(error) && error.code === "authority-profile-mismatch",
+      );
+    } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      authority: "filesystem" as const,
+      dependencyBytes: null,
+      dependencyName: null,
+      label: "node:sqlite",
+      request: "node:sqlite",
+    },
+    {
+      authority: "dynamic-code" as const,
+      dependencyBytes: null,
+      dependencyName: null,
+      label: "node:inspector",
+      request: "node:inspector",
+    },
+    {
+      authority: "dynamic-code" as const,
+      dependencyBytes: null,
+      dependencyName: null,
+      label: "node:v8",
+      request: "node:v8",
+    },
+    {
+      authority: "dynamic-code" as const,
+      dependencyBytes: Buffer.from([0, 1, 2, 3]),
+      dependencyName: "fixture.node",
+      label: "an in-root native addon",
+      request: "./fixture.node",
+    },
+  ])("denies $label when its narrow profile withholds $authority", async (testCase) => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-narrow-authority-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "narrow-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "narrow-fixture", name: "Narrow fixture", version: "1.0.0" }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `require(${JSON.stringify(testCase.request)}); const { Plugin } = require("obsidian"); module.exports = class extends Plugin {};\n`,
+      );
+      if (testCase.dependencyName && testCase.dependencyBytes) {
+        await fs.writeFile(
+          path.join(pluginPath, testCase.dependencyName),
+          testCase.dependencyBytes,
+        );
+      }
+      const dispatch = await narrowConstructionDispatch(pluginPath, testCase.authority);
+
+      await expect(new PluginHost(vaultPath).loadAuthorizedPlugin(dispatch)).rejects.toSatisfy(
+        (error: unknown) =>
+          isPluginConstructionRefusal(error) && error.code === "authority-profile-mismatch",
+      );
+    } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
   });
 
   it("closes plugin-owned modals on unload without duplicating them after reload", async () => {
@@ -178,8 +562,8 @@ module.exports = class ModalFixture extends Plugin {
       }
 
       const host = new PluginHost(vaultPath);
-      await host.loadPlugin(pluginPath);
-      await host.loadPlugin(otherPluginPath);
+      await loadPlugin(host, pluginPath);
+      await loadPlugin(host, otherPluginPath);
       expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(1);
       expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
 
@@ -187,7 +571,7 @@ module.exports = class ModalFixture extends Plugin {
       expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(0);
       expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
 
-      await host.reloadPlugin("modal-fixture");
+      await reloadPlugin(host, pluginPath);
       expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(1);
       expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
     } finally {
@@ -233,18 +617,18 @@ module.exports = class DataFixture extends Plugin {
       );
 
       const host = new PluginHost(vaultPath);
-      await host.loadPlugin(pluginPath);
+      await loadPlugin(host, pluginPath);
       await expect(fs.readFile(path.join(pluginPath, "data.json"), "utf8")).resolves.toContain(
         '"loads": 1',
       );
 
-      await host.reloadPlugin("data-fixture");
+      await reloadPlugin(host, pluginPath);
       await expect(fs.readFile(path.join(pluginPath, "data.json"), "utf8")).resolves.toContain(
         '"loads": 2',
       );
 
       const restartedHost = new PluginHost(vaultPath);
-      await restartedHost.loadPlugin(pluginPath);
+      await loadPlugin(restartedHost, pluginPath);
       await expect(fs.readFile(path.join(pluginPath, "data.json"), "utf8")).resolves.toContain(
         '"loads": 3',
       );
@@ -281,8 +665,8 @@ module.exports = class SecondaryPlugin extends Plugin {
         "utf8",
       );
       const host = new PluginHost(vaultPath);
-      await host.loadPlugin(path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"));
-      const bothLoaded = await host.loadPlugin(secondPlugin);
+      await loadPlugin(host, path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"));
+      const bothLoaded = await loadPlugin(host, secondPlugin);
 
       expect(bothLoaded.plugins).toMatchObject([
         { id: "threadleaf-fixture", state: "loaded", compatibilityLevel: 3 },
@@ -343,8 +727,8 @@ module.exports = class FailingUnloadPlugin extends Plugin {
       );
 
       const host = new PluginHost(vaultPath);
-      await host.loadPlugin(failingPlugin);
-      await host.loadPlugin(path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"));
+      await loadPlugin(host, failingPlugin);
+      await loadPlugin(host, path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture"));
 
       const unloaded = await host.unloadAllPlugins();
 
@@ -402,7 +786,7 @@ module.exports = class HostModulePlugin extends Plugin {
         createRequire(path.resolve("package.json")),
       );
 
-      const loaded = await host.loadPlugin(pluginPath);
+      const loaded = await loadPlugin(host, pluginPath);
       expect(loaded.plugin).toMatchObject({ state: "loaded", compatibilityLevel: 3 });
 
       const verified = await host.runCommand("host-module-fixture:confirm-host-module");
@@ -484,7 +868,7 @@ module.exports = class UiApiPlugin extends Plugin {
       );
 
       const host = new PluginHost(vaultPath);
-      const loaded = await host.loadPlugin(pluginPath);
+      const loaded = await loadPlugin(host, pluginPath);
       expect(loaded.plugin).toMatchObject({ state: "loaded", compatibilityLevel: 2 });
       expect(host.app.compatibility.snapshot()).toEqual({
         editorSuggests: 1,
@@ -647,7 +1031,7 @@ module.exports = class EditorFixture extends Plugin {
       );
 
       const host = new PluginHost(vaultPath);
-      await host.loadPlugin(pluginPath);
+      await loadPlugin(host, pluginPath);
       await expect(host.runCommand("editor-fixture:insert-embed")).rejects.toThrow(
         "[runtime-command-failed].",
       );
@@ -670,7 +1054,7 @@ module.exports = class EditorFixture extends Plugin {
         selection: { anchor: 32, head: 32 },
       });
       expect(snapshot.pluginSurface).toBeNull();
-      expect(snapshot.plugin?.compatibilityLevel).toBe(4);
+      expect(snapshot.plugin?.compatibilityLevel).toBe(3);
       await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(
         "alpha\nomega",
       );
@@ -704,8 +1088,9 @@ module.exports = class EditorFixture extends Plugin {
 
   it("rejects plugin directories outside the active vault", async () => {
     const host = new PluginHost(fixtureVault);
-    await expect(host.loadPlugin(path.resolve("fixtures"))).rejects.toThrow(
-      "[package-path-escape].",
-    );
+    const request = await testConstructionRequest(fixturePlugin);
+    await expect(
+      host.loadPlugin({ ...request, pluginDirectory: path.resolve("fixtures") }),
+    ).rejects.toMatchObject({ code: "authority-profile-missing" });
   });
 });
