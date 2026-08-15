@@ -4,6 +4,14 @@ import {
   type WorkspaceTreePageDescriptor,
 } from "../shared/contracts";
 
+/**
+ * The tree holds complete pages only for the current interaction working set.
+ * Active reveal chains retain their individual rows separately, so a deep path
+ * remains addressable without keeping every sibling page it crosses.
+ */
+export const maximumNavigatorTreeRetainedPages = 16;
+export const maximumNavigatorTreeRetainedEntries = 8_192;
+
 export interface NavigatorTreeChildrenState {
   descriptor: WorkspaceTreePageDescriptor;
   entries: Map<number, WorkspaceTreeEntry>;
@@ -14,12 +22,32 @@ export interface NavigatorTreeState {
   generation: string;
   pages: Map<string | null, NavigatorTreeChildrenState>;
   pendingRequests: Set<string>;
+  cachedPages: Map<string, NavigatorTreeCachedPage>;
+  retainedPageKeys: Set<string>;
+  retainedEntryKeys: Set<string>;
 }
 
 export interface NavigatorTreePageRequest {
   parentPath: string | null;
   offset: number;
   limit: number;
+}
+
+/** A single row needed to keep an active-note reveal chain visible. */
+export interface NavigatorTreeEntryLocation {
+  parentPath: string | null;
+  offset: number;
+}
+
+export interface NavigatorTreeRetentionCounts {
+  pages: number;
+  entries: number;
+}
+
+interface NavigatorTreeCachedPage {
+  parentPath: string | null;
+  offset: number;
+  entryOffsets: readonly number[];
 }
 
 export type NavigatorTreeRow =
@@ -72,6 +100,62 @@ function requestKey(parentPath: string | null, offset: number): string {
   return `${parentPath ?? ""}\u0000${offset}`;
 }
 
+function pageRequestForRow(
+  state: NavigatorTreeState,
+  row: NavigatorTreeRow,
+): NavigatorTreePageRequest {
+  const children = state.pages.get(row.parentPath);
+  const limit = children?.descriptor.limit ?? maximumWorkspaceFilePageSize;
+  const siblingOffset = row.kind === "entry" ? row.siblingIndex : row.offset;
+  return {
+    parentPath: row.parentPath,
+    offset: Math.floor(siblingOffset / limit) * limit,
+    limit,
+  };
+}
+
+function touchCachedPage(state: NavigatorTreeState, key: string): void {
+  const cached = state.cachedPages.get(key);
+  if (!cached) return;
+  state.cachedPages.delete(key);
+  state.cachedPages.set(key, cached);
+}
+
+function retainedEntryCount(state: NavigatorTreeState): number {
+  let total = 0;
+  for (const children of state.pages.values()) {
+    total += children.entries.size;
+  }
+  return total;
+}
+
+function discardCachedPage(state: NavigatorTreeState, key: string): void {
+  const cached = state.cachedPages.get(key);
+  if (!cached) return;
+  const children = state.pages.get(cached.parentPath);
+  if (children) {
+    for (const offset of cached.entryOffsets) {
+      if (!state.retainedEntryKeys.has(requestKey(cached.parentPath, offset))) {
+        children.entries.delete(offset);
+      }
+    }
+  }
+  state.cachedPages.delete(key);
+}
+
+function trimNavigatorTreeCache(state: NavigatorTreeState): void {
+  while (
+    state.cachedPages.size > maximumNavigatorTreeRetainedPages ||
+    retainedEntryCount(state) > maximumNavigatorTreeRetainedEntries
+  ) {
+    const evictedKey = [...state.cachedPages.keys()].find(
+      (key) => !state.retainedPageKeys.has(key),
+    );
+    if (!evictedKey) return;
+    discardCachedPage(state, evictedKey);
+  }
+}
+
 function sortedEntryOffsets(children: NavigatorTreeChildrenState): number[] {
   return [...children.entries.keys()]
     .filter((offset) => offset >= 0 && offset < children.descriptor.total)
@@ -106,6 +190,9 @@ export function createNavigatorTreeState(vaultId: string, generation: string): N
     generation,
     pages: new Map<string | null, NavigatorTreeChildrenState>(),
     pendingRequests: new Set<string>(),
+    cachedPages: new Map<string, NavigatorTreeCachedPage>(),
+    retainedPageKeys: new Set<string>(),
+    retainedEntryKeys: new Set<string>(),
   };
 }
 
@@ -127,19 +214,61 @@ export function applyNavigatorTreePage(
   if (descriptor.generation !== state.generation) {
     return false;
   }
+  const key = requestKey(descriptor.parentPath, descriptor.offset);
   const current = state.pages.get(descriptor.parentPath) ?? {
     descriptor: { ...descriptor },
     entries: new Map<number, WorkspaceTreeEntry>(),
   };
+  if (state.cachedPages.has(key)) {
+    discardCachedPage(state, key);
+  }
   current.descriptor = { ...descriptor };
   for (const offset of current.entries.keys()) {
     if (offset >= descriptor.total) current.entries.delete(offset);
   }
+  const entryOffsets: number[] = [];
   for (const [index, entry] of entries.entries()) {
-    current.entries.set(descriptor.offset + index, entry);
+    const offset = descriptor.offset + index;
+    current.entries.set(offset, entry);
+    entryOffsets.push(offset);
   }
   state.pages.set(descriptor.parentPath, current);
+  state.cachedPages.set(key, {
+    parentPath: descriptor.parentPath,
+    offset: descriptor.offset,
+    entryOffsets,
+  });
+  trimNavigatorTreeCache(state);
   return true;
+}
+
+/**
+ * Retains complete viewport/focus pages and only the exact rows needed for a
+ * deep active-note reveal. Replacing the target set lets stale traversal pages
+ * fall out through the LRU on the next response or retention update.
+ */
+export function retainNavigatorTreePages(
+  state: NavigatorTreeState,
+  pageRequests: readonly NavigatorTreePageRequest[],
+  entryLocations: readonly NavigatorTreeEntryLocation[] = [],
+): void {
+  const pageKeys = new Set<string>();
+  for (const request of pageRequests) {
+    const key = requestKey(request.parentPath, request.offset);
+    pageKeys.add(key);
+    touchCachedPage(state, key);
+  }
+  state.retainedPageKeys = pageKeys;
+  state.retainedEntryKeys = new Set(
+    entryLocations.map((location) => requestKey(location.parentPath, location.offset)),
+  );
+  trimNavigatorTreeCache(state);
+}
+
+export function navigatorTreeRetentionCounts(
+  state: NavigatorTreeState,
+): NavigatorTreeRetentionCounts {
+  return { pages: state.cachedPages.size, entries: retainedEntryCount(state) };
 }
 
 export function completeNavigatorTreePageRequest(
@@ -155,13 +284,14 @@ export function claimNavigatorTreePageRequest(
   request: NavigatorTreePageRequest,
 ): boolean {
   const children = state.pages.get(request.parentPath);
+  const key = requestKey(request.parentPath, request.offset);
   if (
     (children?.descriptor.total !== undefined && request.offset >= children.descriptor.total) ||
-    children?.entries.has(request.offset)
+    state.cachedPages.has(key)
   ) {
+    touchCachedPage(state, key);
     return false;
   }
-  const key = requestKey(request.parentPath, request.offset);
   if (state.pendingRequests.has(key)) return false;
   state.pendingRequests.add(key);
   return true;
@@ -272,18 +402,27 @@ export function claimNavigatorTreePageRequests(
   end: number,
 ): NavigatorTreePageRequest[] {
   const requests: NavigatorTreePageRequest[] = [];
-  for (let index = Math.max(0, start); index < Math.min(end, projection.length); index += 1) {
-    const row = projection.rowAt(index);
-    if (row?.kind !== "placeholder") continue;
-    const children = state.pages.get(row.parentPath);
-    const limit = children?.descriptor.limit ?? maximumWorkspaceFilePageSize;
-    const offset = Math.floor(row.offset / limit) * limit;
-    const total = children?.descriptor.total;
-    if ((total !== undefined && offset >= total) || children?.entries.has(offset)) continue;
-    const request = { parentPath: row.parentPath, offset, limit };
+  for (const request of navigatorTreePageRequestsForRange(state, projection, start, end)) {
     if (claimNavigatorTreePageRequest(state, request)) requests.push(request);
   }
   return requests;
+}
+
+/** Returns all complete pages intersecting a virtual range, loaded or not. */
+export function navigatorTreePageRequestsForRange(
+  state: NavigatorTreeState,
+  projection: NavigatorTreeProjection,
+  start: number,
+  end: number,
+): NavigatorTreePageRequest[] {
+  const requests = new Map<string, NavigatorTreePageRequest>();
+  for (let index = Math.max(0, start); index < Math.min(end, projection.length); index += 1) {
+    const row = projection.rowAt(index);
+    if (!row) continue;
+    const request = pageRequestForRow(state, row);
+    requests.set(requestKey(request.parentPath, request.offset), request);
+  }
+  return [...requests.values()];
 }
 
 export function navigatorTreeParentPath(path: string): string | null {

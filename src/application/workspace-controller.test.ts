@@ -1320,6 +1320,33 @@ describe("WorkspaceController", () => {
     await controller.close();
   });
 
+  it("rejects hidden workspace folders without tightening the generic plugin folder route", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+
+    await expect(
+      controller.createWorkspaceFolder("Projects/.navigator-hidden", expectedVaultId),
+    ).rejects.toThrow("hidden");
+    await expect(
+      controller.createWorkspaceFolder(".navigator-hidden", expectedVaultId),
+    ).rejects.toThrow("hidden");
+    expect(harness.runtimes[0]?.createdPluginFolder).toBeNull();
+
+    await controller.createPluginFolder("Projects/.plugin-private", expectedVaultId);
+    expect(harness.runtimes[0]?.createdPluginFolder).toEqual({
+      folderPath: "Projects/.plugin-private",
+      expectedVaultId,
+    });
+    await controller.close();
+  });
+
   it("rejects an image response that completes after the active vault changes", async () => {
     const store = new MemorySelectionStore();
     const harness = runtimeHarness();

@@ -31,12 +31,23 @@ describe("workspace layout bounds", () => {
     expect(() => parseWorkspaceLayout(layout, "b".repeat(64))).toThrow("vault identity");
   });
 
-  it("migrates version 1 layouts to collapsed navigator expansion state", () => {
+  it("migrates every legacy version 1 layout field while adding collapsed navigator state", () => {
     const layout = createDefaultWorkspaceLayout("a".repeat(64));
+    layout.docks.left.collapsed = true;
+    layout.docks.right.collapsed = true;
+    layout.mainWindowBounds = { x: 120, y: 80, width: 1_280, height: 840, scaleFactor: 2 };
+    layout.popout = {
+      state: "open",
+      viewType: "drawing",
+      filePath: "Projects/Sketch.md",
+      bounds: { x: 160, y: 120, width: 960, height: 720, scaleFactor: 2 },
+      warning: null,
+    };
     const { navigator: _navigator, ...versionOne } = layout;
     const migrated = parseWorkspaceLayout({ ...versionOne, version: 1 }, layout.vaultId);
 
-    expect(migrated).toMatchObject({
+    expect(migrated).toEqual({
+      ...layout,
       version: 2,
       navigator: { expandedFolderPaths: [] },
     });

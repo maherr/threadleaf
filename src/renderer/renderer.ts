@@ -176,10 +176,13 @@ import {
   claimNavigatorTreePageRequest,
   claimNavigatorTreePageRequests,
   completeNavigatorTreePageRequest,
+  type NavigatorTreeEntryLocation,
   type NavigatorTreeProjection,
   type NavigatorTreeState,
+  navigatorTreePageRequestsForRange,
   navigatorTreeParentPath,
   reconcileNavigatorTreeState,
+  retainNavigatorTreePages,
 } from "./navigator-tree";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
 import {
@@ -1051,6 +1054,8 @@ let navigatorFocusedPath: string | null = null;
 let navigatorPendingFocusIndex: number | null = null;
 let navigatorContextFolderPath: string | null | undefined;
 let navigatorRevealRequest = 0;
+let navigatorTreeRevealPath: string | null = null;
+let navigatorTreeRevealLocations: NavigatorTreeEntryLocation[] = [];
 let navigatorExpansionSave = false;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
@@ -9728,6 +9733,8 @@ function reconcileNavigatorTree(snapshot: RuntimeSnapshot): void {
     navigatorTreeProjection = null;
     navigatorFocusedPath = null;
     navigatorPendingFocusIndex = null;
+    navigatorTreeRevealPath = null;
+    navigatorTreeRevealLocations = [];
     return;
   }
   const next = reconcileNavigatorTreeState(navigatorTreeState, vaultId, workspace.indexGeneration);
@@ -9735,6 +9742,8 @@ function reconcileNavigatorTree(snapshot: RuntimeSnapshot): void {
     navigatorFocusedPath = null;
     navigatorPendingFocusIndex = null;
     navigatorTreeProjection = null;
+    navigatorTreeRevealPath = null;
+    navigatorTreeRevealLocations = [];
     navigatorTreeRevision += 1;
   }
   navigatorTreeState = next;
@@ -9887,6 +9896,11 @@ function renderNavigatorTree(
     return;
   }
 
+  if (navigatorTreeRevealPath && navigatorTreeRevealPath !== activePath) {
+    navigatorTreeRevealPath = null;
+    navigatorTreeRevealLocations = [];
+  }
+
   if (!state.pages.has(null)) {
     const rootRequest = { parentPath: null, offset: 0, limit: 256 };
     if (claimNavigatorTreePageRequest(state, rootRequest)) {
@@ -9906,6 +9920,18 @@ function renderNavigatorTree(
     viewportHeight: Math.max(navigatorTreeRowHeight, elements.fileList.clientHeight),
     overscan: navigatorTreeOverscan,
   });
+  const retainedPageRequests = [
+    ...navigatorTreePageRequestsForRange(state, projection, geometry.start, geometry.end),
+  ];
+  for (const path of [navigatorFocusedPath, activePath]) {
+    const index = path ? projection.indexOfPath(path) : null;
+    if (index !== null) {
+      retainedPageRequests.push(
+        ...navigatorTreePageRequestsForRange(state, projection, index, index + 1),
+      );
+    }
+  }
+  retainNavigatorTreePages(state, retainedPageRequests, navigatorTreeRevealLocations);
   for (const request of claimNavigatorTreePageRequests(
     state,
     projection,
@@ -10033,7 +10059,11 @@ function focusNavigatorTreeIndex(index: number): void {
   if (!row) return;
   if (row.kind === "placeholder") {
     navigatorPendingFocusIndex = index;
-    for (const request of claimNavigatorTreePageRequests(state, projection, index, index + 1)) {
+    const requests = claimNavigatorTreePageRequests(state, projection, index, index + 1);
+    if (requests.length > 0) {
+      retainNavigatorTreePages(state, requests, navigatorTreeRevealLocations);
+    }
+    for (const request of requests) {
       void requestNavigatorTreePage(request);
     }
     return;
@@ -10126,40 +10156,51 @@ function handleNavigatorTreeKeydown(event: KeyboardEvent, path: string): void {
   }
 }
 
-async function setNavigatorFolderExpanded(folderPath: string, expanded: boolean): Promise<void> {
+function sameNavigatorExpandedPaths(nextPaths: ReadonlySet<string>): boolean {
+  return (
+    nextPaths.size === navigatorExpandedPaths.size &&
+    [...nextPaths].every((path) => navigatorExpandedPaths.has(path))
+  );
+}
+
+async function persistNavigatorExpandedPaths(
+  nextPaths: ReadonlySet<string>,
+  focusedFolderPath: string | null = null,
+): Promise<boolean> {
   const expectedVaultId = currentSnapshot?.vault.id;
   const layout = workspaceLayoutSnapshot;
   if (!expectedVaultId || !layout || layout.vaultId !== expectedVaultId || navigatorExpansionSave) {
-    return;
+    return false;
   }
-  const nextPaths = new Set(navigatorExpandedPaths);
-  if (expanded) {
-    nextPaths.add(folderPath);
-  } else {
-    nextPaths.delete(folderPath);
-  }
-  if (
-    nextPaths.size === navigatorExpandedPaths.size &&
-    [...nextPaths].every((path) => navigatorExpandedPaths.has(path))
-  ) {
-    return;
-  }
-  navigatorFocusedPath = folderPath;
+  if (sameNavigatorExpandedPaths(nextPaths)) return false;
+  if (focusedFolderPath) navigatorFocusedPath = focusedFolderPath;
   navigatorTreeRevision += 1;
   navigatorExpansionSave = true;
   try {
     renderWorkspaceLayout(
       await window.threadleaf.setWorkspaceNavigatorExpandedPaths([...nextPaths], expectedVaultId),
     );
-    renderNavigatorTree(loadedNote?.path ?? null, true);
-    const focusedIndex = navigatorTreeProjection?.indexOfPath(folderPath) ?? null;
-    if (focusedIndex !== null) {
-      focusNavigatorTreeIndex(focusedIndex);
-    }
+    return true;
   } catch (error) {
     showToast(error instanceof Error ? error.message : String(error));
+    return false;
   } finally {
     navigatorExpansionSave = false;
+  }
+}
+
+async function setNavigatorFolderExpanded(folderPath: string, expanded: boolean): Promise<void> {
+  const nextPaths = new Set(navigatorExpandedPaths);
+  if (expanded) {
+    nextPaths.add(folderPath);
+  } else {
+    nextPaths.delete(folderPath);
+  }
+  if (!(await persistNavigatorExpandedPaths(nextPaths, folderPath))) return;
+  renderNavigatorTree(loadedNote?.path ?? null, true);
+  const focusedIndex = navigatorTreeProjection?.indexOfPath(folderPath) ?? null;
+  if (focusedIndex !== null) {
+    focusNavigatorTreeIndex(focusedIndex);
   }
 }
 
@@ -10190,25 +10231,37 @@ async function revealActiveNavigatorNote(): Promise<void> {
       folderPaths.unshift(parentPath);
       parentPath = navigatorTreeParentPath(parentPath);
     }
-    for (const folderPath of folderPaths) {
-      if (!navigatorExpandedPaths.has(folderPath)) {
-        await setNavigatorFolderExpanded(folderPath, true);
-      }
+    const missingFolderPaths = folderPaths.filter(
+      (folderPath) => !navigatorExpandedPaths.has(folderPath),
+    );
+    const pageRequests = response.location.pages.map((page) => {
+      const children = state.pages.get(page.parentPath);
+      const limit = children?.descriptor.limit ?? 256;
+      return {
+        parentPath: page.parentPath,
+        offset: Math.floor(page.offset / limit) * limit,
+        limit,
+      };
+    });
+    navigatorTreeRevealPath = activePath;
+    navigatorTreeRevealLocations = response.location.pages.map((page) => ({ ...page }));
+    if (missingFolderPaths.length > 0) {
+      const nextPaths = new Set(navigatorExpandedPaths);
+      for (const folderPath of missingFolderPaths) nextPaths.add(folderPath);
+      if (!(await persistNavigatorExpandedPaths(nextPaths))) return;
     }
     if (request !== navigatorRevealRequest || navigatorTreeState !== state) return;
+    // Ancestor rows, not every fetched sibling page, are pinned for a deep
+    // reveal. The normal viewport/focus retention pass keeps its working page
+    // set bounded while the parallel requests fill those exact rows.
+    retainNavigatorTreePages(state, [], navigatorTreeRevealLocations);
+    renderNavigatorTree(activePath, true);
     await Promise.all(
-      response.location.pages.flatMap((page) => {
-        const children = state.pages.get(page.parentPath);
-        const limit = children?.descriptor.limit ?? 256;
-        const treeRequest = {
-          parentPath: page.parentPath,
-          offset: Math.floor(page.offset / limit) * limit,
-          limit,
-        };
-        return claimNavigatorTreePageRequest(state, treeRequest)
-          ? [requestNavigatorTreePage(treeRequest)]
-          : [];
-      }),
+      pageRequests.flatMap((pageRequest) =>
+        claimNavigatorTreePageRequest(state, pageRequest)
+          ? [requestNavigatorTreePage(pageRequest)]
+          : [],
+      ),
     );
     const targetIndex = navigatorTreeProjection?.indexOfPath(activePath) ?? null;
     if (targetIndex !== null) focusNavigatorTreeIndex(targetIndex);

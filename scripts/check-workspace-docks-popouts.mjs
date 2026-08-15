@@ -303,7 +303,7 @@ async function snapshot() {
 }
 
 async function waitForReady(expectedPath = vaultPath, minimumFiles = 4) {
-  return waitFor(async () => {
+  const current = await waitFor(async () => {
     const current = await snapshot();
     return current?.workspace?.state === "ready" &&
       current?.vault?.path === expectedPath &&
@@ -311,6 +311,37 @@ async function waitForReady(expectedPath = vaultPath, minimumFiles = 4) {
       ? current
       : null;
   }, `Vault did not become ready: ${expectedPath}`);
+  await ensureFlatNavigator();
+  return current;
+}
+
+// This suite verifies dock and pop-out behavior. It deliberately uses the
+// legacy flat-list fixture, while check-navigator-tree covers the tree mode.
+async function ensureFlatNavigator() {
+  const mode = await waitFor(async () => {
+    const value = await evaluate('document.querySelector("#file-list")?.dataset.mode ?? null');
+    return value === "tree" || value === "virtual" ? value : null;
+  }, "The navigator did not render before dock checks");
+  if (mode === "tree") {
+    const toggleVisible = await evaluate(`(() => {
+      const toggle = document.querySelector("#navigator-view-toggle");
+      if (!(toggle instanceof HTMLElement)) return false;
+      const style = getComputedStyle(toggle);
+      const bounds = toggle.getBoundingClientRect();
+      return !toggle.hidden && style.display !== "none" && style.visibility !== "hidden" && bounds.width > 0;
+    })()`);
+    // A deliberately collapsed left dock has no file-picker interaction to
+    // exercise during pop-out recovery, so it cannot select either mode.
+    if (!toggleVisible) return;
+    await clickSelector("#navigator-view-toggle");
+  }
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-list")?.dataset.mode')) === "virtual"
+        ? true
+        : null,
+    "The dock fixture could not select the flat navigator",
+  );
 }
 
 async function targetCenter(selector) {

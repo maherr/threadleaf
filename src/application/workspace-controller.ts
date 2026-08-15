@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { hasHiddenVaultSegment } from "../kernel/path-policy";
 import type {
   StateRootPort,
   VaultDirectoryCreateResult,
@@ -59,6 +60,17 @@ function displaySafeVaultName(value: string): string {
     .join("")
     .trim();
   return cleaned || "previous vault";
+}
+
+/**
+ * Navigator-created folders become part of the public index/tree namespace.
+ * Generic plugin folders retain their existing compatibility policy, so this
+ * deliberately narrows only the workspace action before it reaches that route.
+ */
+function assertPublicWorkspaceFolderPath(folderPath: string): void {
+  if (hasHiddenVaultSegment(folderPath)) {
+    throw new Error("Workspace folders cannot use hidden vault path segments.");
+  }
 }
 
 export interface VaultSelectionStore {
@@ -1046,10 +1058,11 @@ export class WorkspaceController {
     );
   }
 
-  createWorkspaceFolder(
+  async createWorkspaceFolder(
     folderPath: string,
     expectedVaultId: string,
   ): Promise<VaultDirectoryCreateResult> {
+    assertPublicWorkspaceFolderPath(folderPath);
     return this.createPluginFolder(folderPath, expectedVaultId);
   }
 

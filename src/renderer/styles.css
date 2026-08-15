@@ -8432,6 +8432,19 @@ button.inspector-item:hover {
     grid-template-columns: 205px minmax(0, 1fr) 238px;
   }
 
+  .navigator-heading {
+    gap: 6px;
+    padding: 12px 10px 8px;
+  }
+
+  .navigator-heading-actions {
+    max-width: 130px;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
   .brand small,
   .source-label,
   .statusbar-end {

@@ -315,6 +315,7 @@ async function launchApplication(options = {}) {
     rendererArgs.some((line) => line.includes("--ozone-platform=x11")),
     `Renderer argv did not prove explicit X11 mode: ${JSON.stringify(rendererArgs)}`,
   );
+  await ensureFlatNavigator();
 }
 
 async function closeApplication() {
@@ -397,6 +398,23 @@ async function clickSelector(selector, modifiers = 0, rootSelector = null) {
       y: target.y,
     });
   }
+}
+
+// Live Preview intentionally keeps the flat file-picker fixture. Tree behavior
+// is separately covered by check-navigator-tree, including its isolated UI run.
+async function ensureFlatNavigator() {
+  const mode = await waitFor(async () => {
+    const value = await evaluate('document.querySelector("#file-list")?.dataset.mode ?? null');
+    return value === "tree" || value === "virtual" ? value : null;
+  }, "The navigator did not render before Live Preview checks");
+  if (mode === "tree") await clickSelector("#navigator-view-toggle");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-list")?.dataset.mode')) === "virtual"
+        ? true
+        : null,
+    "The Live Preview fixture could not select the flat navigator",
+  );
 }
 
 async function pressKey(key, code, modifiers = 0) {

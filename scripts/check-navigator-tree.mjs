@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, watch as watchFile } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +13,10 @@ const userDataPath = path.join(testRoot, "user-data");
 const screenshotDirectory = process.env.THREADLEAF_NAVIGATOR_TREE_SCREENSHOT_DIR;
 const processMarker = randomUUID();
 const output = [];
+const outsidePath = path.join(testRoot, "outside");
+const symlinkParentPath = path.join(vaultPath, "Symlink parent");
+const fileParentPath = path.join(vaultPath, "File parent");
+const absoluteBlockedFolderPath = path.join(outsidePath, "Absolute workspace folder");
 let child;
 let exited;
 let cdp;
@@ -21,6 +25,11 @@ let phase = "setup";
 const longActiveName =
   "Active note with an intentionally very long label that must visibly truncate inside the narrow navigator row";
 const activeNotePath = `Projects/Deep/${longActiveName}.md`;
+const deepRevealSegments = Array.from(
+  { length: 128 },
+  (_, index) => `Deep reveal ${String(index).padStart(3, "0")}`,
+);
+const deepRevealActivePath = `${deepRevealSegments.join("/")}/Target.md`;
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -455,13 +464,31 @@ async function waitForReady() {
 }
 
 async function waitForTreePath(treePath) {
-  return waitFor(
-    async () =>
-      (await evaluate(
-        `(() => { const item = document.querySelector(${JSON.stringify(treeSelector(treePath))}); return item instanceof HTMLElement ? { expanded: item.getAttribute("aria-expanded"), current: item.getAttribute("aria-current"), selected: item.getAttribute("aria-selected") } : null; })()`,
-      )) ?? null,
-    `The tree did not render ${treePath}`,
-  );
+  try {
+    return await waitFor(
+      async () =>
+        (await evaluate(
+          `(() => { const item = document.querySelector(${JSON.stringify(treeSelector(treePath))}); return item instanceof HTMLElement ? { expanded: item.getAttribute("aria-expanded"), current: item.getAttribute("aria-current"), selected: item.getAttribute("aria-selected") } : null; })()`,
+        )) ?? null,
+      `The tree did not render ${treePath}`,
+    );
+  } catch (error) {
+    const observed = await evaluate(`(() => {
+      const list = document.querySelector("#file-list");
+      if (!(list instanceof HTMLElement)) return null;
+      return {
+        busy: list.getAttribute("aria-busy"),
+        scrollTop: list.scrollTop,
+        scrollHeight: list.scrollHeight,
+        clientHeight: list.clientHeight,
+        rows: [...list.querySelectorAll(".navigator-tree-row")].map((row) => row.getAttribute("data-tree-path")),
+      };
+    })()`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}. Observed virtual tree: ${JSON.stringify(observed)}`,
+      { cause: error },
+    );
+  }
 }
 
 async function waitForFocusedTreePath(treePath) {
@@ -491,6 +518,9 @@ async function waitForFocusedTreePath(treePath) {
 async function writeFixtureVault() {
   await fs.mkdir(path.join(vaultPath, "Projects", "Deep"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, "Library"), { recursive: true });
+  await fs.mkdir(path.join(vaultPath, ...deepRevealSegments), { recursive: true });
+  await fs.mkdir(outsidePath, { recursive: true });
+  await fs.symlink(outsidePath, symlinkParentPath, "dir");
   await Promise.all([
     fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome\n", "utf8"),
     fs.writeFile(
@@ -503,6 +533,8 @@ async function writeFixtureVault() {
     ),
     fs.writeFile(path.join(vaultPath, "Projects", "Reference.md"), "# Reference\n", "utf8"),
     fs.writeFile(path.join(vaultPath, activeNotePath), "# Active deep note\n", "utf8"),
+    fs.writeFile(path.join(vaultPath, deepRevealActivePath), "# Deep reveal target\n", "utf8"),
+    fs.writeFile(fileParentPath, "not a folder\n", "utf8"),
   ]);
   const children = Array.from({ length: 1_001 }, (_, index) => {
     const name = `Child-${String(index).padStart(4, "0")}.md`;
@@ -630,6 +662,20 @@ try {
       ),
     "New folder did not prefill its guarded folder dialog",
   );
+  await fillInput("#new-folder-path", "Projects/.navigator-hidden");
+  await clickSelector("#new-folder-create");
+  const hiddenFolderUi = await waitFor(async () => {
+    const state = await evaluate(`(() => ({
+      open: document.querySelector("#new-folder-dialog")?.open === true,
+      error: document.querySelector("#new-folder-error")?.textContent ?? "",
+      toast: document.querySelector("#toast")?.textContent ?? "",
+    }))()`);
+    return state.open && state.error.includes("hidden") ? state : null;
+  }, "The folder dialog did not surface the hidden-path rejection");
+  assert(
+    !hiddenFolderUi.toast.includes("Created Projects/.navigator-hidden"),
+    `A rejected hidden folder announced a success toast: ${JSON.stringify(hiddenFolderUi)}`,
+  );
   await fillInput("#new-folder-path", "Projects/Created from navigator");
   await clickSelector("#new-folder-create");
   await waitFor(
@@ -644,6 +690,81 @@ try {
     async () =>
       await evaluate('document.querySelector("#new-folder-dialog")?.open === false ? true : null'),
     "The committed folder dialog did not close",
+  );
+
+  phase = "workspace folder containment rejections";
+  const rejectedFolderPaths = [
+    ".navigator-hidden",
+    "Projects/.navigator-hidden",
+    "..",
+    absoluteBlockedFolderPath,
+    ".obsidian/Workspace blocked",
+    ".git/Workspace blocked",
+    ".trash/Workspace blocked",
+    ".threadleaf-private/Workspace blocked",
+    "Symlink parent/Workspace blocked",
+    "File parent/Workspace blocked",
+  ];
+  const folderCreateResponses = await evaluate(`(async () => {
+    const snapshot = await window.threadleaf.getSnapshot();
+    const paths = ${JSON.stringify(rejectedFolderPaths)};
+    const results = [];
+    for (const folderPath of paths) {
+      try {
+        const response = await window.threadleaf.createWorkspaceFolder(folderPath, snapshot.vault.id);
+        results.push({ folderPath, status: "resolved", response });
+      } catch (error) {
+        results.push({
+          folderPath,
+          status: "rejected",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    try {
+      const response = await window.threadleaf.createWorkspaceFolder(
+        "Stale identity folder",
+        String(snapshot.vault.id) + "-stale",
+      );
+      results.push({ folderPath: "<stale identity>", status: "resolved", response });
+    } catch (error) {
+      results.push({
+        folderPath: "<stale identity>",
+        status: "rejected",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return results;
+  })()`);
+  assert(
+    folderCreateResponses.every((response) => response.status === "rejected"),
+    `Workspace folder containment allowed a rejected case: ${JSON.stringify(folderCreateResponses)}`,
+  );
+  const rejectedWritePaths = [
+    path.join(vaultPath, ".navigator-hidden"),
+    path.join(vaultPath, "Projects", ".navigator-hidden"),
+    absoluteBlockedFolderPath,
+    path.join(vaultPath, ".obsidian", "Workspace blocked"),
+    path.join(vaultPath, ".git", "Workspace blocked"),
+    path.join(vaultPath, ".trash", "Workspace blocked"),
+    path.join(vaultPath, ".threadleaf-private", "Workspace blocked"),
+    path.join(outsidePath, "Workspace blocked"),
+    path.join(vaultPath, "Stale identity folder"),
+  ];
+  for (const rejectedPath of rejectedWritePaths) {
+    const exists = await fs
+      .access(rejectedPath)
+      .then(() => true)
+      .catch(() => false);
+    assert(!exists, `A rejected workspace folder was created: ${rejectedPath}`);
+  }
+  assert(
+    (await fs.lstat(symlinkParentPath)).isSymbolicLink(),
+    "The rejected symlink-parent folder attempt changed its parent.",
+  );
+  assert(
+    (await fs.stat(fileParentPath)).isFile(),
+    "The rejected file-parent folder attempt changed its parent.",
   );
 
   phase = "reveal active note and truncated active row";
@@ -769,6 +890,75 @@ try {
   await clickSelector("#reveal-active-note");
   await waitForTreePath("Projects");
 
+  phase = "batched 128-level active reveal";
+  await fillInput("#file-search", "Target");
+  await waitFor(
+    async () =>
+      (await evaluate(
+        `Boolean(document.querySelector(${JSON.stringify(`[data-note-path=${JSON.stringify(deepRevealActivePath)}]`)}))`,
+      ))
+        ? true
+        : null,
+    "The deep reveal target did not appear in flat search",
+  );
+  await clickSelector(`[data-note-path=${JSON.stringify(deepRevealActivePath)}]`);
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#note-path")?.textContent ?? ""')) ===
+      deepRevealActivePath
+        ? true
+        : null,
+    "The deep reveal target did not open from flat search",
+  );
+  await fillInput("#file-search", "");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-list")?.dataset.mode')) === "tree"
+        ? true
+        : null,
+    "Clearing search did not restore the folder tree before deep reveal",
+  );
+  const deepCanonicalVaultPath = await fs.realpath(vaultPath);
+  const deepVaultId = createHash("sha256").update(deepCanonicalVaultPath).digest("hex");
+  const deepLayoutPath = path.join(userDataPath, "workspace-layouts", `${deepVaultId}.json`);
+  await fs.access(deepLayoutPath);
+  await delay(100);
+  const deepLayoutEvents = [];
+  const deepLayoutWatcher = watchFile(
+    path.dirname(deepLayoutPath),
+    { persistent: false },
+    (event, name) => {
+      if (String(name) === path.basename(deepLayoutPath)) deepLayoutEvents.push(event);
+    },
+  );
+  const deepRevealStarted = Date.now();
+  let deepReveal;
+  try {
+    await clickSelector("#reveal-active-note");
+    deepReveal = await waitFor(
+      async () => {
+        const item = await evaluate(`(() => {
+        const row = document.querySelector(${JSON.stringify(treeSelector(deepRevealActivePath))});
+        return row instanceof HTMLElement ? { current: row.getAttribute("aria-current") } : null;
+      })()`);
+        return item?.current === "page" ? { elapsedMs: Date.now() - deepRevealStarted } : null;
+      },
+      "The deep active note did not reveal through its complete ancestor chain",
+      3_000,
+    );
+    await delay(200);
+  } finally {
+    deepLayoutWatcher.close();
+  }
+  assert(
+    deepReveal.elapsedMs < 1_000,
+    `The 128-level active reveal exceeded its latency ceiling: ${JSON.stringify(deepReveal)}`,
+  );
+  assert(
+    deepLayoutEvents.length === 1,
+    `The deep active reveal wrote the workspace layout ${deepLayoutEvents.length} times: ${JSON.stringify(deepLayoutEvents)}`,
+  );
+
   phase = "per-workspace persistence";
   const canonicalVaultPath = await fs.realpath(vaultPath);
   const vaultId = createHash("sha256").update(canonicalVaultPath).digest("hex");
@@ -783,7 +973,8 @@ try {
   assert(
     persisted.version === 2 &&
       persisted.navigator?.expandedFolderPaths?.includes("Projects") &&
-      persisted.navigator?.expandedFolderPaths?.includes("Library"),
+      persisted.navigator?.expandedFolderPaths?.includes("Library") &&
+      persisted.navigator?.expandedFolderPaths?.includes(deepRevealSegments.join("/")),
     `The versioned workspace layout did not persist expanded folders: ${JSON.stringify(persisted)}`,
   );
   await closeApplication();
@@ -797,14 +988,32 @@ try {
       ),
     "The persisted navigator did not restore in tree mode",
   );
+  const restoredRevealRoot = await waitForTreePath(deepRevealSegments[0]);
+  assert(
+    restoredRevealRoot.expanded === "true",
+    `The persisted deep reveal root did not restore expanded: ${JSON.stringify(restoredRevealRoot)}`,
+  );
+  await clickSelector(treeSelector(deepRevealSegments[0]));
+  await waitFor(async () => {
+    const item = await waitForTreePath(deepRevealSegments[0]);
+    return item.expanded === "false" ? item : null;
+  }, "The restored deep reveal root did not collapse");
+  const restoredLibrary = await waitForTreePath("Library");
+  assert(
+    restoredLibrary.expanded === "true",
+    `The persisted Library folder did not restore expanded: ${JSON.stringify(restoredLibrary)}`,
+  );
   await waitForTreePath("Library/Child-0000.md");
-  await evaluate(`(() => {
-    const list = document.querySelector("#file-list");
-    if (!(list instanceof HTMLElement)) return false;
-    list.scrollTop = 1_001 * 40;
-    list.dispatchEvent(new Event("scroll"));
-    return true;
-  })()`);
+  await clickSelector(treeSelector("Library"));
+  await waitFor(async () => {
+    const item = await waitForTreePath("Library");
+    return item.expanded === "false" ? item : null;
+  }, "The restored Library folder did not collapse");
+  const restoredProjects = await waitForTreePath("Projects");
+  assert(
+    restoredProjects.expanded === "true",
+    `The persisted Projects folder did not restore expanded: ${JSON.stringify(restoredProjects)}`,
+  );
   const restoredDeep = await waitForTreePath("Projects/Deep");
   assert(
     restoredDeep.expanded === "true",
@@ -812,8 +1021,12 @@ try {
   );
   await closeApplication();
 
+  console.log(`NAVIGATOR_TREE_LIVE_MOUNTED_ROWS=${libraryVisual.rows}`);
   console.log(
-    "Verified isolated X11 navigator tree: initial collapse, ARIA hierarchy, keyboard traversal, reveal, context creation, per-vault layout persistence, flat search/list fallback, dark/light screenshots, truncation, active highlight, and 1,001-child virtualization.",
+    `NAVIGATOR_TREE_DEEP_REVEAL elapsed_ms=${deepReveal.elapsedMs} layout_writes=${deepLayoutEvents.length}`,
+  );
+  console.log(
+    "Verified isolated X11 navigator tree: initial collapse, ARIA hierarchy, keyboard traversal, guarded folder rejections, batched deep reveal, context creation, per-vault layout persistence, flat search/list fallback, dark/light screenshots, truncation, active highlight, and 1,001-child virtualization.",
   );
   if (screenshotDirectory) {
     console.log(`NAVIGATOR_TREE_SCREENSHOTS=${screenshotDirectory}`);
