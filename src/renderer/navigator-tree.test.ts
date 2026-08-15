@@ -7,8 +7,9 @@ import {
   claimNavigatorTreePageRequests,
   completeNavigatorTreePageRequest,
   createNavigatorTreeState,
-  maximumNavigatorTreeRetainedEntries,
-  maximumNavigatorTreeRetainedPages,
+  maximumNavigatorTreeLruPages,
+  type NavigatorTreeState,
+  navigatorTreePageRequestsForRange,
   navigatorTreeRetentionCounts,
   retainNavigatorTreePages,
 } from "./navigator-tree";
@@ -31,6 +32,18 @@ function note(path: string): WorkspaceTreeEntry {
 
 function page(parentPath: string | null, total: number, offset = 0): WorkspaceTreePageDescriptor {
   return { generation: "tree:1", parentPath, offset, limit: 256, total, complete: false };
+}
+
+function expectHonestRetentionBound(state: NavigatorTreeState, pageSize = 256) {
+  const counts = navigatorTreeRetentionCounts(state);
+  expect(counts.parentDescriptors).toBe(state.pages.size);
+  expect(counts.parentDescriptors).toBeLessThanOrEqual(counts.pages);
+  expect(counts.lruPages).toBeLessThanOrEqual(maximumNavigatorTreeLruPages);
+  expect(counts.pages).toBeLessThanOrEqual(counts.mandatoryPages + maximumNavigatorTreeLruPages);
+  expect(counts.entries).toBeLessThanOrEqual(
+    (counts.mandatoryPages + maximumNavigatorTreeLruPages) * pageSize,
+  );
+  return counts;
 }
 
 describe("navigator tree projection", () => {
@@ -123,11 +136,9 @@ describe("navigator tree projection", () => {
         entries,
       );
       completeNavigatorTreePageRequest(state, request.parentPath, request.offset);
-      const counts = navigatorTreeRetentionCounts(state);
+      const counts = expectHonestRetentionBound(state, limit);
       maximumPages = Math.max(maximumPages, counts.pages);
       maximumEntries = Math.max(maximumEntries, counts.entries);
-      expect(counts.pages).toBeLessThanOrEqual(maximumNavigatorTreeRetainedPages);
-      expect(counts.entries).toBeLessThanOrEqual(maximumNavigatorTreeRetainedEntries);
     };
 
     for (let offset = 0; offset < total; offset += limit) {
@@ -135,10 +146,10 @@ describe("navigator tree projection", () => {
     }
 
     const afterTraversal = buildNavigatorTreeProjection(state, new Set());
-    expect(maximumPages).toBe(maximumNavigatorTreeRetainedPages);
-    expect(maximumEntries).toBeLessThanOrEqual(maximumNavigatorTreeRetainedEntries);
+    expect(maximumPages).toBeLessThanOrEqual(maximumNavigatorTreeLruPages + 1);
+    expect(maximumEntries).toBeLessThanOrEqual((maximumNavigatorTreeLruPages + 1) * limit);
     expect(afterTraversal.segmentCount).toBeLessThanOrEqual(
-      maximumNavigatorTreeRetainedPages * limit + 1,
+      (maximumNavigatorTreeLruPages + 1) * limit + 1,
     );
     expect(afterTraversal.rowAt(0)).toMatchObject({ kind: "placeholder", offset: 0 });
 
@@ -150,7 +161,11 @@ describe("navigator tree projection", () => {
       entry: { path: "Root 000000.md" },
     });
 
-    for (let offset = limit; offset <= maximumNavigatorTreeRetainedPages * limit; offset += limit) {
+    for (
+      let offset = limit;
+      offset <= (maximumNavigatorTreeLruPages + 1) * limit;
+      offset += limit
+    ) {
       load(offset);
     }
     const beforeEnd = buildNavigatorTreeProjection(state, new Set());
@@ -182,7 +197,7 @@ describe("navigator tree projection", () => {
     });
   });
 
-  it("keeps the active reveal chain as compact pinned rows after its full pages are evicted", () => {
+  it("keeps the active reveal chain addressable while unrelated pages follow the LRU", () => {
     const state = createNavigatorTreeState("vault", "tree:1");
     const total = 20 * 256;
     const limit = 256;
@@ -219,14 +234,82 @@ describe("navigator tree projection", () => {
 
     const projection = buildNavigatorTreeProjection(state, new Set(["Projects", "Projects/Deep"]));
     expect(projection.indexOfPath("Projects/Deep/Active.md")).toBe(2);
-    expect(navigatorTreeRetentionCounts(state).pages).toBeLessThanOrEqual(
-      maximumNavigatorTreeRetainedPages,
+    const counts = expectHonestRetentionBound(state, limit);
+    expect(counts.mandatoryPages).toBe(3);
+    expect(claimNavigatorTreePageRequests(state, projection, 0, 1)).toEqual([]);
+  });
+
+  it("releases parent descriptors during 20K unique-parent churn", () => {
+    const state = createNavigatorTreeState("vault", "tree:1");
+
+    for (let index = 0; index < 20_000; index += 1) {
+      const parentPath = `Parent ${String(index).padStart(5, "0")}`;
+      const request = { parentPath, offset: 0, limit: 256 };
+      retainNavigatorTreePages(state, [request]);
+      applyNavigatorTreePage(state, page(parentPath, 1), [note(`${parentPath}/Child.md`)]);
+      completeNavigatorTreePageRequest(state, parentPath, 0);
+    }
+
+    const counts = expectHonestRetentionBound(state);
+    expect(counts.parentDescriptors).toBeLessThanOrEqual(maximumNavigatorTreeLruPages + 1);
+  });
+
+  it("keeps a 37-row multi-parent viewport and its active reveal chain within the honest bound", () => {
+    const state = createNavigatorTreeState("vault", "tree:1");
+    const limit = 256;
+    const chain = Array.from(
+      { length: 40 },
+      (_, index) => `Depth ${String(index).padStart(2, "0")}`,
     );
-    expect(navigatorTreeRetentionCounts(state).entries).toBeLessThanOrEqual(
-      maximumNavigatorTreeRetainedEntries,
-    );
-    expect(claimNavigatorTreePageRequests(state, projection, 0, 1)).toEqual([
-      { parentPath: null, offset: 0, limit },
+    const entriesByParent = new Map<string | null, WorkspaceTreeEntry[]>();
+    let parentPath: string | null = null;
+    for (const [level, segment] of chain.entries()) {
+      const folderPath: string = parentPath ? `${parentPath}/${segment}` : segment;
+      entriesByParent.set(parentPath, [
+        folder(folderPath, limit),
+        ...Array.from({ length: limit - 1 }, (_, sibling) =>
+          note(`${parentPath ? `${parentPath}/` : ""}Sibling ${level}-${sibling}.md`),
+        ),
+      ]);
+      parentPath = folderPath;
+    }
+    const activePath = `${parentPath}/Active.md`;
+    entriesByParent.set(parentPath, [
+      note(activePath),
+      ...Array.from({ length: limit - 1 }, (_, sibling) =>
+        note(`${parentPath}/Sibling active-${sibling}.md`),
+      ),
     ]);
+    const revealLocations = [...entriesByParent.keys()].map((parent) => ({
+      parentPath: parent,
+      offset: 0,
+    }));
+
+    retainNavigatorTreePages(state, [], revealLocations);
+    for (const [parent, entries] of entriesByParent) {
+      const request = { parentPath: parent, offset: 0, limit };
+      expect(claimNavigatorTreePageRequest(state, request)).toBe(true);
+      applyNavigatorTreePage(state, page(parent, entries.length), entries);
+      completeNavigatorTreePageRequest(state, parent, 0);
+    }
+
+    const expandedPaths = new Set(chain.map((_, index) => chain.slice(0, index + 1).join("/")));
+    const projection = buildNavigatorTreeProjection(state, expandedPaths);
+    const viewportRequests = navigatorTreePageRequestsForRange(state, projection, 0, 37);
+    expect(viewportRequests).toHaveLength(37);
+    retainNavigatorTreePages(state, viewportRequests, revealLocations);
+    for (const request of viewportRequests) {
+      const entries = entriesByParent.get(request.parentPath);
+      expect(entries).toBeDefined();
+      applyNavigatorTreePage(state, page(request.parentPath, entries?.length ?? 0), entries ?? []);
+      completeNavigatorTreePageRequest(state, request.parentPath, request.offset);
+    }
+
+    const counts = expectHonestRetentionBound(state, limit);
+    expect(counts.mandatoryPages).toBe(revealLocations.length);
+    for (let index = 0; index < 37; index += 1) {
+      expect(projection.rowAt(index)).toMatchObject({ kind: "entry" });
+    }
+    expect(projection.indexOfPath(activePath)).toBe(40);
   });
 });

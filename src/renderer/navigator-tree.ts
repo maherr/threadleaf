@@ -5,12 +5,10 @@ import {
 } from "../shared/contracts";
 
 /**
- * The tree holds complete pages only for the current interaction working set.
- * Active reveal chains retain their individual rows separately, so a deep path
- * remains addressable without keeping every sibling page it crosses.
+ * The cache keeps every page needed by the current viewport, focus, or active
+ * reveal chain. Outside that mandatory set, it retains only a small LRU.
  */
-export const maximumNavigatorTreeRetainedPages = 16;
-export const maximumNavigatorTreeRetainedEntries = 8_192;
+export const maximumNavigatorTreeLruPages = 8;
 
 export interface NavigatorTreeChildrenState {
   descriptor: WorkspaceTreePageDescriptor;
@@ -24,7 +22,6 @@ export interface NavigatorTreeState {
   pendingRequests: Set<string>;
   cachedPages: Map<string, NavigatorTreeCachedPage>;
   retainedPageKeys: Set<string>;
-  retainedEntryKeys: Set<string>;
 }
 
 export interface NavigatorTreePageRequest {
@@ -42,6 +39,9 @@ export interface NavigatorTreeEntryLocation {
 export interface NavigatorTreeRetentionCounts {
   pages: number;
   entries: number;
+  parentDescriptors: number;
+  mandatoryPages: number;
+  lruPages: number;
 }
 
 interface NavigatorTreeCachedPage {
@@ -129,25 +129,42 @@ function retainedEntryCount(state: NavigatorTreeState): number {
   return total;
 }
 
+function cachedMandatoryPageCount(state: NavigatorTreeState): number {
+  let total = 0;
+  for (const key of state.cachedPages.keys()) {
+    if (state.retainedPageKeys.has(key)) total += 1;
+  }
+  return total;
+}
+
+function cachedLruPageCount(state: NavigatorTreeState): number {
+  return state.cachedPages.size - cachedMandatoryPageCount(state);
+}
+
+function hasCachedPageForParent(state: NavigatorTreeState, parentPath: string | null): boolean {
+  for (const cached of state.cachedPages.values()) {
+    if (cached.parentPath === parentPath) return true;
+  }
+  return false;
+}
+
 function discardCachedPage(state: NavigatorTreeState, key: string): void {
   const cached = state.cachedPages.get(key);
   if (!cached) return;
   const children = state.pages.get(cached.parentPath);
   if (children) {
     for (const offset of cached.entryOffsets) {
-      if (!state.retainedEntryKeys.has(requestKey(cached.parentPath, offset))) {
-        children.entries.delete(offset);
-      }
+      children.entries.delete(offset);
     }
   }
   state.cachedPages.delete(key);
+  if (!hasCachedPageForParent(state, cached.parentPath)) {
+    state.pages.delete(cached.parentPath);
+  }
 }
 
 function trimNavigatorTreeCache(state: NavigatorTreeState): void {
-  while (
-    state.cachedPages.size > maximumNavigatorTreeRetainedPages ||
-    retainedEntryCount(state) > maximumNavigatorTreeRetainedEntries
-  ) {
+  while (cachedLruPageCount(state) > maximumNavigatorTreeLruPages) {
     const evictedKey = [...state.cachedPages.keys()].find(
       (key) => !state.retainedPageKeys.has(key),
     );
@@ -192,7 +209,6 @@ export function createNavigatorTreeState(vaultId: string, generation: string): N
     pendingRequests: new Set<string>(),
     cachedPages: new Map<string, NavigatorTreeCachedPage>(),
     retainedPageKeys: new Set<string>(),
-    retainedEntryKeys: new Set<string>(),
   };
 }
 
@@ -258,17 +274,29 @@ export function retainNavigatorTreePages(
     pageKeys.add(key);
     touchCachedPage(state, key);
   }
+  for (const location of entryLocations) {
+    const limit =
+      state.pages.get(location.parentPath)?.descriptor.limit ?? maximumWorkspaceFilePageSize;
+    const offset = Math.floor(location.offset / limit) * limit;
+    const key = requestKey(location.parentPath, offset);
+    pageKeys.add(key);
+    touchCachedPage(state, key);
+  }
   state.retainedPageKeys = pageKeys;
-  state.retainedEntryKeys = new Set(
-    entryLocations.map((location) => requestKey(location.parentPath, location.offset)),
-  );
   trimNavigatorTreeCache(state);
 }
 
 export function navigatorTreeRetentionCounts(
   state: NavigatorTreeState,
 ): NavigatorTreeRetentionCounts {
-  return { pages: state.cachedPages.size, entries: retainedEntryCount(state) };
+  const mandatoryPages = cachedMandatoryPageCount(state);
+  return {
+    pages: state.cachedPages.size,
+    entries: retainedEntryCount(state),
+    parentDescriptors: state.pages.size,
+    mandatoryPages,
+    lruPages: state.cachedPages.size - mandatoryPages,
+  };
 }
 
 export function completeNavigatorTreePageRequest(

@@ -6,10 +6,10 @@ import {
   claimNavigatorTreePageRequests,
   completeNavigatorTreePageRequest,
   createNavigatorTreeState,
-  maximumNavigatorTreeRetainedEntries,
-  maximumNavigatorTreeRetainedPages,
+  maximumNavigatorTreeLruPages,
   type NavigatorTreePageRequest,
   type NavigatorTreeState,
+  navigatorTreePageRequestsForRange,
   navigatorTreeRetentionCounts,
   retainNavigatorTreePages,
 } from "../src/renderer/navigator-tree";
@@ -39,6 +39,22 @@ function syntheticNote(path: string, title: string): WorkspaceFileSummary {
     outgoingCount: 0,
     unresolvedCount: 0,
   };
+}
+
+function syntheticTreeNote(path: string): WorkspaceTreeEntry {
+  return {
+    kind: "note",
+    path,
+    title: path.slice(path.lastIndexOf("/") + 1, -3),
+    tags: [],
+    backlinkCount: 0,
+    outgoingCount: 0,
+    unresolvedCount: 0,
+  };
+}
+
+function syntheticTreeFolder(path: string, childCount: number): WorkspaceTreeEntry {
+  return { kind: "folder", path, title: path.slice(path.lastIndexOf("/") + 1), childCount };
 }
 
 function createCorpus(): WorkspaceFileSummary[] {
@@ -110,17 +126,133 @@ function applyPage(
   return page;
 }
 
-function assertRetentionCeiling(state: NavigatorTreeState): { pages: number; entries: number } {
+function assertHonestRetentionBound(
+  state: NavigatorTreeState,
+): ReturnType<typeof navigatorTreeRetentionCounts> {
   const counts = navigatorTreeRetentionCounts(state);
   assert(
-    counts.pages <= maximumNavigatorTreeRetainedPages,
-    `Retained ${counts.pages} pages, above the ${maximumNavigatorTreeRetainedPages}-page ceiling.`,
+    counts.parentDescriptors <= counts.pages,
+    `Retained ${counts.parentDescriptors} parent descriptors for ${counts.pages} cached pages.`,
   );
   assert(
-    counts.entries <= maximumNavigatorTreeRetainedEntries,
-    `Retained ${counts.entries} entries, above the ${maximumNavigatorTreeRetainedEntries}-entry ceiling.`,
+    counts.lruPages <= maximumNavigatorTreeLruPages,
+    `Retained ${counts.lruPages} LRU pages, above the ${maximumNavigatorTreeLruPages}-page allowance.`,
+  );
+  assert(
+    counts.pages <= counts.mandatoryPages + maximumNavigatorTreeLruPages,
+    `Retained ${counts.pages} pages beyond ${counts.mandatoryPages} mandatory pages and the ${maximumNavigatorTreeLruPages}-page LRU allowance.`,
+  );
+  assert(
+    counts.entries <= (counts.mandatoryPages + maximumNavigatorTreeLruPages) * pageLimit,
+    `Retained ${counts.entries} entries beyond the mandatory-page plus LRU bound.`,
   );
   return counts;
+}
+
+function hasHonestRetentionBound(counts: ReturnType<typeof navigatorTreeRetentionCounts>): boolean {
+  return (
+    counts.parentDescriptors <= counts.pages &&
+    counts.lruPages <= maximumNavigatorTreeLruPages &&
+    counts.pages <= counts.mandatoryPages + maximumNavigatorTreeLruPages &&
+    counts.entries <= (counts.mandatoryPages + maximumNavigatorTreeLruPages) * pageLimit
+  );
+}
+
+function runUniqueParentChurn(): {
+  parentsVisited: number;
+  retained: ReturnType<typeof navigatorTreeRetentionCounts>;
+  bounded: boolean;
+} {
+  const state = createNavigatorTreeState("synthetic-parent-churn", "generation-1");
+  const parentsVisited = 20_000;
+  for (let index = 0; index < parentsVisited; index += 1) {
+    const parentPath = `Parent ${String(index).padStart(5, "0")}`;
+    const request = requestFor(parentPath, 0);
+    retainNavigatorTreePages(state, [request]);
+    applyPage(state, request, [syntheticTreeNote(`${parentPath}/Child.md`)]);
+  }
+  const retained = navigatorTreeRetentionCounts(state);
+  return { parentsVisited, retained, bounded: hasHonestRetentionBound(retained) };
+}
+
+function runMultiParentDeepViewport(): {
+  depth: number;
+  viewportRows: number;
+  distinctViewportPages: number;
+  activeRevealTargetIndex: number | null;
+  activeRevealPagesMandatory: boolean;
+  currentViewportIntact: boolean;
+  retained: ReturnType<typeof navigatorTreeRetentionCounts>;
+  bounded: boolean;
+} {
+  const state = createNavigatorTreeState("synthetic-deep-viewport", "generation-1");
+  const depth = 40;
+  const viewportRows = 37;
+  const chain = Array.from(
+    { length: depth },
+    (_, index) => `Depth ${String(index).padStart(2, "0")}`,
+  );
+  const entriesByParent = new Map<string | null, WorkspaceTreeEntry[]>();
+  let parentPath: string | null = null;
+  for (const [level, segment] of chain.entries()) {
+    const folderPath: string = parentPath ? `${parentPath}/${segment}` : segment;
+    entriesByParent.set(parentPath, [
+      syntheticTreeFolder(folderPath, pageLimit),
+      ...Array.from({ length: pageLimit - 1 }, (_, sibling) =>
+        syntheticTreeNote(`${parentPath ? `${parentPath}/` : ""}Sibling ${level}-${sibling}.md`),
+      ),
+    ]);
+    parentPath = folderPath;
+  }
+  const activePath = `${parentPath}/Active.md`;
+  entriesByParent.set(parentPath, [
+    syntheticTreeNote(activePath),
+    ...Array.from({ length: pageLimit - 1 }, (_, sibling) =>
+      syntheticTreeNote(`${parentPath}/Sibling active-${sibling}.md`),
+    ),
+  ]);
+  const revealLocations = [...entriesByParent.keys()].map((parent) => ({
+    parentPath: parent,
+    offset: 0,
+  }));
+
+  retainNavigatorTreePages(state, [], revealLocations);
+  for (const [parent, entries] of entriesByParent) {
+    const request = requestFor(parent, 0);
+    assert(
+      claimNavigatorTreePageRequest(state, request),
+      `Deep viewport did not claim ${JSON.stringify(request)}.`,
+    );
+    applyPage(state, request, entries);
+  }
+  const expandedPaths = new Set(chain.map((_, index) => chain.slice(0, index + 1).join("/")));
+  const projection = buildNavigatorTreeProjection(state, expandedPaths);
+  const viewportRequests = navigatorTreePageRequestsForRange(state, projection, 0, viewportRows);
+  assert(
+    viewportRequests.length === viewportRows,
+    `Expected ${viewportRows} distinct viewport pages, got ${viewportRequests.length}.`,
+  );
+  retainNavigatorTreePages(state, viewportRequests, revealLocations);
+  for (const request of viewportRequests) {
+    const entries = entriesByParent.get(request.parentPath);
+    assert(entries, `Missing synthetic source for ${request.parentPath ?? "<root>"}.`);
+    applyPage(state, request, entries);
+  }
+  const retained = navigatorTreeRetentionCounts(state);
+  const currentViewportIntact = Array.from(
+    { length: viewportRows },
+    (_, index) => projection.rowAt(index)?.kind === "entry",
+  ).every(Boolean);
+  return {
+    depth,
+    viewportRows,
+    distinctViewportPages: viewportRequests.length,
+    activeRevealTargetIndex: projection.indexOfPath(activePath),
+    activeRevealPagesMandatory: retained.mandatoryPages === revealLocations.length,
+    currentViewportIntact,
+    retained,
+    bounded: hasHonestRetentionBound(retained),
+  };
 }
 
 const started = performance.now();
@@ -205,7 +337,7 @@ function loadRootTraversalPage(offset: number, alreadyClaimed = false): void {
   retainNavigatorTreePages(traversalState, [request]);
   applyPage(traversalState, request, rootEntries);
   pagesApplied += 1;
-  const counts = assertRetentionCeiling(traversalState);
+  const counts = assertHonestRetentionBound(traversalState);
   traversalMaximumPages = Math.max(traversalMaximumPages, counts.pages);
   traversalMaximumEntries = Math.max(traversalMaximumEntries, counts.entries);
   traversalMaximumSegments = Math.max(
@@ -228,7 +360,7 @@ loadRootTraversalPage(0, true);
 
 for (
   let offset = pageLimit;
-  offset <= maximumNavigatorTreeRetainedPages * pageLimit;
+  offset <= (maximumNavigatorTreeLruPages + 1) * pageLimit;
   offset += pageLimit
 ) {
   loadRootTraversalPage(offset);
@@ -298,7 +430,7 @@ for (const location of deepLocation.pages) {
   deepResponseBytes += encodedBytes;
   deepestResponseBytes = Math.max(deepestResponseBytes, encodedBytes);
   applyPage(deepState, request, entries);
-  assertRetentionCeiling(deepState);
+  assertHonestRetentionBound(deepState);
 }
 const deepRevealApplyMs = performance.now() - deepStarted;
 const deepExpandedPaths = new Set(
@@ -309,6 +441,9 @@ assert(
   deepProjection.indexOfPath(deepActivePath) === deepSegments.length,
   "The pinned deep active path was not reconstructable after cache eviction.",
 );
+
+const uniqueParentChurn = runUniqueParentChurn();
+const multiParentDeepViewport = runMultiParentDeepViewport();
 
 const memory = process.memoryUsage();
 process.stdout.write(
@@ -353,10 +488,35 @@ process.stdout.write(
         retained: navigatorTreeRetentionCounts(deepState),
         activeIndex: deepProjection.indexOfPath(deepActivePath),
       },
+      cacheAdversarial: {
+        uniqueParentChurn,
+        multiParentDeepViewport,
+      },
       rssMiB: megabytes(memory.rss),
       heapUsedMiB: megabytes(memory.heapUsed),
     },
     null,
     2,
   )}\n`,
+);
+
+assert(
+  uniqueParentChurn.bounded,
+  `Unique-parent churn exceeded the cache bound: ${JSON.stringify(uniqueParentChurn)}.`,
+);
+assert(
+  multiParentDeepViewport.currentViewportIntact,
+  `The current multi-parent viewport was not materialized: ${JSON.stringify(multiParentDeepViewport)}.`,
+);
+assert(
+  multiParentDeepViewport.activeRevealTargetIndex === multiParentDeepViewport.depth,
+  `The active reveal target was not addressable: ${JSON.stringify(multiParentDeepViewport)}.`,
+);
+assert(
+  multiParentDeepViewport.activeRevealPagesMandatory,
+  `The active reveal pages were not mandatory: ${JSON.stringify(multiParentDeepViewport)}.`,
+);
+assert(
+  multiParentDeepViewport.bounded,
+  `The multi-parent viewport exceeded the cache bound: ${JSON.stringify(multiParentDeepViewport)}.`,
 );
