@@ -33,10 +33,13 @@ import type {
   VaultSearchResponse,
   VaultSelectionSource,
   VaultTrashResponse,
+  WorkspaceFilePageRequest,
+  WorkspaceFilePageResponse,
   WorkspacePaneId,
   WorkspaceSplitDirection,
 } from "../shared/contracts";
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
+import type { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import type { RenderedNoteTemplate } from "./note-template";
 import { WorkspaceRuntime, type WorkspaceRuntimeOptions } from "./workspace-runtime";
@@ -63,6 +66,7 @@ export interface WorkspaceRuntimePort {
   readonly vaultId: string;
   readonly vaultPath: string;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse>;
   loadVaultImage(
@@ -274,6 +278,7 @@ export interface WorkspaceControllerOptions {
   workspaceStateStore?: WorkspaceStateStore;
   beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>;
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings;
+  diagnostics?: WorkspaceOpenDiagnostics;
 }
 
 type SnapshotListener = (snapshot: RuntimeSnapshot) => void;
@@ -303,6 +308,7 @@ function runtimeOptions(
   pluginRuntimeFactory?: PluginRuntimeFactory,
   workspaceSettingsForVault?: (vaultId: string) => VaultWorkspaceSettings,
   beforeWorkspaceStateRestore?: (vaultId: string) => Promise<void>,
+  diagnostics?: WorkspaceOpenDiagnostics,
 ): WorkspaceRuntimeOptions {
   return {
     vaultRoot,
@@ -315,6 +321,8 @@ function runtimeOptions(
     ...(pluginRuntimeFactory ? { pluginRuntimeFactory } : {}),
     ...(workspaceSettingsForVault ? { workspaceSettingsForVault } : {}),
     ...(beforeWorkspaceStateRestore ? { beforeWorkspaceStateRestore } : {}),
+    ...(diagnostics ? { diagnostics } : {}),
+    ...(selectionSource !== "bundled" ? { deferWorkspaceCensus: true } : {}),
   };
 }
 
@@ -327,6 +335,7 @@ export class WorkspaceController {
   readonly #pluginRuntimeFactory: PluginRuntimeFactory | undefined;
   readonly #beforeWorkspaceStateRestore: ((vaultId: string) => Promise<void>) | undefined;
   readonly #workspaceSettingsForVault: ((vaultId: string) => VaultWorkspaceSettings) | undefined;
+  readonly #diagnostics: WorkspaceOpenDiagnostics | undefined;
   readonly #listeners = new Set<SnapshotListener>();
   #runtime: WorkspaceRuntimePort;
   #releaseRuntimeListener: () => void;
@@ -349,6 +358,7 @@ export class WorkspaceController {
     this.#pluginRuntimeFactory = options.pluginRuntimeFactory;
     this.#beforeWorkspaceStateRestore = options.beforeWorkspaceStateRestore;
     this.#workspaceSettingsForVault = options.workspaceSettingsForVault;
+    this.#diagnostics = options.diagnostics;
     this.#deferredInitialVault = deferredInitialVault;
     this.#releaseRuntimeListener = this.bindRuntime(runtime);
   }
@@ -368,6 +378,8 @@ export class WorkspaceController {
             options.pluginModuleResolver,
             undefined,
             options.workspaceSettingsForVault,
+            undefined,
+            options.diagnostics,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory, {
@@ -389,6 +401,8 @@ export class WorkspaceController {
           options.pluginModuleResolver,
           options.pluginRuntimeFactory,
           options.workspaceSettingsForVault,
+          undefined,
+          options.diagnostics,
         ),
       );
       return new WorkspaceController(runtime, options, runtimeFactory);
@@ -415,6 +429,8 @@ export class WorkspaceController {
             options.pluginModuleResolver,
             undefined,
             options.workspaceSettingsForVault,
+            undefined,
+            options.diagnostics,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory, {
@@ -434,6 +450,8 @@ export class WorkspaceController {
             options.pluginModuleResolver,
             options.pluginRuntimeFactory,
             options.workspaceSettingsForVault,
+            undefined,
+            options.diagnostics,
           ),
         );
         return new WorkspaceController(runtime, options, runtimeFactory);
@@ -453,6 +471,8 @@ export class WorkspaceController {
         options.pluginModuleResolver,
         options.pluginRuntimeFactory,
         options.workspaceSettingsForVault,
+        undefined,
+        options.diagnostics,
       ),
     );
     return new WorkspaceController(runtime, options, runtimeFactory);
@@ -468,6 +488,20 @@ export class WorkspaceController {
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.#runtime.getSnapshot().then((snapshot) => this.decorateSnapshot(snapshot));
+  }
+
+  async getWorkspaceFilePage(
+    request: WorkspaceFilePageRequest,
+  ): Promise<WorkspaceFilePageResponse> {
+    const runtime = this.activeRuntime("load workspace files");
+    if (runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.getWorkspaceFilePage(request);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
   }
 
   async activateDeferredInitialVault(): Promise<InitialVaultActivationOutcome> {
@@ -492,6 +526,7 @@ export class WorkspaceController {
           this.#pluginRuntimeFactory,
           this.#workspaceSettingsForVault,
           this.#beforeWorkspaceStateRestore,
+          this.#diagnostics,
         ),
       );
     } catch (error) {

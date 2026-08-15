@@ -42,6 +42,10 @@ import type {
   AppearancePackageReview,
 } from "./theme-packages";
 import type { WorkspaceLayoutSnapshot } from "./workspace-layout";
+import type {
+  WorkspaceOpenTransferAcknowledgement,
+  WorkspaceOpenTransferReceipt,
+} from "./workspace-open-diagnostics";
 import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "./workspace-settings";
 
 export type AppearanceUpdateResponse =
@@ -286,6 +290,7 @@ export interface RuntimeSnapshot {
   resourceDiagnostics?: PluginResourceDiagnostic[];
   workspace?: WorkspaceSnapshot;
   workspaceLayout?: WorkspaceLayoutSnapshot;
+  workspaceOpenDiagnostics?: WorkspaceOpenTransferReceipt;
 }
 
 export interface WorkspaceFileSummary {
@@ -295,6 +300,49 @@ export interface WorkspaceFileSummary {
   backlinkCount: number;
   outgoingCount: number;
   unresolvedCount: number;
+}
+
+export const maximumWorkspaceFilePageSize = 256;
+
+export interface WorkspaceFilePageDescriptor {
+  generation: string;
+  offset: number;
+  limit: number;
+  total: number;
+  complete: boolean;
+}
+
+export interface WorkspaceFilePageRequest {
+  expectedVaultId: string;
+  generation: string;
+  offset: number;
+  limit: number;
+  /** Bounded title/path ranking for the quick switcher. Omit for tree order. */
+  query?: string;
+}
+
+export type WorkspaceFilePageResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      page: WorkspaceFilePageDescriptor;
+      files: WorkspaceFileSummary[];
+    }
+  | {
+      status: "warming" | "degraded" | "stale-generation";
+      vaultId: string;
+      generation: string;
+      census: WorkspaceCensusSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export interface WorkspaceCensusSnapshot {
+  state: "warming" | "scanning" | "indexing" | "reconciling" | "current" | "degraded";
+  generation: number;
+  discovered: number;
+  indexed: number;
+  total: number | null;
+  error: string | null;
 }
 
 export interface WorkspaceCanvasSummary {
@@ -425,7 +473,10 @@ export interface VaultSearchResult {
 
 export interface VaultSearchResponse {
   vaultId: string;
-  indexGeneration: number;
+  /** Runtime-scoped generation token. Changes when the census swaps in a new index. */
+  indexGeneration: string;
+  /** Makes partial-index answers explicitly non-authoritative while the census runs. */
+  census: WorkspaceCensusSnapshot;
   error: string | null;
   query: string;
   terms: string[];
@@ -472,14 +523,18 @@ export type VaultGraphResponse =
   | ({
       status: "ready";
       vaultId: string;
-      indexGeneration: number;
+      indexGeneration: string;
+      census: WorkspaceCensusSnapshot;
     } & VaultGraphProjection)
   | { status: "stale-vault"; vaultId: string };
 
 export interface WorkspaceSnapshot {
-  state: "ready" | "degraded";
-  indexGeneration: number;
+  state: "warming" | "ready" | "degraded";
+  /** Runtime-scoped generation token, safe to compare only as an opaque value. */
+  indexGeneration: string;
   files: WorkspaceFileSummary[];
+  filePage: WorkspaceFilePageDescriptor;
+  census: WorkspaceCensusSnapshot;
   canvasFiles?: WorkspaceCanvasSummary[];
   panes: WorkspacePaneSnapshot[];
   activePaneId: WorkspacePaneId;
@@ -1010,7 +1065,9 @@ export type VaultNoteEmbedUnavailableReason =
   | "outside-vault"
   | "too-large"
   | "unreadable"
-  | "subpath-missing";
+  | "subpath-missing"
+  | "warming"
+  | "degraded";
 
 export type VaultNoteEmbedResponse =
   | {
@@ -1085,6 +1142,8 @@ export interface ThreadleafBridge {
   downloadAppUpdate(): Promise<AppUpdateSnapshot>;
   installAppUpdate(): Promise<AppUpdateSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
+  getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
+  reportWorkspaceOpenDiagnostics(acknowledgement: WorkspaceOpenTransferAcknowledgement): void;
   getWorkspaceLayout(expectedVaultId?: string): Promise<WorkspaceLayoutSnapshot>;
   setWorkspaceDockCollapsed(
     dockId: "left" | "right",

@@ -165,7 +165,7 @@ function runtimeFixture(): RuntimeSnapshot {
     },
     workspace: {
       state: "degraded",
-      indexGeneration: 7,
+      indexGeneration: "test:1:7",
       files: [
         {
           path: "PRIVATE_NOTE_PATH.md",
@@ -176,6 +176,21 @@ function runtimeFixture(): RuntimeSnapshot {
           unresolvedCount: 1,
         },
       ],
+      filePage: {
+        generation: "1:7",
+        offset: 0,
+        limit: 256,
+        total: 1,
+        complete: true,
+      },
+      census: {
+        state: "current",
+        generation: 1,
+        discovered: 1,
+        indexed: 1,
+        total: 1,
+        error: null,
+      },
       panes: [
         {
           id: "primary",
@@ -411,7 +426,7 @@ describe("support bundle", () => {
         openTabCount: 1,
         activeNoteOpen: true,
         recoveryActionCount: 2,
-        indexGeneration: 7,
+        indexGeneration: "test:1:7",
         watcher: { sequence: 9, rescanObserved: true, errorObserved: true },
       },
       plugins: {

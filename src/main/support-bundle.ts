@@ -153,7 +153,7 @@ export function createSupportBundleData(input: SupportBundleInput) {
       openTabCount: workspace?.tabs.length ?? 0,
       activeNoteOpen: workspace?.activeNote !== null && workspace?.activeNote !== undefined,
       recoveryActionCount: workspace?.recoveryActionCount ?? 0,
-      indexGeneration: workspace?.indexGeneration ?? 0,
+      indexGeneration: workspace?.indexGeneration ?? "",
       watcher: {
         sequence: workspace?.watcher.lastSequence ?? 0,
         rescanObserved: workspace?.watcher.lastRescanReason !== null && workspace !== undefined,

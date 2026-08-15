@@ -46,6 +46,7 @@ import type {
   VaultOpenResponse,
   VaultSearchResponse,
   VaultTrashResponse,
+  WorkspaceFilePageResponse,
   WorkspaceSettingsResponse,
   WorkspaceSettingsUpdateResponse,
 } from "../shared/contracts";
@@ -68,7 +69,19 @@ import type {
   AppearancePackagePreviewResponse,
 } from "../shared/theme-packages";
 import type { WorkspaceDockId, WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
+import type { WorkspaceOpenTransferAcknowledgement } from "../shared/workspace-open-diagnostics";
 import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "../shared/workspace-settings";
+
+function acknowledgeWorkspaceOpenReceipt(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+  const receipt = snapshot.workspaceOpenDiagnostics;
+  if (receipt) {
+    ipcRenderer.send(ipcChannels.workspaceOpenDiagnostics, {
+      phase: "received",
+      transferId: receipt.transferId,
+    } satisfies WorkspaceOpenTransferAcknowledgement);
+  }
+  return snapshot;
+}
 
 const bridge: ThreadleafBridge = {
   exportSupportBundle: () =>
@@ -82,7 +95,17 @@ const bridge: ThreadleafBridge = {
     ipcRenderer.invoke(ipcChannels.downloadAppUpdate) as Promise<AppUpdateSnapshot>,
   installAppUpdate: () =>
     ipcRenderer.invoke(ipcChannels.installAppUpdate) as Promise<AppUpdateSnapshot>,
-  getSnapshot: () => ipcRenderer.invoke(ipcChannels.snapshot) as Promise<RuntimeSnapshot>,
+  getSnapshot: async () =>
+    acknowledgeWorkspaceOpenReceipt(
+      (await ipcRenderer.invoke(ipcChannels.snapshot)) as RuntimeSnapshot,
+    ),
+  getWorkspaceFilePage: (request) =>
+    ipcRenderer.invoke(
+      ipcChannels.workspaceFilePage,
+      request,
+    ) as Promise<WorkspaceFilePageResponse>,
+  reportWorkspaceOpenDiagnostics: (acknowledgement) =>
+    ipcRenderer.send(ipcChannels.workspaceOpenDiagnostics, acknowledgement),
   getWorkspaceLayout: (expectedVaultId?: string) =>
     ipcRenderer.invoke(
       ipcChannels.workspaceLayout,
@@ -540,7 +563,7 @@ const bridge: ThreadleafBridge = {
     ) as Promise<AccessibilityPreferencesSnapshot>,
   onSnapshot: (listener) => {
     const subscription = (_event: Electron.IpcRendererEvent, snapshot: RuntimeSnapshot) => {
-      listener(snapshot);
+      listener(acknowledgeWorkspaceOpenReceipt(snapshot));
     };
     ipcRenderer.on(ipcChannels.snapshotChanged, subscription);
     return () => ipcRenderer.removeListener(ipcChannels.snapshotChanged, subscription);

@@ -91,6 +91,11 @@ import {
   workspaceWindowMinimumWidth,
 } from "../shared/workspace-layout";
 import {
+  WorkspaceOpenDiagnostics,
+  type WorkspaceOpenTransferAcknowledgement,
+  WorkspaceOpenTransferTracker,
+} from "../shared/workspace-open-diagnostics";
+import {
   createDefaultVaultWorkspaceSettings,
   parseVaultWorkspaceMode,
   parseVaultWorkspaceSettings,
@@ -228,6 +233,13 @@ let pluginPopoutWindow: BrowserWindow | null = null;
 let pluginPopoutRendererMonitor: NodeJS.Timeout | undefined;
 let closingPluginPopout = false;
 let workspaceSnapshotSequence = 0;
+const workspaceOpenDiagnostics =
+  process.env.THREADLEAF_WORKSPACE_OPEN_DIAGNOSTICS === "1"
+    ? new WorkspaceOpenDiagnostics()
+    : undefined;
+const workspaceOpenTransferTracker = workspaceOpenDiagnostics
+  ? new WorkspaceOpenTransferTracker(workspaceOpenDiagnostics)
+  : undefined;
 const compatibilityPluginViews = new Set<WebContentsView>();
 const compatibilityPluginWebContents = new Set<WebContents>();
 const visiblePluginViews = new Set<WebContentsView>();
@@ -1103,7 +1115,12 @@ function broadcastWorkspaceSnapshot(snapshot: RuntimeSnapshot): void {
       }
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-          window.webContents.send(ipcChannels.snapshotChanged, enriched);
+          window.webContents.send(
+            ipcChannels.snapshotChanged,
+            workspaceOpenTransferTracker
+              ? workspaceOpenTransferTracker.prepare(enriched)
+              : enriched,
+          );
         }
       }
     })
@@ -1501,6 +1518,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
     stateRoot: new FixedStateRoot(userDataPath),
     selectionStore: new FileVaultSelectionStore(join(userDataPath, "workspace-selection.json")),
     workspaceStateStore,
+    ...(workspaceOpenDiagnostics ? { diagnostics: workspaceOpenDiagnostics } : {}),
     beforeWorkspaceStateRestore: async (vaultId) => {
       const recoveryNotices = migrationTransactionManager
         ? await migrationTransactionManager.recover(vaultId, () => currentMigrationState(vaultId))
@@ -1734,7 +1752,37 @@ function registerIpcHandlers(): void {
     if (initialWorkspaceRecoveryPending && initialWorkspaceActivation) {
       await initialWorkspaceActivation;
     }
-    return workspaceSnapshotWithLayout(await workspaceController.getSnapshot());
+    const snapshot = await workspaceSnapshotWithLayout(await workspaceController.getSnapshot());
+    return workspaceOpenTransferTracker ? workspaceOpenTransferTracker.prepare(snapshot) : snapshot;
+  });
+  ipcMain.on(ipcChannels.workspaceOpenDiagnostics, (event, value: unknown) => {
+    if (!isMainRendererSender(event.sender) || !workspaceOpenTransferTracker) {
+      return;
+    }
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("phase" in value) ||
+      !("transferId" in value) ||
+      (value.phase !== "received" && value.phase !== "rendered") ||
+      typeof value.transferId !== "number" ||
+      (value.phase === "rendered" &&
+        (!("durationMs" in value) ||
+          typeof value.durationMs !== "number" ||
+          !("objectCount" in value) ||
+          typeof value.objectCount !== "number"))
+    ) {
+      return;
+    }
+    const acknowledgement = value as WorkspaceOpenTransferAcknowledgement;
+    if (!workspaceOpenTransferTracker.acknowledge(acknowledgement)) {
+      return;
+    }
+    if (acknowledgement.phase === "rendered" && workspaceOpenDiagnostics) {
+      console.info(
+        `THREADLEAF_WORKSPACE_OPEN_DIAGNOSTICS ${JSON.stringify(workspaceOpenDiagnostics.snapshot())}`,
+      );
+    }
   });
   ipcMain.handle(ipcChannels.workspaceLayout, async (event, expectedVaultId: unknown) => {
     if (!isMainRendererSender(event.sender)) {
@@ -1747,6 +1795,17 @@ function registerIpcHandlers(): void {
       throw new Error("The active vault changed before the workspace layout could be read.");
     }
     return workspaceLayoutController.snapshot();
+  });
+  ipcMain.handle(ipcChannels.workspaceFilePage, (event, request: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Workspace file pages require the active Threadleaf window.");
+    }
+    if (typeof request !== "object" || request === null) {
+      throw new Error("Workspace file pages require a page request.");
+    }
+    return workspaceController.getWorkspaceFilePage(
+      request as Parameters<WorkspaceController["getWorkspaceFilePage"]>[0],
+    );
   });
   ipcMain.handle(
     ipcChannels.setWorkspaceDockCollapsed,

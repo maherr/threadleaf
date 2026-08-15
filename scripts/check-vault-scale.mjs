@@ -640,6 +640,9 @@ async function waitForSearch(cdp, marker, predicate) {
           return {
             indexGeneration: response.indexGeneration ?? null,
             resultCount: response.results?.length ?? 0,
+            // results is capped at the search limit (50), so batch convergence
+            // must predicate on the un-truncated total.
+            total: response.total ?? 0,
           };
         })()`,
       ),
@@ -662,7 +665,7 @@ async function measureIncremental(cdp, vaultPath, manifest, variant, runIndex) {
   const singleConverged = await waitForSearch(
     cdp,
     singleMarker,
-    (value) => value.resultCount >= 1 && value.indexGeneration > baseBeforeSingle.indexGeneration,
+    (value) => value.resultCount >= 1 && value.indexGeneration !== baseBeforeSingle.indexGeneration,
   );
   const singleFileMs = performance.now() - singleStarted;
   await fs.writeFile(path.join(vaultPath, ...singlePath.split("/")), singleBytes);
@@ -689,7 +692,7 @@ async function measureIncremental(cdp, vaultPath, manifest, variant, runIndex) {
     cdp,
     batchMarker,
     (value) =>
-      value.resultCount >= 50 && value.indexGeneration >= baseBeforeBatch.indexGeneration + 100,
+      value.total >= 100 && value.indexGeneration !== baseBeforeBatch.indexGeneration,
   );
   const batch100Ms = performance.now() - batchStarted;
   await Promise.all(
@@ -704,8 +707,9 @@ async function measureIncremental(cdp, vaultPath, manifest, variant, runIndex) {
     batchChangedCount: 100,
     singleIndexGeneration: singleConverged.indexGeneration,
     batchIndexGeneration: batchConverged.indexGeneration,
-    singleIndexGenerationDelta: singleConverged.indexGeneration - baseBeforeSingle.indexGeneration,
-    batchIndexGenerationDelta: batchConverged.indexGeneration - baseBeforeBatch.indexGeneration,
+    singleIndexGenerationChanged:
+      singleConverged.indexGeneration !== baseBeforeSingle.indexGeneration,
+    batchIndexGenerationChanged: batchConverged.indexGeneration !== baseBeforeBatch.indexGeneration,
   };
 }
 

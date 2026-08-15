@@ -94,6 +94,26 @@ async function expectEquivalent(reactor: VaultIndexReactor, vault: MemoryVault):
 }
 
 describe("MetadataIndex", () => {
+  it("reports deterministic async-build progress without timing assertions", async () => {
+    const snapshots: VaultTextSnapshot[] = Array.from({ length: 513 }, (_, index) => ({
+      path: `${index.toString().padStart(3, "0")}.md`,
+      content: `# Note ${index}\n`,
+      revision: `${index}`,
+      size: 8,
+    }));
+    const progress: Array<[number, number]> = [];
+
+    await MetadataIndex.fromSnapshotsAsync(snapshots, {
+      onProgress: (indexed, total) => progress.push([indexed, total]),
+    });
+
+    expect(progress).toEqual([
+      [0, 513],
+      [512, 513],
+      [513, 513],
+    ]);
+  });
+
   it("builds the index and reactor from existing text snapshots without rereading the vault", async () => {
     const vault = new MemoryVault();
     vault.set("A.md", "# Alpha\n[[Folder/B]]");

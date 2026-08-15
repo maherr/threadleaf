@@ -8,6 +8,7 @@ import type { KernelFaultInjector } from "../kernel/vault-kernel";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
+import { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
 import {
   absenceConfirmationIntervalMs,
@@ -268,6 +269,339 @@ async function openRuntime(
 }
 
 describe("WorkspaceRuntime", () => {
+  it("keeps the interactive workspace payload bounded independently of corpus size", async () => {
+    await Promise.all(
+      Array.from({ length: 600 }, (_, index) =>
+        fs.writeFile(
+          path.join(vaultPath, `Payload-${index.toString().padStart(3, "0")}.md`),
+          `# Payload ${index}\n`,
+          "utf8",
+        ),
+      ),
+    );
+    const workspace = await openRuntime();
+
+    const snapshot = await workspace.getSnapshot();
+    const filePage = snapshot.workspace?.filePage;
+
+    expect(snapshot.workspace?.files.length).toBeLessThanOrEqual(256);
+    expect(filePage).toMatchObject({ total: 602, complete: false });
+    await expect(
+      workspace.getWorkspaceFilePage({
+        expectedVaultId: workspace.vaultId,
+        generation: filePage?.generation ?? "missing",
+        offset: 0,
+        limit: 200,
+        query: "payload 599",
+      }),
+    ).resolves.toMatchObject({
+      status: "ready",
+      page: { total: 1, complete: true },
+      files: [{ path: "Payload-599.md", title: "Payload-599" }],
+    });
+    const boundedQuickSwitcher = await workspace.getWorkspaceFilePage({
+      expectedVaultId: workspace.vaultId,
+      generation: filePage?.generation ?? "missing",
+      offset: 0,
+      limit: 200,
+      query: "",
+    });
+    expect(boundedQuickSwitcher.status).toBe("ready");
+    if (boundedQuickSwitcher.status === "ready") {
+      expect(boundedQuickSwitcher.files).toHaveLength(200);
+    }
+  });
+
+  it("rejects a file page from the generation before a corpus mutation", async () => {
+    const workspace = await openRuntime();
+    const before = await workspace.getSnapshot();
+    const generation = before.workspace?.filePage.generation;
+    expect(generation).toEqual(expect.any(String));
+    await workspace.createNote("Generation-change.md", "# Changed\n", workspace.vaultId);
+
+    const stale = await workspace.getWorkspaceFilePage({
+      expectedVaultId: workspace.vaultId,
+      generation: generation ?? "missing",
+      offset: 0,
+      limit: 64,
+    });
+
+    expect(stale).toMatchObject({ status: "stale-generation" });
+  });
+
+  it("keeps an uncensused restored active tab selected in its waiting state", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md", "Not-arrived.md"],
+      pinnedPaths: ["Not-arrived.md"],
+      activePath: "Not-arrived.md",
+    });
+    let releaseCensus: (() => void) | undefined;
+    const censusGate = new Promise<void>((resolve) => {
+      releaseCensus = resolve;
+    });
+    const diagnostics = new WorkspaceOpenDiagnostics();
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      workspaceStateStore: store,
+      diagnostics,
+      ...({
+        deferWorkspaceCensus: true,
+        beforeBackgroundCensus: () => censusGate,
+      } as Record<string, unknown>),
+    });
+    try {
+      const warming = await runtime.getSnapshot();
+
+      expect(warming.workspace?.state).toBe("warming");
+      expect(warming.workspace?.tabs).toContainEqual(
+        expect.objectContaining({ path: "Not-arrived.md", active: true, pinned: true }),
+      );
+      expect(warming.workspace?.activeUnavailable).toMatchObject({ path: "Not-arrived.md" });
+      const warmingGeneration = warming.workspace?.filePage.generation;
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+      const current = await runtime.getSnapshot();
+
+      expect(current.workspace).toMatchObject({
+        state: "ready",
+        census: { state: "current", total: 2, indexed: 2 },
+        filePage: { total: 2, complete: true },
+        activeUnavailable: { path: "Not-arrived.md" },
+      });
+      await expect(
+        runtime.getWorkspaceFilePage({
+          expectedVaultId: runtime.vaultId,
+          generation: warmingGeneration ?? "missing",
+          offset: 0,
+          limit: 64,
+        }),
+      ).resolves.toMatchObject({ status: "stale-generation" });
+      expect(diagnostics.snapshot().spans).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "census.parse-index", attributes: { documents: 2 } }),
+        ]),
+      );
+    } finally {
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+    }
+  });
+
+  it("returns a bounded first-time workspace before choosing its first indexed note", async () => {
+    let releaseCensus: (() => void) | undefined;
+    const censusGate = new Promise<void>((resolve) => {
+      releaseCensus = resolve;
+    });
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => censusGate,
+    });
+    try {
+      const warming = await runtime.getSnapshot();
+      expect(warming.workspace).toMatchObject({
+        state: "warming",
+        files: [],
+        tabs: [],
+        filePage: { total: 0, complete: true },
+      });
+
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+      const current = await runtime.getSnapshot();
+      expect(current.workspace).toMatchObject({
+        state: "ready",
+        census: { state: "current", total: 2, indexed: 2 },
+        activeNote: { path: "Linked Note.md" },
+      });
+    } finally {
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+    }
+  });
+
+  it("marks partial search and graph results warming and rotates their generation after census", async () => {
+    const firstStore = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md"],
+      activePath: "Welcome.md",
+    });
+    const secondStore = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md"],
+      activePath: "Welcome.md",
+    });
+    let releaseFirstCensus: (() => void) | undefined;
+    let releaseSecondCensus: (() => void) | undefined;
+    const firstCensusGate = new Promise<void>((resolve) => {
+      releaseFirstCensus = resolve;
+    });
+    const secondCensusGate = new Promise<void>((resolve) => {
+      releaseSecondCensus = resolve;
+    });
+    const first = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      workspaceStateStore: firstStore,
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => firstCensusGate,
+    });
+    const second = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(path.join(sandboxPath, "second-state")),
+      workspaceStateStore: secondStore,
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => secondCensusGate,
+    });
+    try {
+      const warming = await first.getSnapshot();
+      const secondWarming = await second.getSnapshot();
+      const warmingGeneration = warming.workspace?.indexGeneration;
+      expect(warming.workspace).toMatchObject({ census: { state: "warming" } });
+      expect(warmingGeneration).toEqual(expect.any(String));
+      expect(secondWarming.workspace?.indexGeneration).not.toBe(warmingGeneration);
+
+      const warmingSearch = await first.searchVault("bounded UTF-8");
+      expect(warmingSearch).toMatchObject({
+        total: 0,
+        census: { state: "warming" },
+        indexGeneration: warmingGeneration,
+      });
+      await expect(
+        first.getVaultGraph(
+          { mode: "global", rootPath: null, depth: 1, query: "", includeOrphans: true },
+          first.vaultId,
+        ),
+      ).resolves.toMatchObject({
+        status: "ready",
+        census: { state: "warming" },
+        indexGeneration: warmingGeneration,
+      });
+      await expect(
+        first.loadVaultNoteEmbed("Welcome.md", "Linked Note", null, first.vaultId),
+      ).resolves.toMatchObject({ status: "unavailable", reason: "warming" });
+
+      releaseFirstCensus?.();
+      await first.waitForCensusCompletion();
+      const ready = await first.getSnapshot();
+      const readySearch = await first.searchVault("bounded UTF-8");
+      expect(ready.workspace).toMatchObject({ census: { state: "current" } });
+      expect(ready.workspace?.indexGeneration).not.toBe(warmingGeneration);
+      expect(readySearch).toMatchObject({
+        total: 1,
+        census: { state: "current" },
+        indexGeneration: ready.workspace?.indexGeneration,
+      });
+    } finally {
+      releaseFirstCensus?.();
+      releaseSecondCensus?.();
+      await Promise.all([first.close(), second.close()]);
+    }
+  });
+
+  it("reports a failed census as degraded through bounded, search, and graph responses", async () => {
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: async () => {
+        throw new Error("intentional census failure");
+      },
+    });
+    await runtime.waitForCensusCompletion();
+
+    const snapshot = await runtime.getSnapshot();
+    const generation = snapshot.workspace?.filePage.generation;
+    expect(snapshot.workspace).toMatchObject({ state: "degraded", census: { state: "degraded" } });
+    await expect(
+      runtime.getWorkspaceFilePage({
+        expectedVaultId: runtime.vaultId,
+        generation: generation ?? "missing",
+        offset: 0,
+        limit: 64,
+      }),
+    ).resolves.toMatchObject({ status: "degraded", census: { state: "degraded" } });
+    await expect(runtime.searchVault("bounded UTF-8")).resolves.toMatchObject({
+      census: { state: "degraded" },
+    });
+    await expect(
+      runtime.getVaultGraph(
+        { mode: "global", rootPath: null, depth: 1, query: "", includeOrphans: true },
+        runtime.vaultId,
+      ),
+    ).resolves.toMatchObject({ status: "ready", census: { state: "degraded" } });
+    await expect(
+      runtime.loadVaultNoteEmbed("Welcome.md", "Linked Note", null, runtime.vaultId),
+    ).resolves.toMatchObject({ status: "unavailable", reason: "degraded" });
+  });
+
+  it("does not create transient absence bookkeeping when history is traversed while warming", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const first = await openRuntime(store);
+    await first.openNote("Welcome.md");
+    await first.openNote("Linked Note.md");
+    await first.close();
+    runtime = undefined;
+    await fs.rename(path.join(vaultPath, "Welcome.md"), path.join(sandboxPath, "Welcome.md.aside"));
+    let releaseCensus: (() => void) | undefined;
+    const censusGate = new Promise<void>((resolve) => {
+      releaseCensus = resolve;
+    });
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      workspaceStateStore: store,
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => censusGate,
+    });
+    try {
+      expect((await runtime.getSnapshot()).workspace?.panes[0]).toMatchObject({
+        activeNote: { path: "Linked Note.md" },
+        canGoBack: true,
+      });
+      const requestFollowUpScan = vi.spyOn(runtime.watcher, "requestFollowUpScan");
+      await runtime.goBack(runtime.vaultId);
+
+      expect(requestFollowUpScan).not.toHaveBeenCalled();
+    } finally {
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+    }
+  });
+
+  it("partitions parse/index and snapshot construction without wall-clock assertions", async () => {
+    const diagnostics = new WorkspaceOpenDiagnostics();
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      diagnostics,
+    });
+
+    const snapshot = await runtime.getSnapshot();
+    const captured = diagnostics.snapshot();
+
+    expect(captured.spans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "bootstrap.filesystem" }),
+        expect.objectContaining({
+          name: "parse-index",
+          attributes: { documents: snapshot.vault.markdownFileCount },
+        }),
+        expect.objectContaining({
+          name: "snapshot.construction",
+          attributes: expect.objectContaining({
+            files: snapshot.workspace?.files.length,
+            payloadBytes: expect.any(Number),
+            payloadObjects: expect.any(Number),
+          }),
+        }),
+      ]),
+    );
+    expect(captured.metrics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "snapshot.payload", count: 1 })]),
+    );
+  });
+
   it("reuses one visible-file inventory across attachment-card hydration", async () => {
     await fs.mkdir(path.join(vaultPath, "Drawings"), { recursive: true });
     await fs.mkdir(path.join(vaultPath, "Assets", "Ébauche"), { recursive: true });

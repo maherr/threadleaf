@@ -23,6 +23,8 @@ import type {
   VaultNoteEmbedResponse,
   VaultSearchResponse,
   VaultTrashResponse,
+  WorkspaceFilePageRequest,
+  WorkspaceFilePageResponse,
 } from "../shared/contracts";
 import {
   createDefaultVaultWorkspaceSettings,
@@ -155,6 +157,26 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return this.#snapshot;
   }
 
+  async getWorkspaceFilePage(
+    request: WorkspaceFilePageRequest,
+  ): Promise<WorkspaceFilePageResponse> {
+    if (request.expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      page: {
+        generation: request.generation,
+        offset: request.offset,
+        limit: request.limit,
+        total: 0,
+        complete: true,
+      },
+      files: [],
+    };
+  }
+
   async markPluginLayoutReady(): Promise<RuntimeSnapshot> {
     return this.#snapshot;
   }
@@ -174,7 +196,15 @@ class FakeRuntime implements WorkspaceRuntimePort {
   async searchVault(query: string): Promise<VaultSearchResponse> {
     return {
       vaultId: this.vaultId,
-      indexGeneration: 1,
+      indexGeneration: "test:1:1",
+      census: this.#snapshot.workspace?.census ?? {
+        state: "current",
+        generation: 1,
+        discovered: 0,
+        indexed: 0,
+        total: 0,
+        error: null,
+      },
       error: null,
       query,
       terms: query ? [query] : [],
@@ -194,7 +224,15 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return {
       status: "ready",
       vaultId: this.vaultId,
-      indexGeneration: 1,
+      indexGeneration: "test:1:1",
+      census: this.#snapshot.workspace?.census ?? {
+        state: "current",
+        generation: 1,
+        discovered: 0,
+        indexed: 0,
+        total: 0,
+        error: null,
+      },
       ...request,
       totalNodes: 0,
       totalEdges: 0,
