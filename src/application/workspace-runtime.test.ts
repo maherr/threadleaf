@@ -728,7 +728,7 @@ describe("WorkspaceRuntime", () => {
       "Open a local vault",
     );
     await expect(
-      runtime.saveNote(note.path, "blocked", note.revision, runtime.vaultId),
+      runtime.saveNote(note.path, "blocked", note.revision, runtime.vaultId, "primary"),
     ).rejects.toThrow("Open a local vault");
     await expect(
       runtime.setNoteProperty(
@@ -1611,6 +1611,42 @@ module.exports = class ActionCollisionFixture extends Plugin {
         { id: "secondary", activeNote: { path: "Welcome.md" } },
       ],
     });
+  });
+
+  it("autosaves a background pane through the shared writer without stealing focus", async () => {
+    const workspace = await openRuntime();
+    await workspace.splitWorkspace("vertical", workspace.vaultId);
+    const opened = await workspace.openNote("Welcome.md", "secondary");
+    const secondaryNote = opened.workspace?.panes.find(({ id }) => id === "secondary")?.activeNote;
+    if (!secondaryNote) throw new Error("Expected a note in the secondary pane.");
+    await workspace.focusWorkspacePane("primary", workspace.vaultId);
+
+    const saved = await workspace.saveNote(
+      secondaryNote.path,
+      "# Background autosave\n\nsecondary pane bytes\n",
+      secondaryNote.revision,
+      workspace.vaultId,
+      "secondary",
+    );
+
+    expect(saved.outcome).toMatchObject({ status: "committed", path: "Welcome.md" });
+    expect(saved.snapshot.workspace).toMatchObject({
+      activePaneId: "primary",
+      activeNote: { path: "Linked Note.md" },
+      panes: [
+        { id: "primary", activeNote: { path: "Linked Note.md" } },
+        {
+          id: "secondary",
+          activeNote: {
+            path: "Welcome.md",
+            content: "# Background autosave\n\nsecondary pane bytes\n",
+          },
+        },
+      ],
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toBe(
+      "# Background autosave\n\nsecondary pane bytes\n",
+    );
   });
 
   it("reuses the unchanged derived file projection across snapshots", async () => {
@@ -2720,6 +2756,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
       "# Saved in Threadleaf\n\n#edited and [[Linked Note]]",
       revision,
       workspace.vaultId,
+      "primary",
     );
 
     expect(saved.outcome).toMatchObject({ status: "committed", path: "Welcome.md" });
@@ -3080,6 +3117,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
       "# My preserved edit",
       revision,
       workspace.vaultId,
+      "primary",
     );
 
     expect(saved.outcome).toMatchObject({
@@ -3274,7 +3312,7 @@ describe("WorkspaceRuntime atomic-replace reconciliation", () => {
     expect(store.saved.at(-1)?.panes[0]?.activePath).toBe("Attachment Desk.md");
   });
 
-  it("keeps a pinned tab through the move-aside window of a note save", async () => {
+  it("keeps a pinned tab while autosave uses the atomic move-aside writer", async () => {
     const store = new MemoryWorkspaceStateStore();
     let racedScans = 0;
     let observedAbsence = false;
@@ -3300,6 +3338,7 @@ describe("WorkspaceRuntime atomic-replace reconciliation", () => {
       "# Welcome\n\nsaved through the race\n",
       note.revision,
       workspace.vaultId,
+      "primary",
     );
     expect(saved.outcome).toMatchObject({ status: "committed" });
     expect(racedScans).toBe(1);

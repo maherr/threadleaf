@@ -20,6 +20,8 @@ export const ipcChannels = {
   reattachPluginView: "threadleaf:reattach-plugin-view",
   startupShellReady: "threadleaf:startup-shell-ready",
   menuCommand: "threadleaf:menu-command",
+  requestAutosaveFlush: "threadleaf:request-autosave-flush",
+  completeAutosaveFlush: "threadleaf:complete-autosave-flush",
   settings: "threadleaf:settings",
   settingsChanged: "threadleaf:settings-changed",
   accessibilityPreferences: "threadleaf:accessibility-preferences",

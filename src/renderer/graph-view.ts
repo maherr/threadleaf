@@ -629,7 +629,7 @@ export class GraphViewController {
     this.close(false);
     const opened = await this.#options.openNote(path);
     if (!opened) {
-      this.#options.report("Save or revert the open draft before navigating from the graph.");
+      this.#options.report("The note was not opened. Your current editor content is intact.");
     }
   }
 

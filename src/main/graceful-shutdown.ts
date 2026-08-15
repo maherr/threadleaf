@@ -3,6 +3,7 @@ export interface QuitEventLike {
 }
 
 export interface GracefulShutdownOptions {
+  preflight?: () => Promise<void> | void;
   prepare?: () => void;
   close: () => Promise<void> | void;
   finalize?: () => void;
@@ -13,22 +14,14 @@ export interface GracefulShutdownOptions {
 export function createGracefulShutdownHandler(
   options: GracefulShutdownOptions,
 ): (event: QuitEventLike) => void {
-  let state: "idle" | "closing" | "complete" = "idle";
+  let state: "idle" | "preflighting" | "closing" | "complete" = "idle";
 
   const reportError = (error: unknown): void => {
     options.reportError?.(error);
   };
 
-  return (event) => {
-    if (state === "complete") {
-      return;
-    }
-    event.preventDefault();
-    if (state === "closing") {
-      return;
-    }
+  const closeAndQuit = (): void => {
     state = "closing";
-
     try {
       options.prepare?.();
     } catch (error) {
@@ -54,6 +47,28 @@ export function createGracefulShutdownHandler(
           state = "complete";
           options.quit();
         }
+      });
+  };
+
+  return (event) => {
+    if (state === "complete") {
+      return;
+    }
+    event.preventDefault();
+    if (state === "preflighting" || state === "closing") {
+      return;
+    }
+    if (!options.preflight) {
+      closeAndQuit();
+      return;
+    }
+    state = "preflighting";
+    void Promise.resolve()
+      .then(options.preflight)
+      .then(closeAndQuit)
+      .catch((error) => {
+        reportError(error);
+        state = "idle";
       });
   };
 }

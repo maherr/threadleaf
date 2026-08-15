@@ -376,7 +376,7 @@ describe("reviewed Obsidian migration transactions", () => {
       next: applyMigrationSelections(plan, request, current),
       validateReview: validateReview(plan),
     });
-    adapter.current.settings.keyBindings["editor.revert-note"] = "Alt+R";
+    adapter.current.settings.keyBindings["editor.insert-template"] = "Alt+R";
     const rollback = await manager.rollback(vaultA, outcome.transactionId, adapter.current);
     expect(rollback).toMatchObject({ status: "conflict", transactionId: outcome.transactionId });
     expect(adapter.current.settings.pluginsByVault[vaultA]?.enabledPluginIds).toEqual(["exact"]);

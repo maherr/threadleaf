@@ -110,13 +110,13 @@ describe("AppSettingsController", () => {
     const controller = await AppSettingsController.open(store);
     const observed: string[] = [];
     controller.onSnapshot((snapshot) =>
-      observed.push(snapshot.settings.keyBindings["editor.revert-note"] ?? "none"),
+      observed.push(snapshot.settings.keyBindings["editor.insert-template"] ?? "none"),
     );
 
-    const snapshot = await controller.setKeyBinding("editor.revert-note", "Alt+R");
+    const snapshot = await controller.setKeyBinding("editor.insert-template", "Alt+R");
 
     expect(store.saved).toHaveLength(1);
-    expect(snapshot.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(snapshot.settings.keyBindings["editor.insert-template"]).toBe("Alt+R");
     expect(snapshot.warning).toBeNull();
     expect(observed).toEqual(["Alt+R"]);
   });
@@ -126,7 +126,7 @@ describe("AppSettingsController", () => {
     const controller = await AppSettingsController.open(store);
     store.saveError = new Error("settings disk unavailable");
 
-    await expect(controller.setKeyBinding("editor.revert-note", "Alt+R")).rejects.toThrow(
+    await expect(controller.setKeyBinding("editor.insert-template", "Alt+R")).rejects.toThrow(
       "settings disk unavailable",
     );
     expect(controller.getSnapshot().settings).toEqual(createDefaultAppSettings());
@@ -134,7 +134,7 @@ describe("AppSettingsController", () => {
 
   it("resets bindings through the same durable adoption path", async () => {
     const customized = createDefaultAppSettings();
-    customized.keyBindings["editor.revert-note"] = "Alt+R";
+    customized.keyBindings["editor.insert-template"] = "Alt+R";
     customized.appearanceByVault["a".repeat(64)] = {
       colorScheme: "dark",
       themeId: "obsidian-theme:Minimal",
@@ -231,12 +231,12 @@ describe("AppSettingsController", () => {
     const controller = await AppSettingsController.open(store);
     const reviewedBefore = controller.getSnapshot().settings;
 
-    await controller.setKeyBinding("editor.revert-note", "Alt+R");
+    await controller.setKeyBinding("editor.insert-template", "Alt+R");
 
     await expect(
       controller.replaceSettings(createDefaultAppSettings(), reviewedBefore),
     ).rejects.toThrow("private settings changed");
-    expect(controller.getSnapshot().settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(controller.getSnapshot().settings.keyBindings["editor.insert-template"]).toBe("Alt+R");
   });
 
   it("persists private per-vault workspace preferences before publishing them", async () => {
@@ -338,7 +338,7 @@ describe("AppSettingsController", () => {
     const firstVault = "c".repeat(64);
     const secondVault = "d".repeat(64);
 
-    const key = controller.setKeyBinding("editor.revert-note", "Alt+R");
+    const key = controller.setKeyBinding("editor.insert-template", "Alt+R");
     const firstWorkspace = controller.setVaultWorkspaceSettings(
       firstVault,
       workspaceSettings({ defaultNoteFolder: "First", linkStyle: "markdown" }),
@@ -349,16 +349,16 @@ describe("AppSettingsController", () => {
     );
 
     await waitForPendingSaves(store, 1);
-    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(store.pending[0]?.settings.keyBindings["editor.insert-template"]).toBe("Alt+R");
     store.releaseNext();
     await waitForPendingSaves(store, 1);
-    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(store.pending[0]?.settings.keyBindings["editor.insert-template"]).toBe("Alt+R");
     expect(store.pending[0]?.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe(
       "First",
     );
     store.releaseNext();
     await waitForPendingSaves(store, 1);
-    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(store.pending[0]?.settings.keyBindings["editor.insert-template"]).toBe("Alt+R");
     expect(store.pending[0]?.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe(
       "First",
     );
@@ -372,12 +372,12 @@ describe("AppSettingsController", () => {
       firstWorkspace,
       secondWorkspace,
     ]);
-    expect(keySnapshot.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(keySnapshot.settings.keyBindings["editor.insert-template"]).toBe("Alt+R");
     expect(firstSnapshot.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe("First");
     expect(firstSnapshot.settings.workspaceByVault[secondVault]).toBeUndefined();
     expect(secondSnapshot.settings.workspaceByVault[firstVault]?.defaultNoteFolder).toBe("First");
     expect(secondSnapshot.settings.workspaceByVault[secondVault]?.defaultNoteFolder).toBe("Second");
-    expect(secondSnapshot.settings.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(secondSnapshot.settings.keyBindings["editor.insert-template"]).toBe("Alt+R");
   });
 
   it("serializes a vault reset before a different-vault set without restoring stale state", async () => {
@@ -420,7 +420,7 @@ describe("AppSettingsController", () => {
     const vaultId = "1".repeat(64);
     const failure = new Error("settings disk unavailable");
 
-    const key = controller.setKeyBinding("editor.revert-note", "Alt+R");
+    const key = controller.setKeyBinding("editor.insert-template", "Alt+R");
     const workspace = controller.setVaultWorkspaceSettings(
       vaultId,
       workspaceSettings({ defaultNoteFolder: "Recovered" }),
@@ -430,14 +430,14 @@ describe("AppSettingsController", () => {
     store.rejectNext(failure);
     await expect(key).rejects.toThrow("settings disk unavailable");
     await waitForPendingSaves(store, 1);
-    expect(store.pending[0]?.settings.keyBindings["editor.revert-note"]).toBeNull();
+    expect(store.pending[0]?.settings.keyBindings["editor.insert-template"]).toBeNull();
     expect(store.pending[0]?.settings.workspaceByVault[vaultId]?.defaultNoteFolder).toBe(
       "Recovered",
     );
     store.releaseNext();
 
     const snapshot = await workspace;
-    expect(snapshot.settings.keyBindings["editor.revert-note"]).toBeNull();
+    expect(snapshot.settings.keyBindings["editor.insert-template"]).toBeNull();
     expect(snapshot.settings.workspaceByVault[vaultId]?.defaultNoteFolder).toBe("Recovered");
     expect(controller.getSnapshot()).toEqual(snapshot);
   });

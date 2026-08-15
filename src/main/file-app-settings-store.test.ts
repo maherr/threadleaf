@@ -27,11 +27,11 @@ describe("FileAppSettingsStore", () => {
   it("normalizes and durably replaces settings with private permissions", async () => {
     const store = new FileAppSettingsStore(settingsPath);
     const settings = createDefaultAppSettings();
-    settings.keyBindings["editor.revert-note"] = "alt + r";
+    settings.keyBindings["editor.insert-template"] = "alt + r";
 
     const saved = await store.save(settings);
 
-    expect(saved.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(saved.keyBindings["editor.insert-template"]).toBe("Alt+R");
     await expect(store.load()).resolves.toEqual(saved);
     const stat = await fs.stat(settingsPath);
     expect(stat.mode & 0o777).toBe(0o600);
@@ -49,12 +49,12 @@ describe("FileAppSettingsStore", () => {
     await expect(store.load()).resolves.toEqual(initial);
 
     const external = createDefaultAppSettings();
-    external.keyBindings["editor.revert-note"] = "Mod+R";
+    external.keyBindings["editor.insert-template"] = "Mod+R";
     const externalBytes = `${JSON.stringify(external, null, 2)}\n`;
     await fs.writeFile(settingsPath, externalBytes, "utf8");
 
     const attempted = createDefaultAppSettings();
-    attempted.keyBindings["editor.revert-note"] = "Alt+R";
+    attempted.keyBindings["editor.insert-template"] = "Alt+R";
     await expect(store.save(attempted)).rejects.toThrow(
       "changed externally; refusing to overwrite",
     );

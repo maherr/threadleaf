@@ -41,8 +41,6 @@ export const shortcutTargetIds = [
   "workspace.go-back",
   "workspace.go-forward",
   "workspace.focus-note-filter",
-  "editor.save-note",
-  "editor.revert-note",
   "editor.toggle-reading-view",
   "editor.toggle-source-mode",
   "editor.insert-template",
@@ -98,8 +96,6 @@ export const defaultKeyBindings: Readonly<Record<ShortcutTargetId, string | null
   "workspace.go-back": "Mod+BracketLeft",
   "workspace.go-forward": "Mod+BracketRight",
   "workspace.focus-note-filter": "Mod+P",
-  "editor.save-note": "Mod+S",
-  "editor.revert-note": null,
   "editor.toggle-reading-view": "Mod+E",
   "editor.toggle-source-mode": null,
   "editor.insert-template": null,
@@ -308,6 +304,9 @@ export function parseAppSettings(value: unknown): AppSettings {
   }
   const keyBindings: Record<string, string | null> = { ...defaultKeyBindings };
   for (const [targetId, binding] of entries) {
+    if (targetId === "editor.save-note" || targetId === "editor.revert-note") {
+      continue;
+    }
     if (!/^[a-z0-9][a-z0-9._:-]{0,199}$/i.test(targetId)) {
       throw new Error(`Invalid shortcut target: ${targetId}`);
     }

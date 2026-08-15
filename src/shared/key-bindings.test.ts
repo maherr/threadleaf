@@ -37,6 +37,8 @@ describe("key bindings", () => {
       keyBindings: {
         "ui.command-palette": "alt + k",
         "future.plugin-command": "mod + f8",
+        "editor.save-note": "Mod+O",
+        "editor.revert-note": "Alt+R",
       },
     });
 
@@ -51,6 +53,8 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
+    expect(parsed.keyBindings["editor.save-note"]).toBeUndefined();
+    expect(parsed.keyBindings["editor.revert-note"]).toBeUndefined();
     expect(parsed.version).toBe(5);
     expect(parsed.appearanceByVault).toEqual({});
     expect(parsed.pluginsByVault).toEqual({});
@@ -67,12 +71,12 @@ describe("key bindings", () => {
 
   it("updates one target without mutating the previous settings", () => {
     const original = createDefaultAppSettings();
-    const updated = updateKeyBinding(original, "editor.revert-note", "Alt+R");
+    const updated = updateKeyBinding(original, "editor.insert-template", "Alt+R");
 
-    expect(updated.keyBindings["editor.revert-note"]).toBe("Alt+R");
-    expect(original.keyBindings["editor.revert-note"]).toBeNull();
-    expect(() => updateKeyBinding(original, "editor.revert-note", "Mod+S")).toThrow(
-      "editor.save-note",
+    expect(updated.keyBindings["editor.insert-template"]).toBe("Alt+R");
+    expect(original.keyBindings["editor.insert-template"]).toBeNull();
+    expect(() => updateKeyBinding(original, "editor.insert-template", "Mod+O")).toThrow(
+      "workspace.open-vault",
     );
   });
 
@@ -97,10 +101,10 @@ describe("key bindings", () => {
         },
       },
     });
-    const updated = updateKeyBinding(parsed, "editor.revert-note", "Alt+R");
+    const updated = updateKeyBinding(parsed, "editor.insert-template", "Alt+R");
 
     expect(updated.appearanceByVault).toEqual(parsed.appearanceByVault);
-    expect(updated.keyBindings["editor.revert-note"]).toBe("Alt+R");
+    expect(updated.keyBindings["editor.insert-template"]).toBe("Alt+R");
     expect(updated.pluginsByVault).toEqual({});
   });
 

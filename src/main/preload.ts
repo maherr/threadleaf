@@ -6,6 +6,7 @@ import type {
 } from "../shared/accessibility-preferences";
 import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { AppearanceResponse, AppearanceSnapshot } from "../shared/appearance";
+import type { AutosaveFlushRequest, AutosaveFlushResult } from "../shared/autosave";
 import type {
   AppearancePackageApplyResponse,
   AppearancePackageInventoryResponse,
@@ -489,13 +490,14 @@ const bridge: ThreadleafBridge = {
       folderPath,
       expectedVaultId,
     ) as Promise<WorkspaceFolderCreateResponse>,
-  saveNote: (filePath, content, expectedRevision, expectedVaultId) =>
+  saveNote: (filePath, content, expectedRevision, expectedVaultId, paneId) =>
     ipcRenderer.invoke(
       ipcChannels.saveNote,
       filePath,
       content,
       expectedRevision,
       expectedVaultId,
+      paneId,
     ) as Promise<NoteSaveResponse>,
   saveCanvas: (filePath, content, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(
@@ -538,6 +540,15 @@ const bridge: ThreadleafBridge = {
       draftId,
       paneId,
     ) as Promise<EditorDraftClearResponse>,
+  completeAutosaveFlush: (result: AutosaveFlushResult) =>
+    ipcRenderer.send(ipcChannels.completeAutosaveFlush, result),
+  onAutosaveFlushRequest: (listener) => {
+    const subscription = (_event: Electron.IpcRendererEvent, request: AutosaveFlushRequest) => {
+      listener(request);
+    };
+    ipcRenderer.on(ipcChannels.requestAutosaveFlush, subscription);
+    return () => ipcRenderer.removeListener(ipcChannels.requestAutosaveFlush, subscription);
+  },
   onMenuCommand: (listener) => {
     const subscription = (_event: Electron.IpcRendererEvent, commandId: NativeMenuCommandId) => {
       listener(commandId);
