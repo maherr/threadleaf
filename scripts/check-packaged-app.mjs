@@ -231,7 +231,9 @@ async function focusTransclusionPreview() {
 
 async function openTransclusionPreview() {
   const opened = await evaluate(`(() => {
-    const note = document.querySelector('[data-note-path="Welcome.md"]');
+    const note = document.querySelector(
+      '#file-list[data-mode="tree"] .navigator-tree-row[data-kind="note"][data-tree-path="Welcome.md"], #file-list:not([data-mode="tree"]) [data-note-path="Welcome.md"]',
+    );
     if (!(note instanceof HTMLButtonElement)) return false;
     note.click();
     return true;

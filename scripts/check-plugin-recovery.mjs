@@ -156,7 +156,7 @@ async function waitForReadyPlugins(vaultPath, timeoutMs) {
       !snapshot?.startup &&
       snapshot?.vault?.path === vaultPath &&
       snapshot?.workspace?.state === "ready" &&
-      commandIds.has("hang") &&
+      commandIds.has("threadleaf-hang:hang") &&
       commandIds.has("threadleaf-fixture:threadleaf-fixture-confirm")
     ) {
       return snapshot;
@@ -173,7 +173,9 @@ async function runHangCommandThroughPalette(timeoutMs) {
     if (!(query instanceof HTMLInputElement)) return false;
     query.value = "hang";
     query.dispatchEvent(new Event("input", { bubbles: true }));
-    const option = document.querySelector('[data-command-id="plugin.command.hang"]');
+    const option = document.querySelector(
+      '[data-command-id="plugin.command.threadleaf-hang:hang"]',
+    );
     if (!(option instanceof HTMLButtonElement) || option.disabled) return false;
     option.click();
     return true;
@@ -392,7 +394,7 @@ try {
 
   assert(result, "Renderer probe returned no result.");
   assert(
-    result.before.commands.some(({ id }) => id === "hang"),
+    result.before.commands.some(({ id }) => id === "threadleaf-hang:hang"),
     "Hang command did not load.",
   );
   assert(
