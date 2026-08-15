@@ -128,9 +128,7 @@
       "compatibilityLevel": 4,
       "summary": "Activation, command execution, notice delivery, unload, reload, timeout isolation, and restart recovery passed for this exact fixture release.",
       "evidenceMode": "direct",
-      "requiredCapabilities": [
-        "workspace-ui"
-      ],
+      "requiredCapabilities": ["workspace-ui"],
       "platforms": [
         {
           "id": "linux-x64-electron",
@@ -142,16 +140,12 @@
         {
           "id": "macos-electron",
           "status": "packaged-only",
-          "limits": [
-            "The fixture is packaged but its complete workflow is not run on macOS CI."
-          ]
+          "limits": ["The fixture is packaged but its complete workflow is not run on macOS CI."]
         },
         {
           "id": "windows-x64-electron",
           "status": "packaged-only",
-          "limits": [
-            "The fixture is packaged but its complete workflow is not run on Windows CI."
-          ]
+          "limits": ["The fixture is packaged but its complete workflow is not run on Windows CI."]
         }
       ],
       "workflows": [
