@@ -2523,7 +2523,15 @@ function collectLiveCalloutBlocks(
       if (!parseCalloutSourceLine(firstLine.text)) return;
       const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1));
       const range = { from: firstLine.from, to: lastLine.to };
-      if (intersectsAny(range, active) || intersectsAny(range, protectedRanges)) return;
+      // A protected range fully inside the callout body (an inline code span, a
+      // fenced block, inline HTML) is ordinary content; only a range crossing
+      // the block boundary indicates renderer disagreement about the block.
+      const straddles = protectedRanges.some(
+        (protectedRange) =>
+          rangesIntersect(range, protectedRange) &&
+          !(range.from <= protectedRange.from && protectedRange.to <= range.to),
+      );
+      if (intersectsAny(range, active) || straddles) return;
       candidates.push({
         ...range,
         source: state.doc.sliceString(range.from, range.to),
@@ -2977,7 +2985,14 @@ const refreshLivePreview = StateEffect.define<null>();
 
 function buildCalloutDecorations(state: EditorState): DecorationSet {
   const source = state.doc.toString();
+  const frontmatter = scanFrontmatter(source);
+  if (frontmatter.status === "unresolved") {
+    return Decoration.none;
+  }
   const protectedRanges = markdownHtmlRanges(source);
+  if (frontmatter.status === "resolved" && frontmatter.closingLine !== null) {
+    protectedRanges.push({ from: 0, to: state.doc.line(frontmatter.closingLine).to });
+  }
   syntaxTree(state).iterate({
     enter(node) {
       if (["InlineCode", "FencedCode", "CodeText", "HTMLBlock", "HTMLTag"].includes(node.name)) {

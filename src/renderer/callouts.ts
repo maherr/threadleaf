@@ -41,8 +41,8 @@ const calloutAliases: Readonly<Record<string, StandardCalloutType>> = {
 };
 
 const sourceHeaderPattern =
-  /^(?: {0,3}>[\t ]+)+\[!([a-z0-9_-]+)\]([+-]?)(?=$|[\t ])(?:[\t ].*)?$/iu;
-const renderedHeaderPattern = /^\[!([a-z0-9_-]+)\]([+-]?)(?=$|[\t \r\n])/iu;
+  /^(?: {0,3}>[\t ]+)+\[!([a-zA-Z0-9_-]+)\]([+-]?)(?=$|[\t ])(?:[\t ].*)?$/u;
+const renderedHeaderPattern = /^\[!([a-zA-Z0-9_-]+)\]([+-]?)(?=$|[\t \r\n])/u;
 
 function foldFromMarker(marker: string): CalloutFold {
   if (marker === "+") return "expanded";

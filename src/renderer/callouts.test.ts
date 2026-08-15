@@ -144,4 +144,13 @@ describe("Obsidian-compatible callouts", () => {
       expect(root.querySelector("blockquote")?.textContent).toContain("[!note]");
     }
   });
+  it("restricts type identifiers to ASCII despite Unicode case-folding lookalikes", () => {
+    for (const source of ["> [!\u017f] Long s lookalike", "> [!\u212a] Kelvin lookalike"]) {
+      const root = preview(source);
+      expect(root.querySelector(".callout")).toBeNull();
+      expect(root.querySelector("blockquote")).not.toBeNull();
+    }
+    const upper = preview("> [!NOTE] Uppercase ASCII still resolves");
+    expect(upper.querySelector(".callout")?.getAttribute("data-callout")).toBe("note");
+  });
 });
