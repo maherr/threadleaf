@@ -191,6 +191,15 @@ function allowedFinalHost(url: URL): boolean {
   );
 }
 
+function requestHeaders(url: string, accept: string): Record<string, string> {
+  const headers: Record<string, string> = { Accept: accept, "User-Agent": "Threadleaf" };
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token && new URL(url).host === "api.github.com") {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 async function responseBytes(response: Response, maxBytes: number, label: string): Promise<Buffer> {
   const length = response.headers.get("content-length");
   if (length && Number(length) > maxBytes) {
@@ -365,7 +374,7 @@ export class OpenPluginPackageSource implements PluginPackageSource {
     accept = "application/octet-stream",
   ): Promise<Buffer> {
     const response = await this.#fetch(url, {
-      headers: { Accept: accept, "User-Agent": "Threadleaf" },
+      headers: requestHeaders(url, accept),
       redirect: "follow",
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
@@ -380,7 +389,7 @@ export class OpenPluginPackageSource implements PluginPackageSource {
 
   async #requestOptional(url: string, maxBytes: number, label: string): Promise<Buffer | null> {
     const response = await this.#fetch(url, {
-      headers: { Accept: "application/octet-stream", "User-Agent": "Threadleaf" },
+      headers: requestHeaders(url, "application/octet-stream"),
       redirect: "follow",
       signal: AbortSignal.timeout(requestTimeoutMs),
     });

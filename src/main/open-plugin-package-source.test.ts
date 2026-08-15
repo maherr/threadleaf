@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenPluginPackageSource } from "./open-plugin-package-source";
 
 const registryUrl =
@@ -98,7 +98,21 @@ function sourceFetch(
   });
 }
 
+function recordedRequests(fetchImplementation: ReturnType<typeof sourceFetch>) {
+  return fetchImplementation.mock.calls as unknown as Array<
+    [input: string | URL | Request, init: RequestInit | undefined]
+  >;
+}
+
+function authorization(init: RequestInit | undefined): string | null {
+  return new Headers(init?.headers).get("Authorization");
+}
+
 describe("open plugin package source", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("loads and caches the public index while accepting real-world plugin identifiers", async () => {
     const fetchImplementation = sourceFetch();
     const source = new OpenPluginPackageSource(fetchImplementation as typeof fetch);
@@ -132,6 +146,65 @@ describe("open plugin package source", () => {
       `https://api.github.com/repos/${repository}/license?ref=1.2.3`,
       expect.any(Object),
     );
+  });
+
+  it("sends the preferred GitHub token only to exact api.github.com requests", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "preferred-token");
+    vi.stubEnv("GH_TOKEN", "fallback-token");
+    const fetchImplementation = sourceFetch({ styles: true });
+    const source = new OpenPluginPackageSource(fetchImplementation as typeof fetch);
+
+    await source.getPackage("fixture-plugin");
+
+    const requests = recordedRequests(fetchImplementation);
+    const apiRequests = requests.filter(
+      ([input]) => new URL(String(input)).host === "api.github.com",
+    );
+    const nonApiRequests = requests.filter(
+      ([input]) => new URL(String(input)).host !== "api.github.com",
+    );
+    expect(apiRequests).toHaveLength(2);
+    expect(nonApiRequests.length).toBeGreaterThan(0);
+    for (const [, init] of apiRequests) {
+      expect(authorization(init)).toBe("Bearer preferred-token");
+    }
+    for (const [, init] of nonApiRequests) {
+      expect(authorization(init)).toBeNull();
+    }
+  });
+
+  it("falls back to GH_TOKEN for GitHub API requests", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "fallback-token");
+    const fetchImplementation = sourceFetch();
+    const source = new OpenPluginPackageSource(fetchImplementation as typeof fetch);
+
+    await source.getPackage("fixture-plugin");
+
+    const apiRequests = recordedRequests(fetchImplementation).filter(
+      ([input]) => new URL(String(input)).host === "api.github.com",
+    );
+    expect(apiRequests).toHaveLength(2);
+    for (const [, init] of apiRequests) {
+      expect(authorization(init)).toBe("Bearer fallback-token");
+    }
+  });
+
+  it("leaves GitHub API requests unauthenticated when no token is set", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
+    const fetchImplementation = sourceFetch();
+    const source = new OpenPluginPackageSource(fetchImplementation as typeof fetch);
+
+    await source.getPackage("fixture-plugin");
+
+    const apiRequests = recordedRequests(fetchImplementation).filter(
+      ([input]) => new URL(String(input)).host === "api.github.com",
+    );
+    expect(apiRequests).toHaveLength(2);
+    for (const [, init] of apiRequests) {
+      expect(authorization(init)).toBeNull();
+    }
   });
 
   it("treats styles.css as optional but requires a retained license", async () => {
