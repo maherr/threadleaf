@@ -336,6 +336,79 @@ export type WorkspaceFilePageResponse =
     }
   | { status: "stale-vault"; vaultId: string };
 
+export type WorkspaceTreeEntry =
+  | {
+      kind: "folder";
+      path: string;
+      title: string;
+      childCount: number;
+    }
+  | ({ kind: "note" } & WorkspaceFileSummary);
+
+export interface WorkspaceTreePageDescriptor {
+  generation: string;
+  parentPath: string | null;
+  offset: number;
+  limit: number;
+  total: number;
+  complete: boolean;
+}
+
+export interface WorkspaceTreePageRequest {
+  expectedVaultId: string;
+  generation: string;
+  parentPath: string | null;
+  offset: number;
+  limit: number;
+}
+
+export type WorkspaceTreePageResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      page: WorkspaceTreePageDescriptor;
+      entries: WorkspaceTreeEntry[];
+    }
+  | {
+      status: "warming" | "degraded" | "stale-generation";
+      vaultId: string;
+      generation: string;
+      census: WorkspaceCensusSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export interface WorkspaceTreePathPageLocation {
+  parentPath: string | null;
+  offset: number;
+}
+
+export interface WorkspaceTreePathLocation {
+  path: string;
+  pages: WorkspaceTreePathPageLocation[];
+}
+
+export interface WorkspaceTreePathRequest {
+  expectedVaultId: string;
+  generation: string;
+  path: string;
+}
+
+export type WorkspaceTreePathResponse =
+  | { status: "ready"; vaultId: string; location: WorkspaceTreePathLocation }
+  | { status: "missing"; vaultId: string }
+  | {
+      status: "warming" | "degraded" | "stale-generation";
+      vaultId: string;
+      generation: string;
+      census: WorkspaceCensusSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
+export interface WorkspaceFolderCreateResponse {
+  path: string;
+  created: boolean;
+}
+
 export interface WorkspaceCensusSnapshot {
   state: "warming" | "scanning" | "indexing" | "reconciling" | "current" | "degraded";
   generation: number;
@@ -1143,11 +1216,17 @@ export interface ThreadleafBridge {
   installAppUpdate(): Promise<AppUpdateSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
   getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
+  getWorkspaceTreePage(request: WorkspaceTreePageRequest): Promise<WorkspaceTreePageResponse>;
+  getWorkspaceTreePath(request: WorkspaceTreePathRequest): Promise<WorkspaceTreePathResponse>;
   reportWorkspaceOpenDiagnostics(acknowledgement: WorkspaceOpenTransferAcknowledgement): void;
   getWorkspaceLayout(expectedVaultId?: string): Promise<WorkspaceLayoutSnapshot>;
   setWorkspaceDockCollapsed(
     dockId: "left" | "right",
     collapsed: boolean,
+    expectedVaultId: string,
+  ): Promise<WorkspaceLayoutSnapshot>;
+  setWorkspaceNavigatorExpandedPaths(
+    paths: string[],
     expectedVaultId: string,
   ): Promise<WorkspaceLayoutSnapshot>;
   popOutPluginView(expectedVaultId: string): Promise<WorkspaceLayoutSnapshot>;
@@ -1354,6 +1433,10 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
   ): Promise<NoteBookmarksResponse>;
   createNote(path: string, content: string, expectedVaultId: string): Promise<NoteCreateResponse>;
+  createWorkspaceFolder(
+    folderPath: string,
+    expectedVaultId: string,
+  ): Promise<WorkspaceFolderCreateResponse>;
   saveNote(
     path: string,
     content: string,

@@ -72,6 +72,16 @@
             </div>
             <div class="navigator-heading-actions">
               <span class="count-badge" id="file-count">0</span>
+              <button
+                class="navigator-view-toggle"
+                id="navigator-view-toggle"
+                type="button"
+                aria-pressed="true"
+                aria-label="Switch to flat list"
+                title="Switch to flat list"
+              >
+                Tree
+              </button>
               <button class="navigator-new-note" id="new-note" type="button">
                 <span aria-hidden="true">＋</span>
                 <span>New</span>
@@ -105,6 +115,9 @@
           </label>
 
           <p class="filter-summary" id="filter-summary" aria-live="polite">Loading vault index</p>
+          <div class="navigator-tree-toolbar" id="navigator-tree-toolbar">
+            <button id="reveal-active-note" type="button">Reveal active note</button>
+          </div>
           <section
             class="bookmark-shelf"
             id="bookmark-shelf"
@@ -123,6 +136,20 @@
             id="file-list"
             aria-label="Markdown files"
           ></nav>
+          <div
+            class="navigator-context-menu"
+            id="navigator-context-menu"
+            role="menu"
+            aria-label="Folder actions"
+            hidden
+          >
+            <button id="navigator-context-new-note" type="button" role="menuitem">
+              New note here
+            </button>
+            <button id="navigator-context-new-folder" type="button" role="menuitem">
+              New folder
+            </button>
+          </div>
           <section class="canvas-shelf" aria-labelledby="canvas-heading">
             <header class="canvas-shelf-header">
               <span aria-hidden="true">▦</span>
@@ -448,6 +475,51 @@
           <span id="quick-switcher-hint">Ready</span>
         </footer>
       </div>
+    </dialog>
+
+    <dialog
+      class="new-note-dialog"
+      id="new-folder-dialog"
+      aria-labelledby="new-folder-title"
+      aria-describedby="new-folder-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="new-folder-form">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">▱</span>
+          <span>
+            <small>Filesystem-backed creation</small>
+            <strong id="new-folder-title">Create a folder</strong>
+          </span>
+          <button id="new-folder-close" type="button" aria-label="Cancel new folder">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="new-folder-description" class="new-note-description">
+          Enter a vault-relative folder path. Threadleaf creates missing parent folders and never
+          follows symbolic links.
+        </p>
+        <label class="new-note-field" for="new-folder-path">
+          <span>Folder path</span>
+          <input
+            id="new-folder-path"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Projects/Research"
+            maxlength="4096"
+            required
+          />
+        </label>
+        <p class="new-note-error" id="new-folder-error" role="alert" hidden></p>
+        <footer class="new-note-footer">
+          <span id="new-folder-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="new-folder-cancel" type="button">Cancel</button>
+            <button class="primary-button" id="new-folder-create" type="submit">Create folder</button>
+          </span>
+        </footer>
+      </form>
     </dialog>
 
     <dialog

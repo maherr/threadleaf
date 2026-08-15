@@ -1807,6 +1807,28 @@ function registerIpcHandlers(): void {
       request as Parameters<WorkspaceController["getWorkspaceFilePage"]>[0],
     );
   });
+  ipcMain.handle(ipcChannels.workspaceTreePage, (event, request: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Workspace tree pages require the active Threadleaf window.");
+    }
+    if (typeof request !== "object" || request === null) {
+      throw new Error("Workspace tree pages require a page request.");
+    }
+    return workspaceController.getWorkspaceTreePage(
+      request as Parameters<WorkspaceController["getWorkspaceTreePage"]>[0],
+    );
+  });
+  ipcMain.handle(ipcChannels.workspaceTreePath, (event, request: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Workspace tree paths require the active Threadleaf window.");
+    }
+    if (typeof request !== "object" || request === null) {
+      throw new Error("Workspace tree paths require a path request.");
+    }
+    return workspaceController.getWorkspaceTreePath(
+      request as Parameters<WorkspaceController["getWorkspaceTreePath"]>[0],
+    );
+  });
   ipcMain.handle(
     ipcChannels.setWorkspaceDockCollapsed,
     (event, dockId: unknown, collapsed: unknown, expectedVaultId: unknown) => {
@@ -1824,6 +1846,24 @@ function registerIpcHandlers(): void {
       }
       return workspaceLayoutController
         .setDockCollapsed(dockId, collapsed, expectedVaultId)
+        .then((snapshot) => snapshot);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.setWorkspaceNavigatorExpandedPaths,
+    (event, paths: unknown, expectedVaultId: unknown) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Navigator updates require the active Threadleaf window.");
+      }
+      if (
+        !Array.isArray(paths) ||
+        !paths.every((candidate) => typeof candidate === "string") ||
+        typeof expectedVaultId !== "string"
+      ) {
+        throw new Error("Navigator updates require string paths and a vault identity.");
+      }
+      return workspaceLayoutController
+        .setNavigatorExpandedPaths(paths, expectedVaultId)
         .then((snapshot) => snapshot);
     },
   );
@@ -3107,6 +3147,18 @@ function registerIpcHandlers(): void {
         throw new Error("Create note requires string path, content, and vault values.");
       }
       return workspaceController.createNote(filePath, content, expectedVaultId);
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.createWorkspaceFolder,
+    (event, folderPath: unknown, expectedVaultId: unknown) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Workspace folder creates require the active Threadleaf window.");
+      }
+      if (typeof folderPath !== "string" || typeof expectedVaultId !== "string") {
+        throw new Error("Workspace folder creates require a string path and vault identity.");
+      }
+      return workspaceController.createWorkspaceFolder(folderPath, expectedVaultId);
     },
   );
   ipcMain.handle(

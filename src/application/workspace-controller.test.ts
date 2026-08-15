@@ -25,6 +25,10 @@ import type {
   VaultTrashResponse,
   WorkspaceFilePageRequest,
   WorkspaceFilePageResponse,
+  WorkspaceTreePageRequest,
+  WorkspaceTreePageResponse,
+  WorkspaceTreePathRequest,
+  WorkspaceTreePathResponse,
 } from "../shared/contracts";
 import {
   createDefaultVaultWorkspaceSettings,
@@ -175,6 +179,36 @@ class FakeRuntime implements WorkspaceRuntimePort {
       },
       files: [],
     };
+  }
+
+  async getWorkspaceTreePage(
+    request: WorkspaceTreePageRequest,
+  ): Promise<WorkspaceTreePageResponse> {
+    if (request.expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      page: {
+        generation: request.generation,
+        parentPath: request.parentPath,
+        offset: request.offset,
+        limit: request.limit,
+        total: 0,
+        complete: true,
+      },
+      entries: [],
+    };
+  }
+
+  async getWorkspaceTreePath(
+    request: WorkspaceTreePathRequest,
+  ): Promise<WorkspaceTreePathResponse> {
+    if (request.expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return { status: "missing", vaultId: this.vaultId };
   }
 
   async markPluginLayoutReady(): Promise<RuntimeSnapshot> {

@@ -25,10 +25,43 @@ describe("workspace layout bounds", () => {
 
   it("rejects stale or malformed versioned private layout state", () => {
     const layout = createDefaultWorkspaceLayout("a".repeat(64));
-    expect(() => parseWorkspaceLayout({ ...layout, version: 2 }, layout.vaultId)).toThrow(
-      "version 1",
+    expect(() => parseWorkspaceLayout({ ...layout, version: 3 }, layout.vaultId)).toThrow(
+      "version 1 or 2",
     );
     expect(() => parseWorkspaceLayout(layout, "b".repeat(64))).toThrow("vault identity");
+  });
+
+  it("migrates version 1 layouts to collapsed navigator expansion state", () => {
+    const layout = createDefaultWorkspaceLayout("a".repeat(64));
+    const { navigator: _navigator, ...versionOne } = layout;
+    const migrated = parseWorkspaceLayout({ ...versionOne, version: 1 }, layout.vaultId);
+
+    expect(migrated).toMatchObject({
+      version: 2,
+      navigator: { expandedFolderPaths: [] },
+    });
+  });
+
+  it("normalizes bounded public navigator expansion paths", () => {
+    const layout = createDefaultWorkspaceLayout("a".repeat(64));
+    layout.navigator.expandedFolderPaths = ["zeta", "日本語/مرحبا", "Alpha"];
+    expect(parseWorkspaceLayout(layout, layout.vaultId).navigator.expandedFolderPaths).toEqual([
+      "Alpha",
+      "zeta",
+      "日本語/مرحبا",
+    ]);
+    expect(() =>
+      parseWorkspaceLayout(
+        { ...layout, navigator: { expandedFolderPaths: [".obsidian", "Visible"] } },
+        layout.vaultId,
+      ),
+    ).toThrow("hidden or traversal");
+    expect(() =>
+      parseWorkspaceLayout(
+        { ...layout, navigator: { expandedFolderPaths: ["Visible", "Visible"] } },
+        layout.vaultId,
+      ),
+    ).toThrow("duplicates");
   });
 
   it("permits a closed pop-out to retain its last visible bounds", () => {

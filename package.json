@@ -46,6 +46,7 @@
     "build:renderer": "vite build",
     "build:verify": "node scripts/check-built-app.mjs && node scripts/check-native-extension-build-artifact.mjs",
     "benchmark:search": "vitest bench --run src/kernel/full-text-search.bench.ts",
+    "benchmark:navigator-tree": "pnpm run build:benchmarks && node .bench-dist/navigator-tree-scale.cjs",
     "build:benchmarks": "tsup --config benchmarks/tsup.config.ts",
     "benchmark:corpus": "pnpm run build:benchmarks >/dev/null && node .bench-dist/runner.cjs --integrity --profile smoke",
     "benchmark:scale": "pnpm run build:benchmarks >/dev/null && node .bench-dist/runner.cjs",
@@ -127,6 +128,7 @@
     "test:pinned-tabs": "pnpm run build && node scripts/check-pinned-tabs.mjs",
     "test:workspace-docks-popouts": "pnpm run build && node scripts/check-workspace-docks-popouts.mjs",
     "test:workspace-panes": "pnpm run build && node scripts/check-workspace-panes.mjs",
+    "test:navigator-tree": "pnpm run build && node scripts/check-navigator-tree.mjs",
     "test:json-canvas": "pnpm run build && node scripts/check-json-canvas.mjs",
     "test:windows-package": "node scripts/check-windows-package.mjs",
     "typecheck": "tsc --noEmit"

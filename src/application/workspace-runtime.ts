@@ -7,7 +7,11 @@ import {
   watchedPathExists,
 } from "../kernel/node-vault-watcher";
 import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/note-path";
-import { hasPrivateVaultSegment, normalizeVaultPath } from "../kernel/path-policy";
+import {
+  hasHiddenVaultSegment,
+  hasPrivateVaultSegment,
+  normalizeVaultPath,
+} from "../kernel/path-policy";
 import type {
   StateRootPort,
   VaultDirectoryCreateResult,
@@ -63,6 +67,10 @@ import type {
   WorkspacePaneId,
   WorkspacePaneSnapshot,
   WorkspaceSplitDirection,
+  WorkspaceTreePageRequest,
+  WorkspaceTreePageResponse,
+  WorkspaceTreePathRequest,
+  WorkspaceTreePathResponse,
 } from "../shared/contracts";
 import { maximumWorkspaceFilePageSize } from "../shared/contracts";
 import {
@@ -81,6 +89,7 @@ import {
   parseVaultWorkspaceSettings,
   type VaultWorkspaceSettings,
 } from "../shared/workspace-settings";
+import { buildWorkspaceTreeIndex, type WorkspaceTreeIndex } from "../shared/workspace-tree";
 import { ActionRegistry } from "./action-registry";
 import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
 import { loadCanvasAttachment } from "./canvas-attachment-service";
@@ -243,6 +252,7 @@ interface WorkspaceIndexProjection {
   backlinks: Map<string, string[]>;
   files: WorkspaceFileSummary[];
   interactiveFiles: WorkspaceFileSummary[];
+  tree: WorkspaceTreeIndex;
 }
 
 const MAX_DESKTOP_TRASH_ENTRIES = 500;
@@ -261,6 +271,39 @@ interface SetNotePropertyRequest {
   type: NotePropertyType;
   expectedRevision: string;
   expectedVaultId: string;
+}
+
+function normalizeWorkspaceTreeParentPath(parentPath: string | null): string | null {
+  if (parentPath === null) return null;
+  if (
+    typeof parentPath !== "string" ||
+    parentPath.length === 0 ||
+    parentPath.length > 4_096 ||
+    hasHiddenVaultSegment(parentPath)
+  ) {
+    throw new Error("Workspace tree parent paths must be bounded public vault-relative paths.");
+  }
+  const normalized = normalizeVaultPath(parentPath);
+  if (normalized !== parentPath) {
+    throw new Error("Workspace tree parent paths must use a normalized vault-relative form.");
+  }
+  return normalized;
+}
+
+function normalizeWorkspaceTreePath(path: string): string {
+  if (
+    typeof path !== "string" ||
+    path.length === 0 ||
+    path.length > 4_096 ||
+    hasHiddenVaultSegment(path)
+  ) {
+    throw new Error("Workspace tree paths must be bounded public vault-relative paths.");
+  }
+  const normalized = normalizeVaultPath(path);
+  if (normalized !== path) {
+    throw new Error("Workspace tree paths must use a normalized vault-relative form.");
+  }
+  return normalized;
 }
 
 interface RemoveNotePropertyRequest {
@@ -1388,6 +1431,96 @@ export class WorkspaceRuntime {
         complete: request.offset + files.length >= sourceFiles.length,
       },
       files,
+    };
+  }
+
+  async getWorkspaceTreePage(
+    request: WorkspaceTreePageRequest,
+  ): Promise<WorkspaceTreePageResponse> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    if (
+      !Number.isSafeInteger(request.offset) ||
+      request.offset < 0 ||
+      !Number.isSafeInteger(request.limit) ||
+      request.limit < 1 ||
+      request.limit > maximumWorkspaceFilePageSize
+    ) {
+      throw new Error(
+        `Workspace tree pages require a non-negative offset and a limit from 1 to ${maximumWorkspaceFilePageSize}.`,
+      );
+    }
+    const parentPath = normalizeWorkspaceTreeParentPath(request.parentPath);
+    const generation = this.workspaceTreePageGeneration();
+    if (request.generation !== generation) {
+      return {
+        status: "stale-generation",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    if (this.#census.state !== "current") {
+      return {
+        status: this.#census.state === "degraded" ? "degraded" : "warming",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    const entries = this.workspaceIndexProjection().tree.childrenByParent.get(parentPath) ?? [];
+    const pageEntries = entries.slice(request.offset, request.offset + request.limit);
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      page: {
+        generation,
+        parentPath,
+        offset: request.offset,
+        limit: request.limit,
+        total: entries.length,
+        complete: request.offset + pageEntries.length >= entries.length,
+      },
+      entries: [...pageEntries],
+    };
+  }
+
+  async getWorkspaceTreePath(
+    request: WorkspaceTreePathRequest,
+  ): Promise<WorkspaceTreePathResponse> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    const path = normalizeWorkspaceTreePath(request.path);
+    const generation = this.workspaceTreePageGeneration();
+    if (request.generation !== generation) {
+      return {
+        status: "stale-generation",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    if (this.#census.state !== "current") {
+      return {
+        status: this.#census.state === "degraded" ? "degraded" : "warming",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    const location = this.workspaceIndexProjection().tree.pathLocations.get(path);
+    if (!location) {
+      return { status: "missing", vaultId: this.kernel.vaultId };
+    }
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      location: {
+        path: location.path,
+        pages: location.pages.map((page) => ({ ...page })),
+      },
     };
   }
 
@@ -3991,6 +4124,7 @@ export class WorkspaceRuntime {
         backlinks,
         files,
         interactiveFiles: files.slice(0, maximumWorkspaceFilePageSize),
+        tree: buildWorkspaceTreeIndex(files),
       };
       this.#indexProjection = projection;
     }
@@ -4002,6 +4136,10 @@ export class WorkspaceRuntime {
   }
 
   private workspaceFilePageGeneration(): string {
+    return this.workspaceIndexGeneration();
+  }
+
+  private workspaceTreePageGeneration(): string {
     return this.workspaceIndexGeneration();
   }
 
