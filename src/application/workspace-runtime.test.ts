@@ -329,6 +329,72 @@ describe("WorkspaceRuntime", () => {
     expect(stale).toMatchObject({ status: "stale-generation" });
   });
 
+  it("pages index-derived tree children and locates a deep active-note path without filesystem discovery", async () => {
+    const workspace = await openRuntime();
+    await workspace.createNote("Projects/2", "# Two\n", workspace.vaultId);
+    await workspace.createNote("Projects/مرحبا/10", "# Ten\n", workspace.vaultId);
+    const snapshot = await workspace.getSnapshot();
+    const generation = snapshot.workspace?.indexGeneration;
+    expect(generation).toEqual(expect.any(String));
+
+    const root = await workspace.getWorkspaceTreePage({
+      expectedVaultId: workspace.vaultId,
+      generation: generation ?? "missing",
+      parentPath: null,
+      offset: 0,
+      limit: 256,
+    });
+    expect(root).toMatchObject({
+      status: "ready",
+      page: { parentPath: null },
+      entries: expect.arrayContaining([
+        expect.objectContaining({ kind: "folder", path: "Projects", childCount: 2 }),
+      ]),
+    });
+
+    const projects = await workspace.getWorkspaceTreePage({
+      expectedVaultId: workspace.vaultId,
+      generation: generation ?? "missing",
+      parentPath: "Projects",
+      offset: 0,
+      limit: 256,
+    });
+    expect(projects).toMatchObject({
+      status: "ready",
+      entries: [
+        expect.objectContaining({ kind: "folder", path: "Projects/مرحبا", childCount: 1 }),
+        expect.objectContaining({ kind: "note", path: "Projects/2.md" }),
+      ],
+    });
+
+    await expect(
+      workspace.getWorkspaceTreePath({
+        expectedVaultId: workspace.vaultId,
+        generation: generation ?? "missing",
+        path: "Projects/مرحبا/10.md",
+      }),
+    ).resolves.toMatchObject({
+      status: "ready",
+      location: {
+        path: "Projects/مرحبا/10.md",
+        pages: [
+          { parentPath: null, offset: expect.any(Number) },
+          { parentPath: "Projects", offset: expect.any(Number) },
+          { parentPath: "Projects/مرحبا", offset: expect.any(Number) },
+        ],
+      },
+    });
+    await expect(
+      workspace.getWorkspaceTreePage({
+        expectedVaultId: workspace.vaultId,
+        generation: generation ?? "missing",
+        parentPath: ".obsidian",
+        offset: 0,
+        limit: 1,
+      }),
+    ).rejects.toThrow("bounded public");
+  });
+
   it("keeps an uncensused restored active tab selected in its waiting state", async () => {
     const store = new MemoryWorkspaceStateStore({
       openPaths: ["Welcome.md", "Not-arrived.md"],

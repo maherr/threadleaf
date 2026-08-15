@@ -238,12 +238,31 @@ async function snapshot() {
 }
 
 async function waitForReady() {
-  return waitFor(async () => {
+  const current = await waitFor(async () => {
     const current = await snapshot();
     return current?.workspace?.state === "ready" && current?.vault?.path === vaultPath
       ? current
       : null;
   }, "The isolated writable vault did not become ready");
+  await ensureFlatNavigator();
+  return current;
+}
+
+// This suite exercises panes, not hierarchy. Keep its historical flat-list
+// fixture explicit; check-navigator-tree owns the dedicated tree coverage.
+async function ensureFlatNavigator() {
+  const mode = await waitFor(async () => {
+    const value = await evaluate('document.querySelector("#file-list")?.dataset.mode ?? null');
+    return value === "tree" || value === "virtual" ? value : null;
+  }, "The navigator did not render before pane checks");
+  if (mode === "tree") await clickSelector("#navigator-view-toggle");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-list")?.dataset.mode')) === "virtual"
+        ? true
+        : null,
+    "The pane fixture could not select the flat navigator",
+  );
 }
 
 async function paneState(paneId) {

@@ -25,6 +25,10 @@ import type {
   VaultTrashResponse,
   WorkspaceFilePageRequest,
   WorkspaceFilePageResponse,
+  WorkspaceTreePageRequest,
+  WorkspaceTreePageResponse,
+  WorkspaceTreePathRequest,
+  WorkspaceTreePathResponse,
 } from "../shared/contracts";
 import {
   createDefaultVaultWorkspaceSettings,
@@ -175,6 +179,36 @@ class FakeRuntime implements WorkspaceRuntimePort {
       },
       files: [],
     };
+  }
+
+  async getWorkspaceTreePage(
+    request: WorkspaceTreePageRequest,
+  ): Promise<WorkspaceTreePageResponse> {
+    if (request.expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      page: {
+        generation: request.generation,
+        parentPath: request.parentPath,
+        offset: request.offset,
+        limit: request.limit,
+        total: 0,
+        complete: true,
+      },
+      entries: [],
+    };
+  }
+
+  async getWorkspaceTreePath(
+    request: WorkspaceTreePathRequest,
+  ): Promise<WorkspaceTreePathResponse> {
+    if (request.expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return { status: "missing", vaultId: this.vaultId };
   }
 
   async markPluginLayoutReady(): Promise<RuntimeSnapshot> {
@@ -1281,6 +1315,33 @@ describe("WorkspaceController", () => {
     expect(harness.runtimes[0]?.trashedPluginFile).toEqual({
       filePath: "Assets/Drawing.png",
       expectedRevision,
+      expectedVaultId,
+    });
+    await controller.close();
+  });
+
+  it("rejects hidden workspace folders without tightening the generic plugin folder route", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+
+    await expect(
+      controller.createWorkspaceFolder("Projects/.navigator-hidden", expectedVaultId),
+    ).rejects.toThrow("hidden");
+    await expect(
+      controller.createWorkspaceFolder(".navigator-hidden", expectedVaultId),
+    ).rejects.toThrow("hidden");
+    expect(harness.runtimes[0]?.createdPluginFolder).toBeNull();
+
+    await controller.createPluginFolder("Projects/.plugin-private", expectedVaultId);
+    expect(harness.runtimes[0]?.createdPluginFolder).toEqual({
+      folderPath: "Projects/.plugin-private",
       expectedVaultId,
     });
     await controller.close();

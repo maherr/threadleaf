@@ -363,12 +363,46 @@ async function captureScreenshot(name) {
 }
 
 async function waitForReady() {
-  return waitFor(async () => {
+  const state = await waitFor(async () => {
     const state = await evaluate(
       "(async () => { const snapshot = await window.threadleaf.getSnapshot(); return { ready: snapshot.workspace?.state === 'ready', path: snapshot.vault?.path ?? '', count: snapshot.workspace?.files?.length ?? 0, bookmarkDisabled: document.querySelector('#bookmark-note')?.disabled ?? true }; })()",
     );
     return state.ready && state.path === vaultPath && state.count === 2 ? state : null;
   }, "The isolated bookmark vault did not become ready");
+  await ensureFlatNavigator();
+  return state;
+}
+
+// Bookmark assertions intentionally retain their flat-list fixture. The
+// folder tree itself is exercised in check-navigator-tree.
+async function ensureFlatNavigator() {
+  const mode = await waitFor(async () => {
+    const value = await evaluate('document.querySelector("#file-list")?.dataset.mode ?? null');
+    return value === "tree" || value === "virtual" ? value : null;
+  }, "The navigator did not render before bookmark checks");
+  if (mode === "tree") await clickSelector("#navigator-view-toggle");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-list")?.dataset.mode')) === "virtual"
+        ? true
+        : null,
+    "The bookmark fixture could not select the flat navigator",
+  );
+}
+
+async function ensureTreeNavigator() {
+  const mode = await waitFor(async () => {
+    const value = await evaluate('document.querySelector("#file-list")?.dataset.mode ?? null');
+    return value === "tree" || value === "virtual" ? value : null;
+  }, "The navigator did not render before the narrow bookmark check");
+  if (mode === "virtual") await clickSelector("#navigator-view-toggle");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-list")?.dataset.mode')) === "tree"
+        ? true
+        : null,
+    "The narrow bookmark check could not restore the tree navigator",
+  );
 }
 
 async function bookmarkState() {
@@ -557,6 +591,7 @@ try {
   await setTheme("light");
   colourAudit.light = await bookmarkColours();
   await captureScreenshot("bookmarks-missing-light");
+  await ensureTreeNavigator();
   await cdp.send("Emulation.setDeviceMetricsOverride", {
     width: 640,
     height: 720,

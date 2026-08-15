@@ -25,6 +25,7 @@ class MemoryStore {
   failLoad = false;
   failSave = false;
   failSaveCount = 0;
+  saveCount = 0;
   get value(): WorkspaceLayoutDocument | null {
     return this.values.get(vaultId) ?? null;
   }
@@ -41,6 +42,7 @@ class MemoryStore {
     return value ? structuredClone(value) : null;
   }
   async save(layout: WorkspaceLayoutDocument): Promise<WorkspaceLayoutDocument> {
+    this.saveCount += 1;
     if (this.failSaveCount > 0) {
       this.failSaveCount -= 1;
       throw new Error("layout disk unavailable");
@@ -130,7 +132,7 @@ describe("WorkspaceLayoutController", () => {
       vaultId,
     );
     expect(controller.snapshot()).toMatchObject({
-      version: 1,
+      version: 2,
       vaultId,
       docks: { left: { collapsed: true } },
       popout: { state: "open", viewType: "drawing", filePath: "Drawing.md" },
@@ -138,6 +140,54 @@ describe("WorkspaceLayoutController", () => {
     await expect(controller.setDockCollapsed("right", true, "b".repeat(64))).rejects.toThrow(
       "active vault changed",
     );
+  });
+
+  it("persists normalized navigator expansion paths per vault", async () => {
+    const store = new MemoryStore();
+    const controller = new WorkspaceLayoutController({ store });
+    await controller.activateVault(vaultId);
+
+    const saved = await controller.setNavigatorExpandedPaths(
+      ["Projects/Research", "Archive"],
+      vaultId,
+    );
+    expect(saved.navigator.expandedFolderPaths).toEqual(["Archive", "Projects/Research"]);
+    expect(store.values.get(vaultId)?.navigator.expandedFolderPaths).toEqual([
+      "Archive",
+      "Projects/Research",
+    ]);
+
+    await expect(controller.setNavigatorExpandedPaths([".private"], vaultId)).rejects.toThrow(
+      "hidden or traversal",
+    );
+    expect(controller.snapshot().navigator.expandedFolderPaths).toEqual([
+      "Archive",
+      "Projects/Research",
+    ]);
+
+    await controller.activateVault(secondVaultId);
+    expect(controller.snapshot().navigator.expandedFolderPaths).toEqual([]);
+    await controller.activateVault(vaultId);
+    expect(controller.snapshot().navigator.expandedFolderPaths).toEqual([
+      "Archive",
+      "Projects/Research",
+    ]);
+  });
+
+  it("persists a deep navigator reveal chain with one layout write", async () => {
+    const store = new MemoryStore();
+    const controller = new WorkspaceLayoutController({ store });
+    await controller.activateVault(vaultId);
+    const paths = Array.from({ length: 128 }, (_, index) =>
+      Array.from({ length: index + 1 }, (_, segment) => `Depth-${segment}`.padEnd(12, "0")).join(
+        "/",
+      ),
+    );
+
+    const saved = await controller.setNavigatorExpandedPaths(paths, vaultId);
+
+    expect(saved.navigator.expandedFolderPaths).toEqual([...paths].sort());
+    expect(store.saveCount).toBe(1);
   });
 
   it("degrades unavailable saved views without rewriting malformed bytes", async () => {

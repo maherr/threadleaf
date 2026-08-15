@@ -42,6 +42,7 @@ function snapshotOf(document: WorkspaceLayoutDocument): WorkspaceLayoutSnapshot 
         warning: null,
       },
     },
+    navigator: { expandedFolderPaths: [...document.navigator.expandedFolderPaths] },
     mainWindowBounds: document.mainWindowBounds,
     popout: { ...document.popout },
   };
@@ -134,6 +135,24 @@ export class WorkspaceLayoutController {
     return this.persist(expectedVaultId, (document) => ({
       ...document,
       docks: { ...document.docks, [dockId]: { ...document.docks[dockId], collapsed } },
+    }));
+  }
+
+  async setNavigatorExpandedPaths(
+    paths: string[],
+    expectedVaultId: string,
+  ): Promise<WorkspaceLayoutSnapshot> {
+    this.assertVault(expectedVaultId);
+    const requestedPaths = parseWorkspaceLayout(
+      {
+        ...this.requireDocument(),
+        navigator: { expandedFolderPaths: [...paths] },
+      },
+      expectedVaultId,
+    ).navigator.expandedFolderPaths;
+    return this.persist(expectedVaultId, (document) => ({
+      ...document,
+      navigator: { expandedFolderPaths: requestedPaths },
     }));
   }
 

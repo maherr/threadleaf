@@ -47,8 +47,11 @@ import type {
   VaultSearchResponse,
   VaultTrashResponse,
   WorkspaceFilePageResponse,
+  WorkspaceFolderCreateResponse,
   WorkspaceSettingsResponse,
   WorkspaceSettingsUpdateResponse,
+  WorkspaceTreePageResponse,
+  WorkspaceTreePathResponse,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettingsSnapshot } from "../shared/key-bindings";
@@ -104,6 +107,16 @@ const bridge: ThreadleafBridge = {
       ipcChannels.workspaceFilePage,
       request,
     ) as Promise<WorkspaceFilePageResponse>,
+  getWorkspaceTreePage: (request) =>
+    ipcRenderer.invoke(
+      ipcChannels.workspaceTreePage,
+      request,
+    ) as Promise<WorkspaceTreePageResponse>,
+  getWorkspaceTreePath: (request) =>
+    ipcRenderer.invoke(
+      ipcChannels.workspaceTreePath,
+      request,
+    ) as Promise<WorkspaceTreePathResponse>,
   reportWorkspaceOpenDiagnostics: (acknowledgement) =>
     ipcRenderer.send(ipcChannels.workspaceOpenDiagnostics, acknowledgement),
   getWorkspaceLayout: (expectedVaultId?: string) =>
@@ -120,6 +133,12 @@ const bridge: ThreadleafBridge = {
       ipcChannels.setWorkspaceDockCollapsed,
       dockId,
       collapsed,
+      expectedVaultId,
+    ) as Promise<WorkspaceLayoutSnapshot>,
+  setWorkspaceNavigatorExpandedPaths: (paths: string[], expectedVaultId: string) =>
+    ipcRenderer.invoke(
+      ipcChannels.setWorkspaceNavigatorExpandedPaths,
+      paths,
       expectedVaultId,
     ) as Promise<WorkspaceLayoutSnapshot>,
   popOutPluginView: (expectedVaultId: string) =>
@@ -464,6 +483,12 @@ const bridge: ThreadleafBridge = {
       content,
       expectedVaultId,
     ) as Promise<NoteCreateResponse>,
+  createWorkspaceFolder: (folderPath, expectedVaultId) =>
+    ipcRenderer.invoke(
+      ipcChannels.createWorkspaceFolder,
+      folderPath,
+      expectedVaultId,
+    ) as Promise<WorkspaceFolderCreateResponse>,
   saveNote: (filePath, content, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.saveNote,

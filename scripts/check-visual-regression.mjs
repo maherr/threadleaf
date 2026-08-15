@@ -680,12 +680,20 @@ async function clearViewport() {
 }
 
 async function openNote(notePath) {
-  await clickSelector(`#file-list [data-note-path=${JSON.stringify(notePath)}]`);
+  await clickSelector(navigatorNoteSelector(notePath));
   await waitFor(
     async () =>
       (await evaluate("document.querySelector('#note-path')?.textContent ?? ''")) === notePath,
     `Note ${notePath} did not open`,
   );
+}
+
+function navigatorNoteSelector(notePath) {
+  const pathSelector = JSON.stringify(notePath);
+  return [
+    `#file-list[data-mode="tree"] [data-tree-path=${pathSelector}]`,
+    `#file-list:not([data-mode="tree"]) [data-note-path=${pathSelector}]`,
+  ].join(", ");
 }
 
 async function runPaletteCommand(commandId) {

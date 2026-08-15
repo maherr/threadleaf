@@ -290,7 +290,7 @@ async function snapshot() {
 }
 
 async function waitForReady() {
-  return waitFor(async () => {
+  const current = await waitFor(async () => {
     const current = await snapshot();
     return current?.workspace?.state === "ready" &&
       current?.vault?.path === vaultPath &&
@@ -298,6 +298,25 @@ async function waitForReady() {
       ? current
       : null;
   }, "The isolated writable vault did not become ready");
+  await ensureFlatNavigator();
+  return current;
+}
+
+// Pinned-tab coverage needs a stable flat file picker; navigator tree behavior
+// is asserted by the dedicated navigator integration suite.
+async function ensureFlatNavigator() {
+  const mode = await waitFor(async () => {
+    const value = await evaluate('document.querySelector("#file-list")?.dataset.mode ?? null');
+    return value === "tree" || value === "virtual" ? value : null;
+  }, "The navigator did not render before pinned-tab checks");
+  if (mode === "tree") await clickSelector("#navigator-view-toggle");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-list")?.dataset.mode')) === "virtual"
+        ? true
+        : null,
+    "The pinned-tab fixture could not select the flat navigator",
+  );
 }
 
 async function targetCenter(selector) {

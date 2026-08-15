@@ -26,7 +26,7 @@ describe("FileWorkspaceLayoutStore", () => {
     const filePath = path.join(sandboxPath, "layouts", `${vaultId}.json`);
     expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toMatchObject({
-      version: 1,
+      version: 2,
       vaultId,
       docks: { left: { collapsed: true } },
     });

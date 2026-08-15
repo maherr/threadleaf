@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { hasHiddenVaultSegment } from "../kernel/path-policy";
 import type {
   StateRootPort,
   VaultDirectoryCreateResult,
@@ -37,6 +38,10 @@ import type {
   WorkspaceFilePageResponse,
   WorkspacePaneId,
   WorkspaceSplitDirection,
+  WorkspaceTreePageRequest,
+  WorkspaceTreePageResponse,
+  WorkspaceTreePathRequest,
+  WorkspaceTreePathResponse,
 } from "../shared/contracts";
 import type { VaultNoteWorkflowSettings } from "../shared/note-workflows";
 import type { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
@@ -57,6 +62,17 @@ function displaySafeVaultName(value: string): string {
   return cleaned || "previous vault";
 }
 
+/**
+ * Navigator-created folders become part of the public index/tree namespace.
+ * Generic plugin folders retain their existing compatibility policy, so this
+ * deliberately narrows only the workspace action before it reaches that route.
+ */
+function assertPublicWorkspaceFolderPath(folderPath: string): void {
+  if (hasHiddenVaultSegment(folderPath)) {
+    throw new Error("Workspace folders cannot use hidden vault path segments.");
+  }
+}
+
 export interface VaultSelectionStore {
   load(): Promise<string | null>;
   save(vaultPath: string): Promise<void>;
@@ -67,6 +83,8 @@ export interface WorkspaceRuntimePort {
   readonly vaultPath: string;
   getSnapshot(): Promise<RuntimeSnapshot>;
   getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
+  getWorkspaceTreePage(request: WorkspaceTreePageRequest): Promise<WorkspaceTreePageResponse>;
+  getWorkspaceTreePath(request: WorkspaceTreePathRequest): Promise<WorkspaceTreePathResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse>;
   loadVaultImage(
@@ -498,6 +516,34 @@ export class WorkspaceController {
       return { status: "stale-vault", vaultId: runtime.vaultId };
     }
     const response = await runtime.getWorkspaceFilePage(request);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async getWorkspaceTreePage(
+    request: WorkspaceTreePageRequest,
+  ): Promise<WorkspaceTreePageResponse> {
+    const runtime = this.activeRuntime("load workspace tree entries");
+    if (runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.getWorkspaceTreePage(request);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async getWorkspaceTreePath(
+    request: WorkspaceTreePathRequest,
+  ): Promise<WorkspaceTreePathResponse> {
+    const runtime = this.activeRuntime("locate a workspace tree entry");
+    if (runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.getWorkspaceTreePath(request);
     if (this.#runtime !== runtime || this.#runtime.vaultId !== request.expectedVaultId) {
       return { status: "stale-vault", vaultId: this.#runtime.vaultId };
     }
@@ -1010,6 +1056,14 @@ export class WorkspaceController {
       folderPath,
       expectedVaultId,
     );
+  }
+
+  async createWorkspaceFolder(
+    folderPath: string,
+    expectedVaultId: string,
+  ): Promise<VaultDirectoryCreateResult> {
+    assertPublicWorkspaceFolderPath(folderPath);
+    return this.createPluginFolder(folderPath, expectedVaultId);
   }
 
   saveNote(

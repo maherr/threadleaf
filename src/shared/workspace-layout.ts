@@ -1,4 +1,5 @@
-export const workspaceLayoutVersion = 1 as const;
+export const workspaceLayoutVersion = 2 as const;
+export const maximumWorkspaceNavigatorExpandedPaths = 2_048;
 export const workspaceWindowMinimumWidth = 640;
 export const workspaceWindowMinimumHeight = 480;
 export const workspaceVisibleGrip = 48;
@@ -30,10 +31,15 @@ export interface WorkspacePopoutSnapshot {
   warning: string | null;
 }
 
+export interface WorkspaceNavigatorSnapshot {
+  expandedFolderPaths: string[];
+}
+
 export interface WorkspaceLayoutSnapshot {
   version: typeof workspaceLayoutVersion;
   vaultId: string;
   docks: Record<WorkspaceDockId, WorkspaceDockSnapshot>;
+  navigator: WorkspaceNavigatorSnapshot;
   mainWindowBounds: WorkspaceWindowBounds | null;
   popout: WorkspacePopoutSnapshot;
 }
@@ -45,6 +51,7 @@ export interface WorkspaceLayoutDocument {
     left: { collapsed: boolean; viewType: WorkspaceDockViewType };
     right: { collapsed: boolean; viewType: WorkspaceDockViewType };
   };
+  navigator: WorkspaceNavigatorSnapshot;
   mainWindowBounds: WorkspaceWindowBounds | null;
   popout: WorkspacePopoutSnapshot;
 }
@@ -121,13 +128,47 @@ function parsePopout(value: unknown): WorkspacePopoutSnapshot {
   return { state: value.state, viewType, filePath, bounds, warning };
 }
 
+function parseNavigatorFolderPath(value: unknown): string {
+  const folderPath = boundedString(value, "Navigator expanded folder path", 4_096);
+  if (folderPath.includes("\\") || folderPath.includes("\0") || folderPath.endsWith("/")) {
+    throw new Error("Navigator expanded folder paths must use a normalized relative form.");
+  }
+  const segments = folderPath.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        segment.length === 0 || segment === "." || segment === ".." || segment.startsWith("."),
+    )
+  ) {
+    throw new Error("Navigator expanded folder paths cannot use hidden or traversal segments.");
+  }
+  return folderPath;
+}
+
+function parseNavigator(value: unknown): WorkspaceNavigatorSnapshot {
+  if (!isRecord(value) || !Array.isArray(value.expandedFolderPaths)) {
+    throw new Error("Workspace navigator state is invalid.");
+  }
+  if (value.expandedFolderPaths.length > maximumWorkspaceNavigatorExpandedPaths) {
+    throw new Error(
+      `Workspace navigator supports at most ${maximumWorkspaceNavigatorExpandedPaths} expanded folders.`,
+    );
+  }
+  const paths = value.expandedFolderPaths.map(parseNavigatorFolderPath);
+  const unique = new Set(paths);
+  if (unique.size !== paths.length) {
+    throw new Error("Workspace navigator expanded folder paths must not contain duplicates.");
+  }
+  return { expandedFolderPaths: [...unique].sort() };
+}
+
 export function parseWorkspaceLayout(
   value: unknown,
   expectedVaultId: string,
 ): WorkspaceLayoutDocument {
   boundedString(expectedVaultId, "Workspace layout vault identity", 256);
-  if (!isRecord(value) || value.version !== workspaceLayoutVersion) {
-    throw new Error("Workspace layout requires version 1.");
+  if (!isRecord(value) || (value.version !== 1 && value.version !== workspaceLayoutVersion)) {
+    throw new Error("Workspace layout requires version 1 or 2.");
   }
   if (value.vaultId !== expectedVaultId || !isRecord(value.docks)) {
     throw new Error("Workspace layout vault identity or docks are invalid.");
@@ -144,6 +185,8 @@ export function parseWorkspaceLayout(
   const mainWindowBounds =
     value.mainWindowBounds === null ? null : parseWorkspaceWindowBounds(value.mainWindowBounds);
   const popout = parsePopout(value.popout);
+  const navigator =
+    value.version === 1 ? { expandedFolderPaths: [] } : parseNavigator(value.navigator);
   return {
     version: workspaceLayoutVersion,
     vaultId: expectedVaultId,
@@ -157,6 +200,7 @@ export function parseWorkspaceLayout(
         viewType: rightDock.viewType as WorkspaceDockViewType,
       },
     },
+    navigator,
     mainWindowBounds,
     popout,
   };
@@ -171,6 +215,7 @@ export function createDefaultWorkspaceLayout(vaultId: string): WorkspaceLayoutDo
       left: { collapsed: false, viewType: "navigator" },
       right: { collapsed: false, viewType: "inspector" },
     },
+    navigator: { expandedFolderPaths: [] },
     mainWindowBounds: null,
     popout: { state: "closed", viewType: null, filePath: null, bounds: null, warning: null },
   };

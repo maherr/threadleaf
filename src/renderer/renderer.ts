@@ -44,6 +44,7 @@ import type {
   VaultSearchResponse,
   WorkspaceCanvasSummary,
   WorkspaceFileSummary,
+  WorkspaceFolderCreateResponse,
   WorkspaceLinkSummary,
   WorkspaceNoteSnapshot,
   WorkspacePaneId,
@@ -169,6 +170,20 @@ import {
 import { vaultSearchDisplayContext } from "./vault-search-model";
 import "./styles.css";
 import type { WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
+import {
+  applyNavigatorTreePage,
+  buildNavigatorTreeProjection,
+  claimNavigatorTreePageRequest,
+  claimNavigatorTreePageRequests,
+  completeNavigatorTreePageRequest,
+  type NavigatorTreeEntryLocation,
+  type NavigatorTreeProjection,
+  type NavigatorTreeState,
+  navigatorTreePageRequestsForRange,
+  navigatorTreeParentPath,
+  reconcileNavigatorTreeState,
+  retainNavigatorTreePages,
+} from "./navigator-tree";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
 import {
   applyWorkspaceFilePage,
@@ -189,13 +204,19 @@ const elements = {
   statusShape: getElement("status-shape"),
   fileCount: getElement("file-count"),
   newNote: getButton("new-note"),
+  navigatorViewToggle: getButton("navigator-view-toggle"),
   fileSearch: getInput("file-search"),
   searchShortcut: getElement("search-shortcut"),
   filterSummary: getElement("filter-summary"),
+  navigatorTreeToolbar: getElement("navigator-tree-toolbar"),
+  revealActiveNote: getButton("reveal-active-note"),
   bookmarkShelf: getElement("bookmark-shelf"),
   bookmarkCount: getElement("bookmark-count"),
   bookmarkList: getElement("bookmark-list"),
   fileList: getElement("file-list"),
+  navigatorContextMenu: getElement("navigator-context-menu"),
+  navigatorContextNewNote: getButton("navigator-context-new-note"),
+  navigatorContextNewFolder: getButton("navigator-context-new-folder"),
   canvasFileCount: getElement("canvas-file-count"),
   canvasFileList: getElement("canvas-file-list"),
   indexStatus: getElement("index-status"),
@@ -415,6 +436,14 @@ const elements = {
   newNoteCreate: getButton("new-note-create"),
   newNoteError: getElement("new-note-error"),
   newNoteVault: getElement("new-note-vault"),
+  newFolderDialog: getDialog("new-folder-dialog"),
+  newFolderForm: getForm("new-folder-form"),
+  newFolderPath: getInput("new-folder-path"),
+  newFolderClose: getButton("new-folder-close"),
+  newFolderCancel: getButton("new-folder-cancel"),
+  newFolderCreate: getButton("new-folder-create"),
+  newFolderError: getElement("new-folder-error"),
+  newFolderVault: getElement("new-folder-vault"),
   templatePickerDialog: getDialog("template-picker-dialog"),
   templatePickerForm: getForm("template-picker-form"),
   templatePickerSelect: getSelect("template-picker-select"),
@@ -1011,9 +1040,29 @@ let virtualFileState: {
 } = { files: [], activePath: null };
 let workspaceFilePages: WorkspaceFilePagesState | null = null;
 let lastVirtualActivePath: string | null = null;
+type NavigatorViewMode = "tree" | "flat";
+const navigatorTreeRowHeight = 40;
+const navigatorTreeOverscan = 8;
+let navigatorViewMode: NavigatorViewMode = "tree";
+let navigatorTreeState: NavigatorTreeState | null = null;
+let navigatorTreeProjection: NavigatorTreeProjection | null = null;
+let navigatorTreeRenderFrame: number | undefined;
+let navigatorTreeRenderKey = "";
+let navigatorTreeRevision = 0;
+let navigatorExpandedPaths = new Set<string>();
+let navigatorFocusedPath: string | null = null;
+let navigatorPendingFocusIndex: number | null = null;
+let navigatorContextFolderPath: string | null | undefined;
+let navigatorRevealRequest = 0;
+let navigatorTreeRevealPath: string | null = null;
+let navigatorTreeRevealLocations: NavigatorTreeEntryLocation[] = [];
+let navigatorExpansionSave = false;
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
 let newNoteVaultId: string | null = null;
+let newFolderRestoreFocus: HTMLElement | null = null;
+let newFolderBusy = false;
+let newFolderVaultId: string | null = null;
 let templatePickerRestoreFocus: HTMLElement | null = null;
 let templatePickerBusy = false;
 let templatePickerVaultId: string | null = null;
@@ -3511,10 +3560,15 @@ function renderNewNoteDialog(): void {
       : "Active vault";
 }
 
-function openNewNoteDialog(): void {
+function openNewNoteDialog(initialFolderPath: string | null = null): void {
+  const initialPath = initialFolderPath ? `${initialFolderPath}/` : "";
   if (elements.newNoteDialog.open) {
+    if (initialPath) {
+      elements.newNotePath.value = initialPath;
+      elements.newNotePath.setSelectionRange(initialPath.length, initialPath.length);
+    }
     elements.newNotePath.focus();
-    elements.newNotePath.select();
+    if (!initialPath) elements.newNotePath.select();
     return;
   }
   if (!currentSnapshot?.vault.id || readOnlyVault() || busy || saving || dirty) {
@@ -3537,11 +3591,18 @@ function openNewNoteDialog(): void {
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
   newNoteBusy = false;
   newNoteVaultId = currentSnapshot.vault.id;
-  elements.newNotePath.value = "";
+  elements.newNotePath.value = initialPath;
   elements.newNoteError.textContent = "";
   elements.newNoteDialog.showModal();
   renderNewNoteDialog();
-  window.requestAnimationFrame(() => elements.newNotePath.focus());
+  window.requestAnimationFrame(() => {
+    elements.newNotePath.focus();
+    if (initialPath) {
+      elements.newNotePath.setSelectionRange(initialPath.length, initialPath.length);
+    } else {
+      elements.newNotePath.select();
+    }
+  });
 }
 
 function closeNewNoteDialog(restoreFocus = true): void {
@@ -3609,6 +3670,105 @@ async function createNewNote(): Promise<void> {
     showToast(`Created ${response.outcome.path}`);
   }
   window.setTimeout(() => editor.focus(), 0);
+}
+
+function renderNewFolderDialog(): void {
+  const staleVault = Boolean(
+    newFolderVaultId && currentSnapshot?.vault.id && newFolderVaultId !== currentSnapshot.vault.id,
+  );
+  if (staleVault && !elements.newFolderError.textContent) {
+    elements.newFolderError.textContent = "The active vault changed. Cancel and reopen New folder.";
+  }
+  const message = elements.newFolderError.textContent ?? "";
+  elements.newFolderError.hidden = message.length === 0;
+  elements.newFolderPath.disabled = newFolderBusy;
+  elements.newFolderClose.disabled = newFolderBusy;
+  elements.newFolderCancel.disabled = newFolderBusy;
+  elements.newFolderCreate.disabled = newFolderBusy || staleVault || readOnlyVault();
+  elements.newFolderCreate.textContent = newFolderBusy ? "Creating…" : "Create folder";
+  elements.newFolderForm.setAttribute("aria-busy", String(newFolderBusy));
+  elements.newFolderVault.textContent = staleVault
+    ? "Vault changed"
+    : currentSnapshot
+      ? `In ${currentSnapshot.vault.name}`
+      : "Active vault";
+}
+
+function openNewFolderDialog(parentFolderPath: string | null): void {
+  const initialPath = parentFolderPath ? `${parentFolderPath}/` : "";
+  if (elements.newFolderDialog.open) {
+    elements.newFolderPath.value = initialPath;
+    elements.newFolderPath.focus();
+    elements.newFolderPath.setSelectionRange(initialPath.length, initialPath.length);
+    return;
+  }
+  if (!currentSnapshot?.vault.id || readOnlyVault() || busy || saving || dirty) {
+    showToast(
+      readOnlyVault()
+        ? "This vault is read only."
+        : "Save or revert the open draft before creating a folder.",
+    );
+    return;
+  }
+  closeNavigatorContextMenu();
+  newFolderRestoreFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  newFolderBusy = false;
+  newFolderVaultId = currentSnapshot.vault.id;
+  elements.newFolderPath.value = initialPath;
+  elements.newFolderError.textContent = "";
+  elements.newFolderDialog.showModal();
+  renderNewFolderDialog();
+  window.requestAnimationFrame(() => {
+    elements.newFolderPath.focus();
+    elements.newFolderPath.setSelectionRange(initialPath.length, initialPath.length);
+  });
+}
+
+function closeNewFolderDialog(restoreFocus = true): void {
+  if (!elements.newFolderDialog.open || newFolderBusy) return;
+  elements.newFolderDialog.close();
+  newFolderVaultId = null;
+  const restoreTarget = newFolderRestoreFocus;
+  newFolderRestoreFocus = null;
+  if (restoreFocus && restoreTarget?.isConnected) restoreTarget.focus();
+}
+
+async function createNewFolder(): Promise<void> {
+  const expectedVaultId = newFolderVaultId;
+  if (!expectedVaultId || newFolderBusy) return;
+  const requestedPath = elements.newFolderPath.value.trim();
+  if (!requestedPath) {
+    elements.newFolderError.textContent = "Enter a vault-relative folder path.";
+    renderNewFolderDialog();
+    elements.newFolderPath.focus();
+    return;
+  }
+  let response: WorkspaceFolderCreateResponse | null = null;
+  newFolderBusy = true;
+  elements.newFolderError.textContent = "";
+  renderNewFolderDialog();
+  setActionState(true);
+  try {
+    response = await window.threadleaf.createWorkspaceFolder(requestedPath, expectedVaultId);
+  } catch (error) {
+    elements.newFolderError.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    newFolderBusy = false;
+    setActionState(false);
+    if (elements.newFolderDialog.open) renderNewFolderDialog();
+  }
+  if (!response) {
+    elements.newFolderPath.focus();
+    elements.newFolderPath.select();
+    return;
+  }
+  closeNewFolderDialog(false);
+  showToast(
+    response.created
+      ? `Created ${response.path}. It appears in the tree after it contains a Markdown note.`
+      : `${response.path} already exists.`,
+  );
 }
 
 async function openTodaysDailyNote(): Promise<void> {
@@ -8732,6 +8892,17 @@ function renderWorkspaceLayout(layout: WorkspaceLayoutSnapshot | null | undefine
     return;
   }
   workspaceLayoutSnapshot = layout;
+  if (!currentSnapshot?.vault.id || layout.vaultId === currentSnapshot.vault.id) {
+    const nextExpandedPaths = new Set(layout.navigator.expandedFolderPaths);
+    const expandedChanged =
+      nextExpandedPaths.size !== navigatorExpandedPaths.size ||
+      [...nextExpandedPaths].some((path) => !navigatorExpandedPaths.has(path));
+    navigatorExpandedPaths = nextExpandedPaths;
+    if (expandedChanged) {
+      navigatorTreeRevision += 1;
+      scheduleNavigatorTreeRender();
+    }
+  }
   elements.workspaceRoot.dataset.leftDockCollapsed = String(layout.docks.left.collapsed);
   elements.workspaceRoot.dataset.rightDockCollapsed = String(layout.docks.right.collapsed);
   const leftCollapsed = layout.docks.left.collapsed;
@@ -8809,6 +8980,7 @@ function render(snapshot: RuntimeSnapshot): void {
   const previousStartupOpening = currentSnapshot?.startup?.phase === "opening";
   currentSnapshot = snapshot;
   reconcileWorkspaceFilePages(snapshot);
+  reconcileNavigatorTree(snapshot);
   if (previousVaultId !== snapshot.vault.id) {
     workspaceModeRequest += 1;
     resetPaneDocumentModes(snapshot.vault.id);
@@ -9043,6 +9215,9 @@ function render(snapshot: RuntimeSnapshot): void {
     opening || readOnlyVault() || busy || anyPaneSaving() || anyPaneDirty();
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
+  }
+  if (elements.newFolderDialog.open) {
+    renderNewFolderDialog();
   }
   if (elements.templatePickerDialog.open) {
     renderTemplatePickerDialog();
@@ -9550,6 +9725,30 @@ function reconcileWorkspaceFilePages(snapshot: RuntimeSnapshot): void {
   );
 }
 
+function reconcileNavigatorTree(snapshot: RuntimeSnapshot): void {
+  const workspace = snapshot.workspace;
+  const vaultId = snapshot.vault.id;
+  if (!workspace || !vaultId) {
+    navigatorTreeState = null;
+    navigatorTreeProjection = null;
+    navigatorFocusedPath = null;
+    navigatorPendingFocusIndex = null;
+    navigatorTreeRevealPath = null;
+    navigatorTreeRevealLocations = [];
+    return;
+  }
+  const next = reconcileNavigatorTreeState(navigatorTreeState, vaultId, workspace.indexGeneration);
+  if (next !== navigatorTreeState) {
+    navigatorFocusedPath = null;
+    navigatorPendingFocusIndex = null;
+    navigatorTreeProjection = null;
+    navigatorTreeRevealPath = null;
+    navigatorTreeRevealLocations = [];
+    navigatorTreeRevision += 1;
+  }
+  navigatorTreeState = next;
+}
+
 function currentWorkspaceFileSlots(): Array<WorkspaceFileSummary | undefined> {
   return workspaceFilePages?.files ?? currentSnapshot?.workspace?.files ?? [];
 }
@@ -9598,14 +9797,530 @@ function requestWorkspaceFileRange(start: number, end: number): void {
   }
 }
 
+function cancelNavigatorTreeRender(): void {
+  if (navigatorTreeRenderFrame !== undefined) {
+    window.cancelAnimationFrame(navigatorTreeRenderFrame);
+    navigatorTreeRenderFrame = undefined;
+  }
+  navigatorTreeRenderKey = "";
+}
+
+function scheduleNavigatorTreeRender(): void {
+  if (
+    navigatorTreeRenderFrame !== undefined ||
+    vaultOpening() ||
+    elements.fileSearch.value.trim() ||
+    navigatorViewMode !== "tree"
+  ) {
+    return;
+  }
+  navigatorTreeRenderFrame = window.requestAnimationFrame(() => {
+    navigatorTreeRenderFrame = undefined;
+    renderNavigatorTree();
+  });
+}
+
+function requestNavigatorTreePage(request: {
+  parentPath: string | null;
+  offset: number;
+  limit: number;
+}): Promise<void> {
+  const state = navigatorTreeState;
+  if (!state) return Promise.resolve();
+  return window.threadleaf
+    .getWorkspaceTreePage({
+      expectedVaultId: state.vaultId,
+      generation: state.generation,
+      ...request,
+    })
+    .then((response) => {
+      if (
+        response.status !== "ready" ||
+        navigatorTreeState !== state ||
+        response.page.generation !== state.generation
+      ) {
+        return;
+      }
+      if (!applyNavigatorTreePage(state, response.page, response.entries)) return;
+      navigatorTreeRevision += 1;
+      renderNavigatorTree(loadedNote?.path ?? null, true);
+      const pendingFocusIndex = navigatorPendingFocusIndex;
+      if (pendingFocusIndex !== null) {
+        navigatorPendingFocusIndex = null;
+        focusNavigatorTreeIndex(pendingFocusIndex);
+      }
+    })
+    .catch((error: unknown) => {
+      if (navigatorTreeState === state) {
+        showToast(error instanceof Error ? error.message : String(error));
+      }
+    })
+    .finally(() => {
+      completeNavigatorTreePageRequest(state, request.parentPath, request.offset);
+      if (navigatorTreeState === state) {
+        navigatorTreeRevision += 1;
+        scheduleNavigatorTreeRender();
+      }
+    });
+}
+
+function renderNavigatorModeControls(queryActive: boolean): void {
+  const treeVisible = navigatorViewMode === "tree" && !queryActive;
+  elements.navigatorViewToggle.setAttribute("aria-pressed", String(navigatorViewMode === "tree"));
+  elements.navigatorViewToggle.textContent = navigatorViewMode === "tree" ? "Tree" : "List";
+  elements.navigatorViewToggle.ariaLabel =
+    navigatorViewMode === "tree" ? "Switch to flat list" : "Switch to folder tree";
+  elements.navigatorViewToggle.title = elements.navigatorViewToggle.ariaLabel;
+  elements.navigatorTreeToolbar.hidden = !treeVisible;
+  elements.revealActiveNote.disabled =
+    !treeVisible || !loadedNote || !navigatorTreeState || navigatorRevealRequest !== 0;
+}
+
+function renderNavigatorTree(
+  activePath: string | null = loadedNote?.path ?? null,
+  force = false,
+): void {
+  const workspace = currentSnapshot?.workspace;
+  const state = navigatorTreeState;
+  elements.fileList.dataset.mode = "tree";
+  elements.fileList.setAttribute("role", "tree");
+  elements.fileList.setAttribute("aria-label", "Vault note hierarchy");
+  if (!workspace || !state || workspace.census.state !== "current") {
+    elements.fileList.setAttribute("aria-busy", "true");
+    renderEmpty(
+      elements.fileList,
+      workspace?.census.state === "degraded"
+        ? "The note index is degraded, so the folder tree is unavailable."
+        : "Indexing Markdown notes in the background.",
+    );
+    return;
+  }
+
+  if (navigatorTreeRevealPath && navigatorTreeRevealPath !== activePath) {
+    navigatorTreeRevealPath = null;
+    navigatorTreeRevealLocations = [];
+  }
+
+  if (!state.pages.has(null)) {
+    const rootRequest = { parentPath: null, offset: 0, limit: 256 };
+    if (claimNavigatorTreePageRequest(state, rootRequest)) {
+      void requestNavigatorTreePage(rootRequest);
+    }
+    elements.fileList.setAttribute("aria-busy", "true");
+    renderEmpty(elements.fileList, "Loading the vault hierarchy.");
+    return;
+  }
+
+  const projection = buildNavigatorTreeProjection(state, navigatorExpandedPaths);
+  navigatorTreeProjection = projection;
+  const geometry = virtualListWindow({
+    itemCount: projection.length,
+    rowHeight: navigatorTreeRowHeight,
+    scrollTop: elements.fileList.scrollTop,
+    viewportHeight: Math.max(navigatorTreeRowHeight, elements.fileList.clientHeight),
+    overscan: navigatorTreeOverscan,
+  });
+  const retainedPageRequests = [
+    ...navigatorTreePageRequestsForRange(state, projection, geometry.start, geometry.end),
+  ];
+  for (const path of [navigatorFocusedPath, activePath]) {
+    const index = path ? projection.indexOfPath(path) : null;
+    if (index !== null) {
+      retainedPageRequests.push(
+        ...navigatorTreePageRequestsForRange(state, projection, index, index + 1),
+      );
+    }
+  }
+  retainNavigatorTreePages(state, retainedPageRequests, navigatorTreeRevealLocations);
+  for (const request of claimNavigatorTreePageRequests(
+    state,
+    projection,
+    geometry.start,
+    geometry.end,
+  )) {
+    void requestNavigatorTreePage(request);
+  }
+  const renderKey = `${navigatorTreeRevision}:${geometry.start}:${geometry.end}:${activePath ?? ""}:${navigatorFocusedPath ?? ""}:${projection.length}`;
+  if (!force && renderKey === navigatorTreeRenderKey) {
+    return;
+  }
+  navigatorTreeRenderKey = renderKey;
+  elements.fileList.setAttribute("aria-busy", String(state.pendingRequests.size > 0));
+  if (projection.length === 0) {
+    renderEmpty(elements.fileList, "No Markdown notes found.");
+    return;
+  }
+
+  const focusedIndex = navigatorFocusedPath ? projection.indexOfPath(navigatorFocusedPath) : null;
+  const activeIndex = activePath ? projection.indexOfPath(activePath) : null;
+  let targetIndex = focusedIndex ?? activeIndex;
+  if (targetIndex === null || targetIndex < geometry.start || targetIndex >= geometry.end) {
+    targetIndex = null;
+    for (let index = geometry.start; index < geometry.end; index += 1) {
+      if (projection.rowAt(index)?.kind === "entry") {
+        targetIndex = index;
+        break;
+      }
+    }
+  }
+  const targetRow = targetIndex === null ? null : projection.rowAt(targetIndex);
+  if (targetRow?.kind === "entry") {
+    navigatorFocusedPath = targetRow.entry.path;
+  }
+
+  const focusedTreePath =
+    document.activeElement instanceof HTMLElement &&
+    elements.fileList.contains(document.activeElement) &&
+    document.activeElement.classList.contains("navigator-tree-row")
+      ? (document.activeElement.dataset.treePath ?? null)
+      : null;
+
+  const fragment = document.createDocumentFragment();
+  fragment.append(createVirtualSpacer(geometry.topSpacer));
+  for (let index = geometry.start; index < geometry.end; index += 1) {
+    const row = projection.rowAt(index);
+    if (!row || row.kind === "placeholder") {
+      const placeholder = document.createElement("div");
+      placeholder.className = "navigator-tree-placeholder";
+      placeholder.style.height = `${navigatorTreeRowHeight}px`;
+      placeholder.setAttribute("aria-hidden", "true");
+      fragment.append(placeholder);
+      continue;
+    }
+    const { entry } = row;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "navigator-tree-row";
+    button.dataset.treePath = entry.path;
+    button.dataset.kind = entry.kind;
+    button.style.setProperty("--tree-depth", String(row.depth));
+    button.setAttribute("role", "treeitem");
+    button.setAttribute("aria-level", String(row.depth));
+    button.setAttribute("aria-posinset", String(row.siblingIndex + 1));
+    button.setAttribute("aria-setsize", String(row.siblingCount));
+    button.tabIndex = entry.path === navigatorFocusedPath ? 0 : -1;
+    if (entry.kind === "folder") {
+      button.setAttribute("aria-expanded", String(row.expanded));
+      button.ariaLabel = `${entry.path}, folder with ${entry.childCount} ${entry.childCount === 1 ? "item" : "items"}`;
+    } else {
+      button.setAttribute("aria-selected", String(entry.path === activePath));
+      if (entry.path === activePath) button.setAttribute("aria-current", "page");
+      button.ariaLabel = `Open ${entry.path}`;
+    }
+
+    const disclosure = document.createElement("span");
+    disclosure.className = "navigator-tree-disclosure";
+    disclosure.ariaHidden = "true";
+    disclosure.textContent = entry.kind === "folder" ? (row.expanded ? "▾" : "▸") : "·";
+    const copy = document.createElement("span");
+    copy.className = "navigator-tree-copy";
+    const title = document.createElement("strong");
+    title.textContent = entry.title;
+    const location = document.createElement("small");
+    location.textContent =
+      entry.kind === "folder"
+        ? `${entry.childCount.toLocaleString()} ${entry.childCount === 1 ? "item" : "items"}`
+        : (navigatorTreeParentPath(entry.path) ?? "Vault root");
+    copy.append(title, location);
+    button.append(disclosure, copy);
+    button.addEventListener("click", () => {
+      if (entry.kind === "folder") {
+        void setNavigatorFolderExpanded(entry.path, !navigatorExpandedPaths.has(entry.path));
+      } else {
+        void openNote(entry.path);
+      }
+    });
+    button.addEventListener("focus", () => {
+      navigatorFocusedPath = entry.path;
+    });
+    button.addEventListener("contextmenu", (event) => {
+      if (entry.kind !== "folder") return;
+      event.preventDefault();
+      openNavigatorContextMenu(entry.path, event.clientX, event.clientY);
+    });
+    button.addEventListener("keydown", (event) => handleNavigatorTreeKeydown(event, entry.path));
+    fragment.append(button);
+  }
+  fragment.append(createVirtualSpacer(geometry.bottomSpacer));
+  elements.fileList.replaceChildren(fragment);
+  if (focusedTreePath && focusedTreePath === navigatorFocusedPath) {
+    const restored = [
+      ...elements.fileList.querySelectorAll<HTMLButtonElement>(".navigator-tree-row"),
+    ].find((button) => button.dataset.treePath === focusedTreePath);
+    restored?.focus({ preventScroll: true });
+  }
+}
+
+function focusNavigatorTreeIndex(index: number): void {
+  const projection = navigatorTreeProjection;
+  const state = navigatorTreeState;
+  if (!projection || !state) return;
+  const row = projection.rowAt(index);
+  if (!row) return;
+  if (row.kind === "placeholder") {
+    navigatorPendingFocusIndex = index;
+    const requests = claimNavigatorTreePageRequests(state, projection, index, index + 1);
+    if (requests.length > 0) {
+      retainNavigatorTreePages(state, requests, navigatorTreeRevealLocations);
+    }
+    for (const request of requests) {
+      void requestNavigatorTreePage(request);
+    }
+    return;
+  }
+  navigatorPendingFocusIndex = null;
+  navigatorFocusedPath = row.entry.path;
+  elements.fileList.scrollTop = nearestItemScrollTop(
+    index,
+    navigatorTreeRowHeight,
+    elements.fileList.scrollTop,
+    Math.max(navigatorTreeRowHeight, elements.fileList.clientHeight),
+  );
+  renderNavigatorTree(loadedNote?.path ?? null, true);
+  const focusRenderedPath = (): void => {
+    for (const button of elements.fileList.querySelectorAll<HTMLButtonElement>(
+      ".navigator-tree-row",
+    )) {
+      if (button.dataset.treePath === navigatorFocusedPath) {
+        button.focus();
+        return;
+      }
+    }
+  };
+  focusRenderedPath();
+  window.requestAnimationFrame(focusRenderedPath);
+}
+
+function handleNavigatorTreeKeydown(event: KeyboardEvent, path: string): void {
+  navigatorFocusedPath = path;
+  const projection = navigatorTreeProjection;
+  const index = projection?.indexOfPath(path) ?? null;
+  const row = index === null ? null : projection?.rowAt(index);
+  if (!projection || index === null || !row || row.kind !== "entry") return;
+
+  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+    if (row.entry.kind === "folder") {
+      event.preventDefault();
+      const button = event.currentTarget as HTMLElement;
+      const bounds = button.getBoundingClientRect();
+      openNavigatorContextMenu(row.entry.path, bounds.left, bounds.bottom);
+    }
+    return;
+  }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    focusNavigatorTreeIndex(Math.min(projection.length - 1, index + 1));
+    return;
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    focusNavigatorTreeIndex(Math.max(0, index - 1));
+    return;
+  }
+  if (event.key === "Home") {
+    event.preventDefault();
+    focusNavigatorTreeIndex(0);
+    return;
+  }
+  if (event.key === "End") {
+    event.preventDefault();
+    focusNavigatorTreeIndex(Math.max(0, projection.length - 1));
+    return;
+  }
+  if (event.key === "ArrowRight" && row.entry.kind === "folder") {
+    event.preventDefault();
+    if (!navigatorExpandedPaths.has(row.entry.path)) {
+      void setNavigatorFolderExpanded(row.entry.path, true);
+    } else {
+      focusNavigatorTreeIndex(Math.min(projection.length - 1, index + 1));
+    }
+    return;
+  }
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    if (row.entry.kind === "folder" && navigatorExpandedPaths.has(row.entry.path)) {
+      void setNavigatorFolderExpanded(row.entry.path, false);
+    } else if (row.parentPath) {
+      const parentIndex = projection.indexOfPath(row.parentPath);
+      if (parentIndex !== null) focusNavigatorTreeIndex(parentIndex);
+    }
+    return;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    if (row.entry.kind === "folder") {
+      void setNavigatorFolderExpanded(row.entry.path, !navigatorExpandedPaths.has(row.entry.path));
+    } else {
+      void openNote(row.entry.path);
+    }
+  }
+}
+
+function sameNavigatorExpandedPaths(nextPaths: ReadonlySet<string>): boolean {
+  return (
+    nextPaths.size === navigatorExpandedPaths.size &&
+    [...nextPaths].every((path) => navigatorExpandedPaths.has(path))
+  );
+}
+
+async function persistNavigatorExpandedPaths(
+  nextPaths: ReadonlySet<string>,
+  focusedFolderPath: string | null = null,
+): Promise<boolean> {
+  const expectedVaultId = currentSnapshot?.vault.id;
+  const layout = workspaceLayoutSnapshot;
+  if (!expectedVaultId || !layout || layout.vaultId !== expectedVaultId || navigatorExpansionSave) {
+    return false;
+  }
+  if (sameNavigatorExpandedPaths(nextPaths)) return false;
+  if (focusedFolderPath) navigatorFocusedPath = focusedFolderPath;
+  navigatorTreeRevision += 1;
+  navigatorExpansionSave = true;
+  try {
+    renderWorkspaceLayout(
+      await window.threadleaf.setWorkspaceNavigatorExpandedPaths([...nextPaths], expectedVaultId),
+    );
+    return true;
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+    return false;
+  } finally {
+    navigatorExpansionSave = false;
+  }
+}
+
+async function setNavigatorFolderExpanded(folderPath: string, expanded: boolean): Promise<void> {
+  const nextPaths = new Set(navigatorExpandedPaths);
+  if (expanded) {
+    nextPaths.add(folderPath);
+  } else {
+    nextPaths.delete(folderPath);
+  }
+  if (!(await persistNavigatorExpandedPaths(nextPaths, folderPath))) return;
+  renderNavigatorTree(loadedNote?.path ?? null, true);
+  const focusedIndex = navigatorTreeProjection?.indexOfPath(folderPath) ?? null;
+  if (focusedIndex !== null) {
+    focusNavigatorTreeIndex(focusedIndex);
+  }
+}
+
+async function revealActiveNavigatorNote(): Promise<void> {
+  const activePath = loadedNote?.path ?? null;
+  const state = navigatorTreeState;
+  if (!activePath || !state || navigatorRevealRequest !== 0) return;
+  const request = ++navigatorRevealRequest;
+  renderNavigatorModeControls(Boolean(elements.fileSearch.value.trim()));
+  try {
+    const response = await window.threadleaf.getWorkspaceTreePath({
+      expectedVaultId: state.vaultId,
+      generation: state.generation,
+      path: activePath,
+    });
+    if (request !== navigatorRevealRequest || navigatorTreeState !== state) return;
+    if (response.status === "missing") {
+      showToast("The active note is no longer present in the indexed vault tree.");
+      return;
+    }
+    if (response.status !== "ready") {
+      showToast("The folder tree is still catching up with the active note.");
+      return;
+    }
+    const folderPaths: string[] = [];
+    let parentPath = navigatorTreeParentPath(activePath);
+    while (parentPath) {
+      folderPaths.unshift(parentPath);
+      parentPath = navigatorTreeParentPath(parentPath);
+    }
+    const missingFolderPaths = folderPaths.filter(
+      (folderPath) => !navigatorExpandedPaths.has(folderPath),
+    );
+    const pageRequests = response.location.pages.map((page) => {
+      const children = state.pages.get(page.parentPath);
+      const limit = children?.descriptor.limit ?? 256;
+      return {
+        parentPath: page.parentPath,
+        offset: Math.floor(page.offset / limit) * limit,
+        limit,
+      };
+    });
+    navigatorTreeRevealPath = activePath;
+    navigatorTreeRevealLocations = response.location.pages.map((page) => ({ ...page }));
+    if (missingFolderPaths.length > 0) {
+      const nextPaths = new Set(navigatorExpandedPaths);
+      for (const folderPath of missingFolderPaths) nextPaths.add(folderPath);
+      if (!(await persistNavigatorExpandedPaths(nextPaths))) return;
+    }
+    if (request !== navigatorRevealRequest || navigatorTreeState !== state) return;
+    // Ancestor rows, not every fetched sibling page, are pinned for a deep
+    // reveal. The normal viewport/focus retention pass keeps its working page
+    // set bounded while the parallel requests fill those exact rows.
+    retainNavigatorTreePages(state, [], navigatorTreeRevealLocations);
+    renderNavigatorTree(activePath, true);
+    await Promise.all(
+      pageRequests.flatMap((pageRequest) =>
+        claimNavigatorTreePageRequest(state, pageRequest)
+          ? [requestNavigatorTreePage(pageRequest)]
+          : [],
+      ),
+    );
+    const targetIndex = navigatorTreeProjection?.indexOfPath(activePath) ?? null;
+    if (targetIndex !== null) focusNavigatorTreeIndex(targetIndex);
+  } catch (error) {
+    if (request === navigatorRevealRequest) {
+      showToast(error instanceof Error ? error.message : String(error));
+    }
+  } finally {
+    if (request === navigatorRevealRequest) {
+      navigatorRevealRequest = 0;
+      renderNavigatorModeControls(Boolean(elements.fileSearch.value.trim()));
+    }
+  }
+}
+
+function closeNavigatorContextMenu(restoreFocus = false): void {
+  if (elements.navigatorContextMenu.hidden) return;
+  elements.navigatorContextMenu.hidden = true;
+  elements.navigatorContextMenu.style.removeProperty("left");
+  elements.navigatorContextMenu.style.removeProperty("top");
+  const folderPath = navigatorContextFolderPath;
+  navigatorContextFolderPath = undefined;
+  if (restoreFocus && folderPath) {
+    for (const button of elements.fileList.querySelectorAll<HTMLButtonElement>(
+      ".navigator-tree-row",
+    )) {
+      if (button.dataset.treePath === folderPath) {
+        button.focus();
+        break;
+      }
+    }
+  }
+}
+
+function openNavigatorContextMenu(
+  folderPath: string | null,
+  clientX: number,
+  clientY: number,
+): void {
+  navigatorContextFolderPath = folderPath;
+  elements.navigatorContextMenu.hidden = false;
+  const width = 164;
+  const height = 80;
+  elements.navigatorContextMenu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - width))}px`;
+  elements.navigatorContextMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - height))}px`;
+  elements.navigatorContextNewNote.focus();
+}
+
 function renderFiles(
   files: Array<WorkspaceFileSummary | undefined>,
   activePath: string | null,
 ): void {
   const query = elements.fileSearch.value.trim();
+  renderNavigatorModeControls(query !== "");
   if (vaultOpening()) {
     cancelVirtualFileRender();
+    cancelNavigatorTreeRender();
     elements.fileList.dataset.mode = "empty";
+    elements.fileList.removeAttribute("role");
     elements.fileList.replaceChildren();
     elements.fileList.setAttribute("aria-busy", "true");
     elements.fileList.setAttribute("aria-label", "Vault index progress");
@@ -9624,13 +10339,23 @@ function renderFiles(
 
   if (query) {
     cancelVirtualFileRender();
+    cancelNavigatorTreeRender();
     elements.fileList.dataset.mode = "search";
+    elements.fileList.removeAttribute("role");
     elements.fileList.replaceChildren();
     renderVaultSearchResults(activePath, files.length);
     return;
   }
 
   const indexed = currentSnapshot?.workspace?.census.indexed ?? files.length;
+  if (navigatorViewMode === "tree") {
+    cancelVirtualFileRender();
+    elements.filterSummary.textContent = `${indexed.toLocaleString()} ${indexed === 1 ? "note" : "notes"} indexed`;
+    renderNavigatorTree(activePath, true);
+    return;
+  }
+
+  elements.fileList.removeAttribute("role");
   elements.filterSummary.textContent = `${indexed.toLocaleString()} ${indexed === 1 ? "note" : "notes"} indexed`;
   const activeChanged = activePath !== lastVirtualActivePath;
   virtualFileState = { files, activePath };
@@ -9873,6 +10598,10 @@ function cancelVirtualFileRender(): void {
 }
 
 function scheduleVirtualFileRender(): void {
+  if (navigatorViewMode === "tree" && !elements.fileSearch.value.trim()) {
+    scheduleNavigatorTreeRender();
+    return;
+  }
   if (virtualFileRenderFrame !== undefined || vaultOpening() || elements.fileSearch.value.trim()) {
     return;
   }
@@ -11249,6 +11978,9 @@ function setActionState(nextBusy: boolean): void {
   const paneDirty = anyPaneDirty();
   elements.openVault.disabled = busy || paneSaving;
   elements.newNote.disabled = opening || readOnlyVault() || busy || paneSaving || paneDirty;
+  if (elements.newFolderDialog.open) {
+    renderNewFolderDialog();
+  }
   elements.reloadPlugin.disabled =
     opening ||
     busy ||
@@ -11272,6 +12004,52 @@ function setActionState(nextBusy: boolean): void {
 
 elements.fileSearch.addEventListener("input", () => {
   scheduleVaultSearch();
+});
+elements.navigatorViewToggle.addEventListener("click", () => {
+  navigatorViewMode = navigatorViewMode === "tree" ? "flat" : "tree";
+  closeNavigatorContextMenu();
+  elements.fileList.scrollTop = 0;
+  renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
+});
+elements.revealActiveNote.addEventListener("click", () => void revealActiveNavigatorNote());
+elements.navigatorContextNewNote.addEventListener("click", () => {
+  const folderPath = navigatorContextFolderPath;
+  const hasContext = folderPath !== undefined;
+  closeNavigatorContextMenu(true);
+  if (hasContext) openNewNoteDialog(folderPath ?? null);
+});
+elements.navigatorContextNewFolder.addEventListener("click", () => {
+  const folderPath = navigatorContextFolderPath;
+  const hasContext = folderPath !== undefined;
+  closeNavigatorContextMenu(true);
+  if (hasContext) openNewFolderDialog(folderPath ?? null);
+});
+elements.fileList.addEventListener("contextmenu", (event) => {
+  if (
+    navigatorViewMode !== "tree" ||
+    elements.fileSearch.value.trim() ||
+    !(event.target instanceof Element) ||
+    event.target.closest(".navigator-tree-row")
+  ) {
+    return;
+  }
+  event.preventDefault();
+  openNavigatorContextMenu(null, event.clientX, event.clientY);
+});
+document.addEventListener("pointerdown", (event) => {
+  if (
+    !elements.navigatorContextMenu.hidden &&
+    event.target instanceof Node &&
+    !elements.navigatorContextMenu.contains(event.target)
+  ) {
+    closeNavigatorContextMenu();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.navigatorContextMenu.hidden) {
+    event.preventDefault();
+    closeNavigatorContextMenu(true);
+  }
 });
 elements.fileList.addEventListener("scroll", scheduleVirtualFileRender, { passive: true });
 window.addEventListener("resize", scheduleVirtualFileRender);
@@ -11776,6 +12554,21 @@ elements.newNoteDialog.addEventListener("click", (event) => {
     closeNewNoteDialog();
   }
 });
+elements.newFolderForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void createNewFolder();
+});
+elements.newFolderClose.addEventListener("click", () => closeNewFolderDialog());
+elements.newFolderCancel.addEventListener("click", () => closeNewFolderDialog());
+elements.newFolderDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeNewFolderDialog();
+});
+elements.newFolderDialog.addEventListener("click", (event) => {
+  if (event.target === elements.newFolderDialog) {
+    closeNewFolderDialog();
+  }
+});
 elements.templatePickerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void insertSelectedTemplate();
@@ -11885,6 +12678,7 @@ document.addEventListener("keydown", (event) => {
       elements.graphDialog.open ||
       elements.recoveryDialog.open ||
       elements.newNoteDialog.open ||
+      elements.newFolderDialog.open ||
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
@@ -11911,6 +12705,7 @@ document.addEventListener("keydown", (event) => {
       elements.graphDialog.open ||
       elements.recoveryDialog.open ||
       elements.newNoteDialog.open ||
+      elements.newFolderDialog.open ||
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
@@ -11935,6 +12730,7 @@ document.addEventListener("keydown", (event) => {
       elements.graphDialog.open ||
       elements.recoveryDialog.open ||
       elements.newNoteDialog.open ||
+      elements.newFolderDialog.open ||
       elements.templatePickerDialog.open ||
       elements.propertyDialog.open ||
       elements.moveNoteDialog.open ||
@@ -11961,6 +12757,7 @@ document.addEventListener("keydown", (event) => {
     elements.graphDialog.open ||
     elements.recoveryDialog.open ||
     elements.newNoteDialog.open ||
+    elements.newFolderDialog.open ||
     elements.templatePickerDialog.open ||
     elements.propertyDialog.open ||
     elements.moveNoteDialog.open ||
