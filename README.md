@@ -33,22 +33,26 @@ derived state. The first window no longer waits for a complete restored-vault sc
 target, shows indexing state, blocks bootstrap writes, and lets a user choose another vault while
 the real runtime opens in the background. Revision-aware saves use the recoverable writer. If the
 file changed externally, the original is left untouched and the local edit becomes a clearly
-labeled conflict copy. Unsaved Markdown is also protected in a versioned, atomic, private draft
-store outside the vault. Threadleaf retains the exact vault, note, base revision, bytes, and
-selection, clears only the matching committed or reverted draft, and replaces a stopped main
-renderer with a fresh window that restores that state. If the disk changed while the renderer was
-down, recovery keeps the changed disk note untouched and routes a later save through the same
-conflict-copy path. Core actions and dynamically registered compatibility-plugin commands share
-a searchable, keyboard-navigable command palette. Versioned application settings now keep remappable
-keyboard shortcuts outside every vault, reject collisions, and persist changes before activating
-them. Compatibility plugins
+labeled conflict copy. The editor continuously autosaves through that writer after 1.5 seconds of
+inactivity and flushes pending edits before note, tab, pane, vault, window, and application
+transitions. There are no manual Save or Revert gates; Undo is the user-facing revert operation.
+Pending Markdown is also protected in a versioned, atomic, private draft store outside the vault.
+Threadleaf retains the exact vault, note, base revision, bytes, and selection, clears only the
+matching committed draft, and replaces a stopped main renderer with a fresh window that restores
+that state as an undoable transaction. If the disk changed while the renderer was down, recovery
+keeps the changed disk note untouched and routes autosave through the same conflict-copy path. Core
+actions and dynamically registered compatibility-plugin commands share a searchable,
+keyboard-navigable command palette. Versioned application settings now keep remappable keyboard
+shortcuts outside every vault, reject collisions, and persist changes before activating them.
+Compatibility plugins
 in selected and restored vaults stay off by default. Live Preview is the fresh-install editing
 default, with explicit Live, Source, and Read modes in each pane. It keeps canonical Markdown and
-the existing CodeMirror undo, draft, save, and conflict paths, reveals exact source on cursor and
+the existing CodeMirror undo, draft, autosave, and conflict paths, reveals exact source on cursor and
 selection lines, renders common Markdown presentation elsewhere, and edits task markers through
-normal source transactions. An explicit reading view renders the current editor draft through a
-sanitized Markdown subset, keeps unsaved text off disk, resolves internal links through the derived
-index, and provides source-line controls that return to the matching CodeMirror line. Sniffed local
+normal source transactions. An explicit reading view renders the current editor state through a
+sanitized Markdown subset while the same autosave path remains active, resolves internal links
+through the derived index, and provides source-line controls that return to the matching CodeMirror
+line. Sniffed local
 PNG, JPEG, GIF, and WebP attachments now render through a
 vault-scoped, size-bounded main-process service; PDFs, audio, video, common documents, text,
 archives, and unknown bytes resolve to safe metadata cards by magic bytes. External, oversized,
@@ -102,8 +106,9 @@ The nested property service adds dotted and indexed scalar paths and safe mappin
 the same recovery-backed preview and mutation boundary. It reports duplicate keys, anchors, tags,
 multiline scalars, flow values, and syntax errors as read-only reasons rather than normalizing them.
 The desktop right inspector presents those top-level properties in source order and uses the same
-service for typed add, edit, and remove actions. Dirty notes, stale revisions, read-only vaults, and
-unsupported complex values remain explicit no-write states instead of silently normalizing YAML.
+service for typed add, edit, and remove actions. It flushes a pending editor change before capturing
+the mutation revision. Stale revisions, read-only vaults, and unsupported complex values remain
+explicit no-write states instead of silently normalizing YAML.
 Headless task commands scan ordinary Markdown list checkboxes across the vault or one targeted note,
 filter complete, incomplete, and custom statuses, and address one task by its exact source line.
 Toggle, done, todo, and custom-status mutations replace only the checkbox character through the
@@ -445,9 +450,9 @@ note name so basename compatibility cannot pass only in source-level tests, and 
 visible-file inventory plus Unicode word counting.
 
 The Linux editor reliability probe exercises the real Electron and CodeMirror path against a
-disposable vault, including Unicode composition, undo and redo, cursor retention, dirty-navigation
-guards, external-edit conflict preservation, abrupt main-renderer replacement, exact private-draft
-recovery, and clean saved bytes:
+disposable vault, including Unicode composition, undo and redo, cursor retention, transition
+autosave, external-edit conflict preservation, abrupt main-renderer replacement, exact private-draft
+recovery, Undo as recovery revert, and clean autosaved bytes:
 
 ```sh
 pnpm run test:editor-reliability
@@ -455,8 +460,9 @@ pnpm run test:editor-reliability
 
 The daily-note and template gate runs Electron on an isolated X11 virtual display with private app
 state, a disposable vault, and CDP-routed pointer and keyboard input. It verifies settings
-persistence, exact template/date/time insertion, draft-only insertion before save, recoverable
-daily-note creation, no-rewrite reopening, layout containment, and light and dark captures:
+persistence, exact template/date/time insertion, idle autosave, new-note creation while an autosave
+is pending, recoverable daily-note creation, no-rewrite reopening, layout containment, and light and
+dark captures:
 
 ```sh
 pnpm run test:note-workflows
@@ -498,9 +504,10 @@ pnpm run test:support-bundle
 ```
 
 The publish-export gate uses a separate X11 virtual display and real CDP pointer and keyboard
-input. It drives the toolbar and command palette, proves dirty drafts fail closed, verifies embedded
-images and note transclusions, rejects executable markup and private-path canaries, checks exact
-source-vault bytes, and renders the resulting offline page in light and dark modes:
+input. It drives the toolbar and command palette, proves export flushes a pending autosave before
+capturing the source revision, verifies embedded images and note transclusions, rejects executable
+markup and private-path canaries, checks exact source-vault bytes, and renders the resulting offline
+page in light and dark modes:
 
 ```sh
 pnpm run test:publish-export

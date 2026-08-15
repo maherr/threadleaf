@@ -3647,6 +3647,9 @@ async function createWindow(): Promise<void> {
   window.once("ready-to-show", () => window.show());
   window.webContents.on("render-process-gone", (_event, details) => {
     rendererAutosaveFlush.cancelSender(rendererId);
+    if (applicationQuitAuthorized || closeAfterAutosave) {
+      return;
+    }
     recoverMainRenderer({ reason: details.reason, exitCode: details.exitCode });
   });
   window.on("unresponsive", () => {

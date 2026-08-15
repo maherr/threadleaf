@@ -39,7 +39,10 @@ describe("RendererAutosaveFlushCoordinator", () => {
 
   it("fails closed when the renderer never acknowledges", async () => {
     vi.useFakeTimers();
-    const coordinator = new RendererAutosaveFlushCoordinator({ send: () => undefined, timeoutMs: 5 });
+    const coordinator = new RendererAutosaveFlushCoordinator({
+      send: () => undefined,
+      timeoutMs: 5,
+    });
     const result = coordinator.request(9, "window-close");
     const assertion = expect(result).rejects.toThrow("timed out");
     await vi.advanceTimersByTimeAsync(5);

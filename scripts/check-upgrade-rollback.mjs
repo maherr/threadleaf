@@ -320,7 +320,7 @@ async function pressKey(probe, key, code, modifiers = 0) {
   await probe.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers });
 }
 
-async function appendAndSave(probe, marker, expectedBytes) {
+async function appendAndPersist(probe, marker, expectedBytes, persistence) {
   await evaluate(
     probe,
     `(() => {
@@ -334,26 +334,45 @@ async function appendAndSave(probe, marker, expectedBytes) {
   );
   await pressKey(probe, "End", "End", 2);
   await probe.cdp.send("Input.insertText", { text: marker });
-  await waitFor(async () => {
-    const state = await evaluate(
-      probe,
-      `(() => ({
-        editState: document.querySelector('#edit-state')?.textContent ?? '',
-        draftState: document.querySelector('#edit-state')?.getAttribute('data-draft-state') ?? '',
-      }))()`,
+  if (persistence === "manual") {
+    await waitFor(async () => {
+      const state = await evaluate(
+        probe,
+        `(() => ({
+          editState: document.querySelector('#edit-state')?.textContent ?? '',
+          draftState: document.querySelector('#edit-state')?.getAttribute('data-draft-state') ?? '',
+        }))()`,
+      );
+      return state.editState === "Unsaved" && state.draftState === "saved" ? state : null;
+    }, "The legacy package transition edit was not protected before save");
+    await pressKey(probe, "s", "KeyS", 2);
+    await waitFor(
+      async () =>
+        (await evaluate(probe, "document.querySelector('#edit-state')?.textContent ?? ''")) ===
+        "Saved",
+      "The legacy package transition edit did not save",
     );
-    return state.editState === "Unsaved" && state.draftState === "saved" ? state : null;
-  }, "The package transition edit was not protected before save");
-  await pressKey(probe, "s", "KeyS", 2);
-  await waitFor(
-    async () =>
-      (await evaluate(probe, "document.querySelector('#edit-state')?.textContent ?? ''")) ===
-      "Saved",
-    "The package transition edit did not save",
-  );
+  } else {
+    assert(persistence === "autosave", `Unknown package persistence mode: ${persistence}`);
+    await waitFor(async () => {
+      const state = await evaluate(
+        probe,
+        `(() => ({
+          editState: document.querySelector('#edit-state')?.textContent ?? '',
+          draftState: document.querySelector('#edit-state')?.getAttribute('data-draft-state') ?? '',
+        }))()`,
+      );
+      const diskBytes = await fs.readFile(path.join(vaultPath, dailyPath), "utf8");
+      return state.editState === "Saved" &&
+        state.draftState !== "saved" &&
+        diskBytes === expectedBytes
+        ? state
+        : null;
+    }, "The candidate package transition edit did not autosave");
+  }
   assert(
     (await fs.readFile(path.join(vaultPath, dailyPath), "utf8")) === expectedBytes,
-    "The saved note bytes differ from the package transition edit.",
+    "The persisted note bytes differ from the package transition edit.",
   );
 }
 
@@ -365,7 +384,7 @@ async function switchTheme(probe, expectedTheme) {
   }, `Threadleaf did not persist ${expectedTheme} appearance`);
 }
 
-async function readPrivateState(vaultId, expectedTheme) {
+async function readPrivateState(vaultId, expectedTheme, expectedSettingsVersion) {
   const [settingsText, selectionText, workspaceText] = await Promise.all([
     fs.readFile(path.join(userDataPath, "settings.json"), "utf8"),
     fs.readFile(path.join(userDataPath, "workspace-selection.json"), "utf8"),
@@ -374,7 +393,10 @@ async function readPrivateState(vaultId, expectedTheme) {
   const settings = JSON.parse(settingsText);
   const selection = JSON.parse(selectionText);
   const workspace = JSON.parse(workspaceText);
-  assert(settings.version === 4, "Private settings lost their schema version.");
+  assert(
+    settings.version === expectedSettingsVersion,
+    `Private settings schema was ${settings.version} instead of ${expectedSettingsVersion}.`,
+  );
   assert(
     settings.keyBindings["ui.command-palette"] === customPaletteBinding,
     "The custom command-palette binding was lost.",
@@ -597,10 +619,10 @@ try {
   );
   await openNote(baseline.probe, dailyPath);
   const afterBaseline = `${initialDaily}${baselineMarker}`;
-  await appendAndSave(baseline.probe, baselineMarker, afterBaseline);
+  await appendAndPersist(baseline.probe, baselineMarker, afterBaseline, "manual");
   await switchTheme(baseline.probe, "light");
   await closePackage(baseline.probe);
-  let workspace = await readPrivateState(vaultId, "light");
+  let workspace = await readPrivateState(vaultId, "light", 4);
   assert(workspace.activePath === dailyPath, "Baseline workspace did not retain the active note.");
 
   const candidate = await launchPackage(candidateAppImage, candidateVersion);
@@ -616,11 +638,11 @@ try {
     "Upgrade did not preserve the custom hotkey.",
   );
   const afterCandidate = `${afterBaseline}${candidateMarker}`;
-  await appendAndSave(candidate.probe, candidateMarker, afterCandidate);
+  await appendAndPersist(candidate.probe, candidateMarker, afterCandidate, "autosave");
   await openNote(candidate.probe, linkedPath);
   await switchTheme(candidate.probe, "dark");
   await closePackage(candidate.probe);
-  workspace = await readPrivateState(vaultId, "dark");
+  workspace = await readPrivateState(vaultId, "dark", 5);
   assert(
     workspace.activePath === linkedPath,
     "Candidate workspace did not retain its active note.",
@@ -643,9 +665,9 @@ try {
   );
   await openNote(rollback.probe, dailyPath);
   const finalDaily = `${afterCandidate}${rollbackMarker}`;
-  await appendAndSave(rollback.probe, rollbackMarker, finalDaily);
+  await appendAndPersist(rollback.probe, rollbackMarker, finalDaily, "manual");
   await closePackage(rollback.probe);
-  workspace = await readPrivateState(vaultId, "dark");
+  workspace = await readPrivateState(vaultId, "dark", 4);
 
   assert(
     (await fs.readFile(path.join(vaultPath, dailyPath), "utf8")) === finalDaily,

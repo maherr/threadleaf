@@ -462,7 +462,7 @@ export function assertReferenceReceipt(
     receipt.roundtrip?.status === "observed" &&
       receipt.roundtrip.exact === true &&
       receipt.roundtrip.reopenedSha256 === receipt.roundtrip.mutatedSha256,
-    "Reference receipt did not prove an exact edit/save/exit/reopen roundtrip.",
+    "Reference receipt did not prove an exact edit/autosave/exit/reopen roundtrip.",
   );
   const screenshot = receipt.screenshot;
   assert(

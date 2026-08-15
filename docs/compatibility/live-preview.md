@@ -106,8 +106,8 @@ the public conformance record therefore remains `not-verified` until that gate p
 ## Acceptance gates
 
 1. Toggling Live, Source, and Read never changes the CodeMirror document or undo history.
-2. A task checkbox changes only its exact three-byte marker and enters the normal dirty, draft, save,
-   and conflict paths.
+2. A task checkbox changes only its exact three-byte marker and enters the normal pending-edit,
+   private-draft, autosave, and conflict paths.
 3. Cursor movement reveals and re-hides syntax without moving the cursor or changing source.
 4. Both panes may use different modes and keep independent selections and drafts.
 5. Light and dark screenshots expose every affected component without color-only state.

@@ -1667,16 +1667,6 @@ h2 {
   box-shadow: inset 0 0 0 2px var(--surface-raised);
 }
 
-.edit-state[data-state="dirty"] {
-  color: var(--signal);
-}
-
-.edit-state[data-state="dirty"]::before {
-  border-color: var(--signal);
-  border-radius: 1px;
-  background: var(--signal);
-}
-
 .edit-state[data-state="conflict"] {
   color: var(--signal);
   text-decoration: underline;

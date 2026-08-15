@@ -142,26 +142,31 @@ starts restricted. An unavailable or malformed saved selection falls back to the
 with a visible warning and does not erase the saved path, so a temporarily unmounted vault can
 recover on a later launch.
 
-Every editor draft carries the identity of the vault that produced its revision. The save boundary
-rejects a draft after the active vault changes, even if a relative note path happens to exist in
-both vaults. The renderer also blocks user-initiated switching while a note is unsaved. Explicit
-development overrides take precedence without changing the persisted user selection and are
-ignored by packaged builds.
+Every pending editor write carries the identity of the vault and pane that produced its revision.
+The save boundary rejects it after the active vault changes, even if a relative note path happens to
+exist in both vaults. Each CodeMirror change schedules canonical autosave after 1.5 seconds of
+inactivity. Note and history navigation, tab close and reorder, pane focus, split, move, and close,
+new and daily note creation, vault switching, note-bound mutation and export, window blur and close,
+and application quit explicitly await a flush first. A failed write leaves the editor and recovery
+draft intact and keeps a cancelable transition from proceeding. Read-only vaults never produce a
+write snapshot. Explicit development overrides take precedence without changing the persisted user
+selection and are ignored by packaged builds.
 
-The active unsaved draft is also mirrored into a versioned document under the operating system's
-application-data directory after a short debounce. That private document contains the exact vault
+The active pending edit is also mirrored into a versioned document under the operating system's
+application-data directory after a shorter debounce. That private document contains the exact vault
 identity, normalized Markdown path, base revision, draft bytes, selection, draft identity, and
 canonical update time. It is bounded, validated again in the main process, serialized with other
-draft writes, and replaced atomically with mode-0600 permissions. Save and Revert clear only the
-matching draft identity, so a delayed cleanup cannot delete a newer edit. Malformed recovery bytes
-fail visibly and remain available for diagnosis.
+draft writes, and replaced atomically with mode-0600 permissions. Successful canonical autosave
+clears only the matching draft identity, so delayed cleanup cannot delete a newer edit. Malformed
+recovery bytes fail visibly and remain available for diagnosis.
 
 CodeMirror gets a fresh editor state when the active document changes, preventing undo history from
-crossing notes. A successful save adopts the new disk revision without replacing that state, so
-selection and useful undo history remain. If the sandboxed main renderer stops, the main process
-creates and loads a replacement window before retiring the failed window. The replacement restores
-the exact private draft and selection. A changed or missing disk revision remains untouched and a
-later save uses the ordinary conflict-copy boundary.
+crossing notes. A successful autosave adopts the new disk revision without replacing that state, so
+selection and useful undo history remain. Undo is the user-facing revert path. If the sandboxed main
+renderer stops, the main process creates and loads a replacement window before retiring the failed
+window. The replacement restores the exact private draft and selection as one CodeMirror
+transaction, so Undo returns to the canonical disk bytes. A changed or missing disk revision remains
+untouched and autosave uses the ordinary conflict-copy boundary.
 
 ### Workspace panes, tabs, and draft ownership
 
@@ -170,12 +175,13 @@ Markdown paths, an ordered pinned-path subset, and one active path; the layout a
 focused pane and a horizontal or vertical split direction. Normalization emits the pinned subset
 first, then ordinary tabs. Pinning moves a path to the end of that leading region; unpinning moves
 it to the beginning of the ordinary region without disturbing the relative order of other tabs.
-Opening an existing entry reactivates it in that pane. Closing the active entry selects the next
-entry to its right, then the nearest entry to its left. A pinned tab is rejected before close or
-Markdown-trash work begins, so no draft or vault bytes can be discarded through either route.
+Opening an existing entry reactivates it in that pane after flushing the outgoing pane. Closing the
+active entry flushes it before selecting the next entry to its right, then the nearest entry to its
+left. A pinned tab is rejected before close or Markdown-trash work begins, so no draft or vault
+bytes can be discarded through either route.
 Tabs move explicitly between panes, retaining their pin even when the destination already owns the
-path. Closing the secondary pane merges surviving pinned paths, incoming pinned paths, then the
-two ordinary regions without discarding an unsaved draft. Internal and watcher-driven renames remap
+path. Closing the secondary pane flushes both editors, then merges surviving pinned paths, incoming
+pinned paths, and the two ordinary regions. Internal and watcher-driven renames remap
 pins; deletes and missing-path reconciliation prune them. Every published snapshot makes pin state
 explicit, and the narrow main-process toggle IPC validates the vault identity, pane ID, and current
 pane membership before mutation. Each navigation request carries the expected vault identity, so a
@@ -206,12 +212,12 @@ Pure navigation changes persist before the runtime adopts them, so a failed writ
 layout state that silently disappears after restart. A vault mutation that already committed
 remains committed even if the following workspace-state update fails; the runtime adopts the real
 vault result and reports the persistence warning instead of falsely reporting that the vault write
-failed. The renderer owns one mounted CodeMirror editor and one private draft identity per pane,
-rather than hidden unsaved drafts for every tab. A dirty pane therefore blocks actions that would
-replace or discard that pane's active document, while the other pane retains independent
-selection, history, and draft recovery. Vault switching remains blocked until every dirty pane is
-saved or reverted. Closing an inactive tab remains safe because it cannot discard either mounted
-draft.
+failed. The renderer owns one mounted CodeMirror editor, one autosave coordinator, and one private
+draft identity per pane rather than hidden edits for every tab. Any action that would replace or
+discard a mounted document awaits its pane's latest autosave version. The other pane retains
+independent selection, history, revision, and recovery state, and a background-pane write reconciles
+that pane without stealing focus. Closing an inactive tab remains safe because it cannot discard
+either mounted editor.
 
 The native application menu is constructed in the main process with platform roles for ordinary
 editing and window behavior. Product commands and accelerators are derived from the same saved key
@@ -306,7 +312,7 @@ active runtime before showing the native Save dialog, canonicalizes and rejects 
 destinations inside the vault, then checks the active note and stable disk revision again after the
 dialog. A stale note produces no file. Valid output is capped at 96 MiB and atomically installed with
 mode-0600 permissions. The isolated Electron gate drives both visible entry points with real virtual
-input, proves dirty-note refusal and unchanged vault bytes, inspects the generated security and
+input, proves pending editor bytes are flushed before export, inspects the generated security and
 privacy boundary, and renders both color schemes.
 
 ### Appearance boundary
@@ -530,8 +536,9 @@ in Phase 3 rather than being inferred from filenames or third-party compatibilit
 Full-text search is another disposable projection of saved vault bytes. It never writes a canonical
 database and intentionally excludes dot-prefixed paths and Threadleaf transaction artifacts from
 the note corpus. The same index reactor that maintains links updates search documents after
-internal saves, external edits, moves, deletes, subtree rescans, and full rebuilds. An unsaved editor
-draft does not appear until it crosses the recoverable save boundary, which the UI states plainly.
+internal saves, external edits, moves, deletes, subtree rescans, and full rebuilds. A pending editor
+change does not appear until continuous autosave crosses the recoverable write boundary, which the
+UI states plainly.
 
 Queries are bounded to 256 characters, 12 distinct AND terms, and at most 100 returned documents.
 Quoted text is one phrase. Exact folder scopes are applied before result limiting. Both default and
@@ -582,12 +589,12 @@ and source-backed note-embed cards are covered by an isolated virtual-input corp
 footnotes, valid GFM pipe tables, and bounded offline math are also mapped when their boundaries
 are unambiguous. Frontmatter, raw HTML including script, style, textarea, and title contents,
 malformed or ambiguous constructs, and unsupported nesting stay visible as source rather than
-becoming a lossy rendering. Task controls dispatch an exact source transaction, so dirty state,
-undo, drafts, saves, conflicts, and recovery remain one path.
+becoming a lossy rendering. Task controls dispatch an exact source transaction, so pending state,
+undo, drafts, autosaves, conflicts, and recovery remain one path.
 
 Reading view is an explicit document mode, not an implicit write or a second source of truth. It
-renders the current CodeMirror draft, including unsaved changes, without crossing the main-process
-write boundary. Switching modes stores only an application preference outside the vault.
+renders the current CodeMirror document while the ordinary autosave coordinator remains active.
+Switching modes stores only an application preference outside the vault.
 
 The first renderer uses Markdown-it for deterministic block parsing and DOMPurify with a narrow
 element and attribute allowlist. Raw HTML is accepted only after sanitization. Scripts, event
@@ -642,8 +649,8 @@ External links also stay inert during beta rather than broadening IPC for shell 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized
 identities, but the derived metadata index remains authoritative for resolution status and target
-paths. Dirty-note navigation is blocked and preserves the draft; no preview action silently saves
-or discards text.
+paths. Navigation awaits the pending autosave version before changing documents; no preview action
+discards text or creates a second write path.
 
 Live Preview exposes a disposable source/decorated mapping with half-open source ranges, rendered
 ranges, explicit selection affinity, and a deterministic source fallback for malformed or
@@ -736,8 +743,9 @@ snapshot. It classifies editable text, list, number, checkbox, date, and datetim
 retaining unsupported or malformed YAML as visible read-only rows. Add, edit, and remove requests
 cross IPC with the displayed vault identity, note path, and revision. The runtime rechecks all three
 before invoking the shared mutation service, then reconciles the writer result through the normal
-watcher and metadata-index path. Dirty drafts, read-only vaults, stale snapshots, unsupported values,
-and concurrent mutations disable or reject the control without a renderer-owned filesystem path.
+watcher and metadata-index path. The renderer flushes pending editor bytes before binding this
+revision. Read-only vaults, stale snapshots, unsupported values, and concurrent mutations disable or
+reject the control without a renderer-owned filesystem path.
 
 Task inspection uses a shared Markdown scanner over the authoritative note bytes. It recognizes
 unordered and ordered list checkboxes, retains one-based source lines and exact status ranges, and
@@ -790,9 +798,10 @@ back in reverse order. An external winner is never overwritten: Threadleaf prese
 proposal or original bytes as a conflict copy and reports committed, published-source-retained,
 rolled back, or manual review truthfully.
 
-The desktop Publish copy action dispatches through the same service. It carries the active vault identity
-and source revision across IPC, refuses dirty drafts, and keeps previews, blockers, and conflicts in
-a reviewable dialog. Each rewrite names its document, source line, syntax, and exact target change;
+The desktop Publish copy action dispatches through the same service. It flushes pending editor bytes,
+then carries the active vault identity and source revision across IPC while keeping previews,
+blockers, and conflicts in a reviewable dialog. Each rewrite names its document, source line,
+syntax, and exact target change;
 each blocker retains before and after resolution evidence. After a committed or source-retained
 publication, the runtime attributes the compound filesystem changes and refreshes every affected
 index entry before publishing its next snapshot. Attachment sources remain addressable at their
@@ -800,10 +809,11 @@ original path; note tabs and bookmarks are not remapped for attachment publicati
 
 The desktop Trash action calls the same recoverable deletion service as the CLI rather than a
 renderer-owned filesystem path. Its request carries the active vault identity and exact source
-revision. The confirmation names the source, canonical `.trash/` destination, and current indexed
-backlink count; dirty drafts cannot open or submit it. A stale revision or occupied trash path is an
-explicit no-write conflict. On commit, the runtime attributes the resulting corpus deletion to the
-transaction, removes the note from the derived index, closes its tab, selects the entry to its right
+revision. The confirmation opens only after pending editor bytes flush, then names the source,
+canonical `.trash/` destination, and current indexed backlink count. A stale revision or occupied
+trash path is an explicit no-write conflict. On commit, the runtime attributes the resulting corpus
+deletion to the transaction, removes the note from the derived index, closes its tab, selects the
+entry to its right
 then left, and persists that workspace state best effort. Failure to persist workspace metadata
 cannot retroactively turn an already committed vault move into a failed deletion.
 

@@ -1109,7 +1109,7 @@ async function run() {
     referenceReceipt = {
       ...referenceReceipt,
       status: "blocked",
-      reason: "Host vault after-tree hash disagreed with the in-sandbox exact-save receipt.",
+      reason: "Host vault after-tree hash disagreed with the in-sandbox exact-autosave receipt.",
     };
     harnessReceipt.status = "blocked";
     harnessReceipt.provenance = "blocked";
@@ -1143,7 +1143,7 @@ async function run() {
         referenceReceipt?.status === "observed" && profileSafe && vaultRoundtrip.equal
           ? undefined
           : !vaultRoundtrip.equal
-            ? "Synthetic vault did not show the exact single-note edit/save/exit/reopen delta."
+            ? "Synthetic vault did not show the exact single-note edit/autosave/exit/reopen delta."
             : (referenceReceipt?.reason ??
               (!profileSafe
                 ? "Fresh profile produced a path outside the explicit profile allowlist."
@@ -1151,7 +1151,7 @@ async function run() {
       input: {
         fixtureId: FIXTURE_ID,
         predicate: FIXTURE_PREDICATE,
-        action: "open fixture note, synthetic edit/save, exit, reopen; no host URI handler",
+        action: "open fixture note, synthetic edit/autosave, exit, reopen; no host URI handler",
       },
       output: {
         vaultBefore: vaultBefore.treeSha256,
@@ -1206,7 +1206,7 @@ async function run() {
       predicate: FIXTURE_PREDICATE,
       viewport,
       themes: ["system/default"],
-      action: "fixture note after synthetic edit/save/exit/reopen",
+      action: "fixture note after synthetic edit/autosave/exit/reopen",
     },
     output: referenceReceipt?.observed ?? {},
     artifacts: relativeArtifacts(runRoot, uiArtifacts),
@@ -1251,7 +1251,8 @@ async function run() {
     input: {
       fixtureId: FIXTURE_ID,
       predicate: FIXTURE_PREDICATE,
-      action: "open the visible fixture note, append a synthetic UTF-8 marker, save, exit, reopen",
+      action:
+        "open the visible fixture note, append a synthetic UTF-8 marker, await autosave, exit, reopen",
       executable: "current built Threadleaf production Electron",
       profile: "fresh private run-root profile",
     },
@@ -1301,7 +1302,7 @@ async function run() {
     input: {
       referenceCell: "FILE-01",
       candidateCell: THREADLEAF_CELL_ID,
-      behavior: "open fixture note, append a synthetic UTF-8 marker, save, exit, reopen",
+      behavior: "open fixture note, append a synthetic UTF-8 marker, await autosave, exit, reopen",
     },
     output: matchOutput,
     artifacts: ["receipts/FILE-01.v1.json", `receipts/${THREADLEAF_CELL_ID}.v1.json`],

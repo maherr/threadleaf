@@ -498,15 +498,16 @@ try {
   );
   await captureScreenshot("note-workflows-template-picker-dark");
   await clickSelector("#template-picker-insert");
-  await waitFor(
-    async () =>
-      (await evaluate("document.querySelector('#edit-state')?.textContent")) === "Unsaved",
-    "The expanded template did not enter the editor draft",
-  );
-  assert(
-    (await fs.readFile(path.join(vaultPath, "Inbox.md"), "utf8")) === "Inbox body.\n",
-    "Template insertion wrote the note before the explicit save.",
-  );
+  await waitFor(async () => {
+    const state = await evaluate(
+      "(() => ({ open: document.querySelector('#template-picker-dialog')?.open, text: document.querySelector('#note-editor .cm-content')?.textContent ?? '', autosave: document.querySelector('#edit-state')?.textContent ?? '' }))()",
+    );
+    return !state.open &&
+      state.text.includes("{{unknown}}") &&
+      ["Saving soon", "Saving", "Saved"].includes(state.autosave)
+      ? state
+      : null;
+  }, "The expanded template did not enter the autosave path");
   await runPaletteCommand("editor.insert-current-date");
   await waitFor(async () => {
     const state = await evaluate(
@@ -518,27 +519,65 @@ try {
   await runPaletteCommand("editor.insert-current-time");
   await waitFor(async () => {
     const state = await evaluate(
-      "(() => { const text = document.querySelector('#note-editor .cm-content')?.textContent ?? ''; const save = document.querySelector('#save-note'); return { paletteOpen: document.querySelector('#command-palette')?.open, timeCount: text.split('TIME').length - 1, saveDisabled: save instanceof HTMLButtonElement ? save.disabled : null }; })()",
+      "(() => { const text = document.querySelector('#note-editor .cm-content')?.textContent ?? ''; return { paletteOpen: document.querySelector('#command-palette')?.open, timeCount: text.split('TIME').length - 1 }; })()",
     );
-    return !state.paletteOpen && state.timeCount >= 2 && state.saveDisabled === false
-      ? state
-      : null;
+    return !state.paletteOpen && state.timeCount >= 2 ? state : null;
   }, "The current time command did not finish inserting into the editor");
-  await pressKey("s", "KeyS", 2);
   let observedSaveState;
   await waitFor(
     async () => {
       observedSaveState = await evaluate(
-        "(() => ({ state: document.querySelector('#edit-state')?.textContent, saveDisabled: document.querySelector('#save-note')?.disabled, active: document.activeElement?.className ?? '' }))()",
+        "(() => ({ state: document.querySelector('#edit-state')?.textContent, manualSavePresent: document.querySelector('#save-note') !== null, active: document.activeElement?.className ?? '' }))()",
       );
-      return observedSaveState.state === "Saved" ? observedSaveState : null;
+      return observedSaveState.state === "Saved" && !observedSaveState.manualSavePresent
+        ? observedSaveState
+        : null;
     },
-    `The expanded template draft did not save: ${JSON.stringify(observedSaveState)}`,
+    `The expanded template did not autosave: ${JSON.stringify(observedSaveState)}`,
   );
   const expectedInbox = "# Inbox\n\nDATE TIME\n{{unknown}}\nDATE TIMEInbox body.\n";
   assert(
     (await fs.readFile(path.join(vaultPath, "Inbox.md"), "utf8")) === expectedInbox,
     "Template, date, or time insertion changed unexpected Markdown bytes.",
+  );
+
+  phase = "new note while autosave is pending";
+  const newNoteTransitionCanary = "NEW_NOTE_AUTOSAVE_TRANSITION";
+  const inboxBeforeNewNoteTransition = await fs.readFile(path.join(vaultPath, "Inbox.md"), "utf8");
+  await clickSelector("#note-editor .cm-content");
+  await pressKey("End", "End", 2);
+  await cdp.send("Input.insertText", { text: `\n${newNoteTransitionCanary}` });
+  await waitFor(
+    async () =>
+      (await evaluate("document.querySelector('#edit-state')?.textContent")) === "Saving soon",
+    "The new-note transition fixture did not enter the pending autosave state",
+  );
+  await clickSelector("#new-note");
+  await waitFor(
+    async () => (await evaluate("document.querySelector('#new-note-dialog')?.open")) === true,
+    "The new-note dialog did not open while autosave was pending",
+  );
+  await fillInput("#new-note-path", "Autosave Transition.md");
+  await clickSelector("#new-note-create");
+  await waitFor(
+    async () =>
+      (await evaluate("document.querySelector('#note-path')?.textContent")) ===
+      "Autosave Transition.md",
+    "Creating a note did not flush the pending source note and open the new note",
+  );
+  const inboxAfterNewNoteTransition = await fs.readFile(path.join(vaultPath, "Inbox.md"), "utf8");
+  assert(
+    inboxAfterNewNoteTransition.includes(newNoteTransitionCanary),
+    "Creating a note while autosave was pending lost the inserted canary.",
+  );
+  assert(
+    inboxAfterNewNoteTransition.replace(newNoteTransitionCanary, "") ===
+      inboxBeforeNewNoteTransition,
+    `Creating a note while autosave was pending changed bytes beyond the inserted canary: ${JSON.stringify(inboxAfterNewNoteTransition)}.`,
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Autosave Transition.md"), "utf8")) === "",
+    "The new-note transition created unexpected Markdown bytes.",
   );
 
   phase = "daily note create and reopen";
@@ -577,7 +616,7 @@ try {
   await closeApplication();
 
   console.log(
-    "Verified isolated X11 virtual input, workflow settings persistence, exact template/date/time insertion, recoverable daily-note creation, no-rewrite reopen behavior, and dark/light screenshots.",
+    "Verified isolated X11 virtual input, workflow settings persistence, pending-edit autosave before new-note creation, exact template/date/time insertion, recoverable daily-note creation, no-rewrite reopen behavior, and dark/light screenshots.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

@@ -653,7 +653,7 @@ describe("Threadleaf external-oracle candidate", () => {
       },
     };
     assert.deepEqual(threadleafBehaviorMatch(reference, valid), {
-      behavior: "open fixture note, append a synthetic UTF-8 marker, save, exit, reopen",
+      behavior: "open fixture note, append a synthetic UTF-8 marker, await autosave, exit, reopen",
       referenceCell: "FILE-01",
       candidateCell: "THREADLEAF-01",
       referenceExactReopen: true,

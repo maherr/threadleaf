@@ -15,6 +15,7 @@ const screenshotDirectory = process.env.THREADLEAF_EDITOR_SCREENSHOT_DIR;
 const output = [];
 let child;
 let cdp;
+let mainCdp;
 let exited;
 let phase = "setup";
 const processMarker = randomUUID();
@@ -134,6 +135,26 @@ async function waitForMainTarget(port, timeoutMs = 10_000) {
     await delay(50);
   }
   throw new Error("Threadleaf did not expose its main renderer in time.");
+}
+
+async function waitForMainInspectorTarget(port, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      if (response.ok) {
+        const targets = await response.json();
+        const main = targets.find(
+          (target) => target.type === "node" && typeof target.webSocketDebuggerUrl === "string",
+        );
+        if (main) return main;
+      }
+    } catch {
+      // The main-process inspector is still starting.
+    }
+    await delay(50);
+  }
+  throw new Error("Threadleaf did not expose its isolated main-process inspector in time.");
 }
 
 function connectCdp(webSocketUrl) {
@@ -270,6 +291,19 @@ async function openNote(notePath) {
   return waitForNote(notePath);
 }
 
+async function openNoteThroughUi(notePath) {
+  const clicked = await evaluate(`(() => {
+    const targets = [...document.querySelectorAll('[data-note-path]')]
+      .filter((element) => element instanceof HTMLElement && element.dataset.notePath === ${JSON.stringify(notePath)});
+    const target = targets.find((element) => element.classList.contains('note-tab-activate')) ?? targets[0];
+    if (!(target instanceof HTMLElement)) return false;
+    target.click();
+    return true;
+  })()`);
+  assert(clicked, `The visible workspace does not expose ${notePath}.`);
+  return waitForNote(notePath);
+}
+
 async function focusEditor() {
   await evaluate(`(() => {
     const editor = document.querySelector('[data-pane-id="primary"] .cm-content');
@@ -318,6 +352,43 @@ async function waitForDraftSaved(expectedText) {
   }
 }
 
+async function waitForAutosaved(expectedText, notePath, expectedDisk = expectedText) {
+  let lastState;
+  let lastDisk;
+  try {
+    return await waitFor(async () => {
+      const state = await editorState();
+      let disk;
+      try {
+        disk = await fs.readFile(path.join(vaultPath, notePath), "utf8");
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+          lastState = state;
+          lastDisk = "<writer transition>";
+          return null;
+        }
+        throw error;
+      }
+      lastState = state;
+      lastDisk = disk;
+      return state.text === expectedText && state.editState === "Saved" && disk === expectedDisk
+        ? state
+        : null;
+    }, `The exact editor bytes did not autosave to ${notePath}`);
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} Expected editor ${JSON.stringify(expectedText)} and disk ${JSON.stringify(expectedDisk)}, observed state ${JSON.stringify(lastState)} and disk ${JSON.stringify(lastDisk)}.`,
+      { cause: error },
+    );
+  }
+}
+
+async function conflictNotePaths() {
+  return (await fs.readdir(vaultPath))
+    .filter((entry) => entry.startsWith("Welcome.threadleaf-conflict-") && entry.endsWith(".md"))
+    .sort();
+}
+
 async function captureScreenshot(name) {
   if (!screenshotDirectory) {
     return;
@@ -357,11 +428,13 @@ try {
   );
 
   const port = await availablePort();
+  const mainInspectorPort = await availablePort();
   child = spawn(
     "xvfb-run",
     [
       "-a",
       electronPath,
+      `--inspect=127.0.0.1:${mainInspectorPort}`,
       "--ozone-platform=x11",
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
@@ -398,6 +471,7 @@ try {
   }
   await started;
   cdp = await waitForLiveMainCdp(port);
+  mainCdp = connectCdp((await waitForMainInspectorTarget(mainInspectorPort)).webSocketDebuggerUrl);
   phase = "vault readiness";
   await waitFor(async () => {
     const snapshot = await evaluate("window.threadleaf.getSnapshot()");
@@ -441,12 +515,8 @@ try {
   await pressKey("Z", "KeyZ", 2 | 8);
   await waitForDraftSaved(withUndoMarker);
 
-  phase = "save selection";
-  await pressKey("s", "KeyS", 2);
-  await waitFor(async () => {
-    const state = await editorState();
-    return state.editState === "Saved" && state.text === withUndoMarker ? state : null;
-  }, "Saving reset or failed to commit the editor");
+  phase = "continuous autosave";
+  await waitForAutosaved(withUndoMarker, "Welcome.md");
   await pressKey("ArrowLeft", "ArrowLeft");
   await pressKey("ArrowLeft", "ArrowLeft");
   await pressKey("ArrowLeft", "ArrowLeft");
@@ -458,11 +528,11 @@ try {
   await waitFor(async () => {
     const state = await editorState();
     return state.editState === "Saved" && state.text === withUndoMarker ? state : null;
-  }, "Undoing to the saved baseline did not clear dirty state");
+  }, "Undoing to the autosaved baseline did not clear the pending state");
 
   phase = "cross-note history";
   const linkedBefore = await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8");
-  await openNote("Linked Note.md");
+  await openNoteThroughUi("Linked Note.md");
   await focusEditor();
   await pressKey("z", "KeyZ", 2);
   assert(
@@ -477,33 +547,31 @@ try {
   await insertText("\nlocal-conflict");
   const localConflict = `${withUndoMarker}\nlocal-conflict`;
   await waitForDraftSaved(localConflict);
-  await evaluate(`
-    document.querySelector('[data-note-path="Linked Note.md"]')?.click();
-    true;
-  `);
-  await delay(150);
-  assert(
-    (await editorState()).path === "Welcome.md" && (await editorState()).text === localConflict,
-    "Dirty note navigation discarded or hid the protected editor state.",
-  );
+  const conflictsBefore = await conflictNotePaths();
   const externalWelcome = `${withUndoMarker}\nexternal-change`;
   await fs.writeFile(path.join(vaultPath, "Welcome.md"), externalWelcome, "utf8");
-  await waitFor(
-    async () => (await editorState()).editState === "Unsaved, disk changed",
-    "An external edit did not produce a visible dirty conflict",
+  assert(
+    ["Saving soon", "External change detected"].includes((await editorState()).editState),
+    "The pending local edit left the autosave path before the conflict transition.",
   );
-  await pressKey("s", "KeyS", 2);
-  const conflictState = await waitFor(async () => {
-    const state = await editorState();
-    return state.editState === "Saved" && state.path !== "Welcome.md" ? state : null;
-  }, "Saving a stale draft did not activate a preserved conflict note");
-  assert(conflictState.text === localConflict, "The conflict note did not preserve local bytes.");
+  await openNoteThroughUi("Linked Note.md");
+  const conflictsAfter = await waitFor(async () => {
+    const paths = await conflictNotePaths();
+    return paths.length === conflictsBefore.length + 1 ? paths : null;
+  }, "Switching notes with a stale edit did not create a preserved conflict note");
+  const conflictPath = conflictsAfter.find((entry) => !conflictsBefore.includes(entry));
+  assert(conflictPath, "The autosave conflict copy could not be identified.");
+  assert(
+    (await fs.readFile(path.join(vaultPath, conflictPath), "utf8")) === localConflict,
+    "The conflict note did not preserve local bytes.",
+  );
   assert(
     (await fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")) === externalWelcome,
-    "The stale save overwrote the external disk version.",
+    "The stale autosave overwrote the external disk version.",
   );
 
   phase = "protected crash draft";
+  const linkedEditorBaseline = (await editorState()).text.replace(/\n$/u, "");
   await focusEditor();
   await pressKey("End", "End", 2);
   await insertText("\ncrash-draft-TAIL");
@@ -511,7 +579,12 @@ try {
   await pressKey("ArrowLeft", "ArrowLeft");
   await pressKey("ArrowLeft", "ArrowLeft");
   await pressKey("ArrowLeft", "ArrowLeft");
-  const beforeCrash = `${localConflict}\ncrash-draft-TAIL`;
+  const beforeCrash = (
+    await waitFor(async () => {
+      const state = await editorState();
+      return state.text.includes("crash-draft-TAIL") ? state : null;
+    }, "The crash-draft marker did not enter the editor")
+  ).text;
   await waitForDraftSaved(beforeCrash);
   await captureScreenshot("draft-protected-dark");
 
@@ -542,28 +615,50 @@ try {
   );
   await focusEditor();
   await insertText("[HERE]");
-  const recoveredSelectionExpected = `${localConflict}\ncrash-draft-[HERE]TAIL`;
+  const recoveredSelectionExpected = beforeCrash.replace(
+    "crash-draft-TAIL",
+    "crash-draft-[HERE]TAIL",
+  );
   await waitForDraftSaved(recoveredSelectionExpected);
   assert(
     (await editorState()).text === recoveredSelectionExpected,
     "The recovered CodeMirror selection moved.",
   );
+  await pressKey("z", "KeyZ", 2);
+  const firstUndo = await waitFor(async () => {
+    const state = await editorState();
+    return state.text === beforeCrash || state.text.replace(/\n$/u, "") === linkedEditorBaseline
+      ? state
+      : null;
+  }, "Undo did not leave the recovered history at a known boundary");
+  if (firstUndo.text === beforeCrash) {
+    await pressKey("z", "KeyZ", 2);
+    await waitFor(
+      async () => (await editorState()).text.replace(/\n$/u, "") === linkedEditorBaseline,
+      "Undo did not revert the recovered draft to the canonical vault bytes",
+    );
+  }
+  await pressKey("Z", "KeyZ", 2 | 8);
+  const redone = await waitFor(async () => {
+    const state = await editorState();
+    return state.text === beforeCrash || state.text === recoveredSelectionExpected ? state : null;
+  }, "Redo did not restore the recovered edit");
+  if (redone.text === beforeCrash) {
+    await pressKey("End", "End", 2);
+    await pressKey("ArrowLeft", "ArrowLeft");
+    await pressKey("ArrowLeft", "ArrowLeft");
+    await pressKey("ArrowLeft", "ArrowLeft");
+    await pressKey("ArrowLeft", "ArrowLeft");
+    await insertText("[HERE]");
+  }
+  await waitForDraftSaved(recoveredSelectionExpected);
   await captureScreenshot("draft-recovered-dark");
   await evaluate("document.querySelector('#theme-toggle')?.click(); true");
   await waitFor(async () => (await editorState()).theme === "light", "Light theme did not apply");
   await captureScreenshot("draft-recovered-light");
 
-  phase = "recovered draft save";
-  await pressKey("s", "KeyS", 2);
-  const finalState = await waitFor(async () => {
-    const state = await editorState();
-    return state.editState === "Saved" && state.text === recoveredSelectionExpected ? state : null;
-  }, "The recovered draft did not save cleanly");
-  assert(
-    (await fs.readFile(path.join(vaultPath, finalState.path), "utf8")) ===
-      recoveredSelectionExpected,
-    "The saved recovered draft does not match the editor bytes.",
-  );
+  phase = "recovered draft autosave";
+  await waitForAutosaved(recoveredSelectionExpected, "Linked Note.md");
   await waitFor(async () => {
     try {
       const entries = await fs.readdir(path.join(userDataPath, "editor-drafts"));
@@ -573,15 +668,65 @@ try {
     }
   }, "The committed private draft was not cleared");
 
-  phase = "clean exit";
-  await evaluate("setTimeout(() => window.close(), 250); true");
+  phase = "application quit autosave";
+  const beforeApplicationQuit = await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8");
+  const applicationQuitCanary = "APP_QUIT_AUTOSAVE";
+  const rendererRecoveryCountBeforeClose =
+    output.join("").match(/Threadleaf main renderer exited/gu)?.length ?? 0;
+  await focusEditor();
+  await pressKey("End", "End", 2);
+  await insertText(`\n${applicationQuitCanary}`);
+  await waitFor(
+    async () => (await editorState()).editState === "Saving soon",
+    "The quit transition fixture did not enter pending autosave",
+  );
+  const closeResponse = await mainCdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      const createRequire = process.getBuiltinModule("module").createRequire;
+      const { BrowserWindow } = createRequire(process.cwd() + "/inspector.cjs")("electron");
+      const window = BrowserWindow.getAllWindows()[0];
+      if (!window) throw new Error("Threadleaf has no main window to close.");
+      window.close();
+      return true;
+    })()`,
+    returnByValue: true,
+  });
+  if (closeResponse.exceptionDetails) {
+    throw new Error(
+      closeResponse.exceptionDetails.exception?.description ??
+        "The main-process close evaluation failed.",
+    );
+  }
+  mainCdp.close();
+  mainCdp = undefined;
   const exit = await Promise.race([
     exited,
     delay(10_000).then(() => ({ code: null, signal: "timeout" })),
   ]);
   assert(exit.code === 0, `Electron did not exit cleanly: ${JSON.stringify(exit)}`);
+  const afterApplicationQuit = await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8");
+  const quitConflictCanaries = [];
+  for (const entry of (await fs.readdir(vaultPath)).filter((name) =>
+    name.includes("threadleaf-conflict"),
+  )) {
+    const content = await fs.readFile(path.join(vaultPath, entry), "utf8");
+    if (content.includes(applicationQuitCanary)) quitConflictCanaries.push(entry);
+  }
+  assert(
+    afterApplicationQuit.includes(applicationQuitCanary),
+    `Application quit lost its pending editor bytes. Original: ${JSON.stringify(afterApplicationQuit)}. Conflict copies containing the canary: ${JSON.stringify(quitConflictCanaries)}.`,
+  );
+  assert(
+    afterApplicationQuit === `${beforeApplicationQuit}\n${applicationQuitCanary}`,
+    "Application quit autosave changed bytes beyond the inserted canary.",
+  );
+  assert(
+    (output.join("").match(/Threadleaf main renderer exited/gu)?.length ?? 0) ===
+      rendererRecoveryCountBeforeClose,
+    "The authorized close path incorrectly entered renderer crash recovery.",
+  );
   console.log(
-    "Verified Unicode composition, undo/redo, save selection, cross-note history isolation, external conflict preservation, renderer-crash draft recovery, selection recovery, and clean save/reopen bytes.",
+    "Verified Unicode composition, undo/redo, continuous autosave, cross-note history isolation, external conflict preservation, renderer-crash draft recovery, Undo as recovery revert, selection recovery, and application-quit autosave bytes.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);
@@ -590,6 +735,7 @@ try {
   throw new Error(logs ? `${phased}\nElectron output:\n${logs}` : phased, { cause: error });
 } finally {
   cdp?.close();
+  mainCdp?.close();
   if (child && child.exitCode === null && child.signalCode === null) {
     child.kill("SIGTERM");
     if (exited) {

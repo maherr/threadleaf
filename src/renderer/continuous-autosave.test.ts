@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { autosaveFlushReasons } from "../shared/autosave";
-import {
-  ContinuousAutosave,
-  continuousAutosaveDelayMs,
-} from "./continuous-autosave";
+import { ContinuousAutosave, continuousAutosaveDelayMs } from "./continuous-autosave";
 
 describe("ContinuousAutosave", () => {
   it("debounces edits for 1.5 seconds and persists only the latest snapshot", async () => {

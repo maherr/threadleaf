@@ -56,9 +56,10 @@ the single note byte delta and must not write `.obsidian`.
 ## Cells in the first tranche
 
 `HARNESS-00` proves fixture integrity, Xvfb, marker cleanup, probe quiescence, and the process
-supervisor. `FILE-01` opens the fixture-specific note predicate, performs a synthetic edit/save,
-exits, reopens, and requires an exact-byte round trip while allowing only that one note delta plus
-the bounded fresh-profile allowlist. Obsidian's first-run app state may also create or rewrite only
+supervisor. `FILE-01` opens the fixture-specific note predicate, performs a synthetic edit, waits for
+the reference app's autosave, exits, reopens, and requires an exact-byte round trip while allowing
+only that one note delta plus the bounded fresh-profile allowlist. Obsidian's first-run app state may
+also create or rewrite only
 `.obsidian/app.json`, `.obsidian/appearance.json`, `.obsidian/core-plugins.json`, and
 `.obsidian/workspace.json`, each under a bounded size and mode policy. `UI-01` records the measured visible-state projection,
 normalized accessibility nodes, viewport surface geometry, and one private screenshot after reopen.

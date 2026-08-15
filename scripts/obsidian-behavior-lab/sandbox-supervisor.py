@@ -32,6 +32,7 @@ MAX_VISIBLE_TEXT = 2400
 MAX_CDP_FRAME_BYTES = 512 * 1024
 MAX_CDP_HTTP_BYTES = 128 * 1024
 MAX_CDP_EXPRESSION_BYTES = 16 * 1024
+CDP_COMMAND_TIMEOUT_SECONDS = 10
 FIXTURE_PREDICATE = "THREADLEAF_OBSIDIAN_LAB_FIXTURE_V1"
 FIXTURE_NOTE = "00 Overview.md"
 SYNTHETIC_EDIT = "THREADLEAF_SYNTHETIC_EDIT_V1"
@@ -382,6 +383,7 @@ class CdpSocket:
         response = self._read_until(b"\r\n\r\n", 16 * 1024)
         if not response.startswith(b"HTTP/1.1 101"):
             fail(f"CDP WebSocket handshake failed: {response[:200]!r}")
+        self.sock.settimeout(CDP_COMMAND_TIMEOUT_SECONDS)
         self.sequence = 0
 
     def _read_until(self, marker: bytes, limit: int) -> bytes:
@@ -438,7 +440,13 @@ class CdpSocket:
         payload = json.dumps({"id": request_id, "method": method, "params": params or {}}).encode("utf-8")
         self._send_frame(payload)
         while True:
-            opcode, data = self._recv_frame()
+            try:
+                opcode, data = self._recv_frame()
+            except TimeoutError:
+                fail(
+                    f"CDP {method} exceeded the bounded "
+                    f"{CDP_COMMAND_TIMEOUT_SECONDS}s command timeout"
+                )
             if opcode == 0x9:
                 self._send_frame(data, 0xA)
                 continue
@@ -1131,13 +1139,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         edit_bytes = f"{SYNTHETIC_EDIT}\n".encode("utf-8")
         cdp.send("Input.insertText", {"text": edit_bytes.decode("utf-8")})
         fixture_predicate(cdp, require_edit=True)
-        cdp_key(cdp, "s", "KeyS", 83, modifiers=2)
         expected_bytes = before_bytes + edit_bytes
         wait_for_exact_bytes(note_path, expected_bytes)
         before_size, before_sha = len(before_bytes), sha256_bytes(before_bytes)
         mutated_size, mutated_sha = file_digest(note_path)
         if mutated_size != len(expected_bytes) or mutated_sha != sha256_bytes(expected_bytes):
-            fail("saved fixture note hash did not match the exact synthetic edit")
+            fail("autosaved fixture note hash did not match the exact synthetic edit")
         result["roundtrip"] = {
             "status": "editing",
             "fixtureNote": FIXTURE_NOTE,
@@ -1147,7 +1154,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "mutatedBytes": mutated_size,
             "mutatedSha256": mutated_sha,
             "expectedMutatedSha256": sha256_bytes(expected_bytes),
-            "exactSave": True,
+            "exactAutosave": True,
         }
         close_cdp(cdp)
         cdps.remove(cdp)
@@ -1182,7 +1189,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
         if not result["roundtrip"]["exact"]:
-            fail("reopened fixture note did not retain the exact saved bytes")
+            fail("reopened fixture note did not retain the exact autosaved bytes")
         result["ax"] = normalized_ax(reopen_cdp)
         result["screenshot"] = capture_surface(reopen_cdp, args.screenshot)
         result["reopenProcesses"] = process_tree_snapshot(reopen_process.pid, args.marker)

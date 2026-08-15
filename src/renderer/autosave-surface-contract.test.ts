@@ -12,7 +12,10 @@ function functionSource(name: string): string {
   if (start < 0) throw new Error(`Missing renderer function ${name}.`);
   const remainder = rendererSource.slice(start + marker.length);
   const next = remainder.search(/\n(?:async )?function [A-Za-z0-9_]+/);
-  return rendererSource.slice(start, next < 0 ? rendererSource.length : start + marker.length + next);
+  return rendererSource.slice(
+    start,
+    next < 0 ? rendererSource.length : start + marker.length + next,
+  );
 }
 
 function expectOrdered(source: string, first: string, second: string): void {
@@ -33,18 +36,54 @@ describe("continuous autosave surface contract", () => {
   it("flushes each renderer transition before the transition action", () => {
     const expectations = [
       ["createNewNote", 'tryFlushAllPaneAutosaves("new-note")', "window.threadleaf.createNote("],
-      ["openTodaysDailyNote", 'tryFlushAllPaneAutosaves("daily-note")', "window.threadleaf.openDailyNote("],
+      [
+        "openTodaysDailyNote",
+        'tryFlushAllPaneAutosaves("daily-note")',
+        "window.threadleaf.openDailyNote(",
+      ],
       ["closeTab", 'tryFlushPaneAutosave(paneId, "tab-close")', "window.threadleaf.closeNote("],
-      ["reorderTab", 'tryFlushAllPaneAutosaves("tab-reorder")', "window.threadleaf.reorderWorkspaceTab("],
+      [
+        "reorderTab",
+        'tryFlushAllPaneAutosaves("tab-reorder")',
+        "window.threadleaf.reorderWorkspaceTab(",
+      ],
       ["openNote", 'tryFlushPaneAutosave(paneId, "note-switch")', "window.threadleaf.openNote("],
-      ["navigateHistory", 'tryFlushPaneAutosave(paneId, "note-switch")', "window.threadleaf.goBack("],
+      [
+        "navigateHistory",
+        'tryFlushPaneAutosave(paneId, "note-switch")',
+        "window.threadleaf.goBack(",
+      ],
       ["chooseVault", 'tryFlushAllPaneAutosaves("vault-switch")', "window.threadleaf.chooseVault("],
-      ["requestWorkspacePaneFocus", 'tryFlushPaneAutosave(outgoingPaneId, "pane-switch")', "window.threadleaf.focusWorkspacePane("],
-      ["splitWorkspace", 'tryFlushAllPaneAutosaves("pane-split")', "window.threadleaf.splitWorkspace("],
-      ["moveTabToOtherPane", 'tryFlushAllPaneAutosaves("pane-move")', "window.threadleaf.moveNoteToWorkspacePane("],
-      ["closeActiveWorkspacePane", 'tryFlushAllPaneAutosaves("pane-close")', "window.threadleaf.closeWorkspacePane("],
-      ["moveCurrentAttachment", 'tryFlushAllPaneAutosaves("note-mutation")', "window.threadleaf.moveAttachment("],
-      ["exportCurrentNoteAsHtml", 'tryFlushPaneAutosave(paneId, "note-mutation")', "window.threadleaf.publishNote("],
+      [
+        "requestWorkspacePaneFocus",
+        'tryFlushPaneAutosave(outgoingPaneId, "pane-switch")',
+        "window.threadleaf.focusWorkspacePane(",
+      ],
+      [
+        "splitWorkspace",
+        'tryFlushAllPaneAutosaves("pane-split")',
+        "window.threadleaf.splitWorkspace(",
+      ],
+      [
+        "moveTabToOtherPane",
+        'tryFlushAllPaneAutosaves("pane-move")',
+        "window.threadleaf.moveNoteToWorkspacePane(",
+      ],
+      [
+        "closeActiveWorkspacePane",
+        'tryFlushAllPaneAutosaves("pane-close")',
+        "window.threadleaf.closeWorkspacePane(",
+      ],
+      [
+        "moveCurrentAttachment",
+        'tryFlushAllPaneAutosaves("note-mutation")',
+        "window.threadleaf.moveAttachment(",
+      ],
+      [
+        "exportCurrentNoteAsHtml",
+        'tryFlushPaneAutosave(paneId, "note-mutation")',
+        "window.threadleaf.publishNote(",
+      ],
     ] as const;
     for (const [functionName, flush, action] of expectations) {
       expectOrdered(functionSource(functionName), flush, action);

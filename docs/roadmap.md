@@ -55,8 +55,8 @@ equivalence through the real writer-to-watcher seam.
 - [x] File navigation, three-pane source workspace, indexed filtering, headings, tags, links, and
       backlinks.
 - [x] Keyboard-first filtering and accessible light and dark theme foundations.
-- [x] CodeMirror source editor with dirty state, explicit Revert, revision-aware recoverable save,
-      external-change detection, and keep-both conflict UI.
+- [x] CodeMirror source editor with 1.5-second continuous autosave, transition flushes, Undo as
+      revert, revision-aware recoverable writes, external-change detection, and keep-both conflict UI.
 - [x] Arbitrary vault picker, validated runtime swaps, and persistent workspace restoration.
 - [x] Non-blocking first window through a plugin-free bootstrap runtime, explicit target-indexing
       state, disabled bootstrap mutations, user-switch supersession, and a production startup probe.
@@ -73,9 +73,9 @@ equivalence through the real writer-to-watcher seam.
       and body text, with Latin-script-base diacritic-insensitive discovery, ranked exact-source
       context, line navigation, stale-response identity, watcher convergence, and a reproducible
       10,000-note microbenchmark.
-- [x] Explicit sanitized reading view over the current saved or unsaved editor draft, with
-      deterministic source-line navigation, index-resolved internal links, inert external links,
-      dirty-navigation protection, and no new filesystem or shell authority in the renderer.
+- [x] Explicit sanitized reading view over the current CodeMirror document, with deterministic
+      source-line navigation, index-resolved internal links, inert external links, shared autosave,
+      and no new filesystem or shell authority in the renderer.
 - [x] Headless native CLI foundation over the shared read-only vault kernel and metadata index, with
       explicit vault selection, `vault info`, `files`, `read`, `search`, stable JSON, script-safe
       exit codes, and tested `file=` and `query=` compatibility spellings.
@@ -97,11 +97,11 @@ equivalence through the real writer-to-watcher seam.
 - [x] Recovery-backed CLI delete, trash inspection, and restore with exact-path `.trash/` mapping,
       revision checks, collision refusal, interruption recovery, and normal-corpus exclusion.
 - [x] Revision-bound desktop move and rename with exact rewrite preview, plan-bound confirmation,
-      blocker evidence, destination and dirty-draft guards, and open-tab remapping.
+      blocker evidence, destination guards, pending-edit flush, and open-tab remapping.
 - [x] Revision-bound desktop recoverable deletion with explicit confirmation, exact `.trash/`
-      destination and link impact, collision and dirty-draft guards, operation attribution, and
+      destination and link impact, collision guards, pending-edit flush, operation attribution, and
       deterministic surviving-tab selection.
-- [x] Ordered session tabs with path deduplication, dirty-draft guards, neighbor selection on close,
+- [x] Ordered session tabs with path deduplication, close-time autosave, neighbor selection on close,
       watcher rename and delete reconciliation, remappable close and cycle shortcuts, and bounded
       horizontal overflow at the minimum desktop viewport.
 - [x] Versioned per-vault tab restoration in private application state, including exact order and
@@ -171,8 +171,8 @@ conversion.
 
 - [x] Exercise a representative copy of the live vault at real scale, including large notes,
       attachments, external edits, sync-style event bursts, rename refactors, and restart recovery.
-- [x] Complete the editor reliability pass for IME, undo and redo, selections, dirty navigation,
-      save conflicts, crash recovery, and no-loss reopen behavior.
+- [x] Complete the editor reliability pass for IME, undo and redo, selections, transition autosave,
+      external conflicts, crash recovery, and no-loss reopen behavior.
 - [x] Isolate each compatibility plugin in its own renderer process and prove that a timed-out
       plugin does not stop a healthy sibling or the native workspace.
 - [x] Load the public Excalidraw 2.25.3 bundle through the packaged desktop authority and
@@ -341,7 +341,7 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [x] Pointer and keyboard tab reordering and cross-pane transfer, independently collapsible side
       docks, private per-vault dock and window bounds, and native compatibility-plugin pop-out views
       with close, crash, vault-switch, and stale-session recovery.
-- [x] Add bounded per-pane note navigation history with dirty-draft protection, private persistence,
+- [x] Add bounded per-pane note navigation history with pre-navigation autosave, private persistence,
       rename/delete reconciliation, and keyboard, command-palette, and native-menu access, plus a
       deterministic keyboard-accessible quick switcher over indexed note titles and paths.
 - [ ] Add freeform split groups, general floating windows, broader command discovery, and persistent
@@ -365,7 +365,7 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [x] Publish-ready single-note HTML export with sanitized raw markup, embedded bounded local raster
       images and note transclusions, honest inert vault links, safe external links, restrictive CSP,
       responsive light, dark, and print styling, revision and stable-disk binding, outside-vault
-      targeting, atomic mode-0600 writes, dirty-draft refusal, and isolated real-input coverage.
+      targeting, atomic mode-0600 writes, pending-edit flush, and isolated real-input coverage.
 - [ ] Keyboard navigation, screen-reader semantics, reduced motion, contrast, zoom, localization,
       bidirectional text, and touch-target audits across every reachable control.
 - [x] Unsigned Linux x64 AppImage and RPM artifacts with a stable application identity, complete
