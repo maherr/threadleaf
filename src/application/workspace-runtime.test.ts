@@ -395,6 +395,53 @@ describe("WorkspaceRuntime", () => {
     ).rejects.toThrow("bounded public");
   });
 
+  it("loads the all-tag catalog lazily and rejects a stale generation", async () => {
+    const workspace = await openRuntime();
+    await workspace.createNote(
+      "Tagged",
+      "---\ntags: [Project/Alpha]\n---\n#project/Beta #PROJECT\n",
+      workspace.vaultId,
+    );
+    const snapshot = await workspace.getSnapshot();
+    const generation = snapshot.workspace?.indexGeneration ?? "missing";
+    expect(JSON.stringify(snapshot.workspace)).not.toContain("directCount");
+
+    await expect(
+      workspace.getWorkspaceTagCatalog({
+        expectedVaultId: workspace.vaultId,
+        generation,
+      }),
+    ).resolves.toMatchObject({
+      status: "ready",
+      generation,
+      tags: [
+        { key: "project", tag: "Project", directCount: 1, count: 3 },
+        {
+          key: "project/alpha",
+          tag: "Project/Alpha",
+          parentKey: "project",
+          directCount: 1,
+          count: 1,
+        },
+        {
+          key: "project/beta",
+          tag: "project/Beta",
+          parentKey: "project",
+          directCount: 1,
+          count: 1,
+        },
+      ],
+    });
+
+    await workspace.createNote("New-tag", "#external", workspace.vaultId);
+    await expect(
+      workspace.getWorkspaceTagCatalog({
+        expectedVaultId: workspace.vaultId,
+        generation,
+      }),
+    ).resolves.toMatchObject({ status: "stale-generation" });
+  });
+
   it("keeps an uncensused restored active tab selected in its waiting state", async () => {
     const store = new MemoryWorkspaceStateStore({
       openPaths: ["Welcome.md", "Not-arrived.md"],

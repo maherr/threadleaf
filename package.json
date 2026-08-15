@@ -89,6 +89,7 @@
     "test:callouts": "pnpm run test:live-preview",
     "test:live-preview": "pnpm run build && node scripts/check-live-preview.mjs",
     "test:tasks": "pnpm run build && node scripts/check-tasks.mjs",
+    "test:tags": "pnpm run build && node scripts/check-tags.mjs",
     "test:excalidraw-roundtrip": "pnpm run build && node scripts/check-excalidraw-roundtrip.mjs",
     "test:note-bookmarks": "pnpm run build && node scripts/check-note-bookmarks.mjs",
     "test:publish-export": "pnpm run build && node scripts/check-publish-export.mjs",

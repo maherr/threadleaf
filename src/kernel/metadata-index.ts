@@ -10,6 +10,7 @@ import {
   type ParsedMarkdownLink,
   parseMarkdownLinks,
 } from "./markdown-links";
+import { normalizeTagBody, parseInlineMarkdownTags, tagHierarchy, tagKey } from "./markdown-tags";
 import { normalizeVaultDirectoryPath } from "./path-policy";
 import type { VaultReadPort, VaultTextSnapshot } from "./ports";
 import { type RescanReason, type VaultChangeBatch, WatchSequenceGate } from "./watch-protocol";
@@ -45,8 +46,22 @@ export interface DocumentMetadataSnapshot {
   links: LinkMetadata[];
 }
 
+export interface TagIndexEntry {
+  /** Case-insensitive NFC identity without a leading hash. */
+  key: string;
+  /** Source-preserved display spelling without a leading hash. */
+  tag: string;
+  /** Immediate valid parent identity, or null for a root row. */
+  parentKey: string | null;
+  /** Exact occurrences of this tag spelling across the vault. */
+  directCount: number;
+  /** Exact plus descendant occurrences represented by this hierarchy row. */
+  count: number;
+}
+
 export interface MetadataIndexSnapshot {
   documents: DocumentMetadataSnapshot[];
+  tags: TagIndexEntry[];
   backlinks: Array<{ path: string; sources: string[] }>;
   duplicateNames: Array<{ name: string; paths: string[] }>;
 }
@@ -57,6 +72,7 @@ interface ParsedDocument {
   headings: HeadingMetadata[];
   tags: string[];
   tagCounts: Record<string, number>;
+  tagOccurrences: string[];
   properties: Record<string, string | string[]>;
   links: ParsedMarkdownLink[];
 }
@@ -177,12 +193,22 @@ function parseProperties(content: string): Record<string, string | string[]> {
 }
 
 function tagsFromProperties(properties: Record<string, string | string[]>): string[] {
-  const value = properties.tags ?? properties.tag;
+  let plural: string | string[] | undefined;
+  let singular: string | string[] | undefined;
+  for (const [key, candidate] of Object.entries(properties)) {
+    const folded = key.toLocaleLowerCase("en-US");
+    if (folded === "tags") {
+      plural ??= candidate;
+    } else if (folded === "tag") {
+      singular ??= candidate;
+    }
+  }
+  const value = plural ?? singular;
   if (!value) {
     return [];
   }
   const values = Array.isArray(value) ? value : value.split(",");
-  return values.map((tag) => tag.trim().replace(/^#/, "")).filter(Boolean);
+  return values.map(normalizeTagBody).filter((tag): tag is string => tag !== null);
 }
 
 function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
@@ -190,12 +216,18 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
   const masked = maskMarkdownCodeAndComments(snapshot.content);
   const properties = parseProperties(snapshot.content);
   const headings: HeadingMetadata[] = [];
-  const tagCounts = new Map<string, number>();
-  for (const tag of tagsFromProperties(properties)) {
-    tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+  const tagOccurrences = [
+    ...tagsFromProperties(properties),
+    ...parseInlineMarkdownTags(snapshot.content, masked).map(({ tag }) => tag),
+  ];
+  const tagCounts = new Map<string, { tag: string; count: number }>();
+  for (const tag of tagOccurrences) {
+    const key = tagKey(tag);
+    const existing = tagCounts.get(key);
+    if (existing) existing.count += 1;
+    else tagCounts.set(key, { tag, count: 1 });
   }
   const lines = searchable.split("\n");
-  const tagLines = masked.split("\n");
   let bodyStart = 0;
   if (lines[0]?.trim() === "---") {
     const closingIndex = lines.slice(1).findIndex((line) => line.trim() === "---");
@@ -209,17 +241,11 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     if (heading?.[1] && heading[2]) {
       headings.push({ level: heading[1].length, text: flatten(heading[2]), line: index + 1 });
     }
-    const tagLine = tagLines[index] ?? "";
-    for (const tag of tagLine.matchAll(/(?:^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
-      if (tag[1]) {
-        tagCounts.set(tag[1], (tagCounts.get(tag[1]) ?? 0) + 1);
-      }
-    }
   }
   const sortedTagCounts = Object.fromEntries(
-    [...tagCounts.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([tag, count]) => [flatten(tag), count]),
+    [...tagCounts.values()]
+      .sort((left, right) => left.tag.localeCompare(right.tag))
+      .map(({ tag, count }) => [flatten(tag), count]),
   );
   return {
     path: snapshot.path,
@@ -227,6 +253,7 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     headings,
     tags: Object.keys(sortedTagCounts),
     tagCounts: sortedTagCounts,
+    tagOccurrences: tagOccurrences.map(flatten),
     properties,
     links: parseMarkdownLinks(snapshot.content, masked).map((link) => ({
       ...link,
@@ -333,9 +360,43 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+interface TagCatalogAggregate {
+  count: number;
+  directCount: number;
+  parentKey: string | null;
+  representatives: Map<string, string>;
+}
+
+interface TagCatalogContribution {
+  key: string;
+  tag: string;
+  parentKey: string | null;
+  direct: boolean;
+  representativeId: string;
+}
+
+function tagCatalogContributions(document: ParsedDocument): TagCatalogContribution[] {
+  const contributions: TagCatalogContribution[] = [];
+  for (const [occurrence, tag] of document.tagOccurrences.entries()) {
+    const hierarchy = tagHierarchy(tag);
+    for (const [index, display] of hierarchy.entries()) {
+      contributions.push({
+        key: tagKey(display),
+        tag: display,
+        parentKey: index > 0 ? tagKey(hierarchy[index - 1] ?? "") : null,
+        direct: index === hierarchy.length - 1,
+        representativeId: `${document.path}\u0000${String(occurrence).padStart(10, "0")}`,
+      });
+    }
+  }
+  return contributions;
+}
+
 export class MetadataIndex {
   readonly #documents = new Map<string, ParsedDocument>();
   readonly #searchIndex = new FullTextSearchIndex();
+  readonly #tagCatalog = new Map<string, TagCatalogAggregate>();
+  readonly #tagContributions = new Map<string, TagCatalogContribution[]>();
   #generation = 0;
   #snapshotCache: { generation: number; snapshot: MetadataIndexSnapshot } | null = null;
 
@@ -375,8 +436,7 @@ export class MetadataIndex {
         continue;
       }
       const document = parseDocument(snapshot);
-      index.#documents.set(snapshot.path, document);
-      index.#searchIndex.upsert(toSearchDocument(document, snapshot.content));
+      index.upsertDocument(document, toSearchDocument(document, snapshot.content));
       if ((cursor + 1) % snapshotBuildProgressInterval === 0 || cursor + 1 === snapshots.length) {
         options.onProgress?.(cursor + 1, snapshots.length);
       }
@@ -419,13 +479,11 @@ export class MetadataIndex {
     }
     for (const filePath of [...this.#documents.keys()]) {
       if (!prefix || filePath.startsWith(prefix)) {
-        this.#documents.delete(filePath);
-        this.#searchIndex.remove(filePath);
+        this.deleteDocument(filePath);
       }
     }
-    for (const [filePath, replacement] of replacements) {
-      this.#documents.set(filePath, replacement.document);
-      this.#searchIndex.upsert(replacement.searchDocument);
+    for (const replacement of replacements.values()) {
+      this.upsertDocument(replacement.document, replacement.searchDocument);
     }
     this.#generation += 1;
     this.#snapshotCache = null;
@@ -438,15 +496,14 @@ export class MetadataIndex {
     }
     const snapshot = await source.readText(filePath);
     const document = parseDocument(snapshot);
-    this.#documents.set(filePath, document);
-    this.#searchIndex.upsert(toSearchDocument(document, snapshot.content));
+    this.upsertDocument(document, toSearchDocument(document, snapshot.content));
     this.#generation += 1;
     this.#snapshotCache = null;
   }
 
   remove(filePath: string): void {
-    if (this.#documents.delete(filePath)) {
-      this.#searchIndex.remove(filePath);
+    if (this.#documents.has(filePath)) {
+      this.deleteDocument(filePath);
       this.#generation += 1;
       this.#snapshotCache = null;
     }
@@ -502,6 +559,7 @@ export class MetadataIndex {
     }));
     const snapshot = {
       documents: documentSnapshots,
+      tags: this.tagCatalogSnapshot(),
       backlinks: backlinkSnapshot,
       duplicateNames,
     };
@@ -514,12 +572,77 @@ export class MetadataIndex {
     searchDocuments: FullTextSearchDocument[],
   ): void {
     this.#documents.clear();
+    this.#tagCatalog.clear();
+    this.#tagContributions.clear();
     for (const [filePath, document] of documents) {
       this.#documents.set(filePath, document);
+      this.addTagContributions(document);
     }
     this.#searchIndex.replace(searchDocuments);
     this.#generation += 1;
     this.#snapshotCache = null;
+  }
+
+  private upsertDocument(document: ParsedDocument, searchDocument: FullTextSearchDocument): void {
+    if (this.#documents.has(document.path)) this.removeTagContributions(document.path);
+    this.#documents.set(document.path, document);
+    this.#searchIndex.upsert(searchDocument);
+    this.addTagContributions(document);
+  }
+
+  private deleteDocument(filePath: string): void {
+    this.removeTagContributions(filePath);
+    this.#documents.delete(filePath);
+    this.#searchIndex.remove(filePath);
+  }
+
+  private addTagContributions(document: ParsedDocument): void {
+    const contributions = tagCatalogContributions(document);
+    this.#tagContributions.set(document.path, contributions);
+    for (const contribution of contributions) {
+      const aggregate = this.#tagCatalog.get(contribution.key) ?? {
+        count: 0,
+        directCount: 0,
+        parentKey: contribution.parentKey,
+        representatives: new Map<string, string>(),
+      };
+      aggregate.count += 1;
+      if (contribution.direct) aggregate.directCount += 1;
+      aggregate.representatives.set(contribution.representativeId, contribution.tag);
+      this.#tagCatalog.set(contribution.key, aggregate);
+    }
+  }
+
+  private removeTagContributions(filePath: string): void {
+    for (const contribution of this.#tagContributions.get(filePath) ?? []) {
+      const aggregate = this.#tagCatalog.get(contribution.key);
+      if (!aggregate) continue;
+      aggregate.count -= 1;
+      if (contribution.direct) aggregate.directCount -= 1;
+      aggregate.representatives.delete(contribution.representativeId);
+      if (aggregate.count === 0) this.#tagCatalog.delete(contribution.key);
+    }
+    this.#tagContributions.delete(filePath);
+  }
+
+  private tagCatalogSnapshot(): TagIndexEntry[] {
+    return [...this.#tagCatalog.entries()]
+      .map(([key, aggregate]) => {
+        const representative = [...aggregate.representatives.entries()].sort(([left], [right]) =>
+          left.localeCompare(right),
+        )[0]?.[1];
+        if (!representative) {
+          throw new Error(`Tag catalog row ${key} has no representative.`);
+        }
+        return {
+          key,
+          tag: flatten(representative),
+          parentKey: aggregate.parentKey,
+          directCount: aggregate.directCount,
+          count: aggregate.count,
+        };
+      })
+      .sort((left, right) => left.key.localeCompare(right.key));
   }
 }
 

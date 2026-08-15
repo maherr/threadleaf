@@ -295,6 +295,34 @@ describe("FullTextSearchIndex", () => {
     expect(results[2]?.score).toBe(results[3]?.score);
   });
 
+  it("filters tags case-insensitively and includes nested descendants for parent filters", () => {
+    const index = new FullTextSearchIndex();
+    index.replace([
+      document("Direct.md", "plain body", { tags: ["Project"] }),
+      document("Nested.md", "needle body", { tags: ["project/Threadleaf"] }),
+      document("Other.md", "needle body", { tags: ["personal"] }),
+    ]);
+
+    expect(index.search("tag:#PROJECT")).toMatchObject({
+      terms: [],
+      tagFilters: ["project"],
+      total: 2,
+      results: [
+        { path: "Direct.md", contexts: [{ kind: "tag", text: "#Project" }] },
+        { path: "Nested.md", contexts: [{ kind: "tag", text: "#project/Threadleaf" }] },
+      ],
+    });
+    expect(index.search("tag:project/threadleaf").results.map(({ path }) => path)).toEqual([
+      "Nested.md",
+    ]);
+    expect(index.search("tag:project needle").results.map(({ path }) => path)).toEqual([
+      "Nested.md",
+    ]);
+    expect(index.search("tag:project tag:project/threadleaf").total).toBe(1);
+    expect(index.search("tag:project", 50, { caseSensitive: true }).total).toBe(2);
+    expect(() => index.search("tag:2026")).toThrow("valid nonnumeric tag body");
+  });
+
   it("returns bounded contextual lines and reports truncation without losing the total", () => {
     const index = new FullTextSearchIndex();
     index.replace(

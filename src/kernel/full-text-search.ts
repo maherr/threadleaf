@@ -9,6 +9,7 @@ import {
   sourceBoundaryAtOrAfter,
   sourceBoundaryAtOrBefore,
 } from "../shared/search-text";
+import { normalizeTagBody, tagKey } from "./markdown-tags";
 import { displayTitleFromVaultPath } from "./note-path";
 
 export const maxSearchQueryLength = 256;
@@ -48,6 +49,7 @@ export interface FullTextSearchHit {
 export interface FullTextSearchPage {
   query: string;
   terms: string[];
+  tagFilters?: string[];
   total: number;
   truncated: boolean;
   results: FullTextSearchHit[];
@@ -113,6 +115,7 @@ interface IndexedSearchDocument {
   headings: IndexedHeading[];
   tags: Array<{
     text: string;
+    key: string;
     canonical: string;
     normalized: string;
     simple: boolean;
@@ -275,6 +278,7 @@ function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument 
       const normalized = foldSearchText(tag);
       return {
         text: `#${tag}`,
+        key: tagKey(tag),
         canonical,
         normalized,
         simple: isSimpleSearchText(canonical) && isSimpleSearchText(normalized),
@@ -294,19 +298,34 @@ function indexDocument(document: FullTextSearchDocument): IndexedSearchDocument 
   };
 }
 
-function parseTerms(query: string, caseSensitive: boolean): string[] {
+interface ParsedSearchQuery {
+  terms: string[];
+  tagFilters: string[];
+}
+
+function parseQuery(query: string, caseSensitive: boolean): ParsedSearchQuery {
   if (query.length > maxSearchQueryLength) {
     throw new SearchQueryError(
       `Search queries may contain at most ${maxSearchQueryLength} characters.`,
     );
   }
   const terms: string[] = [];
+  const tagFilters: string[] = [];
   let buffer = "";
   let quoted = false;
   const flush = (): void => {
-    const normalized = foldSearchText(buffer.trim(), caseSensitive);
-    if (normalized && !terms.includes(normalized)) {
-      terms.push(normalized);
+    const raw = buffer.trim();
+    const filter = /^tag:(.*)$/iu.exec(raw);
+    if (filter) {
+      const tag = normalizeTagBody(filter[1] ?? "");
+      if (!tag) {
+        throw new SearchQueryError("Tag filters require a valid nonnumeric tag body.");
+      }
+      const key = tagKey(tag);
+      if (!tagFilters.includes(key)) tagFilters.push(key);
+    } else {
+      const normalized = foldSearchText(raw, caseSensitive);
+      if (normalized && !terms.includes(normalized)) terms.push(normalized);
     }
     buffer = "";
   };
@@ -328,10 +347,10 @@ function parseTerms(query: string, caseSensitive: boolean): string[] {
     }
   }
   flush();
-  if (terms.length > maxSearchTerms) {
+  if (terms.length + tagFilters.length > maxSearchTerms) {
     throw new SearchQueryError(`Search queries may contain at most ${maxSearchTerms} terms.`);
   }
-  return terms;
+  return { terms, tagFilters };
 }
 
 function countOccurrences(haystack: string, needle: string, simple: boolean): number {
@@ -596,6 +615,19 @@ interface ScoredDocument {
   matchCount: number;
 }
 
+function tagMatchesFilter(tag: string, filter: string): boolean {
+  return tag === filter || tag.startsWith(`${filter}/`);
+}
+
+function matchingTagFilters(
+  document: IndexedSearchDocument,
+  tagFilters: readonly string[],
+): typeof document.tags {
+  return document.tags.filter((tag) =>
+    tagFilters.some((filter) => tagMatchesFilter(tag.key, filter)),
+  );
+}
+
 /**
  * Match and score one document without touching its lines. Scoring reads the
  * folded whole-note key, which is retained; only the contexts of the results a
@@ -604,19 +636,32 @@ interface ScoredDocument {
 function scoreMatch(
   document: IndexedSearchDocument,
   terms: string[],
+  tagFilters: string[],
   caseSensitive: boolean,
 ): ScoredDocument | null {
+  if (
+    !tagFilters.every((filter) => document.tags.some((tag) => tagMatchesFilter(tag.key, filter)))
+  ) {
+    return null;
+  }
   const content = comparableContent(document, caseSensitive);
   if (!terms.every((term) => containsTerm(document, term, caseSensitive, content))) {
     return null;
   }
   return {
     document,
-    score: scoreDocument(document, terms, caseSensitive, content),
-    matchCount: terms.reduce(
-      (count, term) => count + Math.max(1, countOccurrences(content, term, document.contentSimple)),
-      0,
-    ),
+    score:
+      (terms.length > 0 ? scoreDocument(document, terms, caseSensitive, content) : 0) +
+      tagFilters.reduce(
+        (score, filter) => score + (document.tags.some((tag) => tag.key === filter) ? 130 : 90),
+        0,
+      ),
+    matchCount:
+      terms.reduce(
+        (count, term) =>
+          count + Math.max(1, countOccurrences(content, term, document.contentSimple)),
+        0,
+      ) + matchingTagFilters(document, tagFilters).length,
   };
 }
 
@@ -629,11 +674,22 @@ function scoreMatch(
 function documentContexts(
   document: IndexedSearchDocument,
   terms: string[],
+  tagFilters: string[],
   caseSensitive: boolean,
   maxContexts: number,
   exactContext: boolean,
 ): FullTextSearchContext[] {
-  const candidates = contextCandidates(document, terms, caseSensitive, exactContext).sort(
+  const candidates = [
+    ...contextCandidates(document, terms, caseSensitive, exactContext),
+    ...matchingTagFilters(document, tagFilters).map(
+      (tag): ContextCandidate => ({
+        kind: "tag",
+        text: tag.text,
+        coverage: tagFilters.filter((filter) => tagMatchesFilter(tag.key, filter)).length,
+        occurrences: 1,
+      }),
+    ),
+  ].sort(
     (left, right) =>
       right.coverage - left.coverage ||
       right.occurrences - left.occurrences ||
@@ -692,8 +748,8 @@ export class FullTextSearchIndex {
       throw new Error("Search context limits must be between 1 and 100.");
     }
     const exactContext = options.exactContext ?? false;
-    const terms = parseTerms(query, caseSensitive);
-    if (terms.length === 0) {
+    const { terms, tagFilters } = parseQuery(query, caseSensitive);
+    if (terms.length === 0 && tagFilters.length === 0) {
       return { query, terms, total: 0, truncated: false, results: [] };
     }
     const matches: ScoredDocument[] = [];
@@ -702,7 +758,7 @@ export class FullTextSearchIndex {
       if (folderPrefix && !document.path.startsWith(folderPrefix)) {
         continue;
       }
-      const match = scoreMatch(document, terms, caseSensitive);
+      const match = scoreMatch(document, terms, tagFilters, caseSensitive);
       if (match) {
         matches.push(match);
       }
@@ -714,13 +770,21 @@ export class FullTextSearchIndex {
     return {
       query,
       terms,
+      ...(tagFilters.length > 0 ? { tagFilters } : {}),
       total: matches.length,
       truncated: matches.length > limit,
       results: matches.slice(0, limit).map((match) => ({
         path: match.document.path,
         score: match.score,
         matchCount: match.matchCount,
-        contexts: documentContexts(match.document, terms, caseSensitive, maxContexts, exactContext),
+        contexts: documentContexts(
+          match.document,
+          terms,
+          tagFilters,
+          caseSensitive,
+          maxContexts,
+          exactContext,
+        ),
       })),
     };
   }

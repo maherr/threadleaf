@@ -69,6 +69,7 @@ function graphFixture(): MetadataIndexSnapshot {
   ];
   return {
     documents,
+    tags: [],
     backlinks: documents.map((document) => ({ path: document.path, sources: [] })),
     duplicateNames: [],
   };

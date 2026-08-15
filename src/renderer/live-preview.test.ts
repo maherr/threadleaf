@@ -111,6 +111,29 @@ describe("live preview inline model", () => {
     ]);
   });
 
+  it("uses the shared tag grammar and excludes link labels", () => {
+    const source = "#2026 #y2026 #Cafe\u0301 [label #hidden](Note.md) #a//b";
+
+    expect(parseLivePreviewLine(source, 0)).toEqual([
+      { from: 6, to: 12, kind: "tag", label: "y2026" },
+      { from: 13, to: 19, kind: "tag", label: "Cafe\u0301" },
+      {
+        from: 20,
+        to: 44,
+        kind: "link",
+        label: "label #hidden",
+        link: {
+          syntax: "markdown",
+          target: "Note.md",
+          subpath: null,
+          label: "label #hidden",
+          embed: false,
+          external: false,
+        },
+      },
+    ]);
+  });
+
   it("does not decorate tokens protected by inline or fenced code ranges", () => {
     const source = "`[[literal]]` and [[real]]";
 

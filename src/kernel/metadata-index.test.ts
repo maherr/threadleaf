@@ -237,6 +237,64 @@ describe("MetadataIndex", () => {
     expect(JSON.stringify(snapshot)).not.toContain("Ignored");
   });
 
+  it("indexes frontmatter forms, duplicate occurrences, casing, and nested parent counts", async () => {
+    const vault = new MemoryVault();
+    vault.set(
+      "A.md",
+      [
+        "---",
+        "tags: Project/Alpha, TEAM",
+        "---",
+        "#project/Alpha #PROJECT #2026",
+        "[#hidden](Target.md) `#code`",
+      ].join("\n"),
+    );
+    vault.set("B.md", "---\ntags: [project/Beta, personal]\n---\n#body");
+    vault.set("C.md", "---\ntags:\n  - project/Alpha\n  - y2026\n---");
+
+    const snapshot = (await MetadataIndex.build(vault)).snapshot();
+    const first = snapshot.documents.find(({ path }) => path === "A.md");
+    expect(first).toMatchObject({
+      tags: ["PROJECT", "Project/Alpha", "TEAM"],
+      tagCounts: { "Project/Alpha": 2, PROJECT: 1, TEAM: 1 },
+    });
+    expect(snapshot.tags).toEqual([
+      { key: "body", tag: "body", parentKey: null, directCount: 1, count: 1 },
+      { key: "personal", tag: "personal", parentKey: null, directCount: 1, count: 1 },
+      { key: "project", tag: "Project", parentKey: null, directCount: 1, count: 5 },
+      {
+        key: "project/alpha",
+        tag: "Project/Alpha",
+        parentKey: "project",
+        directCount: 3,
+        count: 3,
+      },
+      {
+        key: "project/beta",
+        tag: "project/Beta",
+        parentKey: "project",
+        directCount: 1,
+        count: 1,
+      },
+      { key: "team", tag: "TEAM", parentKey: null, directCount: 1, count: 1 },
+      { key: "y2026", tag: "y2026", parentKey: null, directCount: 1, count: 1 },
+    ]);
+    expect(snapshot.tags.some(({ key }) => key === "2026")).toBe(false);
+  });
+
+  it("accepts case-insensitive Tags and singular tag frontmatter keys", async () => {
+    const vault = new MemoryVault();
+    vault.set("Upper.md", "---\nTags: [alpha]\n---\nbody");
+    vault.set("Singular.md", "---\ntag: beta\n---\nbody");
+    vault.set("Both.md", "---\nTag: loser\ntags: [winner]\n---\nbody");
+
+    const snapshot = (await MetadataIndex.build(vault)).snapshot();
+    const byPath = (path: string) => snapshot.documents.find((doc) => doc.path === path);
+    expect(byPath("Upper.md")?.tags).toEqual(["alpha"]);
+    expect(byPath("Singular.md")?.tags).toEqual(["beta"]);
+    expect(byPath("Both.md")?.tags).toEqual(["winner"]);
+  });
+
   it("resolves a same-folder note before a duplicate basename elsewhere", async () => {
     const vault = new MemoryVault();
     vault.set("Folder/Source.md", "[[Target]]");
@@ -266,6 +324,53 @@ describe("MetadataIndex", () => {
 });
 
 describe("VaultIndexReactor", () => {
+  it("updates the hierarchical tag catalog through edit, create, move, delete, and rebuild", async () => {
+    const vault = new MemoryVault();
+    vault.set("A.md", "#Home/Child");
+    vault.set("B.md", "#home");
+    const reactor = await VaultIndexReactor.open(vault);
+    const counts = (): Record<string, number> =>
+      Object.fromEntries(reactor.index.snapshot().tags.map(({ key, count }) => [key, count]));
+
+    expect(counts()).toEqual({ home: 2, "home/child": 1 });
+
+    vault.set("A.md", "#Other");
+    await reactor.accept(batch(1, [{ kind: "upsert", state: vault.state("A.md") }]));
+    expect(counts()).toEqual({ home: 1, other: 1 });
+
+    vault.set("C.md", "#HOME/Child #home/child");
+    await reactor.accept(batch(2, [{ kind: "upsert", state: vault.state("C.md") }]));
+    expect(counts()).toEqual({ home: 3, "home/child": 2, other: 1 });
+
+    vault.move("C.md", "Moved.md");
+    await reactor.accept(
+      batch(3, [
+        {
+          kind: "move",
+          from: "C.md",
+          to: "Moved.md",
+          state: vault.state("Moved.md", "c-inode"),
+        },
+      ]),
+    );
+    expect(counts()).toEqual({ home: 3, "home/child": 2, other: 1 });
+
+    vault.remove("B.md");
+    await reactor.accept(batch(4, [{ kind: "delete", path: "B.md" }]));
+    expect(counts()).toEqual({ home: 2, "home/child": 2, other: 1 });
+
+    vault.set("External.md", "#external/child");
+    await reactor.accept(batch(6, []));
+    expect(counts()).toEqual({
+      external: 1,
+      "external/child": 1,
+      home: 2,
+      "home/child": 2,
+      other: 1,
+    });
+    await expectEquivalent(reactor, vault);
+  });
+
   it("keeps full-text results aligned across edits, moves, deletes, and rebuilds", async () => {
     const vault = new MemoryVault();
     vault.set("A.md", "alpha before");

@@ -46,6 +46,10 @@ describe(`FullTextSearchIndex (${documentCount.toLocaleString("en-US")} notes)`,
     index.search("ordinary workspace", 50);
   });
 
+  bench("filter a vault-wide tag without rescanning document text", () => {
+    index.search("tag:area-39", 50);
+  });
+
   bench("project a long matching line for its source-faithful snippet", () => {
     const context = longSnippetIndex.search("needle", 1, { maxContexts: 1 }).results[0]
       ?.contexts[0];

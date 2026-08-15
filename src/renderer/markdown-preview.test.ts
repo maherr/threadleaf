@@ -427,6 +427,36 @@ Working $y$`);
     expect(rendered.querySelector("pre")?.textContent).toContain("[[also not a link]]");
   });
 
+  it("renders valid tags as trusted anchors outside code and links", () => {
+    const rendered = preview(
+      [
+        "#Alpha/Child #2026 #y2026 and (#résumé).",
+        "",
+        "`#inline-code` [linked #hidden](Target.md)",
+        "",
+        "```md",
+        "#fenced",
+        "```",
+      ].join("\n"),
+    );
+    const tags = [...rendered.querySelectorAll<HTMLAnchorElement>("a.tag")];
+
+    expect(tags.map((tag) => tag.textContent)).toEqual(["#Alpha/Child", "#y2026", "#résumé"]);
+    expect(tags.map((tag) => tag.dataset.threadleafTag)).toEqual([
+      "Alpha/Child",
+      "y2026",
+      "résumé",
+    ]);
+    expect(tags.map((tag) => tag.dataset.tagName)).toEqual(["#Alpha/Child", "#y2026", "#résumé"]);
+    expect(tags.map((tag) => tag.getAttribute("href"))).toEqual([
+      "#Alpha/Child",
+      "#y2026",
+      "#résumé",
+    ]);
+    expect(rendered.querySelector("code")?.textContent).toBe("#inline-code");
+    expect(rendered.querySelector("pre")?.textContent).toContain("#fenced");
+  });
+
   it("classifies local and external Markdown links without leaving a navigable URL", () => {
     const rendered = preview(
       "[Local](Folder/Note.md#Part) [Web](https://example.com/path) [Unsafe](javascript:alert(1))",

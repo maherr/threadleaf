@@ -20,6 +20,7 @@ import type {
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
 } from "../shared/contracts";
+import { isValidTagBody } from "../shared/tags";
 import { parseCalloutSourceLine } from "./callouts";
 import {
   collectFootnotes,
@@ -49,6 +50,7 @@ export interface LivePreviewOptions {
   sourceNotePath(): string | null;
   expectedVaultId(): string | null;
   activateLink(link: LivePreviewLink): void;
+  activateTag(tag: string): void;
   loadImage(
     sourceNotePath: string,
     target: string,
@@ -566,10 +568,11 @@ export function parseLivePreviewLine(
       break;
     }
   }
-  for (const match of text.matchAll(/(^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
+  for (const match of text.matchAll(/(^|[\s(])#([\p{L}\p{M}\p{N}_/-]+)/gu)) {
     if (match.index === undefined || !match[2]) {
       continue;
     }
+    if (!isValidTagBody(match[2])) continue;
     const prefixLength = match[1]?.length ?? 0;
     const from = lineFrom + match.index + prefixLength;
     add({ from, to: from + match[0].length - prefixLength, kind: "tag", label: match[2] });
@@ -1689,6 +1692,45 @@ class LinkWidget extends WidgetType {
       }
     });
     return link;
+  }
+}
+
+class TagWidget extends WidgetType {
+  constructor(
+    readonly from: number,
+    readonly to: number,
+    readonly tag: string,
+    readonly options: LivePreviewOptions,
+  ) {
+    super();
+  }
+
+  eq(other: TagWidget): boolean {
+    return this.from === other.from && this.to === other.to && this.tag === other.tag;
+  }
+
+  toDOM(): HTMLElement {
+    const anchor = document.createElement("a");
+    anchor.className = "tag tl-live-tag";
+    anchor.href = `#${this.tag}`;
+    anchor.dataset.threadleafTag = this.tag;
+    anchor.dataset.tagName = `#${this.tag}`;
+    anchor.textContent = `#${this.tag}`;
+    anchor.ariaLabel = `Search for tag ${this.tag}`;
+    anchor.title = `Search notes tagged #${this.tag}`;
+    sourceMetadata(anchor, this.from, this.to, "tag");
+    const activate = (event: MouseEvent | KeyboardEvent): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.options.activateTag(this.tag);
+    };
+    anchor.addEventListener("mousedown", (event) => {
+      if (event.button === 0) activate(event);
+    });
+    anchor.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") activate(event);
+    });
+    return anchor;
   }
 }
 
@@ -2857,16 +2899,25 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
         fallbackRanges.push(token);
       }
       if (token.kind === "tag") {
-        ranges.push(
-          Decoration.mark({
-            class: "tl-live-tag",
-            attributes: {
-              "data-tl-source-from": String(token.from),
-              "data-tl-source-to": String(token.to),
-              "data-tl-mapping-kind": "tag",
-            },
-          }).range(token.from, token.to),
-        );
+        if (mapped?.status === "fallback" || lineActive) {
+          ranges.push(
+            Decoration.mark({
+              class: "tl-live-tag tl-live-tag-source",
+              attributes: {
+                "data-tl-source-from": String(token.from),
+                "data-tl-source-to": String(token.to),
+                "data-tl-mapping-kind": "tag",
+              },
+            }).range(token.from, token.to),
+          );
+        } else {
+          ranges.push(
+            Decoration.replace({
+              widget: new TagWidget(token.from, token.to, token.label, options),
+            }).range(token.from, token.to),
+          );
+          replacedRanges.push(token);
+        }
         continue;
       }
       if (mapped?.status === "fallback") {

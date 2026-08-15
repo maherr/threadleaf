@@ -82,6 +82,16 @@
               >
                 Tree
               </button>
+              <button
+                class="navigator-view-toggle navigator-tag-toggle"
+                id="navigator-tag-toggle"
+                type="button"
+                aria-pressed="false"
+                aria-label="Browse vault tags"
+                title="Browse vault tags"
+              >
+                Tags
+              </button>
               <button class="navigator-new-note" id="new-note" type="button">
                 <span aria-hidden="true">＋</span>
                 <span>New</span>
@@ -99,7 +109,7 @@
             </div>
           </div>
 
-          <label class="search-field" for="file-search">
+          <label class="search-field" id="navigator-search-field" for="file-search">
             <span aria-hidden="true">⌕</span>
             <span class="sr-only">Search saved vault content</span>
             <input
@@ -150,7 +160,7 @@
               New folder
             </button>
           </div>
-          <section class="canvas-shelf" aria-labelledby="canvas-heading">
+          <section class="canvas-shelf" id="canvas-shelf" aria-labelledby="canvas-heading">
             <header class="canvas-shelf-header">
               <span aria-hidden="true">▦</span>
               <strong id="canvas-heading">Canvases</strong>

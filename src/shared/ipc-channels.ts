@@ -13,6 +13,7 @@ export const ipcChannels = {
   workspaceFilePage: "threadleaf:workspace-file-page",
   workspaceTreePage: "threadleaf:workspace-tree-page",
   workspaceTreePath: "threadleaf:workspace-tree-path",
+  workspaceTagCatalog: "threadleaf:workspace-tag-catalog",
   workspaceLayoutChanged: "threadleaf:workspace-layout-changed",
   setWorkspaceDockCollapsed: "threadleaf:set-workspace-dock-collapsed",
   setWorkspaceNavigatorExpandedPaths: "threadleaf:set-workspace-navigator-expanded-paths",

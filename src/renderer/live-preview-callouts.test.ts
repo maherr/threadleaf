@@ -19,6 +19,7 @@ function editorFor(source: string): { view: EditorView; host: HTMLElement } {
           sourceNotePath: () => "Note.md",
           expectedVaultId: () => "vault-a",
           activateLink: () => undefined,
+          activateTag: () => undefined,
           loadImage: async () => ({
             status: "unavailable",
             vaultId: "vault-a",
