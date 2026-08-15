@@ -8,6 +8,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
+import { parseMarkdownTasks, toggleMarkdownTaskStatus } from "../kernel/markdown-tasks";
 import type {
   VaultImageResponse,
   VaultNoteEmbedResponse,
@@ -2241,41 +2242,51 @@ class TaskWidget extends WidgetType {
   constructor(
     readonly from: number,
     readonly to: number,
-    readonly checked: boolean,
+    readonly status: string,
   ) {
     super();
   }
 
   eq(other: TaskWidget): boolean {
-    return this.from === other.from && this.to === other.to && this.checked === other.checked;
+    return this.from === other.from && this.to === other.to && this.status === other.status;
   }
 
   toDOM(view: EditorView): HTMLElement {
+    const checked = this.status !== " ";
     const checkbox = document.createElement("input");
     checkbox.className = "tl-live-task";
     checkbox.type = "checkbox";
-    checkbox.checked = this.checked;
+    checkbox.checked = checked;
     checkbox.disabled = view.state.readOnly;
+    checkbox.dataset.task = this.status === " " ? "" : this.status;
     sourceMetadata(checkbox, this.from, this.to, "task");
-    checkbox.ariaLabel = this.checked ? "Completed task" : "Open task";
+    checkbox.ariaLabel = checked ? "Completed task" : "Open task";
     checkbox.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (view.state.readOnly) {
-        checkbox.checked = this.checked;
+        checkbox.checked = checked;
         return;
       }
       const current = view.state.doc.sliceString(this.from, this.to);
-      if (!/^\[[ xX]\]$/u.test(current)) {
-        checkbox.checked = this.checked;
+      if (current[0] !== "[" || current[current.length - 1] !== "]") {
+        checkbox.checked = checked;
+        return;
+      }
+      let nextStatus: string;
+      try {
+        nextStatus = toggleMarkdownTaskStatus(current.slice(1, -1));
+      } catch {
+        checkbox.checked = checked;
         return;
       }
       view.dispatch({
         changes: {
           from: this.from,
           to: this.to,
-          insert: current[1]?.toLocaleLowerCase("en-US") === "x" ? "[ ]" : "[x]",
+          insert: `[${nextStatus}]`,
         },
+        userEvent: "input.toggle-checkbox",
       });
       view.focus();
     });
@@ -2564,11 +2575,16 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
   const fallbackRanges: SourceRange[] = [];
   const tableRanges: SourceRange[] = [];
   const lineClasses = new Map<number, Set<string>>();
+  const lineTaskStatuses = new Map<number, string>();
   const addLineClass = (position: number, className: string): void => {
     const line = view.state.doc.lineAt(Math.min(position, view.state.doc.length));
     const classes = lineClasses.get(line.from) ?? new Set<string>();
     classes.add(className);
     lineClasses.set(line.from, classes);
+  };
+  const addTaskLineStatus = (position: number, status: string): void => {
+    const line = view.state.doc.lineAt(Math.min(position, view.state.doc.length));
+    lineTaskStatuses.set(line.from, status);
   };
   const addNodeLines = (from: number, to: number, className: string): void => {
     let line = view.state.doc.lineAt(from);
@@ -2612,6 +2628,30 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
   );
   tableRanges.length = 0;
   tableRanges.push(...validTableRanges);
+  const visibleLineNumbers = new Set(
+    visibleLines(view).map((line) => view.state.doc.lineAt(line.from).number),
+  );
+  for (const task of parseMarkdownTasks(source)) {
+    if (!visibleLineNumbers.has(task.line) || sourceOnlyLineNumbers.has(task.line)) {
+      continue;
+    }
+    const line = view.state.doc.line(task.line);
+    const marker = { from: task.statusStart - 1, to: task.statusEnd + 1 };
+    if (intersectsAny(marker, htmlRanges)) {
+      continue;
+    }
+    addLineClass(line.from, "tl-live-task-line");
+    addTaskLineStatus(line.from, task.status === " " ? "" : task.status);
+    if (!sameInactiveLine(view, marker, active)) {
+      continue;
+    }
+    ranges.push(
+      Decoration.replace({
+        widget: new TaskWidget(marker.from, marker.to, task.status),
+      }).range(marker.from, marker.to),
+    );
+    replacedRanges.push(marker);
+  }
   const mathBlocks = collectVisibleMathBlocks(view, protectedRanges);
   const orderedProtectedRanges = mergeSourceRanges([
     ...subtractSourceRanges(protectedRanges, htmlRanges),
@@ -2852,7 +2892,7 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
               const marker = view.state.doc.sliceString(node.from, node.to);
               ranges.push(
                 Decoration.replace({
-                  widget: new TaskWidget(node.from, node.to, /[xX]/u.test(marker)),
+                  widget: new TaskWidget(node.from, node.to, marker.slice(1, -1)),
                 }).range(node.from, node.to),
               );
             }
@@ -2886,10 +2926,14 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
   }
 
   for (const [from, classes] of lineClasses) {
+    const taskStatus = lineTaskStatuses.get(from);
     ranges.push(
       Decoration.line({
         class: [...classes].sort().join(" "),
-        attributes: { "data-tl-source-from": String(from) },
+        attributes: {
+          "data-tl-source-from": String(from),
+          ...(taskStatus === undefined ? {} : { "data-task": taskStatus }),
+        },
       }).range(from),
     );
   }

@@ -379,6 +379,28 @@ Working $y$`);
     expect(rendered.textContent).not.toContain("kind: fixture");
   });
 
+  it("renders standard and custom Markdown task markers as source-addressable checkboxes", () => {
+    const rendered = preview(
+      ["- [ ] open", "  - [x] nested", "> - [?] quoted", ">   1. [🟡] quoted unicode"].join("\n"),
+    );
+    const tasks = [...rendered.querySelectorAll<HTMLLIElement>("li.task-list-item")];
+    const checkboxes = [
+      ...rendered.querySelectorAll<HTMLInputElement>('input[data-threadleaf-task="true"]'),
+    ];
+
+    expect(tasks.map((task) => task.getAttribute("data-task"))).toEqual(["", "x", "?", "🟡"]);
+    expect(tasks.map((task) => task.dataset.sourceLine)).toEqual(["1", "2", "3", "4"]);
+    expect(checkboxes.map((checkbox) => checkbox.checked)).toEqual([false, true, true, true]);
+    expect(checkboxes.map((checkbox) => checkbox.getAttribute("data-task"))).toEqual([
+      "",
+      "x",
+      "?",
+      "🟡",
+    ]);
+    expect(rendered.textContent).not.toContain("[ ] open");
+    expect(rendered.textContent).not.toContain("[?] quoted");
+  });
+
   it("preserves wiki-link meaning without parsing code as links", () => {
     const rendered = preview(
       [

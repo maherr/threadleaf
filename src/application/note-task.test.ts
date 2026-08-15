@@ -59,10 +59,10 @@ describe("recovery-backed Markdown tasks", () => {
     });
     expect(toggled).toMatchObject({
       status: "committed",
-      task: { path: "Tasks.md", line: 5, status: "x", completed: true },
+      task: { path: "Tasks.md", line: 5, status: " ", completed: false },
     });
     await expect(fs.readFile(path.join(vaultPath, "Tasks.md"), "utf8")).resolves.toBe(
-      before.replace("[ ]", "[x]").replace("[🟡]", "[x]"),
+      before.replace("[ ]", "[x]").replace("[🟡]", "[ ]"),
     );
   });
 

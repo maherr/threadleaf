@@ -15,6 +15,16 @@ export function normalizeMarkdownTaskStatus(value: string): string {
   return value;
 }
 
+/**
+ * Toggle a Markdown task marker without assigning meaning to custom states.
+ *
+ * `[ ]` is the one open form. Every other valid single-character marker is
+ * treated as a checked-style state by the editing surfaces and resets to open.
+ */
+export function toggleMarkdownTaskStatus(status: string): string {
+  return normalizeMarkdownTaskStatus(status) === " " ? "x" : " ";
+}
+
 export function isCompletedMarkdownTaskStatus(status: string): boolean {
   return status === "x" || status === "X";
 }

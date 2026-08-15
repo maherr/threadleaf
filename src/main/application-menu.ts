@@ -104,6 +104,7 @@ export function createApplicationMenuTemplate(
         action("Insert Template…", "editor.insert-template"),
         action("Insert Current Date", "editor.insert-current-date"),
         action("Insert Current Time", "editor.insert-current-time"),
+        action("Toggle checkbox status", "editor.toggle-checkbox-status"),
       ],
     },
     {

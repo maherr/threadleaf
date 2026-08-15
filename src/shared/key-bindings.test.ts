@@ -52,6 +52,7 @@ describe("key bindings", () => {
     expect(parsed.keyBindings["workspace.next-tab"]).toBe("Alt+ArrowRight");
     expect(parsed.keyBindings["workspace.previous-tab"]).toBe("Alt+ArrowLeft");
     expect(parsed.keyBindings["editor.toggle-reading-view"]).toBe("Mod+E");
+    expect(parsed.keyBindings["editor.toggle-checkbox-status"]).toBe("Mod+L");
     expect(parsed.keyBindings["future.plugin-command"]).toBe("Mod+F8");
     expect(parsed.keyBindings["editor.save-note"]).toBeUndefined();
     expect(parsed.keyBindings["editor.revert-note"]).toBeUndefined();
@@ -195,6 +196,9 @@ describe("key bindings", () => {
     expect(shortcutTargetForEvent(createDefaultAppSettings().keyBindings, ctrl, false)).toBe(
       "ui.command-palette",
     );
+    expect(
+      shortcutTargetForEvent(createDefaultAppSettings().keyBindings, { ...ctrl, key: "l" }, false),
+    ).toBe("editor.toggle-checkbox-status");
     expect(
       shortcutTargetForEvent(
         createDefaultAppSettings().keyBindings,

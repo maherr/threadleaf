@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { history, undo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -85,6 +86,7 @@ function editorFor(
       doc: `${source}\n\n`,
       selection: { anchor: source.length + 2 },
       extensions: [
+        history(),
         markdown({ base: markdownLanguage }),
         createLivePreviewExtension({
           sourceNotePath: () => current.path,
@@ -438,6 +440,48 @@ describe("Live Preview async ownership", () => {
     expect(separator?.getAttribute("aria-hidden")).toBeNull();
     expect(separator?.getAttribute("aria-label")).toBe("Table alignment row");
     expect(separator?.tabIndex).toBe(-1);
+    view.destroy();
+    host.remove();
+  });
+});
+
+describe("Live Preview task controls", () => {
+  it("renders custom task states, toggles exact source, preserves undo, and reveals the active line", async () => {
+    const source = [
+      "- [ ] open",
+      "  - [x] nested",
+      "> - [?] quoted",
+      "    1. [🟡] indented unicode",
+    ].join("\n");
+    const current = { path: "Tasks.md", vaultId: "vault-a" };
+    const { view, host } = editorFor(source, current, async () => {
+      throw new Error("The task fixture does not contain embeds.");
+    });
+
+    await flushAsyncWork();
+    const checkboxes = [...host.querySelectorAll<HTMLInputElement>(".tl-live-task")];
+    expect(checkboxes.map((checkbox) => checkbox.dataset.task)).toEqual(["", "x", "?", "🟡"]);
+    expect(checkboxes.map((checkbox) => checkbox.checked)).toEqual([false, true, true, true]);
+    const taskLines = [...host.querySelectorAll<HTMLElement>(".cm-line")];
+    expect(taskLines.some((line) => line.dataset.task === "?")).toBe(true);
+    expect(taskLines.some((line) => line.dataset.task === "🟡")).toBe(true);
+
+    const custom = checkboxes[2];
+    if (!custom) {
+      throw new Error("Expected the custom task checkbox.");
+    }
+    custom.click();
+    expect(view.state.doc.toString()).toBe(`${source.replace("[?]", "[ ]")}\n\n`);
+    expect(undo(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe(`${source}\n\n`);
+
+    const activeLine = source.indexOf("> - [?]");
+    view.dispatch({ selection: { anchor: activeLine } });
+    const quotedLine = [...host.querySelectorAll<HTMLElement>(".cm-line")].find(
+      (line) => line.dataset.task === "?",
+    );
+    expect(quotedLine?.querySelector(".tl-live-task")).toBeNull();
+    expect(quotedLine?.textContent).toContain("[?] quoted");
     view.destroy();
     host.remove();
   });
