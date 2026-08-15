@@ -23,6 +23,7 @@ function checkedInShape(manifest: VaultScaleManifest) {
     generatorVersion: manifest.generatorVersion,
     seed: manifest.seed,
     variant: manifest.variant,
+    manifestHash: manifest.manifestHash,
     fileCount: manifest.fileCount,
     visibleFileCount: manifest.visibleFileCount,
     hiddenFileCount: manifest.hiddenFileCount,
@@ -42,6 +43,7 @@ describe("vault-scale corpus generator", () => {
     const second = buildVaultScaleManifest("notes-only");
     expect(first.seed).toBe(vaultScaleSeed);
     expect(second.seed).toBe(first.seed);
+    expect(second.manifestHash).toBe(first.manifestHash);
     expect(second.sampleHash).toBe(first.sampleHash);
     expect(second.sampleFiles).toEqual(first.sampleFiles);
   });
@@ -61,5 +63,5 @@ describe("vault-scale corpus generator", () => {
     for (const variant of ["full", "notes-only"] as const) {
       expect(checkedInShape(buildVaultScaleManifest(variant))).toEqual(checkedIn.variants[variant]);
     }
-  });
+  }, 20_000);
 });

@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     runner: "benchmarks/runner.ts",
+    "performance-acceptance": "benchmarks/performance-acceptance.ts",
     "vault-scale-corpus": "benchmarks/vault-scale-corpus.ts",
     "vault-scale-kernel": "benchmarks/vault-scale-kernel.ts",
   },

@@ -25,14 +25,17 @@ interface TimedOperation<T> {
   peakRssBytes: number;
 }
 
+export const incrementalMutationCount = 100;
+const incrementalAdditionDirectory = "threadleaf-performance-incremental";
+
 function parseOptions(argv: readonly string[]): KernelOptions {
   const valueAfter = (name: string): string | undefined => {
     const index = argv.indexOf(name);
     return index >= 0 ? argv[index + 1] : undefined;
   };
   const variant = valueAfter("--variant");
-  if (variant !== "full" && variant !== "notes-only") {
-    throw new Error("--variant must be full or notes-only.");
+  if (variant !== "full" && variant !== "notes-only" && variant !== "smoke") {
+    throw new Error("--variant must be full, notes-only, or smoke.");
   }
   const vaultPath = valueAfter("--vault");
   const stateRoot = valueAfter("--state-root");
@@ -93,17 +96,6 @@ async function readOriginals(
   return originals;
 }
 
-async function writeMarker(
-  vaultPath: string,
-  originals: ReadonlyMap<string, Buffer>,
-  marker: string,
-): Promise<void> {
-  for (const [relativePath, bytes] of originals) {
-    const next = Buffer.concat([bytes, Buffer.from(`\n${marker}\n`, "utf8")]);
-    await fs.writeFile(path.join(vaultPath, ...relativePath.split("/")), next);
-  }
-}
-
 async function restoreOriginals(
   vaultPath: string,
   originals: ReadonlyMap<string, Buffer>,
@@ -113,6 +105,53 @@ async function restoreOriginals(
   }
 }
 
+function addedPaths(): string[] {
+  return Array.from(
+    { length: incrementalMutationCount },
+    (_, index) => `${incrementalAdditionDirectory}/added-${String(index + 1).padStart(3, "0")}.md`,
+  );
+}
+
+export function createIncrementalMutationPlan(manifest: VaultScaleManifest): {
+  touchPaths: string[];
+  deletePaths: string[];
+  additionPaths: string[];
+} {
+  const touchPaths = manifest.mutationPaths.slice(0, incrementalMutationCount);
+  if (touchPaths.length !== incrementalMutationCount) {
+    throw new Error("The scale manifest has fewer than 100 mutation paths.");
+  }
+  const deletePaths = [...touchPaths];
+  return { touchPaths, deletePaths, additionPaths: addedPaths() };
+}
+
+function assertExactChanges(
+  label: string,
+  changes: readonly { kind: string; state?: { path: string }; path?: string }[],
+  expectedKind: "upsert" | "delete",
+  expectedPaths: readonly string[],
+): void {
+  const observedPaths = changes.map((change) =>
+    change.kind === "upsert" ? change.state?.path : change.path,
+  );
+  if (
+    changes.length !== expectedPaths.length ||
+    changes.some((change) => change.kind !== expectedKind) ||
+    observedPaths.sort().join("\n") !== [...expectedPaths].sort().join("\n")
+  ) {
+    throw new Error(
+      `${label} produced ${changes.length} change(s), not exactly ${expectedPaths.length} ${expectedKind} change(s) for the expected paths.`,
+    );
+  }
+}
+
+async function acceptScan(watcher: NodeVaultWatcher, index: VaultIndexReactor, label: string) {
+  const batch = await watcher.scanNow();
+  if (!batch) throw new Error(`${label} did not produce a watcher change.`);
+  await index.accept(batch);
+  return batch;
+}
+
 async function measureIncremental(
   kernel: VaultKernel,
   baselineSnapshot: Awaited<ReturnType<typeof captureVaultBootstrap>>,
@@ -120,54 +159,138 @@ async function measureIncremental(
   vaultPath: string,
   manifest: VaultScaleManifest,
 ): Promise<{
-  singleFile: TimedOperation<{ changeCount: number; indexGeneration: number }>;
-  batch100: TimedOperation<{ changeCount: number; indexGeneration: number }>;
+  touch100: TimedOperation<{ changeCount: number; indexGeneration: number }>;
+  add100: TimedOperation<{ changeCount: number; indexGeneration: number }>;
+  delete100: TimedOperation<{ changeCount: number; indexGeneration: number }>;
 }> {
-  const singlePath = manifest.mutationPaths[0];
-  if (!singlePath) throw new Error("The scale manifest has no single-file mutation path.");
-  const singleOriginals = await readOriginals(vaultPath, [singlePath]);
-  const singleMarker = `threadleaf-vault-scale-single-${manifest.variant}`;
-  const singleWatcher = NodeVaultWatcher.fromSnapshot(kernel.paths, baselineSnapshot.snapshot, {
-    streamId: `vault-scale-${manifest.variant}-single`,
-  });
-  const singleResult = await measure(async () => {
-    await writeMarker(vaultPath, singleOriginals, singleMarker);
-    const batch = await singleWatcher.scanNow();
-    if (!batch) throw new Error("The single-file mutation did not produce a watcher change.");
-    await baselineIndex.accept(batch);
-    const result = baselineIndex.index.search(singleMarker);
-    if (result.results.length !== 1) {
-      throw new Error("The single-file mutation did not converge in the metadata index.");
-    }
-    return { changeCount: batch.changes.length, indexGeneration: baselineIndex.index.generation };
-  });
-  await restoreOriginals(vaultPath, singleOriginals);
-  await singleWatcher.close();
+  const {
+    touchPaths: touchedPaths,
+    deletePaths: deletedPaths,
+    additionPaths,
+  } = createIncrementalMutationPlan(manifest);
+  const incrementalWatcher = NodeVaultWatcher.fromSnapshot(
+    kernel.paths,
+    baselineSnapshot.snapshot,
+    {
+      streamId: `vault-scale-${manifest.variant}-incremental`,
+    },
+  );
 
-  const batchPaths = manifest.mutationPaths.slice(0, 100);
-  const batchOriginals = await readOriginals(vaultPath, batchPaths);
-  const batchMarker = `threadleaf-vault-scale-batch-${manifest.variant}`;
-  const batchWatcher = NodeVaultWatcher.fromSnapshot(kernel.paths, baselineSnapshot.snapshot, {
-    streamId: `vault-scale-${manifest.variant}-batch`,
-  });
-  const batchResult = await measure(async () => {
-    await writeMarker(vaultPath, batchOriginals, batchMarker);
-    const batch = await batchWatcher.scanNow();
-    if (!batch || batch.changes.length !== batchPaths.length) {
-      throw new Error(
-        `The 100-file mutation produced ${batch?.changes.length ?? 0} changes instead of ${batchPaths.length}.`,
-      );
+  try {
+    const touchOriginals = await readOriginals(vaultPath, touchedPaths);
+    let touchObserved = false;
+    let touchResult: TimedOperation<{ changeCount: number; indexGeneration: number }> | undefined;
+    try {
+      touchResult = await measure(async () => {
+        const changedAt = new Date(Date.now() + 2_000);
+        for (const relativePath of touchedPaths) {
+          await fs.utimes(path.join(vaultPath, ...relativePath.split("/")), changedAt, changedAt);
+        }
+        const batch = await acceptScan(incrementalWatcher, baselineIndex, "The 100-file touch");
+        touchObserved = true;
+        assertExactChanges("The 100-file touch", batch.changes, "upsert", touchedPaths);
+        return {
+          changeCount: batch.changes.length,
+          indexGeneration: baselineIndex.index.generation,
+        };
+      });
+    } finally {
+      await restoreOriginals(vaultPath, touchOriginals);
+      if (touchObserved) {
+        const restoredTouch = await acceptScan(
+          incrementalWatcher,
+          baselineIndex,
+          "The touch restoration",
+        );
+        assertExactChanges("The touch restoration", restoredTouch.changes, "upsert", touchedPaths);
+      }
     }
-    await baselineIndex.accept(batch);
-    const result = baselineIndex.index.search(batchMarker);
-    if (result.results.length < 50) {
-      throw new Error("The 100-file mutation did not converge in the metadata index.");
+    if (!touchResult) throw new Error("The 100-file touch did not produce a timing result.");
+
+    const additionDirectory = path.join(vaultPath, incrementalAdditionDirectory);
+    const addMarker = `threadleaf-vault-scale-add-${manifest.variant}`;
+    let additionsObserved = false;
+    let addResult: TimedOperation<{ changeCount: number; indexGeneration: number }> | undefined;
+    try {
+      addResult = await measure(async () => {
+        await fs.mkdir(additionDirectory, { recursive: true });
+        for (const relativePath of additionPaths) {
+          await fs.writeFile(
+            path.join(vaultPath, ...relativePath.split("/")),
+            `---\ntags: [threadleaf-performance]\n---\n# Added benchmark note\n\n${addMarker}\n`,
+          );
+        }
+        const batch = await acceptScan(incrementalWatcher, baselineIndex, "The 100-file add");
+        additionsObserved = true;
+        assertExactChanges("The 100-file add", batch.changes, "upsert", additionPaths);
+        const addedDocumentCount = baselineIndex.index
+          .snapshot()
+          .documents.filter((document) =>
+            document.path.startsWith(`${incrementalAdditionDirectory}/`),
+          ).length;
+        if (addedDocumentCount !== incrementalMutationCount) {
+          throw new Error("The 100-file add did not converge in the metadata index.");
+        }
+        return {
+          changeCount: batch.changes.length,
+          indexGeneration: baselineIndex.index.generation,
+        };
+      });
+    } finally {
+      await fs.rm(additionDirectory, { recursive: true, force: true });
+      if (additionsObserved) {
+        const removedAdditions = await acceptScan(
+          incrementalWatcher,
+          baselineIndex,
+          "The add restoration",
+        );
+        assertExactChanges(
+          "The add restoration",
+          removedAdditions.changes,
+          "delete",
+          additionPaths,
+        );
+      }
     }
-    return { changeCount: batch.changes.length, indexGeneration: baselineIndex.index.generation };
-  });
-  await restoreOriginals(vaultPath, batchOriginals);
-  await batchWatcher.close();
-  return { singleFile: singleResult, batch100: batchResult };
+    if (!addResult) throw new Error("The 100-file add did not produce a timing result.");
+
+    const deleteOriginals = await readOriginals(vaultPath, deletedPaths);
+    let deletesObserved = false;
+    let deleteResult: TimedOperation<{ changeCount: number; indexGeneration: number }> | undefined;
+    try {
+      deleteResult = await measure(async () => {
+        for (const relativePath of deletedPaths) {
+          await fs.rm(path.join(vaultPath, ...relativePath.split("/")));
+        }
+        const batch = await acceptScan(incrementalWatcher, baselineIndex, "The 100-file delete");
+        deletesObserved = true;
+        assertExactChanges("The 100-file delete", batch.changes, "delete", deletedPaths);
+        return {
+          changeCount: batch.changes.length,
+          indexGeneration: baselineIndex.index.generation,
+        };
+      });
+    } finally {
+      await restoreOriginals(vaultPath, deleteOriginals);
+      if (deletesObserved) {
+        const restoredDeletes = await acceptScan(
+          incrementalWatcher,
+          baselineIndex,
+          "The delete restoration",
+        );
+        assertExactChanges(
+          "The delete restoration",
+          restoredDeletes.changes,
+          "upsert",
+          deletedPaths,
+        );
+      }
+    }
+    if (!deleteResult) throw new Error("The 100-file delete did not produce a timing result.");
+    return { touch100: touchResult, add100: addResult, delete100: deleteResult };
+  } finally {
+    await incrementalWatcher.close();
+  }
 }
 
 async function run(options: KernelOptions): Promise<void> {
@@ -230,8 +353,9 @@ async function run(options: KernelOptions): Promise<void> {
       index.maxBlockingPauseMs,
       projection.maxBlockingPauseMs,
       visibleFiles.maxBlockingPauseMs,
-      incremental.singleFile.maxBlockingPauseMs,
-      incremental.batch100.maxBlockingPauseMs,
+      incremental.touch100.maxBlockingPauseMs,
+      incremental.add100.maxBlockingPauseMs,
+      incremental.delete100.maxBlockingPauseMs,
     ];
     process.stdout.write(
       `${JSON.stringify(
@@ -252,12 +376,14 @@ async function run(options: KernelOptions): Promise<void> {
             indexProjectionMs: projection.durationMs,
             visiblePathEnumerationMs: visibleFiles.durationMs,
             readinessMs: totalReadinessMs,
-            incrementalSingleMs: incremental.singleFile.durationMs,
-            incrementalBatch100Ms: incremental.batch100.durationMs,
+            incrementalTouch100Ms: incremental.touch100.durationMs,
+            incrementalAdd100Ms: incremental.add100.durationMs,
+            incrementalDelete100Ms: incremental.delete100.durationMs,
           },
           incremental: {
-            singleFile: incremental.singleFile.value,
-            batch100: incremental.batch100.value,
+            touch100: incremental.touch100.value,
+            add100: incremental.add100.value,
+            delete100: incremental.delete100.value,
           },
           memory: {
             nodePeakRssBytes: Math.max(
@@ -266,8 +392,9 @@ async function run(options: KernelOptions): Promise<void> {
               index.peakRssBytes,
               projection.peakRssBytes,
               visibleFiles.peakRssBytes,
-              incremental.singleFile.peakRssBytes,
-              incremental.batch100.peakRssBytes,
+              incremental.touch100.peakRssBytes,
+              incremental.add100.peakRssBytes,
+              incremental.delete100.peakRssBytes,
             ),
             nodeSettledRssBytes: settledRssBytes,
             heapUsedBytes: process.memoryUsage().heapUsed,
@@ -279,16 +406,18 @@ async function run(options: KernelOptions): Promise<void> {
               metadataIndexBuildMs: index.maxBlockingPauseMs,
               indexProjectionMs: projection.maxBlockingPauseMs,
               visiblePathEnumerationMs: visibleFiles.maxBlockingPauseMs,
-              incrementalSingleMs: incremental.singleFile.maxBlockingPauseMs,
-              incrementalBatch100Ms: incremental.batch100.maxBlockingPauseMs,
+              incrementalTouch100Ms: incremental.touch100.maxBlockingPauseMs,
+              incrementalAdd100Ms: incremental.add100.maxBlockingPauseMs,
+              incrementalDelete100Ms: incremental.delete100.maxBlockingPauseMs,
             },
             heartbeatTicks: [
               bootstrap.heartbeatTicks,
               index.heartbeatTicks,
               projection.heartbeatTicks,
               visibleFiles.heartbeatTicks,
-              incremental.singleFile.heartbeatTicks,
-              incremental.batch100.heartbeatTicks,
+              incremental.touch100.heartbeatTicks,
+              incremental.add100.heartbeatTicks,
+              incremental.delete100.heartbeatTicks,
             ].reduce((sum, value) => sum + value, 0),
           },
         },
@@ -305,7 +434,12 @@ async function main(): Promise<void> {
   await run(parseOptions(process.argv.slice(2)));
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (
+  process.argv[1]?.endsWith("vault-scale-kernel.cjs") ||
+  process.argv[1]?.endsWith("vault-scale-kernel.ts")
+) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

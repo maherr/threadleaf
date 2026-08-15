@@ -6,11 +6,13 @@ export const vaultScaleSchemaVersion = 1;
 export const vaultScaleGeneratorVersion = "1.0.0";
 export const vaultScaleSeed = 0x54_48_52_44;
 
-export type VaultScaleVariant = "full" | "notes-only";
+export type VaultScaleVariant = "full" | "notes-only" | "smoke";
 
 const manifestFileName = "manifest.json";
 const noteCount = 21_145;
 const hiddenFileCount = 1_024;
+const smokeNoteCount = 1_024;
+const smokeBallastCount = 512;
 
 const fullExtensionCounts: Readonly<Record<string, number>> = {
   ".js": 68_000,
@@ -69,6 +71,8 @@ export interface VaultScaleManifest {
   generatorVersion: typeof vaultScaleGeneratorVersion;
   seed: number;
   variant: VaultScaleVariant;
+  /** SHA-256 of the deterministic manifest payload, excluding this field. */
+  manifestHash: string;
   fileCount: number;
   visibleFileCount: number;
   hiddenFileCount: number;
@@ -201,6 +205,23 @@ function tailExtension(index: number): string {
 }
 
 function descriptorPlan(variant: VaultScaleVariant): FileDescriptor[] {
+  if (variant === "smoke") {
+    const notes: FileDescriptor[] = Array.from({ length: smokeNoteCount }, (_, index) => ({
+      path: notePath(index),
+      kind: "markdown" as const,
+      extension: ".md",
+      index,
+      bytes: noteSize(index),
+    }));
+    const ballast: FileDescriptor[] = Array.from({ length: smokeBallastCount }, (_, index) => ({
+      path: ballastPath(index, ".js"),
+      kind: "ballast" as const,
+      extension: ".js",
+      index,
+      bytes: ballastSize(".js", index),
+    }));
+    return [...notes, ...ballast];
+  }
   const notes: FileDescriptor[] = Array.from({ length: noteCount }, (_, index) => ({
     path: notePath(index),
     kind: "markdown" as const,
@@ -313,6 +334,7 @@ function contentForDescriptor(descriptor: FileDescriptor): Buffer {
 }
 
 function extensionCountsFor(variant: VaultScaleVariant): Record<string, number> {
+  if (variant === "smoke") return { ".md": smokeNoteCount, ".js": smokeBallastCount };
   if (variant === "notes-only") return { ".md": noteCount };
   const namedExtensions: Record<string, number> = { ...fullExtensionCounts };
   delete namedExtensions.misc;
@@ -329,12 +351,14 @@ function sampleDescriptors(
 ): FileDescriptor[] {
   const byPath = new Map(plan.map((descriptor) => [descriptor.path, descriptor]));
   const descriptors: FileDescriptor[] = [];
-  for (const index of sampleNoteIndexes) {
+  const noteIndexes = variant === "smoke" ? [0, 511, 1_023] : sampleNoteIndexes;
+  for (const index of noteIndexes) {
     const descriptor = byPath.get(notePath(index));
     if (descriptor) descriptors.push(descriptor);
   }
-  if (variant === "full") {
-    for (const index of sampleBallastIndexes) {
+  if (variant === "full" || variant === "smoke") {
+    const ballastIndexes = variant === "smoke" ? [0, 511] : sampleBallastIndexes;
+    for (const index of ballastIndexes) {
       const descriptor = plan.find(
         (candidate) => candidate.kind === "ballast" && candidate.index === index,
       );
@@ -365,7 +389,44 @@ export function buildVaultScaleManifest(variant: VaultScaleVariant): VaultScaleM
   const p50 = noteDescriptors[Math.floor((noteDescriptors.length - 1) * 0.5)]?.bytes ?? 0;
   const p90 = noteDescriptors[Math.ceil(noteDescriptors.length * 0.9) - 1]?.bytes ?? 0;
   const p99 = noteDescriptors[Math.ceil(noteDescriptors.length * 0.99) - 1]?.bytes ?? 0;
-  return {
+  const noteSizeDistribution =
+    variant === "smoke"
+      ? {
+          p50Bytes: p50,
+          p90Bytes: p90,
+          p99Bytes: p99,
+          maximumBytes: Math.max(...noteDescriptors.map((descriptor) => descriptor.bytes)),
+          buckets: [
+            {
+              label: "smoke",
+              count: noteDescriptors.length,
+              minimumBytes: Math.min(...noteDescriptors.map((descriptor) => descriptor.bytes)),
+              maximumBytes: Math.max(...noteDescriptors.map((descriptor) => descriptor.bytes)),
+            },
+          ],
+        }
+      : {
+          p50Bytes: p50,
+          p90Bytes: p90,
+          p99Bytes: p99,
+          maximumBytes: Math.max(...noteDescriptors.map((descriptor) => descriptor.bytes)),
+          buckets: noteSizeBuckets.map((bucket, index) =>
+            index === 3
+              ? {
+                  label: bucket.label,
+                  count: bucket.count,
+                  minimumBytes: tailBucketRampBytes(0),
+                  maximumBytes: tailBucketRampBytes(bucket.count - 1),
+                }
+              : {
+                  label: bucket.label,
+                  count: bucket.count,
+                  minimumBytes: bucket.bytes,
+                  maximumBytes: bucket.bytes,
+                },
+          ),
+        };
+  const withoutManifestHash: Omit<VaultScaleManifest, "manifestHash"> = {
     schemaVersion: vaultScaleSchemaVersion,
     generatorVersion: vaultScaleGeneratorVersion,
     seed: vaultScaleSeed,
@@ -384,30 +445,14 @@ export function buildVaultScaleManifest(variant: VaultScaleVariant): VaultScaleM
       p90: depths[Math.ceil(depths.length * 0.9) - 1] ?? 0,
       atLeast10: depths.filter((depth) => depth >= 10).length,
     },
-    noteSizeDistribution: {
-      p50Bytes: p50,
-      p90Bytes: p90,
-      p99Bytes: p99,
-      maximumBytes: Math.max(...noteDescriptors.map((descriptor) => descriptor.bytes)),
-      buckets: noteSizeBuckets.map((bucket, index) =>
-        index === 3
-          ? {
-              label: bucket.label,
-              count: bucket.count,
-              minimumBytes: tailBucketRampBytes(0),
-              maximumBytes: tailBucketRampBytes(bucket.count - 1),
-            }
-          : {
-              label: bucket.label,
-              count: bucket.count,
-              minimumBytes: bucket.bytes,
-              maximumBytes: bucket.bytes,
-            },
-      ),
-    },
+    noteSizeDistribution,
     mutationPaths: Array.from({ length: 100 }, (_, index) => notePath(index + 32)),
     sampleFiles,
     sampleHash,
+  };
+  return {
+    ...withoutManifestHash,
+    manifestHash: sha256(Buffer.from(canonicalJson(withoutManifestHash), "utf8")),
   };
 }
 
@@ -551,8 +596,8 @@ export async function verifyVaultScaleCorpus(
 }
 
 function parseVariant(value: string | undefined): VaultScaleVariant {
-  if (value === "full" || value === "notes-only") return value;
-  throw new Error("--variant must be full or notes-only.");
+  if (value === "full" || value === "notes-only" || value === "smoke") return value;
+  throw new Error("--variant must be full, notes-only, or smoke.");
 }
 
 async function main(): Promise<void> {
