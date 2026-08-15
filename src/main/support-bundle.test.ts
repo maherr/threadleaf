@@ -165,7 +165,7 @@ function runtimeFixture(): RuntimeSnapshot {
     },
     workspace: {
       state: "degraded",
-      indexGeneration: 7,
+      indexGeneration: "test:1:7",
       files: [
         {
           path: "PRIVATE_NOTE_PATH.md",
@@ -426,7 +426,7 @@ describe("support bundle", () => {
         openTabCount: 1,
         activeNoteOpen: true,
         recoveryActionCount: 2,
-        indexGeneration: 7,
+        indexGeneration: "test:1:7",
         watcher: { sequence: 9, rescanObserved: true, errorObserved: true },
       },
       plugins: {

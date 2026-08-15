@@ -203,6 +203,13 @@ export const transientAbsenceSettleMs = 1500;
 export const startupAbsenceSettleMs = 60_000;
 
 /**
+ * `VaultIndexReactor` generations restart at one for every runtime. Pair that
+ * local counter with this process-local instance nonce so a renderer never
+ * accepts another runtime's otherwise identical post-census generation.
+ */
+let workspaceRuntimeInstanceNonce = 0;
+
+/**
  * Absolute extension limit for one startup absence epoch. Target activity can
  * move its quiet deadline, but never beyond five minutes from first observation.
  */
@@ -921,7 +928,8 @@ export class WorkspaceRuntime {
   #censusProgressTimer: ReturnType<typeof setInterval> | undefined;
   #censusProgressPublishPending = false;
   #closed = false;
-  #filePageEpoch = 1;
+  readonly #indexGenerationInstanceNonce = ++workspaceRuntimeInstanceNonce;
+  #indexGenerationEpoch = 1;
   #reconcileStartupPathsAfterCensus = false;
   #activateFirstNoteAfterCensus = false;
   readonly #warmingVisiblePaths = new Set<string>();
@@ -1359,7 +1367,7 @@ export class WorkspaceRuntime {
     }
     if (this.#census.state !== "current") {
       return {
-        status: "warming",
+        status: this.#census.state === "degraded" ? "degraded" : "warming",
         vaultId: this.kernel.vaultId,
         generation,
         census: this.censusSnapshot(),
@@ -1682,10 +1690,11 @@ export class WorkspaceRuntime {
   async searchVault(query: string): Promise<VaultSearchResponse> {
     try {
       const page = this.indexReactor.index.search(query);
-      const { generation: indexGeneration, ...search } = page;
+      const { generation: _indexGeneration, ...search } = page;
       return {
         vaultId: this.kernel.vaultId,
-        indexGeneration,
+        indexGeneration: this.workspaceIndexGeneration(),
+        census: this.censusSnapshot(),
         error: null,
         ...search,
         results: search.results.map((result) => ({
@@ -1699,7 +1708,8 @@ export class WorkspaceRuntime {
       }
       return {
         vaultId: this.kernel.vaultId,
-        indexGeneration: this.indexReactor.index.generation,
+        indexGeneration: this.workspaceIndexGeneration(),
+        census: this.censusSnapshot(),
         error: error.message,
         query,
         terms: [],
@@ -1721,7 +1731,8 @@ export class WorkspaceRuntime {
     return {
       status: "ready",
       vaultId: this.kernel.vaultId,
-      indexGeneration: this.indexReactor.index.generation,
+      indexGeneration: this.workspaceIndexGeneration(),
+      census: this.censusSnapshot(),
       ...projection,
     };
   }
@@ -1757,12 +1768,23 @@ export class WorkspaceRuntime {
     }
   }
 
-  loadVaultNoteEmbed(
+  async loadVaultNoteEmbed(
     sourceNotePath: string,
     target: string,
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse> {
+    if (this.#census.state !== "current") {
+      const degraded = this.#census.state === "degraded";
+      return {
+        status: "unavailable",
+        vaultId: this.kernel.vaultId,
+        reason: degraded ? "degraded" : "warming",
+        message: degraded
+          ? "The note index census is degraded, so this embed cannot be resolved yet."
+          : "The note index is still warming, so this embed cannot be resolved yet.",
+      };
+    }
     return loadVaultNoteEmbed(
       this.kernel,
       this.indexReactor.index.snapshot().documents,
@@ -2526,7 +2548,11 @@ export class WorkspaceRuntime {
     // still be held, so pressing Back while a file is briefly not there neither
     // destroys its entry nor refuses to navigate to it. A confirmed deletion
     // still scrubs its entries, from removeOpenPath, where that decision is made.
-    const { retainedPaths } = this.retainTrackedPaths(availablePaths, this.trackedWorkspacePaths());
+    const trackedPaths = this.trackedWorkspacePaths();
+    const retainedPaths =
+      this.#census.state === "current"
+        ? this.retainTrackedPaths(availablePaths, trackedPaths).retainedPaths
+        : new Set([...availablePaths, ...trackedPaths]);
     const reconciledHistory = navigationHistoryForPaths(
       pane.navigationHistory,
       retainedPaths,
@@ -3910,7 +3936,7 @@ export class WorkspaceRuntime {
           : this.#census.state === "current"
             ? "ready"
             : "warming",
-      indexGeneration: this.indexReactor.index.generation,
+      indexGeneration: this.workspaceIndexGeneration(),
       files: projection.interactiveFiles,
       filePage: {
         generation: this.workspaceFilePageGeneration(),
@@ -3982,8 +4008,12 @@ export class WorkspaceRuntime {
     return projection;
   }
 
+  private workspaceIndexGeneration(): string {
+    return `${this.#indexGenerationInstanceNonce}:${this.#indexGenerationEpoch}:${this.indexReactor.index.generation}`;
+  }
+
   private workspaceFilePageGeneration(): string {
-    return `${this.#filePageEpoch}:${this.indexReactor.index.generation}`;
+    return this.workspaceIndexGeneration();
   }
 
   private censusSnapshot(): WorkspaceCensusSnapshot {
@@ -4056,7 +4086,7 @@ export class WorkspaceRuntime {
         if (this.#closed || this.#censusAbort.signal.aborted) return;
         this.indexReactor = nextReactor;
         this.#indexProjection = null;
-        this.#filePageEpoch += 1;
+        this.#indexGenerationEpoch += 1;
         if (
           this.#activateFirstNoteAfterCensus &&
           this.#panes.every((pane) => pane.openPaths.length === 0)

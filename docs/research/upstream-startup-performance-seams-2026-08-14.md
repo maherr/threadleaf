@@ -72,7 +72,7 @@ VS Code’s documented tree design separates virtual rendering from its collecti
 
 **Disposition:** Adapt the staged-startup pattern now. Do not depend on VS Code/Zed/Sublime/Obsidian.
 
-**Invariant:** the initial interactive snapshot has a real `censusState` such as `not-started | warming | current | rebuilding | degraded`, a monotonic `indexGeneration`, and an explicit bounded-data contract. It must not assert complete file-tree or graph knowledge while warming.
+**Invariant:** the initial interactive snapshot has a real `censusState` such as `not-started | warming | current | rebuilding | degraded`, a runtime-scoped opaque `indexGeneration` token that changes when the authoritative index swaps, and an explicit bounded-data contract. It must not assert complete file-tree or graph knowledge while warming.
 
 **Required local proof:**
 

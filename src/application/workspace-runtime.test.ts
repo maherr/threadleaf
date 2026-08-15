@@ -422,6 +422,153 @@ describe("WorkspaceRuntime", () => {
     }
   });
 
+  it("marks partial search and graph results warming and rotates their generation after census", async () => {
+    const firstStore = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md"],
+      activePath: "Welcome.md",
+    });
+    const secondStore = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md"],
+      activePath: "Welcome.md",
+    });
+    let releaseFirstCensus: (() => void) | undefined;
+    let releaseSecondCensus: (() => void) | undefined;
+    const firstCensusGate = new Promise<void>((resolve) => {
+      releaseFirstCensus = resolve;
+    });
+    const secondCensusGate = new Promise<void>((resolve) => {
+      releaseSecondCensus = resolve;
+    });
+    const first = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      workspaceStateStore: firstStore,
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => firstCensusGate,
+    });
+    const second = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(path.join(sandboxPath, "second-state")),
+      workspaceStateStore: secondStore,
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => secondCensusGate,
+    });
+    try {
+      const warming = await first.getSnapshot();
+      const secondWarming = await second.getSnapshot();
+      const warmingGeneration = warming.workspace?.indexGeneration;
+      expect(warming.workspace).toMatchObject({ census: { state: "warming" } });
+      expect(warmingGeneration).toEqual(expect.any(String));
+      expect(secondWarming.workspace?.indexGeneration).not.toBe(warmingGeneration);
+
+      const warmingSearch = await first.searchVault("bounded UTF-8");
+      expect(warmingSearch).toMatchObject({
+        total: 0,
+        census: { state: "warming" },
+        indexGeneration: warmingGeneration,
+      });
+      await expect(
+        first.getVaultGraph(
+          { mode: "global", rootPath: null, depth: 1, query: "", includeOrphans: true },
+          first.vaultId,
+        ),
+      ).resolves.toMatchObject({
+        status: "ready",
+        census: { state: "warming" },
+        indexGeneration: warmingGeneration,
+      });
+      await expect(
+        first.loadVaultNoteEmbed("Welcome.md", "Linked Note", null, first.vaultId),
+      ).resolves.toMatchObject({ status: "unavailable", reason: "warming" });
+
+      releaseFirstCensus?.();
+      await first.waitForCensusCompletion();
+      const ready = await first.getSnapshot();
+      const readySearch = await first.searchVault("bounded UTF-8");
+      expect(ready.workspace).toMatchObject({ census: { state: "current" } });
+      expect(ready.workspace?.indexGeneration).not.toBe(warmingGeneration);
+      expect(readySearch).toMatchObject({
+        total: 1,
+        census: { state: "current" },
+        indexGeneration: ready.workspace?.indexGeneration,
+      });
+    } finally {
+      releaseFirstCensus?.();
+      releaseSecondCensus?.();
+      await Promise.all([first.close(), second.close()]);
+    }
+  });
+
+  it("reports a failed census as degraded through bounded, search, and graph responses", async () => {
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: async () => {
+        throw new Error("intentional census failure");
+      },
+    });
+    await runtime.waitForCensusCompletion();
+
+    const snapshot = await runtime.getSnapshot();
+    const generation = snapshot.workspace?.filePage.generation;
+    expect(snapshot.workspace).toMatchObject({ state: "degraded", census: { state: "degraded" } });
+    await expect(
+      runtime.getWorkspaceFilePage({
+        expectedVaultId: runtime.vaultId,
+        generation: generation ?? "missing",
+        offset: 0,
+        limit: 64,
+      }),
+    ).resolves.toMatchObject({ status: "degraded", census: { state: "degraded" } });
+    await expect(runtime.searchVault("bounded UTF-8")).resolves.toMatchObject({
+      census: { state: "degraded" },
+    });
+    await expect(
+      runtime.getVaultGraph(
+        { mode: "global", rootPath: null, depth: 1, query: "", includeOrphans: true },
+        runtime.vaultId,
+      ),
+    ).resolves.toMatchObject({ status: "ready", census: { state: "degraded" } });
+    await expect(
+      runtime.loadVaultNoteEmbed("Welcome.md", "Linked Note", null, runtime.vaultId),
+    ).resolves.toMatchObject({ status: "unavailable", reason: "degraded" });
+  });
+
+  it("does not create transient absence bookkeeping when history is traversed while warming", async () => {
+    const store = new MemoryWorkspaceStateStore();
+    const first = await openRuntime(store);
+    await first.openNote("Welcome.md");
+    await first.openNote("Linked Note.md");
+    await first.close();
+    runtime = undefined;
+    await fs.rename(path.join(vaultPath, "Welcome.md"), path.join(sandboxPath, "Welcome.md.aside"));
+    let releaseCensus: (() => void) | undefined;
+    const censusGate = new Promise<void>((resolve) => {
+      releaseCensus = resolve;
+    });
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      workspaceStateStore: store,
+      deferWorkspaceCensus: true,
+      beforeBackgroundCensus: () => censusGate,
+    });
+    try {
+      expect((await runtime.getSnapshot()).workspace?.panes[0]).toMatchObject({
+        activeNote: { path: "Linked Note.md" },
+        canGoBack: true,
+      });
+      const requestFollowUpScan = vi.spyOn(runtime.watcher, "requestFollowUpScan");
+      await runtime.goBack(runtime.vaultId);
+
+      expect(requestFollowUpScan).not.toHaveBeenCalled();
+    } finally {
+      releaseCensus?.();
+      await runtime.waitForCensusCompletion();
+    }
+  });
+
   it("partitions parse/index and snapshot construction without wall-clock assertions", async () => {
     const diagnostics = new WorkspaceOpenDiagnostics();
     runtime = await WorkspaceRuntime.open({

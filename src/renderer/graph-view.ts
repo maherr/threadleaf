@@ -1,4 +1,9 @@
-import type { VaultGraphMode, VaultGraphRequest, VaultGraphResponse } from "../shared/contracts";
+import type {
+  VaultGraphMode,
+  VaultGraphRequest,
+  VaultGraphResponse,
+  WorkspaceCensusSnapshot,
+} from "../shared/contracts";
 import {
   GRAPH_VIEWBOX_HEIGHT,
   GRAPH_VIEWBOX_WIDTH,
@@ -14,7 +19,8 @@ type ReadyGraph = Extract<VaultGraphResponse, { status: "ready" }>;
 interface GraphContext {
   vaultId: string;
   vaultName: string;
-  indexGeneration: number;
+  indexGeneration: string;
+  censusState: WorkspaceCensusSnapshot["state"];
   rootPath: string | null;
 }
 
@@ -219,7 +225,11 @@ export class GraphViewController {
       this.#options.report("The graph closed because the active vault changed.");
       return;
     }
-    if (this.#response && this.#response.indexGeneration !== context.indexGeneration) {
+    if (
+      this.#response &&
+      (this.#response.indexGeneration !== context.indexGeneration ||
+        this.#response.census.state !== context.censusState)
+    ) {
       this.#scheduleRefresh(80);
     }
   }
@@ -519,8 +529,21 @@ export class GraphViewController {
         : "No notes match this filter.";
     const shown = `${positioned.length} of ${response.totalNodes} note${response.totalNodes === 1 ? "" : "s"}`;
     const edgesShown = `${response.edges.length} of ${response.totalEdges} link${response.totalEdges === 1 ? "" : "s"}`;
-    this.#elements.status.dataset.state = response.truncated ? "limited" : "ready";
-    this.#elements.status.textContent = `${shown} · ${edgesShown}${response.truncated ? " · display limit reached" : ""}`;
+    const censusState = response.census.state;
+    const censusCurrent = censusState === "current";
+    this.#elements.status.dataset.state = !censusCurrent
+      ? censusState === "degraded"
+        ? "degraded"
+        : "warming"
+      : response.truncated
+        ? "limited"
+        : "ready";
+    const censusNotice = !censusCurrent
+      ? censusState === "degraded"
+        ? "Index census degraded; graph may be incomplete"
+        : "Index warming; graph will update when ready"
+      : null;
+    this.#elements.status.textContent = `${censusNotice ? `${censusNotice} · ` : ""}${shown} · ${edgesShown}${response.truncated ? " · display limit reached" : ""}`;
     this.#renderTransform();
   }
 

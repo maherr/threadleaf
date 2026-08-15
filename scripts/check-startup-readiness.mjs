@@ -182,6 +182,50 @@ async function waitForReadyVault(deadline) {
   );
 }
 
+async function verifyWarmingSearchHonesty() {
+  return evaluate(`(async () => {
+    const search = document.querySelector("#file-search");
+    if (!(search instanceof HTMLInputElement)) {
+      throw new Error("Interactive warming workspace did not expose a vault search control.");
+    }
+    if (search.disabled) {
+      return { available: false, reason: "disabled" };
+    }
+    search.value = "threadleaf-warming-honesty-probe";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const response = await window.threadleaf.searchVault(search.value);
+    const summary = document.querySelector("#filter-summary")?.textContent ?? "";
+    const list = document.querySelector("#file-list")?.textContent ?? "";
+    search.value = "";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    return {
+      available: true,
+      censusState: response.census?.state ?? null,
+      error: response.error ?? null,
+      visibleText: [summary, list].join("\\n"),
+    };
+  })()`);
+}
+
+async function verifyReadySearch() {
+  return evaluate(`(async () => {
+    const snapshot = await window.threadleaf.getSnapshot();
+    const path =
+      snapshot.workspace?.activeNote?.path ??
+      snapshot.workspace?.files?.[0]?.path ??
+      "";
+    const query = String(path).split("/").at(-1)?.replace(/\\.md$/i, "") ?? "";
+    const response = await window.threadleaf.searchVault(query);
+    return {
+      censusState: response.census?.state ?? null,
+      error: response.error ?? null,
+      total: response.total ?? 0,
+      markdownFileCount: snapshot.vault?.markdownFileCount ?? 0,
+    };
+  })()`);
+}
+
 async function verifyVirtualFileWindow() {
   const inspect = () => `(async () => {
     const list = document.querySelector("#file-list");
@@ -344,7 +388,16 @@ try {
       "Interactive warming workspace lacked its non-color progress shape.",
     );
     assert(!state.newNoteDisabled, "New note was unavailable after workspace restore.");
-    assert(!state.fileSearchDisabled, "Vault search was unavailable after workspace restore.");
+    const warmingSearch = await verifyWarmingSearchHonesty();
+    assert(
+      !warmingSearch.available ||
+        warmingSearch.error !== null ||
+        warmingSearch.censusState === "current" ||
+        /index (is still warming|census is degraded)|search index (warming|degraded)/i.test(
+          warmingSearch.visibleText,
+        ),
+      "Interactive warming search reported an incomplete index as an authoritative empty result.",
+    );
   } else {
     assert(
       state.snapshot?.vault?.path === configuredVault,
@@ -360,10 +413,19 @@ try {
   }
 
   let fullReadyMs = opening || warming ? null : readyMs;
-  if (readyBudgetMs !== null && (opening || warming)) {
-    await waitForReadyVault(startedAt + readyBudgetMs);
-    fullReadyMs = Date.now() - startedAt;
-    if (screenshotDirectory) {
+  if (readyBudgetMs !== null) {
+    if (opening || warming) {
+      await waitForReadyVault(startedAt + readyBudgetMs);
+      fullReadyMs = Date.now() - startedAt;
+    }
+    const readySearch = await verifyReadySearch();
+    assert(
+      readySearch.censusState === "current" &&
+        readySearch.error === null &&
+        (readySearch.markdownFileCount === 0 || readySearch.total > 0),
+      "Ready startup search did not return a real result from the completed census.",
+    );
+    if (screenshotDirectory && (opening || warming)) {
       screenshots.push(await captureTheme("dark", "ready"), await captureTheme("light", "ready"));
     }
   }

@@ -905,6 +905,7 @@ let renderedPreviewPath: string | null = null;
 let renderedPreviewSource: string | null = null;
 let renderedPreviewVaultId: string | null = null;
 let renderedPreviewWatchSequence = -1;
+let renderedPreviewIndexGeneration: string | null = null;
 let previewHydrationRequest = 0;
 let pluginSurfaceRequest = 0;
 let pluginSettingsTargetId: string | null = null;
@@ -915,10 +916,12 @@ let paletteRestoreFocus: HTMLElement | null = null;
 let quickSwitcherMatches: QuickSwitcherNote[] = [];
 let quickSwitcherSelection = -1;
 let quickSwitcherRestoreFocus: HTMLElement | null = null;
-let quickSwitcherIdentity: { vaultId: string; indexGeneration: number } | null = null;
+let quickSwitcherIdentity: { vaultId: string; indexGeneration: string } | null = null;
 let quickSwitcherFileGeneration: string | null = null;
 let quickSwitcherRequest = 0;
-let quickSwitcherStatus: "idle" | "loading" | "warming" | "ready" | "error" = "idle";
+let quickSwitcherInputTimer: number | undefined;
+let quickSwitcherReloadedGeneration: string | null = null;
+let quickSwitcherStatus: "idle" | "loading" | "warming" | "degraded" | "ready" | "error" = "idle";
 let quickSwitcherMessage = "";
 let settingsSnapshot: AppSettingsSnapshot = {
   settings: createDefaultAppSettings(),
@@ -1051,13 +1054,13 @@ type VaultSearchState =
       status: "loading";
       query: string;
       vaultId: string;
-      indexGeneration: number;
+      indexGeneration: string;
     }
   | {
       status: "error";
       query: string;
       vaultId: string;
-      indexGeneration: number;
+      indexGeneration: string;
       message: string;
     }
   | { status: "ready"; response: VaultSearchResponse };
@@ -1097,6 +1100,7 @@ interface WorkspacePaneSession {
   renderedPreviewSource: string | null;
   renderedPreviewVaultId: string | null;
   renderedPreviewWatchSequence: number;
+  renderedPreviewIndexGeneration: string | null;
   previewHydrationRequest: number;
   editorReadOnly: boolean;
 }
@@ -1132,6 +1136,7 @@ function createWorkspacePaneSession(): WorkspacePaneSession {
     renderedPreviewSource: null,
     renderedPreviewVaultId: null,
     renderedPreviewWatchSequence: -1,
+    renderedPreviewIndexGeneration: null,
     previewHydrationRequest: 0,
     editorReadOnly: false,
   };
@@ -1187,6 +1192,7 @@ function captureActivePaneSession(): void {
   session.renderedPreviewSource = renderedPreviewSource;
   session.renderedPreviewVaultId = renderedPreviewVaultId;
   session.renderedPreviewWatchSequence = renderedPreviewWatchSequence;
+  session.renderedPreviewIndexGeneration = renderedPreviewIndexGeneration;
   session.previewHydrationRequest = previewHydrationRequest;
   session.editorReadOnly = editorReadOnly;
 }
@@ -1245,6 +1251,7 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
   renderedPreviewSource = session.renderedPreviewSource;
   renderedPreviewVaultId = session.renderedPreviewVaultId;
   renderedPreviewWatchSequence = session.renderedPreviewWatchSequence;
+  renderedPreviewIndexGeneration = session.renderedPreviewIndexGeneration;
   previewHydrationRequest = session.previewHydrationRequest;
   editorReadOnly = session.editorReadOnly;
 }
@@ -2396,16 +2403,19 @@ function renderReadingView(): void {
     renderedPreviewSource = null;
     renderedPreviewVaultId = null;
     renderedPreviewWatchSequence = -1;
+    renderedPreviewIndexGeneration = null;
     return;
   }
   const source = editor.state.doc.toString();
   const vaultId = loadedVaultId;
   const watchSequence = currentSnapshot?.workspace?.watcher.lastSequence ?? 0;
+  const indexGeneration = currentSnapshot?.workspace?.indexGeneration ?? null;
   if (
     renderedPreviewPath === loadedNote.path &&
     renderedPreviewSource === source &&
     renderedPreviewVaultId === vaultId &&
-    renderedPreviewWatchSequence === watchSequence
+    renderedPreviewWatchSequence === watchSequence &&
+    renderedPreviewIndexGeneration === indexGeneration
   ) {
     return;
   }
@@ -2420,12 +2430,14 @@ function renderReadingView(): void {
   renderedPreviewSource = source;
   renderedPreviewVaultId = vaultId;
   renderedPreviewWatchSequence = watchSequence;
+  renderedPreviewIndexGeneration = indexGeneration;
   if (vaultId) {
     const isCurrent = () =>
       previewHydrationRequest === request &&
       loadedVaultId === vaultId &&
       renderedPreviewPath === loadedNote?.path &&
-      renderedPreviewSource === source;
+      renderedPreviewSource === source &&
+      renderedPreviewIndexGeneration === indexGeneration;
     void hydrateMarkdownPreview(elements.notePreview, {
       sourceNotePath: loadedNote.path,
       expectedVaultId: vaultId,
@@ -2803,6 +2815,18 @@ function scrollToDocumentLine(line: number): void {
   scrollToSourceLine(line);
 }
 
+function unresolvedLinkMessage(status: string | undefined): string {
+  const censusState = currentSnapshot?.workspace?.census.state;
+  if (censusState && censusState !== "current") {
+    return censusState === "degraded"
+      ? "The note index census is degraded, so link availability may be incomplete."
+      : "The note index is still warming, so link availability may be incomplete.";
+  }
+  return status === "ambiguous"
+    ? "That link has more than one possible destination."
+    : "That link does not resolve to a note in this vault.";
+}
+
 async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
   if (anchor.dataset.threadleafRawLink === "true") {
     showToast("Raw HTML links are not active in this beta.");
@@ -2818,11 +2842,7 @@ async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
   const status = anchor.dataset.linkStatus;
   const path = anchor.dataset.threadleafPath;
   if (status !== "resolved" || !path) {
-    showToast(
-      status === "ambiguous"
-        ? "That link has more than one possible destination."
-        : "That link does not resolve to a note in this vault.",
-    );
+    showToast(unresolvedLinkMessage(status));
     return;
   }
   const identity = previewLinkIdentity(anchor);
@@ -2855,11 +2875,7 @@ async function activateLivePreviewLink(identity: LivePreviewLink): Promise<void>
         (candidate.subpath ?? null) === identity.subpath,
     ) ?? null;
   if (link?.status !== "resolved" || !link.path) {
-    showToast(
-      link?.status === "ambiguous"
-        ? "That link has more than one possible destination."
-        : "That link does not resolve to a note in this vault.",
-    );
+    showToast(unresolvedLinkMessage(link?.status));
     return;
   }
   const activate = currentWorkspacePreference().newTabBehavior === "focus";
@@ -3103,6 +3119,42 @@ function selectQuickSwitcherIndex(index: number, scrollIntoView: boolean): void 
   }
 }
 
+/**
+ * A census swap changes the authoritative file page. Reload at most once for
+ * each new token so a stream of snapshots cannot recursively flood IPC while
+ * a large vault is settling.
+ */
+function reloadQuickSwitcherForGenerationChange(): boolean {
+  const identity = currentVaultSearchIdentity();
+  const fileGeneration = currentSnapshot?.workspace?.filePage.generation;
+  if (!identity || !fileGeneration) {
+    closeQuickSwitcher(false);
+    return true;
+  }
+  const generation = `${identity.vaultId}\u0000${identity.indexGeneration}\u0000${fileGeneration}`;
+  if (quickSwitcherReloadedGeneration === generation) {
+    quickSwitcherMatches = [];
+    quickSwitcherSelection = -1;
+    quickSwitcherStatus = "error";
+    quickSwitcherMessage =
+      "The indexed note list changed again. Try the search once indexing settles.";
+    return false;
+  }
+  quickSwitcherReloadedGeneration = generation;
+  void loadQuickSwitcherResults();
+  return true;
+}
+
+function scheduleQuickSwitcherResults(delay = 120): void {
+  if (quickSwitcherInputTimer !== undefined) {
+    window.clearTimeout(quickSwitcherInputTimer);
+  }
+  quickSwitcherInputTimer = window.setTimeout(() => {
+    quickSwitcherInputTimer = undefined;
+    void loadQuickSwitcherResults();
+  }, delay);
+}
+
 function renderQuickSwitcherResults(): void {
   if (!elements.quickSwitcher.open) {
     return;
@@ -3114,12 +3166,19 @@ function renderQuickSwitcherResults(): void {
     return;
   }
   if (
+    quickSwitcherStatus === "warming" &&
+    currentSnapshot?.workspace?.census.state === "degraded"
+  ) {
+    quickSwitcherStatus = "degraded";
+  }
+  if (
     quickSwitcherIdentity?.vaultId !== identity.vaultId ||
     quickSwitcherIdentity?.indexGeneration !== identity.indexGeneration ||
     quickSwitcherFileGeneration !== fileGeneration
   ) {
-    void loadQuickSwitcherResults();
-    return;
+    if (reloadQuickSwitcherForGenerationChange()) {
+      return;
+    }
   }
   elements.quickSwitcherResults.replaceChildren();
   for (const [index, note] of quickSwitcherMatches.entries()) {
@@ -3153,9 +3212,11 @@ function renderQuickSwitcherResults(): void {
         ? "Loading indexed notes…"
         : quickSwitcherStatus === "warming"
           ? "The note index is still warming."
-          : quickSwitcherStatus === "error"
-            ? quickSwitcherMessage
-            : "No indexed note matches this search.";
+          : quickSwitcherStatus === "degraded"
+            ? "The note index census is degraded."
+            : quickSwitcherStatus === "error"
+              ? quickSwitcherMessage
+              : "No indexed note matches this search.";
     elements.quickSwitcherResults.append(empty);
   }
   elements.quickSwitcherCount.textContent =
@@ -3163,9 +3224,11 @@ function renderQuickSwitcherResults(): void {
       ? "Loading"
       : quickSwitcherStatus === "warming"
         ? "Indexing"
-        : quickSwitcherStatus === "error"
-          ? "Unavailable"
-          : `${quickSwitcherMatches.length} shown`;
+        : quickSwitcherStatus === "degraded"
+          ? "Degraded"
+          : quickSwitcherStatus === "error"
+            ? "Unavailable"
+            : `${quickSwitcherMatches.length} shown`;
   selectQuickSwitcherIndex(quickSwitcherSelection, false);
 }
 
@@ -3210,7 +3273,9 @@ async function loadQuickSwitcherResults(): Promise<void> {
       currentIdentity.indexGeneration !== identity.indexGeneration ||
       currentFileGeneration !== fileGeneration
     ) {
-      void loadQuickSwitcherResults();
+      if (!reloadQuickSwitcherForGenerationChange()) {
+        renderQuickSwitcherResults();
+      }
       return;
     }
     if (response.status === "stale-vault") {
@@ -3220,7 +3285,7 @@ async function loadQuickSwitcherResults(): Promise<void> {
     if (response.status !== "ready") {
       quickSwitcherMatches = [];
       quickSwitcherSelection = -1;
-      quickSwitcherStatus = "warming";
+      quickSwitcherStatus = response.status === "degraded" ? "degraded" : "warming";
       renderQuickSwitcherResults();
       return;
     }
@@ -3269,6 +3334,7 @@ function openQuickSwitcher(): void {
   quickSwitcherSelection = -1;
   quickSwitcherIdentity = null;
   quickSwitcherFileGeneration = null;
+  quickSwitcherReloadedGeneration = null;
   quickSwitcherStatus = "idle";
   quickSwitcherMessage = "";
   elements.quickSwitcher.showModal();
@@ -3284,9 +3350,14 @@ function closeQuickSwitcher(restoreFocus = true): void {
     return;
   }
   quickSwitcherRequest += 1;
+  if (quickSwitcherInputTimer !== undefined) {
+    window.clearTimeout(quickSwitcherInputTimer);
+    quickSwitcherInputTimer = undefined;
+  }
   elements.quickSwitcher.close();
   quickSwitcherIdentity = null;
   quickSwitcherFileGeneration = null;
+  quickSwitcherReloadedGeneration = null;
   quickSwitcherStatus = "idle";
   quickSwitcherMessage = "";
   if (documentViewMode === "plugin") {
@@ -4577,6 +4648,11 @@ async function moveCurrentAttachment(): Promise<void> {
   }
 }
 function renderDeleteNoteDialog(): void {
+  const censusState = currentSnapshot?.workspace?.census.state ?? "warming";
+  const backlinkCheckCurrent = censusState === "current";
+  if (backlinkCheckCurrent && loadedNote?.path === deleteNoteSourcePath) {
+    deleteNoteBacklinkCount = loadedNote.backlinks.length;
+  }
   const staleVault = Boolean(
     deleteNoteVaultId && deleteNoteVaultId !== (currentSnapshot?.vault.id ?? null),
   );
@@ -4600,8 +4676,11 @@ function renderDeleteNoteDialog(): void {
   elements.deleteNoteTrashPath.textContent = deleteNoteSourcePath
     ? `.trash/${deleteNoteSourcePath}`
     : ".trash/";
-  elements.deleteNoteImpactCopy.textContent =
-    deleteNoteBacklinkCount === 0
+  elements.deleteNoteImpactCopy.textContent = !backlinkCheckCurrent
+    ? censusState === "degraded"
+      ? "The backlink check is unavailable because the note index census is degraded. The file will remain recoverable in .trash/."
+      : "The backlink check is pending index warm-up. The file will remain recoverable in .trash/."
+    : deleteNoteBacklinkCount === 0
       ? currentWorkspacePreference().confirmDelete === "when-linked"
         ? "No indexed note currently links here. Confirmation is still required; the file will remain recoverable in .trash/."
         : "No indexed note currently links here. Confirm the recoverable move to .trash/."
@@ -4611,7 +4690,9 @@ function renderDeleteNoteDialog(): void {
   elements.deleteNoteSubmit.disabled = deleteNoteBusy || staleVault || staleNote || readOnlyVault();
   elements.deleteNoteSubmit.textContent = deleteNoteBusy
     ? "Moving…"
-    : currentWorkspacePreference().confirmDelete === "when-linked" && deleteNoteBacklinkCount === 0
+    : !backlinkCheckCurrent ||
+        (currentWorkspacePreference().confirmDelete === "when-linked" &&
+          deleteNoteBacklinkCount === 0)
       ? "Confirm recoverable move"
       : "Move to trash";
   elements.deleteNoteForm.setAttribute("aria-busy", String(deleteNoteBusy));
@@ -4651,7 +4732,8 @@ function openDeleteNoteDialog(): void {
   deleteNoteVaultId = loadedVaultId;
   deleteNoteSourcePath = loadedNote.path;
   deleteNoteRevision = loadedNote.revision;
-  deleteNoteBacklinkCount = loadedNote.backlinks.length;
+  deleteNoteBacklinkCount =
+    currentSnapshot?.workspace?.census.state === "current" ? loadedNote.backlinks.length : 0;
   elements.deleteNoteError.textContent = "";
   elements.deleteNoteDialog.showModal();
   renderDeleteNoteDialog();
@@ -8391,7 +8473,7 @@ function renderPaletteResults(): void {
   selectPaletteIndex(paletteSelection, false);
 }
 
-function currentVaultSearchIdentity(): { vaultId: string; indexGeneration: number } | null {
+function currentVaultSearchIdentity(): { vaultId: string; indexGeneration: string } | null {
   if (vaultOpening()) {
     return null;
   }
@@ -8402,7 +8484,7 @@ function currentVaultSearchIdentity(): { vaultId: string; indexGeneration: numbe
 
 function vaultSearchStateMatches(
   query: string,
-  identity: { vaultId: string; indexGeneration: number },
+  identity: { vaultId: string; indexGeneration: string },
 ): boolean {
   if (vaultSearchState.status === "idle") {
     return false;
@@ -8442,7 +8524,7 @@ function scheduleVaultSearch(delay = 120, renderNow = true): void {
       status: "error",
       query,
       vaultId: "",
-      indexGeneration: -1,
+      indexGeneration: "",
       message: "The vault index is not ready yet.",
     };
     if (renderNow) {
@@ -8462,7 +8544,7 @@ function scheduleVaultSearch(delay = 120, renderNow = true): void {
 
 async function performVaultSearch(
   query: string,
-  identity: { vaultId: string; indexGeneration: number },
+  identity: { vaultId: string; indexGeneration: string },
   request: number,
 ): Promise<void> {
   try {
@@ -8475,6 +8557,7 @@ async function performVaultSearch(
       !currentIdentity ||
       response.vaultId !== currentIdentity.vaultId ||
       response.indexGeneration !== currentIdentity.indexGeneration ||
+      response.census.state !== currentSnapshot?.workspace?.census.state ||
       identity.vaultId !== currentIdentity.vaultId ||
       identity.indexGeneration !== currentIdentity.indexGeneration
     ) {
@@ -8525,7 +8608,11 @@ function reconcileVaultSearch(snapshot: RuntimeSnapshot): void {
   if (!vaultId || indexGeneration === undefined) {
     return;
   }
-  if (!vaultSearchStateMatches(query, { vaultId, indexGeneration })) {
+  if (
+    !vaultSearchStateMatches(query, { vaultId, indexGeneration }) ||
+    (vaultSearchState.status === "ready" &&
+      vaultSearchState.response.census.state !== snapshot.workspace?.census.state)
+  ) {
     scheduleVaultSearch(0, false);
   }
 }
@@ -8733,7 +8820,8 @@ function render(snapshot: RuntimeSnapshot): void {
     graphView.onSnapshot({
       vaultId: snapshot.vault.id,
       vaultName: snapshot.vault.name,
-      indexGeneration: snapshot.workspace?.indexGeneration ?? 0,
+      indexGeneration: snapshot.workspace?.indexGeneration ?? "",
+      censusState: snapshot.workspace?.census.state ?? "warming",
       rootPath: loadedNote?.path ?? null,
     });
     recoveryView.onSnapshot({
@@ -9896,6 +9984,19 @@ function renderVaultSearchResults(activePath: string | null, indexedCount: numbe
   }
 
   const response = vaultSearchState.response;
+  if (response.census.state !== "current") {
+    const degraded = response.census.state === "degraded";
+    elements.filterSummary.textContent = degraded
+      ? "Search index degraded"
+      : "Search index warming";
+    renderEmpty(
+      elements.fileList,
+      degraded
+        ? "The note index census is degraded, so search results may be incomplete."
+        : "The note index is still warming. Search results will update when the census is complete.",
+    );
+    return;
+  }
   elements.filterSummary.textContent = response.truncated
     ? `${response.total} matching notes · first ${response.results.length} shown`
     : `${response.total} ${response.total === 1 ? "note" : "notes"} match saved content`;
@@ -10201,6 +10302,7 @@ function replaceEditorDocument(
   renderedPreviewSource = null;
   renderedPreviewVaultId = null;
   renderedPreviewWatchSequence = -1;
+  renderedPreviewIndexGeneration = null;
   elements.notePreview.replaceChildren();
   pendingDiskNote = null;
   diskChanged = false;
@@ -11307,7 +11409,8 @@ const graphView = new GraphViewController(elements.graphDialog, {
     return {
       vaultId: currentSnapshot.vault.id,
       vaultName: currentSnapshot.vault.name,
-      indexGeneration: currentSnapshot.workspace?.indexGeneration ?? 0,
+      indexGeneration: currentSnapshot.workspace?.indexGeneration ?? "",
+      censusState: currentSnapshot.workspace?.census.state ?? "warming",
       rootPath: loadedNote?.path ?? null,
     };
   },
@@ -11433,7 +11536,7 @@ elements.commandPalette.addEventListener("click", (event) => {
     closeCommandPalette();
   }
 });
-elements.quickSwitcherQuery.addEventListener("input", () => void loadQuickSwitcherResults());
+elements.quickSwitcherQuery.addEventListener("input", () => scheduleQuickSwitcherResults());
 elements.quickSwitcherQuery.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();

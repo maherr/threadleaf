@@ -329,7 +329,7 @@ export type WorkspaceFilePageResponse =
       files: WorkspaceFileSummary[];
     }
   | {
-      status: "warming" | "stale-generation";
+      status: "warming" | "degraded" | "stale-generation";
       vaultId: string;
       generation: string;
       census: WorkspaceCensusSnapshot;
@@ -473,7 +473,10 @@ export interface VaultSearchResult {
 
 export interface VaultSearchResponse {
   vaultId: string;
-  indexGeneration: number;
+  /** Runtime-scoped generation token. Changes when the census swaps in a new index. */
+  indexGeneration: string;
+  /** Makes partial-index answers explicitly non-authoritative while the census runs. */
+  census: WorkspaceCensusSnapshot;
   error: string | null;
   query: string;
   terms: string[];
@@ -520,13 +523,15 @@ export type VaultGraphResponse =
   | ({
       status: "ready";
       vaultId: string;
-      indexGeneration: number;
+      indexGeneration: string;
+      census: WorkspaceCensusSnapshot;
     } & VaultGraphProjection)
   | { status: "stale-vault"; vaultId: string };
 
 export interface WorkspaceSnapshot {
   state: "warming" | "ready" | "degraded";
-  indexGeneration: number;
+  /** Runtime-scoped generation token, safe to compare only as an opaque value. */
+  indexGeneration: string;
   files: WorkspaceFileSummary[];
   filePage: WorkspaceFilePageDescriptor;
   census: WorkspaceCensusSnapshot;
@@ -1060,7 +1065,9 @@ export type VaultNoteEmbedUnavailableReason =
   | "outside-vault"
   | "too-large"
   | "unreadable"
-  | "subpath-missing";
+  | "subpath-missing"
+  | "warming"
+  | "degraded";
 
 export type VaultNoteEmbedResponse =
   | {

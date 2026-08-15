@@ -196,7 +196,15 @@ class FakeRuntime implements WorkspaceRuntimePort {
   async searchVault(query: string): Promise<VaultSearchResponse> {
     return {
       vaultId: this.vaultId,
-      indexGeneration: 1,
+      indexGeneration: "test:1:1",
+      census: this.#snapshot.workspace?.census ?? {
+        state: "current",
+        generation: 1,
+        discovered: 0,
+        indexed: 0,
+        total: 0,
+        error: null,
+      },
       error: null,
       query,
       terms: query ? [query] : [],
@@ -216,7 +224,15 @@ class FakeRuntime implements WorkspaceRuntimePort {
     return {
       status: "ready",
       vaultId: this.vaultId,
-      indexGeneration: 1,
+      indexGeneration: "test:1:1",
+      census: this.#snapshot.workspace?.census ?? {
+        state: "current",
+        generation: 1,
+        discovered: 0,
+        indexed: 0,
+        total: 0,
+        error: null,
+      },
       ...request,
       totalNodes: 0,
       totalEdges: 0,

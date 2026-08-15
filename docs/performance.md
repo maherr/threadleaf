@@ -218,25 +218,32 @@ path took about 85.1 seconds.
 Threadleaf now renders a plugin-free bootstrap workspace before opening the configured or restored
 vault in the background. Initial activation reads every visible Markdown file once, seeds watcher
 state and the metadata index from the same stable byte snapshots, reuses generation-bound snapshot
-projections, and virtualizes the file navigator. On the same host and workspace, the final passing
-production probe reached the interactive opening surface in 3.98 seconds, all 20,621 notes were
-ready in 33.61 seconds, and Electron then exited cleanly. The measured full activation is about 2.5
-times faster than the original direct profile. A stricter 3,000 ms first-window run failed before
-the renderer target appeared, so 3 seconds is not a supported budget. The opening surface names the
-target, shows index progress, disables writes and search against the bootstrap vault, and leaves
-Open vault available to supersede a slow or wrong target.
+projections, and virtualizes the file navigator. On the measured 200K corpus, interactive kernel
+open moved from 56,325.8 ms to 38.6 ms. That is kernel-only evidence, not Electron or renderer
+time: the real TTUS was about 4.83 seconds, still within the 5-second opening budget. The IPC
+snapshot payload fell from 28,347,616 bytes to 38,658 bytes (733x), with `payloadObjects` falling
+from 200,023 to 281.
+
+The census completed in about 79.8 seconds on that corpus. There is deliberately no baseline-census
+comparison: the base did not expose `waitForCensusCompletion`, so the apparent 0.028 ms delta was
+not a census measurement. Likewise, the 1.84-second projection span covers a complete O(200K)
+snapshot rebuild, not a 256-row virtualized slice. The opening surface names the target, shows
+index progress, disables writes and search against the bootstrap vault, and leaves Open vault
+available to supersede a slow or wrong target.
 
 Run the isolated production check with any representative vault:
 
 ```sh
 THREADLEAF_STARTUP_PROBE_VAULT=/absolute/path/to/vault \
   THREADLEAF_STARTUP_BUDGET_MS=5000 \
-  THREADLEAF_STARTUP_READY_BUDGET_MS=60000 \
+  THREADLEAF_STARTUP_READY_BUDGET_MS=90000 \
   pnpm test:startup-readiness
 ```
 
 Set `THREADLEAF_STARTUP_SCREENSHOT_DIR` to retain dark and light captures. The two budgets separately
 gate first-window and full-target readiness, and the probe also requires a clean application exit.
+The 90-second ready budget includes background census completion, which took about 79.8 seconds on
+the measured 200K corpus.
 Peak main-process resident memory remained about 2.6 GB during the traced large-workspace run.
 Progress counts, visible-note prioritization, lower memory use, cancellation, and public
 cross-platform regression corpora remain required before this observation becomes a release budget.

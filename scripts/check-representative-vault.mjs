@@ -520,7 +520,7 @@ async function waitForReady(probe, expectedCount, timeoutMs = 90_000) {
       const snapshot = await window.threadleaf.getSnapshot();
       return {
         count: snapshot.workspace?.files.length ?? 0,
-        generation: snapshot.workspace?.indexGeneration ?? 0,
+        generation: snapshot.workspace?.indexGeneration ?? "",
         watcherSequence: snapshot.workspace?.watcher.lastSequence ?? 0,
         watcherError: snapshot.workspace?.watcher.error ?? null,
       };
