@@ -77,6 +77,7 @@ function editorFor(
   current: { path: string; vaultId: string },
   loadNoteEmbed: LoadNoteEmbed,
   loadImage: LoadImage = unavailableImage,
+  activateTag: (tag: string) => void = () => undefined,
 ): { view: EditorView; host: HTMLElement } {
   const host = document.createElement("div");
   document.body.append(host);
@@ -90,6 +91,7 @@ function editorFor(
           sourceNotePath: () => current.path,
           expectedVaultId: () => current.vaultId,
           activateLink: () => undefined,
+          activateTag,
           loadImage,
           loadNoteEmbed,
         }),
@@ -115,6 +117,36 @@ function replaceOwnerWithEqualLinkTarget(
 }
 
 describe("Live Preview async ownership", () => {
+  it("renders inactive tags as anchors and reveals exact source on the active line", async () => {
+    const source = "Tagged #Project/Atlas";
+    const activated: string[] = [];
+    const current = { path: "Current.md", vaultId: "vault-a" };
+    const { view, host } = editorFor(
+      source,
+      current,
+      async () => {
+        throw new Error("The tag fixture has no note embeds.");
+      },
+      unavailableImage,
+      (tag) => activated.push(tag),
+    );
+
+    await flushAsyncWork();
+    const anchor = host.querySelector<HTMLAnchorElement>("a.tag.tl-live-tag");
+    expect(anchor?.getAttribute("href")).toBe("#Project/Atlas");
+    expect(anchor?.dataset.tagName).toBe("#Project/Atlas");
+    anchor?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    expect(activated).toEqual(["Project/Atlas"]);
+
+    view.dispatch({ selection: { anchor: source.indexOf("#") + 2 } });
+    await flushAsyncWork();
+    expect(host.querySelector("a.tag.tl-live-tag")).toBeNull();
+    expect(host.querySelector(".tl-live-tag-source")?.textContent).toBe("#Project/Atlas");
+    expect(view.state.doc.toString()).toBe(`${source}\n\n`);
+    view.destroy();
+    host.remove();
+  });
+
   for (const change of [
     { label: "pane note", path: "New.md", vaultId: "vault-a" },
     { label: "vault", path: "Old.md", vaultId: "vault-b" },

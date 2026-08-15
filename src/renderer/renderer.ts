@@ -53,6 +53,7 @@ import type {
   WorkspacePropertySummary,
   WorkspaceSplitDirection,
   WorkspaceTabSummary,
+  WorkspaceTagCatalogResponse,
   WorkspaceUnavailableEntry,
 } from "../shared/contracts";
 import {
@@ -95,6 +96,7 @@ import {
   type VaultPluginSettings,
 } from "../shared/plugins";
 import { maximumPublishNoteHtmlBytes, publishNoteExportVersion } from "../shared/publish-export";
+import { normalizeTagBody } from "../shared/tags";
 import type {
   AppearancePackageKind,
   AppearancePackagePreviewRequest,
@@ -186,6 +188,11 @@ import {
   reconcileNavigatorTreeState,
   retainNavigatorTreePages,
 } from "./navigator-tree";
+import {
+  buildTagNavigatorProjection,
+  expandableTagKeys,
+  type TagNavigatorProjection,
+} from "./tag-navigator";
 import { nearestItemScrollTop, virtualListWindow } from "./virtual-list";
 import {
   applyWorkspaceFilePage,
@@ -204,9 +211,12 @@ const elements = {
   vaultSource: getElement("vault-source"),
   runtimeState: getElement("runtime-state"),
   statusShape: getElement("status-shape"),
+  filesHeading: getElement("files-heading"),
   fileCount: getElement("file-count"),
   newNote: getButton("new-note"),
   navigatorViewToggle: getButton("navigator-view-toggle"),
+  navigatorTagToggle: getButton("navigator-tag-toggle"),
+  navigatorSearchField: getElement("navigator-search-field"),
   fileSearch: getInput("file-search"),
   searchShortcut: getElement("search-shortcut"),
   filterSummary: getElement("filter-summary"),
@@ -221,6 +231,7 @@ const elements = {
   navigatorContextNewFolder: getButton("navigator-context-new-folder"),
   canvasFileCount: getElement("canvas-file-count"),
   canvasFileList: getElement("canvas-file-list"),
+  canvasShelf: getElement("canvas-shelf"),
   indexStatus: getElement("index-status"),
   recoveryCount: getElement("recovery-count"),
   workspaceRoot: getElement("workspace-root"),
@@ -1024,9 +1035,14 @@ let virtualFileState: {
 let workspaceFilePages: WorkspaceFilePagesState | null = null;
 let lastVirtualActivePath: string | null = null;
 type NavigatorViewMode = "tree" | "flat";
+type NavigatorContentMode = "notes" | "tags";
+type ReadyWorkspaceTagCatalog = Extract<WorkspaceTagCatalogResponse, { status: "ready" }>;
 const navigatorTreeRowHeight = 40;
 const navigatorTreeOverscan = 8;
+const navigatorTagRowHeight = 44;
+const navigatorTagOverscan = 8;
 let navigatorViewMode: NavigatorViewMode = "tree";
+let navigatorContentMode: NavigatorContentMode = "notes";
 let navigatorTreeState: NavigatorTreeState | null = null;
 let navigatorTreeProjection: NavigatorTreeProjection | null = null;
 let navigatorTreeRenderFrame: number | undefined;
@@ -1040,6 +1056,15 @@ let navigatorRevealRequest = 0;
 let navigatorTreeRevealPath: string | null = null;
 let navigatorTreeRevealLocations: NavigatorTreeEntryLocation[] = [];
 let navigatorExpansionSave = false;
+let navigatorTagCatalog: ReadyWorkspaceTagCatalog | null = null;
+let navigatorTagCatalogAttemptIdentity = "";
+let navigatorTagCatalogRequest = 0;
+let navigatorTagCatalogMessage = "Open Tags to load the indexed catalog.";
+let navigatorTagExpandedKeys = new Set<string>();
+let navigatorTagFocusedKey: string | null = null;
+let navigatorTagProjection: TagNavigatorProjection | null = null;
+let navigatorTagRenderFrame: number | undefined;
+let navigatorTagRenderKey = "";
 let newNoteRestoreFocus: HTMLElement | null = null;
 let newNoteBusy = false;
 let newNoteVaultId: string | null = null;
@@ -1382,6 +1407,7 @@ function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
     activateLink: (link) => {
       runInPaneContext(paneId, () => void activateLivePreviewLink(link));
     },
+    activateTag: (tag) => navigateToTag(tag),
     loadImage: (sourceNotePath, target, expectedVaultId) =>
       window.threadleaf.loadVaultImage(sourceNotePath, target, expectedVaultId),
     loadNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
@@ -2174,8 +2200,38 @@ function commandCatalog(): RendererCommand[] {
 }
 
 function focusVaultSearch(): void {
+  if (navigatorContentMode !== "notes") {
+    navigatorContentMode = "notes";
+    renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
+  }
   elements.fileSearch.focus();
   elements.fileSearch.select();
+}
+
+function navigateToTag(value: string): void {
+  const tag = normalizeTagBody(value);
+  if (!tag) {
+    showToast("This tag does not match the vault tag grammar.");
+    return;
+  }
+  navigatorContentMode = "notes";
+  closeNavigatorContextMenu();
+  elements.fileList.scrollTop = 0;
+  elements.fileSearch.value = `tag:#${tag}`;
+  scheduleVaultSearch(0);
+  elements.fileSearch.focus({ preventScroll: true });
+}
+
+function setNavigatorContentMode(mode: NavigatorContentMode): void {
+  if (navigatorContentMode === mode) return;
+  navigatorContentMode = mode;
+  closeNavigatorContextMenu();
+  elements.fileList.scrollTop = 0;
+  renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
+  if (mode === "tags") {
+    const identity = workspaceTagCatalogIdentity();
+    if (identity) void requestNavigatorTagCatalog(identity);
+  }
 }
 
 function splitPreviewTarget(value: string): { target: string; subpath: string | null } {
@@ -8906,6 +8962,7 @@ function render(snapshot: RuntimeSnapshot): void {
   currentSnapshot = snapshot;
   reconcileWorkspaceFilePages(snapshot);
   reconcileNavigatorTree(snapshot);
+  reconcileNavigatorTagCatalog(snapshot);
   if (previousVaultId !== snapshot.vault.id) {
     workspaceModeRequest += 1;
     resetPaneDocumentModes(snapshot.vault.id);
@@ -9730,6 +9787,7 @@ function scheduleNavigatorTreeRender(): void {
   if (
     navigatorTreeRenderFrame !== undefined ||
     vaultOpening() ||
+    navigatorContentMode !== "notes" ||
     elements.fileSearch.value.trim() ||
     navigatorViewMode !== "tree"
   ) {
@@ -9785,14 +9843,332 @@ function requestNavigatorTreePage(request: {
     });
 }
 
+function workspaceTagCatalogIdentity(): { vaultId: string; generation: string } | null {
+  const vaultId = currentSnapshot?.vault.id;
+  const generation = currentSnapshot?.workspace?.indexGeneration;
+  return vaultId && generation !== undefined ? { vaultId, generation } : null;
+}
+
+function workspaceTagCatalogIdentityKey(identity: { vaultId: string; generation: string }): string {
+  return `${identity.vaultId}\u0000${identity.generation}`;
+}
+
+function resetNavigatorTagCatalog(message: string): void {
+  navigatorTagCatalogRequest += 1;
+  navigatorTagCatalog = null;
+  navigatorTagCatalogAttemptIdentity = "";
+  navigatorTagCatalogMessage = message;
+  navigatorTagExpandedKeys = new Set();
+  navigatorTagFocusedKey = null;
+  navigatorTagProjection = null;
+  navigatorTagRenderKey = "";
+}
+
+function reconcileNavigatorTagCatalog(snapshot: RuntimeSnapshot): void {
+  const vaultId = snapshot.vault.id;
+  const generation = snapshot.workspace?.indexGeneration;
+  if (!vaultId || generation === undefined || snapshot.startup?.phase === "opening") {
+    if (navigatorTagCatalog || navigatorTagCatalogAttemptIdentity) {
+      resetNavigatorTagCatalog("The tag catalog will load after the vault index is ready.");
+    }
+    return;
+  }
+  if (
+    navigatorTagCatalog &&
+    (navigatorTagCatalog.vaultId !== vaultId || navigatorTagCatalog.generation !== generation)
+  ) {
+    resetNavigatorTagCatalog("Refreshing the indexed tag catalog.");
+  }
+  if (navigatorContentMode === "tags") {
+    void requestNavigatorTagCatalog({ vaultId, generation });
+  }
+}
+
+async function requestNavigatorTagCatalog(identity: {
+  vaultId: string;
+  generation: string;
+}): Promise<void> {
+  const identityKey = workspaceTagCatalogIdentityKey(identity);
+  if (
+    navigatorTagCatalogAttemptIdentity === identityKey ||
+    (navigatorTagCatalog?.vaultId === identity.vaultId &&
+      navigatorTagCatalog.generation === identity.generation)
+  ) {
+    return;
+  }
+  navigatorTagCatalogAttemptIdentity = identityKey;
+  navigatorTagCatalogMessage = "Loading the indexed tag catalog.";
+  const request = ++navigatorTagCatalogRequest;
+  renderNavigatorTagTree(true);
+  try {
+    const response = await window.threadleaf.getWorkspaceTagCatalog({
+      expectedVaultId: identity.vaultId,
+      generation: identity.generation,
+    });
+    const currentIdentity = workspaceTagCatalogIdentity();
+    if (
+      request !== navigatorTagCatalogRequest ||
+      !currentIdentity ||
+      workspaceTagCatalogIdentityKey(currentIdentity) !== identityKey
+    ) {
+      return;
+    }
+    if (response.status === "ready") {
+      navigatorTagCatalog = response;
+      navigatorTagExpandedKeys = expandableTagKeys(response.tags);
+      navigatorTagFocusedKey = response.tags[0]?.key ?? null;
+      navigatorTagCatalogMessage = `${response.tags.length.toLocaleString()} indexed ${response.tags.length === 1 ? "tag" : "tags"}`;
+    } else {
+      navigatorTagCatalog = null;
+      navigatorTagCatalogMessage =
+        response.status === "degraded"
+          ? "The tag catalog is unavailable while the index is degraded."
+          : "The tag catalog is catching up with the vault index.";
+    }
+  } catch (error) {
+    if (request !== navigatorTagCatalogRequest) return;
+    navigatorTagCatalog = null;
+    navigatorTagCatalogMessage = error instanceof Error ? error.message : String(error);
+  }
+  if (navigatorContentMode === "tags") {
+    renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
+  }
+}
+
+function cancelNavigatorTagRender(): void {
+  if (navigatorTagRenderFrame !== undefined) {
+    window.cancelAnimationFrame(navigatorTagRenderFrame);
+    navigatorTagRenderFrame = undefined;
+  }
+  navigatorTagRenderKey = "";
+}
+
+function scheduleNavigatorTagRender(): void {
+  if (navigatorTagRenderFrame !== undefined || navigatorContentMode !== "tags" || vaultOpening()) {
+    return;
+  }
+  navigatorTagRenderFrame = window.requestAnimationFrame(() => {
+    navigatorTagRenderFrame = undefined;
+    renderNavigatorTagTree();
+  });
+}
+
+function renderNavigatorTagTree(force = false): void {
+  const catalog = navigatorTagCatalog;
+  const identity = workspaceTagCatalogIdentity();
+  cancelVirtualFileRender();
+  cancelNavigatorTreeRender();
+  elements.fileList.dataset.mode = "tags";
+  elements.fileList.setAttribute("role", "tree");
+  elements.fileList.setAttribute("aria-label", "Vault tags");
+  elements.fileList.setAttribute("aria-busy", String(!catalog));
+  elements.filterSummary.textContent = navigatorTagCatalogMessage;
+  if (!identity) {
+    elements.fileList.replaceChildren();
+    renderEmpty(elements.fileList, "Indexing Markdown notes before loading tags.");
+    return;
+  }
+  if (
+    !catalog ||
+    catalog.vaultId !== identity.vaultId ||
+    catalog.generation !== identity.generation
+  ) {
+    void requestNavigatorTagCatalog(identity);
+    elements.fileList.replaceChildren();
+    renderEmpty(elements.fileList, navigatorTagCatalogMessage);
+    return;
+  }
+  if (catalog.tags.length === 0) {
+    elements.fileList.replaceChildren();
+    renderEmpty(elements.fileList, "No valid tags found in this vault.");
+    return;
+  }
+
+  const projection = buildTagNavigatorProjection(catalog.tags, navigatorTagExpandedKeys);
+  navigatorTagProjection = projection;
+  const geometry = virtualListWindow({
+    itemCount: projection.rows.length,
+    rowHeight: navigatorTagRowHeight,
+    scrollTop: elements.fileList.scrollTop,
+    viewportHeight: Math.max(navigatorTagRowHeight, elements.fileList.clientHeight),
+    overscan: navigatorTagOverscan,
+  });
+  if (!navigatorTagFocusedKey || !projection.indexByKey.has(navigatorTagFocusedKey)) {
+    navigatorTagFocusedKey = projection.rows[0]?.tag.key ?? null;
+  }
+  const renderKey = `${catalog.generation}:${geometry.start}:${geometry.end}:${navigatorTagFocusedKey ?? ""}:${[...navigatorTagExpandedKeys].sort().join("|")}`;
+  if (!force && renderKey === navigatorTagRenderKey) return;
+  navigatorTagRenderKey = renderKey;
+
+  const focusedTagKey =
+    document.activeElement instanceof HTMLElement &&
+    elements.fileList.contains(document.activeElement) &&
+    document.activeElement.classList.contains("tag-tree-row")
+      ? (document.activeElement.dataset.tagKey ?? null)
+      : null;
+  const fragment = document.createDocumentFragment();
+  fragment.append(createVirtualSpacer(geometry.topSpacer));
+  for (let index = geometry.start; index < geometry.end; index += 1) {
+    const row = projection.rows[index];
+    if (!row) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tag-tree-row";
+    button.dataset.tagKey = row.tag.key;
+    button.dataset.tagValue = row.tag.tag;
+    button.style.setProperty("--tag-depth", String(row.depth));
+    button.setAttribute("role", "treeitem");
+    button.setAttribute("aria-level", String(row.depth));
+    button.setAttribute("aria-posinset", String(row.siblingIndex + 1));
+    button.setAttribute("aria-setsize", String(row.siblingCount));
+    button.tabIndex = row.tag.key === navigatorTagFocusedKey ? 0 : -1;
+    if (row.hasChildren) button.setAttribute("aria-expanded", String(row.expanded));
+    button.ariaLabel = `Tag ${row.tag.tag}, ${row.tag.directCount} direct, ${row.tag.count} including child tags`;
+
+    const disclosure = document.createElement("span");
+    disclosure.className = "tag-tree-disclosure";
+    disclosure.ariaHidden = "true";
+    disclosure.textContent = row.hasChildren ? (row.expanded ? "▾" : "▸") : "#";
+    const copy = document.createElement("span");
+    copy.className = "tag-tree-copy";
+    const title = document.createElement("strong");
+    title.textContent = `#${row.label}`;
+    const detail = document.createElement("small");
+    detail.textContent = row.hasChildren
+      ? `${row.tag.directCount.toLocaleString()} direct · ${row.tag.count.toLocaleString()} with children`
+      : `${row.tag.count.toLocaleString()} ${row.tag.count === 1 ? "note" : "notes"}`;
+    copy.append(title, detail);
+    const count = document.createElement("span");
+    count.className = "tag-tree-count";
+    count.textContent = row.tag.count.toLocaleString();
+    count.ariaHidden = "true";
+    button.append(disclosure, copy, count);
+    button.addEventListener("click", (event) => {
+      if (
+        row.hasChildren &&
+        event.target instanceof Element &&
+        event.target.closest(".tag-tree-disclosure")
+      ) {
+        toggleNavigatorTagExpanded(row.tag.key, !row.expanded);
+      } else {
+        navigateToTag(row.tag.tag);
+      }
+    });
+    button.addEventListener("focus", () => {
+      navigatorTagFocusedKey = row.tag.key;
+    });
+    button.addEventListener("keydown", (event) => handleNavigatorTagKeydown(event, row.tag.key));
+    fragment.append(button);
+  }
+  fragment.append(createVirtualSpacer(geometry.bottomSpacer));
+  elements.fileList.replaceChildren(fragment);
+  if (focusedTagKey && focusedTagKey === navigatorTagFocusedKey) {
+    elements.fileList
+      .querySelector<HTMLButtonElement>(
+        `.tag-tree-row[data-tag-key="${CSS.escape(focusedTagKey)}"]`,
+      )
+      ?.focus({ preventScroll: true });
+  }
+}
+
+function toggleNavigatorTagExpanded(tagKey: string, expanded: boolean): void {
+  if (expanded) navigatorTagExpandedKeys.add(tagKey);
+  else navigatorTagExpandedKeys.delete(tagKey);
+  navigatorTagFocusedKey = tagKey;
+  navigatorTagRenderKey = "";
+  renderNavigatorTagTree(true);
+  focusNavigatorTagIndex(navigatorTagProjection?.indexByKey.get(tagKey) ?? 0);
+}
+
+function focusNavigatorTagIndex(index: number): void {
+  const projection = navigatorTagProjection;
+  if (!projection || projection.rows.length === 0) return;
+  const targetIndex = Math.max(0, Math.min(index, projection.rows.length - 1));
+  const target = projection.rows[targetIndex];
+  if (!target) return;
+  navigatorTagFocusedKey = target.tag.key;
+  elements.fileList.scrollTop = nearestItemScrollTop(
+    targetIndex,
+    navigatorTagRowHeight,
+    elements.fileList.scrollTop,
+    Math.max(navigatorTagRowHeight, elements.fileList.clientHeight),
+  );
+  renderNavigatorTagTree(true);
+  window.requestAnimationFrame(() => {
+    elements.fileList
+      .querySelector<HTMLButtonElement>(
+        `.tag-tree-row[data-tag-key="${CSS.escape(target.tag.key)}"]`,
+      )
+      ?.focus();
+  });
+}
+
+function handleNavigatorTagKeydown(event: KeyboardEvent, tagKey: string): void {
+  const projection = navigatorTagProjection;
+  const index = projection?.indexByKey.get(tagKey);
+  const row = index === undefined ? null : projection?.rows[index];
+  if (!projection || index === undefined || !row) return;
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    focusNavigatorTagIndex(index + 1);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    focusNavigatorTagIndex(index - 1);
+  } else if (event.key === "Home") {
+    event.preventDefault();
+    focusNavigatorTagIndex(0);
+  } else if (event.key === "End") {
+    event.preventDefault();
+    focusNavigatorTagIndex(projection.rows.length - 1);
+  } else if (event.key === "ArrowRight" && row.hasChildren) {
+    event.preventDefault();
+    if (!row.expanded) toggleNavigatorTagExpanded(tagKey, true);
+    else focusNavigatorTagIndex(index + 1);
+  } else if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    if (row.hasChildren && row.expanded) {
+      toggleNavigatorTagExpanded(tagKey, false);
+    } else if (row.tag.parentKey) {
+      const parentIndex = projection.indexByKey.get(row.tag.parentKey);
+      if (parentIndex !== undefined) focusNavigatorTagIndex(parentIndex);
+    }
+  } else if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    navigateToTag(row.tag.tag);
+  }
+}
+
 function renderNavigatorModeControls(queryActive: boolean): void {
-  const treeVisible = navigatorViewMode === "tree" && !queryActive;
+  const tagsVisible = navigatorContentMode === "tags";
+  const treeVisible = !tagsVisible && navigatorViewMode === "tree" && !queryActive;
+  elements.filesHeading.textContent = tagsVisible ? "Tags" : "Notes";
+  elements.navigatorTagToggle.setAttribute("aria-pressed", String(tagsVisible));
+  elements.navigatorTagToggle.textContent = tagsVisible ? "Notes" : "Tags";
+  elements.navigatorTagToggle.ariaLabel = tagsVisible ? "Browse vault notes" : "Browse vault tags";
+  elements.navigatorTagToggle.title = elements.navigatorTagToggle.ariaLabel;
+  elements.navigatorTagToggle.disabled = vaultOpening() || busy;
+  elements.navigatorViewToggle.hidden = tagsVisible;
+  elements.newNote.hidden = tagsVisible;
+  elements.navigatorSearchField.hidden = tagsVisible;
+  elements.canvasShelf.hidden = tagsVisible;
+  elements.fileCount.textContent = vaultOpening()
+    ? "…"
+    : tagsVisible
+      ? (navigatorTagCatalog?.tags.length.toLocaleString() ?? "…")
+      : String(
+          currentSnapshot?.workspace?.state === "warming"
+            ? (currentSnapshot.workspace?.census.indexed ?? 0)
+            : (currentSnapshot?.workspace?.filePage.total ??
+                currentSnapshot?.vault.markdownFileCount ??
+                0),
+        );
   elements.navigatorViewToggle.setAttribute("aria-pressed", String(navigatorViewMode === "tree"));
   elements.navigatorViewToggle.textContent = navigatorViewMode === "tree" ? "Tree" : "List";
   elements.navigatorViewToggle.ariaLabel =
     navigatorViewMode === "tree" ? "Switch to flat list" : "Switch to folder tree";
   elements.navigatorViewToggle.title = elements.navigatorViewToggle.ariaLabel;
   elements.navigatorTreeToolbar.hidden = !treeVisible;
+  elements.bookmarkShelf.hidden = tagsVisible || bookmarkPaths.length === 0;
   elements.revealActiveNote.disabled =
     !treeVisible || !loadedNote || !navigatorTreeState || navigatorRevealRequest !== 0;
 }
@@ -10237,6 +10613,11 @@ function renderFiles(
 ): void {
   const query = elements.fileSearch.value.trim();
   renderNavigatorModeControls(query !== "");
+  if (navigatorContentMode === "tags") {
+    renderNavigatorTagTree(true);
+    return;
+  }
+  cancelNavigatorTagRender();
   if (vaultOpening()) {
     cancelVirtualFileRender();
     cancelNavigatorTreeRender();
@@ -10351,7 +10732,7 @@ function renderNoteBookmarks(files: WorkspaceFileSummary[], activePath: string |
   const filesByPath = new Map(files.map((file) => [file.path, file]));
   const completeInventory = workspaceFilePages?.descriptor.complete ?? true;
   elements.bookmarkCount.textContent = String(visiblePaths.length);
-  elements.bookmarkShelf.hidden = visiblePaths.length === 0;
+  elements.bookmarkShelf.hidden = navigatorContentMode === "tags" || visiblePaths.length === 0;
   elements.bookmarkShelf.setAttribute("aria-busy", String(bookmarkBusy));
   elements.bookmarkList.replaceChildren();
 
@@ -10519,6 +10900,10 @@ function cancelVirtualFileRender(): void {
 }
 
 function scheduleVirtualFileRender(): void {
+  if (navigatorContentMode === "tags") {
+    scheduleNavigatorTagRender();
+    return;
+  }
   if (navigatorViewMode === "tree" && !elements.fileSearch.value.trim()) {
     scheduleNavigatorTreeRender();
     return;
@@ -10701,6 +11086,25 @@ function renderUnavailableNotice(entry: WorkspaceUnavailableEntry | null | undef
   }
 }
 
+function createTagAnchor(value: string, className = "tag"): HTMLAnchorElement | null {
+  const tag = normalizeTagBody(value);
+  if (!tag) return null;
+  const anchor = document.createElement("a");
+  anchor.className = className;
+  anchor.href = `#${tag}`;
+  anchor.dataset.threadleafTag = tag;
+  anchor.dataset.tagName = `#${tag}`;
+  anchor.textContent = `#${tag}`;
+  anchor.ariaLabel = `Search for tag ${tag}`;
+  anchor.title = `Search notes tagged #${tag}`;
+  anchor.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    navigateToTag(tag);
+  });
+  return anchor;
+}
+
 function renderNote(note: WorkspaceNoteSnapshot | null): void {
   elements.canvasView.hidden = true;
   elements.noteEmpty.hidden = note !== null;
@@ -10727,7 +11131,9 @@ function renderNote(note: WorkspaceNoteSnapshot | null): void {
   elements.noteTags.replaceChildren();
   for (const tag of note.tags) {
     const badge = document.createElement("li");
-    badge.textContent = `#${tag}`;
+    const anchor = createTagAnchor(tag);
+    if (!anchor) continue;
+    badge.append(anchor);
     elements.noteTags.append(badge);
   }
   if (note.tags.length === 0) {
@@ -10777,6 +11183,25 @@ function displayPropertyValue(property: WorkspacePropertySummary): string {
   return value || "Empty text";
 }
 
+function propertyTagValues(property: WorkspacePropertySummary): string[] {
+  if (property.name.toLocaleLowerCase("en-US") !== "tags") return [];
+  const candidates = Array.isArray(property.value)
+    ? property.value
+    : typeof property.value === "string"
+      ? property.value.split(",")
+      : [];
+  const values: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const tag = normalizeTagBody(String(candidate));
+    const key = tag?.normalize("NFC").toLocaleLowerCase("en-US");
+    if (!tag || !key || seen.has(key)) continue;
+    seen.add(key);
+    values.push(tag);
+  }
+  return values;
+}
+
 function renderProperties(note: WorkspaceNoteSnapshot | null): void {
   elements.propertyList.replaceChildren();
   elements.propertyCount.textContent = String(note?.properties.length ?? 0);
@@ -10803,6 +11228,21 @@ function renderProperties(note: WorkspaceNoteSnapshot | null): void {
     edit.append(copy, type);
     edit.addEventListener("click", () => void openPropertyDialog("edit", property));
 
+    const propertyTags = propertyTagValues(property);
+    const main = document.createElement("div");
+    main.className = propertyTags.length > 0 ? "property-main property-main-tags" : "property-main";
+    main.append(edit);
+    if (propertyTags.length > 0) {
+      const pills = document.createElement("div");
+      pills.className = "property-tag-pills";
+      pills.setAttribute("aria-label", `${property.name} tags`);
+      for (const tag of propertyTags) {
+        const anchor = createTagAnchor(tag, "tag property-tag");
+        if (anchor) pills.append(anchor);
+      }
+      main.append(pills);
+    }
+
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "property-remove";
@@ -10811,7 +11251,7 @@ function renderProperties(note: WorkspaceNoteSnapshot | null): void {
     remove.setAttribute("aria-label", `Remove ${property.name} property`);
     remove.textContent = "×";
     remove.addEventListener("click", () => void openPropertyDialog("remove", property));
-    row.append(edit, remove);
+    row.append(main, remove);
     elements.propertyList.append(row);
   }
   if (!note) {
@@ -11859,6 +12299,7 @@ function setActionState(nextBusy: boolean): void {
   const opening = vaultOpening();
   elements.openVault.disabled = busy;
   elements.newNote.disabled = opening || readOnlyVault() || busy;
+  elements.navigatorTagToggle.disabled = opening || busy;
   if (elements.newFolderDialog.open) {
     renderNewFolderDialog();
   }
@@ -11889,6 +12330,9 @@ elements.navigatorViewToggle.addEventListener("click", () => {
   elements.fileList.scrollTop = 0;
   renderFiles(currentWorkspaceFileSlots(), loadedNote?.path ?? null);
 });
+elements.navigatorTagToggle.addEventListener("click", () => {
+  setNavigatorContentMode(navigatorContentMode === "tags" ? "notes" : "tags");
+});
 elements.revealActiveNote.addEventListener("click", () => void revealActiveNavigatorNote());
 elements.navigatorContextNewNote.addEventListener("click", () => {
   const folderPath = navigatorContextFolderPath;
@@ -11904,6 +12348,7 @@ elements.navigatorContextNewFolder.addEventListener("click", () => {
 });
 elements.fileList.addEventListener("contextmenu", (event) => {
   if (
+    navigatorContentMode !== "notes" ||
     navigatorViewMode !== "tree" ||
     elements.fileSearch.value.trim() ||
     !(event.target instanceof Element) ||
@@ -12006,6 +12451,12 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     const canvasOpen = event.target.closest<HTMLButtonElement>(".preview-canvas-embed-open");
     if (canvasOpen) {
       void activatePreviewEmbed(canvasOpen);
+      return;
+    }
+    const tag = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-tag]");
+    if (tag?.dataset.threadleafTag) {
+      event.preventDefault();
+      navigateToTag(tag.dataset.threadleafTag);
       return;
     }
     const anchor = event.target.closest<HTMLAnchorElement>("a[data-threadleaf-link]");

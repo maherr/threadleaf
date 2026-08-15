@@ -8,6 +8,7 @@ import type {
   VaultNoteEmbedResponse,
   WorkspaceLinkSummary,
 } from "../shared/contracts";
+import { isValidTagBody } from "../shared/tags";
 import {
   collectFootnotes,
   type FootnoteCollection,
@@ -86,7 +87,9 @@ const sanitizeConfig = {
     "data-threadleaf-source-fallback",
     "data-threadleaf-subpath",
     "data-threadleaf-table",
+    "data-threadleaf-tag",
     "data-threadleaf-target",
+    "data-tag-name",
     "href",
     "id",
     "role",
@@ -162,6 +165,26 @@ function wikiLinkRule(state: StateInline, silent: boolean): boolean {
     token.meta = parseWikiLink(raw, embed);
   }
   state.pos = close + 2;
+  return true;
+}
+
+function tagRule(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  if (state.src[start] !== "#" || state.linkLevel > 0) {
+    return false;
+  }
+  if (start > 0 && !/[\s(]/u.test(state.src[start - 1] ?? "")) {
+    return false;
+  }
+  const body = /^[\p{L}\p{M}\p{N}_/-]+/u.exec(state.src.slice(start + 1))?.[0];
+  if (!body || !isValidTagBody(body)) {
+    return false;
+  }
+  if (!silent) {
+    const token = state.push("threadleaf_tag", "a", 0);
+    token.meta = { tag: body };
+  }
+  state.pos = start + body.length + 1;
   return true;
 }
 
@@ -460,6 +483,7 @@ const markdown = new MarkdownIt({
 markdown.inline.ruler.before("image", "threadleaf_wikilink", wikiLinkRule);
 markdown.inline.ruler.before("text", "threadleaf_footnote_ref", footnoteReferenceRule);
 markdown.inline.ruler.before("text", "threadleaf_math_inline", mathInlineRule);
+markdown.inline.ruler.before("text", "threadleaf_tag", tagRule);
 markdown.block.ruler.before("fence", "threadleaf_math_block", mathBlockRule);
 
 markdown.core.ruler.after("block", "threadleaf_source_lines", (state) => {
@@ -496,6 +520,12 @@ markdown.renderer.rules.threadleaf_wikilink = (tokens, index, _options, env) => 
   }
   const classes = link.embed ? "internal-link preview-embed-link" : "internal-link";
   return `<a href="#" class="${classes}" data-threadleaf-link="wiki" data-threadleaf-target="${escapeAttribute(link.target)}" data-threadleaf-subpath="${escapeAttribute(link.subpath ?? "")}" data-threadleaf-embed="${String(link.embed)}"${renderTokenAttribute(renderToken)}>${escapeText(label)}</a>`;
+};
+
+markdown.renderer.rules.threadleaf_tag = (tokens, index, _options, env) => {
+  const tag = String(tokens[index]?.meta?.tag ?? "");
+  if (!isValidTagBody(tag)) return "";
+  return `<a class="tag" href="#${escapeAttribute(tag)}" data-threadleaf-tag="${escapeAttribute(tag)}" data-tag-name="#${escapeAttribute(tag)}"${renderTokenAttribute(previewEnvironment(env)?.threadleafRenderToken)}>#${escapeText(tag)}</a>`;
 };
 
 markdown.renderer.rules.threadleaf_math_inline = (tokens, index, _options, env) => {
