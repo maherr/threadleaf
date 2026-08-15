@@ -9843,14 +9843,26 @@ function requestNavigatorTreePage(request: {
     });
 }
 
-function workspaceTagCatalogIdentity(): { vaultId: string; generation: string } | null {
+function workspaceTagCatalogIdentity(): {
+  vaultId: string;
+  generation: string;
+  census: string;
+} | null {
   const vaultId = currentSnapshot?.vault.id;
   const generation = currentSnapshot?.workspace?.indexGeneration;
-  return vaultId && generation !== undefined ? { vaultId, generation } : null;
+  // The census state is part of the catalog identity: a census flip to
+  // "current" must retry a catalog attempt that answered "warming" for the
+  // same generation, or the pane wedges until an unrelated edit.
+  const census = currentSnapshot?.workspace?.census.state ?? "warming";
+  return vaultId && generation !== undefined ? { vaultId, generation, census } : null;
 }
 
-function workspaceTagCatalogIdentityKey(identity: { vaultId: string; generation: string }): string {
-  return `${identity.vaultId}\u0000${identity.generation}`;
+function workspaceTagCatalogIdentityKey(identity: {
+  vaultId: string;
+  generation: string;
+  census: string;
+}): string {
+  return `${identity.vaultId}\u0000${identity.generation}\u0000${identity.census}`;
 }
 
 function resetNavigatorTagCatalog(message: string): void {
@@ -9880,13 +9892,18 @@ function reconcileNavigatorTagCatalog(snapshot: RuntimeSnapshot): void {
     resetNavigatorTagCatalog("Refreshing the indexed tag catalog.");
   }
   if (navigatorContentMode === "tags") {
-    void requestNavigatorTagCatalog({ vaultId, generation });
+    void requestNavigatorTagCatalog({
+      vaultId,
+      generation,
+      census: snapshot.workspace?.census.state ?? "warming",
+    });
   }
 }
 
 async function requestNavigatorTagCatalog(identity: {
   vaultId: string;
   generation: string;
+  census: string;
 }): Promise<void> {
   const identityKey = workspaceTagCatalogIdentityKey(identity);
   if (
@@ -10036,7 +10053,7 @@ function renderNavigatorTagTree(force = false): void {
     const detail = document.createElement("small");
     detail.textContent = row.hasChildren
       ? `${row.tag.directCount.toLocaleString()} direct · ${row.tag.count.toLocaleString()} with children`
-      : `${row.tag.count.toLocaleString()} ${row.tag.count === 1 ? "note" : "notes"}`;
+      : `${row.tag.count.toLocaleString()} ${row.tag.count === 1 ? "use" : "uses"}`;
     copy.append(title, detail);
     const count = document.createElement("span");
     count.className = "tag-tree-count";
@@ -11184,7 +11201,8 @@ function displayPropertyValue(property: WorkspacePropertySummary): string {
 }
 
 function propertyTagValues(property: WorkspacePropertySummary): string[] {
-  if (property.name.toLocaleLowerCase("en-US") !== "tags") return [];
+  const foldedName = property.name.toLocaleLowerCase("en-US");
+  if (foldedName !== "tags" && foldedName !== "tag") return [];
   const candidates = Array.isArray(property.value)
     ? property.value
     : typeof property.value === "string"

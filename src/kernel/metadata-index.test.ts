@@ -282,6 +282,19 @@ describe("MetadataIndex", () => {
     expect(snapshot.tags.some(({ key }) => key === "2026")).toBe(false);
   });
 
+  it("accepts case-insensitive Tags and singular tag frontmatter keys", async () => {
+    const vault = new MemoryVault();
+    vault.set("Upper.md", "---\nTags: [alpha]\n---\nbody");
+    vault.set("Singular.md", "---\ntag: beta\n---\nbody");
+    vault.set("Both.md", "---\nTag: loser\ntags: [winner]\n---\nbody");
+
+    const snapshot = (await MetadataIndex.build(vault)).snapshot();
+    const byPath = (path: string) => snapshot.documents.find((doc) => doc.path === path);
+    expect(byPath("Upper.md")?.tags).toEqual(["alpha"]);
+    expect(byPath("Singular.md")?.tags).toEqual(["beta"]);
+    expect(byPath("Both.md")?.tags).toEqual(["winner"]);
+  });
+
   it("resolves a same-folder note before a duplicate basename elsewhere", async () => {
     const vault = new MemoryVault();
     vault.set("Folder/Source.md", "[[Target]]");

@@ -193,7 +193,17 @@ function parseProperties(content: string): Record<string, string | string[]> {
 }
 
 function tagsFromProperties(properties: Record<string, string | string[]>): string[] {
-  const value = properties.tags ?? properties.tag;
+  let plural: string | string[] | undefined;
+  let singular: string | string[] | undefined;
+  for (const [key, candidate] of Object.entries(properties)) {
+    const folded = key.toLocaleLowerCase("en-US");
+    if (folded === "tags") {
+      plural ??= candidate;
+    } else if (folded === "tag") {
+      singular ??= candidate;
+    }
+  }
+  const value = plural ?? singular;
   if (!value) {
     return [];
   }
