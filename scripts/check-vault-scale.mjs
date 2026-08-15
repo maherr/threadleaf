@@ -691,8 +691,7 @@ async function measureIncremental(cdp, vaultPath, manifest, variant, runIndex) {
   const batchConverged = await waitForSearch(
     cdp,
     batchMarker,
-    (value) =>
-      value.total >= 100 && value.indexGeneration !== baseBeforeBatch.indexGeneration,
+    (value) => value.total >= 100 && value.indexGeneration !== baseBeforeBatch.indexGeneration,
   );
   const batch100Ms = performance.now() - batchStarted;
   await Promise.all(
