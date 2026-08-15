@@ -18,7 +18,7 @@ function assert(condition, message) {
 }
 
 async function run(command, args, options = {}) {
-  await new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: projectRoot,
       env: { ...process.env, ...options.env },
