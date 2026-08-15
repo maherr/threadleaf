@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -34,7 +34,12 @@ assert(
   typeof electronVersion === "string",
   "The Electron target version is not pinned in package.json.",
 );
-const probeRoot = await mkdtemp(path.join(os.tmpdir(), "threadleaf-electron-native-target-"));
+// Canonicalize the temp root: on macOS os.tmpdir() returns the /var -> /private/var symlink, and
+// the native lock's assertPathIdentity() correctly rejects a non-canonical lock path. The app's
+// real lock directory is not symlinked, so this only affects the probe's temp path.
+const probeRoot = await realpath(
+  await mkdtemp(path.join(os.tmpdir(), "threadleaf-electron-native-target-")),
+);
 const probePath = path.join(probeRoot, "probe.cjs");
 const lockPath = path.join(probeRoot, "state.lock");
 await writeFile(
@@ -108,17 +113,22 @@ await writeFile(probePath, `${probeSource}process.exit(0);\n`, "utf8");
 
 try {
   const result = await new Promise((resolve, reject) => {
+    const runAsNode = targetPlatform !== "linux";
     const electronArguments = [
       ...(targetPlatform === "linux"
-        ? ["--no-sandbox", "--disable-gpu", "--ozone-platform=x11"]
+        ? ["--no-sandbox", "--disable-gpu", "--ozone-platform=x11", "--password-store=basic"]
         : []),
-      "--password-store=basic",
       probePath,
     ];
     const child = spawn(electron, electronArguments, {
       cwd: projectRoot,
       env: {
         ...process.env,
+        // The probe is pure Node (loads the Node-API addon, exercises fs locking) and needs no
+        // GUI. On non-Linux hosts run Electron's bundled Node directly, so a headless build host
+        // (no window server, e.g. macOS over SSH) verifies the addon instead of hanging on a GUI
+        // launch. Node-API is identical in both modes, so the verification is equivalent.
+        ...(runAsNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
         THREADLEAF_NATIVE_PROBE_PATH: nativePath,
         THREADLEAF_NATIVE_PROBE_LOCK: lockPath,
         THREADLEAF_NATIVE_TARGET_PLATFORM: targetPlatform,
