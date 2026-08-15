@@ -1878,6 +1878,17 @@ function registerIpcHandlers(): void {
       request as Parameters<WorkspaceController["getWorkspaceTreePath"]>[0],
     );
   });
+  ipcMain.handle(ipcChannels.workspaceTagCatalog, (event, request: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Workspace tags require the active Threadleaf window.");
+    }
+    if (typeof request !== "object" || request === null) {
+      throw new Error("Workspace tags require a catalog request.");
+    }
+    return workspaceController.getWorkspaceTagCatalog(
+      request as Parameters<WorkspaceController["getWorkspaceTagCatalog"]>[0],
+    );
+  });
   ipcMain.handle(
     ipcChannels.setWorkspaceDockCollapsed,
     (event, dockId: unknown, collapsed: unknown, expectedVaultId: unknown) => {

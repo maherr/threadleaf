@@ -51,6 +51,7 @@ import type {
   WorkspaceFolderCreateResponse,
   WorkspaceSettingsResponse,
   WorkspaceSettingsUpdateResponse,
+  WorkspaceTagCatalogResponse,
   WorkspaceTreePageResponse,
   WorkspaceTreePathResponse,
 } from "../shared/contracts";
@@ -118,6 +119,11 @@ const bridge: ThreadleafBridge = {
       ipcChannels.workspaceTreePath,
       request,
     ) as Promise<WorkspaceTreePathResponse>,
+  getWorkspaceTagCatalog: (request) =>
+    ipcRenderer.invoke(
+      ipcChannels.workspaceTagCatalog,
+      request,
+    ) as Promise<WorkspaceTagCatalogResponse>,
   reportWorkspaceOpenDiagnostics: (acknowledgement) =>
     ipcRenderer.send(ipcChannels.workspaceOpenDiagnostics, acknowledgement),
   getWorkspaceLayout: (expectedVaultId?: string) =>

@@ -67,6 +67,9 @@ import type {
   WorkspacePaneId,
   WorkspacePaneSnapshot,
   WorkspaceSplitDirection,
+  WorkspaceTagCatalogRequest,
+  WorkspaceTagCatalogResponse,
+  WorkspaceTagSummary,
   WorkspaceTreePageRequest,
   WorkspaceTreePageResponse,
   WorkspaceTreePathRequest,
@@ -252,6 +255,7 @@ interface WorkspaceIndexProjection {
   backlinks: Map<string, string[]>;
   files: WorkspaceFileSummary[];
   interactiveFiles: WorkspaceFileSummary[];
+  tags: WorkspaceTagSummary[];
   tree: WorkspaceTreeIndex;
 }
 
@@ -1488,6 +1492,37 @@ export class WorkspaceRuntime {
         complete: request.offset + pageEntries.length >= entries.length,
       },
       entries: [...pageEntries],
+    };
+  }
+
+  async getWorkspaceTagCatalog(
+    request: WorkspaceTagCatalogRequest,
+  ): Promise<WorkspaceTagCatalogResponse> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    const generation = this.workspaceIndexGeneration();
+    if (request.generation !== generation) {
+      return {
+        status: "stale-generation",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    if (this.#census.state !== "current") {
+      return {
+        status: this.#census.state === "degraded" ? "degraded" : "warming",
+        vaultId: this.kernel.vaultId,
+        generation,
+        census: this.censusSnapshot(),
+      };
+    }
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      generation,
+      tags: this.workspaceIndexProjection().tags.map((tag) => ({ ...tag })),
     };
   }
 
@@ -4135,6 +4170,7 @@ export class WorkspaceRuntime {
         backlinks,
         files,
         interactiveFiles: files.slice(0, maximumWorkspaceFilePageSize),
+        tags: index.tags.map((tag) => ({ ...tag })),
         tree: buildWorkspaceTreeIndex(files),
       };
       this.#indexProjection = projection;

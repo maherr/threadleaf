@@ -38,6 +38,8 @@ import type {
   WorkspaceFilePageResponse,
   WorkspacePaneId,
   WorkspaceSplitDirection,
+  WorkspaceTagCatalogRequest,
+  WorkspaceTagCatalogResponse,
   WorkspaceTreePageRequest,
   WorkspaceTreePageResponse,
   WorkspaceTreePathRequest,
@@ -85,6 +87,7 @@ export interface WorkspaceRuntimePort {
   getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
   getWorkspaceTreePage(request: WorkspaceTreePageRequest): Promise<WorkspaceTreePageResponse>;
   getWorkspaceTreePath(request: WorkspaceTreePathRequest): Promise<WorkspaceTreePathResponse>;
+  getWorkspaceTagCatalog(request: WorkspaceTagCatalogRequest): Promise<WorkspaceTagCatalogResponse>;
   searchVault(query: string): Promise<VaultSearchResponse>;
   getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse>;
   loadVaultImage(
@@ -531,6 +534,20 @@ export class WorkspaceController {
       return { status: "stale-vault", vaultId: runtime.vaultId };
     }
     const response = await runtime.getWorkspaceTreePage(request);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async getWorkspaceTagCatalog(
+    request: WorkspaceTagCatalogRequest,
+  ): Promise<WorkspaceTagCatalogResponse> {
+    const runtime = this.activeRuntime("load workspace tags");
+    if (runtime.vaultId !== request.expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.getWorkspaceTagCatalog(request);
     if (this.#runtime !== runtime || this.#runtime.vaultId !== request.expectedVaultId) {
       return { status: "stale-vault", vaultId: this.#runtime.vaultId };
     }

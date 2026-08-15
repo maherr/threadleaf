@@ -25,6 +25,8 @@ import type {
   VaultTrashResponse,
   WorkspaceFilePageRequest,
   WorkspaceFilePageResponse,
+  WorkspaceTagCatalogRequest,
+  WorkspaceTagCatalogResponse,
   WorkspaceTreePageRequest,
   WorkspaceTreePageResponse,
   WorkspaceTreePathRequest,
@@ -209,6 +211,20 @@ class FakeRuntime implements WorkspaceRuntimePort {
       return { status: "stale-vault", vaultId: this.vaultId };
     }
     return { status: "missing", vaultId: this.vaultId };
+  }
+
+  async getWorkspaceTagCatalog(
+    request: WorkspaceTagCatalogRequest,
+  ): Promise<WorkspaceTagCatalogResponse> {
+    if (request.expectedVaultId !== this.vaultId) {
+      return { status: "stale-vault", vaultId: this.vaultId };
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      generation: request.generation,
+      tags: [],
+    };
   }
 
   async markPluginLayoutReady(): Promise<RuntimeSnapshot> {

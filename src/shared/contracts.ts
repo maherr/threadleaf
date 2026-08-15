@@ -378,6 +378,34 @@ export type WorkspaceTreePageResponse =
     }
   | { status: "stale-vault"; vaultId: string };
 
+export interface WorkspaceTagSummary {
+  key: string;
+  tag: string;
+  parentKey: string | null;
+  directCount: number;
+  count: number;
+}
+
+export interface WorkspaceTagCatalogRequest {
+  expectedVaultId: string;
+  generation: string;
+}
+
+export type WorkspaceTagCatalogResponse =
+  | {
+      status: "ready";
+      vaultId: string;
+      generation: string;
+      tags: WorkspaceTagSummary[];
+    }
+  | {
+      status: "warming" | "degraded" | "stale-generation";
+      vaultId: string;
+      generation: string;
+      census: WorkspaceCensusSnapshot;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
 export interface WorkspaceTreePathPageLocation {
   parentPath: string | null;
   offset: number;
@@ -554,6 +582,7 @@ export interface VaultSearchResponse {
   error: string | null;
   query: string;
   terms: string[];
+  tagFilters?: string[];
   total: number;
   truncated: boolean;
   results: VaultSearchResult[];
@@ -1219,6 +1248,7 @@ export interface ThreadleafBridge {
   getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse>;
   getWorkspaceTreePage(request: WorkspaceTreePageRequest): Promise<WorkspaceTreePageResponse>;
   getWorkspaceTreePath(request: WorkspaceTreePathRequest): Promise<WorkspaceTreePathResponse>;
+  getWorkspaceTagCatalog(request: WorkspaceTagCatalogRequest): Promise<WorkspaceTagCatalogResponse>;
   reportWorkspaceOpenDiagnostics(acknowledgement: WorkspaceOpenTransferAcknowledgement): void;
   getWorkspaceLayout(expectedVaultId?: string): Promise<WorkspaceLayoutSnapshot>;
   setWorkspaceDockCollapsed(
