@@ -65,9 +65,11 @@ describe("application menu", () => {
         "Insert Template…",
         "Insert Current Date",
         "Insert Current Time",
+        "Toggle checkbox status",
       ],
     );
     expect(item(template, "Edit", "Insert Template…").accelerator).toBeUndefined();
+    expect(item(template, "Edit", "Toggle checkbox status").accelerator).toBe("CmdOrCtrl+L");
     expect(item(template, "Workspace", "Split Right").accelerator).toBeUndefined();
     expect(item(template, "Workspace", "Toggle Pin for Current Tab").accelerator).toBeUndefined();
     expect(item(template, "Workspace", "Quick Switcher…").accelerator).toBe("CmdOrCtrl+Shift+O");

@@ -3,6 +3,7 @@ import {
   normalizeMarkdownTaskStatus,
   type ParsedMarkdownTask,
   parseMarkdownTasks,
+  toggleMarkdownTaskStatus,
 } from "../kernel/markdown-tasks";
 import { normalizeMarkdownNotePath } from "../kernel/note-path";
 import type { VaultMutationPort, VaultReadPort } from "../kernel/ports";
@@ -97,9 +98,7 @@ export async function mutateMarkdownTask(
   const current = taskAtLine(path, snapshot.content, line);
   const nextStatus =
     mutation.kind === "toggle"
-      ? isCompletedMarkdownTaskStatus(current.status)
-        ? " "
-        : "x"
+      ? toggleMarkdownTaskStatus(current.status)
       : normalizeMarkdownTaskStatus(mutation.status);
   const nextTask = taskRecord(path, { ...current, status: nextStatus });
   if (nextStatus === current.status) {

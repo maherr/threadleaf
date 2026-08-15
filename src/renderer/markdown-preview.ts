@@ -1,6 +1,7 @@
 import DOMPurify, { type Config } from "dompurify";
 import MarkdownIt, { type RendererRule, type StateBlock, type StateInline } from "markdown-it";
 import { parseMarkdownLinks, splitMarkdownDestinationTarget } from "../kernel/markdown-links";
+import { type ParsedMarkdownTask, parseMarkdownTasks } from "../kernel/markdown-tasks";
 import type {
   CanvasLoadResponse,
   VaultAttachmentResponse,
@@ -43,6 +44,7 @@ const allowedTags = [
   "h5",
   "h6",
   "hr",
+  "input",
   "li",
   "ol",
   "p",
@@ -67,8 +69,10 @@ const sanitizeConfig = {
   ALLOWED_ATTR: [
     "aria-label",
     "class",
+    "checked",
     "colspan",
     "data-source-line",
+    "data-task",
     "data-threadleaf-alt",
     "data-threadleaf-attachment-alt",
     "data-threadleaf-attachment-target",
@@ -86,6 +90,7 @@ const sanitizeConfig = {
     "data-threadleaf-source-fallback",
     "data-threadleaf-subpath",
     "data-threadleaf-table",
+    "data-threadleaf-task",
     "data-threadleaf-target",
     "href",
     "id",
@@ -94,6 +99,7 @@ const sanitizeConfig = {
     "start",
     "scope",
     "title",
+    "type",
   ],
   ALLOW_ARIA_ATTR: false,
   ALLOW_DATA_ATTR: false,
@@ -176,6 +182,7 @@ interface MarkdownPreviewEnvironment {
   threadleafInlineMathRejectedRanges: ReadonlyMap<number, { from: number; to: number }>;
   threadleafInlineMathUnmatchedOpeners: ReadonlySet<number>;
   threadleafInlineMathCandidatesSeen: number;
+  threadleafTasks: ReadonlyMap<number, ParsedMarkdownTask>;
 }
 
 function previewEnvironment(value: unknown): MarkdownPreviewEnvironment | null {
@@ -473,6 +480,57 @@ markdown.core.ruler.after("block", "threadleaf_source_lines", (state) => {
     }
   }
 });
+
+function taskForToken(
+  environment: MarkdownPreviewEnvironment | null,
+  token: { map?: [number, number] | null } | undefined,
+): ParsedMarkdownTask | null {
+  const sourceLine = token?.map?.[0];
+  return sourceLine === undefined
+    ? null
+    : (environment?.threadleafTasks.get(sourceLine + 1) ?? null);
+}
+
+function renderTaskCheckbox(task: ParsedMarkdownTask, renderToken: string | undefined): string {
+  const checked = task.status !== " ";
+  return `<input type="checkbox" class="task-list-item-checkbox" data-threadleaf-task="true" data-task="${escapeAttribute(task.status)}" aria-label="${checked ? "Completed task" : "Open task"}"${checked ? " checked" : ""}${renderTokenAttribute(renderToken)}>`;
+}
+
+markdown.core.ruler.after("inline", "threadleaf_task_markers", (state) => {
+  const environment = previewEnvironment(state.env);
+  for (const token of state.tokens) {
+    const task = taskForToken(environment, token);
+    const first = token.type === "inline" ? token.children?.[0] : null;
+    const marker = task ? `[${task.status}]` : null;
+    if (!task || !first || first.type !== "text" || !marker || !first.content.startsWith(marker)) {
+      continue;
+    }
+    const remaining = first.content.slice(marker.length);
+    if (remaining.length === 0 || /^[\t ]/u.test(remaining)) {
+      first.content = remaining.length > 0 ? remaining.slice(1) : "";
+    }
+  }
+});
+
+const defaultListItemOpen = markdown.renderer.rules.list_item_open;
+markdown.renderer.rules.list_item_open = (tokens, index, options, env, renderer) => {
+  const token = tokens[index];
+  const environment = previewEnvironment(env);
+  const task = taskForToken(environment, token);
+  if (!token || !task) {
+    return defaultListItemOpen
+      ? defaultListItemOpen(tokens, index, options, env, renderer)
+      : renderer.renderToken(tokens, index, options);
+  }
+  token.attrJoin("class", "task-list-item");
+  token.attrSet("data-task", task.status);
+  token.attrSet("data-source-line", String(task.line));
+  token.attrSet("data-threadleaf-render-token", environment?.threadleafRenderToken ?? "");
+  const opened = defaultListItemOpen
+    ? defaultListItemOpen(tokens, index, options, env, renderer)
+    : renderer.renderToken(tokens, index, options);
+  return `${opened}${renderTaskCheckbox(task, environment?.threadleafRenderToken)}`;
+};
 
 markdown.renderer.rules.threadleaf_wikilink = (tokens, index, _options, env) => {
   const link = tokens[index]?.meta as PreviewWikiLink | undefined;
@@ -1307,6 +1365,7 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
     threadleafInlineMathRejectedRanges: new Map(),
     threadleafInlineMathUnmatchedOpeners: new Set(),
     threadleafInlineMathCandidatesSeen: 0,
+    threadleafTasks: new Map(parseMarkdownTasks(source).map((task) => [task.line, task])),
   };
   const bodyHtml = markdown.render(environment.threadleafSourceText, environment);
   const html = bodyHtml + renderFootnoteSection(footnotes, environment);
@@ -1325,11 +1384,19 @@ export function renderMarkdownPreview(source: string): DocumentFragment {
       element.removeAttribute("data-threadleaf-render-token");
       continue;
     }
+    if (element.tagName === "INPUT") {
+      element.remove();
+      continue;
+    }
     // Raw HTML is source-owned.  Its marker attributes and navigation-shaped
     // classes are never an authority for generated controls, source buttons,
     // hydration, or export.  Remove them before looking at any href.
     for (const attribute of [...element.attributes]) {
-      if (attribute.name.startsWith("data-threadleaf-") || attribute.name === "data-source-line") {
+      if (
+        attribute.name.startsWith("data-threadleaf-") ||
+        attribute.name === "data-source-line" ||
+        attribute.name === "data-task"
+      ) {
         element.removeAttribute(attribute.name);
       }
     }
@@ -1389,9 +1456,16 @@ const strippedProjectionClasses = new Set([
  */
 export function sanitizePluginMarkdownProjection(html: string): DocumentFragment {
   const fragment = DOMPurify.sanitize(html, sanitizeConfig);
+  for (const input of fragment.querySelectorAll("input")) {
+    input.remove();
+  }
   for (const element of fragment.querySelectorAll<HTMLElement>("*")) {
     for (const attribute of [...element.attributes]) {
-      if (attribute.name.startsWith("data-threadleaf-") || attribute.name === "data-source-line") {
+      if (
+        attribute.name.startsWith("data-threadleaf-") ||
+        attribute.name === "data-source-line" ||
+        attribute.name === "data-task"
+      ) {
         element.removeAttribute(attribute.name);
       }
     }

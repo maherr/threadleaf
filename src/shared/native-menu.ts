@@ -24,6 +24,7 @@ export const nativeMenuCommandIds = [
   "editor.insert-template",
   "editor.insert-current-date",
   "editor.insert-current-time",
+  "editor.toggle-checkbox-status",
   "editor.toggle-reading-view",
   "editor.toggle-source-mode",
   "appearance.toggle-theme",

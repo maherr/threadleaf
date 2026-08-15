@@ -164,6 +164,7 @@ import {
   quickSwitcherNotesFromFiles,
 } from "./quick-switcher-model";
 import { RecoveryViewController } from "./recovery-view";
+import { type MarkdownTaskSelection, markdownTaskToggleChanges } from "./task-toggle";
 import {
   renderDocumentViewToolbarLabel,
   renderUnavailableNoticeToolbarLabel,
@@ -836,6 +837,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "editor.insert-current-time",
     label: "Insert current time",
     description: "Insert the current time using this vault's template format.",
+  },
+  {
+    id: "editor.toggle-checkbox-status",
+    label: "Toggle checkbox status",
+    description: "Toggle Markdown tasks on the cursor line or every selected line.",
   },
   {
     id: "editor.toggle-reading-view",
@@ -2026,6 +2032,20 @@ function commandCatalog(): RendererCommand[] {
       run: () => insertFormattedWorkflowValue("time"),
     },
     {
+      id: "editor.toggle-checkbox-status",
+      label: "Toggle checkbox status",
+      category: "Editor",
+      keywords: ["task", "checkbox", "todo", "toggle", "checklist"],
+      shortcut: shortcutFor("editor.toggle-checkbox-status"),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy),
+      disabledReason: !loadedNote
+        ? "No note is open."
+        : readOnly
+          ? "Open a local vault before editing notes."
+          : "Threadleaf is finishing another action.",
+      run: toggleCheckboxStatus,
+    },
+    {
       id: "editor.toggle-reading-view",
       label: documentViewMode === "reading" ? "Switch to editing view" : "Switch to reading view",
       category: "Editor",
@@ -2397,6 +2417,11 @@ function renderReadingView(): void {
     sourceNotePath: loadedNote.path,
   });
   elements.notePreview.replaceChildren(fragment);
+  for (const checkbox of elements.notePreview.querySelectorAll<HTMLInputElement>(
+    'input[data-threadleaf-task="true"]',
+  )) {
+    checkbox.disabled = readOnlyVault();
+  }
   decoratePreviewLinks(elements.notePreview, loadedNote.outgoing, loadedNote.path);
   renderedPreviewPath = loadedNote.path;
   renderedPreviewSource = source;
@@ -3744,6 +3769,34 @@ function insertEditorText(content: string): void {
     scrollIntoView: true,
   });
   editor.focus();
+}
+
+function toggleCheckboxStatus(selections?: readonly MarkdownTaskSelection[]): void {
+  if (!loadedNote || readOnlyVault() || busy) {
+    return;
+  }
+  const changes = markdownTaskToggleChanges(
+    editor.state.doc.toString(),
+    selections ??
+      editor.state.selection.ranges.map((selection) => ({
+        from: selection.from,
+        to: selection.to,
+      })),
+  );
+  if (changes.length === 0) {
+    showToast("No Markdown task is on the cursor or selected lines.");
+    return;
+  }
+  editor.dispatch({
+    changes,
+    scrollIntoView: true,
+    userEvent: "input.toggle-checkbox",
+  });
+  if (documentViewMode === "reading") {
+    renderDocumentView();
+  } else {
+    editor.focus();
+  }
 }
 
 function renderTemplatePickerDialog(): void {
@@ -11986,6 +12039,25 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   pane.notePreview.addEventListener("click", (event) => {
     if (!activate()) return;
     if (!(event.target instanceof Element)) {
+      return;
+    }
+    const taskCheckbox = event.target.closest<HTMLInputElement>(
+      'input[data-threadleaf-task="true"]',
+    );
+    if (taskCheckbox) {
+      event.preventDefault();
+      const sourceLine = Number.parseInt(
+        taskCheckbox.closest<HTMLElement>("li.task-list-item")?.dataset.sourceLine ?? "",
+        10,
+      );
+      if (
+        Number.isSafeInteger(sourceLine) &&
+        sourceLine >= 1 &&
+        sourceLine <= editor.state.doc.lines
+      ) {
+        const line = editor.state.doc.line(sourceLine);
+        toggleCheckboxStatus([{ from: line.from, to: line.from }]);
+      }
       return;
     }
     const sourceAction = event.target.closest<HTMLButtonElement>(".preview-source-action");

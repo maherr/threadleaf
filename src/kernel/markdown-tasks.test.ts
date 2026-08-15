@@ -3,6 +3,7 @@ import {
   isCompletedMarkdownTaskStatus,
   normalizeMarkdownTaskStatus,
   parseMarkdownTasks,
+  toggleMarkdownTaskStatus,
 } from "./markdown-tasks";
 
 describe("Markdown tasks", () => {
@@ -64,6 +65,10 @@ describe("Markdown tasks", () => {
     expect(content.slice(first?.statusStart, first?.statusEnd)).toBe("🟡");
     expect(content.slice(second?.statusStart, second?.statusEnd)).toBe(" ");
     expect(normalizeMarkdownTaskStatus("🟡")).toBe("🟡");
+    expect(toggleMarkdownTaskStatus(" ")).toBe("x");
+    expect(toggleMarkdownTaskStatus("x")).toBe(" ");
+    expect(toggleMarkdownTaskStatus("?")).toBe(" ");
+    expect(toggleMarkdownTaskStatus("🟡")).toBe(" ");
     expect(() => normalizeMarkdownTaskStatus("]")).toThrow("Task status");
     expect(() => normalizeMarkdownTaskStatus("\t")).toThrow("Task status");
     expect(() => normalizeMarkdownTaskStatus("xx")).toThrow("Task status");
