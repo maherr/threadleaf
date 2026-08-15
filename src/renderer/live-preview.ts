@@ -2258,7 +2258,7 @@ class TaskWidget extends WidgetType {
     checkbox.type = "checkbox";
     checkbox.checked = checked;
     checkbox.disabled = view.state.readOnly;
-    checkbox.dataset.task = this.status;
+    checkbox.dataset.task = this.status === " " ? "" : this.status;
     sourceMetadata(checkbox, this.from, this.to, "task");
     checkbox.ariaLabel = checked ? "Completed task" : "Open task";
     checkbox.addEventListener("click", (event) => {
@@ -2641,7 +2641,7 @@ function buildDecorations(view: EditorView, options: LivePreviewOptions): Decora
       continue;
     }
     addLineClass(line.from, "tl-live-task-line");
-    addTaskLineStatus(line.from, task.status);
+    addTaskLineStatus(line.from, task.status === " " ? "" : task.status);
     if (!sameInactiveLine(view, marker, active)) {
       continue;
     }

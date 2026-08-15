@@ -460,7 +460,7 @@ describe("Live Preview task controls", () => {
 
     await flushAsyncWork();
     const checkboxes = [...host.querySelectorAll<HTMLInputElement>(".tl-live-task")];
-    expect(checkboxes.map((checkbox) => checkbox.dataset.task)).toEqual([" ", "x", "?", "🟡"]);
+    expect(checkboxes.map((checkbox) => checkbox.dataset.task)).toEqual(["", "x", "?", "🟡"]);
     expect(checkboxes.map((checkbox) => checkbox.checked)).toEqual([false, true, true, true]);
     const taskLines = [...host.querySelectorAll<HTMLElement>(".cm-line")];
     expect(taskLines.some((line) => line.dataset.task === "?")).toBe(true);
