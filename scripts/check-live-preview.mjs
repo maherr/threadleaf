@@ -773,8 +773,10 @@ try {
   await waitFor(async () => {
     const candidate = await liveSurfaceState();
     const state = await evaluate('document.querySelector("#edit-state")?.textContent ?? ""');
-    return candidate.checkedTasks === 2 && state === "Unsaved" ? candidate : null;
-  }, "The task widget did not enter the normal dirty path");
+    return candidate.checkedTasks === 2 && ["Saving soon", "Saving", "Saved"].includes(state)
+      ? candidate
+      : null;
+  }, "The task widget did not enter the autosave path");
   await pressKey("z", "KeyZ", 2);
   await waitFor(async () => (await liveSurfaceState()).checkedTasks === 1, "Task undo failed");
   await pressKey("Z", "KeyZ", 2 | 8);
@@ -799,17 +801,16 @@ try {
   await clickSelector("#edit-view");
   await waitFor(async () => (await liveSurfaceState()).mode === "live", "Live mode did not return");
 
-  phase = "exact save bytes";
-  await pressKey("s", "KeyS", 2);
+  phase = "exact autosave bytes";
   await waitFor(
     async () =>
       (await evaluate('document.querySelector("#edit-state")?.textContent ?? ""')) === "Saved",
-    "The Live Preview task edit did not save",
+    "The Live Preview task edit did not autosave",
   );
   const savedSource = await fs.readFile(path.join(vaultAPath, "Showcase.md"), "utf8");
   assert(
     savedSource === showcaseSource.replace("- [ ] open task", "- [x] open task"),
-    "Live Preview changed bytes beyond the exact task marker.",
+    "Live Preview autosave changed bytes beyond the exact task marker.",
   );
 
   phase = "internal link activation";
@@ -1051,7 +1052,7 @@ try {
   await closeApplication();
 
   console.log(
-    "Verified isolated virtual input and screenshots for default Live Preview, rich Markdown rendering, exact cursor reveal, task edit/undo/redo/save bytes, Source round trip, internal-link activation, pane-local modes, A/B vault mode isolation, seeded stale localStorage, delayed/error refreshes, both themes, restart persistence, and reachable mode controls.",
+    "Verified isolated virtual input and screenshots for default Live Preview, rich Markdown rendering, exact cursor reveal, task edit/undo/redo/autosave bytes, Source round trip, internal-link activation, pane-local modes, A/B vault mode isolation, seeded stale localStorage, delayed/error refreshes, both themes, restart persistence, and reachable mode controls.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

@@ -36,6 +36,11 @@ import {
   parseVaultAppearanceSettings,
 } from "../shared/appearance";
 import {
+  type AutosaveFlushReason,
+  type AutosaveFlushResult,
+  isAutosaveFlushReason,
+} from "../shared/autosave";
+import {
   type AppearancePackageApplyResponse,
   type NotePropertyType,
   notePropertyTypes,
@@ -139,6 +144,7 @@ import {
   readDevelopmentPublishExportPath,
   suggestedPublishedNoteFilename,
 } from "./publish-export";
+import { RendererAutosaveFlushCoordinator } from "./renderer-autosave-flush";
 import {
   createSupportBundleMarkdown,
   isSupportBundleTargetOutsideVault,
@@ -198,6 +204,21 @@ if (nativeLockProbeIndex >= 0) {
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 let mainWindow: BrowserWindow | null = null;
+let applicationQuitAuthorized = false;
+const rendererAutosaveFlush = new RendererAutosaveFlushCoordinator({
+  send: (senderId, request) => {
+    const window = mainWindow;
+    if (
+      !window ||
+      window.isDestroyed() ||
+      window.webContents.isDestroyed() ||
+      window.webContents.id !== senderId
+    ) {
+      throw new Error("The main renderer is unavailable for autosave.");
+    }
+    window.webContents.send(ipcChannels.requestAutosaveFlush, request);
+  },
+});
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
@@ -880,6 +901,34 @@ function isMainRendererSender(webContents: WebContents): boolean {
       !mainWindow.webContents.isDestroyed() &&
       webContents === mainWindow.webContents,
   );
+}
+
+function parseAutosaveFlushResult(value: unknown): AutosaveFlushResult {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("requestId" in value) ||
+    typeof value.requestId !== "string" ||
+    !("status" in value) ||
+    (value.status !== "flushed" && value.status !== "failed") ||
+    (value.status === "failed" && (!("message" in value) || typeof value.message !== "string"))
+  ) {
+    throw new Error("Renderer autosave acknowledgement is malformed.");
+  }
+  return value as AutosaveFlushResult;
+}
+
+function requestWindowAutosaveFlush(
+  window: BrowserWindow | null,
+  reason: AutosaveFlushReason,
+): Promise<void> {
+  if (!isAutosaveFlushReason(reason)) {
+    return Promise.reject(new Error("Autosave flush reason is unsupported."));
+  }
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
+    return Promise.resolve();
+  }
+  return rendererAutosaveFlush.request(window.webContents.id, reason);
 }
 
 function dispatchApplicationMenuCommand(commandId: NativeMenuCommandId): void {
@@ -1895,6 +1944,16 @@ function registerIpcHandlers(): void {
       return;
     }
     startInitialWorkspaceActivation();
+  });
+  ipcMain.on(ipcChannels.completeAutosaveFlush, (event, value: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      return;
+    }
+    try {
+      rendererAutosaveFlush.complete(event.sender.id, parseAutosaveFlushResult(value));
+    } catch (error) {
+      console.error("Rejected malformed renderer autosave acknowledgement:", error);
+    }
   });
   ipcMain.handle(ipcChannels.settings, async () => {
     const delay = developmentSettingsDelay();
@@ -3169,16 +3228,24 @@ function registerIpcHandlers(): void {
       content: unknown,
       expectedRevision: unknown,
       expectedVaultId: unknown,
+      paneId: unknown,
     ) => {
       if (
         typeof filePath !== "string" ||
         typeof content !== "string" ||
         typeof expectedRevision !== "string" ||
-        typeof expectedVaultId !== "string"
+        typeof expectedVaultId !== "string" ||
+        (paneId !== undefined && paneId !== "primary" && paneId !== "secondary")
       ) {
         throw new Error("Save note requires string path, content, revision, and vault values.");
       }
-      return workspaceController.saveNote(filePath, content, expectedRevision, expectedVaultId);
+      return workspaceController.saveNote(
+        filePath,
+        content,
+        expectedRevision,
+        expectedVaultId,
+        paneId as "primary" | "secondary" | undefined,
+      );
     },
   );
   ipcMain.handle(
@@ -3520,9 +3587,19 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = window;
+  const rendererId = window.webContents.id;
   installMainWindowNavigationGuards(window.webContents);
 
   let boundsTimer: NodeJS.Timeout | undefined;
+  let autosaveBridgeReady = false;
+  let closeAfterAutosave = false;
+  let closeAutosavePending = false;
+  window.webContents.on("did-start-loading", () => {
+    autosaveBridgeReady = false;
+  });
+  window.webContents.on("did-finish-load", () => {
+    autosaveBridgeReady = true;
+  });
   const persistBounds = (): void => {
     if (boundsTimer !== undefined) {
       clearTimeout(boundsTimer);
@@ -3540,15 +3617,46 @@ async function createWindow(): Promise<void> {
   };
   window.on("move", persistBounds);
   window.on("resize", persistBounds);
+  window.on("blur", () => {
+    if (!autosaveBridgeReady || applicationQuitAuthorized) return;
+    void requestWindowAutosaveFlush(window, "window-blur").catch((error) =>
+      console.error("Threadleaf could not flush autosave on window blur:", error),
+    );
+  });
+  window.on("close", (event) => {
+    if (applicationQuitAuthorized || closeAfterAutosave || !autosaveBridgeReady) {
+      return;
+    }
+    event.preventDefault();
+    if (closeAutosavePending) return;
+    closeAutosavePending = true;
+    void requestWindowAutosaveFlush(window, "window-close")
+      .then(() => {
+        if (window.isDestroyed()) return;
+        closeAfterAutosave = true;
+        window.close();
+      })
+      .catch((error) =>
+        console.error("Threadleaf kept the window open after autosave failed:", error),
+      )
+      .finally(() => {
+        closeAutosavePending = false;
+      });
+  });
 
   window.once("ready-to-show", () => window.show());
   window.webContents.on("render-process-gone", (_event, details) => {
+    rendererAutosaveFlush.cancelSender(rendererId);
+    if (applicationQuitAuthorized || closeAfterAutosave) {
+      return;
+    }
     recoverMainRenderer({ reason: details.reason, exitCode: details.exitCode });
   });
   window.on("unresponsive", () => {
     console.error("Threadleaf main window became unresponsive");
   });
   window.once("closed", () => {
+    rendererAutosaveFlush.cancelSender(rendererId);
     if (boundsTimer !== undefined) {
       clearTimeout(boundsTimer);
       boundsTimer = undefined;
@@ -3582,6 +3690,7 @@ const recoverMainRenderer = createMainRendererRecoveryHandler({
 });
 
 const gracefulShutdownHandler = createGracefulShutdownHandler({
+  preflight: () => requestWindowAutosaveFlush(mainWindow, "app-quit"),
   prepare: () => {
     detachPluginView();
     appearanceWatcherLifecycle?.reconcile(null);
@@ -3596,7 +3705,10 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
     visiblePluginViews.clear();
     pluginSurfaceCssKeys.clear();
   },
-  quit: () => app.quit(),
+  quit: () => {
+    applicationQuitAuthorized = true;
+    app.quit();
+  },
   reportError: (error) => console.error("Threadleaf shutdown cleanup failed:", error),
 });
 

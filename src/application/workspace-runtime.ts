@@ -262,6 +262,7 @@ interface SaveNoteRequest {
   content: string;
   expectedRevision: string;
   expectedVaultId: string;
+  paneId?: WorkspacePaneId;
 }
 
 interface SetNotePropertyRequest {
@@ -691,7 +692,8 @@ function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
     !("expectedRevision" in payload) ||
     typeof payload.expectedRevision !== "string" ||
     !("expectedVaultId" in payload) ||
-    typeof payload.expectedVaultId !== "string"
+    typeof payload.expectedVaultId !== "string" ||
+    ("paneId" in payload && payload.paneId !== "primary" && payload.paneId !== "secondary")
   ) {
     throw new Error("Save note requires string path, content, revision, and vault values.");
   }
@@ -700,6 +702,9 @@ function parseSaveNoteRequest(payload: unknown): SaveNoteRequest {
     content: payload.content,
     expectedRevision: payload.expectedRevision,
     expectedVaultId: payload.expectedVaultId,
+    ...("paneId" in payload && (payload.paneId === "primary" || payload.paneId === "secondary")
+      ? { paneId: payload.paneId }
+      : {}),
   };
 }
 
@@ -2016,12 +2021,14 @@ export class WorkspaceRuntime {
     content: string,
     expectedRevision: string,
     expectedVaultId: string,
+    paneId?: WorkspacePaneId,
   ): Promise<NoteSaveResponse> {
     const outcome = await this.actions.dispatch<NoteSaveOutcome>("workspace.save-note", {
       path: filePath,
       content,
       expectedRevision,
       expectedVaultId,
+      ...(paneId ? { paneId } : {}),
     });
     return { outcome, snapshot: await this.publishSnapshot() };
   }
@@ -2745,10 +2752,11 @@ export class WorkspaceRuntime {
     filePath: string,
     paneId = this.#activePaneId,
     recordHistory = true,
+    focusPane = true,
   ): boolean {
     const pane = this.workspacePane(paneId);
     const previousPath = pane.activePath;
-    let changed = this.#activePaneId !== paneId || pane.activePath !== filePath;
+    let changed = (focusPane && this.#activePaneId !== paneId) || pane.activePath !== filePath;
     if (!pane.openPaths.includes(filePath)) {
       pane.openPaths.push(filePath);
       changed = true;
@@ -2757,7 +2765,7 @@ export class WorkspaceRuntime {
       pane.navigationHistory = recordNavigation(pane.navigationHistory, previousPath, filePath);
     }
     pane.activePath = filePath;
-    this.#activePaneId = paneId;
+    if (focusPane) this.#activePaneId = paneId;
     return changed;
   }
 
@@ -3264,7 +3272,7 @@ export class WorkspaceRuntime {
       request.content,
       request.expectedRevision,
     );
-    await this.reconcileNoteWrite(outcome);
+    await this.reconcileNoteWrite(outcome, request.paneId);
     return outcome;
   }
 
@@ -3342,7 +3350,10 @@ export class WorkspaceRuntime {
     return { ...outcome, name: request.name };
   }
 
-  private async reconcileNoteWrite(outcome: VaultWriteResult): Promise<void> {
+  private async reconcileNoteWrite(
+    outcome: VaultWriteResult,
+    paneId = this.#activePaneId,
+  ): Promise<void> {
     if (outcome.status === "committed") {
       this.watcher.operations.expect({
         id: outcome.transactionId,
@@ -3351,7 +3362,7 @@ export class WorkspaceRuntime {
         revision: outcome.revision,
       });
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
-      if (this.activatePath(outcome.path)) {
+      if (this.activatePath(outcome.path, paneId, true, false)) {
         await this.persistWorkspaceStateBestEffort();
       }
       return;
@@ -3370,7 +3381,7 @@ export class WorkspaceRuntime {
       await this.indexReactor.index.refresh(this.kernel, outcome.path);
     }
     await this.indexReactor.index.refresh(this.kernel, conflictCopy.path);
-    if (this.activatePath(conflictCopy.path)) {
+    if (this.activatePath(conflictCopy.path, paneId, true, false)) {
       await this.persistWorkspaceStateBestEffort();
     }
   }

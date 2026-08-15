@@ -519,7 +519,9 @@ async function waitForReady(probe, expectedCount, timeoutMs = 90_000) {
     `(async () => {
       const snapshot = await window.threadleaf.getSnapshot();
       return {
-        count: snapshot.workspace?.files.length ?? 0,
+        count: snapshot.workspace?.census.indexed ?? 0,
+        filePageTotal: snapshot.workspace?.filePage.total ?? 0,
+        residentFiles: snapshot.workspace?.files.length ?? 0,
         generation: snapshot.workspace?.indexGeneration ?? "",
         watcherSequence: snapshot.workspace?.watcher.lastSequence ?? 0,
         watcherError: snapshot.workspace?.watcher.error ?? null,
@@ -583,9 +585,7 @@ async function atomicExternalWrite(relativePath, content) {
 }
 
 async function verifyVirtualFileWindow(probe, expectedCount) {
-  return evaluate(
-    probe,
-    `(() => {
+  const expression = `(() => {
       const list = document.querySelector("#file-list");
       const rows = [...document.querySelectorAll("#file-list .virtual-file-row")];
       const positions = rows.map((row) => Number(row.getAttribute("aria-posinset")));
@@ -597,8 +597,29 @@ async function verifyVirtualFileWindow(probe, expectedCount) {
         total,
         expected: ${expectedCount},
       };
-    })()`,
-  );
+    })()`;
+  let state = await evaluate(probe, expression);
+  if (state.mode !== "virtual") {
+    const switched = await evaluate(
+      probe,
+      `(() => {
+        const toggle = document.querySelector("#navigator-view-toggle");
+        if (!(toggle instanceof HTMLButtonElement)) return false;
+        toggle.click();
+        return true;
+      })()`,
+    );
+    assert(switched, "The navigator did not expose its visible list-view control.");
+    state = await waitFor(
+      async () => {
+        const candidate = await evaluate(probe, expression);
+        return candidate.mode === "virtual" && candidate.rowCount > 0 ? candidate : null;
+      },
+      "The navigator did not switch to its virtualized flat list",
+      10_000,
+    );
+  }
+  return state;
 }
 
 try {
@@ -625,6 +646,10 @@ try {
   const ready = await waitForReady(activeProbe, initialCount);
   const firstReadyMs = Date.now() - activeProbe.startedAt;
   assert(ready.count === initialCount, "The ready snapshot did not contain every copied note.");
+  assert(
+    ready.filePageTotal === initialCount && ready.residentFiles <= 256,
+    "The ready snapshot did not expose a bounded first page over the complete note census.",
+  );
   assert(ready.watcherError === null, "The copied vault watcher reported an error.");
   const virtualFiles = await verifyVirtualFileWindow(activeProbe, initialCount);
   assert(virtualFiles.mode === "virtual", "The real-scale file list was not virtualized.");
@@ -637,7 +662,7 @@ try {
     "Virtualized file geometry drifted.",
   );
 
-  phase = "large note edit and save";
+  phase = "large note edit and autosave";
   const largeOpenStartedAt = Date.now();
   await openNote(activeProbe, largestNote.relativePath, 20_000);
   const largeOpenMs = Date.now() - largeOpenStartedAt;
@@ -651,16 +676,15 @@ try {
   await waitFor(
     async () => {
       const state = await evaluate(activeProbe, renderedStateExpression());
-      return state.editState === "Unsaved" && state.draftState === "saved" ? state : null;
+      return state.editState === "Saving soon" || state.editState === "Saving" ? state : null;
     },
-    "The large-note edit was not protected",
+    "The large-note edit did not enter autosave",
     15_000,
   );
   const largeSaveStartedAt = Date.now();
-  await pressKey(activeProbe, "s", "KeyS", 2);
   await waitFor(
     async () => (await evaluate(activeProbe, renderedStateExpression())).editState === "Saved",
-    "The large-note edit did not save",
+    "The large-note edit did not autosave",
     30_000,
   );
   const largeSaveMs = Date.now() - largeSaveStartedAt;

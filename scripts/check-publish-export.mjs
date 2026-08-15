@@ -471,18 +471,31 @@ try {
     "Publishing changed bytes inside the canonical vault.",
   );
 
-  phase = "dirty-note guard";
+  phase = "autosave before export";
+  await fs.unlink(exportPath);
+  const sourceBeforeAutosaveExport = await fs.readFile(path.join(vaultPath, notePath), "utf8");
   await clickSelector(".cm-content");
-  await cdp.send("Input.insertText", { text: "x" });
-  await waitFor(async () => {
-    const state = await exportUiState();
-    return state?.disabled ? state : null;
-  }, "The export control did not fail closed for an unsaved draft");
-  await clickSelector("#revert-note");
+  const autosaveExportCanary = "AUTOSAVE_EXPORT_CANARY";
+  await cdp.send("Input.insertText", { text: autosaveExportCanary });
   await waitFor(async () => {
     const state = await exportUiState();
     return state && !state.disabled ? state : null;
-  }, "The export control did not recover after reverting the draft");
+  }, "The export control was blocked while autosave was pending");
+  await clickSelector("#export-note");
+  await waitForExport();
+  const sourceAfterAutosaveExport = await fs.readFile(path.join(vaultPath, notePath), "utf8");
+  assert(
+    sourceAfterAutosaveExport.includes(autosaveExportCanary),
+    "Export did not flush the pending editor byte to the vault first.",
+  );
+  assert(
+    sourceAfterAutosaveExport.replace(autosaveExportCanary, "") === sourceBeforeAutosaveExport,
+    "Export autosave changed source bytes beyond the inserted canary.",
+  );
+  assert(
+    (await fs.readFile(exportPath, "utf8")).includes(autosaveExportCanary),
+    "Export did not render the autosaved editor byte.",
+  );
 
   phase = "stale revision guard";
   await fs.unlink(exportPath);
@@ -580,7 +593,7 @@ try {
       bytes: Buffer.byteLength(html),
       embeddedImage: true,
       embeddedNote: true,
-      dirtyGuard: true,
+      autosaveBeforeExport: true,
       toolbarControl: true,
       commandPaletteControl: true,
       isolatedX11: true,

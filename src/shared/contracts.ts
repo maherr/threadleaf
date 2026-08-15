@@ -5,6 +5,7 @@ import type {
 } from "./accessibility-preferences";
 import type { AppUpdateSnapshot } from "./app-updates";
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
+import type { AutosaveFlushRequest, AutosaveFlushResult } from "./autosave";
 import type { CanvasDiagnostic, JsonCanvasDocument } from "./json-canvas";
 import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
 import type {
@@ -1442,6 +1443,7 @@ export interface ThreadleafBridge {
     content: string,
     expectedRevision: string,
     expectedVaultId: string,
+    paneId?: WorkspacePaneId,
   ): Promise<NoteSaveResponse>;
   setNoteProperty(
     path: string,
@@ -1467,6 +1469,8 @@ export interface ThreadleafBridge {
     draftId: string,
     paneId?: WorkspacePaneId,
   ): Promise<EditorDraftClearResponse>;
+  completeAutosaveFlush(result: AutosaveFlushResult): void;
+  onAutosaveFlushRequest(listener: (request: AutosaveFlushRequest) => void): () => void;
   onMenuCommand(listener: (commandId: NativeMenuCommandId) => void): () => void;
   onSnapshot(listener: (snapshot: RuntimeSnapshot) => void): () => void;
   onWorkspaceLayout(listener: (snapshot: WorkspaceLayoutSnapshot) => void): () => void;

@@ -67,4 +67,25 @@ describe("createGracefulShutdownHandler", () => {
 
     expect(reportError.mock.calls).toEqual([[prepareError], [closeError], [finalizeError]]);
   });
+
+  it("keeps the app open when the autosave preflight fails and permits a retry", async () => {
+    const preflight = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("autosave failed"))
+      .mockResolvedValue(undefined);
+    const close = vi.fn(async () => undefined);
+    const quit = vi.fn();
+    const reportError = vi.fn();
+    const handleShutdown = createGracefulShutdownHandler({ preflight, close, quit, reportError });
+
+    handleShutdown({ preventDefault: vi.fn() });
+    await vi.waitFor(() => expect(reportError).toHaveBeenCalledOnce());
+    expect(close).not.toHaveBeenCalled();
+    expect(quit).not.toHaveBeenCalled();
+
+    handleShutdown({ preventDefault: vi.fn() });
+    await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce());
+    expect(preflight).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledOnce();
+  });
 });

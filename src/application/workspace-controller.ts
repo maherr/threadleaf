@@ -246,6 +246,7 @@ export interface WorkspaceRuntimePort {
     content: string,
     expectedRevision: string,
     expectedVaultId: string,
+    paneId?: WorkspacePaneId,
   ): Promise<NoteSaveResponse>;
   setNoteProperty(
     filePath: string,
@@ -1071,12 +1072,14 @@ export class WorkspaceController {
     content: string,
     expectedRevision: string,
     expectedVaultId: string,
+    paneId?: WorkspacePaneId,
   ): Promise<NoteSaveResponse> {
     return this.activeRuntime("save a note").saveNote(
       filePath,
       content,
       expectedRevision,
       expectedVaultId,
+      paneId,
     );
   }
 

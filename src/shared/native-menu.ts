@@ -21,8 +21,6 @@ export const nativeMenuCommandIds = [
   "workspace.next-tab",
   "workspace.previous-tab",
   "workspace.focus-note-filter",
-  "editor.save-note",
-  "editor.revert-note",
   "editor.insert-template",
   "editor.insert-current-date",
   "editor.insert-current-time",

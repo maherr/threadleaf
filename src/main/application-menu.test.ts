@@ -50,7 +50,7 @@ describe("application menu", () => {
     ]);
     expect(item(template, "File", "New Note").accelerator).toBe("Alt+N");
     expect(item(template, "File", "Open Today's Daily Note").accelerator).toBeUndefined();
-    expect(item(template, "File", "Save Note").accelerator).toBe("CmdOrCtrl+S");
+    expect(submenu(template, "File").some(({ label }) => label === "Save Note")).toBe(false);
     expect(item(template, "File", "Export Note as HTML…").accelerator).toBeUndefined();
     expect(submenu(template, "Edit").map(({ label, role, type }) => label ?? role ?? type)).toEqual(
       [

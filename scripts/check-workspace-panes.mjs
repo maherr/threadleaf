@@ -719,6 +719,26 @@ try {
     "The synthetic appearance review modal could not be disarmed.",
   );
 
+  const closeTabMarker = "THREADLEAF-CLOSE-TAB-AUTOSAVE";
+  await appendToPane("primary", `\n\n${closeTabMarker}`);
+  await clickSelector('[data-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]');
+  await waitFor(async () => {
+    const state = await paneState("primary");
+    const candidate = await snapshot();
+    return state?.path === "Welcome.md" &&
+      paneTabPaths(candidate, "primary").join("\n") === "Welcome.md"
+      ? candidate
+      : null;
+  }, "Closing the edited tab did not flush it and select the neighboring note");
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).includes(closeTabMarker),
+    "Closing a tab mid-edit did not autosave its pending bytes.",
+  );
+  await clickSelector('[data-note-path="Linked Note.md"]');
+  await waitFor(
+    async () => (await paneState("primary"))?.path === "Linked Note.md",
+    "The close-tab autosave fixture could not reopen Linked Note.md",
+  );
   await pressKey("[", "BracketLeft", 2);
   await waitFor(
     async () => (await paneState("primary"))?.path === "Welcome.md",
@@ -729,24 +749,31 @@ try {
     const candidate = await snapshot();
     return paneTabPaths(candidate, "primary").join("\n") === "Welcome.md" ? candidate : null;
   }, "The temporary history tab did not close before the pane-layout checks");
-  const historyDraftMarker = "THREADLEAF-HISTORY-DRAFT";
+  const historyDraftMarker = "THREADLEAF-HISTORY-AUTOSAVE";
   await appendToPane("primary", `\n\n${historyDraftMarker}`);
   assert(
-    await evaluate("document.querySelector('#navigate-forward')?.disabled === true"),
-    "The forward control remained enabled while the active pane had a dirty draft.",
+    await evaluate("document.querySelector('#navigate-forward')?.disabled === false"),
+    "The forward control was blocked while autosave was pending.",
   );
   await pressKey("]", "BracketRight", 2);
-  await delay(100);
-  assert(
-    (await paneState("primary"))?.path === "Welcome.md",
-    "History navigation changed notes while the active pane had a dirty draft.",
+  await waitFor(
+    async () => (await paneState("primary"))?.path === "Linked Note.md",
+    "History navigation did not flush the pending edit and move forward.",
   );
-  await clickSelector("#revert-note");
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).includes(historyDraftMarker),
+    "History navigation did not autosave the pending Welcome.md bytes.",
+  );
+  await pressKey("[", "BracketLeft", 2);
+  await waitFor(
+    async () => (await paneState("primary"))?.path === "Welcome.md",
+    "History navigation did not return to Welcome.md after the autosave check.",
+  );
+  await clickSelector('[data-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]');
   await waitFor(async () => {
-    const state = await paneState("primary");
-    const clean = await evaluate("document.querySelector('#navigate-forward')?.disabled === false");
-    return state && !state.text.includes(historyDraftMarker) && clean ? state : null;
-  }, "The history dirty-draft control did not return the editor to a clean state");
+    const candidate = await snapshot();
+    return paneTabPaths(candidate, "primary").join("\n") === "Welcome.md" ? candidate : null;
+  }, "The autosave history tab did not close before pane-layout checks");
 
   await clickSelector("#theme-toggle");
   await waitFor(
@@ -810,63 +837,46 @@ try {
     `Opening the secondary note changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
   );
 
-  phase = "inactive dirty pane independence";
-  const inactiveDraftMarker = "THREADLEAF-INACTIVE-DRAFT";
+  phase = "inactive pane autosave independence";
+  const inactiveDraftMarker = "THREADLEAF-INACTIVE-AUTOSAVE";
   await appendToPane("primary", `\n\n${inactiveDraftMarker}`);
   await focusPaneEditor("secondary");
+  await waitFor(
+    async () =>
+      (await fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).includes(inactiveDraftMarker),
+    "Switching panes did not flush the inactive pane edit.",
+  );
   assert(
     await evaluate(`(() => {
       const back = document.querySelector('[data-pane-id="secondary"] [id^="navigate-back"]');
       return back instanceof HTMLButtonElement && !back.disabled;
     })()`),
-    "A dirty inactive pane disabled history in the clean active pane.",
+    "Autosaving an inactive pane disabled history in the active pane.",
   );
   await pressKey("O", "KeyO", 2 | 8);
   await waitFor(
     () => evaluate("document.querySelector('#quick-switcher')?.open === true"),
-    "A dirty inactive pane blocked the clean active pane quick switcher",
+    "Autosaving an inactive pane blocked the active pane quick switcher",
   );
-  await captureScreenshot("workspace-clean-pane-with-inactive-draft");
+  await captureScreenshot("workspace-clean-pane-after-inactive-autosave");
   await pressKey("Escape", "Escape");
-  await focusPaneEditor("primary");
-  await clickSelector('[data-pane-id="primary"] [id^="revert-note"]');
-  await waitFor(
-    async () => !(await paneState("primary"))?.text.includes(inactiveDraftMarker),
-    "The inactive-pane independence draft did not revert cleanly",
-  );
-  await focusPaneEditor("secondary");
 
   phase = "independent pane editing";
-  const primaryMarker = "THREADLEAF-PRIMARY-DRAFT";
-  const secondaryMarker = "THREADLEAF-SECONDARY-DRAFT";
+  const primaryMarker = "THREADLEAF-PRIMARY-AUTOSAVE";
+  const secondaryMarker = "THREADLEAF-SECONDARY-CRASH-DRAFT";
+  const secondaryBeforePrimaryUndo = (await paneState("secondary")).text;
   await appendToPane("primary", `\n\n${primaryMarker}`);
-  await appendToPane("secondary", `\n\n${secondaryMarker}`);
   let primary = await paneState("primary");
-  let secondary = await paneState("secondary");
   assert(primary.text.includes(primaryMarker), "The primary editor lost its own draft.");
-  assert(
-    !primary.text.includes(secondaryMarker),
-    "The secondary draft leaked into the primary editor.",
-  );
-  assert(secondary.text.includes(secondaryMarker), "The secondary editor lost its own draft.");
-  assert(
-    !secondary.text.includes(primaryMarker),
-    "The primary draft leaked into the secondary editor.",
-  );
-  await Promise.all([
-    waitForDraft(vaultId, "primary", primaryMarker),
-    waitForDraft(vaultId, "secondary", secondaryMarker),
-  ]);
 
   phase = "pane-local undo";
-  await focusPaneEditor("primary");
   await pressKey("z", "KeyZ", 2);
   await waitFor(
     async () => !(await paneState("primary"))?.text.includes(primaryMarker),
     "Undo did not stay in the primary editor",
   );
   assert(
-    (await paneState("secondary")).text.includes(secondaryMarker),
+    (await paneState("secondary")).text === secondaryBeforePrimaryUndo,
     "Primary undo changed the secondary editor.",
   );
   await pressKey("Z", "KeyZ", 2 | 8);
@@ -875,8 +885,30 @@ try {
     "Redo did not restore the primary draft",
   );
   await waitForDraft(vaultId, "primary", primaryMarker);
-  await focusPaneEditor("secondary");
-  await captureScreenshot("workspace-two-pane-drafts");
+  await appendToPane("secondary", `\n\n${secondaryMarker}`);
+  let secondary = await paneState("secondary");
+  primary = await paneState("primary");
+  assert(primary.text.includes(primaryMarker), "The primary editor lost its own autosaved edit.");
+  assert(
+    !primary.text.includes(secondaryMarker),
+    "The secondary draft leaked into the primary editor.",
+  );
+  assert(secondary.text.includes(secondaryMarker), "The secondary editor lost its own draft.");
+  assert(
+    !secondary.text.includes(primaryMarker),
+    "The primary edit leaked into the secondary editor.",
+  );
+  await waitFor(
+    async () =>
+      (await fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).includes(primaryMarker),
+    "Switching to the secondary pane did not autosave the primary edit.",
+  );
+  await waitForDraft(vaultId, "secondary", secondaryMarker);
+  assert(
+    (await readDraft(vaultId, "primary")) === null,
+    "The autosaved primary pane retained a stale private draft.",
+  );
+  await captureScreenshot("workspace-autosaved-primary-with-secondary-crash-draft");
 
   phase = "full process crash";
   await crashApplication();
@@ -892,19 +924,18 @@ try {
     "The active pane did not survive restart.",
   );
 
-  phase = "two-draft recovery";
+  phase = "canonical and crash-draft recovery";
   await waitFor(
     async () => {
       primary = await paneState("primary");
       secondary = await paneState("secondary");
       return primary?.text.includes(primaryMarker) &&
-        primary.draftState === "saved" &&
         secondary?.text.includes(secondaryMarker) &&
         secondary.draftState === "saved"
         ? { primary, secondary }
         : null;
     },
-    "Both independent drafts were not restored after the crash",
+    "The canonical primary edit and secondary crash draft were not restored",
     15_000,
   );
   assert(
@@ -916,33 +947,30 @@ try {
     paneTabPaths(current, "primary").join("\n") === "Welcome.md",
     `Draft recovery changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
   );
-  await captureScreenshot("workspace-two-pane-recovered");
+  await captureScreenshot("workspace-canonical-and-crash-draft-recovered");
 
-  phase = "independent save";
-  await focusPaneEditor("secondary");
-  await pressKey("s", "KeyS", 2);
+  phase = "independent autosave";
+  await focusPaneEditor("primary");
   await waitFor(async () => {
     const state = await paneState("secondary");
     return state?.editState === "Saved" && (await readDraft(vaultId, "secondary")) === null;
-  }, "The secondary recovered draft did not save and clear");
-  await focusPaneEditor("primary");
-  await pressKey("s", "KeyS", 2);
+  }, "The secondary recovered draft did not autosave and clear");
   await waitFor(async () => {
     const state = await paneState("primary");
     return state?.editState === "Saved" && (await readDraft(vaultId, "primary")) === null;
-  }, "The primary recovered draft did not save and clear");
+  }, "The primary autosaved edit did not remain clean");
   assert(
     (await fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).includes(primaryMarker),
-    "The primary saved bytes are missing.",
+    "The primary autosaved bytes are missing.",
   );
   assert(
     (await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).includes(secondaryMarker),
-    "The secondary saved bytes are missing.",
+    "The secondary autosaved bytes are missing.",
   );
   current = await snapshot();
   assert(
     paneTabPaths(current, "primary").join("\n") === "Welcome.md",
-    `Independent save changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
+    `Independent autosave changed the primary tab set: ${JSON.stringify(current.workspace?.panes)}`,
   );
 
   phase = "move tab and collapse pane";
@@ -1048,7 +1076,7 @@ try {
   await closeApplication();
 
   console.log(
-    "Verified isolated virtual input, per-pane note history with dirty-draft refusal, keyboard quick switching, light/dark minimum-viewport rendering, two-pane layout persistence, independent editors and undo histories, two protected crash drafts, clean saves, tab transfer, pane collapse, restart recovery, and non-destructive malformed-state fallback.",
+    "Verified isolated virtual input, per-pane autosave across history and focus transitions, keyboard quick switching, light/dark minimum-viewport rendering, two-pane layout persistence, independent editors and undo histories, crash-draft recovery, clean autosaves, tab transfer, pane collapse, restart recovery, and non-destructive malformed-state fallback.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

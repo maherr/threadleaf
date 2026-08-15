@@ -25,6 +25,7 @@ import {
   effectiveColorScheme,
   type VaultAppearanceSettings,
 } from "../shared/appearance";
+import type { AutosaveFlushReason } from "../shared/autosave";
 import type {
   AttachmentMoveBlocker,
   AttachmentMoveResponse,
@@ -118,6 +119,7 @@ import {
   movePaletteSelection,
   type PaletteCommandDescriptor,
 } from "./command-palette-model";
+import { ContinuousAutosave } from "./continuous-autosave";
 import {
   type ExternalTextRepresentation,
   editorDraftMatchesDiskText,
@@ -255,9 +257,6 @@ const elements = {
   bookmarkNote: getButton("bookmark-note"),
   moveNote: getButton("move-note"),
   deleteNote: getButton("delete-note"),
-  saveNote: getButton("save-note"),
-  saveShortcut: getElement("save-shortcut"),
-  revertNote: getButton("revert-note"),
   editNotice: getElement("edit-notice"),
   editNoticeTitle: getElement("edit-notice-title"),
   editNoticeMessage: getElement("edit-notice-message"),
@@ -563,9 +562,6 @@ const paneElementKeys = [
   "bookmarkNote",
   "moveNote",
   "deleteNote",
-  "saveNote",
-  "saveShortcut",
-  "revertNote",
   "editNotice",
   "editNoticeTitle",
   "editNoticeMessage",
@@ -655,9 +651,6 @@ function paneElementsFor(
     bookmarkNote: button("bookmark-note"),
     moveNote: button("move-note"),
     deleteNote: button("delete-note"),
-    saveNote: button("save-note"),
-    saveShortcut: element("save-shortcut"),
-    revertNote: button("revert-note"),
     editNotice: element("edit-notice"),
     editNoticeTitle: element("edit-notice-title"),
     editNoticeMessage: element("edit-notice-message"),
@@ -802,7 +795,7 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
   {
     id: "workspace.close-tab",
     label: "Close current tab",
-    description: "Close the current note after its draft is saved or reverted.",
+    description: "Flush autosave, then close the current note.",
   },
   {
     id: "workspace.next-tab",
@@ -828,16 +821,6 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
     id: "workspace.focus-note-filter",
     label: "Focus vault search",
     description: "Search saved note content, paths, headings, tags, and properties.",
-  },
-  {
-    id: "editor.save-note",
-    label: "Save current note",
-    description: "Save through the revision-aware recoverable writer.",
-  },
-  {
-    id: "editor.revert-note",
-    label: "Revert current note",
-    description: "Discard the current editor draft and accept the disk version.",
   },
   {
     id: "editor.insert-template",
@@ -1154,6 +1137,14 @@ interface WorkspacePaneSession {
   editorReadOnly: boolean;
 }
 
+interface PendingNoteAutosave {
+  paneId: WorkspacePaneId;
+  path: string;
+  content: string;
+  expectedRevision: string;
+  expectedVaultId: string;
+}
+
 function createWorkspacePaneSession(): WorkspacePaneSession {
   return {
     editor: null,
@@ -1195,6 +1186,18 @@ const paneSessions = new Map<WorkspacePaneId, WorkspacePaneSession>([
   ["primary", createWorkspacePaneSession()],
   ["secondary", createWorkspacePaneSession()],
 ]);
+const paneAutosaves = new Map<WorkspacePaneId, ContinuousAutosave<PendingNoteAutosave>>(
+  (["primary", "secondary"] as const).map((paneId) => [
+    paneId,
+    new ContinuousAutosave<PendingNoteAutosave>({
+      capture: () => runInPaneContext(paneId, currentPendingNoteAutosave),
+      persist: persistPendingNoteAutosave,
+      onStateChange: () => {
+        if (editorsReady) runInPaneContext(paneId, renderEditControls);
+      },
+    }),
+  ]),
+);
 let activePaneContextId: WorkspacePaneId = "primary";
 let editorsReady = false;
 let editor: EditorView;
@@ -1205,6 +1208,14 @@ function paneSession(paneId: WorkspacePaneId): WorkspacePaneSession {
     throw new Error(`Missing workspace pane session: ${paneId}`);
   }
   return session;
+}
+
+function paneAutosave(
+  paneId: WorkspacePaneId = activePaneContextId,
+): ContinuousAutosave<PendingNoteAutosave> {
+  const autosave = paneAutosaves.get(paneId);
+  if (!autosave) throw new Error(`Missing pane autosave coordinator: ${paneId}`);
+  return autosave;
 }
 
 function captureActivePaneSession(): void {
@@ -1320,16 +1331,6 @@ function workspacePaneSnapshot(
   snapshot: RuntimeSnapshot | null = currentSnapshot,
 ): WorkspacePaneSnapshot | null {
   return snapshot?.workspace?.panes.find((pane) => pane.id === paneId) ?? null;
-}
-
-function anyPaneDirty(): boolean {
-  captureActivePaneSession();
-  return [...paneSessions.values()].some((session) => session.dirty);
-}
-
-function anyPaneSaving(): boolean {
-  captureActivePaneSession();
-  return [...paneSessions.values()].some((session) => session.saving);
 }
 
 const editorStyleNonce = "threadleaf-codemirror";
@@ -1504,10 +1505,14 @@ function editorExtensions(paneId: WorkspacePaneId) {
             loadedNote !== null &&
             externalTextFromEditor(update.state.doc.toString(), loadedTextRepresentation) !==
               loadedNote.content;
+          if (loadedNote && loadedVaultId && !readOnlyVault()) {
+            paneAutosave(paneId).changed();
+          }
           if (dirty) {
             scheduleEditorDraftPersistence();
           } else if (wasDirty) {
             clearCurrentEditorDraft();
+            if (!saving) paneAutosave(paneId).synchronized();
             schedulePendingDiskAcceptance();
           }
           renderEditControls();
@@ -1625,10 +1630,7 @@ function propertyEditBlockReason(): string | null {
   if (!loadedNote.propertyEditor.editable) {
     return loadedNote.propertyEditor.message ?? "This frontmatter is read-only.";
   }
-  if (dirty) {
-    return "Save or revert the current note before editing its properties.";
-  }
-  if (busy || saving || propertyBusy) {
+  if (busy || propertyBusy) {
     return "Threadleaf is finishing another action.";
   }
   return null;
@@ -1661,8 +1663,6 @@ function commandCatalog(): RendererCommand[] {
   const tabs = opening ? [] : (workspacePaneSnapshot()?.tabs ?? []);
   const activeTab = tabs.find((tab) => tab.active) ?? null;
   const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
-  const paneDirty = anyPaneDirty();
-  const paneSaving = anyPaneSaving();
   const commands: RendererCommand[] = [
     {
       id: "workspace.create-note",
@@ -1670,18 +1670,14 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["new", "file", "markdown", "note"],
       shortcut: shortcutFor("workspace.create-note"),
-      enabled: Boolean(
-        currentSnapshot?.vault.id && !opening && !readOnly && !busy && !paneSaving && !paneDirty,
-      ),
+      enabled: Boolean(currentSnapshot?.vault.id && !opening && !readOnly && !busy),
       disabledReason: opening
         ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
         : readOnly
           ? "Open a local vault before creating notes."
-          : paneDirty
-            ? "Save or revert drafts before creating another note."
-            : currentSnapshot?.vault.id
-              ? "Threadleaf is finishing another action."
-              : "No writable vault is active.",
+          : currentSnapshot?.vault.id
+            ? "Threadleaf is finishing another action."
+            : "No writable vault is active.",
       run: openNewNoteDialog,
     },
     {
@@ -1690,16 +1686,12 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["daily", "today", "journal", "template", "date"],
       shortcut: shortcutFor("workspace.open-daily-note"),
-      enabled: Boolean(
-        currentSnapshot?.vault.id && !opening && !readOnly && !busy && !paneSaving && !paneDirty,
-      ),
+      enabled: Boolean(currentSnapshot?.vault.id && !opening && !readOnly && !busy),
       disabledReason: opening
         ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
         : readOnly
           ? "Open a local vault before using daily notes."
-          : paneDirty
-            ? "Save or revert drafts before opening today's note."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: openTodaysDailyNote,
     },
     {
@@ -1729,16 +1721,12 @@ function commandCatalog(): RendererCommand[] {
       category: "File",
       keywords: ["export", "publish", "html", "standalone", "offline", "share"],
       shortcut: shortcutFor("workspace.export-note-html"),
-      enabled: Boolean(
-        loadedNote && loadedVaultId && !opening && !busy && !saving && !dirty && !publishExportBusy,
-      ),
+      enabled: Boolean(loadedNote && loadedVaultId && !opening && !busy && !publishExportBusy),
       disabledReason: opening
         ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
         : !loadedNote
           ? "No note is open."
-          : dirty
-            ? "Save or revert the current note before exporting it."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: exportCurrentNoteAsHtml,
     },
     {
@@ -1807,7 +1795,7 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["pin", "unpin", "tab", "keep", "workspace"],
       shortcut: shortcutFor("workspace.toggle-tab-pin"),
-      enabled: Boolean(activeTab && loadedVaultId && !opening && !busy && !saving),
+      enabled: Boolean(activeTab && loadedVaultId && !opening && !busy),
       disabledReason: opening
         ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
         : !activeTab
@@ -1821,14 +1809,12 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["move", "rename", "path", "file", "refactor"],
       shortcut: shortcutFor("workspace.move-note"),
-      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving && !dirty),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy),
       disabledReason: !loadedNote
         ? "No note is open."
         : readOnly
           ? "Open a local vault before moving notes."
-          : dirty
-            ? "Save or revert the current note before moving it."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: openMoveNoteDialog,
     },
     {
@@ -1847,14 +1833,12 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["delete", "remove", "trash", "recover", "file"],
       shortcut: shortcutFor("workspace.delete-note"),
-      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving && !dirty),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy),
       disabledReason: !loadedNote
         ? "No note is open."
         : readOnly
           ? "Open a local vault before moving notes to trash."
-          : dirty
-            ? "Save or revert the current note before moving it to trash."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: openDeleteNoteDialog,
     },
     {
@@ -1863,16 +1847,12 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["close", "tab", "note"],
       shortcut: shortcutFor("workspace.close-tab"),
-      enabled: Boolean(
-        loadedNote && loadedVaultId && !busy && !saving && !dirty && !activeTab?.pinned,
-      ),
+      enabled: Boolean(loadedNote && loadedVaultId && !busy && !activeTab?.pinned),
       disabledReason: !loadedNote
         ? "No note tab is active."
         : activeTab?.pinned
           ? "Unpin the current tab before closing it."
-          : dirty
-            ? "Save or revert the current note before closing it."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: closeActiveTab,
     },
     {
@@ -1881,14 +1861,10 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["back", "history", "previous", "note", "navigation"],
       shortcut: shortcutFor("workspace.go-back"),
-      enabled: Boolean(
-        workspacePaneSnapshot()?.canGoBack && !opening && !busy && !saving && !dirty,
-      ),
-      disabledReason: dirty
-        ? "Save or revert the open draft before navigating note history."
-        : workspacePaneSnapshot()?.canGoBack
-          ? "Threadleaf is finishing another action."
-          : "No earlier note is available in this pane's history.",
+      enabled: Boolean(workspacePaneSnapshot()?.canGoBack && !opening && !busy),
+      disabledReason: workspacePaneSnapshot()?.canGoBack
+        ? "Threadleaf is finishing another action."
+        : "No earlier note is available in this pane's history.",
       run: () => navigateHistory("back"),
     },
     {
@@ -1897,14 +1873,10 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["forward", "history", "next", "note", "navigation"],
       shortcut: shortcutFor("workspace.go-forward"),
-      enabled: Boolean(
-        workspacePaneSnapshot()?.canGoForward && !opening && !busy && !saving && !dirty,
-      ),
-      disabledReason: dirty
-        ? "Save or revert the open draft before navigating note history."
-        : workspacePaneSnapshot()?.canGoForward
-          ? "Threadleaf is finishing another action."
-          : "No later note is available in this pane's history.",
+      enabled: Boolean(workspacePaneSnapshot()?.canGoForward && !opening && !busy),
+      disabledReason: workspacePaneSnapshot()?.canGoForward
+        ? "Threadleaf is finishing another action."
+        : "No later note is available in this pane's history.",
       run: () => navigateHistory("forward"),
     },
     {
@@ -1913,10 +1885,8 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["split", "pane", "right", "vertical", "side by side"],
       shortcut: null,
-      enabled: !opening && !busy && !paneSaving && (paneCount > 1 || !paneDirty),
-      disabledReason: paneDirty
-        ? "Save or revert the open draft before creating another pane."
-        : "Threadleaf is finishing another action.",
+      enabled: !opening && !busy,
+      disabledReason: "Threadleaf is finishing another action.",
       run: () => splitWorkspace("vertical"),
     },
     {
@@ -1925,10 +1895,8 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["split", "pane", "down", "horizontal", "stack"],
       shortcut: null,
-      enabled: !opening && !busy && !paneSaving && (paneCount > 1 || !paneDirty),
-      disabledReason: paneDirty
-        ? "Save or revert the open draft before creating another pane."
-        : "Threadleaf is finishing another action.",
+      enabled: !opening && !busy,
+      disabledReason: "Threadleaf is finishing another action.",
       run: () => splitWorkspace("horizontal"),
     },
     {
@@ -1937,13 +1905,11 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["move", "tab", "pane", "split"],
       shortcut: null,
-      enabled: paneCount > 1 && Boolean(loadedNote) && !busy && !paneSaving && !paneDirty,
+      enabled: paneCount > 1 && Boolean(loadedNote) && !busy,
       disabledReason:
         paneCount < 2
           ? "Split the editor before moving a tab."
-          : paneDirty
-            ? "Save or revert drafts before moving a tab."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: moveActiveTabToOtherPane,
     },
     {
@@ -1952,13 +1918,9 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["close", "pane", "split", "collapse"],
       shortcut: null,
-      enabled: paneCount > 1 && !busy && !paneSaving && !paneDirty,
+      enabled: paneCount > 1 && !busy,
       disabledReason:
-        paneCount < 2
-          ? "Only one editor pane is open."
-          : paneDirty
-            ? "Save or revert drafts before closing a pane."
-            : "Threadleaf is finishing another action.",
+        paneCount < 2 ? "Only one editor pane is open." : "Threadleaf is finishing another action.",
       run: closeActiveWorkspacePane,
     },
     {
@@ -1967,13 +1929,11 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["cycle", "forward", "switch", "tab"],
       shortcut: shortcutFor("workspace.next-tab"),
-      enabled: tabs.length > 1 && !busy && !saving && !dirty,
+      enabled: tabs.length > 1 && !busy,
       disabledReason:
         tabs.length < 2
           ? "Open another note to cycle tabs."
-          : dirty
-            ? "Save or revert the current note before switching tabs."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: () => cycleTab(1),
     },
     {
@@ -1982,13 +1942,11 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["cycle", "backward", "switch", "tab"],
       shortcut: shortcutFor("workspace.previous-tab"),
-      enabled: tabs.length > 1 && !busy && !saving && !dirty,
+      enabled: tabs.length > 1 && !busy,
       disabledReason:
         tabs.length < 2
           ? "Open another note to cycle tabs."
-          : dirty
-            ? "Save or revert the current note before switching tabs."
-            : "Threadleaf is finishing another action.",
+          : "Threadleaf is finishing another action.",
       run: () => cycleTab(-1),
     },
     {
@@ -1997,12 +1955,8 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["folder", "switch", "choose"],
       shortcut: shortcutFor("workspace.open-vault"),
-      enabled: !busy && !paneSaving && !paneDirty,
-      disabledReason: paneDirty
-        ? "Save or revert drafts before switching vaults."
-        : busy || paneSaving
-          ? "Threadleaf is finishing another action."
-          : null,
+      enabled: !busy,
+      disabledReason: busy ? "Threadleaf is finishing another action." : null,
       run: chooseVault,
     },
     {
@@ -2011,12 +1965,10 @@ function commandCatalog(): RendererCommand[] {
       category: "Workspace",
       keywords: ["quick", "switch", "note", "file", "open", "title", "path"],
       shortcut: shortcutFor("workspace.quick-switcher"),
-      enabled: Boolean(!opening && !busy && !saving && !dirty),
-      disabledReason: dirty
-        ? "Save or revert the open draft before opening the quick switcher."
-        : opening
-          ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
-          : "Threadleaf is finishing another action.",
+      enabled: Boolean(!opening && !busy),
+      disabledReason: opening
+        ? `The index for ${currentSnapshot?.startup?.targetName ?? "the vault"} is still opening.`
+        : "Threadleaf is finishing another action.",
       run: openQuickSwitcher,
     },
     {
@@ -2032,42 +1984,12 @@ function commandCatalog(): RendererCommand[] {
       run: focusVaultSearch,
     },
     {
-      id: "editor.save-note",
-      label: "Save current note",
-      category: "Editor",
-      keywords: ["write", "commit"],
-      shortcut: shortcutFor("editor.save-note"),
-      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && dirty && !busy && !saving),
-      disabledReason: !loadedNote
-        ? "No note is open."
-        : readOnly
-          ? "Open a local vault before saving notes."
-          : !dirty
-            ? "The current note has no unsaved changes."
-            : "Threadleaf is finishing another action.",
-      run: saveActiveNote,
-    },
-    {
-      id: "editor.revert-note",
-      label: "Revert current note",
-      category: "Editor",
-      keywords: ["discard", "reload", "undo changes"],
-      shortcut: shortcutFor("editor.revert-note"),
-      enabled: Boolean(loadedNote && dirty && !busy && !saving),
-      disabledReason: !loadedNote
-        ? "No note is open."
-        : !dirty
-          ? "The current note has no unsaved changes."
-          : "Threadleaf is finishing another action.",
-      run: revertActiveNote,
-    },
-    {
       id: "editor.insert-template",
       label: "Insert template",
       category: "Editor",
       keywords: ["template", "insert", "snippet", "boilerplate"],
       shortcut: shortcutFor("editor.insert-template"),
-      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy),
       disabledReason: !loadedNote
         ? "No note is open."
         : readOnly
@@ -2081,7 +2003,7 @@ function commandCatalog(): RendererCommand[] {
       category: "Editor",
       keywords: ["date", "today", "insert", "template"],
       shortcut: shortcutFor("editor.insert-current-date"),
-      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy),
       disabledReason: !loadedNote
         ? "No note is open."
         : readOnly
@@ -2095,7 +2017,7 @@ function commandCatalog(): RendererCommand[] {
       category: "Editor",
       keywords: ["time", "clock", "insert", "template"],
       shortcut: shortcutFor("editor.insert-current-time"),
-      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy && !saving),
+      enabled: Boolean(loadedNote && loadedVaultId && !readOnly && !busy),
       disabledReason: !loadedNote
         ? "No note is open."
         : readOnly
@@ -2109,7 +2031,7 @@ function commandCatalog(): RendererCommand[] {
       category: "Editor",
       keywords: ["preview", "read", "source", "markdown"],
       shortcut: shortcutFor("editor.toggle-reading-view"),
-      enabled: Boolean(loadedNote && !busy && !saving),
+      enabled: Boolean(loadedNote && !busy),
       disabledReason: loadedNote ? "Threadleaf is finishing another action." : "No note is open.",
       run: toggleDocumentView,
     },
@@ -2119,7 +2041,7 @@ function commandCatalog(): RendererCommand[] {
       category: "Editor",
       keywords: ["live preview", "source", "markdown", "edit"],
       shortcut: shortcutFor("editor.toggle-source-mode"),
-      enabled: Boolean(loadedNote && !busy && !saving),
+      enabled: Boolean(loadedNote && !busy),
       disabledReason: loadedNote ? "Threadleaf is finishing another action." : "No note is open.",
       run: toggleEditingView,
     },
@@ -2201,8 +2123,8 @@ function commandCatalog(): RendererCommand[] {
       category: owner?.name ?? "Compatibility plugin",
       keywords: [dispatchId, "plugin", "compatibility"],
       shortcut: null,
-      enabled: !busy && !saving,
-      disabledReason: busy || saving ? "Threadleaf is finishing another action." : null,
+      enabled: !busy,
+      disabledReason: busy ? "Threadleaf is finishing another action." : null,
       run: () => runCompatibilityCommand(dispatchId),
     });
   }
@@ -2570,13 +2492,11 @@ function renderDocumentView(): void {
   elements.noteView.dataset.view = reading ? "reading" : documentViewMode;
   elements.noteEditorShell.dataset.editorMode = editingViewMode;
   elements.noteEditorShell.classList.toggle("is-live-preview", editingViewMode === "live");
-  elements.editView.disabled = !hasNote || busy || saving;
-  elements.sourceView.disabled = !hasNote || busy || saving;
-  elements.readView.disabled = !hasNote || busy || saving;
+  elements.editView.disabled = !hasNote || busy;
+  elements.sourceView.disabled = !hasNote || busy;
+  elements.readView.disabled = !hasNote || busy;
   elements.pluginView.hidden = visiblePluginViewType === null && !plugin;
-  elements.pluginView.disabled = plugin
-    ? busy || saving
-    : !hasNote || !pluginViewType || busy || saving || dirty;
+  elements.pluginView.disabled = plugin ? busy : !hasNote || !pluginViewType || busy;
   elements.pluginView.textContent = pluginSettings ? "Options" : "Plugin";
   elements.editView.setAttribute("aria-pressed", String(live));
   elements.sourceView.setAttribute("aria-pressed", String(source));
@@ -2588,7 +2508,7 @@ function renderDocumentView(): void {
       ? `Open ${visiblePluginViewType} community plugin view`
       : "No community plugin view is registered";
   elements.popOutPluginView.hidden = !hasPluginSurface && !popoutOpen;
-  elements.popOutPluginView.disabled = busy || saving || (!hasPluginSurface && !popoutOpen);
+  elements.popOutPluginView.disabled = busy || (!hasPluginSurface && !popoutOpen);
   elements.popOutPluginView.textContent = popoutOpen ? "↙" : "↗";
   elements.popOutPluginView.ariaLabel = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";
   elements.popOutPluginView.title = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";
@@ -2640,10 +2560,7 @@ async function updatePluginSurfaceBounds(): Promise<void> {
 async function activatePluginView(): Promise<void> {
   const viewType = preferredPluginViewType();
   const filePath = loadedNote?.path;
-  if (!viewType || !filePath || busy || saving || dirty) {
-    if (dirty) {
-      showToast("Save or revert the current note before opening its plugin view.");
-    }
+  if (!viewType || !filePath || busy) {
     return;
   }
   const request = ++pluginSurfaceRequest;
@@ -2687,7 +2604,6 @@ async function ensurePluginLayoutReady(): Promise<void> {
 async function activatePluginSettings(pluginId: string): Promise<void> {
   if (
     busy ||
-    saving ||
     pluginBusy ||
     !(currentSnapshot?.integrations?.settingTabPluginIds ?? []).includes(pluginId)
   ) {
@@ -2832,7 +2748,7 @@ function applyWorkspaceViewDefaults(
   const vaultId = currentSnapshot?.vault.id ?? null;
   for (const paneId of ["primary", "secondary"] as const) {
     runInPaneContext(paneId, () => {
-      if (dirty || saving || (!options.force && modeInitialized && modeVaultId === vaultId)) {
+      if (!options.force && modeInitialized && modeVaultId === vaultId) {
         return;
       }
       modeVaultId = vaultId;
@@ -2972,26 +2888,27 @@ async function activatePreviewEmbed(openButton: HTMLButtonElement): Promise<void
   }
 }
 
-function openAttachmentMoveDialog(
+async function openAttachmentMoveDialog(
   sourcePath: string,
   revision: string,
   restoreFocus?: HTMLElement,
-): void {
+): Promise<void> {
   if (elements.attachmentMoveDialog.open) {
     elements.attachmentMoveTarget.focus();
     elements.attachmentMoveTarget.select();
     return;
   }
-  if (!loadedVaultId || readOnlyVault() || busy || anyPaneSaving() || anyPaneDirty()) {
+  if (!loadedVaultId || readOnlyVault() || busy) {
     showToast(
       readOnlyVault()
         ? "Open a local vault before publishing attachment copies."
-        : anyPaneDirty()
-          ? "Save or revert drafts before publishing an attachment copy."
-          : "Threadleaf is finishing another action.",
+        : "Threadleaf is finishing another action.",
     );
     return;
   }
+  const expectedVaultId = loadedVaultId;
+  if (!(await tryFlushAllPaneAutosaves("note-mutation"))) return;
+  if (loadedVaultId !== expectedVaultId || readOnlyVault() || busy) return;
   if (elements.commandPalette.open) closeCommandPalette(false);
   if (documentViewMode === "plugin") setDocumentView(editingViewMode, false);
   attachmentMoveRestoreFocus =
@@ -3024,7 +2941,7 @@ function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): void 
   if (action === "move") {
     const card = actionButton.closest<HTMLElement>(".preview-attachment-card");
     const revision = card?.dataset.threadleafAttachmentRevision;
-    if (revision) openAttachmentMoveDialog(target, revision, actionButton);
+    if (revision) void openAttachmentMoveDialog(target, revision, actionButton);
     return;
   }
   if (action !== "open" && action !== "reveal") return;
@@ -3368,10 +3285,7 @@ function openQuickSwitcher(): void {
     showToast("Wait for the vault index to finish opening.");
     return;
   }
-  if (busy || dirty || saving) {
-    if (dirty) {
-      showToast("Save or revert the open draft before opening the quick switcher.");
-    }
+  if (busy) {
     return;
   }
   if (documentViewMode === "plugin") {
@@ -3523,7 +3437,6 @@ function updateShortcutLabels(): void {
   elements.commandShortcut.textContent = shortcutFor("ui.command-palette") ?? "None";
   elements.settingsShortcut.textContent = shortcutFor("settings.open-keybindings") ?? "None";
   elements.searchShortcut.textContent = shortcutFor("workspace.focus-note-filter") ?? "None";
-  elements.saveShortcut.textContent = shortcutFor("editor.save-note") ?? "None";
   const newNoteShortcut = shortcutFor("workspace.create-note");
   elements.newNote.title = newNoteShortcut
     ? `Create a new note (${newNoteShortcut})`
@@ -3571,13 +3484,11 @@ function openNewNoteDialog(initialFolderPath: string | null = null): void {
     if (!initialPath) elements.newNotePath.select();
     return;
   }
-  if (!currentSnapshot?.vault.id || readOnlyVault() || busy || saving || dirty) {
+  if (!currentSnapshot?.vault.id || readOnlyVault() || busy) {
     showToast(
       readOnlyVault()
         ? "Open a local vault before creating notes."
-        : dirty
-          ? "Save or revert the open note before creating another."
-          : "A writable vault must be ready before creating a note.",
+        : "A writable vault must be ready before creating a note.",
     );
     return;
   }
@@ -3628,6 +3539,18 @@ async function createNewNote(): Promise<void> {
     elements.newNoteError.textContent = "Enter a note name or vault-relative path.";
     renderNewNoteDialog();
     elements.newNotePath.focus();
+    return;
+  }
+
+  if (!(await tryFlushAllPaneAutosaves("new-note"))) {
+    elements.newNoteError.textContent =
+      "Autosave could not finish. The new note was not created; your editor content is still intact.";
+    renderNewNoteDialog();
+    return;
+  }
+  if (currentSnapshot?.vault.id !== expectedVaultId) {
+    elements.newNoteError.textContent = "The active vault changed. Cancel and reopen New note.";
+    renderNewNoteDialog();
     return;
   }
 
@@ -3702,11 +3625,11 @@ function openNewFolderDialog(parentFolderPath: string | null): void {
     elements.newFolderPath.setSelectionRange(initialPath.length, initialPath.length);
     return;
   }
-  if (!currentSnapshot?.vault.id || readOnlyVault() || busy || saving || dirty) {
+  if (!currentSnapshot?.vault.id || readOnlyVault() || busy) {
     showToast(
       readOnlyVault()
         ? "This vault is read only."
-        : "Save or revert the open draft before creating a folder.",
+        : "A writable vault must be ready before creating a folder.",
     );
     return;
   }
@@ -3773,17 +3696,13 @@ async function createNewFolder(): Promise<void> {
 
 async function openTodaysDailyNote(): Promise<void> {
   const expectedVaultId = currentSnapshot?.vault.id;
-  if (
-    !expectedVaultId ||
-    readOnlyVault() ||
-    vaultOpening() ||
-    busy ||
-    anyPaneSaving() ||
-    anyPaneDirty()
-  ) {
-    if (anyPaneDirty()) {
-      showToast("Save or revert drafts before opening today's note.");
-    }
+  if (!expectedVaultId || readOnlyVault() || vaultOpening() || busy) {
+    return;
+  }
+  if (!(await tryFlushAllPaneAutosaves("daily-note"))) {
+    return;
+  }
+  if (currentSnapshot?.vault.id !== expectedVaultId) {
     return;
   }
   setActionState(true);
@@ -3812,7 +3731,7 @@ async function openTodaysDailyNote(): Promise<void> {
 }
 
 function insertEditorText(content: string): void {
-  if (!loadedNote || readOnlyVault() || busy || saving) {
+  if (!loadedNote || readOnlyVault() || busy) {
     return;
   }
   if (documentViewMode !== "live" && documentViewMode !== "source") {
@@ -3874,7 +3793,7 @@ function renderTemplatePickerDialog(): void {
 async function openTemplatePicker(): Promise<void> {
   const expectedVaultId = loadedVaultId;
   const notePath = loadedNote?.path;
-  if (!expectedVaultId || !notePath || readOnlyVault() || busy || saving) {
+  if (!expectedVaultId || !notePath || readOnlyVault() || busy) {
     return;
   }
   if (elements.templatePickerDialog.open) {
@@ -3972,7 +3891,7 @@ async function insertSelectedTemplate(): Promise<void> {
 async function insertFormattedWorkflowValue(value: "date" | "time"): Promise<void> {
   const expectedVaultId = loadedVaultId;
   const notePath = loadedNote?.path;
-  if (!expectedVaultId || !notePath || readOnlyVault() || busy || saving) {
+  if (!expectedVaultId || !notePath || readOnlyVault() || busy) {
     return;
   }
   setActionState(true);
@@ -4109,7 +4028,10 @@ function renderPropertyDialog(): void {
   configurePropertyValueInput();
 }
 
-function openPropertyDialog(mode: PropertyDialogMode, property?: WorkspacePropertySummary): void {
+async function openPropertyDialog(
+  mode: PropertyDialogMode,
+  property?: WorkspacePropertySummary,
+): Promise<void> {
   const blocked = propertyEditBlockReason();
   if (blocked) {
     showToast(blocked);
@@ -4122,6 +4044,9 @@ function openPropertyDialog(mode: PropertyDialogMode, property?: WorkspaceProper
     showToast("This property cannot be changed losslessly yet.");
     return;
   }
+  const paneId = activePaneContextId;
+  if (!(await tryFlushPaneAutosave(paneId, "note-mutation"))) return;
+  if (propertyEditBlockReason() || !loadedNote || !loadedVaultId) return;
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
   }
@@ -4356,24 +4281,25 @@ function renderMoveNoteDialog(): void {
   }
 }
 
-function openMoveNoteDialog(): void {
+async function openMoveNoteDialog(): Promise<void> {
   if (elements.moveNoteDialog.open) {
     elements.moveNoteTarget.focus();
     elements.moveNoteTarget.select();
     return;
   }
-  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy || saving || dirty) {
+  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy) {
     showToast(
       readOnlyVault()
         ? "Open a local vault before moving notes."
-        : dirty
-          ? "Save or revert the current note before moving it."
-          : loadedNote
-            ? "Threadleaf is finishing another action."
-            : "Open a note before moving or renaming it.",
+        : loadedNote
+          ? "Threadleaf is finishing another action."
+          : "Open a note before moving or renaming it.",
     );
     return;
   }
+  const paneId = activePaneContextId;
+  if (!(await tryFlushPaneAutosave(paneId, "note-mutation"))) return;
+  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy) return;
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
   }
@@ -4569,8 +4495,7 @@ function renderAttachmentMoveDialog(): void {
   elements.attachmentMoveTarget.disabled = attachmentMoveBusy;
   elements.attachmentMoveClose.disabled = attachmentMoveBusy;
   elements.attachmentMoveCancel.disabled = attachmentMoveBusy;
-  elements.attachmentMoveSubmit.disabled =
-    attachmentMoveBusy || staleVault || readOnlyVault() || anyPaneDirty();
+  elements.attachmentMoveSubmit.disabled = attachmentMoveBusy || staleVault || readOnlyVault();
   elements.attachmentMoveSubmit.textContent = attachmentMoveBusy
     ? attachmentMoveConfirmationId
       ? "Publishing…"
@@ -4672,10 +4597,14 @@ async function moveCurrentAttachment(): Promise<void> {
     elements.attachmentMoveTarget.focus();
     return;
   }
-  if (currentSnapshot?.vault.id !== expectedVaultId || anyPaneDirty()) {
-    elements.attachmentMoveError.textContent = anyPaneDirty()
-      ? "Save or revert drafts before publishing an attachment copy."
-      : "The vault changed. Cancel and reopen Publish copy.";
+  if (!(await tryFlushAllPaneAutosaves("note-mutation"))) {
+    elements.attachmentMoveError.textContent =
+      "Autosave could not finish. The attachment was not published; editor content remains intact.";
+    renderAttachmentMoveDialog();
+    return;
+  }
+  if (currentSnapshot?.vault.id !== expectedVaultId) {
+    elements.attachmentMoveError.textContent = "The vault changed. Cancel and reopen Publish copy.";
     attachmentMoveBlockers = [];
     attachmentMoveRewrites = [];
     attachmentMoveConfirmationId = null;
@@ -4864,23 +4793,24 @@ function renderDeleteNoteDialog(): void {
       : "Active vault";
 }
 
-function openDeleteNoteDialog(): void {
+async function openDeleteNoteDialog(): Promise<void> {
   if (elements.deleteNoteDialog.open) {
     elements.deleteNoteCancel.focus();
     return;
   }
-  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy || saving || dirty) {
+  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy) {
     showToast(
       readOnlyVault()
         ? "Open a local vault before moving notes to trash."
-        : dirty
-          ? "Save or revert the current note before moving it to trash."
-          : loadedNote
-            ? "Threadleaf is finishing another action."
-            : "Open a note before moving it to trash.",
+        : loadedNote
+          ? "Threadleaf is finishing another action."
+          : "Open a note before moving it to trash.",
     );
     return;
   }
+  const paneId = activePaneContextId;
+  if (!(await tryFlushPaneAutosave(paneId, "note-mutation"))) return;
+  if (!loadedNote || !loadedVaultId || readOnlyVault() || busy) return;
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
   }
@@ -7474,7 +7404,7 @@ function renderPluginSettings(): void {
     options.className = "secondary-button plugin-options-button";
     options.textContent = "Options";
     options.hidden = !hasSettings;
-    options.disabled = disabled || safeMode || restricted || pluginBusy || busy || saving;
+    options.disabled = disabled || safeMode || restricted || pluginBusy || busy;
     options.ariaLabel = `Open ${plugin.name} options`;
     options.addEventListener("click", () => void activatePluginSettings(plugin.id));
     controls.append(runtimeState, packageControls, authorityAction, options, toggle);
@@ -8088,14 +8018,14 @@ function publishExportIdentityIsCurrent(
 }
 
 async function exportCurrentNoteAsHtml(): Promise<void> {
-  const note = loadedNote;
-  const expectedVaultId = loadedVaultId;
-  if (!note || !expectedVaultId || dirty || saving || busy || publishExportBusy) {
-    if (dirty) {
-      showToast("Save or revert the current note before exporting it.");
-    }
+  if (!loadedNote || !loadedVaultId || busy || publishExportBusy) {
     return;
   }
+  const paneId = activePaneContextId;
+  if (!(await tryFlushPaneAutosave(paneId, "note-mutation"))) return;
+  const note = loadedNote;
+  const expectedVaultId = loadedVaultId;
+  if (!note || !expectedVaultId || busy || publishExportBusy) return;
 
   publishExportBusy = true;
   setActionState(true);
@@ -8815,16 +8745,11 @@ function renderWorkspacePanes(
       "aria-pressed",
       String(paneCount > 1 && workspace?.splitDirection === "horizontal"),
     );
-    const session = paneSession(paneId);
-    const historyBlocked = busy || session.saving || session.dirty;
+    const historyBlocked = busy;
     pane.navigateBack.disabled = !available || historyBlocked || !paneSnapshot?.canGoBack;
     pane.navigateForward.disabled = !available || historyBlocked || !paneSnapshot?.canGoForward;
-    pane.navigateBack.title = session.dirty
-      ? "Save or revert the open draft before navigating note history"
-      : "Go back in note history";
-    pane.navigateForward.title = session.dirty
-      ? "Save or revert the open draft before navigating note history"
-      : "Go forward in note history";
+    pane.navigateBack.title = "Go back in note history";
+    pane.navigateForward.title = "Go forward in note history";
   }
 
   const displayedNotes = new Map<WorkspacePaneId, WorkspaceNoteSnapshot | null>();
@@ -9210,9 +9135,8 @@ function render(snapshot: RuntimeSnapshot): void {
   renderEvents(snapshot);
   setActionState(busy);
   elements.fileSearch.disabled = opening;
-  elements.openVault.disabled = busy || anyPaneSaving();
-  elements.newNote.disabled =
-    opening || readOnlyVault() || busy || anyPaneSaving() || anyPaneDirty();
+  elements.openVault.disabled = busy;
+  elements.newNote.disabled = opening || readOnlyVault() || busy;
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
   }
@@ -9319,20 +9243,22 @@ function tabsElementForPane(paneId: WorkspacePaneId): HTMLElement {
   return pane.noteTabs;
 }
 
-function finishTabDrag(
+async function finishTabDrag(
   targetIndex: number | null = null,
   targetPaneId: WorkspacePaneId | null = currentTabDrag?.targetPaneId ?? null,
-): void {
+): Promise<void> {
   const drag = currentTabDrag;
   clearWorkspaceTabDragVisuals();
   currentTabDrag = null;
-  if (!drag || busy || saving || anyPaneDirty()) {
+  if (!drag || busy) {
     return;
   }
   const expectedVaultId = currentSnapshot?.vault.id;
   if (!expectedVaultId) {
     return;
   }
+  if (!(await tryFlushAllPaneAutosaves("tab-reorder"))) return;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return;
   if (drag.targetPaneId !== drag.paneId && targetPaneId === drag.targetPaneId) {
     void runAction(async () => {
       const moved = await window.threadleaf.moveNoteToWorkspacePane(
@@ -9391,7 +9317,7 @@ function bindWorkspaceKeyboardShortcuts(): void {
   document.addEventListener(
     "pointerdown",
     (event) => {
-      if (event.button !== 0 || busy || saving || anyPaneDirty()) {
+      if (event.button !== 0 || busy) {
         return;
       }
       const target =
@@ -9464,7 +9390,7 @@ function bindWorkspaceKeyboardShortcuts(): void {
       const targetIndex = targetPaneId
         ? updateTabDragTarget(targetPaneId, tabsElementForPane(targetPaneId), event.clientX)
         : null;
-      finishTabDrag(targetIndex, targetPaneId ?? gesture.paneId);
+      void finishTabDrag(targetIndex, targetPaneId ?? gesture.paneId);
       window.setTimeout(() => {
         if (suppressPointerActivationPath === gesture.path) {
           suppressPointerActivationPath = null;
@@ -9483,7 +9409,7 @@ function bindWorkspaceKeyboardShortcuts(): void {
       pointerTabGesture = null;
       suppressPointerActivationPath = null;
       if (currentTabDrag?.path === gesture.path) {
-        finishTabDrag(null, gesture.paneId);
+        void finishTabDrag(null, gesture.paneId);
       }
     },
     true,
@@ -9544,7 +9470,7 @@ function bindTabDragSurface(paneId: WorkspacePaneId, tabsElement: HTMLElement): 
   }
   tabsElement.dataset.dragBound = "true";
   tabsElement.addEventListener("dragover", (event) => {
-    if (!currentTabDrag || busy || saving || anyPaneDirty()) {
+    if (!currentTabDrag || busy) {
       return;
     }
     event.preventDefault();
@@ -9556,7 +9482,7 @@ function bindTabDragSurface(paneId: WorkspacePaneId, tabsElement: HTMLElement): 
     }
     event.preventDefault();
     const targetIndex = updateTabDragTarget(paneId, tabsElement, event.clientX);
-    finishTabDrag(targetIndex, paneId);
+    void finishTabDrag(targetIndex, paneId);
   });
   tabsElement.addEventListener("dragleave", (event) => {
     if (event.relatedTarget instanceof Node && tabsElement.contains(event.relatedTarget)) {
@@ -9640,9 +9566,8 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     });
 
     wrapper.addEventListener("dragstart", (event) => {
-      if (busy || saving || anyPaneDirty()) {
+      if (busy) {
         event.preventDefault();
-        showToast("Save or revert drafts before reordering tabs.");
         return;
       }
       currentTabDrag = {
@@ -9660,7 +9585,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     });
     wrapper.addEventListener("dragend", () => {
       if (currentTabDrag?.path === tab.path) {
-        finishTabDrag(null, paneId);
+        void finishTabDrag(null, paneId);
       }
     });
 
@@ -9673,7 +9598,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     pin.ariaLabel = `${tab.pinned ? "Unpin" : "Pin"} ${tab.path}`;
     pin.title = `${tab.pinned ? "Unpin" : "Pin"} ${tab.path}`;
     pin.textContent = tab.pinned ? "Unpin" : "Pin";
-    pin.disabled = busy || saving;
+    pin.disabled = busy;
     pin.addEventListener("click", (event) => {
       event.stopPropagation();
       void toggleTabPin(tab.path, paneId);
@@ -9685,12 +9610,8 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     close.dataset.notePath = tab.path;
     close.ariaLabel = `Close ${tab.path}`;
     close.textContent = "×";
-    close.disabled = busy || saving || (!tab.pinned && isActive && dirty);
-    close.title = tab.pinned
-      ? `Unpin ${tab.path} before closing it`
-      : isActive && dirty
-        ? "Save or revert this note before closing it"
-        : `Close ${tab.path}`;
+    close.disabled = busy || tab.pinned;
+    close.title = tab.pinned ? `Unpin ${tab.path} before closing it` : `Close ${tab.path}`;
     close.addEventListener("click", (event) => {
       event.stopPropagation();
       void closeTab(tab.path, paneId);
@@ -10880,7 +10801,7 @@ function renderProperties(note: WorkspaceNoteSnapshot | null): void {
     const type = document.createElement("small");
     type.textContent = property.type === "unsupported" ? "Read only" : property.type;
     edit.append(copy, type);
-    edit.addEventListener("click", () => openPropertyDialog("edit", property));
+    edit.addEventListener("click", () => void openPropertyDialog("edit", property));
 
     const remove = document.createElement("button");
     remove.type = "button";
@@ -10889,7 +10810,7 @@ function renderProperties(note: WorkspaceNoteSnapshot | null): void {
     remove.dataset.propertyType = property.type;
     remove.setAttribute("aria-label", `Remove ${property.name} property`);
     remove.textContent = "×";
-    remove.addEventListener("click", () => openPropertyDialog("remove", property));
+    remove.addEventListener("click", () => void openPropertyDialog("remove", property));
     row.append(edit, remove);
     elements.propertyList.append(row);
   }
@@ -10931,7 +10852,7 @@ function reconcileEditor(
         kind: "external",
         title: "The open note disappeared from the index",
         message:
-          "Your unsaved text is still in the editor. Saving will preserve it through the conflict path instead of recreating or overwriting the missing note silently.",
+          "Your editor text is intact. Autosave will preserve it through the conflict-copy path instead of recreating or overwriting the missing note silently.",
       });
       return loadedNote;
     }
@@ -10968,6 +10889,9 @@ function reconcileEditor(
     dirty = externalTextFromEditor(currentText, loadedTextRepresentation) !== incomingNote.content;
     if (dirty) {
       scheduleEditorDraftPersistence();
+      paneAutosave().changed();
+    } else {
+      paneAutosave().synchronized();
     }
     clearEditNotice();
     return incomingNote;
@@ -10986,10 +10910,10 @@ function reconcileEditor(
           ? "This note changed on disk"
           : "The active disk note changed",
       message: !sameVault
-        ? "Threadleaf kept your unsaved editor text. It cannot be saved into the newly active vault; Revert to accept the new vault, or copy the text before switching back."
+        ? "Threadleaf kept the editor text and private recovery draft. The stale-vault write was stopped instead of crossing vault boundaries."
         : samePath
-          ? "Threadleaf kept your unsaved editor text. Save to preserve it as a conflict copy, or Revert to load the current disk version."
-          : "Threadleaf kept your unsaved editor text instead of switching notes. Save to preserve it, or Revert to accept the current disk selection.",
+          ? "Threadleaf kept the editor text. Autosave will preserve it as a conflict copy without overwriting the disk version."
+          : "Threadleaf kept the editor text instead of replacing it. Autosave will finish before the pending navigation continues.",
     });
     return loadedNote;
   }
@@ -11041,6 +10965,7 @@ function replaceEditorDocument(
   pendingDiskNote = null;
   diskChanged = false;
   dirty = false;
+  paneAutosave().reset();
   editorDraftId = null;
   editorDraftPersistenceState = "idle";
   editorDraftPersistenceError = null;
@@ -11129,12 +11054,15 @@ function scheduleEditorDraftPersistence(delayMs = 180): void {
 }
 
 async function flushEditorDraftPersistence(): Promise<void> {
+  let immediate: Promise<void> | null = null;
   if (editorDraftTimer !== undefined) {
     window.clearTimeout(editorDraftTimer);
     editorDraftTimer = undefined;
-    await persistCurrentEditorDraft();
+    immediate = persistCurrentEditorDraft();
   }
-  await editorDraftPersistenceTail;
+  const tail = editorDraftPersistenceTail;
+  if (immediate) await immediate;
+  await tail;
 }
 
 function clearPersistedEditorDraft(
@@ -11274,32 +11202,26 @@ async function restoreEditorDraft(draft: EditorDraftSnapshot, request: number): 
 
   const restoredNote = recoveredDraftNote(draft, diskNote);
   runInPaneContext(paneId, () => {
-    syncingEditor = true;
-    try {
-      editor.setState(createEditorState(draft.content, draft.selection, paneId));
-    } finally {
-      syncingEditor = false;
-    }
-    loadedNote = restoredNote;
-    loadedVaultId = draft.vaultId;
+    replaceEditorDocument(restoredNote, draft.vaultId);
+    editor.dispatch({
+      changes: { from: 0, to: editor.state.doc.length, insert: draft.content },
+      selection: draft.selection,
+      userEvent: "input.recover",
+    });
     loadedTextRepresentation =
       externalTextRepresentationFromDraft(draft.content, draft.textRepresentation) ??
-      externalTextRepresentation(diskNote?.content ?? draft.content);
-    editorTextUndoHistory = [];
-    editorTextRedoHistory = [];
-    syncEditorPresentation();
+      loadedTextRepresentation;
     editorDraftId = draft.draftId;
     editorDraftPersistenceState = "saved";
     editorDraftPersistenceError = null;
     pendingDiskNote = diskNote;
     diskChanged = diskNote === null || diskNote.revision !== draft.baseRevision;
-    dirty = true;
     setEditNotice({
       kind: diskChanged ? "conflict" : "external",
-      title: diskChanged ? "Recovered draft, disk changed" : "Recovered unsaved draft",
+      title: diskChanged ? "Recovered edit, disk changed" : "Recovered edit",
       message: diskChanged
-        ? "Threadleaf restored your private draft without overwriting the changed or missing vault note. Save to preserve it through the conflict path, or Revert to accept disk state."
-        : "Threadleaf restored the exact private draft and selection from before the renderer stopped. Save it to the vault or Revert to discard it.",
+        ? "Threadleaf restored the private recovery draft and will preserve it through the conflict-copy path without overwriting the changed or missing note."
+        : "Threadleaf restored the exact private draft and selection. Autosave is committing it to the vault; Undo discards the recovered edit.",
     });
   });
   render(snapshot);
@@ -11412,20 +11334,18 @@ function renderEmpty(container: HTMLElement, message: string): void {
 }
 
 function renderEditControls(): void {
-  let state: "empty" | "saved" | "dirty" | "conflict" | "saving" = "empty";
+  const autosave = paneAutosave(activePaneContextId);
+  let state: "empty" | "saved" | "conflict" | "saving" = "empty";
   let label = "No note";
-  if (saving) {
-    state = "saving";
-    label = "Saving";
-  } else if (dirty && editorDraftPersistenceState === "error") {
+  if (autosave.error || (dirty && editorDraftPersistenceState === "error")) {
     state = "conflict";
-    label = "Unsaved, recovery failed";
+    label = "Autosave paused";
   } else if (dirty && diskChanged) {
     state = "conflict";
-    label = "Unsaved, disk changed";
-  } else if (dirty) {
-    state = "dirty";
-    label = "Unsaved";
+    label = "External change detected";
+  } else if (saving || autosave.saving || autosave.pending) {
+    state = "saving";
+    label = saving || autosave.saving ? "Saving" : "Saving soon";
   } else if (loadedNote) {
     state = "saved";
     label = readOnlyVault() ? "Read only" : "Saved";
@@ -11433,60 +11353,38 @@ function renderEditControls(): void {
   elements.editState.dataset.state = state;
   elements.editState.dataset.draftState = editorDraftPersistenceState;
   elements.editState.textContent = label;
-  elements.editState.title = editorDraftPersistenceError
-    ? `Private draft recovery failed: ${editorDraftPersistenceError}`
-    : dirty && editorDraftPersistenceState === "saved"
-      ? "Unsaved changes are protected in Threadleaf's private recovery store."
-      : dirty && editorDraftPersistenceState === "pending"
-        ? "Threadleaf is protecting this draft in private recovery storage."
+  elements.editState.title = autosave.error
+    ? `Autosave paused: ${autosave.error.message}`
+    : editorDraftPersistenceError
+      ? `Private draft recovery failed: ${editorDraftPersistenceError}`
+      : autosave.pending
+        ? "Threadleaf will save this edit after a brief pause."
         : "";
   renderBookmarkToggle();
   const opening = vaultOpening();
   const readOnly = readOnlyVault();
   const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
-  const splitBlocked = busy || anyPaneSaving() || (paneCount < 2 && anyPaneDirty());
-  elements.newNote.disabled = opening || readOnly || busy || saving || dirty;
+  const splitBlocked = busy;
+  elements.newNote.disabled = opening || readOnly || busy;
   elements.exportNote.disabled =
-    opening || busy || saving || dirty || publishExportBusy || !loadedNote || !loadedVaultId;
-  elements.exportNote.title = dirty
-    ? "Save or revert the current note before exporting it"
-    : "Export current note as standalone HTML";
-  elements.moveNote.disabled = readOnly || busy || saving || dirty || !loadedNote || !loadedVaultId;
-  elements.deleteNote.disabled =
-    readOnly || busy || saving || dirty || !loadedNote || !loadedVaultId;
-  elements.saveNote.disabled =
-    readOnly || busy || saving || !dirty || !loadedNote || !loadedVaultId;
-  elements.revertNote.disabled = busy || saving || !dirty || !loadedNote;
+    opening || busy || publishExportBusy || !loadedNote || !loadedVaultId;
+  elements.exportNote.title = "Export current note as standalone HTML";
+  elements.moveNote.disabled = readOnly || busy || !loadedNote || !loadedVaultId;
+  elements.deleteNote.disabled = readOnly || busy || !loadedNote || !loadedVaultId;
   elements.splitPaneRight.disabled = opening || splitBlocked;
   elements.splitPaneDown.disabled = opening || splitBlocked;
-  elements.moveTabPane.disabled =
-    opening || paneCount < 2 || busy || anyPaneSaving() || anyPaneDirty() || !loadedNote;
-  elements.closePane.disabled =
-    opening || paneCount < 2 || busy || anyPaneSaving() || anyPaneDirty();
+  elements.moveTabPane.disabled = opening || paneCount < 2 || busy || !loadedNote;
+  elements.closePane.disabled = opening || paneCount < 2 || busy;
   const activePane = workspacePaneSnapshot();
-  const historyBlocked = busy || saving || dirty;
+  const historyBlocked = busy;
   elements.navigateBack.disabled = historyBlocked || !activePane?.canGoBack;
   elements.navigateForward.disabled = historyBlocked || !activePane?.canGoForward;
-  elements.navigateBack.title = dirty
-    ? "Save or revert the open draft before navigating note history"
-    : "Go back in note history";
-  elements.navigateForward.title = dirty
-    ? "Save or revert the open draft before navigating note history"
-    : "Go forward in note history";
-  elements.splitPaneRight.title =
-    paneCount < 2 && anyPaneDirty()
-      ? "Save or revert the open draft before creating another pane"
-      : "Split editor right";
-  elements.splitPaneDown.title =
-    paneCount < 2 && anyPaneDirty()
-      ? "Save or revert the open draft before creating another pane"
-      : "Split editor down";
-  elements.moveTabPane.title = anyPaneDirty()
-    ? "Save or revert drafts before moving a tab between panes"
-    : "Move current tab to the other pane";
-  elements.closePane.title = anyPaneDirty()
-    ? "Save or revert drafts before closing a pane"
-    : "Close this editor pane";
+  elements.navigateBack.title = "Go back in note history";
+  elements.navigateForward.title = "Go forward in note history";
+  elements.splitPaneRight.title = "Split editor right";
+  elements.splitPaneDown.title = "Split editor down";
+  elements.moveTabPane.title = "Move current tab to the other pane";
+  elements.closePane.title = "Close this editor pane";
   renderTabs(opening ? [] : (workspacePaneSnapshot()?.tabs ?? []), loadedNote?.path ?? null);
   renderEditNotice();
   renderDocumentView();
@@ -11526,22 +11424,18 @@ async function closeTab(
   paneId: WorkspacePaneId = activePaneContextId,
 ): Promise<void> {
   activatePaneContext(paneId);
-  if (busy || saving) {
+  if (busy) {
     return;
   }
   const expectedVaultId = currentSnapshot?.vault.id;
   if (!expectedVaultId) {
     return;
   }
+  if (!(await tryFlushPaneAutosave(paneId, "tab-close"))) return;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return;
   const tab = workspacePaneSnapshot(paneId)?.tabs.find((candidate) => candidate.path === filePath);
   if (tab?.pinned) {
     await runAction(() => window.threadleaf.closeNote(filePath, expectedVaultId, paneId));
-    return;
-  }
-  if (loadedNote?.path === filePath && dirty) {
-    showToast("Save or revert the current note before closing its tab.");
-    setDocumentView("source");
-    editor.focus();
     return;
   }
   await runAction(() => window.threadleaf.closeNote(filePath, expectedVaultId, paneId));
@@ -11563,7 +11457,7 @@ async function toggleTabPin(
   paneId: WorkspacePaneId = activePaneContextId,
 ): Promise<void> {
   activatePaneContext(paneId);
-  if (busy || saving) {
+  if (busy) {
     return;
   }
   const expectedVaultId = currentSnapshot?.vault.id;
@@ -11579,16 +11473,15 @@ async function reorderTab(
   targetIndex: number,
 ): Promise<void> {
   activatePaneContext(paneId);
-  if (busy || saving || anyPaneDirty()) {
-    if (anyPaneDirty()) {
-      showToast("Save or revert drafts before reordering tabs.");
-    }
+  if (busy) {
     return;
   }
   const expectedVaultId = currentSnapshot?.vault.id;
   if (!expectedVaultId || !Number.isSafeInteger(targetIndex)) {
     return;
   }
+  if (!(await tryFlushAllPaneAutosaves("tab-reorder"))) return;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return;
   await runAction(() =>
     window.threadleaf.reorderWorkspaceTab(filePath, paneId, targetIndex, expectedVaultId),
   );
@@ -11609,13 +11502,7 @@ async function cycleTab(
 ): Promise<void> {
   activatePaneContext(paneId);
   const tabs = workspacePaneSnapshot(paneId)?.tabs ?? [];
-  if (tabs.length < 2 || busy || saving) {
-    return;
-  }
-  if (dirty) {
-    showToast("Save or revert the current note before switching tabs.");
-    setDocumentView("source");
-    editor.focus();
+  if (tabs.length < 2 || busy) {
     return;
   }
   const activePath = loadedNote?.path ?? tabs.find((tab) => tab.active)?.path;
@@ -11637,12 +11524,9 @@ async function openNote(
   if (busy) {
     return false;
   }
-  if (dirty || saving) {
-    showToast("Save or revert the open note before navigating away.");
-    setDocumentView("source");
-    editor.focus();
-    return false;
-  }
+  const expectedVaultId = currentSnapshot?.vault.id;
+  if (!expectedVaultId || !(await tryFlushPaneAutosave(paneId, "note-switch"))) return false;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return false;
   await runAction(() => window.threadleaf.openNote(filePath, paneId, activate));
   if (!activate) {
     showToast(`Opened ${filePath} in the background.`);
@@ -11674,12 +11558,6 @@ async function navigateHistory(
   if (!expectedVaultId || busy) {
     return;
   }
-  if (dirty || saving) {
-    showToast("Save or revert the open note before navigating history.");
-    setDocumentView("source");
-    editor.focus();
-    return;
-  }
   const pane = workspacePaneSnapshot(paneId);
   if (
     (direction === "back" && !pane?.canGoBack) ||
@@ -11687,6 +11565,8 @@ async function navigateHistory(
   ) {
     return;
   }
+  if (!(await tryFlushPaneAutosave(paneId, "note-switch"))) return;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return;
   await runAction(() =>
     direction === "back"
       ? window.threadleaf.goBack(expectedVaultId, paneId)
@@ -11703,11 +11583,7 @@ async function chooseVault(): Promise<void> {
   if (busy) {
     return;
   }
-  if (anyPaneDirty() || anyPaneSaving()) {
-    showToast("Save or revert drafts in every pane before switching vaults.");
-    editor.focus();
-    return;
-  }
+  if (!(await tryFlushAllPaneAutosaves("vault-switch"))) return;
   try {
     setActionState(true);
     const response = await window.threadleaf.chooseVault();
@@ -11725,92 +11601,104 @@ async function chooseVault(): Promise<void> {
   }
 }
 
-async function saveActiveNote(): Promise<void> {
-  if (!loadedNote || !loadedVaultId || !dirty || saving || busy) {
-    return;
-  }
-  const path = loadedNote.path;
-  const expectedRevision = loadedNote.revision;
-  const expectedVaultId = loadedVaultId;
-  const content = externalTextFromEditor(editor.state.doc.toString(), loadedTextRepresentation);
-  saving = true;
-  savingContent = content;
-  renderEditControls();
-  setActionState(busy);
-  await flushEditorDraftPersistence();
-  const savedDraftId = editorDraftId;
-  const savedDraftVaultId = loadedVaultId;
-  const savedDraftPersistenceState = editorDraftPersistenceState;
-  const savedDraftPersistenceError = editorDraftPersistenceError;
-  editorDraftId = null;
+function currentPendingNoteAutosave(): PendingNoteAutosave | null {
+  if (!dirty || !loadedNote || !loadedVaultId || readOnlyVault()) return null;
+  return {
+    paneId: activePaneContextId,
+    path: loadedNote.path,
+    content: externalTextFromEditor(editor.state.doc.toString(), loadedTextRepresentation),
+    expectedRevision: loadedNote.revision,
+    expectedVaultId: loadedVaultId,
+  };
+}
+
+async function persistPendingNoteAutosave(pending: PendingNoteAutosave): Promise<void> {
+  runInPaneContext(pending.paneId, () => {
+    saving = true;
+    savingContent = pending.content;
+    renderEditControls();
+  });
   try {
+    await runInPaneContext(pending.paneId, flushEditorDraftPersistence);
     const response = await window.threadleaf.saveNote(
-      path,
-      content,
-      expectedRevision,
-      expectedVaultId,
+      pending.path,
+      pending.content,
+      pending.expectedRevision,
+      pending.expectedVaultId,
+      pending.paneId,
     );
     render(response.snapshot);
-    if (savedDraftId && savedDraftVaultId) {
-      clearPersistedEditorDraft(savedDraftVaultId, savedDraftId);
-    }
-    if (response.outcome.status === "conflict") {
+    runInPaneContext(pending.paneId, () => {
+      if (response.outcome.status === "conflict") {
+        setEditNotice({
+          kind: "conflict",
+          title: "Edit preserved as a conflict note",
+          message: `The original changed on disk and was not overwritten. Autosave continued in ${response.outcome.conflictPath}.`,
+        });
+        showToast(`Preserved as ${response.outcome.conflictPath}`);
+      } else if (!dirty) {
+        clearEditNotice();
+      }
+      if (!dirty) clearCurrentEditorDraft();
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runInPaneContext(pending.paneId, () => {
       setEditNotice({
         kind: "conflict",
-        title: "Your edit was preserved as a conflict note",
-        message: `The original changed on disk and was not overwritten. Your version is now ${response.outcome.conflictPath}.`,
+        title: "Autosave paused",
+        message: `Threadleaf kept the editor and recovery draft intact. The vault write failed: ${message}`,
       });
-      showToast(`Preserved as ${response.outcome.conflictPath}`);
-    } else if (dirty) {
-      showToast("Saved, but the note changed again on disk.");
-    } else {
-      clearEditNotice();
-      showToast(`Saved ${response.outcome.path}`);
-    }
-  } catch (error) {
-    if (!editorDraftId && savedDraftId) {
-      editorDraftId = savedDraftId;
-      editorDraftPersistenceState = savedDraftPersistenceState;
-      editorDraftPersistenceError = savedDraftPersistenceError;
-    }
-    showToast(error instanceof Error ? error.message : String(error));
+      showToast(`Autosave paused: ${message}`);
+    });
+    throw error;
   } finally {
-    saving = false;
-    savingContent = null;
-    if (!dirty) {
-      editorDraftPersistenceState = "idle";
-      editorDraftPersistenceError = null;
-    }
-    setActionState(busy);
+    runInPaneContext(pending.paneId, () => {
+      saving = false;
+      savingContent = null;
+      if (!dirty) {
+        editorDraftPersistenceState = "idle";
+        editorDraftPersistenceError = null;
+      }
+      renderEditControls();
+    });
   }
 }
 
-function revertActiveNote(): void {
-  if (!dirty || saving || busy) {
-    return;
-  }
-  const diskNote = diskChanged
-    ? (pendingDiskNote ?? workspacePaneSnapshot()?.activeNote ?? null)
-    : loadedNote;
-  const discardedDraftId = editorDraftId;
-  const discardedVaultId = loadedVaultId;
-  replaceEditorDocument(
-    diskNote,
-    diskChanged ? (currentSnapshot?.vault.id ?? null) : loadedVaultId,
-    {
-      anchor: editor.state.selection.main.anchor,
-      head: editor.state.selection.main.head,
-    },
+async function flushPaneAutosave(
+  paneId: WorkspacePaneId,
+  reason: AutosaveFlushReason,
+): Promise<void> {
+  await paneAutosave(paneId).flush(reason);
+}
+
+async function flushAllPaneAutosaves(reason: AutosaveFlushReason): Promise<void> {
+  await Promise.all(
+    (["primary", "secondary"] as const)
+      .filter((paneId) => workspacePaneSnapshot(paneId) !== null)
+      .map((paneId) => flushPaneAutosave(paneId, reason)),
   );
-  if (discardedDraftId && discardedVaultId) {
-    clearPersistedEditorDraft(discardedVaultId, discardedDraftId);
+}
+
+async function tryFlushPaneAutosave(
+  paneId: WorkspacePaneId,
+  reason: AutosaveFlushReason,
+): Promise<boolean> {
+  try {
+    await flushPaneAutosave(paneId, reason);
+    return true;
+  } catch {
+    return false;
   }
-  if (currentSnapshot) {
-    render(currentSnapshot);
-  } else {
-    renderEditControls();
+}
+
+async function tryFlushAllPaneAutosaves(reason: AutosaveFlushReason): Promise<boolean> {
+  try {
+    await flushAllPaneAutosaves(reason);
+    return true;
+  } catch {
+    return false;
   }
-  showToast(diskNote ? "Reverted to the current disk version." : "Accepted the disk deletion.");
 }
 
 function showToast(message: string): void {
@@ -11866,10 +11754,9 @@ function activateWorkspacePaneLocally(paneId: WorkspacePaneId): void {
 }
 
 function requestWorkspacePaneFocus(paneId: WorkspacePaneId): void {
-  if (!workspacePaneSnapshot(paneId) || busy || anyPaneSaving()) {
+  if (!workspacePaneSnapshot(paneId) || busy) {
     return;
   }
-  activateWorkspacePaneLocally(paneId);
   const expectedVaultId = currentSnapshot?.vault.id;
   if (!expectedVaultId) {
     return;
@@ -11877,6 +11764,18 @@ function requestWorkspacePaneFocus(paneId: WorkspacePaneId): void {
   const request = ++paneFocusRequest;
   paneFocusTail = paneFocusTail
     .then(async () => {
+      if (request !== paneFocusRequest || busy || currentSnapshot?.vault.id !== expectedVaultId) {
+        return;
+      }
+      const outgoingPaneId = activePaneContextId;
+      if (
+        outgoingPaneId !== paneId &&
+        !(await tryFlushPaneAutosave(outgoingPaneId, "pane-switch"))
+      ) {
+        return;
+      }
+      if (request !== paneFocusRequest || currentSnapshot?.vault.id !== expectedVaultId) return;
+      activateWorkspacePaneLocally(paneId);
       const snapshot = await window.threadleaf.focusWorkspacePane(paneId, expectedVaultId);
       if (
         request === paneFocusRequest &&
@@ -11895,13 +11794,11 @@ function requestWorkspacePaneFocus(paneId: WorkspacePaneId): void {
 
 async function splitWorkspace(direction: WorkspaceSplitDirection): Promise<void> {
   const expectedVaultId = currentSnapshot?.vault.id;
-  const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
-  if (!expectedVaultId || busy || anyPaneSaving() || (paneCount < 2 && anyPaneDirty())) {
-    if (paneCount < 2 && anyPaneDirty()) {
-      showToast("Save or revert the open draft before creating another pane.");
-    }
+  if (!expectedVaultId || busy) {
     return;
   }
+  if (!(await tryFlushAllPaneAutosaves("pane-split"))) return;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return;
   await runAction(() => window.threadleaf.splitWorkspace(direction, expectedVaultId));
   window.requestAnimationFrame(() => editor.focus());
 }
@@ -11922,18 +11819,11 @@ async function moveTabToOtherPane(
   expectedVaultId = currentSnapshot?.vault.id,
 ): Promise<void> {
   const toPaneId = otherWorkspacePaneId(fromPaneId);
-  if (
-    !expectedVaultId ||
-    !workspacePaneSnapshot(toPaneId) ||
-    busy ||
-    anyPaneSaving() ||
-    anyPaneDirty()
-  ) {
-    if (anyPaneDirty()) {
-      showToast("Save or revert drafts before moving a tab between panes.");
-    }
+  if (!expectedVaultId || !workspacePaneSnapshot(toPaneId) || busy) {
     return;
   }
+  if (!(await tryFlushAllPaneAutosaves("pane-move"))) return;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return;
   await runAction(() =>
     window.threadleaf.moveNoteToWorkspacePane(filePath, fromPaneId, toPaneId, expectedVaultId),
   );
@@ -11943,18 +11833,11 @@ async function moveTabToOtherPane(
 async function closeActiveWorkspacePane(): Promise<void> {
   const expectedVaultId = currentSnapshot?.vault.id;
   const paneId = activePaneContextId;
-  if (
-    !expectedVaultId ||
-    (currentSnapshot?.workspace?.panes.length ?? 0) < 2 ||
-    busy ||
-    anyPaneSaving() ||
-    anyPaneDirty()
-  ) {
-    if (anyPaneDirty()) {
-      showToast("Save or revert drafts before closing a pane.");
-    }
+  if (!expectedVaultId || (currentSnapshot?.workspace?.panes.length ?? 0) < 2 || busy) {
     return;
   }
+  if (!(await tryFlushAllPaneAutosaves("pane-close"))) return;
+  if (currentSnapshot?.vault.id !== expectedVaultId) return;
   await runAction(() => window.threadleaf.closeWorkspacePane(paneId, expectedVaultId));
   window.requestAnimationFrame(() => editor.focus());
 }
@@ -11974,17 +11857,14 @@ function renderAllPaneEditControls(): void {
 function setActionState(nextBusy: boolean): void {
   busy = nextBusy;
   const opening = vaultOpening();
-  const paneSaving = anyPaneSaving();
-  const paneDirty = anyPaneDirty();
-  elements.openVault.disabled = busy || paneSaving;
-  elements.newNote.disabled = opening || readOnlyVault() || busy || paneSaving || paneDirty;
+  elements.openVault.disabled = busy;
+  elements.newNote.disabled = opening || readOnlyVault() || busy;
   if (elements.newFolderDialog.open) {
     renderNewFolderDialog();
   }
   elements.reloadPlugin.disabled =
     opening ||
     busy ||
-    paneSaving ||
     pluginBusy ||
     pluginSafeModeActive() ||
     currentPluginPreference().compatibilityMode === "restricted" ||
@@ -11992,12 +11872,10 @@ function setActionState(nextBusy: boolean): void {
   elements.unloadPlugin.disabled =
     opening ||
     busy ||
-    paneSaving ||
     pluginBusy ||
     pluginSafeModeActive() ||
     currentPluginPreference().compatibilityMode === "restricted";
-  elements.runCommand.disabled =
-    opening || busy || paneSaving || (currentSnapshot?.commands.length ?? 0) === 0;
+  elements.runCommand.disabled = opening || busy || (currentSnapshot?.commands.length ?? 0) === 0;
   renderAllPaneEditControls();
   renderNoteBookmarks(currentLoadedWorkspaceFiles(), loadedNote?.path ?? null);
 }
@@ -12055,14 +11933,20 @@ elements.fileList.addEventListener("scroll", scheduleVirtualFileRender, { passiv
 window.addEventListener("resize", scheduleVirtualFileRender);
 
 function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneElements): void {
-  const activate = (): void => activateWorkspacePaneLocally(paneId);
+  const activate = (): boolean => {
+    if (paneId !== activePaneContextId) {
+      requestWorkspacePaneFocus(paneId);
+      return false;
+    }
+    return true;
+  };
   pane.workspacePane.addEventListener(
     "pointerdown",
     (event) => {
       if (event.button !== 0 || paneId === activePaneContextId) {
         return;
       }
-      if (busy || anyPaneSaving()) {
+      if (busy) {
         event.preventDefault();
         return;
       }
@@ -12071,24 +11955,24 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     { capture: true },
   );
   pane.workspacePane.addEventListener("focusin", () => {
-    if (paneId !== activePaneContextId && !busy && !anyPaneSaving()) {
+    if (paneId !== activePaneContextId && !busy) {
       requestWorkspacePaneFocus(paneId);
     }
   });
   pane.editView.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     setDocumentView("live");
   });
   pane.sourceView.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     setDocumentView("source");
   });
   pane.readView.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     setDocumentView("reading");
   });
   pane.pluginView.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     if (documentViewMode === "plugin") {
       setDocumentView(editingViewMode);
     } else {
@@ -12096,11 +11980,11 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     }
   });
   pane.popOutPluginView.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void togglePluginPopout();
   });
   pane.notePreview.addEventListener("click", (event) => {
-    activate();
+    if (!activate()) return;
     if (!(event.target instanceof Element)) {
       return;
     }
@@ -12131,55 +12015,47 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     }
   });
   pane.splitPaneRight.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void splitWorkspace("vertical");
   });
   pane.splitPaneDown.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void splitWorkspace("horizontal");
   });
   pane.navigateBack.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void navigateHistory("back", paneId);
   });
   pane.navigateForward.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void navigateHistory("forward", paneId);
   });
   pane.moveTabPane.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void moveActiveTabToOtherPane();
   });
   pane.closePane.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void closeActiveWorkspacePane();
   });
   pane.moveNote.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void executeRendererCommand("workspace.move-note");
   });
   pane.bookmarkNote.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void executeRendererCommand("workspace.toggle-note-bookmark");
   });
   pane.exportNote.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void executeRendererCommand("workspace.export-note-html");
   });
   pane.deleteNote.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     void executeRendererCommand("workspace.delete-note");
   });
-  pane.saveNote.addEventListener("click", () => {
-    activate();
-    void executeRendererCommand("editor.save-note");
-  });
-  pane.revertNote.addEventListener("click", () => {
-    activate();
-    void executeRendererCommand("editor.revert-note");
-  });
   pane.dismissEditNotice.addEventListener("click", () => {
-    activate();
+    if (!activate()) return;
     clearEditNotice();
   });
 }
@@ -12831,6 +12707,22 @@ const unsubscribeAppearance = window.threadleaf.onAppearance((snapshot) => {
   renderSettings();
   renderPaletteResults();
 });
+const unsubscribeAutosaveFlush = window.threadleaf.onAutosaveFlushRequest((request) => {
+  void flushAllPaneAutosaves(request.reason)
+    .then(() => {
+      window.threadleaf.completeAutosaveFlush({
+        requestId: request.requestId,
+        status: "flushed",
+      });
+    })
+    .catch((error: unknown) => {
+      window.threadleaf.completeAutosaveFlush({
+        requestId: request.requestId,
+        status: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+});
 const unsubscribeMenuCommand = window.threadleaf.onMenuCommand((commandId) => {
   const openDialog = document.querySelector<HTMLDialogElement>("dialog[open]");
   if (commandId === "ui.command-palette") {
@@ -12877,26 +12769,6 @@ const pluginSurfaceResizeObserver = new ResizeObserver(() => {
 for (const pane of paneElements.values()) {
   pluginSurfaceResizeObserver.observe(pane.pluginSurfaceHost);
 }
-window.addEventListener("beforeunload", (event) => {
-  let hasDirtyPane = false;
-  for (const paneId of ["primary", "secondary"] as const) {
-    runInPaneContext(paneId, () => {
-      if (!dirty) {
-        return;
-      }
-      hasDirtyPane = true;
-      if (editorDraftTimer !== undefined) {
-        window.clearTimeout(editorDraftTimer);
-        editorDraftTimer = undefined;
-      }
-      void persistCurrentEditorDraft();
-    });
-  }
-  if (hasDirtyPane) {
-    event.preventDefault();
-    event.returnValue = "";
-  }
-});
 window.addEventListener(
   "unload",
   () => {
@@ -12904,6 +12776,7 @@ window.addEventListener(
       window.clearTimeout(vaultSearchTimer);
     }
     for (const paneId of ["primary", "secondary"] as const) {
+      paneAutosave(paneId).dispose();
       runInPaneContext(paneId, () => {
         if (editorDraftTimer !== undefined) {
           window.clearTimeout(editorDraftTimer);
@@ -12917,6 +12790,7 @@ window.addEventListener(
     unsubscribeAccessibility();
     unsubscribeAppUpdate();
     unsubscribeAppearance();
+    unsubscribeAutosaveFlush();
     unsubscribeMenuCommand();
     systemColorScheme.removeEventListener("change", handleSystemColorSchemeChange);
     systemHighContrast.removeEventListener("change", handleSystemAccessibilityChange);

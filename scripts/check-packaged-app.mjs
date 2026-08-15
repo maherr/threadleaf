@@ -526,7 +526,7 @@ try {
     newDisabled: document.querySelector('#new-note')?.disabled,
     moveDisabled: document.querySelector('#move-note')?.disabled,
     deleteDisabled: document.querySelector('#delete-note')?.disabled,
-    saveDisabled: document.querySelector('#save-note')?.disabled,
+    manualSavePresent: document.querySelector('#save-note') !== null,
     packageSearchDisabled: document.querySelector('#plugin-index-search')?.disabled,
   }))()`);
   assert(controls.source === "Bundled read-only demo", "Bundled mode lacks a visible label.");
@@ -536,7 +536,7 @@ try {
     controls.newDisabled &&
       controls.moveDisabled &&
       controls.deleteDisabled &&
-      controls.saveDisabled &&
+      !controls.manualSavePresent &&
       controls.packageSearchDisabled,
     `Bundled mutation controls are not all disabled: ${JSON.stringify(controls)}`,
   );

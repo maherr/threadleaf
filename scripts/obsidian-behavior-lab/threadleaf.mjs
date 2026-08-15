@@ -421,7 +421,7 @@ export function assertThreadleafReceipt(receipt, { runRoot, vaultPath }) {
   assert(
     receipt.visible?.initial?.visibleText?.includes("THREADLEAF_OBSIDIAN_LAB_FIXTURE_V1") &&
       receipt.visible?.reopened?.visibleText?.includes(THREADLEAF_EDIT),
-    "Threadleaf did not visibly render the fixture and saved candidate edit.",
+    "Threadleaf did not visibly render the fixture and autosaved candidate edit.",
   );
   assert(
     receipt.screenshot?.fromSurface === true &&
@@ -681,9 +681,7 @@ export async function runThreadleafRoundtrip({
     );
     failureStage = "verify-visible-edit";
     await waitForCandidate(initial.cdp, { requireEdit: true });
-    failureStage = "save-edit";
-    await sendKey(initial.cdp, "s", "KeyS", 83, 2);
-    failureStage = "verify-saved-bytes";
+    failureStage = "wait-for-autosave";
     await waitForExactBytes(notePath, expectedBytes);
     failureStage = "close-initial";
     await closeThreadleaf(initial);
@@ -696,7 +694,7 @@ export async function runThreadleafRoundtrip({
     reopenedBytes = await fs.readFile(notePath);
     assert(
       reopenedBytes.equals(expectedBytes),
-      "Threadleaf reopened note bytes differed from the saved candidate bytes.",
+      "Threadleaf reopened note bytes differed from the autosaved candidate bytes.",
     );
     failureStage = "capture-surface";
     const surface = await bounded(
@@ -849,14 +847,14 @@ export function threadleafBehaviorMatch(reference, candidate) {
   );
   assert(
     referenceRoundtrip.reopenedSha256 === referenceRoundtrip.mutatedSha256,
-    "Obsidian external-oracle FILE-01 reopened bytes did not equal the saved bytes.",
+    "Obsidian external-oracle FILE-01 reopened bytes did not equal the autosaved bytes.",
   );
   assertThreadleafReceipt(candidate, {
     runRoot: candidate?.paths?.runRoot,
     vaultPath: candidate?.paths?.vault,
   });
   return {
-    behavior: "open fixture note, append a synthetic UTF-8 marker, save, exit, reopen",
+    behavior: "open fixture note, append a synthetic UTF-8 marker, await autosave, exit, reopen",
     referenceCell: "FILE-01",
     candidateCell: THREADLEAF_CELL_ID,
     referenceExactReopen: referenceRoundtrip.reopenedSha256 === referenceRoundtrip.mutatedSha256,
