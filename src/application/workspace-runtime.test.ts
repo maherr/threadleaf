@@ -424,6 +424,79 @@ describe("WorkspaceRuntime", () => {
     expect(current).toMatchObject({ status: "ready", page: { total: 2 } });
   });
 
+  it("retries an asynchronously assembled snapshot after the index generation advances", async () => {
+    const workspace = await openRuntime();
+    await workspace.watcher.close();
+    const before = await workspace.getSnapshot();
+    const activePath = before.workspace?.activeNote?.path;
+    if (!activePath) throw new Error("Expected an active note before the snapshot race.");
+
+    const originalReadText = workspace.kernel.readText.bind(workspace.kernel);
+    let releaseRead: () => void = () => undefined;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let markReadStarted: () => void = () => undefined;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    let blockFirstActiveRead = true;
+    vi.spyOn(workspace.kernel, "readText").mockImplementation(async (filePath) => {
+      if (blockFirstActiveRead && filePath === activePath) {
+        blockFirstActiveRead = false;
+        markReadStarted();
+        await readGate;
+      }
+      return originalReadText(filePath);
+    });
+
+    const pending = workspace.getSnapshot();
+    await readStarted;
+    let created: Awaited<ReturnType<WorkspaceRuntime["createNote"]>>;
+    try {
+      created = await workspace.createNote(
+        "Concurrent-snapshot.md",
+        "# Concurrent snapshot\n",
+        workspace.vaultId,
+      );
+    } finally {
+      releaseRead();
+    }
+    const assembled = await pending;
+
+    expect(created.outcome).toMatchObject({
+      status: "committed",
+      path: "Concurrent-snapshot.md",
+    });
+    expect(assembled.workspace).toMatchObject({
+      indexGeneration: created.snapshot.workspace?.indexGeneration,
+      filePage: { total: created.snapshot.workspace?.filePage.total },
+      census: created.snapshot.workspace?.census,
+      activeNote: { path: "Concurrent-snapshot.md" },
+    });
+  });
+
+  it("refreshes metadata when active note bytes move ahead of the captured index", async () => {
+    const workspace = await openRuntime();
+    await workspace.watcher.close();
+    const before = await workspace.getSnapshot();
+    const activeNote = before.workspace?.activeNote;
+    if (!activeNote) throw new Error("Expected an active note before the external edit.");
+    const content = "# Externally changed\n\n#external-refresh\n";
+
+    await fs.writeFile(path.join(vaultPath, activeNote.path), content, "utf8");
+    const refreshed = await workspace.getSnapshot();
+
+    expect(refreshed.workspace?.indexGeneration).not.toBe(before.workspace?.indexGeneration);
+    expect(refreshed.workspace?.activeNote).toMatchObject({
+      path: activeNote.path,
+      content,
+      tags: ["external-refresh"],
+      headings: [{ level: 1, text: "Externally changed", line: 1 }],
+    });
+    expect(refreshed.workspace?.activeNote?.revision).not.toBe(activeNote.revision);
+  });
+
   it("pages the physical Files tree with exact typed rows and explicit missing parents", async () => {
     const workspace = await openRuntime();
     await workspace.createNote("Projects/2", "# Two\n", workspace.vaultId);

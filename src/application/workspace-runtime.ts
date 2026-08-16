@@ -297,6 +297,24 @@ interface WorkspaceSnapshotIndexCapture {
   workspaceChanged: boolean;
 }
 
+interface WorkspaceSnapshotAssembly {
+  snapshot: NonNullable<RuntimeSnapshot["workspace"]>;
+  commit: () => void;
+}
+
+class WorkspaceSnapshotRevisionMismatch extends Error {
+  constructor(
+    readonly path: string,
+    readonly expectedRevision: string,
+    readonly observedRevision: string,
+  ) {
+    super(`Workspace snapshot bytes changed while metadata was being assembled: ${path}`);
+    this.name = "WorkspaceSnapshotRevisionMismatch";
+  }
+}
+
+const maximumWorkspaceSnapshotAssemblyAttempts = 8;
+
 const MAX_DESKTOP_TRASH_ENTRIES = 500;
 
 interface SaveNoteRequest {
@@ -4237,8 +4255,15 @@ export class WorkspaceRuntime {
     return snapshot;
   }
 
-  private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
-    const snapshotStartedAt = this.#diagnostics?.now();
+  private async getWorkspaceSnapshot(
+    attempt = 0,
+    snapshotStartedAt = this.#diagnostics?.now(),
+  ): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
+    if (attempt >= maximumWorkspaceSnapshotAssemblyAttempts) {
+      throw new Error(
+        `Workspace changed during ${maximumWorkspaceSnapshotAssemblyAttempts} consecutive snapshot assembly attempts.`,
+      );
+    }
     let capture: WorkspaceSnapshotIndexCapture | null = null;
     while (capture === null) {
       await this.ensureVisibleInventory();
@@ -4348,13 +4373,28 @@ export class WorkspaceRuntime {
     if (capture.workspaceChanged) {
       await this.persistWorkspaceStateBestEffort();
     }
-    return this.getWorkspaceSnapshotFromCapture(capture, snapshotStartedAt);
+
+    let assembly: WorkspaceSnapshotAssembly;
+    try {
+      assembly = await this.getWorkspaceSnapshotFromCapture(capture, snapshotStartedAt);
+    } catch (error) {
+      if (!(error instanceof WorkspaceSnapshotRevisionMismatch)) throw error;
+      await this.refreshWorkspaceSnapshotRevision(error);
+      return this.getWorkspaceSnapshot(attempt + 1, snapshotStartedAt);
+    }
+
+    const accepted = await this.withIndexStateLock(async () => {
+      if (!this.workspaceSnapshotCaptureIsCurrent(capture)) return false;
+      assembly.commit();
+      return true;
+    });
+    return accepted ? assembly.snapshot : this.getWorkspaceSnapshot(attempt + 1, snapshotStartedAt);
   }
 
   private async getWorkspaceSnapshotFromCapture(
     capture: WorkspaceSnapshotIndexCapture,
     snapshotStartedAt?: number,
-  ): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
+  ): Promise<WorkspaceSnapshotAssembly> {
     const {
       projection,
       census,
@@ -4369,6 +4409,7 @@ export class WorkspaceRuntime {
     } = capture;
     const { documents, backlinks, files } = projection;
     const noteSnapshots = new Map<string, Promise<WorkspaceNoteSnapshot>>();
+    const loadedNoteSnapshots = new Map<string, WorkspaceNoteSnapshot>();
     const loadNoteSnapshot = (filePath: string): Promise<WorkspaceNoteSnapshot> => {
       const cached = noteSnapshots.get(filePath);
       if (cached) {
@@ -4391,6 +4432,13 @@ export class WorkspaceRuntime {
       }
       const pending = this.kernel.readText(filePath).then(
         (note) => {
+          if (note.revision !== activeMetadata.revision) {
+            throw new WorkspaceSnapshotRevisionMismatch(
+              filePath,
+              activeMetadata.revision,
+              note.revision,
+            );
+          }
           const propertyInspection = inspectMarkdownNoteProperties(
             note.content,
             activeMetadata.properties,
@@ -4417,7 +4465,7 @@ export class WorkspaceRuntime {
             properties: propertyInspection.properties,
             propertyEditor: propertyInspection.editor,
           };
-          this.#retainedNotes.set(note.path, snapshot);
+          loadedNoteSnapshots.set(note.path, snapshot);
           return snapshot;
         },
         (error: unknown) => {
@@ -4433,6 +4481,7 @@ export class WorkspaceRuntime {
       return pending;
     };
     const canvasSnapshots = new Map<string, Promise<WorkspaceCanvasSnapshot>>();
+    const loadedCanvasSnapshots = new Map<string, WorkspaceCanvasSnapshot>();
     const loadCanvasSnapshot = (filePath: string): Promise<WorkspaceCanvasSnapshot> => {
       const cached = canvasSnapshots.get(filePath);
       if (cached) {
@@ -4453,7 +4502,7 @@ export class WorkspaceRuntime {
               response.status === "unavailable" ? response.message : "The active vault changed.",
             );
           }
-          this.#retainedCanvases.set(filePath, response.canvas);
+          loadedCanvasSnapshots.set(filePath, response.canvas);
           return response.canvas;
         },
         (error: unknown) => {
@@ -4522,16 +4571,6 @@ export class WorkspaceRuntime {
         .map((pane) => pane.activePath)
         .filter((filePath): filePath is string => filePath !== null),
     );
-    for (const filePath of this.#retainedNotes.keys()) {
-      if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
-        this.#retainedNotes.delete(filePath);
-      }
-    }
-    for (const filePath of this.#retainedCanvases.keys()) {
-      if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
-        this.#retainedCanvases.delete(filePath);
-      }
-    }
     const snapshot: NonNullable<RuntimeSnapshot["workspace"]> = {
       state:
         watcherError || census.state === "degraded" || inventory.state === "degraded"
@@ -4564,23 +4603,78 @@ export class WorkspaceRuntime {
         error: watcherError,
       },
     };
-    if (this.#diagnostics && snapshotStartedAt !== undefined) {
-      const shape = measureSerializableValue(snapshot);
-      this.#diagnostics.addMetric("snapshot.payload", 0, {
-        bytes: shape.bytes,
-        attributes: {
-          arrays: shape.arrays,
-          objects: shape.objects,
-          scalars: shape.scalars,
-        },
-      });
-      this.#diagnostics.addSpan("snapshot.construction", snapshotStartedAt, {
-        files: snapshot.files.length,
-        payloadBytes: shape.bytes,
-        payloadObjects: shape.objects,
-      });
-    }
-    return snapshot;
+    return {
+      snapshot,
+      commit: () => {
+        for (const [filePath, note] of loadedNoteSnapshots) {
+          this.#retainedNotes.set(filePath, note);
+        }
+        for (const [filePath, canvas] of loadedCanvasSnapshots) {
+          this.#retainedCanvases.set(filePath, canvas);
+        }
+        for (const filePath of this.#retainedNotes.keys()) {
+          if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
+            this.#retainedNotes.delete(filePath);
+          }
+        }
+        for (const filePath of this.#retainedCanvases.keys()) {
+          if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
+            this.#retainedCanvases.delete(filePath);
+          }
+        }
+        if (this.#diagnostics && snapshotStartedAt !== undefined) {
+          const shape = measureSerializableValue(snapshot);
+          this.#diagnostics.addMetric("snapshot.payload", 0, {
+            bytes: shape.bytes,
+            attributes: {
+              arrays: shape.arrays,
+              objects: shape.objects,
+              scalars: shape.scalars,
+            },
+          });
+          this.#diagnostics.addSpan("snapshot.construction", snapshotStartedAt, {
+            files: snapshot.files.length,
+            payloadBytes: shape.bytes,
+            payloadObjects: shape.objects,
+          });
+        }
+      },
+    };
+  }
+
+  private workspaceSnapshotCaptureIsCurrent(capture: WorkspaceSnapshotIndexCapture): boolean {
+    const census = this.censusSnapshot();
+    const inventory = this.inventorySnapshot();
+    return (
+      capture.indexGeneration === this.workspaceIndexGeneration() &&
+      capture.projection.generation === this.indexReactor.index.generation &&
+      !this.inventoryCaptureNeedsRetry() &&
+      capture.census.state === census.state &&
+      capture.census.generation === census.generation &&
+      capture.census.discovered === census.discovered &&
+      capture.census.indexed === census.indexed &&
+      capture.census.total === census.total &&
+      capture.census.error === census.error &&
+      capture.inventory.state === inventory.state &&
+      capture.inventory.generation === inventory.generation &&
+      capture.inventory.fileCount === inventory.fileCount &&
+      capture.inventory.folderCount === inventory.folderCount &&
+      capture.inventory.error === inventory.error &&
+      capture.watcherError === this.#watcherError &&
+      capture.lastWatchSequence === this.#lastWatchSequence &&
+      capture.lastRescanReason === this.#lastRescanReason &&
+      workspaceStatesEqual(capture.snapshotState, this.currentWorkspaceState())
+    );
+  }
+
+  private refreshWorkspaceSnapshotRevision(
+    mismatch: WorkspaceSnapshotRevisionMismatch,
+  ): Promise<void> {
+    return this.withIndexMutation(async () => {
+      const current = this.workspaceIndexProjection().documents.get(mismatch.path);
+      if (current?.revision === mismatch.observedRevision) return;
+      await this.indexReactor.index.refresh(this.kernel, mismatch.path);
+    });
   }
 
   private workspaceIndexProjection(): WorkspaceIndexProjection {
