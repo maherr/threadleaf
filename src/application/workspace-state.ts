@@ -112,9 +112,9 @@ function normalizeWorkspacePath(value: unknown): string {
   }
   const normalized = normalizeVaultPath(value);
   const folded = normalized.toLocaleLowerCase("en-US");
-  if (!folded.endsWith(".md") && !folded.endsWith(".canvas")) {
+  if (!folded.endsWith(".md") && !folded.endsWith(".canvas") && !folded.endsWith(".excalidraw")) {
     throw new Error(
-      `Workspace tabs can contain only Markdown notes or JSON Canvases: ${normalized}`,
+      `Workspace tabs can contain only Markdown notes, JSON Canvases, or native Excalidraw scenes: ${normalized}`,
     );
   }
   if (normalized.toLocaleLowerCase("en-US").startsWith(".obsidian/")) {

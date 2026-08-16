@@ -11,7 +11,7 @@
       "support": "supported",
       "surface": "format-parser-and-vault-kernel",
       "source": {"files": ["Drawings/Unicode Scene.excalidraw.md"]},
-      "operation": {"kind": "edit-text-and-allow-plugin-json-reserialization", "encoding": "json", "editedElement": "text-title"},
+      "operation": {"kind": "edit-text-and-allow-plugin-json-reserialization", "encoding": "json", "editedElement": "text1234"},
       "expected": {"status": "semantic-equivalence", "nonSceneBytesEqual": true, "text": "Ébauche modifiée"},
       "allowedVariance": ["JSON object-key order", "JSON whitespace", "revision", "transactionId"]
     },
@@ -21,7 +21,7 @@
       "support": "supported",
       "surface": "format-parser-and-vault-kernel",
       "source": {"files": ["Drawings/Compressed Scene.excalidraw.md"]},
-      "operation": {"kind": "open-save-without-scene-edit", "encoding": "compressed-json"},
+      "operation": {"kind": "open-save-without-scene-edit", "encoding": "compressed-json", "pluginSettings": {"compress": true}},
       "expected": {"status": "byte-exact", "compressedPayloadOpaque": true},
       "allowedVariance": ["revision", "transactionId"]
     },
@@ -82,8 +82,8 @@
       "surface": "manual-observation-record",
       "source": {"files": ["observations/obsidian-roundtrip.v1.json"]},
       "operation": {"kind": "manual-only-official-obsidian-open-edit-save-reopen"},
-      "expected": {"status": "unverified", "reason": "No official Obsidian run was performed for this corpus."},
-      "allowedVariance": ["operator", "recordedAt", "result"]
+      "expected": {"status": "observed", "reason": "A pinned official Obsidian run exists as external evidence, not as an executable Threadleaf gate."},
+      "allowedVariance": ["operator", "recordedAt"]
     }
   ]
 }

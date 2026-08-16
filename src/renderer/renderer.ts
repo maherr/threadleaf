@@ -159,7 +159,7 @@ import {
   type MigrationReviewIdentityState,
   migrationReviewOperationIsCurrent,
 } from "./migration-review-identity";
-import { pluginViewTypeForPath } from "./plugin-view-model";
+import { pluginViewTypeForPath, workspacePluginViewTypeForPath } from "./plugin-view-model";
 import { createStandalonePublishedNoteHtml } from "./publish-export";
 import {
   maximumQuickSwitcherResults,
@@ -941,6 +941,7 @@ let renderedPreviewWatchSequence = -1;
 let renderedPreviewIndexGeneration: string | null = null;
 let previewHydrationRequest = 0;
 let pluginSurfaceRequest = 0;
+let pluginDocumentActivationRequest = 0;
 let pluginSettingsTargetId: string | null = null;
 let pluginLayoutReadyVaultId: string | null = null;
 let paletteMatches: RendererCommand[] = [];
@@ -1374,7 +1375,7 @@ function activeWorkspaceDocumentPath(
 ): string | null {
   const workspace = snapshot?.workspace;
   const pane = workspace?.panes.find((candidate) => candidate.id === workspace.activePaneId);
-  return pane?.activeCanvas?.path ?? pane?.activeNote?.path ?? null;
+  return pane?.activeCanvas?.path ?? pane?.activePluginFile?.path ?? pane?.activeNote?.path ?? null;
 }
 
 const editorStyleNonce = "threadleaf-codemirror";
@@ -2525,8 +2526,10 @@ function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
   const activePane = workspacePaneSnapshot();
   const activeCanvas = activePane?.activeCanvas;
+  const activePluginFile = activePane?.activePluginFile;
   const activeUnavailable = activePane?.activeUnavailable;
   const hasCanvas = activeCanvas !== undefined && activeCanvas !== null;
+  const hasPluginFile = activePluginFile !== undefined && activePluginFile !== null;
   const settingsPending = Boolean(currentSnapshot?.vault.id && hasNote && !settingsLoaded);
   if (settingsPending) {
     // The first settings snapshot is the only source of truth for a vault's
@@ -2539,7 +2542,7 @@ function renderDocumentView(): void {
     elements.canvasView.hidden = !hasCanvas;
     elements.pluginSurfaceHost.hidden = true;
     renderDocumentViewToolbarLabel(elements.notePath, {
-      loadedPath: loadedNote?.path ?? activeCanvas?.path ?? null,
+      loadedPath: loadedNote?.path ?? activeCanvas?.path ?? activePluginFile?.path ?? null,
       unavailable: activeUnavailable,
     });
     elements.editView.disabled = true;
@@ -2560,7 +2563,7 @@ function renderDocumentView(): void {
   const pluginSettings =
     pluginSettingsTargetId !== null ||
     currentSnapshot?.pluginSurface?.viewType === "threadleaf-plugin-settings";
-  const plugin = documentViewMode === "plugin" && (hasNote || pluginSettings);
+  const plugin = documentViewMode === "plugin" && (hasNote || hasPluginFile || pluginSettings);
   const popoutState = workspaceLayoutSnapshot?.popout.state ?? "closed";
   const popoutOpen = popoutState === "open";
   const hasPluginSurface =
@@ -2569,7 +2572,7 @@ function renderDocumentView(): void {
   const visiblePluginViewType = pluginSettings
     ? "threadleaf-plugin-settings"
     : (pluginViewType ?? (plugin ? (currentSnapshot?.pluginSurface?.viewType ?? null) : null));
-  elements.noteEmpty.hidden = hasNote || hasCanvas || plugin;
+  elements.noteEmpty.hidden = hasNote || hasCanvas || hasPluginFile || plugin;
   elements.noteEditorShell.hidden = reading;
   elements.notePreview.hidden = !reading;
   elements.noteView.hidden = !hasNote || plugin;
@@ -2590,7 +2593,9 @@ function renderDocumentView(): void {
   elements.sourceView.disabled = !hasNote || busy;
   elements.readView.disabled = !hasNote || busy;
   elements.pluginView.hidden = visiblePluginViewType === null && !plugin;
-  elements.pluginView.disabled = plugin ? busy : !hasNote || !pluginViewType || busy;
+  elements.pluginView.disabled = plugin
+    ? busy
+    : (!hasNote && !hasPluginFile) || !pluginViewType || busy;
   elements.pluginView.textContent = pluginSettings ? "Options" : "Plugin";
   elements.editView.setAttribute("aria-pressed", String(live));
   elements.sourceView.setAttribute("aria-pressed", String(source));
@@ -2616,7 +2621,7 @@ function renderDocumentView(): void {
         (pluginName ? `${pluginName} settings` : "Plugin settings"))
       : null;
   renderDocumentViewToolbarLabel(elements.notePath, {
-    loadedPath: loadedNote?.path ?? activeCanvas?.path ?? null,
+    loadedPath: loadedNote?.path ?? activeCanvas?.path ?? activePluginFile?.path ?? null,
     unavailable: activeUnavailable,
     pluginLabel,
   });
@@ -2635,7 +2640,10 @@ function renderDocumentView(): void {
 function preferredPluginViewType(
   snapshot: RuntimeSnapshot | null = currentSnapshot,
 ): string | null {
-  return loadedNote ? pluginViewTypeForPath(loadedNote.path, snapshot?.integrations) : null;
+  const filePath =
+    loadedNote?.path ??
+    workspacePaneSnapshot(activePaneContextId, snapshot)?.activePluginFile?.path;
+  return filePath ? pluginViewTypeForPath(filePath, snapshot?.integrations) : null;
 }
 
 async function updatePluginSurfaceBounds(): Promise<void> {
@@ -2653,7 +2661,8 @@ async function updatePluginSurfaceBounds(): Promise<void> {
 
 async function activatePluginView(): Promise<void> {
   const viewType = preferredPluginViewType();
-  const filePath = loadedNote?.path;
+  const filePath =
+    loadedNote?.path ?? workspacePaneSnapshot(activePaneContextId)?.activePluginFile?.path;
   if (!viewType || !filePath || busy) {
     return;
   }
@@ -2789,8 +2798,10 @@ function persistDocumentMode(): void {
 }
 
 function setDocumentView(mode: DocumentViewMode, focus = true): void {
+  const activePluginFile = workspacePaneSnapshot(activePaneContextId)?.activePluginFile;
   if (
     !loadedNote &&
+    !activePluginFile &&
     mode === "plugin" &&
     pluginSettingsTargetId === null &&
     currentSnapshot?.pluginSurface?.viewType !== "threadleaf-plugin-settings"
@@ -8902,6 +8913,21 @@ function renderWorkspacePanes(
       displayedNotes.set(paneId, null);
       continue;
     }
+    if (pane.activePluginFile) {
+      const paneUi = paneElements.get(paneId);
+      if (!paneUi) continue;
+      if (loadedNote || dirty) {
+        replaceEditorDocument(null, null);
+      }
+      loadedNote = null;
+      loadedVaultId = null;
+      paneUi.noteEmpty.hidden = true;
+      paneUi.noteView.hidden = true;
+      paneUi.canvasView.hidden = true;
+      paneUi.notePath.textContent = pane.activePluginFile.path;
+      displayedNotes.set(paneId, null);
+      continue;
+    }
     const displayedNote = reconcileEditor(pane.activeNote, snapshot.vault.id);
     displayedNotes.set(paneId, displayedNote);
     const paneUi = paneElements.get(paneId);
@@ -8914,11 +8940,18 @@ function renderWorkspacePanes(
 
   activatePaneContext(activePaneId);
   const displayedNote = displayedNotes.get(activePaneId) ?? null;
-  if (workspace?.panes.find((pane) => pane.id === activePaneId)?.activeCanvas) {
+  const activePane = workspace?.panes.find((pane) => pane.id === activePaneId);
+  if (activePane?.activeCanvas) {
     renderNote(null);
     elements.noteEmpty.hidden = true;
     elements.noteView.hidden = true;
     elements.canvasView.hidden = false;
+  } else if (activePane?.activePluginFile) {
+    renderNote(null);
+    elements.noteEmpty.hidden = true;
+    elements.noteView.hidden = true;
+    elements.canvasView.hidden = true;
+    elements.notePath.textContent = activePane.activePluginFile.path;
   } else {
     renderNote(displayedNote);
     renderUnavailableNotice(
@@ -9182,7 +9215,10 @@ function render(snapshot: RuntimeSnapshot): void {
   const activePane = workspace?.panes.find((pane) => pane.id === workspace?.activePaneId);
   renderCanvasFiles(
     workspace?.canvasFiles ?? [],
-    activePane?.activeCanvas?.path ?? activePane?.activeNote?.path ?? null,
+    activePane?.activeCanvas?.path ??
+      activePane?.activePluginFile?.path ??
+      activePane?.activeNote?.path ??
+      null,
   );
   const needsAttention =
     !opening && (workspace?.state === "degraded" || snapshot.vault.warning !== null);
@@ -9295,6 +9331,46 @@ function render(snapshot: RuntimeSnapshot): void {
     runInPaneContext(pane.id, () => maybeRestoreEditorDraft(snapshot));
   }
   activatePaneContext(workspace?.activePaneId ?? "primary");
+  const activePluginFile = activePane?.activePluginFile;
+  const activePluginViewType = activePluginFile
+    ? workspacePluginViewTypeForPath(activePluginFile.path, snapshot.integrations)
+    : null;
+  const pluginSurfaceMatchesActiveFile =
+    activePluginFile !== undefined &&
+    activePluginFile !== null &&
+    activePluginViewType !== null &&
+    snapshot.pluginSurface?.filePath === activePluginFile.path &&
+    snapshot.pluginSurface.viewType === activePluginViewType;
+  if (
+    activePluginFile &&
+    activePluginViewType &&
+    !pluginSurfaceMatchesActiveFile &&
+    pluginSettingsTargetId === null
+  ) {
+    const request = ++pluginDocumentActivationRequest;
+    const activateWhenIdle = (): void => {
+      if (request !== pluginDocumentActivationRequest) return;
+      if (busy) {
+        window.requestAnimationFrame(activateWhenIdle);
+        return;
+      }
+      const currentPluginFile = workspacePaneSnapshot(activePaneContextId)?.activePluginFile;
+      const currentViewType = currentPluginFile
+        ? workspacePluginViewTypeForPath(currentPluginFile.path, currentSnapshot?.integrations)
+        : null;
+      if (
+        currentPluginFile?.path === activePluginFile.path &&
+        currentViewType === activePluginViewType &&
+        (currentSnapshot?.pluginSurface?.filePath !== activePluginFile.path ||
+          currentSnapshot?.pluginSurface?.viewType !== activePluginViewType)
+      ) {
+        void activatePluginView();
+      }
+    };
+    window.requestAnimationFrame(activateWhenIdle);
+  } else {
+    pluginDocumentActivationRequest += 1;
+  }
   if (snapshot.workspaceOpenDiagnostics && diagnosticsStartedAt !== null) {
     window.threadleaf.reportWorkspaceOpenDiagnostics({
       phase: "rendered",
@@ -10321,7 +10397,10 @@ async function activateNavigatorTreeFile(
   entry: Exclude<WorkspaceTreeEntry, { kind: "folder" }>,
   restoreFocus?: HTMLElement | null,
 ): Promise<void> {
-  if (entry.kind === "file") {
+  if (
+    entry.kind === "file" &&
+    !workspacePluginViewTypeForPath(entry.path, currentSnapshot?.integrations)
+  ) {
     await filePreview.show(entry.path, restoreFocus);
     return;
   }
@@ -10451,11 +10530,15 @@ function renderNavigatorTree(
     button.setAttribute("aria-posinset", String(row.siblingIndex + 1));
     button.setAttribute("aria-setsize", String(row.siblingCount));
     button.tabIndex = entry.path === navigatorFocusedPath ? 0 : -1;
+    const pluginFileViewType =
+      entry.kind === "file"
+        ? workspacePluginViewTypeForPath(entry.path, currentSnapshot?.integrations)
+        : null;
     if (entry.kind === "folder") {
       button.setAttribute("aria-expanded", String(row.expanded));
       button.ariaLabel = `${entry.path}, folder with ${entry.childCount} ${entry.childCount === 1 ? "item" : "items"}`;
     } else {
-      if (entry.kind !== "file") {
+      if (entry.kind !== "file" || pluginFileViewType) {
         button.setAttribute("aria-selected", String(entry.path === activePath));
         if (entry.path === activePath) button.setAttribute("aria-current", "page");
       }
@@ -10464,7 +10547,9 @@ function renderNavigatorTree(
           ? `Open note ${entry.path}`
           : entry.kind === "canvas"
             ? `Open canvas ${entry.path}`
-            : `Preview file ${entry.path}`;
+            : pluginFileViewType
+              ? `Open plugin document ${entry.path}`
+              : `Preview file ${entry.path}`;
     }
 
     const disclosure = document.createElement("span");
@@ -11999,7 +12084,7 @@ function renderEditControls(): void {
   elements.splitPaneDown.title = "Split editor down";
   elements.moveTabPane.title = "Move current tab to the other pane";
   elements.closePane.title = "Close this editor pane";
-  renderTabs(opening ? [] : (workspacePaneSnapshot()?.tabs ?? []), loadedNote?.path ?? null);
+  renderTabs(opening ? [] : (workspacePaneSnapshot()?.tabs ?? []), activeWorkspaceDocumentPath());
   renderEditNotice();
   renderDocumentView();
   renderPropertyControls();
@@ -12107,7 +12192,8 @@ function toggleCurrentTabPin(): Promise<void> {
 }
 
 function closeActiveTab(): Promise<void> {
-  return loadedNote ? closeTab(loadedNote.path, activePaneContextId) : Promise.resolve();
+  const activePath = activeWorkspaceDocumentPath();
+  return activePath ? closeTab(activePath, activePaneContextId) : Promise.resolve();
 }
 
 async function cycleTab(
@@ -12146,6 +12232,10 @@ async function openNote(
     showToast(`Opened ${filePath} in the background.`);
     return true;
   }
+  const activePluginFile = workspacePaneSnapshot(paneId)?.activePluginFile;
+  if (activePluginFile?.path === filePath && documentViewMode !== "plugin") {
+    await activatePluginView();
+  }
   if (line && loadedNote?.path === filePath) {
     scrollToDocumentLine(line);
   }
@@ -12159,7 +12249,9 @@ async function openNote(
     });
   }
   return (
-    loadedNote?.path === filePath || workspacePaneSnapshot(paneId)?.activeCanvas?.path === filePath
+    loadedNote?.path === filePath ||
+    workspacePaneSnapshot(paneId)?.activeCanvas?.path === filePath ||
+    workspacePaneSnapshot(paneId)?.activePluginFile?.path === filePath
   );
 }
 
@@ -12419,7 +12511,7 @@ async function splitWorkspace(direction: WorkspaceSplitDirection): Promise<void>
 
 async function moveActiveTabToOtherPane(): Promise<void> {
   const expectedVaultId = currentSnapshot?.vault.id;
-  const filePath = loadedNote?.path;
+  const filePath = activeWorkspaceDocumentPath();
   const fromPaneId = activePaneContextId;
   if (!filePath) {
     return;

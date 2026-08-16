@@ -200,8 +200,8 @@ async function check() {
     }
     if (fixture.id === "threadleaf.excalidraw-roundtrip.v1") {
       assert(
-        fixture.observation?.status === "unverified",
-        "official Obsidian observation must remain unverified",
+        fixture.observation?.status === "observed",
+        "official Obsidian observation is not recorded",
       );
       assert(
         /^[a-f0-9]{64}$/u.test(fixture.observation.sha256),
@@ -232,8 +232,8 @@ async function check() {
       `missing required claim ${id}`,
     );
   assert(
-    conformance.gaps.some((gap) => gap.id === "official-obsidian-roundtrip"),
-    "official Obsidian gap is hidden",
+    !conformance.gaps.some((gap) => gap.id === "official-obsidian-roundtrip"),
+    "observed official Obsidian roundtrip is still published as a gap",
   );
   for (const claim of conformance.claims) {
     assert(claim.label === "normative", `${claim.id} claim is not labeled normative`);

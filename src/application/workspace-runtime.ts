@@ -45,6 +45,7 @@ import type {
   NoteSaveOutcome,
   NoteSaveResponse,
   PluginEditorContext,
+  PluginIntegrationSnapshot,
   PluginMarkdownProjectionResponse,
   PluginMutationWaitOptions,
   RuntimeSnapshot,
@@ -67,6 +68,7 @@ import type {
   WorkspaceNoteSnapshot,
   WorkspacePaneId,
   WorkspacePaneSnapshot,
+  WorkspacePluginFileSnapshot,
   WorkspaceSplitDirection,
   WorkspaceTagCatalogRequest,
   WorkspaceTagCatalogResponse,
@@ -83,6 +85,7 @@ import {
   parseVaultNoteWorkflowSettings,
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
+import { isNativeExcalidrawPath, workspacePluginViewTypeForPath } from "../shared/plugin-document";
 import { filterQuickSwitcherNotes } from "../shared/quick-switcher";
 import {
   measureSerializableValue,
@@ -272,6 +275,18 @@ interface WorkspaceInventoryProjection {
   tree: WorkspaceTreeIndex;
 }
 
+function workspacePluginViewTypesForPaths(
+  filePaths: Iterable<string>,
+  integrations: PluginIntegrationSnapshot | null | undefined,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const filePath of filePaths) {
+    const viewType = workspacePluginViewTypeForPath(filePath, integrations);
+    if (viewType) result.set(filePath, viewType);
+  }
+  return result;
+}
+
 function visibleInventoryProjection(
   visible: VisibleVaultPaths,
 ): Omit<WorkspaceInventoryProjection, "generation"> {
@@ -292,6 +307,7 @@ interface WorkspaceSnapshotIndexCapture {
   lastWatchSequence: number;
   lastRescanReason: string | null;
   canvasFiles: WorkspaceCanvasSummary[];
+  pluginFileViewTypes: ReadonlyMap<string, string>;
   renderablePaths: ReadonlySet<string>;
   snapshotState: PersistedWorkspaceState;
   workspaceChanged: boolean;
@@ -314,6 +330,13 @@ class WorkspaceSnapshotRevisionMismatch extends Error {
 }
 
 const maximumWorkspaceSnapshotAssemblyAttempts = 8;
+
+/** Matches the existing bounded attachment bridge while a custom view establishes file identity. */
+const maximumWorkspacePluginFileBytes = 16 * 1024 * 1024;
+
+function isMarkdownPath(filePath: string): boolean {
+  return filePath.toLocaleLowerCase("en-US").endsWith(".md");
+}
 
 const MAX_DESKTOP_TRASH_ENTRIES = 500;
 
@@ -1033,6 +1056,11 @@ export class WorkspaceRuntime {
    * exactly as it was rather than emptied and rebuilt for a gap nobody caused.
    */
   readonly #retainedCanvases = new Map<string, WorkspaceCanvasSnapshot>();
+  /**
+   * The same receipt for a registered-extension file. The plugin owns its live view state, so a
+   * short replace gap republishes the file identity instead of tearing down the custom surface.
+   */
+  readonly #retainedPluginFiles = new Map<string, WorkspacePluginFileSnapshot>();
   readonly #now: () => number;
   readonly #diagnostics: WorkspaceOpenDiagnostics | undefined;
   #census: WorkspaceCensusSnapshot = {
@@ -1318,7 +1346,7 @@ export class WorkspaceRuntime {
       for (const filePath of activePaths) {
         if (!(await watchedPathExists(kernel.paths, filePath))) continue;
         warmingVisiblePaths.add(filePath);
-        if (!isCanvasPath(filePath)) {
+        if (isMarkdownPath(filePath)) {
           try {
             initialDocuments.push(await kernel.readText(filePath));
           } catch (error) {
@@ -1374,15 +1402,27 @@ export class WorkspaceRuntime {
       options.now ?? Date.now,
     );
 
+    // A restored custom-document tab is only eligible while its plugin registration is live.
+    // Load that authority before restore reconciliation can rewrite the persisted workspace.
+    if (options.pluginDirectory) {
+      await pluginHost.loadPlugin(options.pluginDirectory);
+    }
+
     if (restoredWorkspace) {
       if (deferredCensus) {
         runtime.applyWorkspaceState(restoredWorkspace);
       } else {
         const visible = await kernel.listVisiblePaths();
         runtime.seedVisibleInventory(visible);
+        const pluginSnapshot = await pluginHost.getSnapshot();
+        const pluginFileViewTypes = workspacePluginViewTypesForPaths(
+          visible.files,
+          pluginSnapshot.integrations,
+        );
         const availablePaths = new Set([
           ...indexReactor.index.snapshot().documents.map((document) => document.path),
           ...visible.files.filter(isCanvasPath),
+          ...pluginFileViewTypes.keys(),
         ]);
         // The restore reconciles against the vault listing like the projection
         // does, so it retains through the same authority rather than dropping on
@@ -1452,9 +1492,6 @@ export class WorkspaceRuntime {
           await runtime.persistWorkspaceStateBestEffort();
         }
       }
-    }
-    if (options.pluginDirectory) {
-      await pluginHost.loadPlugin(options.pluginDirectory);
     }
     if (!runtime.readOnly) {
       if (deferredCensus) {
@@ -1813,7 +1850,7 @@ export class WorkspaceRuntime {
   }
 
   private async snapshotWithPluginState(pluginSnapshot: RuntimeSnapshot): Promise<RuntimeSnapshot> {
-    const workspace = await this.getWorkspaceSnapshot();
+    const workspace = await this.getWorkspaceSnapshot(pluginSnapshot.integrations);
     const workspaceActions = this.actions.list();
     const workspaceActionIds = new Set(workspaceActions.map(({ id }) => id));
     return {
@@ -2833,6 +2870,7 @@ export class WorkspaceRuntime {
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
     this.#retainedCanvases.clear();
+    this.#retainedPluginFiles.clear();
     this.#confirmedRemovalPaths.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
     for (const release of this.#releaseActions.reverse()) {
@@ -3023,11 +3061,33 @@ export class WorkspaceRuntime {
       }
       await this.kernel.readBinary(filePath, 8 * 1024 * 1024);
       this.#warmingVisiblePaths.add(filePath);
-    } else {
+    } else if (isMarkdownPath(filePath)) {
       if (!captured.indexedPaths.has(filePath)) {
         throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
       }
       await this.kernel.readText(filePath);
+      this.#warmingVisiblePaths.add(filePath);
+    } else {
+      if (!isNativeExcalidrawPath(filePath)) {
+        throw new Error(
+          `Workspace tabs do not support this ordinary file type because it is not indexed as a document: ${filePath}`,
+        );
+      }
+      const pluginSnapshot = await this.pluginHost.getSnapshot();
+      const viewType = workspacePluginViewTypeForPath(filePath, pluginSnapshot.integrations);
+      if (!viewType) {
+        throw new Error(`No loaded plugin registered a document view for: ${filePath}`);
+      }
+      const visible = await this.kernel.listVisiblePaths();
+      if (!visible.files.includes(filePath)) {
+        throw new Error(`Plugin document is not present in the active vault: ${filePath}`);
+      }
+      const source = await this.kernel.readBinary(filePath, maximumWorkspacePluginFileBytes);
+      if (source.status !== "ready") {
+        throw new Error(
+          `Plugin document exceeds the ${maximumWorkspacePluginFileBytes} byte workspace limit: ${filePath}`,
+        );
+      }
       this.#warmingVisiblePaths.add(filePath);
     }
     if (!retained && !warmingUnknown) {
@@ -3076,9 +3136,15 @@ export class WorkspaceRuntime {
       censusState: this.#census.state,
       indexedPaths: this.indexReactor.index.snapshot().documents.map((document) => document.path),
     }));
+    const pluginSnapshot = await this.pluginHost.getSnapshot();
+    const pluginFileViewTypes = workspacePluginViewTypesForPaths(
+      visible.files,
+      pluginSnapshot.integrations,
+    );
     const availablePaths = new Set([
       ...captured.indexedPaths,
       ...visible.files.filter(isCanvasPath),
+      ...pluginFileViewTypes.keys(),
     ]);
     // Traversing history reconciles this pane against the vault listing and
     // writes the result back, which makes it a sink like the projection: an
@@ -4256,6 +4322,7 @@ export class WorkspaceRuntime {
   }
 
   private async getWorkspaceSnapshot(
+    pluginIntegrations?: PluginIntegrationSnapshot,
     attempt = 0,
     snapshotStartedAt = this.#diagnostics?.now(),
   ): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
@@ -4280,12 +4347,20 @@ export class WorkspaceRuntime {
             path: filePath,
             title: titleForJsonCanvasPath(filePath),
           }));
-          const availablePaths = new Set([...projection.documents.keys(), ...canvasPaths]);
+          const trackedPaths = this.trackedWorkspacePaths();
+          const pluginFileViewTypes = workspacePluginViewTypesForPaths(
+            new Set([...visibleFiles, ...trackedPaths]),
+            pluginIntegrations,
+          );
+          const availablePaths = new Set([
+            ...projection.documents.keys(),
+            ...canvasPaths,
+            ...visibleFiles.filter((filePath) => pluginFileViewTypes.has(filePath)),
+          ]);
           // Reconciliation closes a tab here and in the two sibling call sites that
           // reconcile against the vault listing, so all three ask the same authority
           // what may still be held. Only the confirmed-absent path in
           // settleUnconfirmedAbsences may take a retained path out of the panes.
-          const trackedPaths = this.trackedWorkspacePaths();
           let retainedPaths: ReadonlySet<string>;
           let trackedMissing: string[];
           if (census.state === "current" && inventory.state === "current") {
@@ -4317,7 +4392,10 @@ export class WorkspaceRuntime {
                   ...availablePaths,
                   ...trackedMissing.filter(
                     (filePath) =>
-                      this.#retainedNotes.has(filePath) || this.#retainedCanvases.has(filePath),
+                      this.#retainedNotes.has(filePath) ||
+                      this.#retainedCanvases.has(filePath) ||
+                      (this.#retainedPluginFiles.has(filePath) &&
+                        pluginFileViewTypes.has(filePath)),
                   ),
                 ]);
           const reconciledPanes = this.#panes.map((pane) => {
@@ -4363,6 +4441,7 @@ export class WorkspaceRuntime {
             lastWatchSequence: this.#lastWatchSequence,
             lastRescanReason: this.#lastRescanReason,
             canvasFiles,
+            pluginFileViewTypes,
             renderablePaths,
             snapshotState,
             workspaceChanged,
@@ -4380,7 +4459,7 @@ export class WorkspaceRuntime {
     } catch (error) {
       if (!(error instanceof WorkspaceSnapshotRevisionMismatch)) throw error;
       await this.refreshWorkspaceSnapshotRevision(error);
-      return this.getWorkspaceSnapshot(attempt + 1, snapshotStartedAt);
+      return this.getWorkspaceSnapshot(pluginIntegrations, attempt + 1, snapshotStartedAt);
     }
 
     const accepted = await this.withIndexStateLock(async () => {
@@ -4388,7 +4467,9 @@ export class WorkspaceRuntime {
       assembly.commit();
       return true;
     });
-    return accepted ? assembly.snapshot : this.getWorkspaceSnapshot(attempt + 1, snapshotStartedAt);
+    return accepted
+      ? assembly.snapshot
+      : this.getWorkspaceSnapshot(pluginIntegrations, attempt + 1, snapshotStartedAt);
   }
 
   private async getWorkspaceSnapshotFromCapture(
@@ -4404,6 +4485,7 @@ export class WorkspaceRuntime {
       lastWatchSequence,
       lastRescanReason,
       canvasFiles,
+      pluginFileViewTypes,
       renderablePaths,
       snapshotState,
     } = capture;
@@ -4515,6 +4597,39 @@ export class WorkspaceRuntime {
       canvasSnapshots.set(filePath, pending);
       return pending;
     };
+    const pluginFileSnapshots = new Map<string, Promise<WorkspacePluginFileSnapshot>>();
+    const loadedPluginFileSnapshots = new Map<string, WorkspacePluginFileSnapshot>();
+    const loadPluginFileSnapshot = (
+      filePath: string,
+      viewType: string,
+    ): Promise<WorkspacePluginFileSnapshot> => {
+      const cached = pluginFileSnapshots.get(filePath);
+      if (cached) return cached;
+      const retained = this.#retainedPluginFiles.get(filePath);
+      const pending = (async () => {
+        try {
+          const response = await this.kernel.readBinary(filePath, maximumWorkspacePluginFileBytes);
+          if (response.status !== "ready") {
+            throw new Error(
+              `Plugin document exceeds the ${maximumWorkspacePluginFileBytes} byte workspace limit: ${filePath}`,
+            );
+          }
+          const snapshot: WorkspacePluginFileSnapshot = {
+            path: response.snapshot.path,
+            title: displayTitleFromVaultPath(response.snapshot.path),
+            revision: response.snapshot.revision,
+            viewType,
+          };
+          loadedPluginFileSnapshots.set(filePath, snapshot);
+          return snapshot;
+        } catch (error) {
+          if (retained) return retained;
+          throw error;
+        }
+      })();
+      pluginFileSnapshots.set(filePath, pending);
+      return pending;
+    };
     const panes: WorkspacePaneSnapshot[] = await Promise.all(
       snapshotState.panes.map(async (pane) => {
         // The selected tab may be one whose file is not there and for which
@@ -4528,8 +4643,15 @@ export class WorkspaceRuntime {
           !unavailablePath && pane.activePath && isCanvasPath(pane.activePath)
             ? await loadCanvasSnapshot(pane.activePath)
             : null;
+        const pluginFileViewType = pane.activePath
+          ? (pluginFileViewTypes.get(pane.activePath) ?? null)
+          : null;
+        const activePluginFile =
+          !unavailablePath && pane.activePath && !activeCanvas && pluginFileViewType
+            ? await loadPluginFileSnapshot(pane.activePath, pluginFileViewType)
+            : null;
         const activeNote =
-          !unavailablePath && pane.activePath && !activeCanvas
+          !unavailablePath && pane.activePath && !activeCanvas && !activePluginFile
             ? await loadNoteSnapshot(pane.activePath)
             : null;
         return {
@@ -4547,6 +4669,7 @@ export class WorkspaceRuntime {
           canGoBack: Boolean(pane.navigationHistory?.back.length),
           canGoForward: Boolean(pane.navigationHistory?.forward.length),
           ...(activeCanvas ? { activeCanvas } : {}),
+          ...(activePluginFile ? { activePluginFile } : {}),
           ...(unavailablePath
             ? {
                 activeUnavailable: {
@@ -4595,6 +4718,7 @@ export class WorkspaceRuntime {
       splitDirection: snapshotState.splitDirection,
       tabs: activePane.tabs,
       activeNote: activePane.activeNote,
+      ...(activePane.activePluginFile ? { activePluginFile: activePane.activePluginFile } : {}),
       ...(activePane.activeUnavailable ? { activeUnavailable: activePane.activeUnavailable } : {}),
       recoveryActionCount: this.kernel.startupRecoveryActions.length,
       watcher: {
@@ -4612,6 +4736,9 @@ export class WorkspaceRuntime {
         for (const [filePath, canvas] of loadedCanvasSnapshots) {
           this.#retainedCanvases.set(filePath, canvas);
         }
+        for (const [filePath, pluginFile] of loadedPluginFileSnapshots) {
+          this.#retainedPluginFiles.set(filePath, pluginFile);
+        }
         for (const filePath of this.#retainedNotes.keys()) {
           if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
             this.#retainedNotes.delete(filePath);
@@ -4620,6 +4747,11 @@ export class WorkspaceRuntime {
         for (const filePath of this.#retainedCanvases.keys()) {
           if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
             this.#retainedCanvases.delete(filePath);
+          }
+        }
+        for (const filePath of this.#retainedPluginFiles.keys()) {
+          if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
+            this.#retainedPluginFiles.delete(filePath);
           }
         }
         if (this.#diagnostics && snapshotStartedAt !== undefined) {

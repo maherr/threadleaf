@@ -8,7 +8,8 @@ The manifest records every canonical byte. The supported cases prove exact bytes
 native, and compressed scenes, canonical semantic equivalence for an intentionally reserialized
 uncompressed scene, attachment digests and reference rewrites, and revision-bound external-edit
 conflicts.
-The optional Obsidian record remains explicitly unverified until a person runs the manual protocol.
+The official Obsidian record is an attended external observation for one pinned application,
+plugin, settings pair, and corpus manifest. It remains excluded from executable pass counts.
 
 Run the headless gate with:
 

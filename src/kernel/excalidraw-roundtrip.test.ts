@@ -12,6 +12,7 @@ import {
   parseUncompressedExcalidrawScene,
   replaceExcalidrawScene,
   rewriteExcalidrawAttachmentReference,
+  synchronizeExcalidrawTextElementMappings,
 } from "./excalidraw-roundtrip";
 import { FixedStateRoot } from "./ports";
 import { VaultKernel } from "./vault-kernel";
@@ -68,13 +69,13 @@ describe("Excalidraw public-format round trip", () => {
     const elements = Array.isArray(scene.elements) ? scene.elements : [];
     const text = elements.find(
       (element): element is Record<string, unknown> =>
-        typeof element === "object" && element !== null && element.id === "text-title",
+        typeof element === "object" && element !== null && element.id === "text1234",
     );
     expect(text).toBeDefined();
-    if (text) {
-      text.text = "Ébauche modifiée";
-      text.originalText = "Ébauche modifiée";
-    }
+    if (!text) throw new Error("Expected the deterministic Excalidraw text element.");
+    text.text = "Ébauche modifiée";
+    text.originalText = "Ébauche modifiée";
+    text.rawText = "Ébauche modifiée";
     const reordered = JSON.stringify({
       appState: scene.appState,
       files: scene.files,
@@ -83,7 +84,10 @@ describe("Excalidraw public-format round trip", () => {
       source: scene.source,
       type: scene.type,
     });
-    const edited = replaceExcalidrawScene(source, reordered);
+    const edited = synchronizeExcalidrawTextElementMappings(
+      replaceExcalidrawScene(source, reordered),
+      { ...scene, elements },
+    );
     const comparison = compareExcalidrawMarkdown(source, edited);
     expect(comparison).toMatchObject({
       equal: false,
@@ -94,9 +98,30 @@ describe("Excalidraw public-format round trip", () => {
     expect(canonicalExcalidrawSceneDigest(parseUncompressedExcalidrawScene(edited))).toBe(
       canonicalExcalidrawSceneDigest({ ...scene, elements }),
     );
-    expect(edited.slice(0, edited.indexOf("```json"))).toBe(
-      source.slice(0, source.indexOf("```json")),
+    expect(edited.slice(0, edited.indexOf("# Excalidraw Data"))).toBe(
+      source.slice(0, source.indexOf("# Excalidraw Data")),
     );
+    expect(edited).toContain("Ébauche modifiée ^text1234");
+    const staleMapping = edited.replace("Ébauche modifiée ^text1234", "Ébauche périmée ^text1234");
+    expect(compareExcalidrawMarkdown(edited, staleMapping)).toMatchObject({
+      equal: false,
+      kind: "semantic",
+      nonSceneBytesEqual: true,
+      reason: expect.stringContaining("generated text mappings"),
+    });
+
+    const invalidIdScene = {
+      ...scene,
+      elements: elements.map((element) =>
+        element === text ? { ...element, id: "text-title" } : element,
+      ),
+    };
+    expect(() =>
+      synchronizeExcalidrawTextElementMappings(
+        source.replaceAll("text1234", "text-title"),
+        invalidIdScene,
+      ),
+    ).toThrow("eight public-format characters");
   });
 
   it("requires exact bytes for compressed scenes", async () => {

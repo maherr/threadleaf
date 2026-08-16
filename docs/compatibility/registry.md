@@ -8,7 +8,7 @@ Registry schema: 1. Threadleaf version: 0.1.0-beta.6.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
-| [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.6 | 4 | composed | 2026-08-15 |
+| [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.6 | 4 | composed | 2026-08-16 |
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0-beta.6 | 4 | direct | 2026-08-15 |
 
 ## Excalidraw 2.25.3
@@ -46,7 +46,7 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 ### Limitations
 
 - Inline wiki-embed rendering and export formats beyond SVG and PNG are not verified.
-- The official Obsidian to Threadleaf to Obsidian byte-roundtrip remains unverified.
+- The official Obsidian to Threadleaf to Obsidian roundtrip is recorded as external evidence for one pinned Linux Flatpak and exact plugin release; it is not an executable registry gate.
 - The exact release check and host workflow checks are composed gates, not one monolithic end-to-end command.
 
 ## Threadleaf Compatibility Fixture 0.1.0

@@ -72,7 +72,7 @@ describe("plugin compatibility settings", () => {
       status: "verified",
       testedVersion: "2.25.3",
       testedThreadleafVersion: "0.1.0-beta.6",
-      lastTested: "2026-08-15",
+      lastTested: "2026-08-16",
     });
     expect(
       createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.26.0" }),
@@ -81,7 +81,7 @@ describe("plugin compatibility settings", () => {
       status: "different-version",
       testedVersion: "2.25.3",
       testedThreadleafVersion: "0.1.0-beta.6",
-      lastTested: "2026-08-15",
+      lastTested: "2026-08-16",
     });
     expect(createPluginCompatibilityReport({ id: "unknown-plugin", version: "1.0.0" })).toEqual({
       level: 0,

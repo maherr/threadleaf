@@ -191,11 +191,11 @@
       "licensePath": "fixtures/corpus/excalidraw-roundtrip-v1/LICENSE",
       "licenseSha256": "1108689f1bab6476f329d73735ed941aaf1069e86b0a1436e0ffd1ee3f7e0eb1",
       "provenancePath": "fixtures/corpus/excalidraw-roundtrip-v1/PROVENANCE.md",
-      "provenanceSha256": "79e005ded92636a6329c2b31c357eeab0d4aa964a675029e94b8e8ca3d907013",
+      "provenanceSha256": "25be6b5fcbdaf8a090d123bfa07ced422ac808efc0f0ddfed94b5cb8a0919265",
       "manifestPath": "fixtures/corpus/excalidraw-roundtrip-v1/manifest.json",
-      "manifestSha256": "aae684b741c6360d7f2370640eac01025a22fc503ff8829aed3c7e4d15410a2f",
+      "manifestSha256": "cbe5305e5ebec6f6906d2c3ef7a1981250688b5beab9dfa22c845dca737bf2f5",
       "casesPath": "fixtures/corpus/excalidraw-roundtrip-v1/cases.json",
-      "casesSha256": "e497a46d501e71dfdcec5594a50a737573321a062daa21a85d7159fb0fc9dc88",
+      "casesSha256": "30b8a86bb8b457b36fd3cba4e33ae891d31c5aea80ba5971c9c6137540e688aa",
       "cases": [
         {
           "id": "markdown.uncompressed-semantic-edit",
@@ -261,8 +261,8 @@
         },
         {
           "path": "vault/Drawings/Compressed Scene.excalidraw.md",
-          "bytes": 431,
-          "sha256": "38c778e6f0f4825a39359d44a46020dcb607ad792f8efbc9c4efbd34f6ec037d"
+          "bytes": 1632,
+          "sha256": "3988a4ae6b67724c52c1fecbb21bd5f6681d3cfdab9f4f49910f8b196b8e5557"
         },
         {
           "path": "vault/Drawings/Native Scene.excalidraw",
@@ -271,8 +271,8 @@
         },
         {
           "path": "vault/Drawings/Unicode Scene.excalidraw.md",
-          "bytes": 2819,
-          "sha256": "2f3816379c44b670f6abc75a31e6b922c1f2b1f48a3e08b15fd48b65fbf126a6"
+          "bytes": 2737,
+          "sha256": "76912dbc34c39d582a7ae55b7960cb9227efa35ac5781c5424d4b2a2068fadd0"
         },
         {
           "path": "vault/Notes/External.md",
@@ -294,10 +294,10 @@
       ],
       "observation": {
         "path": "fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json",
-        "sha256": "2fb6dacd8058fdf1973635a327e1dcb3eadc7a804f55570c274de91b6973280c",
-        "status": "unverified",
-        "method": "manual-only",
-        "source": "No official Obsidian run was performed for this corpus."
+        "sha256": "9b8e5ca4d8a0ed068264d52810c6f261102d82be1f5150e9581c07d4c271e620",
+        "status": "observed",
+        "method": "attended-disposable-vault-cross-application-roundtrip",
+        "source": "Official Obsidian 1.13.7 Flatpak with unchanged Excalidraw 2.25.3, followed by the packaged Threadleaf gate and two official Obsidian return opens separated by an official restart."
       }
     }
   ]

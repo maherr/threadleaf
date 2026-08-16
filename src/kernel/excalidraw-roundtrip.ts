@@ -55,6 +55,8 @@ export interface ExcalidrawAttachmentManifest {
 }
 
 const sceneFencePattern = /^```(compressed-json|json)\r?\n([\s\S]*?)^```[ \t]*$/gmu;
+const generatedTextSectionPattern =
+  /(^# Excalidraw Data[ \t]*\r?\n(?:\r?\n)?## Text Elements[ \t]*\r?\n)([\s\S]*?)(^%%[ \t]*\r?\n## Drawing[ \t]*\r?$)/mu;
 const frontmatterPattern = /^(---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$))/u;
 const markdownImagePattern = /!\[\[[^\]\n]+\]\]|!\[[^\]\n]*\]\([^\n)]+\)/gu;
 const wikiTargetPattern = /^!\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]$/u;
@@ -133,6 +135,88 @@ function sceneRangeFromMatch(match: RegExpExecArray): ExcalidrawSceneRange {
   };
 }
 
+function generatedTextSectionBodyRange(
+  markdown: string,
+): { start: number; end: number; lineEnding: "\n" | "\r\n" } | null {
+  const match = generatedTextSectionPattern.exec(markdown);
+  if (!match) return null;
+  const header = match[1] ?? "";
+  const body = match[2] ?? "";
+  const start = match.index + header.length;
+  return {
+    start,
+    end: start + body.length,
+    lineEnding: header.includes("\r\n") ? "\r\n" : "\n",
+  };
+}
+
+function textElementsFromScene(scene: Record<string, unknown>): Record<string, unknown>[] {
+  if (!Array.isArray(scene.elements)) return [];
+  return scene.elements.filter(
+    (element): element is Record<string, unknown> =>
+      isRecord(element) && element.type === "text" && element.isDeleted !== true,
+  );
+}
+
+function renderGeneratedTextSectionBody(
+  scene: Record<string, unknown>,
+  lineEnding: "\n" | "\r\n",
+): string {
+  const ids = new Set<string>();
+  const entries = textElementsFromScene(scene).map((element) => {
+    const id = element.id;
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]{8}$/u.test(id)) {
+      throw new Error("Excalidraw text element IDs must be eight public-format characters.");
+    }
+    if (ids.has(id)) {
+      throw new Error(`Excalidraw Text Elements contains a duplicate ID: ${id}`);
+    }
+    ids.add(id);
+    const raw =
+      typeof element.rawText === "string"
+        ? element.rawText
+        : typeof element.originalText === "string"
+          ? element.originalText
+          : typeof element.text === "string"
+            ? element.text
+            : "";
+    const normalized = raw.replace(/\r?\n/gu, lineEnding);
+    return `${normalized} ^${id}`;
+  });
+  return entries.length === 0
+    ? lineEnding
+    : `${entries.join(`${lineEnding}${lineEnding}`)}${lineEnding}${lineEnding}`;
+}
+
+function generatedTextSectionMatchesScene(
+  markdown: string,
+  scene: Record<string, unknown>,
+): boolean {
+  const range = generatedTextSectionBodyRange(markdown);
+  if (!range) return true;
+  try {
+    return (
+      markdown.slice(range.start, range.end) ===
+      renderGeneratedTextSectionBody(scene, range.lineEnding)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Rebuild the official generated text map from the current uncompressed scene. */
+export function synchronizeExcalidrawTextElementMappings(
+  markdown: string,
+  scene: Record<string, unknown>,
+): string {
+  const range = generatedTextSectionBodyRange(markdown);
+  if (!range) {
+    throw new Error("Excalidraw Markdown does not contain the canonical Text Elements section.");
+  }
+  const body = renderGeneratedTextSectionBody(scene, range.lineEnding);
+  return `${markdown.slice(0, range.start)}${body}${markdown.slice(range.end)}`;
+}
+
 /** Parse the first Excalidraw scene fence without rewriting any source bytes. */
 export function parseExcalidrawMarkdown(markdown: string): ExcalidrawMarkdownDocument {
   const frontmatter = markdown.match(frontmatterPattern)?.[1] ?? null;
@@ -209,8 +293,21 @@ export function canonicalExcalidrawSceneDigest(value: unknown): string {
   return sha256(Buffer.from(canonicalizeExcalidrawScene(value), "utf8"));
 }
 
-function sceneWithoutPayload(markdown: string, document: ExcalidrawMarkdownDocument): string {
-  return `${markdown.slice(0, document.scene.payloadStart)}${markdown.slice(document.scene.payloadEnd)}`;
+function sourceWithoutGeneratedSceneBytes(
+  markdown: string,
+  document: ExcalidrawMarkdownDocument,
+): string {
+  const ranges = [
+    { start: document.scene.payloadStart, end: document.scene.payloadEnd },
+    generatedTextSectionBodyRange(markdown),
+  ]
+    .filter((range): range is { start: number; end: number } => range !== null)
+    .sort((left, right) => right.start - left.start);
+  let result = markdown;
+  for (const range of ranges) {
+    result = `${result.slice(0, range.start)}${result.slice(range.end)}`;
+  }
+  return result;
 }
 
 /**
@@ -249,8 +346,8 @@ export function compareExcalidrawMarkdown(
     };
   }
   const nonSceneBytesEqual =
-    sceneWithoutPayload(beforeMarkdown, beforeDocument) ===
-    sceneWithoutPayload(afterMarkdown, afterDocument);
+    sourceWithoutGeneratedSceneBytes(beforeMarkdown, beforeDocument) ===
+    sourceWithoutGeneratedSceneBytes(afterMarkdown, afterDocument);
   if (beforeDocument.scene.encoding === "compressed-json") {
     return {
       equal: false,
@@ -266,8 +363,12 @@ export function compareExcalidrawMarkdown(
   const afterScene = parseUncompressedExcalidrawScene(afterMarkdown);
   const beforeSceneDigest = canonicalExcalidrawSceneDigest(beforeScene);
   const afterSceneDigest = canonicalExcalidrawSceneDigest(afterScene);
+  const generatedTextSectionsMatch =
+    generatedTextSectionMatchesScene(beforeMarkdown, beforeScene) &&
+    generatedTextSectionMatchesScene(afterMarkdown, afterScene);
   return {
-    equal: nonSceneBytesEqual && beforeSceneDigest === afterSceneDigest,
+    equal:
+      nonSceneBytesEqual && beforeSceneDigest === afterSceneDigest && generatedTextSectionsMatch,
     kind: "semantic",
     encoding: "json",
     nonSceneBytesEqual,
@@ -275,9 +376,12 @@ export function compareExcalidrawMarkdown(
     afterDigest,
     beforeSceneDigest,
     afterSceneDigest,
-    ...(nonSceneBytesEqual && beforeSceneDigest === afterSceneDigest
+    ...(nonSceneBytesEqual && beforeSceneDigest === afterSceneDigest && generatedTextSectionsMatch
       ? {}
-      : { reason: "Non-scene Markdown bytes or canonical scene semantics changed." }),
+      : {
+          reason:
+            "Non-scene Markdown bytes, generated text mappings, or canonical scene semantics changed.",
+        }),
   };
 }
 

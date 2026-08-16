@@ -71,19 +71,22 @@ text, follow the host theme, and skip release notes already acknowledged at 2.25
 the authority grant from Threadleaf's own catalog, then exercises:
 
 1. the reachable Plugin control plus open and visible canvas rendering;
-2. a deterministic scene edit and save;
-3. new drawing creation and Markdown embed insertion;
-4. the unchanged plugin's SVG and PNG vault-export controls plus byte checks;
-5. note switching;
-6. application settings open and close while the drawing is active, followed by the unchanged
+2. compressed Markdown and native `.excalidraw` scenes, with the native scene selected through the
+   real Files tree and retained outside the Markdown index;
+3. a deterministic scene edit and save;
+4. new drawing creation and Markdown embed insertion;
+5. the unchanged plugin's SVG and PNG vault-export controls plus byte checks;
+6. note switching;
+7. application settings open and close while the drawing is active, followed by the unchanged
    plugin's own options page;
-7. native pop-out detach and reattach, including main and detached renderer responsiveness and
+8. native pop-out detach and reattach, including main and detached renderer responsiveness and
    toolbar/chrome ownership;
-8. a forced pop-out renderer crash, degraded-state recovery, and stale pop-out cleanup;
-9. a vault switch from a detached drawing and return to the original vault;
-10. plugin unload and reload;
-11. clean application restart; and
-12. source-byte and attachment-manifest checks after restart.
+9. a forced pop-out renderer crash, degraded-state recovery, and stale pop-out cleanup;
+10. a vault switch from a detached drawing and return to the original vault;
+11. plugin unload and reload;
+12. clean application restart with the native scene left active, automatically restored as the
+    selected plugin document, and rendered without an explicit reopen; and
+13. source-byte and attachment-manifest checks after restart.
 
 The draw/edit step sends a real canvas gesture through CDP and then uses the deterministic source
 save to set the expected text element. Settings, pop-out, vault-switch, and reattach controls use
@@ -112,7 +115,23 @@ reports a failure instead of hanging the gate.
 
 The manual record at
 [`observations/obsidian-roundtrip.v1.json`](../../fixtures/corpus/excalidraw-roundtrip-v1/observations/obsidian-roundtrip.v1.json)
-is provenance-stamped with `status: "unverified"`. No official Obsidian output, screenshot, or
-private application asset is checked in. The headless corpus reports that absence as unverified,
-not as a pass. A future manual run must use a copied synthetic vault and record only independently
-observed behavior, exact source manifests, and its method.
+is provenance-stamped with `status: "observed"`. The attended run used official Obsidian 1.13.7
+from the x86_64 Flathub Flatpak at commit
+`d91a9e9d80451e51f9d0fb3b8d89227af556e93493005033b3f8dcbe2e6acc91`, Electron 43.3.0,
+Chromium 150.0.7871.212, and unchanged Excalidraw 2.25.3 release assets. Each official launch used
+an isolated Xvfb display, X11, a disposable profile, a copied synthetic vault, loopback-only CDP,
+and an isolated network namespace.
+
+Official Obsidian opened, edited, saved, closed, and reopened the corpus under both
+`compress: false` and `compress: true`. Threadleaf then consumed the official uncompressed output through the
+packaged gate, edited and restarted it, and returned the resulting vault to official Obsidian.
+Official Obsidian rendered the edited scene before and after its own restart. All 11 public vault
+files had the same path, byte size, and SHA-256 digest before and after both return opens. The
+sorted manifest digest was
+`a41f0cd8fd984137dc20629af74287d95e80ed0d4b1600053d97537c3e46d2ba` on both sides.
+
+This is external-oracle evidence, not an executable Threadleaf gate. The case remains declared
+`support: "unsupported"`, and `pnpm corpus:check` reports seven executable gates, one observed
+external case, and zero unverified cases. No official Obsidian output, profile, screenshot, or
+private application asset is checked in; the record retains only exact identities, digests,
+isolation facts, observed behavior, and limitations.

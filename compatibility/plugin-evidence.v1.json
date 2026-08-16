@@ -11,7 +11,7 @@
         "bundleSha256": "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6"
       },
       "threadleafVersion": "0.1.0-beta.6",
-      "lastTested": "2026-08-15",
+      "lastTested": "2026-08-16",
       "compatibilityLevel": 4,
       "summary": "Open, create, embed, SVG and PNG export, unload, reload, and plugin-owned settings workflows passed for this exact plugin release.",
       "evidenceMode": "composed",
@@ -110,7 +110,7 @@
       "failures": [],
       "limitations": [
         "Inline wiki-embed rendering and export formats beyond SVG and PNG are not verified.",
-        "The official Obsidian to Threadleaf to Obsidian byte-roundtrip remains unverified.",
+        "The official Obsidian to Threadleaf to Obsidian roundtrip is recorded as external evidence for one pinned Linux Flatpak and exact plugin release; it is not an executable registry gate.",
         "The exact release check and host workflow checks are composed gates, not one monolithic end-to-end command."
       ]
     },

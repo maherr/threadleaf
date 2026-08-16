@@ -539,6 +539,18 @@ export interface WorkspaceCanvasSnapshot {
   readOnly: boolean;
 }
 
+/**
+ * A visible non-Markdown file owned by a loaded compatibility plugin's registered view.
+ * The primary renderer receives identity and revision only; the trusted plugin realm reads and
+ * writes the source through the same revision-bound vault bridge used by its other file APIs.
+ */
+export interface WorkspacePluginFileSnapshot {
+  path: string;
+  title: string;
+  revision: string;
+  viewType: string;
+}
+
 export type EditorDraftLineEnding = "lf" | "crlf" | "cr";
 
 /**
@@ -669,6 +681,8 @@ export interface WorkspaceSnapshot {
   tabs: WorkspaceTabSummary[];
   /** Active-pane projection retained for one-pane consumers and compatibility plugins. */
   activeNote: WorkspaceNoteSnapshot | null;
+  /** Active registered-extension document, when the selected file is not Markdown or Canvas. */
+  activePluginFile?: WorkspacePluginFileSnapshot | null;
   /** Waiting-state entry for the active pane when its file is absent but not yet confirmed removed. */
   activeUnavailable?: WorkspaceUnavailableEntry | null;
   recoveryActionCount: number;
@@ -687,8 +701,10 @@ export interface WorkspacePaneSnapshot {
   canGoBack?: boolean;
   canGoForward?: boolean;
   activeCanvas?: WorkspaceCanvasSnapshot | null;
+  /** A non-Markdown file whose content surface belongs to a registered compatibility view. */
+  activePluginFile?: WorkspacePluginFileSnapshot | null;
   /**
-   * Set instead of `activeNote` or `activeCanvas` when the selected tab's file
+   * Set instead of `activeNote`, `activeCanvas`, or `activePluginFile` when the selected tab's file
    * is not on disk right now and nothing readable has been published for it in
    * this session. The workspace keeps such a tab rather than closing it on an
    * absence it has not confirmed, so the pane has to be able to say what it is

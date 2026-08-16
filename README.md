@@ -253,8 +253,10 @@ through public `Vault.rename`, `FileManager.renameFile`, and `FileManager.trashF
 unchanged Excalidraw plugin has moved and trashed real binary fixtures through those paths while
 preserving their exact SHA-256 digests, and recovery fixtures cover interrupted renames plus
 external-edit conflicts without replacing either side. The corresponding official Obsidian
-same-vault roundtrip is still pending. The deterministic public-format corpus and isolated Electron
-gate are documented in [Excalidraw round-trip boundary](docs/compatibility/excalidraw-roundtrip.md).
+cross-application roundtrip is now recorded as an external observation for the pinned official
+Obsidian 1.13.7 Flatpak and exact Excalidraw 2.25.3 release. It remains distinct from executable
+Threadleaf gates. The deterministic public-format corpus, isolated Electron gate, and observation
+boundary are documented in [Excalidraw round-trip boundary](docs/compatibility/excalidraw-roundtrip.md).
 Untested export formats and universal plugin parity remain unsupported. Excalidraw's release-notes modal and Threadleaf
 light/dark chrome also render, and its stylesheet is preserved while four remote font URLs are
 replaced with inert embedded assets. The runtime is still trusted:

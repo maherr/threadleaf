@@ -5,15 +5,24 @@ aliases: ["Ébauche publique"]
 ---
 ==⚠  Switch to EXCALIDRAW VIEW in the MORE OPTIONS menu of this document. ⚠==
 
+![[Assets/Ébauche/diagram.svg|diagramme]]
+See also [the source note](../Notes/Source.md).
+
+# Excalidraw Data
+
+## Text Elements
+Ébauche ouverte ^text1234
+
+%%
 ## Drawing
 ```json
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "https://excalidraw.com",
+  "source": "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.25.3",
   "elements": [
     {
-      "id": "text-title",
+      "id": "text1234",
       "type": "text",
       "x": 120,
       "y": 96,
@@ -100,17 +109,7 @@ aliases: ["Ébauche publique"]
     "zenModeEnabled": false,
     "viewModeEnabled": false
   },
-  "files": {
-    "asset-emoji": {
-      "mimeType": "image/svg+xml",
-      "id": "asset-emoji",
-      "dataURL": "data:image/svg+xml;base64,PHN2Zy8+",
-      "created": 1723500000000,
-      "status": "saved"
-    }
-  }
+  "files": {}
 }
 ```
-
-![[Assets/Ébauche/diagram.svg|diagramme]]
-See also [the source note](../Notes/Source.md).
+%%

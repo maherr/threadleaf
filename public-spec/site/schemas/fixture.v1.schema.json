@@ -129,7 +129,7 @@
                 "pattern": "^[a-f0-9]{64}$"
               },
               "status": {
-                "type": "string"
+                "enum": ["unverified", "observed"]
               },
               "method": {
                 "type": "string"

@@ -10,6 +10,8 @@ import path from "node:path";
 const appRoot = process.cwd();
 const fixtureRoot = path.join(appRoot, "fixtures", "corpus", "excalidraw-roundtrip-v1");
 const fixtureVault = path.join(fixtureRoot, "vault");
+const sourceVaultOverride = process.env.THREADLEAF_EXCALIDRAW_SOURCE_VAULT?.trim();
+const sourceVault = sourceVaultOverride ? path.resolve(sourceVaultOverride) : fixtureVault;
 const pluginId = "obsidian-excalidraw-plugin";
 const pluginVersion = "2.25.3";
 const repository = "zsviczian/obsidian-excalidraw-plugin";
@@ -22,6 +24,7 @@ const pinnedPlugin = {
 };
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const screenshotDirectoryOverride = process.env.THREADLEAF_EXCALIDRAW_SCREENSHOT_DIR;
+const keepTemporaryRoot = process.env.THREADLEAF_EXCALIDRAW_KEEP_TEMP === "1";
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-excalidraw-e2e-"));
 const vaultPath = path.join(testRoot, "vault");
 const secondVaultPath = path.join(testRoot, "vault-two");
@@ -339,6 +342,12 @@ async function capture(connection, label, theme) {
   return { filePath, digest: sha256(bytes) };
 }
 
+async function captureCurrentTheme(connection, label) {
+  const theme = await evaluate(connection, "document.documentElement.dataset.theme");
+  assert(theme === "dark" || theme === "light", `${label} has no active screenshot theme.`);
+  return capture(connection, label, theme);
+}
+
 async function fetchPublicPlugin() {
   const supplied = process.env.THREADLEAF_EXCALIDRAW_PLUGIN_PATH?.trim();
   if (supplied) {
@@ -435,16 +444,7 @@ async function writePluginFixture() {
   if (plugin.styles) await fs.writeFile(path.join(pluginPath, "styles.css"), plugin.styles);
   await fs.writeFile(
     path.join(pluginPath, "data.json"),
-    JSON.stringify({
-      compress: false,
-      matchTheme: true,
-      matchThemeAlways: true,
-      matchThemeTrigger: true,
-      onceOffCompressFlagReset: true,
-      onceOffGPTVersionReset: true,
-      previousRelease: pluginVersion,
-      showReleaseNotes: false,
-    }),
+    JSON.stringify(pluginFixtureSettings(false)),
   );
   return {
     ...plugin,
@@ -452,6 +452,19 @@ async function writePluginFixture() {
     mainSha256: sha256(plugin.main),
     mainBytes: plugin.main.length,
     stylesSha256: plugin.styles ? sha256(plugin.styles) : null,
+  };
+}
+
+function pluginFixtureSettings(compress) {
+  return {
+    compress,
+    matchTheme: true,
+    matchThemeAlways: true,
+    matchThemeTrigger: true,
+    onceOffCompressFlagReset: true,
+    onceOffGPTVersionReset: true,
+    previousRelease: pluginVersion,
+    showReleaseNotes: false,
   };
 }
 
@@ -465,16 +478,46 @@ async function canonicalManifest(root = vaultPath) {
   return { manifest, result };
 }
 
+function synchronizeTextElementMappings(content, scene) {
+  const section =
+    /(^# Excalidraw Data[ \t]*\r?\n(?:\r?\n)?## Text Elements[ \t]*\r?\n)([\s\S]*?)(^%%[ \t]*\r?\n## Drawing[ \t]*\r?$)/mu.exec(
+      content,
+    );
+  assert(section, "The canonical Excalidraw Text Elements section is missing.");
+  const lineEnding = section[1].includes("\r\n") ? "\r\n" : "\n";
+  const ids = new Set();
+  const entries = (scene.elements ?? [])
+    .filter((element) => element?.type === "text" && element.isDeleted !== true)
+    .map((element) => {
+      assert(
+        typeof element.id === "string" && /^[A-Za-z0-9_-]{8}$/u.test(element.id),
+        "Excalidraw text element IDs must be eight public-format characters.",
+      );
+      assert(!ids.has(element.id), `Duplicate Excalidraw text element ID: ${element.id}`);
+      ids.add(element.id);
+      const raw = element.rawText ?? element.originalText ?? element.text ?? "";
+      return `${String(raw).replace(/\r?\n/gu, lineEnding)} ^${element.id}`;
+    });
+  const body =
+    entries.length === 0
+      ? lineEnding
+      : `${entries.join(`${lineEnding}${lineEnding}`)}${lineEnding}${lineEnding}`;
+  const start = section.index + section[1].length;
+  const end = start + section[2].length;
+  return `${content.slice(0, start)}${body}${content.slice(end)}`;
+}
+
 function sceneEdit(content) {
   const opening = "```json\n";
   const start = content.indexOf(opening);
   const end = content.indexOf("\n```", start + opening.length);
   assert(start >= 0 && end > start, "The uncompressed Excalidraw fixture fence is missing.");
   const scene = JSON.parse(content.slice(start + opening.length, end));
-  const text = scene.elements?.find((element) => element.id === "text-title");
+  const text = scene.elements?.find((element) => element.id === "text1234");
   assert(text, "The deterministic Excalidraw text element is missing.");
   text.text = "Ébauche dessinée";
   text.originalText = "Ébauche dessinée";
+  text.rawText = "Ébauche dessinée";
   const payload = `${JSON.stringify(
     {
       files: scene.files,
@@ -487,7 +530,8 @@ function sceneEdit(content) {
     null,
     2,
   )}\n`;
-  return `${content.slice(0, start + opening.length)}${payload}${content.slice(end + 1)}`;
+  const edited = `${content.slice(0, start + opening.length)}${payload}${content.slice(end + 1)}`;
+  return synchronizeTextElementMappings(edited, scene);
 }
 
 async function startApp(port, pluginState) {
@@ -630,8 +674,39 @@ async function closeApp() {
   ]);
 }
 
-async function openDrawing(filePath, vaultId) {
-  await evaluate(cdp, `window.threadleaf.openNote(${JSON.stringify(filePath)})`);
+async function openNavigatorPluginDocument(filePath) {
+  await waitFor(
+    cdp,
+    "document.querySelector('#file-list')?.dataset.mode === 'tree'",
+    "Files navigator tree mode",
+  );
+  const segments = filePath.split("/");
+  for (let depth = 1; depth < segments.length; depth += 1) {
+    const folderPath = segments.slice(0, depth).join("/");
+    const selector = `#file-list [data-tree-path=${JSON.stringify(folderPath)}]`;
+    await waitFor(
+      cdp,
+      `document.querySelector(${JSON.stringify(selector)}) instanceof HTMLButtonElement`,
+      `navigator folder ${folderPath}`,
+    );
+    const expanded = await evaluate(
+      cdp,
+      `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-expanded') === 'true'`,
+    );
+    if (!expanded) await clickSelector(cdp, selector);
+  }
+  const selector = `#file-list [data-tree-path=${JSON.stringify(filePath)}]`;
+  await waitFor(
+    cdp,
+    `(() => { const row = document.querySelector(${JSON.stringify(selector)}); return row instanceof HTMLButtonElement && row.dataset.kind === 'file'; })()`,
+    `native plugin document row ${filePath}`,
+  );
+  await clickSelector(cdp, selector);
+}
+
+async function openDrawing(filePath, vaultId, options = {}) {
+  if (options.viaNavigator) await openNavigatorPluginDocument(filePath);
+  else await evaluate(cdp, `window.threadleaf.openNote(${JSON.stringify(filePath)})`);
   await waitFor(
     cdp,
     `document.querySelector('#note-path')?.textContent === ${JSON.stringify(filePath)}`,
@@ -667,7 +742,49 @@ async function openDrawing(filePath, vaultId) {
     `Excalidraw view ${filePath}`,
     20_000,
   );
+  if (options.viaNavigator) {
+    const selector = `#file-list [data-tree-path=${JSON.stringify(filePath)}]`;
+    await waitFor(
+      cdp,
+      `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-current') === 'page'`,
+      `selected native plugin document row ${filePath}`,
+    );
+  }
   return vaultId;
+}
+
+async function assertRestoredNativeDrawing(filePath, vaultId) {
+  const selector = `#file-list [data-tree-path=${JSON.stringify(filePath)}]`;
+  const restored = await waitFor(
+    cdp,
+    `(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      const pane = snapshot.workspace?.panes.find((candidate) => candidate.id === snapshot.workspace?.activePaneId);
+      const row = document.querySelector(${JSON.stringify(selector)});
+      const host = document.querySelector('#plugin-surface-host');
+      const button = document.querySelector('#plugin-view');
+      return snapshot.vault.id === ${JSON.stringify(vaultId)} &&
+        snapshot.workspace?.activeNote === null &&
+        snapshot.workspace?.activePluginFile?.path === ${JSON.stringify(filePath)} &&
+        pane?.activePluginFile?.path === ${JSON.stringify(filePath)} &&
+        pane.tabs.some((tab) => tab.path === ${JSON.stringify(filePath)} && tab.active) &&
+        snapshot.pluginSurface?.viewType === 'excalidraw' &&
+        snapshot.pluginSurface.filePath === ${JSON.stringify(filePath)} &&
+        document.querySelector('#note-path')?.textContent === ${JSON.stringify(filePath)} &&
+        row instanceof HTMLButtonElement && row.getAttribute('aria-current') === 'page' &&
+        host instanceof HTMLElement && !host.hidden &&
+        button instanceof HTMLButtonElement && button.getAttribute('aria-pressed') === 'true'
+        ? snapshot
+        : null;
+    })()`,
+    `restored native plugin document ${filePath}`,
+    30_000,
+  );
+  assert(
+    restored.workspace.activePluginFile.viewType === "excalidraw",
+    `Restored native document lost its live view type: ${JSON.stringify(restored.workspace.activePluginFile)}`,
+  );
+  return restored;
 }
 
 async function connectPluginSurface(port) {
@@ -840,13 +957,16 @@ async function exportPublicFixtures() {
   };
 }
 
-async function unloadReload(vaultId) {
+async function unloadPlugin() {
   await evaluate(cdp, `window.threadleaf.unloadPlugin(${JSON.stringify(pluginId)})`);
   await waitFor(
     cdp,
     `(async () => { const s = await window.threadleaf.getSnapshot(); return !(s.plugins ?? []).some((p) => p.id === ${JSON.stringify(pluginId)} && p.state === 'loaded'); })()`,
     "Excalidraw unload",
   );
+}
+
+async function reloadPlugin(vaultId) {
   await evaluate(cdp, `window.threadleaf.reloadPlugin(${JSON.stringify(pluginId)})`);
   await waitFor(
     cdp,
@@ -862,6 +982,19 @@ async function unloadReload(vaultId) {
     "Native workspace stopped responding after reload.",
   );
   assert(vaultId, "Vault identity was lost across plugin reload.");
+}
+
+async function unloadReload(vaultId) {
+  await unloadPlugin();
+  await reloadPlugin(vaultId);
+}
+
+async function reloadWithCompression(vaultId, compress) {
+  await unloadPlugin();
+  const dataPath = path.join(pluginPath, "data.json");
+  const settings = JSON.parse(await fs.readFile(dataPath, "utf8"));
+  await fs.writeFile(dataPath, JSON.stringify({ ...settings, compress }));
+  await reloadPlugin(vaultId);
 }
 
 async function assertDrawingChrome(filePath, popoutState = "closed") {
@@ -1351,7 +1484,8 @@ async function run() {
   if (process.platform !== "linux")
     throw new Error("The packaged Excalidraw workflow currently requires Linux and Xvfb.");
   assert(await exists(electronPath), "Electron is not installed; packaged workflow is unverified.");
-  await fs.cp(fixtureVault, vaultPath, { recursive: true });
+  assert(await exists(sourceVault), `The Excalidraw source vault is missing: ${sourceVault}`);
+  await fs.cp(sourceVault, vaultPath, { recursive: true });
   await fs.cp(fixtureVault, secondVaultPath, { recursive: true });
   await fs.symlink(vaultPath, pickerLink);
   await fs.mkdir(userDataPath, { recursive: true });
@@ -1361,9 +1495,12 @@ async function run() {
   const port = await availablePort();
   const first = await startApp(port, pluginState);
   const targetPort = port;
-  await openDrawing("Drawings/Unicode Scene.excalidraw.md", first.vaultId);
-  await connectPluginSurface(targetPort);
   const filePath = "Drawings/Unicode Scene.excalidraw.md";
+  const compressedPath = "Drawings/Compressed Scene.excalidraw.md";
+  const nativePath = "Drawings/Native Scene.excalidraw";
+  const representationPreservationPaths = [compressedPath, nativePath];
+  await openDrawing(filePath, first.vaultId);
+  await connectPluginSurface(targetPort);
   const appShots = [
     await capture(cdp, "excalidraw-app", "dark"),
     await capture(cdp, "excalidraw-app", "light"),
@@ -1391,6 +1528,34 @@ async function run() {
     pluginCdp,
     "(() => { const target = document.querySelector('[data-visual-positive-control]'); target?.style.removeProperty('outline'); target?.style.removeProperty('outline-offset'); target?.removeAttribute('data-visual-positive-control'); return true; })()",
   );
+  const compressedSource = await fs.readFile(path.join(vaultPath, compressedPath), "utf8");
+  const compressedSetting = /^```compressed-json[ \t]*$/mu.test(compressedSource);
+  assert(
+    compressedSetting || /^```json[ \t]*$/mu.test(compressedSource),
+    "The compressed-scene fixture has no supported Excalidraw scene fence.",
+  );
+  await reloadWithCompression(first.vaultId, compressedSetting);
+  await openDrawing(compressedPath, first.vaultId);
+  await connectPluginSurface(targetPort);
+  await captureCurrentTheme(pluginCdp, "excalidraw-compressed-canvas");
+  assert(
+    sha256(await fs.readFile(path.join(vaultPath, compressedPath))) ===
+      before.result[compressedPath]?.sha256,
+    "Opening the compressed scene under its matching setting changed source bytes.",
+  );
+
+  await reloadWithCompression(first.vaultId, false);
+  assert(
+    sha256(await fs.readFile(path.join(vaultPath, compressedPath))) ===
+      before.result[compressedPath]?.sha256,
+    "Unloading the compressed scene under its matching setting changed source bytes.",
+  );
+  await openDrawing(nativePath, first.vaultId, { viaNavigator: true });
+  await connectPluginSurface(targetPort);
+  await captureCurrentTheme(cdp, "excalidraw-native-app");
+  await captureCurrentTheme(pluginCdp, "excalidraw-native-canvas");
+  await openDrawing(filePath, first.vaultId);
+  await connectPluginSurface(targetPort);
   await drawEditGesture();
   await directSceneEdit(first.vaultId, filePath);
   await createAndEmbed(first.vaultId);
@@ -1475,10 +1640,21 @@ async function run() {
   await connectPluginSurface(port);
 
   const restartSource = sha256(await fs.readFile(path.join(vaultPath, filePath)));
+  await openDrawing(nativePath, returned.vault.id, { viaNavigator: true });
+  await connectPluginSurface(port);
+  const nativeRestartSource = sha256(await fs.readFile(path.join(vaultPath, nativePath)));
   await closeApp();
 
   const restartPort = await availablePort();
   const restarted = await startApp(restartPort, pluginState);
+  await assertRestoredNativeDrawing(nativePath, restarted.vaultId);
+  await connectPluginSurface(restartPort);
+  await captureCurrentTheme(cdp, "excalidraw-restart-native-app");
+  await captureCurrentTheme(pluginCdp, "excalidraw-restart-native-canvas");
+  assert(
+    sha256(await fs.readFile(path.join(vaultPath, nativePath))) === nativeRestartSource,
+    "Restarting with the native scene active changed its source bytes.",
+  );
   await openDrawing(filePath, restarted.vaultId);
   await connectPluginSurface(restartPort);
   await capture(pluginCdp, "excalidraw-restart", "dark");
@@ -1503,6 +1679,12 @@ async function run() {
     after.result["Notes/Source.md"]?.sha256 !== before.result["Notes/Source.md"]?.sha256,
     "The intentional embed edit did not change source bytes.",
   );
+  for (const representationPath of representationPreservationPaths) {
+    assert(
+      after.result[representationPath]?.sha256 === before.result[representationPath]?.sha256,
+      `Opening and restarting changed ${representationPath}.`,
+    );
+  }
   assert(
     after.result[filePath]?.sha256 === restartSource,
     "Restart changed the persisted Excalidraw source bytes.",
@@ -1525,6 +1707,7 @@ async function run() {
         workflows: [
           "create",
           "draw-edit",
+          "compressed-and-native-scene-open",
           "embed",
           "svg-png-export",
           "note-switch",
@@ -1535,6 +1718,7 @@ async function run() {
           ...(pluginCrash.induced ? ["plugin-renderer-crash-degraded-recovery"] : []),
           "vault-switch-popout-cleanup",
           "unload-reload",
+          "native-scene-restart-recovery",
           "restart",
           "source-byte-and-attachment-manifest",
         ],
@@ -1579,5 +1763,9 @@ try {
   process.exitCode = 1;
 } finally {
   await closeApp().catch(() => undefined);
-  await fs.rm(testRoot, { recursive: true, force: true });
+  if (keepTemporaryRoot) {
+    console.error(`Excalidraw packaged workflow retained temporary root: ${testRoot}`);
+  } else {
+    await fs.rm(testRoot, { recursive: true, force: true });
+  }
 }

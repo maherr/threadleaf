@@ -7,5 +7,6 @@
   migration, Live Preview, JSON Canvas, workspace, processor, package-inspection, and native
   extension evidence into generated machine-readable datasets.
 - Added fixture provenance, license, and exact-byte digest requirements.
-- Recorded the unsupported official Obsidian observation, non-sandboxed host boundaries, and
-  unwired native bundle path without promoting roadmap text to normative behavior.
+- Recorded the pinned official Obsidian roundtrip as external observed evidence, retained its
+  unsupported executable status, and kept non-sandboxed host boundaries and the unwired native
+  bundle path visible without promoting roadmap text to normative behavior.

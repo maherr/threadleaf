@@ -47,8 +47,8 @@ the plugin's normal `saveData` path on close, restores it on reopen, and removes
 close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
 not implied by those results. The public-format byte and semantic boundary is exercised separately
 by the [Excalidraw round-trip corpus and packaged gate](excalidraw-roundtrip.md), including native
-`.excalidraw` JSON and attachment manifests. Its official Obsidian observation remains explicitly
-unverified until a person runs the copied-vault manual protocol.
+`.excalidraw` JSON and attachment manifests. Its pinned official Obsidian roundtrip is recorded as
+an attended external observation and remains separate from executable compatibility gates.
 
 The measured Markdown processor family has a separate public contract in
 [`open-plugin-api.md`](open-plugin-api.md). It covers fenced-block replacement, ordered Markdown
@@ -308,5 +308,4 @@ place for manual review.
 - A Threadleaf-owned, open-licensed package directory backed by reviewed releases.
 - Broader workspace, editor, settings-control, conversion, adapter-mutation, file, and
   metadata APIs.
-- Complete Excalidraw inline wiki-embed, remaining export-format, and cross-application
-  byte-preservation workflows.
+- Complete Excalidraw inline wiki-embed and remaining export-format workflows.

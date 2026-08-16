@@ -10,6 +10,7 @@ import {
   parseExcalidrawMarkdown,
   parseUncompressedExcalidrawScene,
   replaceExcalidrawScene,
+  synchronizeExcalidrawTextElementMappings,
 } from "../kernel/excalidraw-roundtrip";
 import { FixedStateRoot } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
@@ -43,6 +44,13 @@ interface CorpusCases {
   cases: CorpusCase[];
 }
 
+type ExternalObservationStatus = "observed" | "unverified";
+
+interface CorpusCaseResult {
+  message: string;
+  status: "passed" | ExternalObservationStatus;
+}
+
 const corpusDirectory = path.resolve(process.cwd(), "fixtures/corpus/excalidraw-roundtrip-v1");
 const canonicalVault = path.join(corpusDirectory, "vault");
 const canonicalManifestPath = path.join(corpusDirectory, "manifest.json");
@@ -56,6 +64,24 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     fail(message);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function observationText(value: unknown, label: string): string {
+  assert(
+    typeof value === "string" && value.trim() === value && value.length > 0,
+    `${label} is invalid`,
+  );
+  return value;
+}
+
+function observationSha256(value: unknown, label: string): string {
+  const digest = observationText(value, label);
+  assert(/^[a-f0-9]{64}$/u.test(digest), `${label} is not SHA-256`);
+  return digest;
 }
 
 async function readJson<T>(filePath: string): Promise<T> {
@@ -159,13 +185,163 @@ async function verifyManifest(manifest: CorpusManifest): Promise<void> {
   );
 }
 
-async function verifyCases(cases: CorpusCases, manifest: CorpusManifest): Promise<void> {
+async function verifyExternalObservation(
+  value: Record<string, unknown>,
+  entry: CorpusCase,
+  manifest: CorpusManifest,
+): Promise<ExternalObservationStatus> {
+  assert(value.schemaVersion === 1, `${entry.id} observation schema is stale`);
+  assert(
+    value.observationId === "threadleaf.excalidraw.obsidian.v1",
+    `${entry.id} observation identity is stale`,
+  );
+  assert(
+    value.status === "observed" || value.status === "unverified",
+    `${entry.id} observation status is invalid`,
+  );
+  const status = value.status;
+  assert(entry.expected.status === status, `${entry.id} case and observation statuses differ`);
+  observationText(value.method, `${entry.id} method`);
+  observationText(value.source, `${entry.id} source`);
+  observationText(value.operator, `${entry.id} operator`);
+  const recordedAt = observationText(value.recordedAt, `${entry.id} recordedAt`);
+  assert(/^\d{4}-\d{2}-\d{2}$/u.test(recordedAt), `${entry.id} recordedAt is invalid`);
+  if (status === "unverified") {
+    assert(value.result === null, `${entry.id} unverified observation cannot carry a result`);
+    return status;
+  }
+
+  assert(isRecord(value.corpus), `${entry.id} corpus receipt is missing`);
+  assert(value.corpus.corpusId === manifest.corpusId, `${entry.id} corpus identity differs`);
+  const recordedManifestSha256 = observationSha256(
+    value.corpus.manifestSha256,
+    `${entry.id} corpus manifest`,
+  );
+  assert(
+    recordedManifestSha256 === sha256(await fs.readFile(canonicalManifestPath)),
+    `${entry.id} corpus manifest receipt is stale`,
+  );
+  const canonicalPublicFileCount = manifest.files.filter(
+    (file) => !file.path.startsWith(".obsidian/"),
+  ).length;
+  assert(
+    value.corpus.canonicalPublicFileCount === canonicalPublicFileCount,
+    `${entry.id} canonical public file count differs`,
+  );
+
+  assert(
+    isRecord(value.officialApplication),
+    `${entry.id} official application receipt is missing`,
+  );
+  assert(
+    value.officialApplication.id === "md.obsidian.Obsidian",
+    `${entry.id} did not identify official Obsidian`,
+  );
+  observationText(value.officialApplication.version, `${entry.id} application version`);
+  observationSha256(value.officialApplication.flatpakCommit, `${entry.id} Flatpak commit`);
+  observationText(value.officialApplication.electronVersion, `${entry.id} Electron version`);
+  observationText(value.officialApplication.chromiumVersion, `${entry.id} Chromium version`);
+  assert(
+    isRecord(value.officialApplication.isolation) &&
+      value.officialApplication.isolation.profile === "disposable" &&
+      value.officialApplication.isolation.vault === "disposable synthetic copy" &&
+      value.officialApplication.isolation.remoteDebuggingAddress === "127.0.0.1",
+    `${entry.id} official application was not isolated`,
+  );
+
+  assert(isRecord(value.plugin), `${entry.id} plugin receipt is missing`);
+  assert(
+    value.plugin.id === "obsidian-excalidraw-plugin" && value.plugin.version === "2.25.3",
+    `${entry.id} plugin identity differs`,
+  );
+  assert(
+    observationSha256(value.plugin.manifestSha256, `${entry.id} plugin manifest`) ===
+      "43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e",
+    `${entry.id} plugin manifest digest differs`,
+  );
+  assert(
+    observationSha256(value.plugin.mainSha256, `${entry.id} plugin bundle`) ===
+      "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6" &&
+      value.plugin.mainBytes === 4_898_048,
+    `${entry.id} plugin bundle identity differs`,
+  );
+  observationSha256(value.plugin.stylesSha256, `${entry.id} plugin stylesheet`);
+
+  assert(
+    Array.isArray(value.officialSettingsRuns) && value.officialSettingsRuns.length === 2,
+    `${entry.id} must record both compression settings`,
+  );
+  const compressionSettings = new Set<boolean>();
+  for (const [index, run] of value.officialSettingsRuns.entries()) {
+    assert(isRecord(run), `${entry.id} settings run ${index} is invalid`);
+    assert(typeof run.compress === "boolean", `${entry.id} settings run ${index} lacks compress`);
+    compressionSettings.add(run.compress);
+    assert(
+      run.fileCount === canonicalPublicFileCount,
+      `${entry.id} settings run ${index} file count differs`,
+    );
+    observationSha256(run.manifestSha256, `${entry.id} settings run ${index} manifest`);
+    observationSha256(run.unicodeSceneSha256, `${entry.id} settings run ${index} Unicode scene`);
+    observationSha256(
+      run.compressedSceneSha256,
+      `${entry.id} settings run ${index} compressed scene`,
+    );
+    observationSha256(run.nativeSceneSha256, `${entry.id} settings run ${index} native scene`);
+  }
+  assert(
+    compressionSettings.has(false) && compressionSettings.has(true),
+    `${entry.id} compression setting coverage differs`,
+  );
+
+  assert(
+    isRecord(value.crossApplicationRoundtrip),
+    `${entry.id} cross-application receipt is missing`,
+  );
+  const inputManifest = observationSha256(
+    value.crossApplicationRoundtrip.inputManifestSha256,
+    `${entry.id} input manifest`,
+  );
+  const outputManifest = observationSha256(
+    value.crossApplicationRoundtrip.outputManifestSha256,
+    `${entry.id} output manifest`,
+  );
+  assert(
+    value.crossApplicationRoundtrip.threadleafStatus === "passed" &&
+      value.crossApplicationRoundtrip.officialReturnOpens === 2 &&
+      value.crossApplicationRoundtrip.officialRestart === true &&
+      value.crossApplicationRoundtrip.exact === true &&
+      inputManifest === outputManifest,
+    `${entry.id} cross-application result is incomplete`,
+  );
+
+  assert(isRecord(value.result), `${entry.id} result is missing`);
+  assert(
+    value.result.status === "passed" &&
+      value.result.officialOpenSaveReopen === true &&
+      value.result.threadleafOpenEditRestart === true &&
+      value.result.officialReturnOpenRestart === true &&
+      value.result.crossApplicationBytesExact === true &&
+      value.result.attachmentBytesExact === true,
+    `${entry.id} observed result is incomplete`,
+  );
+  assert(
+    Array.isArray(value.limitations) && value.limitations.length > 0,
+    `${entry.id} limitations are missing`,
+  );
+  return status;
+}
+
+async function verifyCases(
+  cases: CorpusCases,
+  manifest: CorpusManifest,
+): Promise<Map<string, ExternalObservationStatus>> {
   assert(cases.schemaVersion === 1, "cases schemaVersion must be 1");
   assert(cases.corpusId === manifest.corpusId, "cases and manifest corpus IDs differ");
   assert(cases.license === "CC0-1.0", "cases must declare the fixture license");
   assert(cases.canonicalRoot === "vault", "cases canonicalRoot must be vault");
   assert(cases.manifest === "manifest.json", "cases manifest pointer is stale");
   const manifestPaths = new Set(manifest.files.map((entry) => entry.path));
+  const externalObservations = new Map<string, ExternalObservationStatus>();
   for (const entry of cases.cases) {
     assert(entry.id.length > 0 && entry.source && entry.expected, "case shape is incomplete");
     if (entry.source.files !== "manifest") {
@@ -174,10 +350,9 @@ async function verifyCases(cases: CorpusCases, manifest: CorpusManifest): Promis
           const observation = await readJson<Record<string, unknown>>(
             path.join(corpusDirectory, source),
           );
-          assert(observation.schemaVersion === 1, `${entry.id} observation schema is stale`);
-          assert(
-            observation.status === "unverified",
-            `${entry.id} must remain unverified until a manual observation exists`,
+          externalObservations.set(
+            entry.id,
+            await verifyExternalObservation(observation, entry, manifest),
           );
         } else {
           assert(
@@ -188,6 +363,7 @@ async function verifyCases(cases: CorpusCases, manifest: CorpusManifest): Promis
       }
     }
   }
+  return externalObservations;
 }
 
 async function copyCanonicalVault(target: string): Promise<void> {
@@ -208,12 +384,13 @@ function textElementWithChangedText(markdown: string, nextText: string): string 
     : [];
   const target = elements.find(
     (element): element is Record<string, unknown> =>
-      typeof element === "object" && element !== null && element.id === "text-title",
+      typeof element === "object" && element !== null && element.id === "text1234",
   );
   assert(target, "the deterministic text element is missing");
   target.text = nextText;
   target.originalText = nextText;
-  return replaceExcalidrawScene(
+  target.rawText = nextText;
+  const edited = replaceExcalidrawScene(
     markdown,
     JSON.stringify({
       files: scene.files,
@@ -224,6 +401,7 @@ function textElementWithChangedText(markdown: string, nextText: string): string 
       version: scene.version,
     }),
   );
+  return synchronizeExcalidrawTextElementMappings(edited, scene);
 }
 
 async function runUncompressedCase(vaultRoot: string, stateRoot: string): Promise<void> {
@@ -244,9 +422,13 @@ async function runUncompressedCase(vaultRoot: string, stateRoot: string): Promis
   const reopenedElements = Array.isArray(reopenedScene.elements) ? reopenedScene.elements : [];
   const reopenedText = reopenedElements.find(
     (element): element is Record<string, unknown> =>
-      typeof element === "object" && element !== null && element.id === "text-title",
+      typeof element === "object" && element !== null && element.id === "text1234",
   );
   assert(reopenedText?.text === "Ébauche modifiée", "edited scene did not reopen");
+  assert(
+    reopened.content.includes("Ébauche modifiée ^text1234"),
+    "edited scene text mapping did not reopen",
+  );
   assert(
     canonicalizeExcalidrawScene(parseUncompressedExcalidrawScene(reopened.content)).includes(
       "Ébauche modifiée",
@@ -380,9 +562,16 @@ async function runPackagedGatePresenceCase(): Promise<void> {
   await fs.access(path.resolve(process.cwd(), "scripts/check-excalidraw-roundtrip.mjs"));
 }
 
-async function runCase(entry: CorpusCase): Promise<string> {
+async function runCase(
+  entry: CorpusCase,
+  externalObservations: ReadonlyMap<string, ExternalObservationStatus>,
+): Promise<CorpusCaseResult> {
   if (entry.support === "unsupported") {
-    return `${entry.id}: unverified (declared unsupported, not counted as a pass)`;
+    const status = externalObservations.get(entry.id) ?? "unverified";
+    return {
+      message: `${entry.id}: ${status} (external evidence, not an executable pass)`,
+      status,
+    };
   }
   const temporaryRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "threadleaf-excalidraw-roundtrip-"),
@@ -405,11 +594,14 @@ async function runCase(entry: CorpusCase): Promise<string> {
       await runExternalEditCase(vaultRoot, stateRoot);
     } else if (entry.id === "workflow.packaged-electron") {
       await runPackagedGatePresenceCase();
-      return `${entry.id}: gate present (run separately with Electron/Xvfb)`;
+      return {
+        message: `${entry.id}: gate present (run separately with Electron/Xvfb)`,
+        status: "passed",
+      };
     } else {
       fail(`no handler for ${entry.id}`);
     }
-    return `${entry.id}: passed`;
+    return { message: `${entry.id}: passed`, status: "passed" };
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true });
   }
@@ -417,28 +609,29 @@ async function runCase(entry: CorpusCase): Promise<string> {
 
 export async function runExcalidrawRoundtripCorpus(): Promise<{
   passed: number;
+  observed: number;
   unverified: number;
 }> {
   const manifest = await readJson<CorpusManifest>(canonicalManifestPath);
   await verifyManifest(manifest);
   const cases = await readJson<CorpusCases>(canonicalCasesPath);
-  await verifyCases(cases, manifest);
-  const results: string[] = [];
+  const externalObservations = await verifyCases(cases, manifest);
+  const results: CorpusCaseResult[] = [];
   let passed = 0;
+  let observed = 0;
   let unverified = 0;
   for (const entry of cases.cases) {
-    results.push(await runCase(entry));
-    if (entry.support === "supported") {
-      passed += 1;
-    } else {
-      unverified += 1;
-    }
+    const result = await runCase(entry, externalObservations);
+    results.push(result);
+    if (result.status === "passed") passed += 1;
+    else if (result.status === "observed") observed += 1;
+    else unverified += 1;
   }
   for (const result of results) {
-    process.stdout.write(`${result}\n`);
+    process.stdout.write(`${result.message}\n`);
   }
   process.stdout.write(
-    `Excalidraw round-trip corpus: ${passed} executable gates, ${unverified} unverified\n`,
+    `Excalidraw round-trip corpus: ${passed} executable gates, ${observed} observed external, ${unverified} unverified\n`,
   );
-  return { passed, unverified };
+  return { passed, observed, unverified };
 }

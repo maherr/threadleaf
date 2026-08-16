@@ -281,7 +281,7 @@ normal external vault backup and the privacy-safe feedback workflow.
       menus with custom icons, item states, dismissal, positioning, and keyboard navigation.
 - [x] Await custom-view open and close hooks around state and component lifecycles, including
       failure-safe component cleanup and leaf detachment.
-- [ ] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
+- [x] Preserve Excalidraw Markdown and attachment bytes across Threadleaf, Obsidian, external edits,
       rename, sync-style conflicts, and recovery without a converter-only fork of the format.
   - [x] Preserve exact Markdown, PNG, and SVG bytes through Threadleaf plugin writes, attachment
         rename and recoverable trash, external-edit conflicts, simulated interrupted writes and
@@ -289,7 +289,7 @@ normal external vault backup and the privacy-safe feedback workflow.
   - [x] Add a deterministic public-format corpus for native `.excalidraw` JSON, compressed and
         uncompressed Markdown, Unicode and nested attachments, semantic versus byte comparisons,
         and an isolated packaged Electron/CDP workflow gate.
-  - [ ] Complete the same disposable-vault open and save roundtrip in official Obsidian, then reopen
+  - [x] Complete the same disposable-vault open and save roundtrip in official Obsidian, then reopen
         it in Threadleaf and compare every fixture byte.
 
 Exit gate: selected high-value plugins complete named workflows against public fixtures.

@@ -143,6 +143,22 @@ describe("workspace state", () => {
     });
   });
 
+  it("persists native Excalidraw tabs without admitting ordinary files", () => {
+    const state = createWorkspaceState(
+      vaultId,
+      ["Notes/Source.md", "Drawings/Native Scene.excalidraw"],
+      "Drawings/Native Scene.excalidraw",
+    );
+    expect(createWorkspaceStateDocument(state)).toMatchObject({
+      openPaths: ["Notes/Source.md", "Drawings/Native Scene.excalidraw"],
+      activePath: "Drawings/Native Scene.excalidraw",
+    });
+    expect(parseWorkspaceState(createWorkspaceStateDocument(state), vaultId)).toEqual(state);
+    expect(() => createWorkspaceState(vaultId, ["Attachment.json"], "Attachment.json")).toThrow(
+      "native Excalidraw scenes",
+    );
+  });
+
   it("rejects crossed vaults, duplicates, private paths, and invalid active tabs", () => {
     expect(() =>
       parseWorkspaceState(
