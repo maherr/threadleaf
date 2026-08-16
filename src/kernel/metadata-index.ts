@@ -404,6 +404,10 @@ export class MetadataIndex {
     return this.#generation;
   }
 
+  get documentCount(): number {
+    return this.#documents.size;
+  }
+
   static async build(source: VaultReadPort): Promise<MetadataIndex> {
     const index = new MetadataIndex();
     await index.rebuild(source);

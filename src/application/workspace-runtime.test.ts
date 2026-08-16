@@ -286,6 +286,14 @@ describe("WorkspaceRuntime", () => {
 
     expect(snapshot.workspace?.files.length).toBeLessThanOrEqual(256);
     expect(filePage).toMatchObject({ total: 602, complete: false });
+    expect(snapshot.workspace?.census).toMatchObject({
+      state: "current",
+      generation: 1,
+      discovered: 602,
+      indexed: 602,
+      total: 602,
+    });
+    expect(snapshot.vault.markdownFileCount).toBe(602);
     await expect(
       workspace.getWorkspaceFilePage({
         expectedVaultId: workspace.vaultId,
@@ -312,21 +320,108 @@ describe("WorkspaceRuntime", () => {
     }
   });
 
-  it("rejects a file page from the generation before a corpus mutation", async () => {
+  it("invalidates file-page generations across direct create, rename, and delete mutations", async () => {
     const workspace = await openRuntime();
     const before = await workspace.getSnapshot();
     const generation = before.workspace?.filePage.generation;
+    const censusGeneration = before.workspace?.census.generation ?? Number.NaN;
     expect(generation).toEqual(expect.any(String));
-    await workspace.createNote("Generation-change.md", "# Changed\n", workspace.vaultId);
+    const created = await workspace.createNote(
+      "Generation-change.md",
+      "# Changed\n",
+      workspace.vaultId,
+    );
+    expect(created.snapshot.workspace).toMatchObject({
+      census: {
+        generation: censusGeneration + 1,
+        discovered: 3,
+        indexed: 3,
+        total: 3,
+      },
+      filePage: { generation: expect.any(String), total: 3 },
+    });
+    expect(created.snapshot.vault.markdownFileCount).toBe(3);
+    expect(created.snapshot.workspace?.indexGeneration).not.toBe(generation);
 
-    const stale = await workspace.getWorkspaceFilePage({
+    await expect(
+      workspace.getWorkspaceFilePage({
+        expectedVaultId: workspace.vaultId,
+        generation: generation ?? "missing",
+        offset: 0,
+        limit: 64,
+      }),
+    ).resolves.toMatchObject({ status: "stale-generation" });
+
+    const createdNote = created.snapshot.workspace?.activeNote;
+    const createdGeneration = created.snapshot.workspace?.filePage.generation;
+    if (!createdNote || !createdGeneration)
+      throw new Error("Expected the created note generation.");
+    const moved = await workspace.moveNote(
+      createdNote.path,
+      "Generation-renamed.md",
+      createdNote.revision,
+      workspace.vaultId,
+    );
+    expect(moved.outcome).toMatchObject({
+      status: "committed",
+      from: "Generation-change.md",
+      to: "Generation-renamed.md",
+    });
+    expect(moved.snapshot.workspace).toMatchObject({
+      census: {
+        generation: censusGeneration + 1,
+        discovered: 3,
+        indexed: 3,
+        total: 3,
+      },
+      filePage: { total: 3 },
+      activeNote: { path: "Generation-renamed.md" },
+    });
+    expect(moved.snapshot.workspace?.indexGeneration).not.toBe(createdGeneration);
+    await expect(
+      workspace.getWorkspaceFilePage({
+        expectedVaultId: workspace.vaultId,
+        generation: createdGeneration,
+        offset: 0,
+        limit: 64,
+      }),
+    ).resolves.toMatchObject({ status: "stale-generation" });
+
+    const movedNote = moved.snapshot.workspace?.activeNote;
+    const movedGeneration = moved.snapshot.workspace?.filePage.generation;
+    if (!movedNote || !movedGeneration) throw new Error("Expected the renamed note generation.");
+    const deleted = await workspace.deleteNote(
+      movedNote.path,
+      movedNote.revision,
+      workspace.vaultId,
+    );
+    expect(deleted.outcome).toMatchObject({ status: "committed" });
+    expect(deleted.snapshot.workspace).toMatchObject({
+      census: {
+        generation: censusGeneration + 2,
+        discovered: 2,
+        indexed: 2,
+        total: 2,
+      },
+      filePage: { total: 2 },
+    });
+    expect(deleted.snapshot.vault.markdownFileCount).toBe(2);
+    await expect(
+      workspace.getWorkspaceFilePage({
+        expectedVaultId: workspace.vaultId,
+        generation: movedGeneration,
+        offset: 0,
+        limit: 64,
+      }),
+    ).resolves.toMatchObject({ status: "stale-generation" });
+
+    const current = await workspace.getWorkspaceFilePage({
       expectedVaultId: workspace.vaultId,
-      generation: generation ?? "missing",
+      generation: deleted.snapshot.workspace?.filePage.generation ?? "missing",
       offset: 0,
       limit: 64,
     });
-
-    expect(stale).toMatchObject({ status: "stale-generation" });
+    expect(current).toMatchObject({ status: "ready", page: { total: 2 } });
   });
 
   it("pages index-derived tree children and locates a deep active-note path without filesystem discovery", async () => {
@@ -533,6 +628,129 @@ describe("WorkspaceRuntime", () => {
       releaseCensus?.();
       await runtime.waitForCensusCompletion();
     }
+  });
+
+  it("keeps the current census aligned with accepted external vault changes", async () => {
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+    });
+    await runtime.waitForCensusCompletion();
+
+    const initial = await runtime.getSnapshot();
+    expect(initial.workspace).toMatchObject({
+      state: "ready",
+      census: {
+        state: "current",
+        discovered: 2,
+        indexed: 2,
+        total: 2,
+      },
+      filePage: { total: 2 },
+    });
+    const initialCensusGeneration = initial.workspace?.census.generation ?? Number.NaN;
+    expect(initialCensusGeneration).toBeGreaterThan(0);
+
+    await fs.writeFile(path.join(vaultPath, "External.md"), "# External\n", "utf8");
+    const created = await runtime.reconcileNow();
+    expect(created.workspace).toMatchObject({
+      state: "ready",
+      census: {
+        state: "current",
+        generation: initialCensusGeneration + 1,
+        discovered: 3,
+        indexed: 3,
+        total: 3,
+      },
+      filePage: { total: 3 },
+    });
+    expect(created.vault.markdownFileCount).toBe(3);
+
+    await fs.writeFile(path.join(vaultPath, "preview.bin"), Buffer.from([0x01, 0x02, 0x03]));
+    const attachment = await runtime.reconcileNow();
+    expect(attachment.workspace).toMatchObject({
+      census: {
+        generation: initialCensusGeneration + 1,
+        discovered: 3,
+        indexed: 3,
+        total: 3,
+      },
+      filePage: { total: 3 },
+    });
+
+    await fs.unlink(path.join(vaultPath, "External.md"));
+    const deleted = await runtime.reconcileNow();
+    expect(deleted.workspace).toMatchObject({
+      state: "ready",
+      census: {
+        state: "current",
+        generation: initialCensusGeneration + 2,
+        discovered: 2,
+        indexed: 2,
+        total: 2,
+      },
+      filePage: { total: 2 },
+    });
+    expect(deleted.vault.markdownFileCount).toBe(2);
+  });
+
+  it("finishes one coherent snapshot before publishing an overlapping reconciliation", async () => {
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+    });
+    const before = await runtime.getSnapshot();
+    const beforeGeneration = before.workspace?.indexGeneration;
+    expect(beforeGeneration).toEqual(expect.any(String));
+
+    const snapshotSeam = runtime as unknown as {
+      visibleVaultFiles: () => Promise<readonly string[]>;
+    };
+    const visibleVaultFiles = snapshotSeam.visibleVaultFiles.bind(runtime);
+    let pauseNextSnapshot = true;
+    let releaseSnapshot: () => void = () => undefined;
+    const snapshotGate = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    let reportSnapshotPaused: () => void = () => undefined;
+    const snapshotPaused = new Promise<void>((resolve) => {
+      reportSnapshotPaused = resolve;
+    });
+    snapshotSeam.visibleVaultFiles = async () => {
+      const files = await visibleVaultFiles();
+      if (pauseNextSnapshot) {
+        pauseNextSnapshot = false;
+        reportSnapshotPaused();
+        await snapshotGate;
+      }
+      return files;
+    };
+
+    const overlappingSnapshot = runtime.getSnapshot();
+    await snapshotPaused;
+    await fs.writeFile(path.join(vaultPath, "Overlap.md"), "# Overlap\n", "utf8");
+    const reconciliation = runtime.reconcileNow();
+    const reconciledBeforeSnapshotRelease = await Promise.race([
+      reconciliation.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ]);
+    releaseSnapshot();
+    const [during, after] = await Promise.all([overlappingSnapshot, reconciliation]);
+
+    expect(reconciledBeforeSnapshotRelease).toBe(false);
+    expect(during.workspace).toMatchObject({
+      indexGeneration: beforeGeneration,
+      filePage: { generation: beforeGeneration, total: 2 },
+      census: { discovered: 2, indexed: 2, total: 2 },
+    });
+    expect(during.vault.markdownFileCount).toBe(2);
+    expect(after.workspace).toMatchObject({
+      filePage: { total: 3 },
+      census: { discovered: 3, indexed: 3, total: 3 },
+    });
+    expect(after.workspace?.indexGeneration).not.toBe(beforeGeneration);
+    expect(after.vault.markdownFileCount).toBe(3);
   });
 
   it("marks partial search and graph results warming and rotates their generation after census", async () => {

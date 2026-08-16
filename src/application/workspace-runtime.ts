@@ -40,7 +40,6 @@ import type {
   NotePropertySetOutcome,
   NotePropertySetResponse,
   NotePropertyType,
-  NoteRestoreOutcome,
   NoteRestoreResponse,
   NoteSaveOutcome,
   NoteSaveResponse,
@@ -257,6 +256,19 @@ interface WorkspaceIndexProjection {
   interactiveFiles: WorkspaceFileSummary[];
   tags: WorkspaceTagSummary[];
   tree: WorkspaceTreeIndex;
+}
+
+interface WorkspaceSnapshotIndexCapture {
+  projection: WorkspaceIndexProjection;
+  census: WorkspaceCensusSnapshot;
+  indexGeneration: string;
+  watcherError: string | null;
+  lastWatchSequence: number;
+  lastRescanReason: string | null;
+  canvasFiles: WorkspaceCanvasSummary[];
+  renderablePaths: ReadonlySet<string>;
+  snapshotState: PersistedWorkspaceState;
+  workspaceChanged: boolean;
 }
 
 const MAX_DESKTOP_TRASH_ENTRIES = 500;
@@ -929,6 +941,9 @@ export class WorkspaceRuntime {
   // observed private state as a compare-and-save receipt so a stale reactor cannot clobber it.
   #workspacePersistedState: PersistedWorkspaceState | null | undefined;
   #workspacePersistenceTail: Promise<void> = Promise.resolve();
+  // Serializes index applies and short immutable captures only. Vault writes and snapshot I/O stay
+  // outside this tail because kernel fault seams deliberately re-enter reconciliation.
+  #indexStateTail: Promise<void> = Promise.resolve();
   #workspaceLoadWarning: string | null;
   #workspaceSaveWarning: string | null = null;
   #watcherError: string | null = null;
@@ -1049,6 +1064,16 @@ export class WorkspaceRuntime {
         discovered: this.indexReactor.index.snapshot().documents.length,
         indexed: this.indexReactor.index.snapshot().documents.length,
         total: null,
+        error: null,
+      };
+    } else {
+      const count = this.indexReactor.index.documentCount;
+      this.#census = {
+        state: "current",
+        generation: 1,
+        discovered: count,
+        indexed: count,
+        total: count,
         error: null,
       };
     }
@@ -1389,7 +1414,11 @@ export class WorkspaceRuntime {
     );
   }
 
-  async getWorkspaceFilePage(
+  getWorkspaceFilePage(request: WorkspaceFilePageRequest): Promise<WorkspaceFilePageResponse> {
+    return this.withIndexStateLock(() => this.getWorkspaceFilePageLocked(request));
+  }
+
+  private async getWorkspaceFilePageLocked(
     request: WorkspaceFilePageRequest,
   ): Promise<WorkspaceFilePageResponse> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
@@ -1443,7 +1472,11 @@ export class WorkspaceRuntime {
     };
   }
 
-  async getWorkspaceTreePage(
+  getWorkspaceTreePage(request: WorkspaceTreePageRequest): Promise<WorkspaceTreePageResponse> {
+    return this.withIndexStateLock(() => this.getWorkspaceTreePageLocked(request));
+  }
+
+  private async getWorkspaceTreePageLocked(
     request: WorkspaceTreePageRequest,
   ): Promise<WorkspaceTreePageResponse> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
@@ -1495,7 +1528,13 @@ export class WorkspaceRuntime {
     };
   }
 
-  async getWorkspaceTagCatalog(
+  getWorkspaceTagCatalog(
+    request: WorkspaceTagCatalogRequest,
+  ): Promise<WorkspaceTagCatalogResponse> {
+    return this.withIndexStateLock(() => this.getWorkspaceTagCatalogLocked(request));
+  }
+
+  private async getWorkspaceTagCatalogLocked(
     request: WorkspaceTagCatalogRequest,
   ): Promise<WorkspaceTagCatalogResponse> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
@@ -1526,7 +1565,11 @@ export class WorkspaceRuntime {
     };
   }
 
-  async getWorkspaceTreePath(
+  getWorkspaceTreePath(request: WorkspaceTreePathRequest): Promise<WorkspaceTreePathResponse> {
+    return this.withIndexStateLock(() => this.getWorkspaceTreePathLocked(request));
+  }
+
+  private async getWorkspaceTreePathLocked(
     request: WorkspaceTreePathRequest,
   ): Promise<WorkspaceTreePathResponse> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
@@ -1601,6 +1644,7 @@ export class WorkspaceRuntime {
         id: this.kernel.vaultId,
         name: this.readOnly ? "Threadleaf Demo" : pluginSnapshot.vault.name,
         path: this.kernel.paths.rootPath,
+        markdownFileCount: workspace.census.indexed,
         mode: this.readOnly ? "synthetic-read-only" : "kernel-backed",
         source: this.selectionSource,
         warning: this.warning,
@@ -1840,25 +1884,27 @@ export class WorkspaceRuntime {
       throw new Error("The active vault changed before this note could be restored.");
     }
     this.assertWritable("restore notes from trash");
-    const outcome: NoteRestoreOutcome = await restoreTrashedMarkdownNote(
-      this.kernel,
-      filePath,
-      expectedRevision,
-    );
+    const outcome = await restoreTrashedMarkdownNote(this.kernel, filePath, expectedRevision);
     if (outcome.status === "committed") {
       const restored = await this.kernel.readText(outcome.to);
-      this.watcher.operations.expect({
-        id: outcome.transactionId,
-        kind: "write",
-        path: outcome.to,
-        revision: restored.revision,
+      await this.withIndexMutation(async () => {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "write",
+          path: outcome.to,
+          revision: restored.revision,
+        });
+        await this.indexReactor.index.refresh(this.kernel, outcome.to);
       });
-      await this.indexReactor.index.refresh(this.kernel, outcome.to);
     }
     return { outcome, snapshot: await this.publishSnapshot() };
   }
 
-  async searchVault(query: string): Promise<VaultSearchResponse> {
+  searchVault(query: string): Promise<VaultSearchResponse> {
+    return this.withIndexStateLock(() => this.searchVaultLocked(query));
+  }
+
+  private async searchVaultLocked(query: string): Promise<VaultSearchResponse> {
     try {
       const page = this.indexReactor.index.search(query);
       const { generation: _indexGeneration, ...search } = page;
@@ -1891,7 +1937,11 @@ export class WorkspaceRuntime {
     }
   }
 
-  async getVaultGraph(
+  getVaultGraph(request: VaultGraphRequest, expectedVaultId: string): Promise<VaultGraphResponse> {
+    return this.withIndexStateLock(() => this.getVaultGraphLocked(request, expectedVaultId));
+  }
+
+  private async getVaultGraphLocked(
     request: VaultGraphRequest,
     expectedVaultId: string,
   ): Promise<VaultGraphResponse> {
@@ -1925,7 +1975,7 @@ export class WorkspaceRuntime {
       return { status: "stale-vault", vaultId: this.kernel.vaultId };
     }
     try {
-      const visiblePaths = await this.visibleVaultFiles();
+      const visiblePaths = await this.withIndexStateLock(() => this.visibleVaultFiles());
       return loadVaultAttachment(this.kernel, sourceNotePath, target, expectedVaultId, {
         visiblePaths,
       });
@@ -1939,14 +1989,32 @@ export class WorkspaceRuntime {
     }
   }
 
-  async loadVaultNoteEmbed(
+  loadVaultNoteEmbed(
     sourceNotePath: string,
     target: string,
     subpath: string | null,
     expectedVaultId: string,
   ): Promise<VaultNoteEmbedResponse> {
-    if (this.#census.state !== "current") {
-      const degraded = this.#census.state === "degraded";
+    return this.loadVaultNoteEmbedFromCapturedIndex(
+      sourceNotePath,
+      target,
+      subpath,
+      expectedVaultId,
+    );
+  }
+
+  private async loadVaultNoteEmbedFromCapturedIndex(
+    sourceNotePath: string,
+    target: string,
+    subpath: string | null,
+    expectedVaultId: string,
+  ): Promise<VaultNoteEmbedResponse> {
+    const captured = await this.withIndexStateLock(async () => ({
+      census: this.censusSnapshot(),
+      documents: this.indexReactor.index.snapshot().documents,
+    }));
+    if (captured.census.state !== "current") {
+      const degraded = captured.census.state === "degraded";
       return {
         status: "unavailable",
         vaultId: this.kernel.vaultId,
@@ -1958,7 +2026,7 @@ export class WorkspaceRuntime {
     }
     return loadVaultNoteEmbed(
       this.kernel,
-      this.indexReactor.index.snapshot().documents,
+      captured.documents,
       sourceNotePath,
       target,
       subpath,
@@ -2199,6 +2267,14 @@ export class WorkspaceRuntime {
     content: Uint8Array,
     expectedVaultId: string,
   ): Promise<NoteCreateOutcome> {
+    return this.createPluginFileThroughKernel(filePath, content, expectedVaultId);
+  }
+
+  private async createPluginFileThroughKernel(
+    filePath: string,
+    content: Uint8Array,
+    expectedVaultId: string,
+  ): Promise<NoteCreateOutcome> {
     if (expectedVaultId !== this.kernel.vaultId) {
       throw new Error("The active vault changed before this plugin file could be created.");
     }
@@ -2210,37 +2286,48 @@ export class WorkspaceRuntime {
     const outcome = await this.kernel.createBinary(normalizedPath, content);
     this.#visibleVaultFiles = null;
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
-    if (outcome.status === "committed") {
-      if (isMarkdown) {
-        this.watcher.operations.expect({
-          id: outcome.transactionId,
-          kind: "write",
-          path: outcome.path,
-          revision: outcome.revision,
-        });
-      }
-      await this.indexReactor.index.refresh(this.kernel, outcome.path);
-    } else if (outcome.status === "conflict") {
-      if (isMarkdown) {
-        const conflictCopy = await this.kernel.readText(outcome.conflictPath);
-        this.watcher.operations.expect({
-          id: outcome.transactionId,
-          kind: "write",
-          path: conflictCopy.path,
-          revision: conflictCopy.revision,
-        });
-      }
-      if (outcome.currentRevision === null) {
-        this.indexReactor.index.remove(outcome.path);
-      } else {
+    await this.withIndexMutation(async () => {
+      if (outcome.status === "committed") {
+        if (isMarkdown) {
+          this.watcher.operations.expect({
+            id: outcome.transactionId,
+            kind: "write",
+            path: outcome.path,
+            revision: outcome.revision,
+          });
+        }
         await this.indexReactor.index.refresh(this.kernel, outcome.path);
+      } else if (outcome.status === "conflict") {
+        if (isMarkdown) {
+          const conflictCopy = await this.kernel.readText(outcome.conflictPath);
+          this.watcher.operations.expect({
+            id: outcome.transactionId,
+            kind: "write",
+            path: conflictCopy.path,
+            revision: conflictCopy.revision,
+          });
+        }
+        if (outcome.currentRevision === null) {
+          this.indexReactor.index.remove(outcome.path);
+        } else {
+          await this.indexReactor.index.refresh(this.kernel, outcome.path);
+        }
+        await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
       }
-      await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
-    }
+    });
     return outcome;
   }
 
   async writePluginFile(
+    filePath: string,
+    content: Uint8Array,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultWriteResult> {
+    return this.writePluginFileThroughKernel(filePath, content, expectedRevision, expectedVaultId);
+  }
+
+  private async writePluginFileThroughKernel(
     filePath: string,
     content: Uint8Array,
     expectedRevision: string,
@@ -2257,37 +2344,53 @@ export class WorkspaceRuntime {
     const outcome = await this.kernel.writeBinary(normalizedPath, content, expectedRevision);
     this.#visibleVaultFiles = null;
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
-    if (outcome.status === "committed") {
-      if (isMarkdown) {
-        this.watcher.operations.expect({
-          id: outcome.transactionId,
-          kind: "write",
-          path: outcome.path,
-          revision: outcome.revision,
-        });
-      }
-      await this.indexReactor.index.refresh(this.kernel, outcome.path);
-    } else {
-      if (isMarkdown) {
-        const conflictCopy = await this.kernel.readText(outcome.conflictPath);
-        this.watcher.operations.expect({
-          id: outcome.transactionId,
-          kind: "write",
-          path: conflictCopy.path,
-          revision: conflictCopy.revision,
-        });
-      }
-      if (outcome.currentRevision === null) {
-        this.indexReactor.index.remove(outcome.path);
-      } else {
+    await this.withIndexMutation(async () => {
+      if (outcome.status === "committed") {
+        if (isMarkdown) {
+          this.watcher.operations.expect({
+            id: outcome.transactionId,
+            kind: "write",
+            path: outcome.path,
+            revision: outcome.revision,
+          });
+        }
         await this.indexReactor.index.refresh(this.kernel, outcome.path);
+      } else {
+        if (isMarkdown) {
+          const conflictCopy = await this.kernel.readText(outcome.conflictPath);
+          this.watcher.operations.expect({
+            id: outcome.transactionId,
+            kind: "write",
+            path: conflictCopy.path,
+            revision: conflictCopy.revision,
+          });
+        }
+        if (outcome.currentRevision === null) {
+          this.indexReactor.index.remove(outcome.path);
+        } else {
+          await this.indexReactor.index.refresh(this.kernel, outcome.path);
+        }
+        await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
       }
-      await this.indexReactor.index.refresh(this.kernel, outcome.conflictPath);
-    }
+    });
     return outcome;
   }
 
   async renamePluginFile(
+    filePath: string,
+    targetPath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult> {
+    return this.renamePluginFileThroughKernel(
+      filePath,
+      targetPath,
+      expectedRevision,
+      expectedVaultId,
+    );
+  }
+
+  private async renamePluginFileThroughKernel(
     filePath: string,
     targetPath: string,
     expectedRevision: string,
@@ -2310,26 +2413,36 @@ export class WorkspaceRuntime {
       expectedRevision,
     );
     this.#visibleVaultFiles = null;
-    if (outcome.status === "committed") {
-      this.watcher.operations.expect({
-        id: outcome.transactionId,
-        kind: "rename",
-        from: outcome.from,
-        to: outcome.to,
-        revision: expectedRevision,
-      });
-      this.indexReactor.index.remove(outcome.from);
-      await this.indexReactor.index.refresh(this.kernel, outcome.to);
-      if (this.moveOpenPath(outcome.from, outcome.to)) {
-        await this.persistWorkspaceStateBestEffort();
+    await this.withIndexMutation(async () => {
+      if (outcome.status === "committed") {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "rename",
+          from: outcome.from,
+          to: outcome.to,
+          revision: expectedRevision,
+        });
+        this.indexReactor.index.remove(outcome.from);
+        await this.indexReactor.index.refresh(this.kernel, outcome.to);
+        if (this.moveOpenPath(outcome.from, outcome.to)) {
+          await this.persistWorkspaceStateBestEffort();
+        }
+      } else {
+        await this.indexReactor.index.rebuild(this.kernel);
       }
-    } else {
-      await this.indexReactor.index.rebuild(this.kernel);
-    }
+    });
     return outcome;
   }
 
   async trashPluginFile(
+    filePath: string,
+    expectedRevision: string,
+    expectedVaultId: string,
+  ): Promise<VaultRenameResult> {
+    return this.trashPluginFileThroughKernel(filePath, expectedRevision, expectedVaultId);
+  }
+
+  private async trashPluginFileThroughKernel(
     filePath: string,
     expectedRevision: string,
     expectedVaultId: string,
@@ -2351,19 +2464,21 @@ export class WorkspaceRuntime {
       expectedRevision,
     );
     this.#visibleVaultFiles = null;
-    if (outcome.status === "committed") {
-      this.watcher.operations.expect({
-        id: outcome.transactionId,
-        kind: "delete",
-        path: outcome.from,
-      });
-      this.indexReactor.index.remove(outcome.from);
-      if (this.removeOpenPath(outcome.from)) {
-        await this.persistWorkspaceStateBestEffort();
+    await this.withIndexMutation(async () => {
+      if (outcome.status === "committed") {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "delete",
+          path: outcome.from,
+        });
+        this.indexReactor.index.remove(outcome.from);
+        if (this.removeOpenPath(outcome.from)) {
+          await this.persistWorkspaceStateBestEffort();
+        }
+      } else {
+        await this.indexReactor.index.rebuild(this.kernel);
       }
-    } else {
-      await this.indexReactor.index.rebuild(this.kernel);
-    }
+    });
     return outcome;
   }
 
@@ -2442,10 +2557,12 @@ export class WorkspaceRuntime {
     } else {
       // A scan with nothing to report is still a look at the vault, and it is the
       // look that confirms an absence observed on the pass before it.
-      this.#reconcilePass += 1;
-      if (await this.settleUnconfirmedAbsences()) {
-        await this.persistWorkspaceStateBestEffort();
-      }
+      await this.withIndexMutation(async () => {
+        this.#reconcilePass += 1;
+        if (await this.settleUnconfirmedAbsences()) {
+          await this.persistWorkspaceStateBestEffort();
+        }
+      });
     }
     return this.getSnapshot();
   }
@@ -2463,6 +2580,7 @@ export class WorkspaceRuntime {
       this.#censusProgressTimer = undefined;
     }
     await this.#censusPromise?.catch(() => undefined);
+    await this.#indexStateTail.catch(() => undefined);
     this.clearAbsenceWake();
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
@@ -2630,6 +2748,12 @@ export class WorkspaceRuntime {
 
   private async selectNote(request: OpenNoteRequest): Promise<void> {
     const filePath = normalizeVaultPath(request.path);
+    const captured = await this.withIndexStateLock(async () => ({
+      censusState: this.#census.state,
+      indexedPaths: new Set(
+        this.indexReactor.index.snapshot().documents.map((document) => document.path),
+      ),
+    }));
     // A tab the workspace is deliberately holding through an unconfirmed absence
     // is one the user can see, so it is one they will click. Both branches below
     // prove the file is there by reading it, which for such a path throws out of
@@ -2638,10 +2762,10 @@ export class WorkspaceRuntime {
     // absence is confirmed, and either way the answer arrives on its own.
     const retained = this.#unconfirmedAbsences.has(filePath) && this.tracksWorkspacePath(filePath);
     const warmingUnknown =
-      this.#census.state !== "current" &&
+      captured.censusState !== "current" &&
       this.tracksWorkspacePath(filePath) &&
       !this.#warmingVisiblePaths.has(filePath) &&
-      !this.indexReactor.index.snapshot().documents.some((document) => document.path === filePath);
+      !captured.indexedPaths.has(filePath);
     if (retained || warmingUnknown) {
       // Nothing to read.
     } else if (isCanvasPath(filePath)) {
@@ -2652,10 +2776,7 @@ export class WorkspaceRuntime {
       await this.kernel.readBinary(filePath, 8 * 1024 * 1024);
       this.#warmingVisiblePaths.add(filePath);
     } else {
-      const exists = this.indexReactor.index
-        .snapshot()
-        .documents.some((document) => document.path === filePath);
-      if (!exists) {
+      if (!captured.indexedPaths.has(filePath)) {
         throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
       }
       await this.kernel.readText(filePath);
@@ -2703,8 +2824,12 @@ export class WorkspaceRuntime {
       throw new Error(`Workspace pane is not open: ${paneId}`);
     }
     const visible = await this.kernel.listVisiblePaths();
+    const captured = await this.withIndexStateLock(async () => ({
+      censusState: this.#census.state,
+      indexedPaths: this.indexReactor.index.snapshot().documents.map((document) => document.path),
+    }));
     const availablePaths = new Set([
-      ...this.indexReactor.index.snapshot().documents.map((document) => document.path),
+      ...captured.indexedPaths,
       ...visible.files.filter(isCanvasPath),
     ]);
     // Traversing history reconciles this pane against the vault listing and
@@ -2715,7 +2840,7 @@ export class WorkspaceRuntime {
     // still scrubs its entries, from removeOpenPath, where that decision is made.
     const trackedPaths = this.trackedWorkspacePaths();
     const retainedPaths =
-      this.#census.state === "current"
+      captured.censusState === "current"
         ? this.retainTrackedPaths(availablePaths, trackedPaths).retainedPaths
         : new Set([...availablePaths, ...trackedPaths]);
     const reconciledHistory = navigationHistoryForPaths(
@@ -3143,18 +3268,20 @@ export class WorkspaceRuntime {
         };
       }
       const target = await this.kernel.readText(result.to);
-      this.watcher.operations.expect({
-        id: result.transactionId,
-        kind: "rename",
-        from: result.from,
-        to: result.to,
-        revision: target.revision,
+      await this.withIndexMutation(async () => {
+        this.watcher.operations.expect({
+          id: result.transactionId,
+          kind: "rename",
+          from: result.from,
+          to: result.to,
+          revision: target.revision,
+        });
+        this.indexReactor.index.remove(result.from);
+        await this.indexReactor.index.refresh(this.kernel, result.to);
+        if (this.moveOpenPath(result.from, result.to)) {
+          await this.persistWorkspaceStateBestEffort();
+        }
       });
-      this.indexReactor.index.remove(result.from);
-      await this.indexReactor.index.refresh(this.kernel, result.to);
-      if (this.moveOpenPath(result.from, result.to)) {
-        await this.persistWorkspaceStateBestEffort();
-      }
       return {
         status: "committed",
         from: result.from,
@@ -3164,6 +3291,9 @@ export class WorkspaceRuntime {
         writes: [],
       };
     }
+    const indexSnapshot = await this.withIndexStateLock(async () =>
+      this.indexReactor.index.snapshot(),
+    );
     const outcome = await moveMarkdownNote(
       this.kernel,
       sourcePath,
@@ -3173,7 +3303,7 @@ export class WorkspaceRuntime {
         ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
         automaticLinkUpdates: this.#workspaceSettings.automaticLinkUpdates,
         linkStyle: this.#workspaceSettings.linkStyle,
-        indexSnapshot: this.indexReactor.index.snapshot(),
+        indexSnapshot,
       },
     );
     if (outcome.status !== "committed") {
@@ -3181,36 +3311,41 @@ export class WorkspaceRuntime {
     }
 
     const target = await this.kernel.readText(outcome.to);
-    if (outcome.writes.length === 0) {
-      this.watcher.operations.expect({
-        id: outcome.transactionId,
-        kind: "rename",
-        from: outcome.from,
-        to: outcome.to,
-        revision: target.revision,
-      });
-    } else {
-      const sourceWrite = outcome.writes.find((write) => write.path === outcome.from);
-      this.watcher.operations.expect({
-        id: outcome.transactionId,
-        kind: "move-with-writes",
-        from: outcome.from,
-        to: outcome.to,
-        targetRevision: target.revision,
-        sourceRewritten: sourceWrite !== undefined,
-        writes: outcome.writes
-          .filter((write) => write.path !== outcome.from)
-          .map((write) => ({ path: write.resultPath, revision: write.revision })),
-      });
-    }
-    this.indexReactor.index.remove(outcome.from);
-    const refreshPaths = new Set([outcome.to, ...outcome.writes.map((write) => write.resultPath)]);
-    for (const refreshPath of refreshPaths) {
-      await this.indexReactor.index.refresh(this.kernel, refreshPath);
-    }
-    if (this.moveOpenPath(outcome.from, outcome.to)) {
-      await this.persistWorkspaceStateBestEffort();
-    }
+    await this.withIndexMutation(async () => {
+      if (outcome.writes.length === 0) {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "rename",
+          from: outcome.from,
+          to: outcome.to,
+          revision: target.revision,
+        });
+      } else {
+        const sourceWrite = outcome.writes.find((write) => write.path === outcome.from);
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "move-with-writes",
+          from: outcome.from,
+          to: outcome.to,
+          targetRevision: target.revision,
+          sourceRewritten: sourceWrite !== undefined,
+          writes: outcome.writes
+            .filter((write) => write.path !== outcome.from)
+            .map((write) => ({ path: write.resultPath, revision: write.revision })),
+        });
+      }
+      this.indexReactor.index.remove(outcome.from);
+      const refreshPaths = new Set([
+        outcome.to,
+        ...outcome.writes.map((write) => write.resultPath),
+      ]);
+      for (const refreshPath of refreshPaths) {
+        await this.indexReactor.index.refresh(this.kernel, refreshPath);
+      }
+      if (this.moveOpenPath(outcome.from, outcome.to)) {
+        await this.persistWorkspaceStateBestEffort();
+      }
+    });
     return outcome;
   }
 
@@ -3239,6 +3374,9 @@ export class WorkspaceRuntime {
       throw new Error("Attachment source and destination must be safe vault-relative files.");
     }
 
+    const expectedGeneration = await this.withIndexStateLock(
+      async () => this.indexReactor.index.generation,
+    );
     const outcome = await moveBinaryAttachment(
       this.kernel,
       sourcePath,
@@ -3246,7 +3384,11 @@ export class WorkspaceRuntime {
       request.expectedRevision,
       {
         ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
-        expectedGeneration: this.indexReactor.index.generation,
+        expectedGeneration,
+        // Deliberately optimistic: the attachment planner calls this while its
+        // filesystem plan is in flight so any concurrent index publication
+        // invalidates the plan. Holding the index tail across that filesystem
+        // work would deadlock reentrant watcher and move-aside fault seams.
         currentGeneration: () => this.indexReactor.index.generation,
       },
     );
@@ -3255,14 +3397,16 @@ export class WorkspaceRuntime {
     }
 
     if (outcome.writes.length > 0) {
-      this.watcher.operations.expect({
-        id: outcome.transactionId,
-        kind: "multi-write",
-        writes: outcome.writes,
+      await this.withIndexMutation(async () => {
+        this.watcher.operations.expect({
+          id: outcome.transactionId,
+          kind: "multi-write",
+          writes: outcome.writes,
+        });
+        for (const write of outcome.writes) {
+          await this.indexReactor.index.refresh(this.kernel, write.path);
+        }
       });
-      for (const write of outcome.writes) {
-        await this.indexReactor.index.refresh(this.kernel, write.path);
-      }
     }
     return outcome;
   }
@@ -3279,15 +3423,17 @@ export class WorkspaceRuntime {
       return outcome;
     }
 
-    this.watcher.operations.expect({
-      id: outcome.transactionId,
-      kind: "delete",
-      path: outcome.from,
+    await this.withIndexMutation(async () => {
+      this.watcher.operations.expect({
+        id: outcome.transactionId,
+        kind: "delete",
+        path: outcome.from,
+      });
+      this.indexReactor.index.remove(outcome.from);
+      if (this.removeOpenPath(outcome.from)) {
+        await this.persistWorkspaceStateBestEffort();
+      }
     });
-    this.indexReactor.index.remove(outcome.from);
-    if (this.removeOpenPath(outcome.from)) {
-      await this.persistWorkspaceStateBestEffort();
-    }
     return outcome;
   }
 
@@ -3307,7 +3453,7 @@ export class WorkspaceRuntime {
       request.content,
       request.expectedRevision,
     );
-    await this.reconcileNoteWrite(outcome, request.paneId);
+    await this.withIndexMutation(() => this.reconcileNoteWrite(outcome, request.paneId));
     return outcome;
   }
 
@@ -3321,7 +3467,9 @@ export class WorkspaceRuntime {
     const normalizedPath = normalizeMarkdownNotePath(normalizeVaultPath(request.path));
     const existing = await this.kernel.readText(normalizedPath);
     if (existing.revision !== request.expectedRevision) {
-      await this.indexReactor.index.refresh(this.kernel, normalizedPath);
+      await this.withIndexMutation(() =>
+        this.indexReactor.index.refresh(this.kernel, normalizedPath),
+      );
       return {
         status: "stale",
         path: normalizedPath,
@@ -3340,7 +3488,7 @@ export class WorkspaceRuntime {
       proposal.content,
       existing.revision,
     );
-    await this.reconcileNoteWrite(outcome);
+    await this.withIndexMutation(() => this.reconcileNoteWrite(outcome));
     return {
       ...outcome,
       name: request.name,
@@ -3359,7 +3507,9 @@ export class WorkspaceRuntime {
     const normalizedPath = normalizeMarkdownNotePath(normalizeVaultPath(request.path));
     const existing = await this.kernel.readText(normalizedPath);
     if (existing.revision !== request.expectedRevision) {
-      await this.indexReactor.index.refresh(this.kernel, normalizedPath);
+      await this.withIndexMutation(() =>
+        this.indexReactor.index.refresh(this.kernel, normalizedPath),
+      );
       return {
         status: "stale",
         path: normalizedPath,
@@ -3381,7 +3531,7 @@ export class WorkspaceRuntime {
       proposal.content,
       existing.revision,
     );
-    await this.reconcileNoteWrite(outcome);
+    await this.withIndexMutation(() => this.reconcileNoteWrite(outcome));
     return { ...outcome, name: request.name };
   }
 
@@ -3434,7 +3584,7 @@ export class WorkspaceRuntime {
       ? defaultNotePath(this.#workspaceSettings.defaultNoteFolder, request.path)
       : request.path;
     const outcome = await createMarkdownNote(this.kernel, requestedPath, request.content);
-    await this.integrateNoteCreateOutcome(outcome, activate, false);
+    await this.withIndexMutation(() => this.integrateNoteCreateOutcome(outcome, activate, false));
     return outcome;
   }
 
@@ -3446,7 +3596,7 @@ export class WorkspaceRuntime {
     }
     this.assertWritable("open today's daily note");
     const result = await openOrCreateDailyNote(this.kernel, request.settings, request.now);
-    await this.integrateNoteCreateOutcome(result.outcome, true, true);
+    await this.withIndexMutation(() => this.integrateNoteCreateOutcome(result.outcome, true, true));
     return result;
   }
 
@@ -3501,6 +3651,14 @@ export class WorkspaceRuntime {
   }
 
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
+    if (this.#closed) return;
+    await this.withIndexMutation(() => this.acceptWatchBatch(batch));
+    if (publish) {
+      await this.publishSnapshot();
+    }
+  }
+
+  private async acceptWatchBatch(batch: VaultChangeBatch): Promise<void> {
     this.#visibleVaultFiles = null;
     this.#reconcilePass += 1;
     // The metadata index keeps applying deletions as they are observed. During a
@@ -3528,9 +3686,6 @@ export class WorkspaceRuntime {
     }
     this.#lastWatchSequence = batch.sequence;
     this.#lastRescanReason = result.mode === "rebuild" ? (result.reason ?? "unknown") : null;
-    if (publish) {
-      await this.publishSnapshot();
-    }
   }
 
   /** Whether any pane holds this path as a tab or in its navigation history. */
@@ -3849,89 +4004,127 @@ export class WorkspaceRuntime {
 
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const snapshotStartedAt = this.#diagnostics?.now();
-    const projection = this.workspaceIndexProjection();
-    const visibleFiles =
-      this.#census.state === "current"
-        ? await this.visibleVaultFiles()
-        : [...this.#warmingVisiblePaths];
-    const canvasPaths = visibleFiles.filter(isCanvasPath);
-    const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
-      path: filePath,
-      title: titleForJsonCanvasPath(filePath),
-    }));
-    const { documents, backlinks, files } = projection;
-    const availablePaths = new Set([...documents.keys(), ...canvasPaths]);
-    // Reconciliation closes a tab here and in the two sibling call sites that
-    // reconcile against the vault listing, so all three ask the same authority
-    // what may still be held. Only the confirmed-absent path in
-    // settleUnconfirmedAbsences may take a retained path out of the panes.
-    const trackedPaths = this.trackedWorkspacePaths();
-    let retainedPaths: ReadonlySet<string>;
-    let trackedMissing: string[];
-    if (this.#census.state === "current") {
-      const retained = this.retainTrackedPaths(
-        availablePaths,
-        trackedPaths,
-        this.#reconcileStartupPathsAfterCensus ? "startup" : "transient",
-      );
-      retainedPaths = retained.retainedPaths;
-      trackedMissing = retained.trackedMissing;
-      this.#reconcileStartupPathsAfterCensus = false;
-    } else {
-      trackedMissing = [...trackedPaths].filter((filePath) => !availablePaths.has(filePath));
-      retainedPaths =
-        trackedMissing.length === 0
-          ? availablePaths
-          : new Set([...availablePaths, ...trackedMissing]);
-    }
-    // A retained path can still be unrenderable: nothing readable was ever
-    // published for it. It may hold the selection anyway - the pane says what it
-    // is waiting for instead of rendering a document - because a selection this
-    // pane was given is not something reconciliation gets to overwrite for an
-    // absence it has not confirmed. What renderability decides is which tab is
-    // picked when the pane has to choose one for itself.
-    const renderablePaths =
-      trackedMissing.length === 0
-        ? availablePaths
-        : new Set([
-            ...availablePaths,
-            ...trackedMissing.filter(
-              (filePath) =>
-                this.#retainedNotes.has(filePath) || this.#retainedCanvases.has(filePath),
-            ),
-          ]);
-    const reconciledPanes = this.#panes.map((pane) => {
-      const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
-      const activePath =
-        pane.activePath && openPaths.includes(pane.activePath)
-          ? pane.activePath
-          : (openPaths.filter((filePath) => renderablePaths.has(filePath)).at(-1) ??
-            openPaths.at(-1) ??
-            null);
-      const navigationHistory = navigationHistoryForPaths(
-        pane.navigationHistory,
-        retainedPaths,
-        activePath,
-      );
-      return {
-        id: pane.id,
-        openPaths,
-        pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
-        activePath,
-        ...(navigationHistory ? { navigationHistory } : {}),
-      };
-    });
-    const reconciledState = createWorkspaceLayout(
-      this.kernel.vaultId,
-      reconciledPanes,
-      this.#activePaneId,
-      this.#splitDirection,
+    const capture = await this.withIndexStateLock(
+      async (): Promise<WorkspaceSnapshotIndexCapture> => {
+        const projection = this.workspaceIndexProjection();
+        const census = this.censusSnapshot();
+        const indexGeneration = this.workspaceIndexGeneration();
+        const visibleFiles =
+          census.state === "current"
+            ? await this.visibleVaultFiles()
+            : [...this.#warmingVisiblePaths];
+        const canvasPaths = visibleFiles.filter(isCanvasPath);
+        const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
+          path: filePath,
+          title: titleForJsonCanvasPath(filePath),
+        }));
+        const availablePaths = new Set([...projection.documents.keys(), ...canvasPaths]);
+        // Reconciliation closes a tab here and in the two sibling call sites that
+        // reconcile against the vault listing, so all three ask the same authority
+        // what may still be held. Only the confirmed-absent path in
+        // settleUnconfirmedAbsences may take a retained path out of the panes.
+        const trackedPaths = this.trackedWorkspacePaths();
+        let retainedPaths: ReadonlySet<string>;
+        let trackedMissing: string[];
+        if (census.state === "current") {
+          const retained = this.retainTrackedPaths(
+            availablePaths,
+            trackedPaths,
+            this.#reconcileStartupPathsAfterCensus ? "startup" : "transient",
+          );
+          retainedPaths = retained.retainedPaths;
+          trackedMissing = retained.trackedMissing;
+          this.#reconcileStartupPathsAfterCensus = false;
+        } else {
+          trackedMissing = [...trackedPaths].filter((filePath) => !availablePaths.has(filePath));
+          retainedPaths =
+            trackedMissing.length === 0
+              ? availablePaths
+              : new Set([...availablePaths, ...trackedMissing]);
+        }
+        // A retained path can still be unrenderable: nothing readable was ever
+        // published for it. It may hold the selection anyway - the pane says what it
+        // is waiting for instead of rendering a document - because a selection this
+        // pane was given is not something reconciliation gets to overwrite for an
+        // absence it has not confirmed. What renderability decides is which tab is
+        // picked when the pane has to choose one for itself.
+        const renderablePaths =
+          trackedMissing.length === 0
+            ? availablePaths
+            : new Set([
+                ...availablePaths,
+                ...trackedMissing.filter(
+                  (filePath) =>
+                    this.#retainedNotes.has(filePath) || this.#retainedCanvases.has(filePath),
+                ),
+              ]);
+        const reconciledPanes = this.#panes.map((pane) => {
+          const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
+          const activePath =
+            pane.activePath && openPaths.includes(pane.activePath)
+              ? pane.activePath
+              : (openPaths.filter((filePath) => renderablePaths.has(filePath)).at(-1) ??
+                openPaths.at(-1) ??
+                null);
+          const navigationHistory = navigationHistoryForPaths(
+            pane.navigationHistory,
+            retainedPaths,
+            activePath,
+          );
+          return {
+            id: pane.id,
+            openPaths,
+            pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
+            activePath,
+            ...(navigationHistory ? { navigationHistory } : {}),
+          };
+        });
+        const snapshotState = createWorkspaceLayout(
+          this.kernel.vaultId,
+          reconciledPanes,
+          this.#activePaneId,
+          this.#splitDirection,
+        );
+        const workspaceChanged = !workspaceStatesEqual(this.currentWorkspaceState(), snapshotState);
+        if (workspaceChanged) {
+          this.applyWorkspaceState(snapshotState);
+        }
+        return {
+          projection,
+          census,
+          indexGeneration,
+          watcherError: this.#watcherError,
+          lastWatchSequence: this.#lastWatchSequence,
+          lastRescanReason: this.#lastRescanReason,
+          canvasFiles,
+          renderablePaths,
+          snapshotState,
+          workspaceChanged,
+        };
+      },
     );
-    if (!workspaceStatesEqual(this.currentWorkspaceState(), reconciledState)) {
-      this.applyWorkspaceState(reconciledState);
+    if (capture.workspaceChanged) {
       await this.persistWorkspaceStateBestEffort();
     }
+    return this.getWorkspaceSnapshotFromCapture(capture, snapshotStartedAt);
+  }
 
+  private async getWorkspaceSnapshotFromCapture(
+    capture: WorkspaceSnapshotIndexCapture,
+    snapshotStartedAt?: number,
+  ): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
+    const {
+      projection,
+      census,
+      indexGeneration,
+      watcherError,
+      lastWatchSequence,
+      lastRescanReason,
+      canvasFiles,
+      renderablePaths,
+      snapshotState,
+    } = capture;
+    const { documents, backlinks, files } = projection;
     const noteSnapshots = new Map<string, Promise<WorkspaceNoteSnapshot>>();
     const loadNoteSnapshot = (filePath: string): Promise<WorkspaceNoteSnapshot> => {
       const cached = noteSnapshots.get(filePath);
@@ -4030,7 +4223,6 @@ export class WorkspaceRuntime {
       canvasSnapshots.set(filePath, pending);
       return pending;
     };
-    const snapshotState = reconciledState;
     const panes: WorkspacePaneSnapshot[] = await Promise.all(
       snapshotState.panes.map(async (pane) => {
         // The selected tab may be one whose file is not there and for which
@@ -4099,21 +4291,21 @@ export class WorkspaceRuntime {
     }
     const snapshot: NonNullable<RuntimeSnapshot["workspace"]> = {
       state:
-        this.#watcherError || this.#census.state === "degraded"
+        watcherError || census.state === "degraded"
           ? "degraded"
-          : this.#census.state === "current"
+          : census.state === "current"
             ? "ready"
             : "warming",
-      indexGeneration: this.workspaceIndexGeneration(),
+      indexGeneration,
       files: projection.interactiveFiles,
       filePage: {
-        generation: this.workspaceFilePageGeneration(),
+        generation: indexGeneration,
         offset: 0,
         limit: maximumWorkspaceFilePageSize,
         total: files.length,
         complete: files.length <= maximumWorkspaceFilePageSize,
       },
-      census: this.censusSnapshot(),
+      census,
       ...(canvasFiles.length > 0 ? { canvasFiles } : {}),
       panes,
       activePaneId: snapshotState.activePaneId,
@@ -4123,9 +4315,9 @@ export class WorkspaceRuntime {
       ...(activePane.activeUnavailable ? { activeUnavailable: activePane.activeUnavailable } : {}),
       recoveryActionCount: this.kernel.startupRecoveryActions.length,
       watcher: {
-        lastSequence: this.#lastWatchSequence,
-        lastRescanReason: this.#lastRescanReason,
-        error: this.#watcherError,
+        lastSequence: lastWatchSequence,
+        lastRescanReason,
+        error: watcherError,
       },
     };
     if (this.#diagnostics && snapshotStartedAt !== undefined) {
@@ -4188,6 +4380,44 @@ export class WorkspaceRuntime {
 
   private workspaceTreePageGeneration(): string {
     return this.workspaceIndexGeneration();
+  }
+
+  private withIndexStateLock<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#indexStateTail.then(operation, operation);
+    this.#indexStateTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private withIndexMutation<T>(operation: () => Promise<T>): Promise<T> {
+    return this.withIndexStateLock(async () => {
+      try {
+        return await operation();
+      } finally {
+        this.synchronizeCurrentCensus();
+      }
+    });
+  }
+
+  private synchronizeCurrentCensus(): void {
+    if (this.#census.state === "current") {
+      const count = this.indexReactor.index.documentCount;
+      if (
+        this.#census.discovered !== count ||
+        this.#census.indexed !== count ||
+        this.#census.total !== count
+      ) {
+        this.#census = {
+          ...this.#census,
+          generation: this.#census.generation + 1,
+          discovered: count,
+          indexed: count,
+          total: count,
+        };
+      }
+    }
   }
 
   private censusSnapshot(): WorkspaceCensusSnapshot {
@@ -4257,22 +4487,26 @@ export class WorkspaceRuntime {
           });
         }
         bootstrap.documents.length = 0;
-        if (this.#closed || this.#censusAbort.signal.aborted) return;
-        this.indexReactor = nextReactor;
-        this.#indexProjection = null;
-        this.#indexGenerationEpoch += 1;
-        if (
-          this.#activateFirstNoteAfterCensus &&
-          this.#panes.every((pane) => pane.openPaths.length === 0)
-        ) {
-          const firstPath = this.indexReactor.index.snapshot().documents[0]?.path;
-          if (firstPath && this.activatePath(firstPath, "primary", false)) {
-            await this.persistWorkspaceStateBestEffort();
+        const installed = await this.withIndexStateLock(async () => {
+          if (this.#closed || this.#censusAbort.signal.aborted) return false;
+          this.indexReactor = nextReactor;
+          this.#indexProjection = null;
+          this.#indexGenerationEpoch += 1;
+          if (
+            this.#activateFirstNoteAfterCensus &&
+            this.#panes.every((pane) => pane.openPaths.length === 0)
+          ) {
+            const firstPath = this.indexReactor.index.snapshot().documents[0]?.path;
+            if (firstPath && this.activatePath(firstPath, "primary", false)) {
+              await this.persistWorkspaceStateBestEffort();
+            }
           }
-        }
-        this.#activateFirstNoteAfterCensus = false;
-        this.#census = { ...this.#census, state: "reconciling" };
-        this.watcher.installStartupSnapshot(bootstrap.snapshot);
+          this.#activateFirstNoteAfterCensus = false;
+          this.#census = { ...this.#census, state: "reconciling" };
+          this.watcher.installStartupSnapshot(bootstrap.snapshot);
+          return true;
+        });
+        if (!installed) return;
         await this.watcher.startWithInitialScan((batch) => this.handleWatchBatch(batch), {
           signal: this.#censusAbort.signal,
           onProgress: ({ scanned, total }) => {
@@ -4280,17 +4514,21 @@ export class WorkspaceRuntime {
             this.scheduleCensusProgressPublish();
           },
         });
-        if (this.#closed || this.#censusAbort.signal.aborted) return;
-        const total = this.indexReactor.index.snapshot().documents.length;
-        this.#census = {
-          state: "current",
-          generation: this.#census.generation + 1,
-          discovered: total,
-          indexed: total,
-          total,
-          error: null,
-        };
-        this.#reconcileStartupPathsAfterCensus = true;
+        const completed = await this.withIndexStateLock(async () => {
+          if (this.#closed || this.#censusAbort.signal.aborted) return false;
+          const total = this.indexReactor.index.documentCount;
+          this.#census = {
+            state: "current",
+            generation: this.#census.generation + 1,
+            discovered: total,
+            indexed: total,
+            total,
+            error: null,
+          };
+          this.#reconcileStartupPathsAfterCensus = true;
+          return true;
+        });
+        if (!completed) return;
         await this.publishSnapshot();
         this.requestRestoredAbsenceFollowUp();
       } catch (error) {
@@ -4302,8 +4540,10 @@ export class WorkspaceRuntime {
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        this.#census = { ...this.#census, state: "degraded", error: message };
-        this.recordWatcherError(error);
+        await this.withIndexStateLock(async () => {
+          this.#census = { ...this.#census, state: "degraded", error: message };
+          this.recordWatcherError(error);
+        });
         await this.publishSnapshot();
       }
     })();

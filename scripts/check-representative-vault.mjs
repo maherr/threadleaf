@@ -770,15 +770,51 @@ try {
     activeProbe,
     `(async () => {
       const snapshot = await window.threadleaf.getSnapshot();
-      const paths = new Set(snapshot.workspace?.files.map((file) => file.path) ?? []);
+      const descriptor = snapshot.workspace?.filePage;
+      const vaultId = snapshot.vault.id;
+      if (!descriptor || !vaultId) throw new Error("The settled vault file page is unavailable.");
+      if (descriptor.generation !== snapshot.workspace?.indexGeneration) {
+        throw new Error("The settled vault snapshot exposed mismatched index generations.");
+      }
+      const paths = new Set();
+      for (let offset = 0; offset < descriptor.total; offset += descriptor.limit) {
+        const response = await window.threadleaf.getWorkspaceFilePage({
+          expectedVaultId: vaultId,
+          generation: descriptor.generation,
+          offset,
+          limit: descriptor.limit,
+        });
+        if (
+          response.status !== "ready" ||
+          response.page.generation !== descriptor.generation ||
+          response.page.offset !== offset ||
+          response.page.limit !== descriptor.limit ||
+          response.page.total !== descriptor.total ||
+          response.page.complete !== (offset + response.files.length >= descriptor.total)
+        ) {
+          throw new Error("The settled vault file pages changed during the burst check.");
+        }
+        for (const file of response.files) paths.add(file.path);
+      }
+      if (paths.size !== descriptor.total) {
+        throw new Error("The settled vault file pages did not cover the declared total.");
+      }
       const moved = ${JSON.stringify(movedBurstPaths)};
       const retained = ${JSON.stringify(burstPaths.slice(100))};
       const removed = ${JSON.stringify(burstPaths.slice(0, 100))};
+      const settled = await window.threadleaf.getSnapshot();
+      if (
+        settled.workspace?.indexGeneration !== descriptor.generation ||
+        settled.workspace?.filePage.generation !== descriptor.generation ||
+        settled.workspace?.filePage.total !== descriptor.total
+      ) {
+        throw new Error("The settled vault generation changed while its pages were inspected.");
+      }
       return {
         count: paths.size,
         complete: moved.every((item) => paths.has(item)) &&
           retained.every((item) => paths.has(item)) && removed.every((item) => !paths.has(item)),
-        watcherError: snapshot.workspace?.watcher.error ?? null,
+        watcherError: settled.workspace?.watcher.error ?? null,
       };
     })()`,
     20_000,

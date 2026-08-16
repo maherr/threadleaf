@@ -30,6 +30,8 @@ const deepRevealSegments = Array.from(
   (_, index) => `Deep reveal ${String(index).padStart(3, "0")}`,
 );
 const deepRevealActivePath = `${deepRevealSegments.join("/")}/Target.md`;
+const fixtureMarkdownCount = 1_006;
+const convergedMarkdownCount = fixtureMarkdownCount + 1;
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -448,13 +450,17 @@ async function closeApplication() {
   exited = undefined;
 }
 
-async function waitForReady() {
+async function waitForReady(expectedMarkdownCount) {
   return waitFor(
     async () => {
       const current = await snapshot();
       return current?.workspace?.state === "ready" &&
         current?.vault?.path === vaultPath &&
-        current?.workspace?.census?.indexed >= 1_005
+        current?.workspace?.census?.discovered === expectedMarkdownCount &&
+        current?.workspace?.census?.indexed === expectedMarkdownCount &&
+        current?.workspace?.census?.total === expectedMarkdownCount &&
+        current?.workspace?.filePage?.total === expectedMarkdownCount &&
+        current?.vault?.markdownFileCount === expectedMarkdownCount
         ? current
         : null;
     },
@@ -555,7 +561,7 @@ try {
 
   phase = "isolated X11 launch";
   await launchApplication();
-  await waitForReady();
+  await waitForReady(fixtureMarkdownCount);
   await assertIsolatedX11Renderer();
 
   phase = "initial collapsed tree";
@@ -573,6 +579,104 @@ try {
     return tree?.toggle === "true" ? tree : null;
   }, "The tree did not start with only top-level entries visible");
   assert(initialTree.rows < 12, "The initial navigator eagerly rendered nested entries.");
+
+  phase = "external census convergence";
+  const beforeCensus = await snapshot();
+  const beforeCensusGeneration = beforeCensus.workspace?.census.generation ?? Number.NaN;
+  const beforeIndexGeneration = beforeCensus.workspace?.indexGeneration;
+  const beforeFilePageGeneration = beforeCensus.workspace?.filePage.generation;
+  const beforeSequence = beforeCensus.workspace?.watcher.lastSequence ?? 0;
+  assert(
+    beforeCensus.workspace?.census.discovered === fixtureMarkdownCount &&
+      beforeCensus.workspace.census.indexed === fixtureMarkdownCount &&
+      beforeCensus.workspace.census.total === fixtureMarkdownCount &&
+      beforeCensus.workspace.filePage.total === fixtureMarkdownCount &&
+      beforeCensus.vault.markdownFileCount === fixtureMarkdownCount,
+    "The navigator census baseline did not match the independent fixture count.",
+  );
+  assert(
+    Number.isSafeInteger(beforeCensusGeneration) &&
+      typeof beforeIndexGeneration === "string" &&
+      beforeFilePageGeneration === beforeIndexGeneration,
+    "The navigator census baseline did not expose one coherent generation.",
+  );
+  await fs.writeFile(
+    path.join(vaultPath, "Census Convergence.md"),
+    "# Census convergence\n",
+    "utf8",
+  );
+  const convergedCensus = await waitFor(async () => {
+    const current = await snapshot();
+    return current.workspace?.census.indexed === convergedMarkdownCount &&
+      current.workspace?.census.discovered === convergedMarkdownCount &&
+      current.workspace?.census.total === convergedMarkdownCount &&
+      current.workspace?.filePage.total === convergedMarkdownCount &&
+      current.vault.markdownFileCount === convergedMarkdownCount &&
+      (current.workspace?.watcher.lastSequence ?? 0) > beforeSequence
+      ? current
+      : null;
+  }, "The visible census did not converge after an external note arrived");
+  assert(
+    convergedCensus.workspace?.watcher.error === null,
+    "The watcher degraded while the visible census converged.",
+  );
+  assert(
+    convergedCensus.workspace?.census.generation === beforeCensusGeneration + 1 &&
+      convergedCensus.workspace.indexGeneration !== beforeIndexGeneration &&
+      convergedCensus.workspace.filePage.generation !== beforeFilePageGeneration &&
+      convergedCensus.workspace.filePage.generation === convergedCensus.workspace.indexGeneration,
+    "The converged census did not rotate one coherent generation.",
+  );
+  const staleFilePage = await evaluate(`window.threadleaf.getWorkspaceFilePage({
+    expectedVaultId: ${JSON.stringify(beforeCensus.vault.id)},
+    generation: ${JSON.stringify(beforeFilePageGeneration)},
+    offset: 0,
+    limit: 64,
+  })`);
+  assert(
+    staleFilePage?.status === "stale-generation",
+    "The navigator accepted a file-page token from before census convergence.",
+  );
+  const visibleCensus = await waitFor(async () => {
+    const current = await evaluate(`(() => ({
+      fileCount: document.querySelector("#file-count")?.textContent ?? "",
+      summary: document.querySelector("#filter-summary")?.textContent ?? "",
+    }))()`);
+    return current.fileCount === String(convergedMarkdownCount) &&
+      current.summary === `${convergedMarkdownCount.toLocaleString()} notes indexed`
+      ? current
+      : null;
+  }, "The rendered navigator count did not match the current census");
+  await setTheme("dark");
+  const censusDark = await captureScreenshot("navigator-census-converged-dark");
+  const originalSummary = visibleCensus.summary;
+  const censusPositiveControlReached = await evaluate(`(() => {
+    const summary = document.querySelector("#filter-summary");
+    if (!(summary instanceof HTMLElement)) return false;
+    summary.textContent = "CENSUS VISUAL CONTROL";
+    summary.style.outline = "8px solid rgb(0, 114, 178)";
+    return summary.textContent === "CENSUS VISUAL CONTROL" &&
+      getComputedStyle(summary).outlineWidth === "8px";
+  })()`);
+  assert(
+    censusPositiveControlReached,
+    "The census screenshot positive control did not reach the rendered count.",
+  );
+  const censusPositive = await captureScreenshot("navigator-census-positive-control-dark");
+  assert(
+    censusDark !== censusPositive,
+    "The census screenshot positive control changed no pixels.",
+  );
+  await evaluate(`(() => {
+    const summary = document.querySelector("#filter-summary");
+    if (!(summary instanceof HTMLElement)) return false;
+    summary.textContent = ${JSON.stringify(originalSummary)};
+    summary.style.removeProperty("outline");
+    return true;
+  })()`);
+  await setTheme("light");
+  const censusLight = await captureScreenshot("navigator-census-converged-light");
+  assert(censusDark !== censusLight, "The converged census screenshots ignored the active theme.");
 
   phase = "keyboard hierarchy traversal";
   await evaluate(
@@ -789,11 +893,12 @@ try {
     const label = item?.querySelector("strong");
     if (!(item instanceof HTMLElement) || !(label instanceof HTMLElement)) return null;
     const style = getComputedStyle(item);
+    const markerStyle = getComputedStyle(item, "::after");
     return {
       current: item.getAttribute("aria-current"),
       selected: item.getAttribute("aria-selected"),
-      boxShadow: style.boxShadow,
       background: style.backgroundColor,
+      markerBoxShadow: markerStyle.boxShadow,
       truncated: label.scrollWidth > label.clientWidth,
       visible: item.getBoundingClientRect().top >= 0 && item.getBoundingClientRect().bottom <= innerHeight,
     };
@@ -801,7 +906,9 @@ try {
   assert(
     activeVisual?.current === "page" &&
       activeVisual.selected === "true" &&
-      activeVisual.boxShadow !== "none" &&
+      activeVisual.background !== "transparent" &&
+      activeVisual.background !== "rgba(0, 0, 0, 0)" &&
+      activeVisual.markerBoxShadow !== "none" &&
       activeVisual.truncated &&
       activeVisual.visible,
     `The revealed active row is not visibly selected and truncated: ${JSON.stringify(activeVisual)}`,
@@ -979,7 +1086,7 @@ try {
   );
   await closeApplication();
   await launchApplication();
-  await waitForReady();
+  await waitForReady(convergedMarkdownCount);
   await assertIsolatedX11Renderer();
   await waitFor(
     async () =>
@@ -1026,7 +1133,7 @@ try {
     `NAVIGATOR_TREE_DEEP_REVEAL elapsed_ms=${deepReveal.elapsedMs} layout_writes=${deepLayoutEvents.length}`,
   );
   console.log(
-    "Verified isolated X11 navigator tree: initial collapse, ARIA hierarchy, keyboard traversal, guarded folder rejections, batched deep reveal, context creation, per-vault layout persistence, flat search/list fallback, dark/light screenshots, truncation, active highlight, and 1,001-child virtualization.",
+    "Verified isolated X11 navigator tree: external census convergence, initial collapse, ARIA hierarchy, keyboard traversal, guarded folder rejections, batched deep reveal, context creation, per-vault layout persistence, flat search/list fallback, dark/light screenshots, truncation, active highlight, and 1,001-child virtualization.",
   );
   if (screenshotDirectory) {
     console.log(`NAVIGATOR_TREE_SCREENSHOTS=${screenshotDirectory}`);
