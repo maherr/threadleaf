@@ -1229,6 +1229,88 @@ export interface AttachmentRestoreResponse {
   affectedVaultName?: string;
 }
 
+export interface AttachmentInsertPreview {
+  sourceNotePath: string;
+  targetPath: string;
+  sourceFileName: string;
+  byteLength: number;
+  contentRevision: string;
+  proposedNoteRevision: string;
+  referenceText: string;
+  selectionStart: number;
+  selectionEnd: number;
+  selectionAfter: number;
+}
+
+export type AttachmentInsertRefusalReason =
+  | "invalid-source"
+  | "private-path"
+  | "invalid-file-name"
+  | "attachment-too-large"
+  | "invalid-target"
+  | "unsupported-target"
+  | "target-parent-missing"
+  | "target-exists"
+  | "source-unreadable"
+  | "source-write-unavailable"
+  | "source-revision-changed"
+  | "invalid-selection"
+  | "workspace-changed"
+  | "attachment-publish-unavailable"
+  | "stale-vault";
+
+export type AttachmentInsertOutcome =
+  | {
+      status: "requires-confirmation";
+      preview: AttachmentInsertPreview;
+      confirmationId: string;
+    }
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      attachmentPath: string;
+      attachmentRevision: string;
+      transactionId: string;
+      preview: AttachmentInsertPreview;
+    }
+  | {
+      status: "conflict-copy";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      attachmentPath: string;
+      attachmentRevision: string;
+      transactionId: string;
+      preview: AttachmentInsertPreview;
+      message: string;
+    }
+  | {
+      status: "refused";
+      sourceNotePath: string;
+      targetPath: string;
+      sourceFileName: string;
+      reason: AttachmentInsertRefusalReason;
+      message: string;
+    }
+  | {
+      status: "manual-conflict";
+      path: string;
+      attachmentPath: string;
+      transactionId: string;
+      reason: string;
+      message: string;
+    };
+
+export interface AttachmentInsertResponse {
+  outcome: AttachmentInsertOutcome;
+  snapshot: RuntimeSnapshot;
+  /** Set when the affected runtime was replaced before its reply. */
+  affectedVaultId?: string;
+  /** Basename-safe identity of the vault affected by the operation. */
+  affectedVaultName?: string;
+}
+
 export type NoteDeleteOutcome =
   | { status: "committed"; from: string; to: string; transactionId: string }
   | { status: "conflict"; from: string; to: string; reason: string };
@@ -1754,6 +1836,17 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
     confirmationId?: string,
   ): Promise<AttachmentRestoreResponse>;
+  insertAttachment(
+    sourceNotePath: string,
+    targetPath: string,
+    sourceFileName: string,
+    bytes: ArrayBuffer,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    selectionStart: number,
+    selectionEnd: number,
+    confirmationId?: string,
+  ): Promise<AttachmentInsertResponse>;
   deleteNote(
     path: string,
     expectedRevision: string,

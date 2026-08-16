@@ -8621,6 +8621,16 @@ button.inspector-item:hover {
   max-height: calc(100vh - 24px);
 }
 
+.attachment-insert-dialog {
+  max-height: calc(100vh - 24px);
+}
+
+.note-editor .cm-editor[data-attachment-drop-active="true"] {
+  outline: 2px dashed var(--accent-strong);
+  outline-offset: -4px;
+  background: color-mix(in srgb, var(--accent-soft) 42%, transparent);
+}
+
 .delete-note-dialog {
   width: min(570px, calc(100vw - 32px));
 }

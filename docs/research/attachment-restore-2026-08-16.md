@@ -13,8 +13,9 @@ existing or equivalent vault name.
 
 The card's Restore file chooser, card-scoped single-file drop, and focused Paste file control are
 three input adapters over one shared external-byte ingress authority. They do not add renderer or
-runtime filesystem writers. General editor ingestion remains open because choosing a new
-destination and inserting a new Markdown token require a separate recoverable compound transaction.
+runtime filesystem writers. General editor ingestion uses a separate recoverable compound
+publish-then-reference transaction because it must choose a new destination and insert a new
+Markdown token; see [recoverable editor attachment insertion](attachment-insert-2026-08-16.md).
 
 ## Authorization boundary
 
@@ -118,7 +119,9 @@ The packaged Linux Electron gate adds the real user path:
 - renderer exception and error-log rejection.
 
 The clipboard fixture proves the browser event adapter. It does not claim physical OS clipboard
-integration, filename synthesis for generic ClipboardItem blobs, or arbitrary editor insertion.
+integration or filename synthesis for generic ClipboardItem blobs.
+Editor insertion has its own packaged file-paste and physical file-drop proof; it does not inherit
+physical OS clipboard integration from this deterministic card fixture.
 
 Private product study may directly inform Threadleaf's architecture and interaction choices. This
 proof comes from Threadleaf's own authority checks, journal, fixtures, fault injection, and packaged

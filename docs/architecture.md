@@ -741,8 +741,34 @@ revision, raw missing target, and vault binding. The incoming basename remains d
 authorization metadata, never destination authority. Text, HTML, URLs, directories, multiple
 files, unsafe names, unreadable inputs, and oversized inputs are refused. The handlers are bound to
 authorized missing cards rather than the document or editor, so ordinary text paste and workspace
-tab dragging remain outside this feature. Arbitrary editor drop or paste still requires an explicit
-naming and placement policy plus a recoverable compound note-and-byte transaction.
+tab dragging remain outside the exact-path restore feature.
+
+The editor has a separate one-file insertion adapter and compound transaction. File drop resolves a
+CodeMirror position from the pointer; file paste captures and replaces the current selection. Text,
+HTML, and URL transfers return to CodeMirror untouched. Directory-shaped and multi-file transfers
+are owned, canceled, and refused before Chromium can navigate or a partial batch can begin. The
+renderer copies at most 16 MiB from one safe-basename raster or passive attachment `File`, proposes
+the source note's folder as the destination, and allows only an editable vault-relative path whose
+visible parent already exists. It sends bytes and bounded metadata, never the selected absolute
+path or a filesystem handle.
+
+Pending pane saves flush before review. The application maps LF CodeMirror selection offsets back
+to exact BOM and CRLF or CR-only source offsets, builds either the configured wiki embed or a
+source-relative encoded Markdown embed, and binds the byte hash, target, source revision, selection,
+generated reference, proposed note revision, and index generation into a read-only first response.
+The target must remain absent under exact, case, and NFC identities; no folder is created and no
+suffix is invented.
+
+Confirmation enters a dedicated `attachment-insert` journal. Private evidence contains the exact
+attachment and complete proposed note. The kernel rechecks source writability and revision, target
+absence and namespace uniqueness, contained existing parent, supported suffix, and strict
+publication capability before publishing the attachment. Only a verified durable publication may
+advance to the revision-bound note write. If an external source edit wins after publication, the
+complete proposed note becomes a named conflict copy that already points to the new attachment. An
+uncertain publication receipt, post-publication target ambiguity, or unsafe source namespace keeps
+both private blobs for manual review. Verified commit, rollback, and conflict receipts clean up
+only after archival. Supported attachment targets are filtered out of the note-link inspector and
+unresolved note-link totals.
 
 Every publication preview binds the exact Markdown path set, every note revision, and the metadata
 generation. For an `always` or `ask` rename, the reference corpus instead includes every visible
@@ -799,6 +825,8 @@ The missing-reference recovery boundary and packaged evidence are recorded in
 [single-reference attachment relinking](research/attachment-relink-2026-08-16.md).
 The external-byte recovery boundary and packaged evidence are recorded in
 [exact-path attachment restoration](research/attachment-restore-2026-08-16.md).
+The general editor insertion transaction and packaged evidence are recorded in
+[recoverable editor attachment insertion](research/attachment-insert-2026-08-16.md).
 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized

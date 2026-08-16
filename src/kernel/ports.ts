@@ -115,6 +115,61 @@ export interface VaultAttachmentIngressMutationPort {
   ): Promise<VaultAttachmentIngressResult>;
 }
 
+export interface VaultAttachmentInsertRequest {
+  sourceNotePath: string;
+  sourceNoteRevision: string;
+  nextSourceContent: string;
+  targetPath: string;
+  attachmentBytes: Uint8Array;
+}
+
+export type VaultAttachmentInsertFailureReason =
+  | "source-note-changed"
+  | "source-write-unavailable"
+  | "target-present"
+  | "target-normalized-exists"
+  | "attachment-publish-unavailable"
+  | "publish-state-diverged"
+  | "conflict-preservation-diverged";
+
+export type VaultAttachmentInsertResult =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      attachmentPath: string;
+      attachmentRevision: string;
+      transactionId: string;
+    }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      attachmentPath: string;
+      attachmentRevision: string;
+      transactionId: string;
+    }
+  | {
+      status: "refused";
+      path: string;
+      attachmentPath: string;
+      reason: VaultAttachmentInsertFailureReason;
+    }
+  | {
+      status: "manual-conflict";
+      path: string;
+      attachmentPath: string;
+      reason: VaultAttachmentInsertFailureReason;
+      transactionId: string;
+    };
+
+export interface VaultAttachmentInsertMutationPort {
+  insertAttachmentWithReference(
+    request: VaultAttachmentInsertRequest,
+  ): Promise<VaultAttachmentInsertResult>;
+}
+
 export interface VaultDirectoryCreateResult {
   created: boolean;
   path: string;

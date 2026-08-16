@@ -33,6 +33,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added card-scoped single-file drag-and-drop and file-backed **Paste file** recovery as thin
   adapters over the same Restore file preview and ingress transaction, with directory, multi-file,
   text, HTML, URL, unsafe-name, unreadable, and oversized-input refusal.
+- Added one-file editor drop and file paste with pointer or selection placement, editable
+  source-folder destination proposals, configured wiki or Markdown embeds, byte-and-note-bound
+  two-step review, strict no-overwrite publication, restart recovery, conflict-copy preservation,
+  and packaged dark/light exact-byte proof.
 
 ### Changed
 
@@ -68,6 +72,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   note additions, deletions, and sync-style event bursts.
 - Rejected traversal through a relative folder symlink at any path ancestor while retaining safe
   contained file aliases and excluding broken, private, outside-vault, and special-file targets.
+- Kept supported attachment links and embeds out of the note-link inspector and unresolved
+  note-link totals after insertion.
 
 ## [0.1.0-beta.6]
 

@@ -1336,6 +1336,130 @@ describe("WorkspaceRuntime", () => {
     expect(workspace.watcher.operations.size).toBe(0);
   });
 
+  it("previews and inserts one external attachment at the editor selection", async () => {
+    const insertedBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 0xff]);
+    await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.writeFile(
+      path.join(vaultPath, "Notes", "Current.md"),
+      "before replace after\n",
+      "utf8",
+    );
+    const workspace = await openRuntime(undefined, { linkStyle: "markdown" });
+    const opened = await workspace.openNote("Notes/Current.md");
+    const source = opened.workspace?.activeNote;
+    if (!source) throw new Error("Expected the insertion source note to open.");
+    const selectionStart = source.content.indexOf("replace");
+    const selectionEnd = selectionStart + "replace".length;
+
+    const preview = await workspace.insertAttachment(
+      source.path,
+      "Assets/diagram one.png",
+      "diagram one.png",
+      insertedBytes,
+      source.revision,
+      workspace.vaultId,
+      selectionStart,
+      selectionEnd,
+    );
+    expect(preview.outcome).toMatchObject({
+      status: "requires-confirmation",
+      preview: {
+        targetPath: "Assets/diagram one.png",
+        referenceText: "![diagram one](../Assets/diagram%20one.png)",
+        selectionStart,
+        selectionEnd,
+      },
+    });
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected an attachment insertion confirmation.");
+    }
+
+    const committed = await workspace.insertAttachment(
+      source.path,
+      "Assets/diagram one.png",
+      "diagram one.png",
+      insertedBytes,
+      source.revision,
+      workspace.vaultId,
+      selectionStart,
+      selectionEnd,
+      preview.outcome.confirmationId,
+    );
+    expect(committed.outcome).toMatchObject({
+      status: "committed",
+      path: source.path,
+      attachmentPath: "Assets/diagram one.png",
+      preview: preview.outcome.preview,
+    });
+    expect(committed.snapshot.workspace?.activeNote?.content).toBe(
+      "before ![diagram one](../Assets/diagram%20one.png) after\n",
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "diagram one.png"))).resolves.toEqual(
+      Buffer.from(insertedBytes),
+    );
+  });
+
+  it("publishes a conflict copy when the source changes after attachment publication", async () => {
+    await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "# Current\n", "utf8");
+    const workspace = await openRuntime(undefined, undefined, undefined, async (point) => {
+      if (point === "attachment-insert:before-note-write") {
+        await fs.writeFile(
+          path.join(vaultPath, "Notes", "Current.md"),
+          "# External winner\n",
+          "utf8",
+        );
+      }
+    });
+    const opened = await workspace.openNote("Notes/Current.md");
+    const source = opened.workspace?.activeNote;
+    if (!source) throw new Error("Expected the insertion source note to open.");
+    const bytes = Buffer.from("image bytes");
+    const preview = await workspace.insertAttachment(
+      source.path,
+      "Assets/photo.png",
+      "photo.png",
+      bytes,
+      source.revision,
+      workspace.vaultId,
+      source.content.length,
+      source.content.length,
+    );
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected an attachment insertion confirmation.");
+    }
+
+    const conflict = await workspace.insertAttachment(
+      source.path,
+      "Assets/photo.png",
+      "photo.png",
+      bytes,
+      source.revision,
+      workspace.vaultId,
+      source.content.length,
+      source.content.length,
+      preview.outcome.confirmationId,
+    );
+    expect(conflict.outcome).toMatchObject({
+      status: "conflict-copy",
+      path: source.path,
+      conflictPath: expect.stringMatching(/\.threadleaf-conflict-/u),
+      attachmentPath: "Assets/photo.png",
+    });
+    if (conflict.outcome.status !== "conflict-copy") {
+      throw new Error("Expected an attachment insertion conflict copy.");
+    }
+    expect(conflict.snapshot.workspace?.activeNote?.path).toBe(conflict.outcome.conflictPath);
+    expect(conflict.snapshot.workspace?.activeNote?.content).toBe(
+      "# Current\n![[../Assets/photo.png]]",
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+      "# External winner\n",
+    );
+  });
+
   it("rejects oversized restore bytes at the action boundary", async () => {
     const workspace = await openRuntime();
 
@@ -1505,6 +1629,11 @@ describe("WorkspaceRuntime", () => {
       { id: "workspace.focus-pane", name: "Focus workspace pane", source: "workspace" },
       { id: "workspace.go-back", name: "Go back in note history", source: "workspace" },
       { id: "workspace.go-forward", name: "Go forward in note history", source: "workspace" },
+      {
+        id: "workspace.insert-attachment",
+        name: "Insert external attachment",
+        source: "workspace",
+      },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       {
         id: "workspace.move-note-to-pane",
@@ -3879,20 +4008,40 @@ module.exports = class ActionCollisionFixture extends Plugin {
     ).resolves.toEqual({ status: "stale-vault", vaultId: workspace.vaultId });
   });
 
-  it("keeps Markdown image targets out of the note-link inspector", async () => {
+  it("keeps supported attachment targets out of the note-link inspector", async () => {
     await fs.writeFile(
       path.join(vaultPath, "Gallery.md"),
-      "# Gallery\n\n![Local](assets/image.png)\n\n[[Linked Note]]",
+      [
+        "# Gallery",
+        "",
+        "![Local](assets/image.png)",
+        "",
+        "![[assets/image.png]]",
+        "",
+        "[[assets/report.pdf]]",
+        "",
+        "[Report](assets/report.pdf)",
+        "",
+        "![[Linked Note]]",
+        "",
+        "[[Linked Note]]",
+      ].join("\n"),
       "utf8",
     );
     const workspace = await openRuntime();
     const opened = await workspace.openNote("Gallery.md");
 
     expect(opened.workspace?.activeNote?.outgoing).toEqual([
+      expect.objectContaining({
+        syntax: "wiki",
+        embed: true,
+        path: "Linked Note.md",
+        status: "resolved",
+      }),
       expect.objectContaining({ syntax: "wiki", path: "Linked Note.md", status: "resolved" }),
     ]);
     expect(opened.workspace?.files.find((file) => file.path === "Gallery.md")).toMatchObject({
-      outgoingCount: 1,
+      outgoingCount: 2,
       unresolvedCount: 0,
     });
   });
@@ -4016,6 +4165,11 @@ module.exports = class ActionCollisionFixture extends Plugin {
       { id: "workspace.focus-pane", name: "Focus workspace pane", source: "workspace" },
       { id: "workspace.go-back", name: "Go back in note history", source: "workspace" },
       { id: "workspace.go-forward", name: "Go forward in note history", source: "workspace" },
+      {
+        id: "workspace.insert-attachment",
+        name: "Insert external attachment",
+        source: "workspace",
+      },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
       {
         id: "workspace.move-note-to-pane",

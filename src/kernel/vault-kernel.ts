@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
+import { isSafeExternalAttachmentTarget } from "../shared/attachment-targets";
 import { MAX_CANVAS_BYTES } from "../shared/json-canvas";
 import {
   type AttachmentPublishCapability,
@@ -30,6 +31,7 @@ import {
 } from "./durability";
 import {
   type AttachmentIngressJournal,
+  type AttachmentInsertJournal,
   type MoveWithWritesJournal,
   type MoveWithWritesJournalEntry,
   type MultiWriteJournal,
@@ -60,6 +62,9 @@ import type {
   VaultAttachmentIngressAuthorization,
   VaultAttachmentIngressFailureReason,
   VaultAttachmentIngressResult,
+  VaultAttachmentInsertFailureReason,
+  VaultAttachmentInsertRequest,
+  VaultAttachmentInsertResult,
   VaultAttachmentRelinkPreconditionFailure,
   VaultAttachmentRelinkPreconditions,
   VaultAttachmentRelinkWriteResult,
@@ -114,7 +119,16 @@ export type KernelFaultPoint =
   | "attachment-ingress:after-stage"
   | "attachment-ingress:before-publish"
   | "attachment-ingress:after-publish"
-  | "attachment-ingress:after-commit";
+  | "attachment-ingress:after-commit"
+  | "attachment-insert:after-intent"
+  | "attachment-insert:after-stage"
+  | "attachment-insert:before-publish"
+  | "attachment-insert:after-native-publish"
+  | "attachment-insert:after-publish"
+  | "attachment-insert:before-note-write"
+  | "attachment-insert:after-note-write"
+  | "attachment-insert:after-conflict-preserve"
+  | "attachment-insert:after-commit";
 
 export type KernelFaultInjector = (point: KernelFaultPoint) => void | Promise<void>;
 
@@ -166,7 +180,13 @@ export type {
 
 export interface RecoveryAction {
   transactionId: string;
-  kind: "write" | "rename" | "multi-write" | "move-with-writes" | "attachment-ingress";
+  kind:
+    | "write"
+    | "rename"
+    | "multi-write"
+    | "move-with-writes"
+    | "attachment-ingress"
+    | "attachment-insert";
   outcome:
     | "committed"
     | "published-source-retained"
@@ -218,6 +238,10 @@ type StrictAttachmentTargetCheck =
 type AttachmentIngressPreflight =
   | { status: "ready"; targetAbsolute: string }
   | { status: "refused"; reason: VaultAttachmentIngressFailureReason };
+
+type AttachmentInsertPreflight =
+  | { status: "ready"; targetAbsolute: string }
+  | { status: "refused"; reason: VaultAttachmentInsertFailureReason };
 
 interface MoveWithWritesBlobs {
   before: Buffer;
@@ -751,6 +775,91 @@ export class VaultKernel implements VaultMutationPort {
     });
   }
 
+  async insertAttachmentWithReference(
+    request: VaultAttachmentInsertRequest,
+  ): Promise<VaultAttachmentInsertResult> {
+    this.assertWritable();
+    if (request.attachmentBytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES) {
+      throw new Error(
+        `Attachment insertion is limited to ${MAX_VAULT_ATTACHMENT_BYTES} bytes per operation.`,
+      );
+    }
+    assertExpectedRevision(request.sourceNoteRevision);
+    return this.withMutation(async () => {
+      const sourceNotePath = normalizeVaultPath(request.sourceNotePath);
+      const targetPath = normalizeVaultPath(request.targetPath);
+      const foldedTarget = targetPath.toLocaleLowerCase("en-US");
+      if (
+        !sourceNotePath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        foldedTarget.endsWith(".md") ||
+        foldedTarget.endsWith(".canvas") ||
+        !isSafeExternalAttachmentTarget(targetPath) ||
+        hasHiddenVaultSegment(sourceNotePath) ||
+        hasPrivateVaultSegment(sourceNotePath) ||
+        hasHiddenVaultSegment(targetPath) ||
+        hasPrivateVaultSegment(targetPath)
+      ) {
+        return {
+          status: "refused",
+          path: sourceNotePath,
+          attachmentPath: targetPath,
+          reason: "attachment-publish-unavailable",
+        };
+      }
+      const normalizedRequest: VaultAttachmentInsertRequest = {
+        ...request,
+        sourceNotePath,
+        targetPath,
+      };
+      const initial = await this.checkAttachmentInsertBeforePublish(normalizedRequest);
+      if (initial.status === "refused") {
+        return {
+          status: "refused",
+          path: sourceNotePath,
+          attachmentPath: targetPath,
+          reason: initial.reason,
+        };
+      }
+
+      const attachmentBytes = Buffer.from(request.attachmentBytes);
+      const noteBytes = Buffer.from(request.nextSourceContent, "utf8");
+      const id = randomUUID();
+      const journal: AttachmentInsertJournal = {
+        version: 1,
+        id,
+        vaultId: this.vaultId,
+        kind: "attachment-insert",
+        phase: "intent",
+        sourceNotePath,
+        sourceNoteRevision: request.sourceNoteRevision,
+        nextNoteRevision: revisionOf(noteBytes),
+        noteByteLength: noteBytes.byteLength,
+        targetPath,
+        attachmentRevision: revisionOf(attachmentBytes),
+        attachmentByteLength: attachmentBytes.byteLength,
+        conflictPath: this.buildConflictPath(sourceNotePath, id),
+        createdAt: this.clock().toISOString(),
+      };
+      await this.writeJournal(journal);
+      await this.inject("attachment-insert:after-intent");
+
+      const blobDirectory = this.getTransactionBlobDirectory(id);
+      try {
+        await fs.mkdir(blobDirectory);
+        await syncDirectory(this.transactionDirectory);
+        await durableCreate(this.getAttachmentInsertAttachmentBlobPath(id), attachmentBytes);
+        await durableCreate(this.getAttachmentInsertNoteBlobPath(id), noteBytes);
+      } catch (error) {
+        await this.archiveAttachmentInsert(journal, "rolled-back");
+        throw error;
+      }
+      journal.phase = "staged";
+      await this.writeJournal(journal);
+      await this.inject("attachment-insert:after-stage");
+      return this.continueAttachmentInsert(journal, attachmentBytes, noteBytes);
+    });
+  }
+
   async createDirectory(relativeDirectory: string): Promise<VaultDirectoryCreateResult> {
     this.assertWritable();
     return this.withMutation(() => this.paths.createDirectory(relativeDirectory));
@@ -1196,10 +1305,11 @@ export class VaultKernel implements VaultMutationPort {
 
     const recoveryPriority: Record<TransactionJournal["kind"], number> = {
       write: 0,
-      "attachment-ingress": 1,
-      rename: 2,
-      "multi-write": 3,
-      "move-with-writes": 4,
+      "attachment-insert": 1,
+      "attachment-ingress": 2,
+      rename: 3,
+      "multi-write": 4,
+      "move-with-writes": 5,
     };
     journals.sort(
       (left, right) =>
@@ -1225,6 +1335,8 @@ export class VaultKernel implements VaultMutationPort {
       try {
         if (journal.kind === "write") {
           actions.push(await this.recoverWrite(journal));
+        } else if (journal.kind === "attachment-insert") {
+          actions.push(await this.recoverAttachmentInsert(journal));
         } else if (journal.kind === "attachment-ingress") {
           actions.push(await this.recoverAttachmentIngress(journal));
         } else if (journal.kind === "rename") {
@@ -1361,15 +1473,16 @@ export class VaultKernel implements VaultMutationPort {
       } catch {
         continue;
       }
-      if (
-        typeof history !== "object" ||
-        history === null ||
-        Array.isArray(history) ||
-        !("kind" in history) ||
-        history.kind !== "attachment-ingress" ||
-        !("outcome" in history) ||
-        (history.outcome !== "committed" && history.outcome !== "rolled-back")
-      ) {
+      if (typeof history !== "object" || history === null || Array.isArray(history)) {
+        continue;
+      }
+      const kind = "kind" in history ? history.kind : null;
+      const outcome = "outcome" in history ? history.outcome : null;
+      const terminal =
+        (kind === "attachment-ingress" && (outcome === "committed" || outcome === "rolled-back")) ||
+        (kind === "attachment-insert" &&
+          (outcome === "committed" || outcome === "rolled-back" || outcome === "conflict-copy"));
+      if (!terminal) {
         continue;
       }
       await fs.rm(path.join(this.transactionDirectory, entry.name), {
@@ -2494,6 +2607,288 @@ export class VaultKernel implements VaultMutationPort {
     return path.join(this.getTransactionBlobDirectory(transactionId), "attachment-ingress.bin");
   }
 
+  private getAttachmentInsertAttachmentBlobPath(transactionId: string): string {
+    return path.join(this.getTransactionBlobDirectory(transactionId), "attachment-insert.bin");
+  }
+
+  private getAttachmentInsertNoteBlobPath(transactionId: string): string {
+    return path.join(this.getTransactionBlobDirectory(transactionId), "attachment-insert-note.md");
+  }
+
+  private async loadAttachmentInsertBlobs(
+    journal: AttachmentInsertJournal,
+  ): Promise<{ attachment: Buffer; note: Buffer }> {
+    const attachmentPath = this.getAttachmentInsertAttachmentBlobPath(journal.id);
+    const notePath = this.getAttachmentInsertNoteBlobPath(journal.id);
+    const [attachmentStat, noteStat] = await Promise.all([
+      fs.lstat(attachmentPath),
+      fs.lstat(notePath),
+    ]);
+    if (
+      !attachmentStat.isFile() ||
+      attachmentStat.isSymbolicLink() ||
+      !noteStat.isFile() ||
+      noteStat.isSymbolicLink()
+    ) {
+      throw new Error("Attachment-insert evidence contains a non-regular file.");
+    }
+    const [attachment, note] = await Promise.all([
+      readStableFile(attachmentPath),
+      readStableFile(notePath),
+    ]);
+    if (
+      !attachment ||
+      attachment.revision !== journal.attachmentRevision ||
+      attachment.size !== journal.attachmentByteLength ||
+      attachment.size > MAX_VAULT_ATTACHMENT_BYTES ||
+      !note ||
+      note.revision !== journal.nextNoteRevision ||
+      note.size !== journal.noteByteLength
+    ) {
+      throw new Error("Attachment-insert evidence failed its revision check.");
+    }
+    return { attachment: attachment.bytes, note: note.bytes };
+  }
+
+  private async continueAttachmentInsert(
+    journal: AttachmentInsertJournal,
+    attachmentBytes: Buffer,
+    noteBytes: Buffer,
+  ): Promise<VaultAttachmentInsertResult> {
+    if (
+      attachmentBytes.byteLength !== journal.attachmentByteLength ||
+      revisionOf(attachmentBytes) !== journal.attachmentRevision ||
+      noteBytes.byteLength !== journal.noteByteLength ||
+      revisionOf(noteBytes) !== journal.nextNoteRevision
+    ) {
+      throw new Error("Attachment-insert prepared bytes do not match their journal.");
+    }
+    if (journal.phase === "committed") {
+      await this.archiveAttachmentInsert(journal, "committed");
+      return {
+        status: "committed",
+        path: journal.sourceNotePath,
+        revision: journal.nextNoteRevision,
+        attachmentPath: journal.targetPath,
+        attachmentRevision: journal.attachmentRevision,
+        transactionId: journal.id,
+      };
+    }
+
+    if (journal.phase === "staged") {
+      let preflight = await this.checkAttachmentInsertBeforePublish({
+        sourceNotePath: journal.sourceNotePath,
+        sourceNoteRevision: journal.sourceNoteRevision,
+        nextSourceContent: noteBytes.toString("utf8"),
+        targetPath: journal.targetPath,
+        attachmentBytes,
+      });
+      if (preflight.status === "refused") {
+        return this.rollbackAttachmentInsert(journal, preflight.reason);
+      }
+      await this.inject("attachment-insert:before-publish");
+      preflight = await this.checkAttachmentInsertBeforePublish({
+        sourceNotePath: journal.sourceNotePath,
+        sourceNoteRevision: journal.sourceNoteRevision,
+        nextSourceContent: noteBytes.toString("utf8"),
+        targetPath: journal.targetPath,
+        attachmentBytes,
+      });
+      if (preflight.status === "refused") {
+        return this.rollbackAttachmentInsert(journal, preflight.reason);
+      }
+
+      let installed = false;
+      try {
+        installed = await this.installPreparedFile(
+          this.getAttachmentInsertAttachmentBlobPath(journal.id),
+          preflight.targetAbsolute,
+          true,
+        );
+      } catch {
+        return this.manualAttachmentInsert(journal, "publish-state-diverged");
+      }
+      if (!installed) {
+        const target = await this.readAttachmentInsertTarget(journal).catch(() => null);
+        return this.rollbackAttachmentInsert(
+          journal,
+          target ? "target-present" : "attachment-publish-unavailable",
+        );
+      }
+      await this.inject("attachment-insert:after-native-publish");
+      const published = await this.checkAttachmentInsertPublished(journal);
+      if (published) return this.manualAttachmentInsert(journal, published);
+      journal.phase = "attachment-published";
+      await this.writeJournal(journal);
+      await this.inject("attachment-insert:after-publish");
+    }
+
+    if (journal.phase === "attachment-published") {
+      const published = await this.checkAttachmentInsertPublished(journal);
+      if (published) return this.manualAttachmentInsert(journal, published);
+      await this.inject("attachment-insert:before-note-write");
+      try {
+        await this.paths.resolveForWrite(journal.sourceNotePath);
+      } catch {
+        return this.manualAttachmentInsert(journal, "conflict-preservation-diverged");
+      }
+      const current = await this.readMutationFile(
+        this.paths.resolveLexical(journal.sourceNotePath),
+      ).catch(() => null);
+      if (current?.revision === journal.nextNoteRevision) {
+        journal.phase = "note-written";
+        await this.writeJournal(journal);
+      } else if (current?.revision === journal.sourceNoteRevision) {
+        const noteWrite = await this.performWrite(
+          journal.sourceNotePath,
+          noteBytes,
+          journal.sourceNoteRevision,
+        );
+        if (noteWrite.status === "conflict") {
+          journal.conflictPath = noteWrite.conflictPath;
+          journal.phase = "conflict-preserved";
+          await this.writeJournal(journal);
+          await this.inject("attachment-insert:after-conflict-preserve");
+          await this.archiveAttachmentInsert(journal, "conflict-copy");
+          return {
+            status: "conflict",
+            path: journal.sourceNotePath,
+            currentRevision: noteWrite.currentRevision,
+            conflictPath: journal.conflictPath,
+            attachmentPath: journal.targetPath,
+            attachmentRevision: journal.attachmentRevision,
+            transactionId: journal.id,
+          };
+        }
+        journal.phase = "note-written";
+        await this.writeJournal(journal);
+        await this.inject("attachment-insert:after-note-write");
+      } else {
+        return this.preserveAttachmentInsertConflict(journal, noteBytes, current?.revision ?? null);
+      }
+    }
+
+    if (journal.phase === "note-written") {
+      const published = await this.checkAttachmentInsertPublished(journal);
+      if (published) return this.manualAttachmentInsert(journal, published);
+      const current = await this.readMutationFile(
+        this.paths.resolveLexical(journal.sourceNotePath),
+      ).catch(() => null);
+      if (current?.revision !== journal.nextNoteRevision) {
+        return this.preserveAttachmentInsertConflict(journal, noteBytes, current?.revision ?? null);
+      }
+      journal.phase = "committed";
+      await this.writeJournal(journal);
+      await this.inject("attachment-insert:after-commit");
+      await this.archiveAttachmentInsert(journal, "committed");
+      return {
+        status: "committed",
+        path: journal.sourceNotePath,
+        revision: journal.nextNoteRevision,
+        attachmentPath: journal.targetPath,
+        attachmentRevision: journal.attachmentRevision,
+        transactionId: journal.id,
+      };
+    }
+
+    if (journal.phase === "conflict-preserved") {
+      const published = await this.checkAttachmentInsertPublished(journal);
+      const conflict = await this.readMutationFile(
+        this.paths.resolveLexical(journal.conflictPath),
+      ).catch(() => null);
+      if (published || conflict?.revision !== journal.nextNoteRevision) {
+        return this.manualAttachmentInsert(journal, "conflict-preservation-diverged");
+      }
+      const current = await this.readMutationFile(
+        this.paths.resolveLexical(journal.sourceNotePath),
+      ).catch(() => null);
+      await this.archiveAttachmentInsert(journal, "conflict-copy");
+      return {
+        status: "conflict",
+        path: journal.sourceNotePath,
+        currentRevision: current?.revision ?? null,
+        conflictPath: journal.conflictPath,
+        attachmentPath: journal.targetPath,
+        attachmentRevision: journal.attachmentRevision,
+        transactionId: journal.id,
+      };
+    }
+
+    throw new Error(`Attachment-insert phase cannot continue: ${journal.phase}`);
+  }
+
+  private async preserveAttachmentInsertConflict(
+    journal: AttachmentInsertJournal,
+    noteBytes: Buffer,
+    currentRevision: string | null,
+  ): Promise<VaultAttachmentInsertResult> {
+    const existing = await this.readMutationFile(
+      this.paths.resolveLexical(journal.conflictPath),
+    ).catch(() => null);
+    if (existing?.revision !== journal.nextNoteRevision) {
+      const result = await this.performWrite(journal.conflictPath, noteBytes, null);
+      if (result.status === "conflict") journal.conflictPath = result.conflictPath;
+    }
+    const preserved = await this.readMutationFile(
+      this.paths.resolveLexical(journal.conflictPath),
+    ).catch(() => null);
+    if (preserved?.revision !== journal.nextNoteRevision) {
+      return this.manualAttachmentInsert(journal, "conflict-preservation-diverged");
+    }
+    journal.phase = "conflict-preserved";
+    await this.writeJournal(journal);
+    await this.inject("attachment-insert:after-conflict-preserve");
+    await this.archiveAttachmentInsert(journal, "conflict-copy");
+    return {
+      status: "conflict",
+      path: journal.sourceNotePath,
+      currentRevision,
+      conflictPath: journal.conflictPath,
+      attachmentPath: journal.targetPath,
+      attachmentRevision: journal.attachmentRevision,
+      transactionId: journal.id,
+    };
+  }
+
+  private async rollbackAttachmentInsert(
+    journal: AttachmentInsertJournal,
+    reason: VaultAttachmentInsertFailureReason,
+  ): Promise<VaultAttachmentInsertResult> {
+    await this.archiveAttachmentInsert(journal, "rolled-back");
+    return {
+      status: "refused",
+      path: journal.sourceNotePath,
+      attachmentPath: journal.targetPath,
+      reason,
+    };
+  }
+
+  private async manualAttachmentInsert(
+    journal: AttachmentInsertJournal,
+    reason: VaultAttachmentInsertFailureReason,
+  ): Promise<VaultAttachmentInsertResult> {
+    await this.archiveAttachmentInsert(journal, "manual-conflict");
+    return {
+      status: "manual-conflict",
+      path: journal.sourceNotePath,
+      attachmentPath: journal.targetPath,
+      reason,
+      transactionId: journal.id,
+    };
+  }
+
+  private async archiveAttachmentInsert(
+    journal: AttachmentInsertJournal,
+    outcome: "committed" | "rolled-back" | "conflict-copy" | "manual-conflict",
+  ): Promise<void> {
+    await this.archiveJournal(journal, outcome);
+    if (outcome === "manual-conflict") return;
+    await fs
+      .rm(this.getTransactionBlobDirectory(journal.id), { recursive: true, force: true })
+      .catch(() => undefined);
+    await syncDirectory(this.transactionDirectory).catch(() => undefined);
+  }
+
   private async loadAttachmentIngressBlob(journal: AttachmentIngressJournal): Promise<Buffer> {
     const blobPath = this.getAttachmentIngressBlobPath(journal.id);
     const stat = await fs.lstat(blobPath);
@@ -3136,6 +3531,60 @@ export class VaultKernel implements VaultMutationPort {
     };
   }
 
+  private async recoverAttachmentInsert(journal: AttachmentInsertJournal): Promise<RecoveryAction> {
+    if (journal.phase === "intent") {
+      let prepared: { attachment: Buffer; note: Buffer } | null = null;
+      try {
+        prepared = await this.loadAttachmentInsertBlobs(journal);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+          throw error;
+        }
+      }
+      if (!prepared) {
+        await this.archiveAttachmentInsert(journal, "rolled-back");
+        return {
+          transactionId: journal.id,
+          kind: "attachment-insert",
+          outcome: "rolled-back",
+          path: journal.sourceNotePath,
+        };
+      }
+      journal.phase = "staged";
+      await this.writeJournal(journal);
+    }
+
+    const prepared = await this.loadAttachmentInsertBlobs(journal);
+    if (journal.phase === "staged") {
+      const target = await this.readAttachmentInsertTarget(journal).catch(() => null);
+      if (target) {
+        await this.archiveAttachmentInsert(journal, "manual-conflict");
+        return {
+          transactionId: journal.id,
+          kind: "attachment-insert",
+          outcome: "manual-conflict",
+          path: journal.sourceNotePath,
+        };
+      }
+    }
+
+    const result = await this.continueAttachmentInsert(journal, prepared.attachment, prepared.note);
+    return {
+      transactionId: result.status === "refused" ? journal.id : result.transactionId,
+      kind: "attachment-insert",
+      outcome:
+        result.status === "committed"
+          ? "committed"
+          : result.status === "conflict"
+            ? "conflict-copy"
+            : result.status === "manual-conflict"
+              ? "manual-conflict"
+              : "rolled-back",
+      path: journal.sourceNotePath,
+      ...(result.status === "conflict" ? { conflictPath: result.conflictPath } : {}),
+    };
+  }
+
   private async recoverRename(journal: RenameJournal): Promise<RecoveryAction> {
     let sourceAbsolute: string;
     let targetAbsolute: string;
@@ -3634,6 +4083,65 @@ export class VaultKernel implements VaultMutationPort {
       }
     }
     return "unsafe";
+  }
+
+  private async checkAttachmentInsertBeforePublish(
+    request: VaultAttachmentInsertRequest,
+  ): Promise<AttachmentInsertPreflight> {
+    if (!isSafeExternalAttachmentTarget(request.targetPath)) {
+      return { status: "refused", reason: "attachment-publish-unavailable" };
+    }
+    try {
+      await this.paths.resolveForWrite(request.sourceNotePath);
+    } catch {
+      return { status: "refused", reason: "source-write-unavailable" };
+    }
+    let source: VaultTextSnapshot;
+    try {
+      source = await this.readText(request.sourceNotePath);
+    } catch {
+      return { status: "refused", reason: "source-note-changed" };
+    }
+    if (source.revision !== request.sourceNoteRevision) {
+      return { status: "refused", reason: "source-note-changed" };
+    }
+    const targetState = await this.attachmentRelinkMissingPathState(request.targetPath);
+    if (targetState === "present") return { status: "refused", reason: "target-present" };
+    if (targetState === "unsafe") {
+      return { status: "refused", reason: "attachment-publish-unavailable" };
+    }
+    const targetCheck = await this.checkStrictAttachmentTarget(request.targetPath);
+    if (targetCheck.status !== "ready") {
+      return { status: "refused", reason: targetCheck.status };
+    }
+    return targetCheck;
+  }
+
+  private async readAttachmentInsertTarget(
+    journal: AttachmentInsertJournal,
+  ): Promise<FileSnapshot | null> {
+    return this.readMutationFile(this.paths.resolveLexical(journal.targetPath), true);
+  }
+
+  private async checkAttachmentInsertPublished(
+    journal: AttachmentInsertJournal,
+  ): Promise<VaultAttachmentInsertFailureReason | null> {
+    const targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+    if (targetCheck.status !== "ready") return targetCheck.status;
+    let target: FileSnapshot | null;
+    try {
+      target = await this.readMutationFile(targetCheck.targetAbsolute, true);
+    } catch {
+      return "publish-state-diverged";
+    }
+    if (
+      !target ||
+      target.revision !== journal.attachmentRevision ||
+      target.size !== journal.attachmentByteLength
+    ) {
+      return "publish-state-diverged";
+    }
+    return null;
   }
 
   private async checkAttachmentIngressBeforePublish(

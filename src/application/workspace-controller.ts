@@ -9,6 +9,7 @@ import type {
 import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  AttachmentInsertResponse,
   AttachmentMoveResponse,
   AttachmentOperation,
   AttachmentRelinkResponse,
@@ -209,6 +210,17 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
     confirmationId?: string,
   ): Promise<AttachmentRestoreResponse>;
+  insertAttachment?(
+    sourceNotePath: string,
+    targetPath: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    selectionStart: number,
+    selectionEnd: number,
+    confirmationId?: string,
+  ): Promise<AttachmentInsertResponse>;
   deleteNote(
     filePath: string,
     expectedRevision: string,
@@ -1068,6 +1080,61 @@ export class WorkspaceController {
     if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
       if (
         response.outcome.status === "committed" ||
+        response.outcome.status === "manual-conflict"
+      ) {
+        return {
+          ...response,
+          snapshot: await this.#runtime.getSnapshot(),
+          affectedVaultId: runtime.vaultId,
+          affectedVaultName: displaySafeVaultName(response.snapshot.vault.name),
+        };
+      }
+      return { outcome: staleOutcome(), snapshot: await this.#runtime.getSnapshot() };
+    }
+    return response;
+  }
+
+  async insertAttachment(
+    sourceNotePath: string,
+    targetPath: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    selectionStart: number,
+    selectionEnd: number,
+    confirmationId?: string,
+  ): Promise<AttachmentInsertResponse> {
+    const runtime = this.activeRuntime("insert an external attachment");
+    if (!runtime.insertAttachment) {
+      throw new Error("The active workspace does not support attachment insertion.");
+    }
+    const staleOutcome = () => ({
+      status: "refused" as const,
+      sourceNotePath,
+      targetPath,
+      sourceFileName,
+      reason: "stale-vault" as const,
+      message: "The active vault changed before this attachment could be inserted.",
+    });
+    if (runtime.vaultId !== expectedVaultId) {
+      return { outcome: staleOutcome(), snapshot: await runtime.getSnapshot() };
+    }
+    const response = await runtime.insertAttachment(
+      sourceNotePath,
+      targetPath,
+      sourceFileName,
+      bytes,
+      expectedSourceRevision,
+      expectedVaultId,
+      selectionStart,
+      selectionEnd,
+      confirmationId,
+    );
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      if (
+        response.outcome.status === "committed" ||
+        response.outcome.status === "conflict-copy" ||
         response.outcome.status === "manual-conflict"
       ) {
         return {

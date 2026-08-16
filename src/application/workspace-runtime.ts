@@ -25,7 +25,10 @@ import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
+import { isExternalAttachmentTarget } from "../shared/attachment-targets";
 import type {
+  AttachmentInsertOutcome,
+  AttachmentInsertResponse,
   AttachmentMoveOutcome,
   AttachmentMoveResponse,
   AttachmentOperation,
@@ -110,6 +113,7 @@ import {
   type WorkspaceTreeIndex,
 } from "../shared/workspace-tree";
 import { ActionRegistry } from "./action-registry";
+import { insertExternalAttachment } from "./attachment-insert";
 import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
 import { inspectMissingAttachmentRelinkOffer, relinkMissingAttachment } from "./attachment-relink";
 import { restoreMissingAttachment } from "./attachment-restore";
@@ -503,6 +507,18 @@ interface RestoreAttachmentRequest {
   confirmationId: string | null;
 }
 
+interface InsertAttachmentRequest {
+  sourceNotePath: string;
+  targetPath: string;
+  sourceFileName: string;
+  bytes: Uint8Array;
+  expectedSourceRevision: string;
+  expectedVaultId: string;
+  selectionStart: number;
+  selectionEnd: number;
+  confirmationId: string | null;
+}
+
 interface DeleteNoteRequest {
   path: string;
   expectedRevision: string;
@@ -659,6 +675,52 @@ function parseRestoreAttachmentRequest(payload: unknown): RestoreAttachmentReque
     bytes: new Uint8Array(payload.bytes),
     expectedSourceRevision: payload.expectedSourceRevision,
     expectedVaultId: payload.expectedVaultId,
+    confirmationId:
+      "confirmationId" in payload && typeof payload.confirmationId === "string"
+        ? payload.confirmationId
+        : null,
+  };
+}
+
+function parseInsertAttachmentRequest(payload: unknown): InsertAttachmentRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("sourceNotePath" in payload) ||
+    typeof payload.sourceNotePath !== "string" ||
+    !("targetPath" in payload) ||
+    typeof payload.targetPath !== "string" ||
+    !("sourceFileName" in payload) ||
+    typeof payload.sourceFileName !== "string" ||
+    !("bytes" in payload) ||
+    !(payload.bytes instanceof Uint8Array) ||
+    payload.bytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES ||
+    !("expectedSourceRevision" in payload) ||
+    typeof payload.expectedSourceRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string" ||
+    !("selectionStart" in payload) ||
+    !Number.isSafeInteger(payload.selectionStart) ||
+    (payload.selectionStart as number) < 0 ||
+    !("selectionEnd" in payload) ||
+    !Number.isSafeInteger(payload.selectionEnd) ||
+    (payload.selectionEnd as number) < 0 ||
+    ("confirmationId" in payload &&
+      !(payload.confirmationId === null || typeof payload.confirmationId === "string"))
+  ) {
+    throw new Error(
+      "Insert attachment requires string note, target, file name, revision, and vault values plus bounded bytes, non-negative selection offsets, and an optional confirmation.",
+    );
+  }
+  return {
+    sourceNotePath: payload.sourceNotePath,
+    targetPath: payload.targetPath,
+    sourceFileName: payload.sourceFileName,
+    bytes: new Uint8Array(payload.bytes),
+    expectedSourceRevision: payload.expectedSourceRevision,
+    expectedVaultId: payload.expectedVaultId,
+    selectionStart: payload.selectionStart as number,
+    selectionEnd: payload.selectionEnd as number,
     confirmationId:
       "confirmationId" in payload && typeof payload.confirmationId === "string"
         ? payload.confirmationId
@@ -950,7 +1012,13 @@ function parseRemoveNotePropertyRequest(payload: unknown): RemoveNotePropertyReq
   };
 }
 
-function isWorkspaceNoteLink(link: { syntax: "wiki" | "markdown"; embed: boolean }): boolean {
+function isWorkspaceNoteLink(link: {
+  syntax: "wiki" | "markdown";
+  embed: boolean;
+  target: string;
+}): boolean {
+  const targetPath = link.target.split(/[?#]/u, 1)[0] ?? link.target;
+  if (isExternalAttachmentTarget(targetPath)) return false;
   return link.syntax !== "markdown" || !link.embed;
 }
 
@@ -1388,6 +1456,13 @@ export class WorkspaceRuntime {
         source: "workspace",
         execute: (payload) =>
           this.restoreAttachmentThroughKernel(parseRestoreAttachmentRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.insert-attachment",
+        name: "Insert external attachment",
+        source: "workspace",
+        execute: (payload) =>
+          this.insertAttachmentThroughKernel(parseInsertAttachmentRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.delete-note",
@@ -2229,6 +2304,34 @@ export class WorkspaceRuntime {
         bytes,
         expectedSourceRevision,
         expectedVaultId,
+        confirmationId: confirmationId ?? null,
+      },
+    );
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async insertAttachment(
+    sourceNotePath: string,
+    targetPath: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    selectionStart: number,
+    selectionEnd: number,
+    confirmationId?: string,
+  ): Promise<AttachmentInsertResponse> {
+    const outcome = await this.actions.dispatch<AttachmentInsertOutcome>(
+      "workspace.insert-attachment",
+      {
+        sourceNotePath,
+        targetPath,
+        sourceFileName,
+        bytes,
+        expectedSourceRevision,
+        expectedVaultId,
+        selectionStart,
+        selectionEnd,
         confirmationId: confirmationId ?? null,
       },
     );
@@ -4008,6 +4111,66 @@ export class WorkspaceRuntime {
       this.invalidateVisibleInventory();
     }
     return outcome;
+  }
+
+  private async insertAttachmentThroughKernel(
+    request: InsertAttachmentRequest,
+  ): Promise<AttachmentInsertOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return {
+        status: "refused",
+        sourceNotePath: request.sourceNotePath,
+        targetPath: request.targetPath,
+        sourceFileName: request.sourceFileName,
+        reason: "stale-vault",
+        message: "The active vault changed before this attachment could be inserted.",
+      };
+    }
+    this.assertWritable("insert external attachments");
+    const expectedGeneration = await this.withIndexStateLock(
+      async () => this.indexReactor.index.generation,
+    );
+    const execution = await insertExternalAttachment(
+      this.kernel,
+      {
+        sourceNotePath: request.sourceNotePath,
+        targetPath: request.targetPath,
+        sourceFileName: request.sourceFileName,
+        bytes: request.bytes,
+        expectedSourceRevision: request.expectedSourceRevision,
+        selectionStart: request.selectionStart,
+        selectionEnd: request.selectionEnd,
+        linkStyle: this.#workspaceSettings.linkStyle,
+        ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+      },
+      {
+        generation: expectedGeneration,
+        currentGeneration: () => this.indexReactor.index.generation,
+      },
+    );
+    if (
+      execution.status === "committed" ||
+      execution.status === "conflict-copy" ||
+      execution.status === "manual-conflict"
+    ) {
+      this.invalidateVisibleInventory();
+    }
+    if ("writeConflict" in execution) {
+      await this.withIndexMutation(() => this.reconcileNoteWrite(execution.writeConflict));
+      const { writeConflict: _writeConflict, ...outcome } = execution;
+      return outcome;
+    }
+    if (execution.status === "committed") {
+      await this.withIndexMutation(() =>
+        this.reconcileNoteWrite({
+          status: "committed",
+          path: execution.path,
+          revision: execution.revision,
+          transactionId: execution.transactionId,
+        }),
+      );
+    }
+    return execution;
   }
 
   private async deleteNoteThroughKernel(request: DeleteNoteRequest): Promise<NoteDeleteOutcome> {

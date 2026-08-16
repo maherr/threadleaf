@@ -2199,6 +2199,78 @@
     />
 
     <dialog
+      class="new-note-dialog move-note-dialog attachment-insert-dialog"
+      id="attachment-insert-dialog"
+      aria-labelledby="attachment-insert-title"
+      aria-describedby="attachment-insert-description"
+      aria-modal="true"
+    >
+      <form class="new-note-shell" id="attachment-insert-form">
+        <header class="new-note-header">
+          <span class="new-note-mark" aria-hidden="true">＋</span>
+          <span>
+            <small>Recoverable editor insertion</small>
+            <strong id="attachment-insert-title">Insert external attachment</strong>
+          </span>
+          <button id="attachment-insert-close" type="button" aria-label="Cancel attachment insertion">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+        <p id="attachment-insert-description" class="new-note-description">
+          Threadleaf will publish the selected file's exact bytes first, then insert one reference
+          at the captured editor position. Nothing is written until the reviewed plan is confirmed.
+        </p>
+        <div class="move-note-current">
+          <span>Source note</span>
+          <code id="attachment-insert-source">No note selected</code>
+        </div>
+        <div class="move-note-current">
+          <span>Selected file</span>
+          <code id="attachment-insert-file">No file selected</code>
+        </div>
+        <label class="new-note-field" for="attachment-insert-target">
+          <span>Vault path</span>
+          <input
+            id="attachment-insert-target"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Attachments/file.png"
+            maxlength="4096"
+            required
+          />
+        </label>
+        <p class="new-note-error" id="attachment-insert-error" role="alert" hidden></p>
+        <p
+          class="move-note-preview-message"
+          id="attachment-insert-preview-message"
+          role="status"
+          hidden
+        ></p>
+        <section
+          class="move-note-blockers"
+          id="attachment-insert-proof"
+          aria-labelledby="attachment-insert-proof-summary"
+          hidden
+        >
+          <strong id="attachment-insert-proof-summary">Insertion proof</strong>
+          <ol id="attachment-insert-proof-list"></ol>
+        </section>
+        <footer class="new-note-footer">
+          <span id="attachment-insert-vault">Active vault</span>
+          <span>
+            <button class="secondary-button" id="attachment-insert-cancel" type="button">
+              Cancel
+            </button>
+            <button class="primary-button" id="attachment-insert-submit" type="submit">
+              Review insertion
+            </button>
+          </span>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog
       class="new-note-dialog delete-note-dialog"
       id="delete-note-dialog"
       aria-labelledby="delete-note-title"

@@ -3506,6 +3506,60 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.insertAttachment,
+    (
+      event,
+      sourceNotePath: unknown,
+      targetPath: unknown,
+      sourceFileName: unknown,
+      bytes: unknown,
+      expectedSourceRevision: unknown,
+      expectedVaultId: unknown,
+      selectionStart: unknown,
+      selectionEnd: unknown,
+      confirmationId: unknown,
+    ) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Attachment insertion is available only to the owned main renderer.");
+      }
+      if (
+        typeof sourceNotePath !== "string" ||
+        typeof targetPath !== "string" ||
+        typeof sourceFileName !== "string" ||
+        !(bytes instanceof ArrayBuffer) ||
+        typeof expectedSourceRevision !== "string" ||
+        typeof expectedVaultId !== "string" ||
+        !Number.isSafeInteger(selectionStart) ||
+        (selectionStart as number) < 0 ||
+        !Number.isSafeInteger(selectionEnd) ||
+        (selectionEnd as number) < 0 ||
+        !(confirmationId === undefined || typeof confirmationId === "string") ||
+        sourceNotePath.length > 4_096 ||
+        targetPath.length > 4_096 ||
+        Buffer.byteLength(sourceFileName, "utf8") > 255 ||
+        bytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES ||
+        expectedSourceRevision.length > 128 ||
+        expectedVaultId.length > 128 ||
+        (typeof confirmationId === "string" && confirmationId.length > 128)
+      ) {
+        throw new Error(
+          "Insert attachment requires bounded string note, target, file name, revision, and vault values plus an ArrayBuffer payload, non-negative selection offsets, and an optional confirmation.",
+        );
+      }
+      return workspaceController.insertAttachment(
+        sourceNotePath,
+        targetPath,
+        sourceFileName,
+        new Uint8Array(bytes.slice(0)),
+        expectedSourceRevision,
+        expectedVaultId,
+        selectionStart as number,
+        selectionEnd as number,
+        confirmationId,
+      );
+    },
+  );
+  ipcMain.handle(
     ipcChannels.deleteNote,
     (_event, filePath: unknown, expectedRevision: unknown, expectedVaultId: unknown) => {
       if (

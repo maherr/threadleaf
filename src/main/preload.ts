@@ -12,6 +12,7 @@ import type {
   AppearancePackageInventoryResponse,
   AppearancePackageLocalPreviewResponse,
   AppearanceUpdateResponse,
+  AttachmentInsertResponse,
   AttachmentMoveResponse,
   AttachmentOperation,
   AttachmentRelinkResponse,
@@ -538,6 +539,29 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       confirmationId,
     ) as Promise<AttachmentRestoreResponse>,
+  insertAttachment: (
+    sourceNotePath,
+    targetPath,
+    sourceFileName,
+    bytes,
+    expectedSourceRevision,
+    expectedVaultId,
+    selectionStart,
+    selectionEnd,
+    confirmationId,
+  ) =>
+    ipcRenderer.invoke(
+      ipcChannels.insertAttachment,
+      sourceNotePath,
+      targetPath,
+      sourceFileName,
+      bytes,
+      expectedSourceRevision,
+      expectedVaultId,
+      selectionStart,
+      selectionEnd,
+      confirmationId,
+    ) as Promise<AttachmentInsertResponse>,
   deleteNote: (filePath, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.deleteNote,

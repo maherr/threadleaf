@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isSafeExternalAttachmentTarget } from "../shared/attachment-targets";
 import { hasHiddenVaultSegment, hasPrivateVaultSegment, normalizeVaultPath } from "./path-policy";
 import type { VaultAttachmentIngressAuthorization, VaultMarkdownCorpus } from "./ports";
 
@@ -14,6 +15,13 @@ export type MoveWithWritesPhase =
   | "rolling-back"
   | "committed";
 export type AttachmentIngressPhase = "intent" | "staged" | "published" | "committed";
+export type AttachmentInsertPhase =
+  | "intent"
+  | "staged"
+  | "attachment-published"
+  | "note-written"
+  | "conflict-preserved"
+  | "committed";
 
 interface JournalBase {
   version: 1;
@@ -102,12 +110,26 @@ export interface AttachmentIngressJournal extends JournalBase {
   authorization: VaultAttachmentIngressAuthorization;
 }
 
+export interface AttachmentInsertJournal extends JournalBase {
+  kind: "attachment-insert";
+  phase: AttachmentInsertPhase;
+  sourceNotePath: string;
+  sourceNoteRevision: string;
+  nextNoteRevision: string;
+  noteByteLength: number;
+  targetPath: string;
+  attachmentRevision: string;
+  attachmentByteLength: number;
+  conflictPath: string;
+}
+
 export type TransactionJournal =
   | WriteJournal
   | RenameJournal
   | MultiWriteJournal
   | MoveWithWritesJournal
-  | AttachmentIngressJournal;
+  | AttachmentIngressJournal
+  | AttachmentInsertJournal;
 
 const revisionPattern = /^[a-f0-9]{64}$/;
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -141,6 +163,14 @@ const attachmentIngressPhases = new Set<AttachmentIngressPhase>([
   "intent",
   "staged",
   "published",
+  "committed",
+]);
+const attachmentInsertPhases = new Set<AttachmentInsertPhase>([
+  "intent",
+  "staged",
+  "attachment-published",
+  "note-written",
+  "conflict-preserved",
   "committed",
 ]);
 
@@ -697,6 +727,76 @@ export function parseTransactionJournal(
       throw new Error("Attachment-ingress journal authorization is invalid.");
     }
     return input as unknown as AttachmentIngressJournal;
+  }
+
+  if (input.kind === "attachment-insert") {
+    const expectedKeys = [
+      "version",
+      "id",
+      "vaultId",
+      "createdAt",
+      "kind",
+      "phase",
+      "sourceNotePath",
+      "sourceNoteRevision",
+      "nextNoteRevision",
+      "noteByteLength",
+      "targetPath",
+      "attachmentRevision",
+      "attachmentByteLength",
+      "conflictPath",
+    ] as const;
+    if (
+      !hasExactKeys(input, expectedKeys) ||
+      typeof input.phase !== "string" ||
+      !attachmentInsertPhases.has(input.phase as AttachmentInsertPhase) ||
+      typeof input.sourceNotePath !== "string" ||
+      !isRevision(input.sourceNoteRevision) ||
+      !isRevision(input.nextNoteRevision) ||
+      !Number.isSafeInteger(input.noteByteLength) ||
+      (input.noteByteLength as number) < 0 ||
+      typeof input.targetPath !== "string" ||
+      !isRevision(input.attachmentRevision) ||
+      !Number.isSafeInteger(input.attachmentByteLength) ||
+      (input.attachmentByteLength as number) < 0 ||
+      typeof input.conflictPath !== "string"
+    ) {
+      throw new Error("Attachment-insert journal shape is invalid.");
+    }
+    try {
+      const sourceNotePath = normalizeVaultPath(input.sourceNotePath);
+      const targetPath = normalizeVaultPath(input.targetPath);
+      const conflictPath = normalizeVaultPath(input.conflictPath);
+      const targetFolded = targetPath.toLocaleLowerCase("en-US");
+      if (
+        sourceNotePath !== input.sourceNotePath ||
+        !sourceNotePath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        targetPath !== input.targetPath ||
+        !isSafeExternalAttachmentTarget(targetPath) ||
+        targetFolded.endsWith(".md") ||
+        targetFolded.endsWith(".canvas") ||
+        conflictPath !== input.conflictPath ||
+        !conflictPath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        conflictPath === sourceNotePath ||
+        hasHiddenVaultSegment(sourceNotePath) ||
+        hasPrivateVaultSegment(sourceNotePath) ||
+        hasHiddenVaultSegment(targetPath) ||
+        hasPrivateVaultSegment(targetPath) ||
+        hasHiddenVaultSegment(conflictPath) ||
+        hasPrivateVaultSegment(conflictPath)
+      ) {
+        throw new Error("Attachment-insert journal paths are invalid.");
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "Attachment-insert journal paths are invalid."
+      ) {
+        throw error;
+      }
+      throw new Error("Attachment-insert journal paths are invalid.", { cause: error });
+    }
+    return input as unknown as AttachmentInsertJournal;
   }
 
   throw new Error("Journal kind is invalid.");

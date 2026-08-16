@@ -52,6 +52,21 @@ const externalPasteName = "clipboard-recovery.bin";
 const externalPasteBytes = Buffer.from([0x50, 0x00, 0xfd, 0x53, 0xef, 0xbb, 0xbf, 0x0a]);
 const recoveredAttachmentPath = "Assets/recovered report.pdf";
 const recoveredAttachmentBytes = Buffer.from("%PDF-1.7\nrecovered fixture\0", "binary");
+const insertionPasteNotePath = "Notes/Paste Desk.md";
+const insertionPasteNote = "Replace this entire note.";
+const insertionPasteFileName = "pasted diagram.png";
+const insertionPasteTargetPath = `Notes/${insertionPasteFileName}`;
+const insertionPasteBytes = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xfe,
+]);
+const insertionPasteReference = `![[${insertionPasteFileName}]]`;
+const insertionDropNotePath = "Notes/Drop Desk.md";
+const insertionDropNote = "before\nafter\n";
+const externalInsertionDropPath = path.join(testRoot, "dropped-plan.pdf");
+const insertionDropFileName = path.basename(externalInsertionDropPath);
+const insertionDropTargetPath = `Notes/${insertionDropFileName}`;
+const insertionDropBytes = Buffer.from("%PDF-1.7\neditor-drop-fixture\0", "binary");
+const insertionDropReference = `![[${insertionDropFileName}]]`;
 const originalAudioCanvas = `\uFEFF${[
   "{",
   '  "nodes": [',
@@ -561,6 +576,328 @@ async function dispatchTextOnlyPaste(selector) {
       dialogOpen: document.querySelector('#attachment-move-dialog')?.open === true,
     };
   })()`);
+}
+
+async function waitForAttachmentInsertDialog(message) {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    if (await evaluate("document.querySelector('#attachment-insert-dialog')?.open === true"))
+      return;
+    await delay(40);
+  }
+  throw new Error(message);
+}
+
+async function openEditorNote(notePath) {
+  await evaluate(`(async () => {
+    await window.threadleaf.openNote(${JSON.stringify(notePath)}, 'primary', true);
+    return true;
+  })()`);
+  const openDeadline = Date.now() + 8_000;
+  while (Date.now() < openDeadline) {
+    const state = await evaluate(`(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      return {
+        path: snapshot.workspace?.activeNote?.path ?? '',
+        renderedPath: document.querySelector('[data-pane-id="primary"] [id^="note-path"]')?.textContent ?? '',
+      };
+    })()`);
+    if (state.path === notePath && state.renderedPath === notePath) break;
+    await delay(40);
+  }
+  const opened = await evaluate(`(async () => {
+    const snapshot = await window.threadleaf.getSnapshot();
+    return snapshot.workspace?.activeNote?.path === ${JSON.stringify(notePath)} &&
+      document.querySelector('[data-pane-id="primary"] [id^="note-path"]')?.textContent === ${JSON.stringify(notePath)};
+  })()`);
+  assert(opened, `The packaged application did not open ${notePath}.`);
+  if (
+    (await evaluate("document.querySelector('#note-view')?.getAttribute('data-view')")) !== "live"
+  ) {
+    await clickPointer("#edit-view");
+  }
+  const editorDeadline = Date.now() + 8_000;
+  while (Date.now() < editorDeadline) {
+    const state = await evaluate(`(() => ({
+      view: document.querySelector('#note-view')?.getAttribute('data-view') ?? '',
+      mounted: document.querySelector('[data-pane-id="primary"] .cm-content[contenteditable="true"]') !== null,
+    }))()`);
+    if (state.view === "live" && state.mounted) return;
+    await delay(40);
+  }
+  throw new Error(`The packaged application did not mount the live editor for ${notePath}.`);
+}
+
+async function focusAndSelectAllEditor() {
+  await clickPointer('[data-pane-id="primary"] .cm-content');
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+  });
+}
+
+async function dispatchEditorFilePaste(sourceFileName, bytes) {
+  await focusAndSelectAllEditor();
+  const result = await evaluate(`(() => {
+    const editor = document.querySelector('[data-pane-id="primary"] .cm-content');
+    if (!(editor instanceof HTMLElement)) return { dispatched: false, reason: 'missing' };
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([Uint8Array.from(${JSON.stringify([...bytes])})], ${JSON.stringify(sourceFileName)}, {
+      type: 'application/octet-stream',
+    }));
+    const event = new ClipboardEvent('paste', {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: transfer,
+    });
+    const dispatchResult = editor.dispatchEvent(event);
+    return {
+      dispatched: true,
+      focused: document.activeElement === editor,
+      defaultPrevented: event.defaultPrevented,
+      dispatchResult,
+    };
+  })()`);
+  assert(
+    result?.dispatched &&
+      result.focused &&
+      result.defaultPrevented &&
+      result.dispatchResult === false,
+    `The file-backed clipboard event did not enter the focused editor: ${JSON.stringify(result)}`,
+  );
+  await waitForAttachmentInsertDialog(
+    "The file-backed clipboard event did not reach the editor attachment workbench.",
+  );
+}
+
+async function editorDropTarget(lineIndex = 0) {
+  const target = await evaluate(`(() => {
+    const editor = document.querySelector('[data-pane-id="primary"] .cm-content');
+    const lines = editor ? [...editor.querySelectorAll('.cm-line')] : [];
+    const line = lines[${lineIndex}];
+    if (!(editor instanceof HTMLElement) || !(line instanceof HTMLElement)) {
+      return { ok: false, reason: 'missing' };
+    }
+    line.scrollIntoView({ block: 'center' });
+    const rect = line.getBoundingClientRect();
+    const x = Math.floor(rect.left + 2);
+    const y = Math.floor(rect.top + rect.height / 2);
+    const hit = document.elementFromPoint(x, y);
+    return {
+      ok: rect.width > 0 && rect.height > 0,
+      x,
+      y,
+      hit: hit instanceof Element && (hit === editor || editor.contains(hit)),
+      reason: hit instanceof Element ? hit.tagName : 'empty',
+    };
+  })()`);
+  assert(target?.ok, "The editor drop line is missing or hidden.");
+  assert(target.hit, `The editor drop hit-target check failed: ${target.reason}.`);
+  return target;
+}
+
+async function beginEditorFileDrag(sourcePaths, lineIndex = 0) {
+  const target = await editorDropTarget(lineIndex);
+  const data = fileDragData(sourcePaths);
+  for (const type of ["dragEnter", "dragOver"]) {
+    await cdp.send("Input.dispatchDragEvent", {
+      type,
+      x: target.x,
+      y: target.y,
+      data,
+    });
+  }
+  const state = await evaluate(`(() => ({
+    active: document.querySelector('[data-pane-id="primary"] .cm-editor')?.getAttribute('data-attachment-drop-active') ?? '',
+    dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
+  }))()`);
+  assert(
+    sourcePaths.length === 1
+      ? state.active === "true" && !state.dialogOpen
+      : state.active !== "true" && !state.dialogOpen,
+    `The editor drag state did not match the transfer cardinality: ${JSON.stringify(state)}`,
+  );
+  return { target, data };
+}
+
+async function dispatchRejectedEditorDrop(sourcePaths, lineIndex = 0) {
+  const target = await editorDropTarget(lineIndex);
+  const beforeHref = await evaluate("location.href");
+  const sourceFileNames = sourcePaths.map((sourcePath) => path.basename(sourcePath));
+  return evaluate(`(() => {
+    const editor = document.querySelector('[data-pane-id="primary"] .cm-content');
+    if (!(editor instanceof HTMLElement)) return { dispatched: false, reason: 'missing' };
+    const transfer = new DataTransfer();
+    for (const [index, fileName] of ${JSON.stringify(sourceFileNames)}.entries()) {
+      transfer.items.add(new File([Uint8Array.from([index + 1])], fileName, {
+        type: 'application/octet-stream',
+      }));
+    }
+    const events = ['dragenter', 'dragover', 'drop'].map((type) => {
+      const event = new DragEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+        clientX: ${target.x},
+        clientY: ${target.y},
+      });
+      const dispatchResult = editor.dispatchEvent(event);
+      return { type, defaultPrevented: event.defaultPrevented, dispatchResult };
+    });
+    return {
+      dispatched: true,
+      owned: events.every((event) => event.defaultPrevented && event.dispatchResult === false),
+      events,
+      sameDocument: location.href === ${JSON.stringify(beforeHref)},
+      dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
+      editorPresent: document.querySelector('[data-pane-id="primary"] .cm-content') !== null,
+      active: document.querySelector('[data-pane-id="primary"] .cm-editor')?.getAttribute('data-attachment-drop-active') ?? '',
+      toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+    };
+  })()`);
+}
+
+async function assertAttachmentInsertWorkbench({
+  sourceNotePath,
+  sourceFileName,
+  targetPath,
+  bytes,
+  reference,
+}) {
+  const initial = await evaluate(`(() => {
+    const dialog = document.querySelector('#attachment-insert-dialog');
+    return {
+      open: dialog?.open === true,
+      title: document.querySelector('#attachment-insert-title')?.textContent ?? '',
+      description: document.querySelector('#attachment-insert-description')?.textContent ?? '',
+      source: document.querySelector('#attachment-insert-source')?.textContent ?? '',
+      file: document.querySelector('#attachment-insert-file')?.textContent ?? '',
+      target: document.querySelector('#attachment-insert-target')?.value ?? '',
+      submit: document.querySelector('#attachment-insert-submit')?.textContent?.trim() ?? '',
+      body: dialog?.textContent ?? '',
+      html: dialog?.outerHTML ?? '',
+    };
+  })()`);
+  assert(
+    initial.open &&
+      initial.title === "Insert external attachment" &&
+      initial.description.includes("publish the selected file's exact bytes first") &&
+      initial.description.includes("Nothing is written until") &&
+      initial.source === sourceNotePath &&
+      initial.file === `${sourceFileName} · ${bytes.byteLength} B` &&
+      initial.target === targetPath &&
+      initial.submit === "Review insertion" &&
+      !initial.html.includes(testRoot) &&
+      !initial.html.includes(vaultPath),
+    `The editor attachment workbench was not truthful or path-private: ${JSON.stringify(initial)}`,
+  );
+  await clickPointer("#attachment-insert-submit");
+  const previewDeadline = Date.now() + 8_000;
+  let preview = null;
+  while (Date.now() < previewDeadline) {
+    preview = await evaluate(`(() => ({
+      open: document.querySelector('#attachment-insert-dialog')?.open === true,
+      message: document.querySelector('#attachment-insert-preview-message')?.textContent ?? '',
+      proof: document.querySelector('#attachment-insert-proof')?.textContent ?? '',
+      hashTitle: document.querySelector('#attachment-insert-proof .move-note-blocker-origin')?.getAttribute('title') ?? '',
+      submit: document.querySelector('#attachment-insert-submit')?.textContent?.trim() ?? '',
+    }))()`);
+    if (
+      preview.open &&
+      preview.message.includes("Review the exact byte identity") &&
+      preview.submit === "Insert file and reference"
+    ) {
+      break;
+    }
+    await delay(50);
+  }
+  assert(
+    preview?.open &&
+      preview.message.includes("Submit again to commit both parts") &&
+      preview.proof.includes(sourceFileName) &&
+      preview.proof.includes(targetPath) &&
+      preview.proof.includes(reference) &&
+      /^SHA-256 [a-f0-9]{64}$/u.test(preview.hashTitle) &&
+      preview.submit === "Insert file and reference",
+    `The editor attachment preview omitted its compound proof: ${JSON.stringify(preview)}`,
+  );
+  return preview;
+}
+
+async function confirmAttachmentInsert({ sourceNotePath, expectedNote, targetPath, bytes }) {
+  await clickPointer("#attachment-insert-submit");
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const targetExists = await fs
+      .stat(path.join(vaultPath, targetPath))
+      .then(() => true)
+      .catch(() => false);
+    const state = await evaluate(`(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      return {
+        dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
+        toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+        path: snapshot.workspace?.activeNote?.path ?? '',
+        outgoingCount: snapshot.workspace?.activeNote?.outgoing.length ?? -1,
+        editorText: [...document.querySelectorAll('[data-pane-id="primary"] .cm-content .cm-line')]
+          .map((line) => line.textContent ?? '')
+          .join('\\n'),
+        editorFocused: document.activeElement?.classList.contains('cm-content') === true,
+      };
+    })()`);
+    if (
+      targetExists &&
+      !state.dialogOpen &&
+      state.toast.includes(`Inserted ${targetPath} and added one reference.`) &&
+      state.path === sourceNotePath &&
+      state.outgoingCount === 0 &&
+      state.editorText === expectedNote &&
+      state.editorFocused
+    ) {
+      break;
+    }
+    await delay(60);
+  }
+  assert(
+    (await fs.readFile(path.join(vaultPath, targetPath))).equals(bytes),
+    `The confirmed editor insertion changed the exact bytes for ${targetPath}.`,
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, sourceNotePath), "utf8")) === expectedNote,
+    `The confirmed editor insertion did not write the expected reference in ${sourceNotePath}.`,
+  );
+  const terminal = await evaluate(`(async () => {
+    const snapshot = await window.threadleaf.getSnapshot();
+    return {
+      dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
+      toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+      path: snapshot.workspace?.activeNote?.path ?? '',
+      outgoingCount: snapshot.workspace?.activeNote?.outgoing.length ?? -1,
+      editorText: [...document.querySelectorAll('[data-pane-id="primary"] .cm-content .cm-line')]
+        .map((line) => line.textContent ?? '')
+        .join('\\n'),
+      editorFocused: document.activeElement?.classList.contains('cm-content') === true,
+    };
+  })()`);
+  assert(
+    !terminal.dialogOpen &&
+      terminal.toast.includes(`Inserted ${targetPath} and added one reference.`) &&
+      terminal.path === sourceNotePath &&
+      terminal.outgoingCount === 0 &&
+      terminal.editorText === expectedNote &&
+      terminal.editorFocused,
+    `The committed editor insertion did not reconcile and focus the visible note: ${JSON.stringify(terminal)}`,
+  );
 }
 
 async function replaceInput(selector, value) {
@@ -1078,8 +1415,11 @@ try {
   await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, "Restored"), { recursive: true });
+  await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
   await fs.mkdir(userDataPath, { recursive: true });
   await fs.writeFile(notePath, originalNote, "utf8");
+  await fs.writeFile(path.join(vaultPath, insertionPasteNotePath), insertionPasteNote, "utf8");
+  await fs.writeFile(path.join(vaultPath, insertionDropNotePath), insertionDropNote, "utf8");
   await fs.writeFile(
     path.join(vaultPath, "Assets", "report.pdf"),
     Buffer.from("%PDF-1.7\nfixture\0", "binary"),
@@ -1095,6 +1435,7 @@ try {
   await fs.writeFile(path.join(vaultPath, recoveredAttachmentPath), recoveredAttachmentBytes);
   await fs.writeFile(externalRestorePath, externalRestoreBytes);
   await fs.writeFile(externalDropPath, externalDropBytes);
+  await fs.writeFile(externalInsertionDropPath, insertionDropBytes);
   await fs.writeFile(path.join(vaultPath, "Audio Board.canvas"), originalAudioCanvas, "utf8");
   await fs.writeFile(path.join(vaultPath, "Unsafe Audio.canvas"), unsafeAudioCanvas, "utf8");
   await fs.writeFile(
@@ -1932,6 +2273,117 @@ try {
   screenshots.push(await capture("packaged-attachment-relinked-light.png"));
   await setTheme("dark");
   screenshots.push(await capture("packaged-attachment-relinked-dark.png"));
+
+  await openEditorNote(insertionPasteNotePath);
+  await setTheme("dark");
+  await dispatchEditorFilePaste(insertionPasteFileName, insertionPasteBytes);
+  await assertAttachmentInsertWorkbench({
+    sourceNotePath: insertionPasteNotePath,
+    sourceFileName: insertionPasteFileName,
+    targetPath: insertionPasteTargetPath,
+    bytes: insertionPasteBytes,
+    reference: insertionPasteReference,
+  });
+  assert(
+    (await fs.readFile(path.join(vaultPath, insertionPasteNotePath), "utf8")) ===
+      insertionPasteNote &&
+      !(await fs
+        .stat(path.join(vaultPath, insertionPasteTargetPath))
+        .then(() => true)
+        .catch(() => false)),
+    "The editor paste preview mutated the note or published bytes before confirmation.",
+  );
+  screenshots.push(await capture("packaged-editor-attachment-paste-preview-dark.png"));
+  await clickPointer("#attachment-insert-cancel");
+  const pasteCancelDeadline = Date.now() + 5_000;
+  while (Date.now() < pasteCancelDeadline) {
+    if (!(await evaluate("document.querySelector('#attachment-insert-dialog')?.open === true")))
+      break;
+    await delay(40);
+  }
+  assert(
+    !(await evaluate("document.querySelector('#attachment-insert-dialog')?.open === true")),
+    "The editor paste preview did not close before the light-theme pass.",
+  );
+  await setTheme("light");
+  await dispatchEditorFilePaste(insertionPasteFileName, insertionPasteBytes);
+  await assertAttachmentInsertWorkbench({
+    sourceNotePath: insertionPasteNotePath,
+    sourceFileName: insertionPasteFileName,
+    targetPath: insertionPasteTargetPath,
+    bytes: insertionPasteBytes,
+    reference: insertionPasteReference,
+  });
+  screenshots.push(await capture("packaged-editor-attachment-paste-preview-light.png"));
+  await confirmAttachmentInsert({
+    sourceNotePath: insertionPasteNotePath,
+    expectedNote: insertionPasteReference,
+    targetPath: insertionPasteTargetPath,
+    bytes: insertionPasteBytes,
+  });
+
+  await openEditorNote(insertionDropNotePath);
+  await setTheme("dark");
+  const rejectedEditorDrop = await dispatchRejectedEditorDrop(
+    [externalInsertionDropPath, externalDropPath],
+    1,
+  );
+  assert(
+    rejectedEditorDrop?.dispatched &&
+      rejectedEditorDrop.owned &&
+      rejectedEditorDrop.sameDocument &&
+      !rejectedEditorDrop.dialogOpen &&
+      rejectedEditorDrop.editorPresent &&
+      rejectedEditorDrop.active !== "true" &&
+      rejectedEditorDrop.toast.includes("Insert one file at a time"),
+    `A refused multi-file editor drop escaped its owned boundary: ${JSON.stringify(rejectedEditorDrop)}`,
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, insertionDropNotePath), "utf8")) ===
+      insertionDropNote &&
+      !(await fs
+        .stat(path.join(vaultPath, insertionDropTargetPath))
+        .then(() => true)
+        .catch(() => false)),
+    "The multi-file editor drop refusal mutated the note or attachment namespace.",
+  );
+  const darkEditorDrag = await beginEditorFileDrag([externalInsertionDropPath], 1);
+  screenshots.push(await capture("packaged-editor-attachment-drop-target-dark.png"));
+  await cancelFileDrag(darkEditorDrag);
+  await setTheme("light");
+  const lightEditorDrag = await beginEditorFileDrag([externalInsertionDropPath], 1);
+  screenshots.push(await capture("packaged-editor-attachment-drop-target-light.png"));
+  await finishFileDrop(lightEditorDrag);
+  await waitForAttachmentInsertDialog(
+    "The trusted CDP file drop did not reach the editor attachment workbench.",
+  );
+  await assertAttachmentInsertWorkbench({
+    sourceNotePath: insertionDropNotePath,
+    sourceFileName: insertionDropFileName,
+    targetPath: insertionDropTargetPath,
+    bytes: insertionDropBytes,
+    reference: insertionDropReference,
+  });
+  assert(
+    (await fs.readFile(path.join(vaultPath, insertionDropNotePath), "utf8")) ===
+      insertionDropNote &&
+      !(await fs
+        .stat(path.join(vaultPath, insertionDropTargetPath))
+        .then(() => true)
+        .catch(() => false)),
+    "The editor drop preview mutated the note or published bytes before confirmation.",
+  );
+  screenshots.push(await capture("packaged-editor-attachment-drop-preview-light.png"));
+  await confirmAttachmentInsert({
+    sourceNotePath: insertionDropNotePath,
+    expectedNote: `before\n${insertionDropReference}after\n`,
+    targetPath: insertionDropTargetPath,
+    bytes: insertionDropBytes,
+  });
+  await setTheme("dark");
+  screenshots.push(await capture("packaged-editor-attachment-inserted-dark.png"));
+  await setTheme("light");
+  screenshots.push(await capture("packaged-editor-attachment-inserted-light.png"));
   assert(
     rendererErrors.length === 0,
     `The packaged attachment workflow emitted renderer errors: ${JSON.stringify(rendererErrors)}`,
@@ -1960,6 +2412,9 @@ try {
       multiFileDropRefusal: true,
       attachmentDropRestore: true,
       attachmentPasteRestore: true,
+      editorAttachmentPasteInsert: true,
+      editorAttachmentDropInsert: true,
+      editorAttachmentMultiFileRefusal: true,
       unsupportedExternalInput: true,
       nativeAttachmentOpen: true,
       nativeAttachmentRevealDispatch: true,

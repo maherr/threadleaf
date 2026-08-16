@@ -425,6 +425,16 @@ changing the source note or exposing a selected filesystem path across IPC. It n
 exact, case-equivalent, or Unicode-equivalent claimant. Text, HTML, URLs, folders, and multiple
 files are not treated as restore bytes. Relink instead previews and rewrites one proven source
 target to an existing visible vault attachment without changing attachment bytes.
+A writable Live Preview or Source editor also accepts one supported external file. Drop inserts at
+the measured pointer position; file paste replaces the current selection. Threadleaf proposes the
+source note's folder plus the selected basename, lets you edit that vault-relative destination,
+and requires an existing visible parent. The first submission proves the exact bytes, target,
+selection, generated wiki or Markdown embed, and proposed note revision without writing either
+part. Confirmation publishes the attachment without overwrite, then writes the reference through
+one restart-recoverable transaction. A final source race preserves the complete proposed note as a
+named conflict copy that points to the published attachment. Text, HTML, and URL input stays with
+the editor; folders and multiple files are canceled and refused. Supported attachment embeds stay
+out of note-link and unresolved-note counts.
 Ctrl/Cmd+N opens the New note dialog
 and selects the resulting empty Markdown note for editing.
 The Properties section in the right inspector lists top-level frontmatter in source order. Add,
@@ -529,12 +539,16 @@ focused Paste file control. Each adapter reaches the same two-step workbench, ke
 absent before confirmation, commits byte-exact restoration without changing the source note, and
 leaves no stale recovery controls after the card becomes ready. A text-only clipboard event is an
 explicit negative control. The deterministic clipboard fixture proves the renderer event adapter,
-not physical OS clipboard integration. A separate missing passive embed is relinked to an existing
-visible attachment through an exact two-step preview, proving that the source token alone changes
-while candidate bytes and the missing path stay untouched. Every run captures dark, light, and
-positive-control screenshots, checks that both positive controls change pixels, asserts an explicit
-X11 renderer, and rejects renderer errors; only a completed gate run is packaged UI evidence. Set
-the screenshot directory to retain those captures:
+not physical OS clipboard integration. The same packaged run pastes a file over a real CodeMirror
+selection and drops a real external file at a measured editor line. It proves exact-byte
+publication, pointer and selection placement, no mutation before confirmation, note reconciliation,
+cursor focus, multi-file cancellation, and attachment exclusion from note-link counts. A separate
+missing passive embed is relinked to an existing visible attachment through an exact two-step
+preview, proving that the source token alone changes while candidate bytes and the missing path stay
+untouched. Every run captures dark, light, and positive-control screenshots, checks that both
+positive controls change pixels, asserts an explicit X11 renderer, and rejects renderer errors;
+only a completed gate run is packaged UI evidence. Set the screenshot directory to retain those
+captures:
 
 ```sh
 THREADLEAF_ATTACHMENT_SCREENSHOT_DIR=/tmp/threadleaf-attachment-visual pnpm run test:packaged-attachments

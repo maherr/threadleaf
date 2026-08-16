@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  AttachmentInsertResponse,
   AttachmentMoveResponse,
   AttachmentRelinkResponse,
   AttachmentRestoreResponse,
@@ -166,6 +167,18 @@ class FakeRuntime implements WorkspaceRuntimePort {
     confirmationId?: string;
   } | null = null;
   attachmentRestoreLoader: (() => Promise<AttachmentRestoreResponse>) | null = null;
+  insertedAttachment: {
+    sourceNotePath: string;
+    targetPath: string;
+    sourceFileName: string;
+    bytes: number[];
+    expectedSourceRevision: string;
+    expectedVaultId: string;
+    selectionStart: number;
+    selectionEnd: number;
+    confirmationId?: string;
+  } | null = null;
+  attachmentInsertLoader: (() => Promise<AttachmentInsertResponse>) | null = null;
   deletedNote: {
     filePath: string;
     expectedRevision: string;
@@ -532,9 +545,9 @@ class FakeRuntime implements WorkspaceRuntimePort {
   async moveAttachment(
     filePath: string,
     targetPath: string,
-    expectedRevision: string,
-    expectedVaultId: string,
-    confirmationId?: string,
+    _expectedRevision: string,
+    _expectedVaultId: string,
+    _confirmationId?: string,
   ): Promise<AttachmentMoveResponse> {
     if (this.attachmentMoveLoader) return this.attachmentMoveLoader();
     return {
@@ -618,6 +631,54 @@ class FakeRuntime implements WorkspaceRuntimePort {
           sourceFileName,
           byteLength: bytes.byteLength,
           contentRevision: "d".repeat(64),
+        },
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async insertAttachment(
+    sourceNotePath: string,
+    targetPath: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    selectionStart: number,
+    selectionEnd: number,
+    confirmationId?: string,
+  ): Promise<AttachmentInsertResponse> {
+    this.insertedAttachment = {
+      sourceNotePath,
+      targetPath,
+      sourceFileName,
+      bytes: [...bytes],
+      expectedSourceRevision,
+      expectedVaultId,
+      selectionStart,
+      selectionEnd,
+      ...(confirmationId ? { confirmationId } : {}),
+    };
+    if (this.attachmentInsertLoader) return this.attachmentInsertLoader();
+    return {
+      outcome: {
+        status: "committed",
+        path: sourceNotePath,
+        revision: "e".repeat(64),
+        attachmentPath: targetPath,
+        attachmentRevision: "f".repeat(64),
+        transactionId: "attachment-insert",
+        preview: {
+          sourceNotePath,
+          targetPath,
+          sourceFileName,
+          byteLength: bytes.byteLength,
+          contentRevision: "f".repeat(64),
+          proposedNoteRevision: "e".repeat(64),
+          referenceText: "![[photo.png]]",
+          selectionStart,
+          selectionEnd,
+          selectionAfter: selectionStart + "![[photo.png]]".length,
         },
       },
       snapshot: this.#snapshot,
@@ -1597,6 +1658,107 @@ describe("WorkspaceController", () => {
 
     expect(response).toMatchObject({
       outcome: { status: "committed", path: "Missing/report.bin" },
+      snapshot: { vault: { path: path.resolve("/replacement/vault") } },
+      affectedVaultId: oldVaultId,
+      affectedVaultName: path.basename(path.resolve(fixtureVaultPath)),
+    });
+    await controller.close();
+  });
+
+  it("forwards every editor attachment insertion proof value to the active runtime", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+    const expectedSourceRevision = "a".repeat(64);
+    const confirmationId = "b".repeat(64);
+
+    await controller.insertAttachment(
+      "Notes/Current.md",
+      "Assets/photo.png",
+      "photo.png",
+      Uint8Array.from([0, 255, 128, 66]),
+      expectedSourceRevision,
+      expectedVaultId,
+      7,
+      12,
+      confirmationId,
+    );
+
+    expect(harness.runtimes[0]?.insertedAttachment).toEqual({
+      sourceNotePath: "Notes/Current.md",
+      targetPath: "Assets/photo.png",
+      sourceFileName: "photo.png",
+      bytes: [0, 255, 128, 66],
+      expectedSourceRevision,
+      expectedVaultId,
+      selectionStart: 7,
+      selectionEnd: 12,
+      confirmationId,
+    });
+    await controller.close();
+  });
+
+  it("reports an insertion conflict copy from a runtime replaced before its reply", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const oldRuntime = harness.runtimes[0];
+    if (!oldRuntime) throw new Error("Expected the bundled runtime.");
+    const oldVaultId = controller.vaultId;
+    oldRuntime.attachmentInsertLoader = async () => {
+      await controller.switchVault("/replacement/vault");
+      return {
+        outcome: {
+          status: "conflict-copy",
+          path: "Notes/Current.md",
+          currentRevision: "1".repeat(64),
+          conflictPath: "Notes/Current.threadleaf-conflict.md",
+          attachmentPath: "Assets/photo.png",
+          attachmentRevision: "2".repeat(64),
+          transactionId: "attachment-insert",
+          preview: {
+            sourceNotePath: "Notes/Current.md",
+            targetPath: "Assets/photo.png",
+            sourceFileName: "photo.png",
+            byteLength: 4,
+            contentRevision: "2".repeat(64),
+            proposedNoteRevision: "3".repeat(64),
+            referenceText: "![[../Assets/photo.png]]",
+            selectionStart: 7,
+            selectionEnd: 12,
+            selectionAfter: 36,
+          },
+          message: "Conflict retained.",
+        },
+        snapshot: await oldRuntime.getSnapshot(),
+      };
+    };
+
+    const response = await controller.insertAttachment(
+      "Notes/Current.md",
+      "Assets/photo.png",
+      "photo.png",
+      Uint8Array.from([0, 255, 128, 66]),
+      "a".repeat(64),
+      oldVaultId,
+      7,
+      12,
+      "b".repeat(64),
+    );
+
+    expect(response).toMatchObject({
+      outcome: { status: "conflict-copy", attachmentPath: "Assets/photo.png" },
       snapshot: { vault: { path: path.resolve("/replacement/vault") } },
       affectedVaultId: oldVaultId,
       affectedVaultName: path.basename(path.resolve(fixtureVaultPath)),
