@@ -44,7 +44,7 @@
       }
     },
     {
-      "includes": ["compatibility/authority/obsidian-1.13.7.d.ts"],
+      "includes": ["compatibility/authority/obsidian-1.13.7.d.ts.base64"],
       "formatter": {
         "enabled": false
       },

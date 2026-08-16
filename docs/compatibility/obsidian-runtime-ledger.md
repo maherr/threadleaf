@@ -4,7 +4,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 
 ## Authority and census
 
-- Authority: `public-api/obsidian.d.ts`
+- Authority representation: `compatibility/authority/obsidian-1.13.7.d.ts.base64`
+- Decoded declaration: `obsidian-1.13.7.d.ts`
 - SHA-256: `ed358aa05694582597726321352494a9833b77c117991189e55761ced8326027`
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
@@ -23,7 +24,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | arrayBufferToBase64 | function | missing | 6d32d259293c66cd |
 | arrayBufferToHex | function | missing | b08fc77997d83ccd |
 | base64ToArrayBuffer | function | missing | 62e0d860d41c4011 |
-| BaseComponent | class | implemented | d5ca1a2d7335232a |
+| BaseComponent | class | partial | d5ca1a2d7335232a |
 | BasesEntry | class | missing | c2adff844b8f99f5 |
 | BasesEntryGroup | class | missing | 1593d0338da949ce |
 | BasesQueryResult | class | missing | b2e46230415278ba |
@@ -33,7 +34,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ButtonComponent | class | missing | 3329c8e457d23c16 |
 | CapacitorAdapter | class | missing | b468049f7adeaf0c |
 | ColorComponent | class | missing | aa471211ee3a3891 |
-| Component | class | implemented | 66c65c8e55598f6c |
+| Component | class | partial | 66c65c8e55598f6c |
 | ConfirmationButton | class | missing | b3100e2fe15dddf0 |
 | ConfirmationModal | class | missing | 16d786038936266a |
 | DateValue | class | missing | 45dce24b565b761c |
@@ -94,7 +95,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Modal | class | missing | 0ecda97644af4e27 |
 | moment | variable | missing | 9ee051521ccd8991 |
 | MomentFormatComponent | class | missing | b3a4fd344f8d82a1 |
-| normalizePath | function | implemented | 9811227609eeb952 |
+| normalizePath | function | partial | 9811227609eeb952 |
 | Notice | class | missing | 10560b31dc604864 |
 | NotNullValue | class | missing | c1ea1665f928693f |
 | NullValue | class | missing | 1324bf65b03915a3 |
@@ -107,7 +108,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | parseLinktext | function | missing | fd10e8b7ba73e829 |
 | parsePropertyId | function | missing | 260ec28552701cc8 |
 | parseYaml | function | missing | 48af828ae472e2e3 |
-| Platform | variable | implemented | ce92658397c816fa |
+| Platform | variable | partial | ce92658397c816fa |
 | Plugin | class | partial | e771e8ff5a3f8cba |
 | PluginSettingTab | class | missing | 0afb03b5ff995364 |
 | PopoverState | enum | missing | 1994d816d82c6a0c |
@@ -176,7 +177,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 
 ## Class obligations
 
-Each row is one declaration-owned obligation. Overloads retain separate full-signature hashes. Inherited obligations are represented by heritage edges and are not double-counted.
+Each row is one declaration-owned obligation. Overloads retain separate full-signature hashes. Inherited obligations are represented by heritage edges and are not double-counted. Covered obligation IDs and signature hashes are emitted on each class record.
 
 | Class | Member | AST kind | Staticness | Visibility | Signature |
 | --- | --- | --- | --- | --- | --- |
@@ -883,4 +884,4 @@ Each row is one declaration-owned obligation. Overloads retain separate full-sig
 
 ## Evidence policy
 
-The allowed statuses are `implemented`, `partial`, `unsupported`, `missing`, and `internal-extra`. An implemented status requires a factory binding, an implementation binding, all declaration-owned member names for a class, and every referenced executable evidence marker.
+The allowed statuses are `implemented`, `partial`, `unsupported`, `missing`, and `internal-extra`. An implemented class requires a factory binding, an implementation binding, positive executable evidence, and coverage for every distinct declaration signature, including overloads. An implemented non-class export requires explicit positive behavioral coverage for every declared behavior ID. Structural member names and manual status fields cannot promote an export. Unsupported is derived only from a marker explicitly declared with `@compatibility-status unsupported`.

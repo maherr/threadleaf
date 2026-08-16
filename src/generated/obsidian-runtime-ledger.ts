@@ -3,7 +3,7 @@ export const obsidianRuntimeLedger = {
   "schemaVersion": 1,
   "authority": {
     "version": "Obsidian 1.13.7",
-    "source": "public-api/obsidian.d.ts",
+    "source": "compatibility/authority/obsidian-1.13.7.d.ts.base64",
     "sha256": "ed358aa05694582597726321352494a9833b77c117991189e55761ced8326027",
     "bytes": 204109,
     "lines": 8498
@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 4,
-    "partial": 1,
+    "implemented": 0,
+    "partial": 5,
     "unsupported": 0,
     "missing": 153,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 15
+    "implementedObligations": 7
   },
   "factory": {
     "keys": [
@@ -192,6 +192,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
@@ -204,7 +205,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:178dceba34896cc5a91ac96cb9f493d09af29904420484affb95269d79baadd8"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:AbstractTextComponent:d3e7b4b7f2ccfbaecb2e8892be658bd004ee4f09ba924f541cd9fd07059cb425",
@@ -217,6 +222,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:AbstractTextComponent:d3e7b4b7f2ccfbaecb2e8892be658bd004ee4f09ba924f541cd9fd07059cb425:2791ad336d01f2a5f6bc2ed9c9cad12deb550434cc4fe8c455b468bf8eb7af3b",
@@ -230,7 +236,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:AbstractTextComponent:d3e7b4b7f2ccfbaecb2e8892be658bd004ee4f09ba924f541cd9fd07059cb425:16e9d9bd4f494e547d42ab305fd79fd33a3a69413c27ac7d615dc6594a142758"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:addIcon:ec68d56929fc1f6da55f51b57487eda8d3038aa3dbd9597104e3d3244b489424",
@@ -243,9 +253,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:apiVersion:9939efa4020032ad99680f2ee8412eb6f938d8ed68b122c5e19cf198ea4e86dd",
@@ -258,9 +273,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:App:b71058fef0a041bf6135e145ef8acaf3602a63bf1fb93a719c1f86dc049c8041",
@@ -273,6 +293,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:App:b71058fef0a041bf6135e145ef8acaf3602a63bf1fb93a719c1f86dc049c8041:d85a13b12dabe4664c6e5f11bb08978e0e1c1037bc9fc036eec1aa1eb7ea7dfb",
@@ -288,7 +309,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:App:b71058fef0a041bf6135e145ef8acaf3602a63bf1fb93a719c1f86dc049c8041:664fb222e34c5256200b825dc0ed59e00236c8b1d630cc6136b87d9dcf5349dc",
         "obligation:export:class:App:b71058fef0a041bf6135e145ef8acaf3602a63bf1fb93a719c1f86dc049c8041:c7212f1420c7faf1e4dea1dc3f323176964e83a3fc34341db49bf14508060a32"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:arrayBufferToBase64:6d32d259293c66cd68ba5685fd21eca8d2615f88f6f7d2851d04ac7c2d5eafb4",
@@ -301,9 +326,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:arrayBufferToHex:b08fc77997d83ccde2ca04f796d57737ff5fb348824e0c690cc7ddedac543c95",
@@ -316,9 +346,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:base64ToArrayBuffer:62e0d860d41c4011db0cc753c4b6444fcb8da1a0fd0ee73532ca3b59ad6986cb",
@@ -331,15 +366,20 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb",
       "name": "BaseComponent",
       "kind": "class",
-      "status": "implemented",
+      "status": "partial",
       "signatureHash": "d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb",
       "location": {
         "line": 497,
@@ -351,6 +391,7 @@ export const obsidianRuntimeLedger = {
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
+      "negativeEvidence": [],
       "implementation": {
         "source": "src/runtime/obsidian-components.ts",
         "exportName": "BaseComponent"
@@ -360,7 +401,17 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:e876a92b66fa873277f5c10814a541ae73544309a062a1f3e5ad17ac4c296ba9",
         "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [
+        "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
+      ],
+      "coveredObligationSignatureHashes": [
+        "6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
+      ],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:BasesEntry:c2adff844b8f99f55330a57837d050cc8cff823706095631152623a2829d71bd",
@@ -373,6 +424,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:BasesEntry:c2adff844b8f99f55330a57837d050cc8cff823706095631152623a2829d71bd:e12eff1c1127b2066c858ea0100ffc5f60722f64a1b7d46955b9d444c08b12e6",
@@ -380,7 +432,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:BasesEntry:c2adff844b8f99f55330a57837d050cc8cff823706095631152623a2829d71bd:bca3715c04c0acfd311862c4f1cbc2789eaa12360624ebbd26d614c070ebbd26"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:BasesEntryGroup:1593d0338da949ce3edcff52a168b268644187b703af845901a1c92bd68bb116",
@@ -393,13 +449,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:BasesEntryGroup:1593d0338da949ce3edcff52a168b268644187b703af845901a1c92bd68bb116:c0e386f0ae77d1e839420f144abb3ee6e4b39f7ccd723a302c97d87ffb0b4976",
         "obligation:export:class:BasesEntryGroup:1593d0338da949ce3edcff52a168b268644187b703af845901a1c92bd68bb116:3274684d500e7af7dc62d10d2b3b053c01be2e2b1175f2b70be87cd3945b9900",
         "obligation:export:class:BasesEntryGroup:1593d0338da949ce3edcff52a168b268644187b703af845901a1c92bd68bb116:fc1100aebab20f429d98b96b6bd486268be1d1f64b827edff76c409c3c51e1ee"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:BasesQueryResult:b2e46230415278ba96731f6fe8234b76f177eb7e248996e7877e455bf244cac5",
@@ -412,6 +473,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:BasesQueryResult:b2e46230415278ba96731f6fe8234b76f177eb7e248996e7877e455bf244cac5:1b5fdc41c3d28426848e98ffa3fd4fb407eabb4fedee64ac9bf497d2673da9fe",
@@ -419,7 +481,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:BasesQueryResult:b2e46230415278ba96731f6fe8234b76f177eb7e248996e7877e455bf244cac5:7354f59bc37a9d4c866a25d88dc30e949c3e9af2fbe575504cf43861ea133dce",
         "obligation:export:class:BasesQueryResult:b2e46230415278ba96731f6fe8234b76f177eb7e248996e7877e455bf244cac5:a0063feeb56852776aa3c1dabe366567829266ddf9fc72e0cea85eb56622ea90"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:BasesView:64c9be20c2cc3198eea627a6a395afa0c6d045f93357e2c850cd78f98df9679b",
@@ -432,6 +498,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:BasesView:64c9be20c2cc3198eea627a6a395afa0c6d045f93357e2c850cd78f98df9679b:be81cf9047ff19ea3085a4926c2d23d62bc75b54ae13a4bd98ac27ae7b3e7373",
@@ -445,7 +512,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:BasesView:64c9be20c2cc3198eea627a6a395afa0c6d045f93357e2c850cd78f98df9679b:ce54f0e22dbb39de8a6d9ae0b32b3ecac5bc749fddcb78e4f1e572212b338d63"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:BasesViewConfig:430e1421ac6a4cb4e6a158c193b5f611b90f9b0429fa7cd96c8b6bd1f6413f3b",
@@ -458,6 +529,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:BasesViewConfig:430e1421ac6a4cb4e6a158c193b5f611b90f9b0429fa7cd96c8b6bd1f6413f3b:5926229d7a2fefdf6466fc8cbdb96eff8012f3f2d476a42931bf72d0634edd54",
@@ -469,7 +541,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:BasesViewConfig:430e1421ac6a4cb4e6a158c193b5f611b90f9b0429fa7cd96c8b6bd1f6413f3b:6a2ead0d4150ab24baacf039c8da141836ec0184555ad91b057979a7dec0ce04",
         "obligation:export:class:BasesViewConfig:430e1421ac6a4cb4e6a158c193b5f611b90f9b0429fa7cd96c8b6bd1f6413f3b:ae15142eaba9dff93abb2c56bec220bcbbf0ad853e21abb40efde84deb18a58e"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:BooleanValue:fdd077f4df28f630065c5d5b8a26bbf881f45b5311888ed88a5cc1b04beb729c",
@@ -482,13 +558,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:BooleanValue:fdd077f4df28f630065c5d5b8a26bbf881f45b5311888ed88a5cc1b04beb729c:417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:BooleanValue:fdd077f4df28f630065c5d5b8a26bbf881f45b5311888ed88a5cc1b04beb729c:6b3737af17d367b7c69922fa1923d275f60e09ccbaf09fc3896e4f73ed77a863"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ButtonComponent:3329c8e457d23c16ad8b60e2d50f0d608a47232008ff47102af253cee52cbaaf",
@@ -501,6 +582,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ButtonComponent:3329c8e457d23c16ad8b60e2d50f0d608a47232008ff47102af253cee52cbaaf:27ce8e3e6278e613a20322609bb7d852cf65f12ad47875fbb71dbb050a13aca6",
@@ -519,7 +601,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ButtonComponent:3329c8e457d23c16ad8b60e2d50f0d608a47232008ff47102af253cee52cbaaf:7105e8d50c796591d8e6f0fe775a3610b4c2e654fed7c6eea9fa5389275f3b56"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:CapacitorAdapter:b468049f7adeaf0c44ccda89868530c33a5ac9f7ab20db9f4032923280ad4786",
@@ -532,6 +618,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:CapacitorAdapter:b468049f7adeaf0c44ccda89868530c33a5ac9f7ab20db9f4032923280ad4786:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
@@ -557,7 +644,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:CapacitorAdapter:b468049f7adeaf0c44ccda89868530c33a5ac9f7ab20db9f4032923280ad4786:26e176ba00daa7c6cbc4745cb5d13c596119c1d89b1b636c57b4751e780f5e20"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ColorComponent:aa471211ee3a3891ce36b7f57fea9ed161598667bb6117abe6b8550ff7db8e51",
@@ -570,6 +661,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ColorComponent:aa471211ee3a3891ce36b7f57fea9ed161598667bb6117abe6b8550ff7db8e51:5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
@@ -584,13 +676,17 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ColorComponent:aa471211ee3a3891ce36b7f57fea9ed161598667bb6117abe6b8550ff7db8e51:16e9d9bd4f494e547d42ab305fd79fd33a3a69413c27ac7d615dc6594a142758"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7",
       "name": "Component",
       "kind": "class",
-      "status": "implemented",
+      "status": "partial",
       "signatureHash": "66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7",
       "location": {
         "line": 1835,
@@ -602,6 +698,7 @@ export const obsidianRuntimeLedger = {
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
+      "negativeEvidence": [],
       "implementation": {
         "source": "src/runtime/obsidian-components.ts",
         "exportName": "Component"
@@ -620,7 +717,21 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:7d48aaee27340ba0cb02af90749473ebb4f87296d49a5274ca514f3d4b015cd0",
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ad1741746d6d2c06d595a1a3216e6f1f249eedf082c7b00ef7a0dee3320aa2a9"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+      ],
+      "coveredObligationSignatureHashes": [
+        "ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
+        "49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
+        "565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
+        "e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+      ],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2",
@@ -633,6 +744,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
@@ -643,7 +755,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:1a303e64b8cf2ec1f9a57e9cd0a02227907b4373709aa9ebcfcbe002135c791e"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9",
@@ -656,6 +772,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
@@ -667,7 +784,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:18093cad26441ad13739840b68cb4dc6b379831aa2742a41f054b83091129924"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202",
@@ -680,6 +801,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -690,7 +812,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:debounce:a72e0eb10fc8a6518b6ed69b80fccd9d338e31cf78245156217f3af84ae992ba",
@@ -703,9 +829,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:displayTooltip:dee2b380f1fef0a99fe4b178a3cff3b52ed1b1a2cdd86d6adc806bca9be7dcb3",
@@ -718,9 +849,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:DisplayValueComponent:8eadc4fafb416556a0aedb81702ff4a39031f10f78901384edb0cbaf068e2af9",
@@ -733,6 +869,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:DisplayValueComponent:8eadc4fafb416556a0aedb81702ff4a39031f10f78901384edb0cbaf068e2af9:2365fe127f55a436cdeacc4a14aeecbd31a74a1430026a96ecbc6481ae6ceaec",
@@ -740,7 +877,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:DisplayValueComponent:8eadc4fafb416556a0aedb81702ff4a39031f10f78901384edb0cbaf068e2af9:05f7c2743d702b584d2db3dfa5201a977cfe0927abb38ed6849229e0e42df404",
         "obligation:export:class:DisplayValueComponent:8eadc4fafb416556a0aedb81702ff4a39031f10f78901384edb0cbaf068e2af9:de004cce4c7acff8aa897a7e4fdc8b9c2f8fe9c84966a22465b92a9e116b1780"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:DropdownComponent:563d13fef3a6b00c1e057105c2c528c0bcfa880ce45dc91d8dae077082e570e2",
@@ -753,6 +894,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:DropdownComponent:563d13fef3a6b00c1e057105c2c528c0bcfa880ce45dc91d8dae077082e570e2:e80f80a52b25f1540b9517819823362853083788ca26fbff2af6dabb97c3e4ce",
@@ -766,7 +908,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:DropdownComponent:563d13fef3a6b00c1e057105c2c528c0bcfa880ce45dc91d8dae077082e570e2:16e9d9bd4f494e547d42ab305fd79fd33a3a69413c27ac7d615dc6594a142758"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202",
@@ -779,6 +925,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -790,7 +937,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:EditableFileView:c32178dc1207763babbc23c9b42adb5b3cae749751d8d6997ae7a3bd9d2a5c9e",
@@ -803,11 +954,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:EditableFileView:c32178dc1207763babbc23c9b42adb5b3cae749751d8d6997ae7a3bd9d2a5c9e:f231dffe92d67e9e23a7a124f713e774a396d00f813afd7100f35988d7e564ba"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff",
@@ -820,6 +976,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:c4ccece0510d09467d7e5a427a09a7c2d86f208a8465d9e874b0c627bf4135d8",
@@ -855,7 +1012,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:74edc05f9042c01f64b32e96ab8c9ee030197bd373034e341518c2e0e75d9cb2",
         "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:c997a7c7815f9c7697a7e039fc3940cfae407ccbbfc30d00420c143bbb48dab0"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:editorEditorField:916f430eb29e5f68203cc704c9cbd522e2402723d2ec14a3a75d7f74ee94f7e1",
@@ -868,9 +1029,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:editorInfoField:3b001a5075d8b7181d92043fbc397d1d12c784f4b3795530098866e19c9ad519",
@@ -883,9 +1049,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:editorLivePreviewField:9dc2e8d15892552fc3d05e731624d1a453da6cd3cbef9380a87f361f5007c813",
@@ -898,9 +1069,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:EditorSuggest:b03c36d2fa50ced5e17e119df3b80787079eded0387f70fcf655e9ae3de70014",
@@ -913,6 +1089,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:EditorSuggest:b03c36d2fa50ced5e17e119df3b80787079eded0387f70fcf655e9ae3de70014:c4e1cbd6c591a787c8fc57d23de3c373b8411283e169c437e2f9dc96fb020bf7",
@@ -924,7 +1101,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:EditorSuggest:b03c36d2fa50ced5e17e119df3b80787079eded0387f70fcf655e9ae3de70014:178dceba34896cc5a91ac96cb9f493d09af29904420484affb95269d79baadd8"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:editorViewField:576bc7a8290cb1207bf0c3a6520d45885ab908c4168f128c8be663ee701ae40c",
@@ -937,9 +1118,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc",
@@ -952,6 +1138,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:fc6271188eb7c9babf3baf790d3da81b7585dc07ca4bbe78d66f59677d051851",
@@ -960,7 +1147,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:9fef56047f29871472c28f7c9f73b28a9fff1546b4bc5bc774751a068a67ea12",
         "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:ca1d7dddeb69569db0698f1c839cdf33b040434cc22cf8e0c712d6af9869df75"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ExtraButtonComponent:60577a4b3a5c4ed28e8dc753f51f524a106f560c42f23793ebf2663ae95ff0d4",
@@ -973,6 +1164,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ExtraButtonComponent:60577a4b3a5c4ed28e8dc753f51f524a106f560c42f23793ebf2663ae95ff0d4:5c3f3cf2cb388700ef6375b7f27d46a84be4e9030f8ba7ded4ca3551f91351bc",
@@ -984,7 +1176,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ExtraButtonComponent:60577a4b3a5c4ed28e8dc753f51f524a106f560c42f23793ebf2663ae95ff0d4:7105e8d50c796591d8e6f0fe775a3610b4c2e654fed7c6eea9fa5389275f3b56"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de",
@@ -997,6 +1193,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:9c02cecd73636d8a96b69b728f0faddcaa29c37f17cf7b0d4e145e4b533b8653",
@@ -1007,7 +1204,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff",
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
@@ -1020,6 +1221,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
@@ -1049,7 +1251,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:26e176ba00daa7c6cbc4745cb5d13c596119c1d89b1b636c57b4751e780f5e20"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:FileValue:90a3b3e1fcd404610cc3238dddfa7b6c5ac4e868c55ff770b17e987920db1f87",
@@ -1062,6 +1268,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:FileValue:90a3b3e1fcd404610cc3238dddfa7b6c5ac4e868c55ff770b17e987920db1f87:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -1069,7 +1276,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:FileValue:90a3b3e1fcd404610cc3238dddfa7b6c5ac4e868c55ff770b17e987920db1f87:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:FileView:1a7d777aaddc3cb12e91364cc356cd6bcc37c399be5b591e97a61d6a14a32558",
@@ -1082,6 +1293,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:FileView:1a7d777aaddc3cb12e91364cc356cd6bcc37c399be5b591e97a61d6a14a32558:b553f2450337788bf15ce0a01d110d820dc42ea81531af44210318d79138c5d8",
@@ -1099,7 +1311,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:FileView:1a7d777aaddc3cb12e91364cc356cd6bcc37c399be5b591e97a61d6a14a32558:f1bef16fd54333996413ee00e6cff3864e31414c2be0901101632fd5b26a7544"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:finishRenderMath:58b4e9583b344203c37a7acc1376ab339641d34ebc60f5f75e9ae18e0a022d14",
@@ -1112,9 +1328,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:FuzzySuggestModal:042ca80827cde1a885feff3a22ac82bd926601e91c5ffc20111e2520fe5a94d6",
@@ -1127,6 +1348,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:FuzzySuggestModal:042ca80827cde1a885feff3a22ac82bd926601e91c5ffc20111e2520fe5a94d6:133ff4578bfdffe0b93b2073be7983ede7cb6f0a50bb9fdd446247f7e240df1a",
@@ -1138,7 +1360,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:FuzzySuggestModal:042ca80827cde1a885feff3a22ac82bd926601e91c5ffc20111e2520fe5a94d6:99d242c36fc90ed567c76c5474f430b1d702048a309e286d01368607435c668e"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:getAllTags:c253ffb6b75bcc9ead69db03d6cc079a831a61ef65bdf67640f510e4883d9900",
@@ -1151,9 +1377,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:getBlobArrayBuffer:36e0f8e9725fc3ae5e627b96750f801560fc36a4783b0b81f41f196ae2e3f733",
@@ -1166,9 +1397,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:getFrontMatterInfo:bc0a1032b37fb45b896917c30e486d0cd48b9e2fe594b27592610b009625cc1f",
@@ -1181,9 +1417,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:getIcon:68c885a5426e9933891079d730cbedc0b2f8af7fd52d92e8ef66d9bca852fa51",
@@ -1196,9 +1437,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:getIconIds:1d6f1c811f777079aeb4fed0274ad1a0707b933e95e5be73b056ab934d4542db",
@@ -1211,9 +1457,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:getLanguage:bb51d9b13d4bc56fbcd5006df57e830739674f94c923b3e14eaec963e60e9b45",
@@ -1226,9 +1477,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:getLinkpath:a0344dabcbd756f0444cff7b95e0dd970359ab7a394884bbba73802d554eeec5",
@@ -1241,9 +1497,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:hexToArrayBuffer:dd08182366ea08da09e515ce0c1690adf9caf57ccc9cc5983c7bd93dd28076b2",
@@ -1256,9 +1517,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:HoverPopover:d8787e67d7235c2cd172b9bf5481373f4c4c89ea90d75bcfb0975c71ce2f12c0",
@@ -1271,6 +1537,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:HoverPopover:d8787e67d7235c2cd172b9bf5481373f4c4c89ea90d75bcfb0975c71ce2f12c0:043842debd8b8b59b931c380b1d55b3989d1efa6a23961137f7edad0f7e8bcf7",
@@ -1279,7 +1546,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:HoverPopover:d8787e67d7235c2cd172b9bf5481373f4c4c89ea90d75bcfb0975c71ce2f12c0:ce54f0e22dbb39de8a6d9ae0b32b3ecac5bc749fddcb78e4f1e572212b338d63"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:htmlToMarkdown:22ec65ef974aafbe3c312f0e3eafecbdd2fd61b9409257d8591664a14c2b793c",
@@ -1292,9 +1563,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
@@ -1307,11 +1583,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
@@ -1324,11 +1605,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
@@ -1341,11 +1627,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ItemView:eed72ec50d5d3f3c1c5a7476c20e9a29370acd3eac1a764fcf5b818b062a9cf8",
@@ -1358,6 +1649,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ItemView:eed72ec50d5d3f3c1c5a7476c20e9a29370acd3eac1a764fcf5b818b062a9cf8:5aa11484fd71bf4fa44e99e8f92c579bc1e48275ad73f44127ad0bb6b66de527",
@@ -1366,7 +1658,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ItemView:eed72ec50d5d3f3c1c5a7476c20e9a29370acd3eac1a764fcf5b818b062a9cf8:dcc839a4015c4b7dd9db959a8f757833b8adb92462a751b973386e453c6d58a3"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:iterateCacheRefs:fc3366f3dd699432ea0c15e9eaef520096886267fe36312d0b17a02c1657ab34",
@@ -1379,9 +1675,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:iterateRefs:882efbf3735f3d6a7289c72ad5ce2e4436276802d5cb537d0634a47cb15eb5d1",
@@ -1394,9 +1695,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Keymap:f1db66e7793929423b587162b1ab6529cbda4ca77365a9aabce8d729e4b4625a",
@@ -1409,6 +1715,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Keymap:f1db66e7793929423b587162b1ab6529cbda4ca77365a9aabce8d729e4b4625a:5590a232b9c48778b2dec5239672fb65d90626b69e12164ec0b3911b9f4ef91d",
@@ -1416,7 +1723,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Keymap:f1db66e7793929423b587162b1ab6529cbda4ca77365a9aabce8d729e4b4625a:6dde21ad620b156dcfbd8697ffe63d9dc0f25fef4d65f81a6e83472b20c86aa5",
         "obligation:export:class:Keymap:f1db66e7793929423b587162b1ab6529cbda4ca77365a9aabce8d729e4b4625a:502e4d49fb3d11199b4d77546708c703d4d720c0930e4f9f7621cedd4382428c"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917",
@@ -1429,13 +1740,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917:534966daaa62199d28c4266a86947e030c68ccc817384ea65df14f6899fd941c"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ListValue:22393019e553322f3dbd24e27fa61f01ed3cfc6d04e9ab4f3779aefa41d99616",
@@ -1448,6 +1764,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ListValue:22393019e553322f3dbd24e27fa61f01ed3cfc6d04e9ab4f3779aefa41d99616:417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb",
@@ -1461,7 +1778,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ListValue:22393019e553322f3dbd24e27fa61f01ed3cfc6d04e9ab4f3779aefa41d99616:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:livePreviewState:33974b4ed1375f2bdeb0433749f432b24cc0faeb8789aec9047b8b3da64a28d0",
@@ -1474,9 +1795,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:loadMathJax:b98165b8c369b4a529884f42ade42af2f7873282f9be6d56102ccb90499bd384",
@@ -1489,9 +1815,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:loadMermaid:b7baf683b29b12b153b18af718efdad2c46f5d478a5aaaaa2bd1a8892bb2d5ac",
@@ -1504,9 +1835,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:loadPdfJs:2cba001982743bdeb144e4f0a754d975b7f9944fb25f006462cd40a9ee40f4c7",
@@ -1519,9 +1855,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:loadPrism:fe01ee67b414289a68f645fee481fdc48fa4eda9c4863f8c8e40023b595752a6",
@@ -1534,9 +1875,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MarkdownEditView:b641199f259b145969e9ac21cf65907ab953818ff848af253985e63013f26944",
@@ -1549,6 +1895,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MarkdownEditView:b641199f259b145969e9ac21cf65907ab953818ff848af253985e63013f26944:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -1566,7 +1913,11 @@ export const obsidianRuntimeLedger = {
         "heritage:export:class:MarkdownEditView:b641199f259b145969e9ac21cf65907ab953818ff848af253985e63013f26944:97c4e9e69dfade032888d9a57c085bc8a709bd344bf054c8729b059163470397",
         "heritage:export:class:MarkdownEditView:b641199f259b145969e9ac21cf65907ab953818ff848af253985e63013f26944:be22c9544ffbdac9bbe5fe710e1b4dfc5de8aa9afb0040fabb2c0d003ec6adda",
         "heritage:export:class:MarkdownEditView:b641199f259b145969e9ac21cf65907ab953818ff848af253985e63013f26944:58b3da424e65e63686da006d33e46123cd3f6e51d9f930956032b8bd99fbff89"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431",
@@ -1579,13 +1930,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
         "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:d93e976781e689bc31323a52cb85b58c19aaeacc3a5017fd153f9acfac0abe5d",
         "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:4d0b38d6cd43a67c1bdec89f8689e17b47ed34dcf9311611cd4c4f166a0d2a93"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MarkdownPreviewView:d2b4b65cecca9dfddae15459d1d3db16d9f4e02b986e6a6ff4f0e5d9d4b0b81f",
@@ -1598,6 +1954,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MarkdownPreviewView:d2b4b65cecca9dfddae15459d1d3db16d9f4e02b986e6a6ff4f0e5d9d4b0b81f:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
@@ -1613,7 +1970,11 @@ export const obsidianRuntimeLedger = {
         "heritage:export:class:MarkdownPreviewView:d2b4b65cecca9dfddae15459d1d3db16d9f4e02b986e6a6ff4f0e5d9d4b0b81f:5cbc1f4b1b866e75453b548699a414c84777653eb3325e898ca61571a8be69d9",
         "heritage:export:class:MarkdownPreviewView:d2b4b65cecca9dfddae15459d1d3db16d9f4e02b986e6a6ff4f0e5d9d4b0b81f:97c4e9e69dfade032888d9a57c085bc8a709bd344bf054c8729b059163470397",
         "heritage:export:class:MarkdownPreviewView:d2b4b65cecca9dfddae15459d1d3db16d9f4e02b986e6a6ff4f0e5d9d4b0b81f:7c3e032ffd0e7042c8947e738b8f121f2c8a4d67bc68027ccc759b1a16c26770"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MarkdownRenderChild:96bd6907c45bbddbb1796913e3463163d9fe545c63604a4c320fa9e614c0d27d",
@@ -1626,6 +1987,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MarkdownRenderChild:96bd6907c45bbddbb1796913e3463163d9fe545c63604a4c320fa9e614c0d27d:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
@@ -1633,7 +1995,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:MarkdownRenderChild:96bd6907c45bbddbb1796913e3463163d9fe545c63604a4c320fa9e614c0d27d:ce54f0e22dbb39de8a6d9ae0b32b3ecac5bc749fddcb78e4f1e572212b338d63"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02",
@@ -1646,6 +2012,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -1658,7 +2025,11 @@ export const obsidianRuntimeLedger = {
         "heritage:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:4c9f95d33c40ba44d995966c0ed19d629694150bd6a383fec3002198c6ef5673",
         "heritage:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:7c3e032ffd0e7042c8947e738b8f121f2c8a4d67bc68027ccc759b1a16c26770",
         "heritage:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:be22c9544ffbdac9bbe5fe710e1b4dfc5de8aa9afb0040fabb2c0d003ec6adda"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MarkdownView:dae51444710c4853ad83bdb8e95431ae72a97bedfcc58684fb53a93cb269b715",
@@ -1671,6 +2042,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MarkdownView:dae51444710c4853ad83bdb8e95431ae72a97bedfcc58684fb53a93cb269b715:3aad26f21d3aea8e39518c7e59a931c892eef845935e3ba360ae580885d29bb2",
@@ -1688,7 +2060,11 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:MarkdownView:dae51444710c4853ad83bdb8e95431ae72a97bedfcc58684fb53a93cb269b715:3364285451b74028acb8ee57e897577f547302bbede24a3e979c4378561f430d",
         "heritage:export:class:MarkdownView:dae51444710c4853ad83bdb8e95431ae72a97bedfcc58684fb53a93cb269b715:58b3da424e65e63686da006d33e46123cd3f6e51d9f930956032b8bd99fbff89"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Menu:0a7cec2e1715d55b9cd93ba4e0fbe6df63ce32a61f1c7168cc99f6dcff208f93",
@@ -1701,6 +2077,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Menu:0a7cec2e1715d55b9cd93ba4e0fbe6df63ce32a61f1c7168cc99f6dcff208f93:aa2e84c1045c9c884581137eb6ccc6a66476eb0b40ae56fcf47c92267b307554",
@@ -1719,7 +2096,11 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:Menu:0a7cec2e1715d55b9cd93ba4e0fbe6df63ce32a61f1c7168cc99f6dcff208f93:ce54f0e22dbb39de8a6d9ae0b32b3ecac5bc749fddcb78e4f1e572212b338d63",
         "heritage:export:class:Menu:0a7cec2e1715d55b9cd93ba4e0fbe6df63ce32a61f1c7168cc99f6dcff208f93:e08914b0175a19b0cb1186580d8b941b9caf715cc9df001de040ed60d375c8e4"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MenuItem:4b0f05262839c35382ac112400aeb7d4c28c164e157f5a9ba453eac6a9ef171a",
@@ -1732,6 +2113,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MenuItem:4b0f05262839c35382ac112400aeb7d4c28c164e157f5a9ba453eac6a9ef171a:d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
@@ -1744,7 +2126,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:MenuItem:4b0f05262839c35382ac112400aeb7d4c28c164e157f5a9ba453eac6a9ef171a:d7b0a4293c0100dfda2029090bab1e283327b07087feca2a5677865e68130bfa",
         "obligation:export:class:MenuItem:4b0f05262839c35382ac112400aeb7d4c28c164e157f5a9ba453eac6a9ef171a:0ca05263f99bcfad0c784f9f2056575c65fed3afd8d1926fa5e30bb50171714a"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MenuSeparator:8d76cd93d0b4b14a3dc3d33f1be30d916578ae91e14c4cdde1788cd2592a3ef0",
@@ -1757,9 +2143,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
@@ -1772,6 +2163,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
@@ -1787,7 +2179,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Modal:0ecda97644af4e2713635ad7b490630cadbfa649b6526b5c272c753baee12451",
@@ -1800,6 +2196,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Modal:0ecda97644af4e2713635ad7b490630cadbfa649b6526b5c272c753baee12451:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -1820,7 +2217,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:Modal:0ecda97644af4e2713635ad7b490630cadbfa649b6526b5c272c753baee12451:e08914b0175a19b0cb1186580d8b941b9caf715cc9df001de040ed60d375c8e4"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:moment:9ee051521ccd89918f50dcf06fb3fa740a30fd5deb53d26cf6605d65418bf8b9",
@@ -1833,9 +2234,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:MomentFormatComponent:b3a4fd344f8d82a1089b64a8dda9eaebe24bce367649ac52ace97495c301075c",
@@ -1848,6 +2254,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:MomentFormatComponent:b3a4fd344f8d82a1089b64a8dda9eaebe24bce367649ac52ace97495c301075c:aab09ba1b5c5e7807e3bd2eee0f491b14d105169e06f1c6e334c9b37d1a0582b",
@@ -1859,13 +2266,17 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:MomentFormatComponent:b3a4fd344f8d82a1089b64a8dda9eaebe24bce367649ac52ace97495c301075c:548c45e86bfb51c159b26cd4eda88b172b30c3eef67b1910c3aaa58fea14853a"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:normalizePath:9811227609eeb952a314a406437297900614254808fa498dd825e06cdfaaff4f",
       "name": "normalizePath",
       "kind": "function",
-      "status": "implemented",
+      "status": "partial",
       "signatureHash": "9811227609eeb952a314a406437297900614254808fa498dd825e06cdfaaff4f",
       "location": {
         "line": 4606,
@@ -1877,12 +2288,24 @@ export const obsidianRuntimeLedger = {
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
+      "negativeEvidence": [],
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
         "exportName": "normalizePath"
       },
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [
+        "normalize.backslashes",
+        "normalize.leading-slash",
+        "normalize.empty",
+        "normalize.already-normalized"
+      ],
+      "coveredBehaviorIds": [
+        "normalize.backslashes"
+      ]
     },
     {
       "exportId": "export:class:Notice:10560b31dc604864c11ffba52fd3028df1eee9bc0077436e9f54232656883178",
@@ -1895,6 +2318,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Notice:10560b31dc604864c11ffba52fd3028df1eee9bc0077436e9f54232656883178:7662563e9572f16e81c6cb926f1afa211b5c88583e85fe057e6b64d62037ee12",
@@ -1904,7 +2328,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Notice:10560b31dc604864c11ffba52fd3028df1eee9bc0077436e9f54232656883178:37cdb322988a2d4d13c07a1aab0d7949c50554765ee454b13cee96823482d8b8",
         "obligation:export:class:Notice:10560b31dc604864c11ffba52fd3028df1eee9bc0077436e9f54232656883178:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:NotNullValue:c1ea1665f928693fb9c893089a4014dc3009931e6301c7f7b906a3608848b47c",
@@ -1917,11 +2345,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:NotNullValue:c1ea1665f928693fb9c893089a4014dc3009931e6301c7f7b906a3608848b47c:8e37953d23daca5ff01b8282c33f4e0a2152f1d1885f94c06418617e3ee1d24e"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:NullValue:1324bf65b03915a3f0cd328a8925569783bb7e24715cc6529560f4eed3522a40",
@@ -1934,6 +2367,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:NullValue:1324bf65b03915a3f0cd328a8925569783bb7e24715cc6529560f4eed3522a40:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -1942,7 +2376,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:NullValue:1324bf65b03915a3f0cd328a8925569783bb7e24715cc6529560f4eed3522a40:8e37953d23daca5ff01b8282c33f4e0a2152f1d1885f94c06418617e3ee1d24e"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:NumberValue:fd1c8c04fc04ea959f10b6f15bd9f7c7f5b4302fcce177ec0b2b72f4835c3953",
@@ -1955,13 +2393,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:NumberValue:fd1c8c04fc04ea959f10b6f15bd9f7c7f5b4302fcce177ec0b2b72f4835c3953:417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:NumberValue:fd1c8c04fc04ea959f10b6f15bd9f7c7f5b4302fcce177ec0b2b72f4835c3953:e73b8fbce1bebe598621dcc621ecaa39c3578de3c8f3e1de8c9b58537c357e06"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ObjectValue:f4b04ddccfe69cc44d6ae289ee7979be3083e4d11f8635102640ef5406ef5105",
@@ -1974,6 +2417,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ObjectValue:f4b04ddccfe69cc44d6ae289ee7979be3083e4d11f8635102640ef5406ef5105:417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb",
@@ -1984,7 +2428,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ObjectValue:f4b04ddccfe69cc44d6ae289ee7979be3083e4d11f8635102640ef5406ef5105:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:parseFrontMatterAliases:6591b6101b4100ac6200e4b4e585a0f2a5b9de038eb0f5fe1b2ab9f698e4faaa",
@@ -1997,9 +2445,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:parseFrontMatterEntry:208d94491e23b5b6485b849a2a6068b7518159088a45956c0371e48a872bbdf1",
@@ -2012,9 +2465,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:parseFrontMatterStringArray:deb327a55cd9c91fa2fe75eb17b4e8b85308491594ff58bce0496f45703bd712",
@@ -2027,9 +2485,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:parseFrontMatterTags:c9dcb6788b1937d3d38d0f695dcb60f57892603175b9c2d39b6f4ac1536ebcff",
@@ -2042,9 +2505,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:parseLinktext:fd10e8b7ba73e829355a39b5b63d2ad04869fc7e3ad68075d8ec04b7b5e7cf97",
@@ -2057,9 +2525,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:parsePropertyId:260ec28552701cc81f3ccf4046084cd5d90acbd7c19bbec60240a4c9118f4d46",
@@ -2072,9 +2545,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:parseYaml:48af828ae472e2e33e3a0f49687c0daec8ffbb80eebed5a668a9d4925490fffc",
@@ -2087,15 +2565,20 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:variable:Platform:ce92658397c816faa5ca84e482b7007f9254dcb82318595625c42245c74557c4",
       "name": "Platform",
       "kind": "variable",
-      "status": "implemented",
+      "status": "partial",
       "signatureHash": "ce92658397c816faa5ca84e482b7007f9254dcb82318595625c42245c74557c4",
       "location": {
         "line": 4823,
@@ -2107,12 +2590,24 @@ export const obsidianRuntimeLedger = {
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
+      "negativeEvidence": [],
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
         "exportName": "Platform"
       },
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [
+        "platform.isDesktop",
+        "platform.isDesktopApp",
+        "platform.isMobile",
+        "platform.os"
+      ],
+      "coveredBehaviorIds": [
+        "platform.isDesktop"
+      ]
     },
     {
       "exportId": "export:class:Plugin:e771e8ff5a3f8cba5096ceeabf2e20d4faf1e1609d6ab0042271be07a43f3827",
@@ -2130,6 +2625,7 @@ export const obsidianRuntimeLedger = {
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
+      "negativeEvidence": [],
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
         "exportName": "Plugin"
@@ -2162,7 +2658,15 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:Plugin:e771e8ff5a3f8cba5096ceeabf2e20d4faf1e1609d6ab0042271be07a43f3827:ce54f0e22dbb39de8a6d9ae0b32b3ecac5bc749fddcb78e4f1e572212b338d63"
-      ]
+      ],
+      "coveredObligationIds": [
+        "obligation:export:class:Plugin:e771e8ff5a3f8cba5096ceeabf2e20d4faf1e1609d6ab0042271be07a43f3827:41240f63b5f7ff1b8215a8041827ea7cb41b8bedc9b47290fd9441bfacbafd57"
+      ],
+      "coveredObligationSignatureHashes": [
+        "41240f63b5f7ff1b8215a8041827ea7cb41b8bedc9b47290fd9441bfacbafd57"
+      ],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b",
@@ -2175,6 +2679,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
@@ -2184,7 +2689,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:5dd97f9d2ceb3df2c59aa7866c15ce73f7b63924e104fc35434c63bd889429a1"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:enum:PopoverState:1994d816d82c6a0ca6c9df0290f1f3c10d30f864e88605c6a57c6e95f6b15063",
@@ -2197,9 +2706,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7",
@@ -2212,6 +2726,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -2225,7 +2740,11 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:7d2b2c069e45f364026dddec59e193ac94a0cfa4d784b0a1e5eab51d877f7e60",
         "heritage:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:e08914b0175a19b0cb1186580d8b941b9caf715cc9df001de040ed60d375c8e4"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:prepareFuzzySearch:8ef6a695db24bdb3038f5096fd59f6645ebff097c799e4dee162de5b903373df",
@@ -2238,9 +2757,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:prepareSimpleSearch:81341d6edc8ec6fa746b2b9f673707f42b76815df174302ea41cc3995c956f82",
@@ -2253,9 +2777,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:PrimitiveValue:8a6cb580619668a61d674f73fee72fdf8e5a379c2577f1d76fbc685999a562ec",
@@ -2268,6 +2797,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:PrimitiveValue:8a6cb580619668a61d674f73fee72fdf8e5a379c2577f1d76fbc685999a562ec:ee21824f173ab456589bf5b00ef9019a714ac5f68e4264174cf5ddc8338c4359",
@@ -2276,7 +2806,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:PrimitiveValue:8a6cb580619668a61d674f73fee72fdf8e5a379c2577f1d76fbc685999a562ec:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ProgressBarComponent:765be3f5a5d3693b36a6c2b4bcb89c6ea459df7fea5af5746a83574a94e422da",
@@ -2289,6 +2823,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ProgressBarComponent:765be3f5a5d3693b36a6c2b4bcb89c6ea459df7fea5af5746a83574a94e422da:5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
@@ -2297,7 +2832,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ProgressBarComponent:765be3f5a5d3693b36a6c2b4bcb89c6ea459df7fea5af5746a83574a94e422da:64185194b1aee3d37333a9e6c5eb28285694b18cecf6a25e3d16fb1f2bc96166"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:QueryController:8687a7aa105e69dd9d978c7cf0f28d78f2b5b0f1bf94fdd7051510ddb41fe791",
@@ -2310,11 +2849,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:QueryController:8687a7aa105e69dd9d978c7cf0f28d78f2b5b0f1bf94fdd7051510ddb41fe791:ce54f0e22dbb39de8a6d9ae0b32b3ecac5bc749fddcb78e4f1e572212b338d63"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00",
@@ -2327,6 +2871,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -2334,7 +2879,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
@@ -2347,11 +2896,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc:62a5617fe8231845f442c1d20cfb2b25531b770b06f5125212a2cfe10811f8da"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:removeIcon:1b1690db3c4ed09269009e335421b253baf9f45c71ea581550ccc18eaee92dbc",
@@ -2364,9 +2918,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:RenderContext:beb981213ad00fafecd3b74138e0de3fb842cb6765ee285ae17b0bd6f20b90f5",
@@ -2379,13 +2938,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:RenderContext:beb981213ad00fafecd3b74138e0de3fb842cb6765ee285ae17b0bd6f20b90f5:1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:RenderContext:beb981213ad00fafecd3b74138e0de3fb842cb6765ee285ae17b0bd6f20b90f5:be22c9544ffbdac9bbe5fe710e1b4dfc5de8aa9afb0040fabb2c0d003ec6adda"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:renderMatches:f868e63e141ad46bc0a6050bf421ff650ba83f2c7a448e1d4ad45e0084ea2c74",
@@ -2398,9 +2962,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:renderMath:bdf8f2074b169c02d315058a5198110b8130966c7c21a80753d11360b4fef8ff",
@@ -2413,9 +2982,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:renderResults:4dfb992b9bec08fd958205c8a120551194177a33c1dd4a97c4021b4ad165068a",
@@ -2428,9 +3002,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:request:bbd290f3567bac5f36166ca6012824ca94d72e34b0c58fc459c5920e30524780",
@@ -2443,9 +3022,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:requestUrl:e0c2b7ee43b9a78d6356c83f2021564903015a3a26f2fb04175fcd84ef41d047",
@@ -2458,9 +3042,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:requireApiVersion:0686387471c2904a41b047d06617804700a3090d42af57664bd036d52103305a",
@@ -2473,9 +3062,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:resolveSubpath:46690fc4ac8ecb442f227549c3ee3c1f0b688dd93bf5cb7fb44cc3f37ef4a2ec",
@@ -2488,9 +3082,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:sanitizeHTMLToDom:1bdf091e2ab0377ef593916d56f9f04e430fe0e08bdcd5f419ea51424020629a",
@@ -2503,9 +3102,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Scope:cd031d650ae6bd697d35a546d66560edde8222f97ce7636eebee02186c317824",
@@ -2518,13 +3122,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Scope:cd031d650ae6bd697d35a546d66560edde8222f97ce7636eebee02186c317824:dfbbe0bf52ff241e1a8a4311d76a365c6d39de93cb61d2a27df90f2f2d865536",
         "obligation:export:class:Scope:cd031d650ae6bd697d35a546d66560edde8222f97ce7636eebee02186c317824:3f846d9d942fc5eb24cd8f20d22411d8734d12a1e9d576fc363eae243038534c",
         "obligation:export:class:Scope:cd031d650ae6bd697d35a546d66560edde8222f97ce7636eebee02186c317824:29f1893403b727950c360ac40eb3f64818ae715ac6ec0b11bcf0355a6be070e4"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SearchComponent:72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2",
@@ -2537,6 +3146,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SearchComponent:72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2:30d5f9c5009e1a80d92e4ded7af5c213fc51bb655b56a57d19b7c8a8eccc8f84",
@@ -2545,7 +3155,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:SearchComponent:72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2:74121212c93894e00eff7f8596894f7fcfba1af0390c97af4976c3db4d9e5609"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623",
@@ -2558,6 +3172,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
@@ -2566,7 +3181,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:7105e8d50c796591d8e6f0fe775a3610b4c2e654fed7c6eea9fa5389275f3b56"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SecretStorage:cd03c227b70ca8e0d5c76594295057a148616d2aeef1ac549c10ec175cb7281b",
@@ -2579,6 +3198,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SecretStorage:cd03c227b70ca8e0d5c76594295057a148616d2aeef1ac549c10ec175cb7281b:161cb372b072299a6a5a8f7537f07602c50012830881d77c10a47506448a958e",
@@ -2587,7 +3207,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:SecretStorage:cd03c227b70ca8e0d5c76594295057a148616d2aeef1ac549c10ec175cb7281b:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:setIcon:74dab0a196e4515a7020a0d9a41a72c499c80d737f21f1739f9c1119c89f7b53",
@@ -2600,9 +3224,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Setting:28f9e763ee1bc0e3c932e94f388d8b8023edf525be550f7a633320a1d30e61c6",
@@ -2615,6 +3244,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Setting:28f9e763ee1bc0e3c932e94f388d8b8023edf525be550f7a633320a1d30e61c6:9ed42da9dc0c68e9b504b40167901181f1b19b721946d958a1dd2f4fdb874320",
@@ -2649,7 +3279,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Setting:28f9e763ee1bc0e3c932e94f388d8b8023edf525be550f7a633320a1d30e61c6:6cc1cdae65cae7dfe94d28998e67da30b7886f120d9c54101bde13ed21542761",
         "obligation:export:class:Setting:28f9e763ee1bc0e3c932e94f388d8b8023edf525be550f7a633320a1d30e61c6:a68090bd9cc1dfa8d18f710437f53145afcc62f4a92297bb2da010f4902d7557"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c",
@@ -2662,6 +3296,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:1b2cc125324a30f53d13936bff315f1cca0bd84275c0ce6d252052e8f6ba633b",
@@ -2672,7 +3307,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:dc16f5c46e657114676e524e5290f40c276b55002da4275fb7fdb1e30e89c34b",
         "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:dc176cd2f3cb57d79c0286e7bcdbb264b3fc693cc78891f54e9f8d5fe6f687e9"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3",
@@ -2685,6 +3324,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:17ee832eea7c105caf3153131e13db3fa487c257f74be9985a8fdd3505e30d85",
@@ -2695,7 +3335,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:5bb60b9d54df4e77ea59fc7cbcd95eded52ebd3f32b3f89fb9a845d16a86b744",
         "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7",
@@ -2708,6 +3352,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
@@ -2722,7 +3367,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:bd4466f961ebd1103e0e4cdda44fa3f4f5a17191de1829607324e210022248c8",
         "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:setTooltip:d2b2dabab058f3d2bffaec52cf3c6525045a41a90e4c3b3d5355ac3e319d995b",
@@ -2735,9 +3384,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SliderComponent:d90844d55c39379dcd52769fdd909d3a10418199ecbbe1ddd33f58d566e0f2da",
@@ -2750,6 +3404,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SliderComponent:d90844d55c39379dcd52769fdd909d3a10418199ecbbe1ddd33f58d566e0f2da:ebe15669ef849d92f084d313c45c2cf899872d968bf56f758bb5379b8c6fe5ac",
@@ -2766,7 +3421,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:SliderComponent:d90844d55c39379dcd52769fdd909d3a10418199ecbbe1ddd33f58d566e0f2da:64185194b1aee3d37333a9e6c5eb28285694b18cecf6a25e3d16fb1f2bc96166"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:sortSearchResults:b51b5d221f8562ada54039843a7d5308326ac3f7c80c26e33961e453ad17e5fa",
@@ -2779,9 +3438,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:stringifyYaml:9fd7dc20723b04e0ef64d5fec81cbba98142076f7cec864b52ada34bcc2b332d",
@@ -2794,9 +3458,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:StringValue:5a8c7f34710de2a3b01f7f1c3a8c7467bf3319a7543cd8e832cda04e660fabf1",
@@ -2809,13 +3478,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:StringValue:5a8c7f34710de2a3b01f7f1c3a8c7467bf3319a7543cd8e832cda04e660fabf1:417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:StringValue:5a8c7f34710de2a3b01f7f1c3a8c7467bf3319a7543cd8e832cda04e660fabf1:ff3c7482621d1d5b0891ef9fd84b774fa7d6abda6d2dbc5a4b5d82c7b51a1b3a"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:stripHeading:f21325fbff066d0b2096f6ce96e01757edd0457848cee6ab6371d126a5de8abe",
@@ -2828,9 +3502,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:function:stripHeadingForLink:609f52c3520cfb71dbd816cdcde3702aeed67eba4ecd0611eefdd523cd1b97ef",
@@ -2843,9 +3522,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:SuggestModal:4282e1a8e74dc8a6cc5092a10d976dc86a748bac0d52ad8125f44ee2fe06a7c1",
@@ -2858,6 +3542,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:SuggestModal:4282e1a8e74dc8a6cc5092a10d976dc86a748bac0d52ad8125f44ee2fe06a7c1:6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
@@ -2877,7 +3562,11 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:SuggestModal:4282e1a8e74dc8a6cc5092a10d976dc86a748bac0d52ad8125f44ee2fe06a7c1:18093cad26441ad13739840b68cb4dc6b379831aa2742a41f054b83091129924",
         "heritage:export:class:SuggestModal:4282e1a8e74dc8a6cc5092a10d976dc86a748bac0d52ad8125f44ee2fe06a7c1:7d2b2c069e45f364026dddec59e193ac94a0cfa4d784b0a1e5eab51d877f7e60"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9",
@@ -2890,6 +3579,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7fceb92c74d6548b411353b643a58660784283b0c00a871aa5dd1fdd1025a2d6",
@@ -2897,7 +3587,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:5926229d7a2fefdf6466fc8cbdb96eff8012f3f2d476a42931bf72d0634edd54",
         "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:669359a256027d9eafc81a60da17601fd1bee18369e3ec806c074cee27e31c86"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d",
@@ -2910,13 +3604,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d:d4f5d61f43842c3242ea8bb2dc1b2527a5a4fa69750886d88e29012bf5fa444f"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f",
@@ -2929,6 +3628,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
@@ -2936,7 +3636,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:1c24a28a18adc4b2560bdbaa9f5360a2ba04ca596b83bb4ed66570ba4f37a384",
         "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:9408e16ea034c464d17f58358186726110680168253faebe2c5f811cc54b1003"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:TextAreaComponent:82022a25c1d9b8692259fd880f233dd0d033897fced04bc878cd7b2b5167f4fa",
@@ -2949,13 +3653,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:TextAreaComponent:82022a25c1d9b8692259fd880f233dd0d033897fced04bc878cd7b2b5167f4fa:5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:TextAreaComponent:82022a25c1d9b8692259fd880f233dd0d033897fced04bc878cd7b2b5167f4fa:5c712c543c56a4c1d5de4ff229ad84d1d9dbf3ec189280d2616cf26c00a4b69b"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:TextComponent:4f2a68c9738f82e5b15235a8619c150ec1bdf96f7e94041aa363893a90ec8b52",
@@ -2968,13 +3677,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:TextComponent:4f2a68c9738f82e5b15235a8619c150ec1bdf96f7e94041aa363893a90ec8b52:5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:TextComponent:4f2a68c9738f82e5b15235a8619c150ec1bdf96f7e94041aa363893a90ec8b52:74121212c93894e00eff7f8596894f7fcfba1af0390c97af4976c3db4d9e5609"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:TextFileView:0a4a4ba88dddacf03c9c0042db8a0565364f1e845d4a74c1fff1523bd8ad061e",
@@ -2987,6 +3701,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:TextFileView:0a4a4ba88dddacf03c9c0042db8a0565364f1e845d4a74c1fff1523bd8ad061e:2487ed39a9dd7aff365e41c924e46fd672b65ba1bdaac7405b97cd3029ee4a11",
@@ -3001,7 +3716,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:TextFileView:0a4a4ba88dddacf03c9c0042db8a0565364f1e845d4a74c1fff1523bd8ad061e:bdbb6c2ee23c0cde28b27cd97b9e35b98b9e264e2ab1dd187a89771941cf2cbe"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251",
@@ -3014,6 +3733,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:695aab2ce80ec954c62a02a8717d3c782de8dd3b3bda0603c70726b0010319e2",
@@ -3022,7 +3742,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:54c92298af3d76f8cd67625e5f8bdf4d6547ea3e1966c610b39a44f652ba10f2"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30",
@@ -3035,6 +3759,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:75a52d3b487ddf6825d46e0587af0b92b3f360294a7f4c7d7bd5984299d0f2c7",
@@ -3042,7 +3767,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:54c92298af3d76f8cd67625e5f8bdf4d6547ea3e1966c610b39a44f652ba10f2"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ToggleComponent:a39eaf18ee6900de2db5cb84766616899cb5b4a08fbd709a60ee5ec5b9bf106f",
@@ -3055,6 +3784,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ToggleComponent:a39eaf18ee6900de2db5cb84766616899cb5b4a08fbd709a60ee5ec5b9bf106f:7086c05bfed4445bd2d017998eda244fe993ad976791c858220edaff8be8ff65",
@@ -3068,7 +3798,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ToggleComponent:a39eaf18ee6900de2db5cb84766616899cb5b4a08fbd709a60ee5ec5b9bf106f:8d0eca45d5d01e64e7a7cdef132613ef985708aa0404781024f3439a2e4d4494"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
@@ -3081,11 +3815,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Value:7c58c01f8b9556273522a291722247cb44e052c15e968eee987d97cdf2240def",
@@ -3098,6 +3837,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Value:7c58c01f8b9556273522a291722247cb44e052c15e968eee987d97cdf2240def:417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb",
@@ -3109,7 +3849,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Value:7c58c01f8b9556273522a291722247cb44e052c15e968eee987d97cdf2240def:374bb562c2cee460b74127ae35e8566608c1cbb21eb18e085496569eeb56b3f4",
         "obligation:export:class:Value:7c58c01f8b9556273522a291722247cb44e052c15e968eee987d97cdf2240def:cc7c1edfd83a6aa5eaa22b915a999a6c8bf1b8f071439ac3c029e24615e5da12"
       ],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20",
@@ -3122,6 +3866,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:e4b9f53fc257c673a3b0ae8e1d1206f004bcb06128862f3d9b9305481aaeb74f",
@@ -3130,7 +3875,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:7105e8d50c796591d8e6f0fe775a3610b4c2e654fed7c6eea9fa5389275f3b56"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11",
@@ -3143,6 +3892,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
@@ -3180,7 +3930,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49",
@@ -3193,6 +3947,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -3216,7 +3971,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:ce54f0e22dbb39de8a6d9ae0b32b3ecac5bc749fddcb78e4f1e572212b338d63"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8",
@@ -3229,6 +3988,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:bfca3020e3d780bc5003364df0c6a8a4573bac19aefb175663c2a046a755ff9f",
@@ -3292,7 +4052,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceContainer:111dc7e1f6366fe3ff666d4378cf23344f5da92322c7db62d3b9f0dfa30420c9",
@@ -3305,6 +4069,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceContainer:111dc7e1f6366fe3ff666d4378cf23344f5da92322c7db62d3b9f0dfa30420c9:f8a66ca6a9a99b0c09f50b7044862ac31ea0511c4e1a5343506ff960ef47b415",
@@ -3312,7 +4077,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceContainer:111dc7e1f6366fe3ff666d4378cf23344f5da92322c7db62d3b9f0dfa30420c9:a59c2c31bb4d845c3c0af93430370f09a950e09949c7cae412357d9a37b4fd55"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceFloating:e7ce5a480a9e4cc1dc8675f8b45324cc2208b686dc36c98e97eb7d627d7dba90",
@@ -3325,13 +4094,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceFloating:e7ce5a480a9e4cc1dc8675f8b45324cc2208b686dc36c98e97eb7d627d7dba90:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceFloating:e7ce5a480a9e4cc1dc8675f8b45324cc2208b686dc36c98e97eb7d627d7dba90:1bea966066947fdd2c463e68b5c8a432209056774523f477e179337c03423812"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceItem:792134b77a9c1bb5302d753d6536fb185754809cae5a711f1a7c3a9b5549e6bd",
@@ -3344,6 +4118,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceItem:792134b77a9c1bb5302d753d6536fb185754809cae5a711f1a7c3a9b5549e6bd:440a2aaa1958e3044d27c8f899cf33c53247ce4b37db93b3d5e050c91d2c824f",
@@ -3352,7 +4127,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceItem:792134b77a9c1bb5302d753d6536fb185754809cae5a711f1a7c3a9b5549e6bd:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194",
@@ -3365,6 +4144,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:20409d8b1eb66ea96957e5152d576154d6be4e65130e7a131cf7e58b178f8626",
@@ -3392,7 +4172,11 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:5cbb939c76afc562e5771f1a258d1597fa4a1e8ba90f9dde3dcc84d9c1588206",
         "heritage:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:be22c9544ffbdac9bbe5fe710e1b4dfc5de8aa9afb0040fabb2c0d003ec6adda"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceMobileDrawer:d18a5e362fc9f67ac70930e1b173cfdb87126c18f745f722ad3b38433474f5d3",
@@ -3405,6 +4189,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceMobileDrawer:d18a5e362fc9f67ac70930e1b173cfdb87126c18f745f722ad3b38433474f5d3:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8",
@@ -3415,7 +4200,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceMobileDrawer:d18a5e362fc9f67ac70930e1b173cfdb87126c18f745f722ad3b38433474f5d3:1bea966066947fdd2c463e68b5c8a432209056774523f477e179337c03423812"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceParent:1fb7060d911d26037de04d4c0dedda3c4c72e57e68725d70cf211963039ecee0",
@@ -3428,11 +4217,16 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceParent:1fb7060d911d26037de04d4c0dedda3c4c72e57e68725d70cf211963039ecee0:5cbb939c76afc562e5771f1a258d1597fa4a1e8ba90f9dde3dcc84d9c1588206"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceRibbon:ffebe640f57faebeb55a9df3fcc091e2abe8d66c19ae2a67a2eb83b7a3e13541",
@@ -3445,9 +4239,14 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [],
-      "heritageEdgeIds": []
+      "heritageEdgeIds": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceRoot:cbd16d72040e24ecf7e56810a5a9f6c6193383c2e9809fe754c0ba2437947f6d",
@@ -3460,6 +4259,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceRoot:cbd16d72040e24ecf7e56810a5a9f6c6193383c2e9809fe754c0ba2437947f6d:6e6a3f62ac28ba794bce503b63f55c434d38acc6a1c77bcf2cffec92fac1862a",
@@ -3467,7 +4267,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceRoot:cbd16d72040e24ecf7e56810a5a9f6c6193383c2e9809fe754c0ba2437947f6d:a547b2a0a6e8700422838be00d768ca238a088dc022358fd12a9fc5aa64c025e"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceSidedock:7290bfc648754714eb199f391f29b65ecb72be9e7582e7dd9839f86167b79aba",
@@ -3480,6 +4284,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceSidedock:7290bfc648754714eb199f391f29b65ecb72be9e7582e7dd9839f86167b79aba:a300c49ff6826beb695e65e1741dea8357b5b936782b77845f5ce85109427a5e",
@@ -3489,7 +4294,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceSidedock:7290bfc648754714eb199f391f29b65ecb72be9e7582e7dd9839f86167b79aba:a59c2c31bb4d845c3c0af93430370f09a950e09949c7cae412357d9a37b4fd55"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
@@ -3502,13 +4311,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:1bea966066947fdd2c463e68b5c8a432209056774523f477e179337c03423812"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceTabs:351384193e50748c3cce47b0209cd285d81c20df177fb151135fb2ca5514cc49",
@@ -3521,13 +4335,18 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceTabs:351384193e50748c3cce47b0209cd285d81c20df177fb151135fb2ca5514cc49:0aec706ba975b7ef072b1ae50c7540efdb6d2d17ee04290990b569a5c34a4f3d"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceTabs:351384193e50748c3cce47b0209cd285d81c20df177fb151135fb2ca5514cc49:1bea966066947fdd2c463e68b5c8a432209056774523f477e179337c03423812"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     },
     {
       "exportId": "export:class:WorkspaceWindow:4d8f442507ed4e2b2cc55babb27d7a3d12075ca2ff88c4217fc3811aaf9c65ca",
@@ -3540,6 +4359,7 @@ export const obsidianRuntimeLedger = {
         "column": 1
       },
       "evidence": [],
+      "negativeEvidence": [],
       "implementation": null,
       "obligationIds": [
         "obligation:export:class:WorkspaceWindow:4d8f442507ed4e2b2cc55babb27d7a3d12075ca2ff88c4217fc3811aaf9c65ca:6e6a3f62ac28ba794bce503b63f55c434d38acc6a1c77bcf2cffec92fac1862a",
@@ -3547,7 +4367,11 @@ export const obsidianRuntimeLedger = {
       ],
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceWindow:4d8f442507ed4e2b2cc55babb27d7a3d12075ca2ff88c4217fc3811aaf9c65ca:a547b2a0a6e8700422838be00d768ca238a088dc022358fd12a9fc5aa64c025e"
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": [],
+      "requiredBehaviorIds": [],
+      "coveredBehaviorIds": []
     }
   ],
   "classes": [
@@ -3676,7 +4500,9 @@ export const obsidianRuntimeLedger = {
             "column": 55
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:AbstractTextComponent:d3e7b4b7f2ccfbaecb2e8892be658bd004ee4f09ba924f541cd9fd07059cb425",
@@ -3815,7 +4641,9 @@ export const obsidianRuntimeLedger = {
             "column": 94
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:App:b71058fef0a041bf6135e145ef8acaf3602a63bf1fb93a719c1f86dc049c8041",
@@ -4003,12 +4831,14 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb",
       "name": "BaseComponent",
-      "status": "implemented",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
@@ -4056,7 +4886,15 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [
+        "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
+      ],
+      "coveredObligationSignatureHashes": [
+        "6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
+      ]
     },
     {
       "exportId": "export:class:BasesEntry:c2adff844b8f99f55330a57837d050cc8cff823706095631152623a2829d71bd",
@@ -4105,7 +4943,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:BasesEntryGroup:1593d0338da949ce3edcff52a168b268644187b703af845901a1c92bd68bb116",
@@ -4158,7 +4998,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:BasesQueryResult:b2e46230415278ba96731f6fe8234b76f177eb7e248996e7877e455bf244cac5",
@@ -4226,7 +5068,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:BasesView:64c9be20c2cc3198eea627a6a395afa0c6d045f93357e2c850cd78f98df9679b",
@@ -4371,7 +5215,9 @@ export const obsidianRuntimeLedger = {
             "column": 41
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:BasesViewConfig:430e1421ac6a4cb4e6a158c193b5f611b90f9b0429fa7cd96c8b6bd1f6413f3b",
@@ -4499,7 +5345,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:BooleanValue:fdd077f4df28f630065c5d5b8a26bbf881f45b5311888ed88a5cc1b04beb729c",
@@ -4535,7 +5383,9 @@ export const obsidianRuntimeLedger = {
             "column": 35
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ButtonComponent:3329c8e457d23c16ad8b60e2d50f0d608a47232008ff47102af253cee52cbaaf",
@@ -4749,7 +5599,9 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:CapacitorAdapter:b468049f7adeaf0c44ccda89868530c33a5ac9f7ab20db9f4032923280ad4786",
@@ -5068,7 +5920,9 @@ export const obsidianRuntimeLedger = {
             "column": 42
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ColorComponent:aa471211ee3a3891ce36b7f57fea9ed161598667bb6117abe6b8550ff7db8e51",
@@ -5222,12 +6076,14 @@ export const obsidianRuntimeLedger = {
             "column": 37
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7",
       "name": "Component",
-      "status": "implemented",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
@@ -5410,7 +6266,19 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+      ],
+      "coveredObligationSignatureHashes": [
+        "ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
+        "49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
+        "565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
+        "e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+      ]
     },
     {
       "exportId": "export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2",
@@ -5506,7 +6374,9 @@ export const obsidianRuntimeLedger = {
             "column": 41
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9",
@@ -5615,7 +6485,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202",
@@ -5711,7 +6583,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:DisplayValueComponent:8eadc4fafb416556a0aedb81702ff4a39031f10f78901384edb0cbaf068e2af9",
@@ -5779,7 +6653,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:DropdownComponent:563d13fef3a6b00c1e057105c2c528c0bcfa880ce45dc91d8dae077082e570e2",
@@ -5918,7 +6794,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202",
@@ -6031,7 +6909,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:EditableFileView:c32178dc1207763babbc23c9b42adb5b3cae749751d8d6997ae7a3bd9d2a5c9e",
@@ -6049,7 +6929,9 @@ export const obsidianRuntimeLedger = {
             "column": 48
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff",
@@ -6591,7 +7473,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:EditorSuggest:b03c36d2fa50ced5e17e119df3b80787079eded0387f70fcf655e9ae3de70014",
@@ -6704,7 +7588,9 @@ export const obsidianRuntimeLedger = {
             "column": 48
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc",
@@ -6787,7 +7673,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ExtraButtonComponent:60577a4b3a5c4ed28e8dc753f51f524a106f560c42f23793ebf2663ae95ff0d4",
@@ -6896,7 +7784,9 @@ export const obsidianRuntimeLedger = {
             "column": 43
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de",
@@ -7009,7 +7899,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
@@ -7392,7 +8284,9 @@ export const obsidianRuntimeLedger = {
             "column": 43
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:FileValue:90a3b3e1fcd404610cc3238dddfa7b6c5ac4e868c55ff770b17e987920db1f87",
@@ -7441,7 +8335,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:FileView:1a7d777aaddc3cb12e91364cc356cd6bcc37c399be5b591e97a61d6a14a32558",
@@ -7640,7 +8536,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:FuzzySuggestModal:042ca80827cde1a885feff3a22ac82bd926601e91c5ffc20111e2520fe5a94d6",
@@ -7755,7 +8653,9 @@ export const obsidianRuntimeLedger = {
             "column": 52
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:HoverPopover:d8787e67d7235c2cd172b9bf5481373f4c4c89ea90d75bcfb0975c71ce2f12c0",
@@ -7819,7 +8719,9 @@ export const obsidianRuntimeLedger = {
             "column": 35
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
@@ -7837,7 +8739,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
@@ -7855,7 +8759,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
@@ -7873,7 +8779,9 @@ export const obsidianRuntimeLedger = {
             "column": 33
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ItemView:eed72ec50d5d3f3c1c5a7476c20e9a29370acd3eac1a764fcf5b818b062a9cf8",
@@ -7937,7 +8845,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Keymap:f1db66e7793929423b587162b1ab6529cbda4ca77365a9aabce8d729e4b4625a",
@@ -8009,7 +8919,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917",
@@ -8045,7 +8957,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ListValue:22393019e553322f3dbd24e27fa61f01ed3cfc6d04e9ab4f3779aefa41d99616",
@@ -8186,7 +9100,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MarkdownEditView:b641199f259b145969e9ac21cf65907ab953818ff848af253985e63013f26944",
@@ -8375,7 +9291,9 @@ export const obsidianRuntimeLedger = {
             "column": 72
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431",
@@ -8434,7 +9352,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MarkdownPreviewView:d2b4b65cecca9dfddae15459d1d3db16d9f4e02b986e6a6ff4f0e5d9d4b0b81f",
@@ -8593,7 +9513,9 @@ export const obsidianRuntimeLedger = {
             "column": 87
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MarkdownRenderChild:96bd6907c45bbddbb1796913e3463163d9fe545c63604a4c320fa9e614c0d27d",
@@ -8642,7 +9564,9 @@ export const obsidianRuntimeLedger = {
             "column": 42
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02",
@@ -8762,7 +9686,9 @@ export const obsidianRuntimeLedger = {
             "column": 102
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MarkdownView:dae51444710c4853ad83bdb8e95431ae72a97bedfcc58684fb53a93cb269b715",
@@ -8956,7 +9882,9 @@ export const obsidianRuntimeLedger = {
             "column": 59
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Menu:0a7cec2e1715d55b9cd93ba4e0fbe6df63ce32a61f1c7168cc99f6dcff208f93",
@@ -9167,7 +10095,9 @@ export const obsidianRuntimeLedger = {
             "column": 48
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MenuItem:4b0f05262839c35382ac112400aeb7d4c28c164e157f5a9ba453eac6a9ef171a",
@@ -9312,14 +10242,18 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MenuSeparator:8d76cd93d0b4b14a3dc3d33f1be30d916578ae91e14c4cdde1788cd2592a3ef0",
       "name": "MenuSeparator",
       "status": "missing",
       "obligations": [],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
@@ -9488,7 +10422,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Modal:0ecda97644af4e2713635ad7b490630cadbfa649b6526b5c272c753baee12451",
@@ -9732,7 +10668,9 @@ export const obsidianRuntimeLedger = {
             "column": 31
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:MomentFormatComponent:b3a4fd344f8d82a1089b64a8dda9eaebe24bce367649ac52ace97495c301075c",
@@ -9841,7 +10779,9 @@ export const obsidianRuntimeLedger = {
             "column": 44
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Notice:10560b31dc604864c11ffba52fd3028df1eee9bc0077436e9f54232656883178",
@@ -9939,7 +10879,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:NotNullValue:c1ea1665f928693fb9c893089a4014dc3009931e6301c7f7b906a3608848b47c",
@@ -9957,7 +10899,9 @@ export const obsidianRuntimeLedger = {
             "column": 44
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:NullValue:1324bf65b03915a3f0cd328a8925569783bb7e24715cc6529560f4eed3522a40",
@@ -10023,7 +10967,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:NumberValue:fd1c8c04fc04ea959f10b6f15bd9f7c7f5b4302fcce177ec0b2b72f4835c3953",
@@ -10059,7 +11005,9 @@ export const obsidianRuntimeLedger = {
             "column": 34
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ObjectValue:f4b04ddccfe69cc44d6ae289ee7979be3083e4d11f8635102640ef5406ef5105",
@@ -10155,7 +11103,9 @@ export const obsidianRuntimeLedger = {
             "column": 34
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Plugin:e771e8ff5a3f8cba5096ceeabf2e20d4faf1e1609d6ab0042271be07a43f3827",
@@ -10534,6 +11484,12 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
+      ],
+      "coveredObligationIds": [
+        "obligation:export:class:Plugin:e771e8ff5a3f8cba5096ceeabf2e20d4faf1e1609d6ab0042271be07a43f3827:41240f63b5f7ff1b8215a8041827ea7cb41b8bedc9b47290fd9441bfacbafd57"
+      ],
+      "coveredObligationSignatureHashes": [
+        "41240f63b5f7ff1b8215a8041827ea7cb41b8bedc9b47290fd9441bfacbafd57"
       ]
     },
     {
@@ -10613,7 +11569,9 @@ export const obsidianRuntimeLedger = {
             "column": 48
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7",
@@ -10751,7 +11709,9 @@ export const obsidianRuntimeLedger = {
             "column": 70
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:PrimitiveValue:8a6cb580619668a61d674f73fee72fdf8e5a379c2577f1d76fbc685999a562ec",
@@ -10815,7 +11775,9 @@ export const obsidianRuntimeLedger = {
             "column": 49
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ProgressBarComponent:765be3f5a5d3693b36a6c2b4bcb89c6ea459df7fea5af5746a83574a94e422da",
@@ -10879,7 +11841,9 @@ export const obsidianRuntimeLedger = {
             "column": 43
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:QueryController:8687a7aa105e69dd9d978c7cf0f28d78f2b5b0f1bf94fdd7051510ddb41fe791",
@@ -10897,7 +11861,9 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00",
@@ -10946,7 +11912,9 @@ export const obsidianRuntimeLedger = {
             "column": 34
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
@@ -10964,7 +11932,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:RenderContext:beb981213ad00fafecd3b74138e0de3fb842cb6765ee285ae17b0bd6f20b90f5",
@@ -10998,7 +11968,9 @@ export const obsidianRuntimeLedger = {
             "column": 39
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Scope:cd031d650ae6bd697d35a546d66560edde8222f97ce7636eebee02186c317824",
@@ -11051,7 +12023,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SearchComponent:72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2",
@@ -11115,7 +12089,9 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623",
@@ -11179,7 +12155,9 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SecretStorage:cd03c227b70ca8e0d5c76594295057a148616d2aeef1ac549c10ec175cb7281b",
@@ -11243,7 +12221,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Setting:28f9e763ee1bc0e3c932e94f388d8b8023edf525be550f7a633320a1d30e61c6",
@@ -11716,7 +12696,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c",
@@ -11829,7 +12811,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3",
@@ -11944,7 +12928,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7",
@@ -12117,7 +13103,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SliderComponent:d90844d55c39379dcd52769fdd909d3a10418199ecbbe1ddd33f58d566e0f2da",
@@ -12301,7 +13289,9 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:StringValue:5a8c7f34710de2a3b01f7f1c3a8c7467bf3319a7543cd8e832cda04e660fabf1",
@@ -12337,7 +13327,9 @@ export const obsidianRuntimeLedger = {
             "column": 34
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:SuggestModal:4282e1a8e74dc8a6cc5092a10d976dc86a748bac0d52ad8125f44ee2fe06a7c1",
@@ -12567,7 +13559,9 @@ export const obsidianRuntimeLedger = {
             "column": 64
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9",
@@ -12635,7 +13629,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d",
@@ -12669,7 +13665,9 @@ export const obsidianRuntimeLedger = {
             "column": 31
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f",
@@ -12737,7 +13735,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:TextAreaComponent:82022a25c1d9b8692259fd880f233dd0d033897fced04bc878cd7b2b5167f4fa",
@@ -12771,7 +13771,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:TextComponent:4f2a68c9738f82e5b15235a8619c150ec1bdf96f7e94041aa363893a90ec8b52",
@@ -12805,7 +13807,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:TextFileView:0a4a4ba88dddacf03c9c0042db8a0565364f1e845d4a74c1fff1523bd8ad061e",
@@ -12965,7 +13969,9 @@ export const obsidianRuntimeLedger = {
             "column": 44
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251",
@@ -13029,7 +14035,9 @@ export const obsidianRuntimeLedger = {
             "column": 28
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30",
@@ -13078,7 +14086,9 @@ export const obsidianRuntimeLedger = {
             "column": 30
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ToggleComponent:a39eaf18ee6900de2db5cb84766616899cb5b4a08fbd709a60ee5ec5b9bf106f",
@@ -13217,7 +14227,9 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
@@ -13235,7 +14247,9 @@ export const obsidianRuntimeLedger = {
             "column": 31
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Value:7c58c01f8b9556273522a291722247cb44e052c15e968eee987d97cdf2240def",
@@ -13373,7 +14387,9 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20",
@@ -13441,7 +14457,9 @@ export const obsidianRuntimeLedger = {
             "column": 49
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11",
@@ -13942,7 +14960,9 @@ export const obsidianRuntimeLedger = {
             "column": 28
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49",
@@ -14239,7 +15259,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8",
@@ -15128,7 +16150,9 @@ export const obsidianRuntimeLedger = {
             "column": 32
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceContainer:111dc7e1f6366fe3ff666d4378cf23344f5da92322c7db62d3b9f0dfa30420c9",
@@ -15181,7 +16205,9 @@ export const obsidianRuntimeLedger = {
             "column": 50
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceFloating:e7ce5a480a9e4cc1dc8675f8b45324cc2208b686dc36c98e97eb7d627d7dba90",
@@ -15215,7 +16241,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceItem:792134b77a9c1bb5302d753d6536fb185754809cae5a711f1a7c3a9b5549e6bd",
@@ -15281,7 +16309,9 @@ export const obsidianRuntimeLedger = {
             "column": 45
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194",
@@ -15625,7 +16655,9 @@ export const obsidianRuntimeLedger = {
             "column": 61
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceMobileDrawer:d18a5e362fc9f67ac70930e1b173cfdb87126c18f745f722ad3b38433474f5d3",
@@ -15719,7 +16751,9 @@ export const obsidianRuntimeLedger = {
             "column": 44
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceParent:1fb7060d911d26037de04d4c0dedda3c4c72e57e68725d70cf211963039ecee0",
@@ -15737,14 +16771,18 @@ export const obsidianRuntimeLedger = {
             "column": 47
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceRibbon:ffebe640f57faebeb55a9df3fcc091e2abe8d66c19ae2a67a2eb83b7a3e13541",
       "name": "WorkspaceRibbon",
       "status": "missing",
       "obligations": [],
-      "heritageEdges": []
+      "heritageEdges": [],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceRoot:cbd16d72040e24ecf7e56810a5a9f6c6193383c2e9809fe754c0ba2437947f6d",
@@ -15793,7 +16831,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceSidedock:7290bfc648754714eb199f391f29b65ecb72be9e7582e7dd9839f86167b79aba",
@@ -15872,7 +16912,9 @@ export const obsidianRuntimeLedger = {
             "column": 40
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
@@ -15906,7 +16948,9 @@ export const obsidianRuntimeLedger = {
             "column": 37
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceTabs:351384193e50748c3cce47b0209cd285d81c20df177fb151135fb2ca5514cc49",
@@ -15940,7 +16984,9 @@ export const obsidianRuntimeLedger = {
             "column": 36
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     },
     {
       "exportId": "export:class:WorkspaceWindow:4d8f442507ed4e2b2cc55babb27d7a3d12075ca2ff88c4217fc3811aaf9c65ca",
@@ -15989,7 +17035,9 @@ export const obsidianRuntimeLedger = {
             "column": 38
           }
         }
-      ]
+      ],
+      "coveredObligationIds": [],
+      "coveredObligationSignatureHashes": []
     }
   ],
   "extras": {

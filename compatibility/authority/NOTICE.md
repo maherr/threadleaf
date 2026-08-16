@@ -1,9 +1,10 @@
 # Obsidian public API authority
 
-`obsidian-1.13.7.d.ts` is a byte-for-byte copy of the public API declaration from
+`obsidian-1.13.7.d.ts.base64` is a reversible ASCII representation of the exact public API declaration from
 [`obsidianmd/obsidian-api`](https://github.com/obsidianmd/obsidian-api). The upstream
-repository distributes the declaration under the MIT license. This copy is used only as
-the public shape authority for the executable compatibility ledger.
+repository distributes the declaration under the MIT license. The generator decodes this
+representation and verifies the upstream bytes, SHA-256, size, and line count before parsing.
+It is used only as the public shape authority for the executable compatibility ledger.
 
 Copyright 2022 Dynalist Inc.
 

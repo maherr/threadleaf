@@ -12,12 +12,13 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const authorityHash = "ed358aa05694582597726321352494a9833b77c117991189e55761ced8326027";
 const authorityBytes = 204_109;
 const authorityLines = 8_498;
-const authoritySourcePath = "public-api/obsidian.d.ts";
+const authoritySourcePath = "compatibility/authority/obsidian-1.13.7.d.ts.base64";
+const authorityDeclarationName = "obsidian-1.13.7.d.ts";
 const authorityPath = path.join(
   repositoryRoot,
   "compatibility",
   "authority",
-  "obsidian-1.13.7.d.ts",
+  "obsidian-1.13.7.d.ts.base64",
 );
 
 const outputFiles = {
@@ -61,6 +62,31 @@ function writeOrCheck(filePath, content, check) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function decodeAuthority() {
+  const encoded = readFileSync(authorityPath, "ascii");
+  const compact = encoded.replace(/\s+/gu, "");
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(compact)) {
+    fail("authority representation is not valid base64");
+  }
+  const rawBytes = Buffer.from(compact, "base64");
+  if (rawBytes.toString("base64") !== compact) {
+    fail("authority representation is not canonical base64");
+  }
+  if (sha256(rawBytes) !== authorityHash) {
+    fail(`authority SHA-256 mismatch: ${sha256(rawBytes)}`);
+  }
+  if (rawBytes.byteLength !== authorityBytes) fail("authority byte count drifted");
+  const source = rawBytes.toString("utf8");
+  if (!Buffer.from(source, "utf8").equals(rawBytes)) {
+    fail("authority declaration is not valid UTF-8");
+  }
+  const lineCount = source.endsWith("\n")
+    ? source.split("\n").length - 1
+    : source.split("\n").length;
+  if (lineCount !== authorityLines) fail("authority line count drifted");
+  return { encoded, rawBytes, source };
 }
 
 function normalizedSignature(node, sourceFile) {
@@ -316,10 +342,19 @@ function markerIndex() {
         const id = match[1];
         const offset = match.index ?? 0;
         const line = source.slice(0, offset).split("\n").length;
+        const markerWindow = source.slice(
+          Math.max(0, offset - 160),
+          offset + match[0].length + 160,
+        );
+        const statusMatch = markerWindow.match(/@compatibility-status\s+(unsupported|positive)\b/u);
+        if (markerWindow.includes("@compatibility-status") && !statusMatch) {
+          fail(`invalid compatibility marker status near ${id}`);
+        }
         markers.push({
           id,
           path: path.relative(repositoryRoot, fullPath).split(path.sep).join("/"),
           line,
+          status: statusMatch?.[1] ?? "positive",
         });
       }
     }
@@ -351,22 +386,119 @@ function relativeRepositoryPath(value, label) {
   return normalized;
 }
 
-function evidenceReferences(entry, label) {
-  if (!Array.isArray(entry?.evidence) || entry.evidence.length === 0) {
-    fail(`${label} requires at least one executable evidence reference`);
+function evidenceReferences(entry, label, field = "evidence", required = true) {
+  if (!Array.isArray(entry?.[field]) || (required && entry[field].length === 0)) {
+    if (required) fail(`${label} requires at least one executable evidence reference`);
+    return [];
   }
-  return entry.evidence.map((reference, index) => {
+  return entry[field].map((reference, index) => {
     if (!reference || typeof reference !== "object") {
-      fail(`${label}.evidence[${index}] must contain an id and path`);
+      fail(`${label}.${field}[${index}] must contain an id and path`);
     }
     if (typeof reference.id !== "string" || reference.id.length === 0) {
-      fail(`${label}.evidence[${index}].id must be a non-empty string`);
+      fail(`${label}.${field}[${index}].id must be a non-empty string`);
     }
     return {
       id: reference.id,
-      path: relativeRepositoryPath(reference.path, `${label}.evidence[${index}].path`),
+      path: relativeRepositoryPath(reference.path, `${label}.${field}[${index}].path`),
     };
   });
+}
+
+function validateEvidenceReferences(references, label, markerMap, expectedStatus) {
+  for (const reference of references) {
+    const marker = markerMap.get(reference.id);
+    if (!marker) fail(`${label} evidence marker is missing: ${reference.id}`);
+    if (marker.path !== reference.path) {
+      fail(
+        `evidence marker path drifted for ${reference.id}: expected ${reference.path}, found ${marker.path}`,
+      );
+    }
+    if (expectedStatus && marker.status !== expectedStatus) {
+      fail(`evidence marker ${reference.id} must be declared ${expectedStatus}`);
+    }
+  }
+}
+
+function normalizeCoverage(declared, entry, label, markerMap) {
+  const coverage = entry?.coverage ?? {};
+  if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
+    fail(`${label}.coverage must be an object`);
+  }
+  const declarationsByHash = new Map(
+    (declared.obligations ?? []).map((obligation) => [obligation.signatureHash, obligation]),
+  );
+  const obligations = Array.isArray(coverage.obligations) ? coverage.obligations : [];
+  const coveredObligations = [];
+  const seenObligationHashes = new Set();
+  for (const [index, item] of obligations.entries()) {
+    if (!item || typeof item !== "object" || typeof item.signatureHash !== "string") {
+      fail(`${label}.coverage.obligations[${index}] must name a declaration signature hash`);
+    }
+    const declaration = declarationsByHash.get(item.signatureHash);
+    if (!declaration) {
+      fail(`${label}.coverage names an unknown obligation signature: ${item.signatureHash}`);
+    }
+    if (seenObligationHashes.has(item.signatureHash)) {
+      fail(`${label}.coverage repeats obligation signature: ${item.signatureHash}`);
+    }
+    seenObligationHashes.add(item.signatureHash);
+    const evidence = evidenceReferences(
+      { evidence: item.evidence },
+      `${label}.coverage.obligations[${index}]`,
+    );
+    validateEvidenceReferences(
+      evidence,
+      `${label}.coverage.obligations[${index}]`,
+      markerMap,
+      "positive",
+    );
+    coveredObligations.push({
+      obligationId: declaration.obligationId,
+      signatureHash: declaration.signatureHash,
+      evidence,
+    });
+  }
+
+  const requiredBehaviorIds = coverage.requiredBehaviorIds ?? [];
+  if (
+    !Array.isArray(requiredBehaviorIds) ||
+    requiredBehaviorIds.some((id) => typeof id !== "string" || id.length === 0)
+  ) {
+    fail(`${label}.coverage.requiredBehaviorIds must be an array of non-empty strings`);
+  }
+  if (new Set(requiredBehaviorIds).size !== requiredBehaviorIds.length) {
+    fail(`${label}.coverage.requiredBehaviorIds contains duplicates`);
+  }
+  const behaviorEntries = Array.isArray(coverage.behaviors) ? coverage.behaviors : [];
+  const coveredBehaviors = [];
+  const seenBehaviorIds = new Set();
+  for (const [index, item] of behaviorEntries.entries()) {
+    if (!item || typeof item !== "object" || typeof item.id !== "string" || item.id.length === 0) {
+      fail(`${label}.coverage.behaviors[${index}] must name a behavior id`);
+    }
+    if (!requiredBehaviorIds.includes(item.id)) {
+      fail(`${label}.coverage.behaviors names an undeclared behavior: ${item.id}`);
+    }
+    if (seenBehaviorIds.has(item.id)) fail(`${label}.coverage repeats behavior: ${item.id}`);
+    seenBehaviorIds.add(item.id);
+    const evidence = evidenceReferences(
+      { evidence: item.evidence },
+      `${label}.coverage.behaviors[${index}]`,
+    );
+    validateEvidenceReferences(
+      evidence,
+      `${label}.coverage.behaviors[${index}]`,
+      markerMap,
+      "positive",
+    );
+    coveredBehaviors.push({ id: item.id, evidence });
+  }
+  return {
+    obligations: coveredObligations,
+    requiredBehaviorIds: [...requiredBehaviorIds],
+    behaviors: coveredBehaviors,
+  };
 }
 
 function validateSource(source, runtimeExports, factoryKeys, implementationMap, markers) {
@@ -385,6 +517,7 @@ function validateSource(source, runtimeExports, factoryKeys, implementationMap, 
   ) {
     fail("manual source authority metadata drifted");
   }
+  const markerMap = new Map(markers.map((marker) => [marker.id, marker]));
   for (const [name, entry] of Object.entries(source.exports)) {
     const declared = runtimeExports.find((candidate) => candidate.name === name);
     if (!declared) fail(`manual source targets unknown public export: ${name}`);
@@ -402,25 +535,18 @@ function validateSource(source, runtimeExports, factoryKeys, implementationMap, 
       if (entry.implementation.exportName !== name)
         fail(`implementation exportName must equal ${name}`);
     }
-    for (const reference of evidenceReferences(entry, name)) {
-      const marker = markers.find((candidate) => candidate.id === reference.id);
-      if (!marker) fail(`evidence marker is missing: ${reference.id}`);
-      if (marker.path !== reference.path) {
-        fail(
-          `evidence marker path drifted for ${reference.id}: expected ${reference.path}, found ${marker.path}`,
-        );
-      }
+    const evidence = evidenceReferences(entry, name, "evidence", false);
+    const negativeEvidence = evidenceReferences(entry, name, "negativeEvidence", false);
+    if (evidence.length === 0 && negativeEvidence.length === 0) {
+      fail(`${name} requires positive or negative executable evidence`);
     }
+    validateEvidenceReferences(evidence, name, markerMap, "positive");
+    validateEvidenceReferences(negativeEvidence, name, markerMap, "unsupported");
+    normalizeCoverage(declared, entry, name, markerMap);
     if (!allowedStatuses.has(entry.status ?? "missing")) {
       fail(`manual source uses an invalid status for ${name}`);
     }
-    const derivedStatus = deriveStatus(
-      declared,
-      entry,
-      factoryKeys,
-      implementationMap,
-      new Set(markers.map((marker) => marker.id)),
-    );
+    const derivedStatus = deriveStatus(declared, entry, factoryKeys, implementationMap, markerMap);
     if (entry.status && entry.status !== derivedStatus) {
       fail(`manual status for ${name} does not match executable derivation`);
     }
@@ -431,15 +557,8 @@ function validateSource(source, runtimeExports, factoryKeys, implementationMap, 
       fail(`extra is a public export: ${name}`);
     if (entry?.status !== "internal-extra") fail(`extra ${name} must be internal-extra`);
     if (!factoryKeys.includes(name)) fail(`documented extra is not in the factory: ${name}`);
-    for (const reference of evidenceReferences(entry, `extra ${name}`)) {
-      const marker = markers.find((candidate) => candidate.id === reference.id);
-      if (!marker) fail(`extra evidence marker is missing: ${reference.id}`);
-      if (marker.path !== reference.path) {
-        fail(
-          `extra evidence marker path drifted for ${reference.id}: expected ${reference.path}, found ${marker.path}`,
-        );
-      }
-    }
+    const evidence = evidenceReferences(entry, `extra ${name}`);
+    validateEvidenceReferences(evidence, `extra ${name}`, markerMap, "positive");
   }
   const factoryExtras = factoryKeys.filter(
     (key) => !runtimeExports.some((entry) => entry.name === key),
@@ -450,30 +569,50 @@ function validateSource(source, runtimeExports, factoryKeys, implementationMap, 
   }
 }
 
-function deriveStatus(declared, entry, factoryKeys, implementationMap, markerIds) {
-  if (
-    !entry?.implementation ||
-    !factoryKeys.includes(declared.name) ||
-    !implementationMap.has(declared.name)
-  ) {
-    return "missing";
-  }
-  const evidenceReady = entry.evidence.every((reference) => markerIds.has(reference.id));
+export function deriveStatus(declared, entry, factoryKeys, implementationMap, markerMap) {
+  const positiveEvidence = Array.isArray(entry?.evidence) ? entry.evidence : [];
+  const negativeEvidence = Array.isArray(entry?.negativeEvidence) ? entry.negativeEvidence : [];
+  const negativeReady =
+    negativeEvidence.length > 0 &&
+    negativeEvidence.every((reference) => markerMap.get(reference.id)?.status === "unsupported");
+  const hasBinding =
+    entry?.implementation &&
+    factoryKeys.includes(declared.name) &&
+    implementationMap.has(declared.name);
+  if (!hasBinding) return negativeReady ? "unsupported" : "missing";
+  const evidenceReady = positiveEvidence.every(
+    (reference) => markerMap.get(reference.id)?.status === "positive",
+  );
   if (!evidenceReady) return "missing";
   const binding = implementationMap.get(declared.name);
   if (declared.kind !== binding.kind) return "missing";
-  if (declared.kind !== "class") return "implemented";
-  const declaredMembers = new Set(declared.obligations.map((obligation) => obligation.name));
-  const coveredMembers = [...declaredMembers].filter((name) => binding.members.has(name));
-  if (coveredMembers.length === 0) return "missing";
-  return coveredMembers.length === declaredMembers.size ? "implemented" : "partial";
+  const coverage = entry.coverage ?? {};
+  if (declared.kind === "class") {
+    const covered = new Set(
+      (coverage.obligations ?? []).map((obligation) => obligation.signatureHash),
+    );
+    if (covered.size === 0) return "partial";
+    const required = new Set(declared.obligations.map((obligation) => obligation.signatureHash));
+    return [...required].every((signatureHash) => covered.has(signatureHash))
+      ? "implemented"
+      : "partial";
+  }
+  const requiredBehaviors = coverage.requiredBehaviorIds ?? [];
+  const coveredBehaviors = new Set((coverage.behaviors ?? []).map((behavior) => behavior.id));
+  if (requiredBehaviors.length === 0) return "partial";
+  return requiredBehaviors.every((behaviorId) => coveredBehaviors.has(behaviorId))
+    ? "implemented"
+    : "partial";
 }
 
 function createLedger(source, runtimeExports, factoryKeys, implementationMap, markers) {
-  const markerIds = new Set(markers.map((marker) => marker.id));
+  const markerMap = new Map(markers.map((marker) => [marker.id, marker]));
+  const coverageByName = new Map();
   const exports = runtimeExports.map((declared) => {
     const manual = source.exports[declared.name] ?? null;
-    const status = deriveStatus(declared, manual, factoryKeys, implementationMap, markerIds);
+    const coverage = normalizeCoverage(declared, manual, declared.name, markerMap);
+    coverageByName.set(declared.name, coverage);
+    const status = deriveStatus(declared, manual, factoryKeys, implementationMap, markerMap);
     return {
       exportId: declared.exportId,
       name: declared.name,
@@ -482,21 +621,33 @@ function createLedger(source, runtimeExports, factoryKeys, implementationMap, ma
       signatureHash: declared.signatureHash,
       location: declared.location,
       evidence: manual?.evidence ?? [],
+      negativeEvidence: manual?.negativeEvidence ?? [],
       implementation: manual?.implementation ?? null,
       obligationIds: declared.obligationIds,
       heritageEdgeIds: declared.heritageEdgeIds,
+      coveredObligationIds: coverage.obligations.map((obligation) => obligation.obligationId),
+      coveredObligationSignatureHashes: coverage.obligations.map(
+        (obligation) => obligation.signatureHash,
+      ),
+      requiredBehaviorIds: coverage.requiredBehaviorIds,
+      coveredBehaviorIds: coverage.behaviors.map((behavior) => behavior.id),
     };
   });
   const classes = runtimeExports
     .filter((entry) => entry.kind === "class")
     .map((entry) => {
       const exportRecord = exports.find((candidate) => candidate.exportId === entry.exportId);
+      const coverage = coverageByName.get(entry.name);
       return {
         exportId: entry.exportId,
         name: entry.name,
         status: exportRecord.status,
         obligations: entry.obligations,
         heritageEdges: entry.heritageEdges,
+        coveredObligationIds: coverage.obligations.map((obligation) => obligation.obligationId),
+        coveredObligationSignatureHashes: coverage.obligations.map(
+          (obligation) => obligation.signatureHash,
+        ),
       };
     });
   const obligations = classes.flatMap((entry) => entry.obligations);
@@ -515,12 +666,7 @@ function createLedger(source, runtimeExports, factoryKeys, implementationMap, ma
     instanceMembers: obligations.filter((entry) => !entry.static).length,
     staticMembers: obligations.filter((entry) => entry.static).length,
     heritageEdges: heritageEdges.length,
-    implementedObligations: obligations.filter((obligation) => {
-      const owner = classes.find((entry) =>
-        entry.obligations.some((candidate) => candidate.obligationId === obligation.obligationId),
-      );
-      return owner?.status === "implemented";
-    }).length,
+    implementedObligations: new Set(exports.flatMap((entry) => entry.coveredObligationIds)).size,
   };
   return {
     schemaVersion: 1,
@@ -564,7 +710,7 @@ function generatedMarkdown(ledger) {
       ),
     )
     .join("\n");
-  return `# Obsidian 1.13.7 runtime ledger\n\nThis file is generated from the pinned MIT declaration and the checked-in manual evidence source. The declaration is an authority for public shape, while executable Threadleaf tests determine status.\n\n## Authority and census\n\n- Authority: \`${ledger.authority.source}\`\n- SHA-256: \`${ledger.authority.sha256}\`\n- Runtime-valued exports: ${ledger.counts.runtimeExports} (${ledger.counts.classes} classes, ${ledger.counts.functions} functions, ${ledger.counts.enums} enum, ${ledger.counts.variables} variables)\n- Own class-member obligations: ${ledger.counts.ownMembers} (${ledger.counts.instanceMembers} instance, ${ledger.counts.staticMembers} static)\n- Heritage edges: ${ledger.counts.heritageEdges}\n- Factory keys: ${ledger.factory.keys.length} (${ledger.factory.publicKeys.length} public, ${ledger.factory.internalExtras.length} internal extra)\n\n## Export status\n\n| Export | Kind | Status | Signature |\n| --- | --- | --- | --- |\n${rows}\n\n## Class obligations\n\nEach row is one declaration-owned obligation. Overloads retain separate full-signature hashes. Inherited obligations are represented by heritage edges and are not double-counted.\n\n| Class | Member | AST kind | Staticness | Visibility | Signature |\n| --- | --- | --- | --- | --- | --- |\n${obligationRows}\n\n## Evidence policy\n\nThe allowed statuses are \`implemented\`, \`partial\`, \`unsupported\`, \`missing\`, and \`internal-extra\`. An implemented status requires a factory binding, an implementation binding, all declaration-owned member names for a class, and every referenced executable evidence marker.\n`;
+  return `# Obsidian 1.13.7 runtime ledger\n\nThis file is generated from the pinned MIT declaration and the checked-in manual evidence source. The declaration is an authority for public shape, while executable Threadleaf tests determine status.\n\n## Authority and census\n\n- Authority representation: \`${ledger.authority.source}\`\n- Decoded declaration: \`${authorityDeclarationName}\`\n- SHA-256: \`${ledger.authority.sha256}\`\n- Runtime-valued exports: ${ledger.counts.runtimeExports} (${ledger.counts.classes} classes, ${ledger.counts.functions} functions, ${ledger.counts.enums} enum, ${ledger.counts.variables} variables)\n- Own class-member obligations: ${ledger.counts.ownMembers} (${ledger.counts.instanceMembers} instance, ${ledger.counts.staticMembers} static)\n- Heritage edges: ${ledger.counts.heritageEdges}\n- Factory keys: ${ledger.factory.keys.length} (${ledger.factory.publicKeys.length} public, ${ledger.factory.internalExtras.length} internal extra)\n\n## Export status\n\n| Export | Kind | Status | Signature |\n| --- | --- | --- | --- |\n${rows}\n\n## Class obligations\n\nEach row is one declaration-owned obligation. Overloads retain separate full-signature hashes. Inherited obligations are represented by heritage edges and are not double-counted. Covered obligation IDs and signature hashes are emitted on each class record.\n\n| Class | Member | AST kind | Staticness | Visibility | Signature |\n| --- | --- | --- | --- | --- | --- |\n${obligationRows}\n\n## Evidence policy\n\nThe allowed statuses are \`implemented\`, \`partial\`, \`unsupported\`, \`missing\`, and \`internal-extra\`. An implemented class requires a factory binding, an implementation binding, positive executable evidence, and coverage for every distinct declaration signature, including overloads. An implemented non-class export requires explicit positive behavioral coverage for every declared behavior ID. Structural member names and manual status fields cannot promote an export. Unsupported is derived only from a marker explicitly declared with \`@compatibility-status unsupported\`.\n`;
 }
 
 function main() {
@@ -572,18 +718,10 @@ function main() {
   if (!existsSync(authorityPath)) {
     fail(`authority declaration is missing at ${path.relative(repositoryRoot, authorityPath)}`);
   }
-  const authoritySource = readFileSync(authorityPath, "utf8");
-  const actualHash = sha256(authoritySource);
-  if (actualHash !== authorityHash) fail(`authority SHA-256 mismatch: ${actualHash}`);
-  if (Buffer.byteLength(authoritySource, "utf8") !== authorityBytes)
-    fail("authority byte count drifted");
-  const authorityLineCount = authoritySource.endsWith("\n")
-    ? authoritySource.split("\n").length - 1
-    : authoritySource.split("\n").length;
-  if (authorityLineCount !== authorityLines) fail("authority line count drifted");
+  const { source: authoritySource } = decodeAuthority();
 
   const source = readJson(outputFiles.source);
-  const declarationAst = parseAst(authoritySourcePath, authoritySource);
+  const declarationAst = parseAst(authorityDeclarationName, authoritySource);
   const runtimeExports = publicRuntimeExports(declarationAst.sourceFile);
   declarationAst.api.close();
   const factoryAst = parseAst(
@@ -642,4 +780,6 @@ function main() {
   }
 }
 
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

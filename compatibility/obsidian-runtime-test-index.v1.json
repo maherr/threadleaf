@@ -4,32 +4,38 @@
     {
       "id": "obsidian-runtime.base-component.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 11
+      "line": 11,
+      "status": "positive"
     },
     {
       "id": "obsidian-runtime.component.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 12
+      "line": 12,
+      "status": "positive"
     },
     {
       "id": "obsidian-runtime.normalize-path.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 15
+      "line": 15,
+      "status": "positive"
     },
     {
       "id": "obsidian-runtime.platform.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 14
+      "line": 14,
+      "status": "positive"
     },
     {
       "id": "obsidian-runtime.plugin.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 13
+      "line": 13,
+      "status": "positive"
     },
     {
       "id": "obsidian-runtime.sleep-extra.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 38
+      "line": 51,
+      "status": "positive"
     }
   ]
 }
