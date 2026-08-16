@@ -23,6 +23,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Added truthful, type-specific keyboard instructions and shortcut metadata to Live Preview
+  callouts while preserving Enter/Space exact-source reveal.
+- Restored visible keyboard-focus frames around command palette and quick-switcher queries, and
+  raised repeated note view and tab close controls to the WCAG 2.2 24px target-size floor.
 - Kept the visible note census, paginated file total, and vault count synchronized after external
   note additions, deletions, and sync-style event bursts.
 - Rejected traversal through a relative folder symlink at any path ancestor while retaining safe

@@ -490,6 +490,29 @@ try {
     current.workspace.panes[0].tabs.length === 1,
     `A fresh workspace did not auto-open exactly one fixture note: ${JSON.stringify(current.workspace.panes[0].tabs)}`,
   );
+  const repeatedActionTargets = await evaluate(`(() => {
+    const close = document.querySelector('[data-pane-id="primary"] .note-tab-close');
+    const modes = [...document.querySelectorAll('[data-pane-id="primary"] .document-view-switch button')]
+      .filter((mode) =>
+        mode instanceof HTMLButtonElement && !mode.hidden && getComputedStyle(mode).display !== 'none'
+      );
+    if (!(close instanceof HTMLElement) || modes.length === 0) return null;
+    const closeBounds = close.getBoundingClientRect();
+    return {
+      close: { width: closeBounds.width, height: closeBounds.height },
+      modes: modes.map((mode) => {
+        const bounds = mode.getBoundingClientRect();
+        return { width: bounds.width, height: bounds.height };
+      }),
+    };
+  })()`);
+  assert(
+    repeatedActionTargets &&
+      repeatedActionTargets.close.width >= 24 &&
+      repeatedActionTargets.close.height >= 24 &&
+      repeatedActionTargets.modes.every((target) => target.width >= 24 && target.height >= 24),
+    `Repeated document controls missed the 24px target floor: ${JSON.stringify(repeatedActionTargets)}`,
+  );
 
   phase = "deterministic empty workspace";
   await clickSelector('[data-pane-id="primary"] .note-tab-close');
@@ -673,6 +696,23 @@ try {
     () => evaluate("document.querySelector('#quick-switcher')?.open === true"),
     "The quick switcher hotkey did not open its dialog",
   );
+  const quickSwitcherFocus = await evaluate(`(() => {
+    const input = document.querySelector('#quick-switcher-query');
+    const frame = document.querySelector('.quick-switcher-search');
+    if (!(input instanceof HTMLInputElement) || !(frame instanceof HTMLElement)) return null;
+    const style = getComputedStyle(frame);
+    return {
+      active: document.activeElement === input,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  })()`);
+  assert(
+    quickSwitcherFocus?.active === true &&
+      quickSwitcherFocus.outlineStyle === "solid" &&
+      quickSwitcherFocus.outlineWidth >= 2,
+    `The quick switcher did not expose its focused query with a visible frame: ${JSON.stringify(quickSwitcherFocus)}`,
+  );
   await captureScreenshot("workspace-quick-switcher-dark");
   assert(
     await evaluate(
@@ -692,6 +732,35 @@ try {
   await waitFor(
     async () => (await paneState("primary"))?.path === "Linked Note.md",
     "Enter did not open the selected quick-switcher note",
+  );
+
+  await pressKey("k", "KeyK", 2);
+  await waitFor(
+    () => evaluate("document.querySelector('#command-palette')?.open === true"),
+    "The command palette hotkey did not open its dialog",
+  );
+  const commandPaletteFocus = await evaluate(`(() => {
+    const input = document.querySelector('#palette-query');
+    const frame = document.querySelector('.palette-search');
+    if (!(input instanceof HTMLInputElement) || !(frame instanceof HTMLElement)) return null;
+    const style = getComputedStyle(frame);
+    return {
+      active: document.activeElement === input,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  })()`);
+  assert(
+    commandPaletteFocus?.active === true &&
+      commandPaletteFocus.outlineStyle === "solid" &&
+      commandPaletteFocus.outlineWidth >= 2,
+    `The command palette did not expose its focused query with a visible frame: ${JSON.stringify(commandPaletteFocus)}`,
+  );
+  await captureScreenshot("workspace-command-palette-dark");
+  await pressKey("Escape", "Escape");
+  await waitFor(
+    () => evaluate("document.querySelector('#command-palette')?.open === false"),
+    "The command palette did not close after focus verification",
   );
 
   assert(

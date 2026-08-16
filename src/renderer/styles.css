@@ -1608,6 +1608,8 @@ h2 {
 }
 
 .note-tab-close {
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
   font-family: var(--mono);
   font-size: 15px;
@@ -1690,7 +1692,7 @@ h2 {
 
 .document-view-switch button {
   min-width: 34px;
-  min-height: 21px;
+  min-height: 24px;
   padding: 0 6px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -4342,6 +4344,11 @@ button.inspector-item:hover {
   border-bottom: 1px solid var(--line);
 }
 
+.quick-switcher-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .quick-switcher-prompt {
   color: var(--accent-strong);
   font-family: var(--mono);
@@ -5567,6 +5574,11 @@ button.inspector-item:hover {
   min-width: 0;
   padding: 18px 18px 14px;
   border-bottom: 1px solid var(--line);
+}
+
+.palette-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .palette-prompt {

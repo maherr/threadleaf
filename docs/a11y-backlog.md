@@ -8,6 +8,26 @@ touch targets across `src/renderer/**`. It is a static code-analysis audit, not 
 verification; see Limitations at the end before treating any item here as confirmed against
 real assistive technology.
 
+## Remediation status
+
+Rechecked against the current implementation on 2026-08-16. The findings table below remains the
+historical audit record; this status distinguishes live gaps from premises that intervening work
+had already resolved.
+
+| Finding | Status | Verification |
+|---------|--------|--------------|
+| 1 | Resolved | Keyboard focus and Enter/Space activation had already landed. This remediation pass added a type-specific accessible name, `aria-keyshortcuts="Enter Space"`, unit coverage for both keys, and an isolated Electron check that sends a real Enter key to a rendered warning callout and verifies selection of its exact Markdown source line. |
+| 2 | Open | Bidirectional isolation remains a cross-cutting P1 and needs its own right-to-left fixture and rendered verification lane. |
+| 3 | Resolved | The command palette and quick switcher now draw a 2px accent frame through `:focus-within`. The workspace Electron check verifies active input focus and live computed outline styles; dark and light screenshots confirm the frame remains visible without shifting layout. |
+| 4 | Resolved | Document view buttons now have a 24px minimum height, enforced by a CSS contract test and measured on the live surface. |
+| 5 | Resolved | Note tab close controls now have 24px minimum width and height, enforced by a CSS contract test; the live surface measured the visible control at 25 by 33 pixels. |
+| 6 | Resolved before this pass | The current `TaskWidget` already derives each checkbox accessible name from its task text. Existing tests cover the task-specific name, so no production change was needed. |
+| 7-10 | Unchanged | The low-priority semantic and localization notes, plus the informational heading item, remain as originally classified. |
+
+These checks do not constitute a screen-reader certification or close the roadmap's broader
+accessibility review. In particular, finding 2 and the assistive-technology, forced-colors, and
+high-zoom checks in Explicit limitations remain open.
+
 ## Summary
 
 Threadleaf's renderer is unusually disciplined about accessibility for its size. Every one of
@@ -149,12 +169,10 @@ Finding 10 needs no lane; it is informational only.
 
 ## Explicit limitations
 
-- **Static analysis only.** This audit read source, markup, and stylesheets; it did not run
-  Electron. The heavy-gate lock for this repo was saturated for the duration of this lane, and
-  the task scope excludes Electron/Xvfb runs regardless. Every finding above is grounded in
-  reading the actual code path (not inferred from naming or comments), but none of it has been
-  confirmed against a real screen reader (NVDA, JAWS, VoiceOver, Orca), real OS zoom at 200%/400%,
-  or real high-contrast/forced-colors mode.
+- **The original audit was static.** The 2026-08-16 remediation status adds targeted Electron
+  runtime proof for findings 1, 3, 4, and 5, but none of this work has been confirmed against a
+  real screen reader (NVDA, JAWS, VoiceOver, Orca), real OS zoom at 200%/400%, or real
+  high-contrast/forced-colors mode.
 - **A follow-up runtime lane should verify, in this order of value:** (a) the note graph's
   `role="application"` region under NVDA/JAWS with Chrome, since nested focusable `role="button"`
   SVG descendants of an `role="img"` ancestor (`index.html:551-557` containing `:539-546`) are

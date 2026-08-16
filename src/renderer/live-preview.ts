@@ -26,7 +26,7 @@ import type {
   WorkspaceLinkSummary,
 } from "../shared/contracts";
 import { isValidTagBody } from "../shared/tags";
-import { parseCalloutSourceLine } from "./callouts";
+import { calloutDefaultTitle, parseCalloutSourceLine } from "./callouts";
 import {
   collectFootnotes,
   createSafeMathElement,
@@ -2178,7 +2178,10 @@ class CalloutWidget extends WidgetType {
     frame.className = "tl-live-callout-block";
     frame.tabIndex = 0;
     frame.setAttribute("role", "group");
-    frame.ariaLabel = "Callout. Click to edit the exact Markdown source.";
+    frame.setAttribute("aria-keyshortcuts", "Enter Space");
+    const header = parseCalloutSourceLine(this.source.split(/\r?\n/u, 1)[0] ?? "");
+    const title = header ? `${calloutDefaultTitle(header.type)} callout` : "Callout";
+    frame.ariaLabel = `${title}. Press Enter or Space to edit the exact Markdown source.`;
     sourceMetadata(frame, this.from, this.to, "callout");
     frame.append(renderMarkdownPreview(this.source));
     const reveal = (event: MouseEvent | KeyboardEvent): void => {

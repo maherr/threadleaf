@@ -1294,10 +1294,48 @@ try {
     opened.sourcePressed === "true",
     "Source mode was not pressed after the reachable-control check.",
   );
+
+  phase = "keyboard callout source reveal";
+  await evaluate('document.querySelector("#edit-view")?.click(); true');
+  await waitFor(async () => (await liveSurfaceState()).mode === "live", "Live mode did not return");
+  const keyboardCallout = await evaluate(`(() => {
+    const frame = [...document.querySelectorAll('.tl-live-callout-block')].find((candidate) =>
+      candidate.querySelector('.callout[data-callout="warning"]')
+    );
+    if (!(frame instanceof HTMLElement)) return null;
+    frame.scrollIntoView({ block: "center", inline: "nearest" });
+    frame.focus();
+    return {
+      active: document.activeElement === frame,
+      label: frame.getAttribute('aria-label'),
+      shortcuts: frame.getAttribute('aria-keyshortcuts'),
+    };
+  })()`);
+  assert(
+    keyboardCallout?.active === true &&
+      keyboardCallout.label?.startsWith("Warning callout. Press Enter or Space") &&
+      keyboardCallout.shortcuts === "Enter Space",
+    `The rendered warning callout did not expose its keyboard source action: ${JSON.stringify(keyboardCallout)}`,
+  );
+  await pressKey("Enter", "Enter");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector(".cm-activeLine")?.textContent ?? ""')).includes(
+        "[!warning]- Collapsed",
+      )
+        ? true
+        : null,
+    "Enter on a rendered Live Preview callout did not reveal its exact source line",
+  );
+  await evaluate('document.querySelector("#source-view")?.click(); true');
+  await waitFor(
+    async () => (await liveSurfaceState()).mode === "source",
+    "Source mode did not return after the keyboard callout proof",
+  );
   await closeApplication();
 
   console.log(
-    "Verified isolated virtual input and screenshots for default Live Preview, rich Markdown rendering, exact cursor reveal, task edit/undo/redo/autosave bytes, Source round trip, internal-link activation, pane-local modes, A/B vault mode isolation, seeded stale localStorage, delayed/error refreshes, both themes, restart persistence, and reachable mode controls.",
+    "Verified isolated virtual input and screenshots for default Live Preview, rich Markdown rendering, pointer and keyboard exact-source reveal, task edit/undo/redo/autosave bytes, Source round trip, internal-link activation, pane-local modes, A/B vault mode isolation, seeded stale localStorage, delayed/error refreshes, both themes, restart persistence, and reachable mode controls.",
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);

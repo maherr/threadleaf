@@ -97,6 +97,29 @@ describe("Live Preview callout replacement", () => {
     expect(rendered[0]?.getAttribute("data-callout")).toBe("tip");
     view.destroy();
   });
+
+  for (const key of ["Enter", " "]) {
+    it(`reveals exact callout source from ${key === " " ? "Space" : key}`, () => {
+      const { view, host } = editorFor("intro\n\n> [!note] Title\n> body\n\nafter");
+      const frame = host.querySelector<HTMLElement>(".tl-live-callout-block");
+      expect(frame).not.toBeNull();
+      expect(frame?.tabIndex).toBe(0);
+      expect(frame?.getAttribute("role")).toBe("group");
+      expect(frame?.getAttribute("aria-label")).toContain("Note callout");
+      expect(frame?.getAttribute("aria-keyshortcuts")).toBe("Enter Space");
+      const sourceFrom = Number(frame?.dataset.tlSourceFrom);
+      expect(Number.isInteger(sourceFrom)).toBe(true);
+
+      frame?.focus();
+      const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key });
+      frame?.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(view.state.selection.main.anchor).toBe(sourceFrom);
+      view.destroy();
+    });
+  }
+
   it("keeps task checkboxes inside a rendered callout inert until the source is revealed", () => {
     const { view, host } = editorFor("intro\n\n> [!todo] List\n> - [ ] task in callout\n\nafter");
     const rendered = calloutWidgets(host);
