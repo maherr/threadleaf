@@ -118,11 +118,15 @@ field or schema version.
 
 ## Evidence and provenance
 
-Evidence comes from public API definitions, open file formats, independently written fixtures,
-open-source plugin bundles, and executable behavior tests. Proprietary application code, copied
-assets, decompiled resources, private vault bytes, and network-only observations are excluded.
-Every fixture contribution MUST include a provenance statement and a license. The contribution
-workflow is documented in [contributing.md](contributing.md).
+Evidence that supports a compatibility claim comes from public API definitions, open file formats,
+independently written fixtures, open-source plugin bundles, and executable behavior tests. Copied
+proprietary application code or assets, redistributed extracted material, private vault bytes, and
+network-only observations are excluded from this specification and its fixtures. Private study of
+application internals may inform an independently authored architecture or product design, but it is
+not compatibility evidence and cannot replace an executable behavior test. No extracted
+implementation details are published through this specification. Every fixture contribution MUST
+include a provenance statement and a license. The contribution workflow is documented in
+[contributing.md](contributing.md).
 
 The [conformance report](../data/conformance.v1.json) keeps unsupported and not-verified behavior
 visible. A gap is not a roadmap commitment and must not be rendered as a normative requirement.

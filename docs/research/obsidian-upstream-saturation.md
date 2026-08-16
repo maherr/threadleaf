@@ -270,15 +270,15 @@ distinction pattern already used for the Excalidraw round-trip corpus (byte vs. 
   including the jump to 1.13.7. The format has not drifted even though the host application has.
 - The spec page's content is schema-only; it contains no interaction/UI section. Obsidian's own Canvas
   *view* (drag/drop, grouping gestures, edit affordances) is therefore necessarily outside the open
-  spec's scope by construction, not by an explicit disclaimer found on the page. Any Threadleaf Canvas
-  editor UI must be independently designed against the schema, not derived from Obsidian's
-  implementation, which is proprietary application behavior outside the clean-room boundary.
+  spec's scope by construction, not by an explicit disclaimer found on the page. Threadleaf may study
+  and be strongly inspired by those interaction ideas, while independently authoring its UI and never
+  copying or publishing extracted source expression, implementation details, or assets.
 
-**Disposition**: **Depend.** This is the cleanest seam in the corpus: an MIT-licensed, stable,
-schema-only open format with a single first-party authority and no application code entanglement.
-Implementing `.canvas` read/write directly against the spec is lower-risk than any other seam here.
-The interaction design remains **Reject** for reuse (must be independently designed; nothing to
-depend on or extract from a proprietary UI).
+**Disposition**: **Depend** on the format and **Adapt** interaction ideas through independently
+authored design. This is the cleanest seam in the corpus: an MIT-licensed, stable, schema-only open
+format with a single first-party authority and no application code entanglement. Implementing
+`.canvas` read/write directly against the spec is lower-risk than any other seam here. Proprietary
+source expression, extracted implementation details, and assets remain **Reject** for reuse.
 
 **Open risks**: none that change the **Depend** disposition. Two items worth naming precisely:
 
@@ -583,7 +583,7 @@ seams themselves.
 | Vault/link/frontmatter | Depend (confirmed subset); Extract (Bases as future case category) | Property types and hidden-file rules match live docs exactly; Bases is new, uncovered surface. |
 | Plugin API surface | Depend (confirmed subset); N/A (Bases API) | Manifest and Markdown post-processor contract match; no Threadleaf-side Bases-API consumer exists to evaluate. |
 | Theme/CSS contract | Adapt | No upstream stability guarantee exists, so alias coverage is inherently a re-verify-per-release posture, not a one-time capture. |
-| JSON Canvas | Depend (format); Reject (UI reuse) | MIT, stable two years, schema-only, single first-party authority; the cleanest seam. Interaction design has nothing to depend on. |
+| JSON Canvas | Depend (format); Adapt (interaction ideas); Reject (source/assets) | MIT, stable two years, schema-only, single first-party authority. Independently authored UI may be strongly inspired by studied interaction ideas, but source expression, extracted implementation details, and assets are not reused. |
 | Sync/conflict | Reject (protocol); Extract (conflict-UX validation only) | Proprietary paid service, correctly out of clean-room bounds; documented default behavior validates Threadleaf's already-chosen conservative conflict handling. |
 | Packaging/installer | N/A (RPM); Extract (format-matrix awareness) | No upstream RPM precedent exists to diverge from; installer-format landscape is informative only. |
 
