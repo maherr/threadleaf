@@ -944,7 +944,13 @@ Working $y$`);
             mimeType: target.endsWith("pdf") ? "application/pdf" : null,
             size: 12,
             revision: "f".repeat(64),
-            actions: { open: true, reveal: true, rename: true, move: true, inline: false },
+            actions: {
+              open: target.endsWith("pdf"),
+              reveal: true,
+              rename: true,
+              move: true,
+              inline: false,
+            },
           },
         };
       },
@@ -955,7 +961,12 @@ Working $y$`);
     expect(cards[0]?.textContent).toContain("application/pdf");
     expect(cards[1]?.textContent).toContain("unsupported");
     expect(rendered.querySelectorAll("img, video, audio, iframe")).toHaveLength(0);
-    expect(rendered.querySelectorAll(".preview-attachment-action")).toHaveLength(8);
+    expect(rendered.querySelectorAll(".preview-attachment-action")).toHaveLength(7);
+    expect(
+      rendered.querySelector(
+        '[data-threadleaf-attachment-path="Assets/unknown.bin"][data-threadleaf-attachment-action="open"]',
+      ),
+    ).toBeNull();
     expect(
       [...rendered.querySelectorAll<HTMLElement>(".preview-attachment-action")].filter(
         (button) => button.textContent === "Rename or move",

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -50,6 +51,7 @@ const attachmentPublishUnavailableMessage =
 let child;
 let cdp;
 let exited;
+let nativeReceiverOutput = "";
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -430,6 +432,39 @@ async function waitForReady(deadline) {
   throw new Error("The packaged attachment fixture did not reach Ready.");
 }
 
+async function waitForToast(fragment, deadline) {
+  while (Date.now() < deadline) {
+    const text = await evaluate("document.querySelector('#toast')?.textContent ?? ''");
+    if (text.includes(fragment)) return text;
+    await delay(25);
+  }
+  throw new Error(`The packaged attachment toast did not include ${JSON.stringify(fragment)}.`);
+}
+
+function nativeReceiverEvents() {
+  return nativeReceiverOutput
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("THREADLEAF_NATIVE_ATTACHMENT_RECEIVER "))
+    .map((line) => JSON.parse(line.slice("THREADLEAF_NATIVE_ATTACHMENT_RECEIVER ".length)));
+}
+
+async function waitForNativeReceiver(action, absolutePath, deadline) {
+  const pathSha256 = createHash("sha256").update(absolutePath, "utf8").digest("hex");
+  while (Date.now() < deadline) {
+    const event = nativeReceiverEvents().find(
+      (candidate) =>
+        candidate.version === 1 &&
+        candidate.action === action &&
+        candidate.pathSha256 === pathSha256,
+    );
+    if (event) return event;
+    await delay(25);
+  }
+  throw new Error(
+    `The packaged main process did not receive ${action} for the exact canonical attachment path.`,
+  );
+}
+
 async function setTheme(theme) {
   const current = await evaluate("document.documentElement.dataset.theme");
   if (current !== theme) {
@@ -694,7 +729,11 @@ try {
     ],
     {
       cwd: appRoot,
-      env: { ...process.env, ELECTRON_OZONE_PLATFORM_HINT: "x11" },
+      env: {
+        ...process.env,
+        ELECTRON_OZONE_PLATFORM_HINT: "x11",
+        THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER: "stdout-v1",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -704,8 +743,10 @@ try {
   const output = [];
   for (const stream of [child.stdout, child.stderr]) {
     stream.on("data", (chunk) => {
-      output.push(String(chunk));
+      const text = String(chunk);
+      output.push(text);
       if (output.length > 100) output.shift();
+      nativeReceiverOutput = `${nativeReceiverOutput}${text}`.slice(-64 * 1024);
     });
   }
 
@@ -741,7 +782,10 @@ try {
     actionCount: card.querySelectorAll('.preview-attachment-action').length,
   })))()`);
   assert(
-    cardState.length === 3 && cardState.every((card) => card.actionCount === 4),
+    cardState.length === 3 &&
+      cardState.find((card) => card.path === "Assets/report.pdf")?.actionCount === 4 &&
+      cardState.find((card) => card.path === "Assets/audio.mp3")?.actionCount === 4 &&
+      cardState.find((card) => card.path === "Assets/unknown.bin")?.actionCount === 3,
     "Attachment cards lost open/reveal/rename/publication metadata.",
   );
   assert(
@@ -758,6 +802,15 @@ try {
   );
   assert(
     (await evaluate(
+      `document.querySelector('[data-threadleaf-attachment-path="Assets/unknown.bin"] [data-threadleaf-attachment-action="open"]') === null`,
+    )) === true &&
+      (await evaluate(
+        `document.querySelector('[data-threadleaf-attachment-path="Assets/unknown.bin"] [data-threadleaf-attachment-action="reveal"]') !== null`,
+      )) === true,
+    "Unknown bytes were not restricted to the safe native Reveal action.",
+  );
+  assert(
+    (await evaluate(
       "document.querySelectorAll('.preview-attachment-card img, .preview-attachment-card iframe, .preview-attachment-card video, .preview-attachment-card audio').length",
     )) === 0,
     "The attachment card exposed an inline executable/media element.",
@@ -765,11 +818,20 @@ try {
   await clickPointer(
     '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="open"]',
   );
-  assert(
-    (await evaluate("document.querySelector('#toast')?.textContent ?? ''")).includes(
-      "Opening local attachments is not enabled yet",
-    ),
-    "The packaged Open attachment affordance was not inert.",
+  await waitForToast("Opened Assets/report.pdf.", Date.now() + 5_000);
+  await waitForNativeReceiver(
+    "open",
+    await fs.realpath(path.join(vaultPath, "Assets", "report.pdf")),
+    Date.now() + 5_000,
+  );
+  await clickPointer(
+    '[data-threadleaf-attachment-path="Assets/unknown.bin"] [data-threadleaf-attachment-action="reveal"]',
+  );
+  await waitForToast("Asked your file manager to reveal Assets/unknown.bin.", Date.now() + 5_000);
+  await waitForNativeReceiver(
+    "reveal",
+    await fs.realpath(path.join(vaultPath, "Assets", "unknown.bin")),
+    Date.now() + 5_000,
   );
   assert(
     (await fs.readFile(notePath, "utf8")) === originalNote,
@@ -1148,6 +1210,8 @@ try {
       exactBytes: true,
       attachmentMove: true,
       attachmentRename: true,
+      nativeAttachmentOpen: true,
+      nativeAttachmentRevealDispatch: true,
       canvasReferenceRewrite: true,
       unsafeCanvasBlocker: true,
       changedPixels,

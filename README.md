@@ -407,9 +407,14 @@ background references join the same recoverable transaction. Threadleaf replaces
 JSON string tokens, preserving BOM, line endings, formatting, unknown fields, number spellings, and
 all unrelated bytes. Malformed, unreadable, oversized, duplicate-keyed, invalidly encoded, or
 otherwise unprovable Canvas files block source removal. Every Canvas revision remains bound into the
-confirmed operation. Open and Reveal attachment affordances remain inert until a native capability
-is separately reviewed. The packaged gate exercises metadata cards for PDF-signature, MP3-signature,
-and unknown-byte fixtures, then proves source-retaining publication and source-removing rename with
+confirmed operation. The reviewed native capability now binds Open and Reveal to the active vault,
+canonical contained path, and exact card revision. Reveal works for every safely inspected file;
+Open requires its sniffed bytes and both requested and canonical suffixes to agree with an approved
+non-launcher document or media class. Unknown or mismatched files remain revealable, and the
+renderer never receives an absolute path, file URL, shell handle, or native error detail. The
+packaged gate exercises metadata cards for PDF-signature, MP3-signature, and unknown-byte fixtures,
+observes exact canonical-path hashes at the main receiver for real Open and Reveal clicks, then
+proves source-retaining publication and source-removing rename with
 exact attachment, Markdown, and Canvas bytes. It makes no broader attachment format support claim.
 Ctrl/Cmd+N opens the New note dialog
 and selects the resulting empty Markdown note for editing.
@@ -506,7 +511,8 @@ THREADLEAF_PROPERTY_SCREENSHOT_DIR=/tmp/threadleaf-property-visual pnpm run test
 
 The packaged attachment gate uses an explicit X11 Xvfb display, a dedicated Electron profile and
 fixture vault, and real CDP pointer and keyboard input with hit-target checks. It exercises
-source-retaining publication, a visible unsafe-Canvas blocker, and a completed source-removing rename
+vault-bound native Open and Reveal through an exact-path-hash main receiver, unknown-byte Open
+refusal, source-retaining publication, a visible unsafe-Canvas blocker, and a completed source-removing rename
 with visible Canvas reference previews plus exact source, target, Markdown, and Canvas bytes. Every
 run captures dark, light, and positive-control screenshots and checks that the positive control
 changes pixels; only a completed gate run is packaged UI evidence. Set the screenshot directory to

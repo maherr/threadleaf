@@ -137,9 +137,12 @@ when vault or inventory identity changes. See
 
 Local non-note embeds are resolved only inside the active vault. A bounded read classifies PDFs,
 common documents, audio, video, text, archives, and unknown bytes by magic bytes, never by filename
-extension. The reading view shows metadata and explicit open/reveal affordances without injecting
-bytes into an executable or media element. Relative Markdown links and wiki embeds are rewritten
-by the recoverable attachment publication planner, with one shared local-target parser, exact query and
+extension. The reading view shows metadata and explicit native actions without injecting bytes
+into an executable or media element. Reveal is available after exact vault, path, containment,
+regular-file, size, and revision validation. Open additionally requires the sniffed bytes and both
+the requested and canonical suffixes to agree with an approved non-launcher class. Relative
+Markdown links and wiki embeds are rewritten by the recoverable attachment publication planner,
+with one shared local-target parser, exact query and
 fragment preservation, case/NFC-aware source and duplicate-basename refusal, and revision-bound
 external-edit conflicts. Media metadata probes use a fast seek, one-second bounded
 sampling, capped output, and a kill deadline; no arbitrary decode is part of offline reading view.
@@ -218,8 +221,13 @@ for a PDF-signature file, an MP3-signature file, and unknown bytes; its move byt
 uses the PDF-signature fixture only. It makes no broader attachment format support claim. Its gate
 requires explicit X11 Xvfb, a dedicated profile and vault, real CDP pointer and keyboard input,
 hit-target checks, mandatory light/dark/positive-control screenshots, and a pixel-changing positive
-control before a completed run can count as packaged evidence. Open and Reveal remain inert until a
-separately reviewed native capability is implemented.
+control before a completed run can count as packaged evidence. The same gate clicks native Open
+and Reveal, requires a main-process receiver event carrying the exact canonical-path hash rather
+than trusting a toast, confirms unknown bytes have Reveal but no Open, preserves every fixture byte,
+and renders the truthful Reveal-dispatch receipt in both themes. Electron Open success is based on
+its empty result string; Reveal is reported only as dispatched because its native API returns no
+completion receipt. See
+[vault-bound native attachment actions](../research/native-attachment-actions-2026-08-16.md).
 
 The Excalidraw-specific public-format extension lives in
 [Excalidraw round-trip boundary](excalidraw-roundtrip.md). It adds native `.excalidraw` JSON,

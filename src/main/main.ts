@@ -11,6 +11,7 @@ import {
   type OpenDialogOptions,
   type SaveDialogOptions,
   screen,
+  shell,
   type WebContents,
   type WebContentsView,
 } from "electron";
@@ -19,6 +20,10 @@ import { AppSettingsController } from "../application/app-settings-controller";
 import { AppUpdateController } from "../application/app-update-controller";
 import { parseEditorDraft } from "../application/editor-draft";
 import { NoteBookmarkController } from "../application/note-bookmarks";
+import {
+  performVaultAttachmentNativeAction,
+  type VaultAttachmentShellPort,
+} from "../application/vault-attachment-native-action";
 import { parseVaultGraphRequest } from "../application/vault-graph";
 import { WorkspaceController } from "../application/workspace-controller";
 import { atomicWriteFile, readStableFile } from "../kernel/durability";
@@ -51,6 +56,7 @@ import {
   type PluginSurfaceBounds,
   type PluginUpdateResponse,
   type RuntimeSnapshot,
+  type VaultAttachmentNativeActionRequest,
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettings } from "../shared/key-bindings";
@@ -921,6 +927,36 @@ function isMainRendererSender(webContents: WebContents): boolean {
       webContents === mainWindow.webContents,
   );
 }
+
+function createVaultAttachmentShellPort(): VaultAttachmentShellPort {
+  const diagnosticReceiver =
+    process.env.THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER === "stdout-v1" &&
+    process.argv.some((argument) => argument.startsWith("--remote-debugging-port="));
+  if (diagnosticReceiver) {
+    const report = (action: "open" | "reveal", absolutePath: string): void => {
+      console.log(
+        `THREADLEAF_NATIVE_ATTACHMENT_RECEIVER ${JSON.stringify({
+          version: 1,
+          action,
+          pathSha256: createHash("sha256").update(absolutePath, "utf8").digest("hex"),
+        })}`,
+      );
+    };
+    return {
+      openPath: async (absolutePath) => {
+        report("open", absolutePath);
+        return "";
+      },
+      showItemInFolder: (absolutePath) => report("reveal", absolutePath),
+    };
+  }
+  return {
+    openPath: (absolutePath) => shell.openPath(absolutePath),
+    showItemInFolder: (absolutePath) => shell.showItemInFolder(absolutePath),
+  };
+}
+
+const vaultAttachmentShell = createVaultAttachmentShellPort();
 
 function parseAutosaveFlushResult(value: unknown): AutosaveFlushResult {
   if (
@@ -2765,6 +2801,41 @@ function registerIpcHandlers(): void {
       return workspaceController.loadVaultAttachment(sourceNotePath, target, expectedVaultId);
     },
   );
+  ipcMain.handle(ipcChannels.vaultAttachmentNativeAction, (event, request: unknown) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Native attachment actions are available only to the owned main renderer.");
+    }
+    if (
+      typeof request !== "object" ||
+      request === null ||
+      !("action" in request) ||
+      (request.action !== "open" && request.action !== "reveal") ||
+      !("path" in request) ||
+      typeof request.path !== "string" ||
+      !("expectedRevision" in request) ||
+      typeof request.expectedRevision !== "string" ||
+      !("expectedVaultId" in request) ||
+      typeof request.expectedVaultId !== "string"
+    ) {
+      throw new Error(
+        "Native attachment action requires typed action, path, revision, and vault values.",
+      );
+    }
+    const vaultId = workspaceController.vaultId;
+    const vaultPath = workspaceController.vaultPath;
+    return performVaultAttachmentNativeAction(
+      {
+        vaultId,
+        vaultPath,
+        getActiveVault: () => ({
+          vaultId: workspaceController.vaultId,
+          vaultPath: workspaceController.vaultPath,
+        }),
+      },
+      request as VaultAttachmentNativeActionRequest,
+      vaultAttachmentShell,
+    );
+  });
   ipcMain.handle(
     ipcChannels.loadVaultFilePreview,
     (event, filePath: unknown, expectedVaultId: unknown, expectedInventoryGeneration: unknown) => {

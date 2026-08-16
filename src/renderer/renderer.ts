@@ -3061,7 +3061,7 @@ async function openAttachmentMoveDialog(
   });
 }
 
-function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): void {
+async function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): Promise<void> {
   const action = actionButton.dataset.threadleafAttachmentAction;
   const target = actionButton.dataset.threadleafAttachmentPath;
   if (!target) {
@@ -3081,14 +3081,38 @@ function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): void 
     return;
   }
   if (action !== "open" && action !== "reveal") return;
-  // The card deliberately exposes the safe action metadata without granting a
-  // renderer-originated shell/network capability.  A future native bridge can
-  // consume these data attributes without changing the byte-preserving loader.
-  showToast(
-    action === "open"
-      ? `Opening local attachments is not enabled yet: ${target}`
-      : `Revealing local attachments is not enabled yet: ${target}`,
-  );
+  const card = actionButton.closest<HTMLElement>(".preview-attachment-card");
+  const expectedRevision = card?.dataset.threadleafAttachmentRevision;
+  const expectedVaultId = loadedVaultId;
+  if (!expectedRevision || !expectedVaultId) {
+    showToast("This attachment card is no longer current. Refresh Reading view and try again.");
+    return;
+  }
+  actionButton.disabled = true;
+  try {
+    const response = await window.threadleaf.runVaultAttachmentNativeAction({
+      action,
+      path: target,
+      expectedRevision,
+      expectedVaultId,
+    });
+    if (loadedVaultId !== expectedVaultId || !actionButton.isConnected) return;
+    if (response.status === "opened") {
+      showToast(`Opened ${response.path}.`);
+    } else if (response.status === "reveal-dispatched") {
+      showToast(`Asked your file manager to reveal ${response.path}.`);
+    } else if (response.status === "stale-vault") {
+      showToast("The active vault changed before the attachment action completed.");
+    } else {
+      showToast(response.message);
+    }
+  } catch (error) {
+    if (loadedVaultId === expectedVaultId && actionButton.isConnected) {
+      showToast(ipcErrorMessage(error));
+    }
+  } finally {
+    if (actionButton.isConnected) actionButton.disabled = false;
+  }
 }
 
 async function runCompatibilityCommand(commandId: string): Promise<void> {
@@ -12824,7 +12848,7 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
     }
     const attachmentAction = event.target.closest<HTMLButtonElement>(".preview-attachment-action");
     if (attachmentAction) {
-      activatePreviewAttachmentAction(attachmentAction);
+      void activatePreviewAttachmentAction(attachmentAction);
       return;
     }
     const canvasOpen = event.target.closest<HTMLButtonElement>(".preview-canvas-embed-open");

@@ -19,6 +19,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `always`, `ask`, and `never` link-update policy, exact rewrite previews, recoverable compound
   transactions, complete Markdown and JSON Canvas reference-corpus receipts, byte-local Canvas file
   and group-background reference rewrites, and visible refusal when Canvas safety cannot be proved.
+- Added vault-bound native **Open** and **Reveal** attachment actions with owned-renderer IPC,
+  canonical containment, exact-revision and bounded-read validation, byte-and-suffix Open approval,
+  unknown-byte Reveal fallback, redacted native failures, and packaged main-receiver proof.
 
 ### Changed
 

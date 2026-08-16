@@ -120,17 +120,17 @@ describe("bounded attachment detection", () => {
 
   it("returns metadata and open/reveal affordances without inline executable bytes", async () => {
     const bytes = Buffer.from("%PDF-1.7\nfixture", "ascii");
-    await fs.writeFile(path.join(vaultPath, "Assets", "report.bin"), bytes);
+    await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), bytes);
     const response = await loadVaultAttachment(
       kernel,
       "Notes/Current.md",
-      "../Assets/report.bin",
+      "../Assets/report.pdf",
       kernel.vaultId,
     );
     expect(response).toMatchObject({
       status: "ready",
       attachment: {
-        path: "Assets/report.bin",
+        path: "Assets/report.pdf",
         kind: "pdf",
         mimeType: "application/pdf",
         size: bytes.length,
@@ -138,6 +138,19 @@ describe("bounded attachment detection", () => {
       },
     });
     expect(response.status === "ready" && "base64" in response.attachment).toBe(false);
+
+    await fs.writeFile(path.join(vaultPath, "Assets", "disguised.desktop"), bytes);
+    await expect(
+      loadVaultAttachment(
+        kernel,
+        "Notes/Current.md",
+        "../Assets/disguised.desktop",
+        kernel.vaultId,
+      ),
+    ).resolves.toMatchObject({
+      status: "ready",
+      attachment: { actions: { open: false, reveal: true } },
+    });
   });
 
   it("uses Obsidian relative-first and vault-root fallback resolution for nested attachments", async () => {

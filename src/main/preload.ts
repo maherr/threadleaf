@@ -40,6 +40,8 @@ import type {
   PluginUpdateResponse,
   RuntimeSnapshot,
   ThreadleafBridge,
+  VaultAttachmentNativeActionRequest,
+  VaultAttachmentNativeActionResponse,
   VaultAttachmentResponse,
   VaultFilePreviewResponse,
   VaultGraphRequest,
@@ -315,6 +317,11 @@ const bridge: ThreadleafBridge = {
       target,
       expectedVaultId,
     ) as Promise<VaultAttachmentResponse>,
+  runVaultAttachmentNativeAction: (request: VaultAttachmentNativeActionRequest) =>
+    ipcRenderer.invoke(
+      ipcChannels.vaultAttachmentNativeAction,
+      request,
+    ) as Promise<VaultAttachmentNativeActionResponse>,
   loadVaultFilePreview: (path, expectedVaultId, expectedInventoryGeneration) =>
     ipcRenderer.invoke(
       ipcChannels.loadVaultFilePreview,

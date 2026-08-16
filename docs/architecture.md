@@ -675,9 +675,10 @@ Obsidian-style wiki embeds first become inert placeholders. A dedicated read-onl
 replace raster placeholders with sniffed PNG, JPEG, GIF, or WebP bytes. A separate attachment
 service resolves local non-note embeds by contained path, bounded stable read, and magic bytes
 instead of trusting a filename extension. PDF, audio, video, document, text, archive, and unknown
-bytes become metadata cards with explicit open/reveal affordances; no attachment payload is injected
-as executable or inline media content, and those affordances remain inert until a future native
-shell capability is reviewed. A separate note-embed service resolves indexed Markdown identities
+bytes become metadata cards with explicit native actions; no attachment payload is injected as
+executable or inline media content. Reveal remains available for every safely inspected file. Open
+requires agreement between byte-sniffed content and an allowlisted non-launcher suffix on both
+the requested and canonical paths. A separate note-embed service resolves indexed Markdown identities
 and extracts either the whole note, one heading through its descendants, or one block ID. It
 returns exact path, revision, source range, content bytes, and nested-link summaries. The renderer
 sanitizes every returned fragment through the same Markdown pipeline, then recursively hydrates its
@@ -706,8 +707,10 @@ preflight and post-mutation check, not an atomic lock against arbitrary external
 observed after the final preflight drives exact journaled rollback or a manual conflict, preserving
 surviving bytes and never silently retiring a pending transaction. Attachment operations do not
 remap note tabs or bookmarks, because those state entries identify Markdown notes rather than
-attachment references. Open and Reveal remain inert until a reviewed native capability is
-available.
+attachment references. Open and Reveal cross one main-renderer-only, vault-identity- and
+revision-bound native capability. It returns only vault-relative typed receipts: Open reports
+success after Electron's result string is empty, while Reveal truthfully reports only that the file
+manager request was dispatched because the OS API has no completion receipt.
 
 Reference-style ordinary links and images share one source-evidence gate. A visible, single
 definition that resolves to the source may be rewritten once. A source-only, opaque, unresolved,
@@ -730,6 +733,17 @@ ancestry set stops cycles while allowing finite same-note section embeds.
 Oversized, missing, ambiguous, external, malformed, unsupported, stale-vault, and out-of-vault
 targets remain labeled placeholders. SVG and unsupported non-note wiki embeds remain inert.
 External links also stay inert during beta rather than broadening IPC for shell access prematurely.
+
+Native attachment actions do not reuse external-link or generic shell authority. Their handler
+accepts only the owned main renderer and one typed `{ action, path, expectedRevision,
+expectedVaultId }` request. It canonicalizes the relative path inside the captured active vault,
+rejects hidden/private paths and special files, repeats the 16 MiB stable read and exact revision
+check, and rechecks the active vault immediately before dispatch. A contained leaf symlink is sent
+as its canonical target; an outside or hidden target fails closed. No absolute path, file URL,
+native error detail, or shell handle crosses back to the renderer. The final read is a conservative
+preflight, not an atomic lock against an unrelated same-user writer replacing a path before an
+external application consumes it. The research and proof record is
+[vault-bound native attachment actions](research/native-attachment-actions-2026-08-16.md).
 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized

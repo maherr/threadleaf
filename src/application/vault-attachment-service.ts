@@ -75,6 +75,50 @@ export interface SniffedAttachmentType {
   mimeType: string;
 }
 
+const nativeOpenSuffixes: Readonly<Record<string, readonly string[]>> = {
+  "image/png": [".png"],
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/gif": [".gif"],
+  "image/webp": [".webp"],
+  "application/pdf": [".pdf"],
+  "application/rtf": [".rtf"],
+  "application/zip:document": [".docx", ".xlsx", ".pptx"],
+  "application/zip:archive": [".zip"],
+  "audio/mpeg": [".mp3"],
+  "audio/flac": [".flac"],
+  "audio/ogg": [".ogg", ".oga"],
+  "audio/wav": [".wav"],
+  "audio/mp4": [".m4a", ".m4b"],
+  "video/x-msvideo": [".avi"],
+  "video/webm": [".webm"],
+  "video/mp4": [".mp4", ".m4v", ".mov"],
+  "text/plain": [".txt", ".text", ".csv", ".tsv", ".json", ".yaml", ".yml", ".toml", ".log"],
+};
+
+/**
+ * Native Open is narrower than passive metadata inspection. Both bounded bytes
+ * and the suffix seen by the operating system must identify a non-launcher
+ * document class; every other contained file remains eligible for Reveal.
+ */
+export function isVaultAttachmentNativeOpenEligible(
+  relativePath: string,
+  detected: SniffedAttachmentType | null,
+): boolean {
+  if (!detected) return false;
+  let normalizedPath: string;
+  try {
+    normalizedPath = normalizeVaultPath(relativePath);
+  } catch {
+    return false;
+  }
+  const suffix = path.posix.extname(normalizedPath).toLocaleLowerCase("en-US");
+  const key =
+    detected.mimeType === "application/zip"
+      ? `${detected.mimeType}:${detected.kind}`
+      : detected.mimeType;
+  return nativeOpenSuffixes[key]?.includes(suffix) ?? false;
+}
+
 interface ResolvedAttachmentTarget {
   status: "resolved";
   path: string;
@@ -440,7 +484,15 @@ export async function loadVaultAttachment(
     mimeType: sniffed?.mimeType ?? null,
     size: result.snapshot.size,
     revision: result.snapshot.revision,
-    actions: { open: true, reveal: true, rename: true, move: true, inline: false },
+    actions: {
+      open:
+        isVaultAttachmentNativeOpenEligible(attachmentPath, sniffed) &&
+        isVaultAttachmentNativeOpenEligible(canonicalPath, sniffed),
+      reveal: true,
+      rename: true,
+      move: true,
+      inline: false,
+    },
   };
   return { status: "ready", vaultId: reader.vaultId, attachment };
 }

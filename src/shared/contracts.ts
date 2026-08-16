@@ -1210,6 +1210,38 @@ export type VaultAttachmentResponse =
     }
   | { status: "stale-vault"; vaultId: string };
 
+export type VaultAttachmentNativeAction = "open" | "reveal";
+
+export interface VaultAttachmentNativeActionRequest {
+  action: VaultAttachmentNativeAction;
+  path: string;
+  expectedRevision: string;
+  expectedVaultId: string;
+}
+
+export type VaultAttachmentNativeActionUnavailableReason =
+  | "invalid"
+  | "private"
+  | "missing"
+  | "outside-vault"
+  | "not-file"
+  | "too-large"
+  | "stale-revision"
+  | "unsupported"
+  | "unreadable"
+  | "native-failed";
+
+export type VaultAttachmentNativeActionResponse =
+  | { status: "opened"; vaultId: string; path: string }
+  | { status: "reveal-dispatched"; vaultId: string; path: string }
+  | {
+      status: "unavailable";
+      vaultId: string;
+      reason: VaultAttachmentNativeActionUnavailableReason;
+      message: string;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
 export type VaultFilePreviewUnavailableReason =
   | "invalid"
   | "private"
@@ -1449,6 +1481,9 @@ export interface ThreadleafBridge {
     target: string,
     expectedVaultId: string,
   ): Promise<VaultAttachmentResponse>;
+  runVaultAttachmentNativeAction(
+    request: VaultAttachmentNativeActionRequest,
+  ): Promise<VaultAttachmentNativeActionResponse>;
   loadVaultFilePreview(
     path: string,
     expectedVaultId: string,
