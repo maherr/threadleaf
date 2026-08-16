@@ -36,6 +36,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Aligned current release documentation and default extension-porting report metadata with
+  `package.json` version 0.1.0-beta.6.
 - Required the real Excalidraw canvas to be visible after detach, reattach, and pop-out crash
   recovery before accepting screenshots, eliminating placeholder-only visual false positives.
 - Made the canonical Electron Live Preview gate wait for completed pane actions and explicitly

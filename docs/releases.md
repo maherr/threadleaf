@@ -1,6 +1,6 @@
 # Release engineering
 
-Threadleaf 0.1.0-beta.3 is a maintainer-led daily-drive beta. Native contributor lanes create
+Threadleaf 0.1.0-beta.6 is a maintainer-led daily-drive beta. Native contributor lanes create
 unsigned Linux x64, macOS ARM64 and x64, and Windows x64 artifacts. These remain contributor builds,
 not signed public releases. A separate manual workflow fails closed unless Windows signing and
 Apple Developer ID plus notarization credentials are present. Nothing publishes automatically.
@@ -241,7 +241,7 @@ changes.
 On Fedora, the built RPM can be exercised through the same contract after installation:
 
 ```sh
-sudo dnf install ./release/Threadleaf-0.1.0-beta.3-linux-x86_64.rpm
+sudo dnf install ./release/Threadleaf-0.1.0-beta.6-linux-x86_64.rpm
 THREADLEAF_PACKAGED_EXECUTABLE=/opt/Threadleaf/threadleaf \
   THREADLEAF_PACKAGED_SCREENSHOT_DIR=/tmp/threadleaf-installed-visual \
   xvfb-run -a node scripts/check-packaged-app.mjs
