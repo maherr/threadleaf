@@ -11,82 +11,82 @@
   "cases": {
     "workspace-live-dark": {
       "path": "workspace-live-dark.png",
-      "sha256": "e0544f6decb525dd820d5e215b7e199797c1667abd91567a78e90097cbe7f819",
+      "sha256": "7a167eeee2d24d9210c90ed4947c9959982225f2d119235a706397ec2f0d7755",
       "dimensions": [1180, 820]
     },
     "workspace-source-light": {
       "path": "workspace-source-light.png",
-      "sha256": "9a0c5f69d286e3fd15714b4f88d47f11cebb1256bd8023a4ebc76e1e65a00a23",
+      "sha256": "dc2ca925bcb11fd69b8cd57a0630889385071bb285242924ee061eb3482a1414",
       "dimensions": [1180, 820]
     },
     "workspace-reading-light": {
       "path": "workspace-reading-light.png",
-      "sha256": "d90d0976591c20a6561e77408fd274632a7303b08b31f8672d83f897030b6958",
+      "sha256": "122657e3de1c33bca49b5623627df63f319cfc6bf63c240d0ba634cf4cdccc2d",
       "dimensions": [1180, 820]
     },
     "settings-appearance-dark": {
       "path": "settings-appearance-dark.png",
-      "sha256": "c8fb1246a27001c77bc0ee6ce0b96594c2669cc0a9e2b99cb2a782e03fadd197",
+      "sha256": "12dc65e516e89026394916b029d87005fa186086d37068e62ee7c78ee558ce5d",
       "dimensions": [1180, 820]
     },
     "settings-plugin-diagnostics-light": {
       "path": "settings-plugin-diagnostics-light.png",
-      "sha256": "8d07bf5472c56f10dddf604e04a5c4ac392db55fb886e576f24c1acdcbd4691b",
+      "sha256": "e71e026e43b081376bfc4b53a09c6c56aa832bdbca41c17077a913335bb99d93",
       "dimensions": [1180, 820]
     },
     "accessibility-high-contrast-dark": {
       "path": "accessibility-high-contrast-dark.png",
-      "sha256": "04e304bf92fba2ff1be223cfd4cfa60fcfb34e88775c8bbd84e720850f3580cd",
+      "sha256": "366bbb8b40d610def43cb56042c103459f055e36799627142cadb922855007fd",
       "dimensions": [1180, 820]
     },
     "command-palette-light": {
       "path": "command-palette-light.png",
-      "sha256": "1aebcdd98f81e15c144123b37f485bd1f8c7d9aae55cb88dd5936f8cdd4fb270",
+      "sha256": "d29768e80b83b4121210b35aa011f7ccd4648ef6e77ff6cefaf1c5dc9353ff02",
       "dimensions": [1180, 820]
     },
     "split-pinned-dark": {
       "path": "split-pinned-dark.png",
-      "sha256": "2f0d7cf649b437a797ee4ad8a41c48fdafd18d449588b7a17b3be7980378f850",
+      "sha256": "7f8d77dfdfe74c01adad600dc3ff931c4d0675ac855c11c95976bc7eee995adc",
       "dimensions": [1180, 820]
     },
     "graph-dark": {
       "path": "graph-dark.png",
-      "sha256": "e2316758efea1b566f32dc2dae840de64a098d6e745a2ce16539fc5dcd61c3a8",
+      "sha256": "d828a1197cd69f241c47adfa2907bdec4617f58c7e91dcd2d521ea37928c6bcb",
       "dimensions": [1180, 820]
     },
     "recovery-light": {
       "path": "recovery-light.png",
-      "sha256": "3b02731ea84bb4c65e4c79d007e9f703ff3b55a5c61494c6f91b909d7522c648",
+      "sha256": "6fe3fdfa0521a0a51bea5090bf74430077c8072454577efd88f084eaf83611eb",
       "dimensions": [1180, 820]
     },
     "empty-note-light": {
       "path": "empty-note-light.png",
-      "sha256": "6d51b618c0633811700f5991ab31d25535efd413bba3a8c4a58bf9f7b897bb8f",
+      "sha256": "94a87f2317640ac91573b8f8ecf949a288f94a38ab58cfb08b2863a4b1b9cabf",
       "dimensions": [1180, 820]
     },
     "missing-link-dark": {
       "path": "missing-link-dark.png",
-      "sha256": "53d694e16d13fe7e0e869e61c2ad7b7107eca54b1a7d50f78784a78ac6835847",
+      "sha256": "fa6fd86d25268cbd020922408a364055b5eedfc3f99d33b97032e2a9b531c476",
       "dimensions": [1180, 820]
     },
     "long-text-dark": {
       "path": "long-text-dark.png",
-      "sha256": "19b6238c06c60f3a9ec2b8a78ea680bbed5456327605d3e241f0e7f22c1c7476",
+      "sha256": "49de94faab534d1a1851a0ee8f5a8a055e578bce944cf19f784a82d20cda7a38",
       "dimensions": [1180, 820]
     },
     "minimum-light": {
       "path": "minimum-light.png",
-      "sha256": "2f2fde27d8f4906d496d5a063a1cc066a7cfedc110d22dc4ea00e822107ba362",
+      "sha256": "3c8dc5d6caa2f9be9424e2d3e9c8cd0f351fee059d16e231b3e43ccc0f6a6a93",
       "dimensions": [860, 640]
     },
     "high-dpi-dark": {
       "path": "high-dpi-dark.png",
-      "sha256": "1ffec22dea1da72226df16250181f531dae243b86ca0a0c663ce201e3c598512",
+      "sha256": "6bdd5e0fa908119628431d754cdc48fb7285047f4ef3b5a7403205bc1f353ca9",
       "dimensions": [2360, 1640]
     },
     "zoom-125-light": {
       "path": "zoom-125-light.png",
-      "sha256": "f4dcd6787100bff6f288dc4dc6563396ff82137150e405c3fd170a2437dcbeb4",
+      "sha256": "312bd51491172170723082ea48a0af511a3b82cd63fe803cfa8655e9d867ca3a",
       "dimensions": [1180, 820]
     }
   }

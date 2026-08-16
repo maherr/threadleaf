@@ -1,6 +1,6 @@
 {
   "name": "threadleaf",
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "private": true,
   "type": "module",
   "description": "An open runtime for local Markdown vaults and community plugins.",

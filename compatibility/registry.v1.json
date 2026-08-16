@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": "scripts/generate-plugin-compatibility-registry.mjs",
-  "threadleafVersion": "0.1.0-beta.6",
+  "threadleafVersion": "0.1.0-beta.7",
   "entries": [
     {
       "plugin": {
@@ -12,7 +12,7 @@
         "license": "AGPL-3.0",
         "bundleSha256": "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6"
       },
-      "threadleafVersion": "0.1.0-beta.6",
+      "threadleafVersion": "0.1.0-beta.7",
       "lastTested": "2026-08-16",
       "compatibilityLevel": 0,
       "summary": "An exact reviewed authority profile now permits sealed construction for this release, and historical workflow gates passed, but the required production Electron receipt was not regenerated under the current evidence policy, so current compatibility evidence remains Level 0.",
@@ -126,7 +126,7 @@
         "license": "AGPL-3.0",
         "bundleSha256": "b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a"
       },
-      "threadleafVersion": "0.1.0-beta.6",
+      "threadleafVersion": "0.1.0-beta.7",
       "lastTested": "2026-08-16",
       "compatibilityLevel": 2,
       "summary": "The exact 2.26.4 package passed reviewed-profile matching, content-addressed sealed construction, plugin onload, Settings convergence, clean process-restart reconstruction, revocation and unload, plus a current packaged Linux drawing edit, create, embed, SVG and PNG export, pop-out recovery, vault-switch, unload-reload, and restart workflow. The published level remains 2 because no controller-finalized Level 4 receipt exists.",
@@ -206,7 +206,7 @@
         "license": "AGPL-3.0-or-later",
         "bundleSha256": "8450949c0c1989d68810b8e4d70c79bfd3e80cbf590785154a80baedd3860788"
       },
-      "threadleafVersion": "0.1.0-beta.6",
+      "threadleafVersion": "0.1.0-beta.7",
       "lastTested": "2026-08-15",
       "compatibilityLevel": 0,
       "summary": "Historical fixture workflows passed, but no reviewed authority profile currently permits construction, so current compatibility evidence is Level 0.",

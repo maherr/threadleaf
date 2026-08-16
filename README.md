@@ -13,7 +13,7 @@ Pressroom and Lampside themes grounded in the structure of a hand-bound working 
 
 ## Status
 
-Threadleaf 0.1.0-beta.6 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
+Threadleaf 0.1.0-beta.7 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
 proof loads an unchanged CommonJS fixture
 plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
 command, and exercises that command through a dedicated Electron compatibility renderer. The

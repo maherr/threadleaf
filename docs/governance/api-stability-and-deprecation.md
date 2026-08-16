@@ -8,7 +8,7 @@ itself 1.0 (the roadmap's own
 
 ## Everything is pre-1.0
 
-Threadleaf is `0.1.0-beta.6` ([`package.json`](../../package.json)).
+Threadleaf is `0.1.0-beta.7` ([`package.json`](../../package.json)).
 [`CHANGELOG.md`](../../CHANGELOG.md) states that the project "uses Semantic Versioning... once public
 releases begin," meaning SemVer is not strictly in force yet. Read every "stable" claim below as
 "governed by an explicit, versioned contract that changes deliberately and is recorded in the

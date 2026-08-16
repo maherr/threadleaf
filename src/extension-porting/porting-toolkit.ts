@@ -48,7 +48,7 @@ const supportedPackageEntries = new Set(["manifest.json", "main.js", "styles.css
  * version: see the `PluginPackageInspectionOptions.appVersion` doc comment in
  * plugin-package-inspection.ts for why that comparison was removed there.
  */
-const defaultPortingAppVersion = "0.1.0-beta.6";
+const defaultPortingAppVersion = "0.1.0-beta.7";
 
 export type PortingDiagnosticSeverity = "info" | "warning" | "error";
 
