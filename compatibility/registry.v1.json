@@ -15,7 +15,7 @@
       "threadleafVersion": "0.1.0-beta.6",
       "lastTested": "2026-08-16",
       "compatibilityLevel": 0,
-      "summary": "Historical workflow gates passed for this exact release, but no reviewed authority profile currently permits construction, so current compatibility evidence is Level 0.",
+      "summary": "An exact reviewed authority profile now permits sealed construction for this release, and historical workflow gates passed, but the required production Electron receipt was not regenerated under the current evidence policy, so current compatibility evidence remains Level 0.",
       "evidenceMode": "composed",
       "requiredCapabilities": [
         "vault-read",
@@ -111,10 +111,78 @@
       ],
       "failures": [],
       "limitations": [
-        "No reviewed authority profile currently binds this exact package identity; construction is denied with authority-profile-missing.",
+        "The exact reviewed authority profile binds this package, but no current controller-finalized production Electron receipt exists for it.",
         "Inline wiki-embed rendering and export formats beyond SVG and PNG are not verified.",
         "The official Obsidian to Threadleaf to Obsidian roundtrip is recorded as external evidence for one pinned Linux Flatpak and exact plugin release; it is not an executable registry gate.",
         "The exact release check and host workflow checks are composed gates, not one monolithic end-to-end command."
+      ]
+    },
+    {
+      "plugin": {
+        "id": "obsidian-excalidraw-plugin",
+        "name": "Excalidraw",
+        "version": "2.26.4",
+        "repository": "https://github.com/zsviczian/obsidian-excalidraw-plugin",
+        "license": "AGPL-3.0",
+        "bundleSha256": "b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a"
+      },
+      "threadleafVersion": "0.1.0-beta.6",
+      "lastTested": "2026-08-16",
+      "compatibilityLevel": 2,
+      "summary": "The exact 2.26.4 package passed reviewed-profile matching, content-addressed sealed construction, plugin onload, Settings convergence, clean process-restart reconstruction, and revocation and unload on Linux, establishing Level 2 construction evidence.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "vault-read",
+        "vault-write",
+        "network",
+        "clipboard",
+        "external-navigation",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "The exact package was constructed by the trusted desktop compatibility runtime, not a sandbox.",
+            "The static capability report is a review aid, not a runtime sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package construction and restart workflow is not verified on macOS."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package construction and restart workflow is not verified on Windows."
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "sealed-construction-restart-revocation",
+          "name": "Review, seal, construct, restart-reconstruct, revoke, and unload the exact package",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-plugin-packages-e2e.mjs",
+              "command": "pnpm test:plugin-packages-e2e:built"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Drawing edit, save, export, and settings workflows are not verified for 2.26.4.",
+        "No controller-finalized production Electron receipt currently supports a Level 4 workflow claim.",
+        "This is trusted same-user desktop construction evidence, not a sandbox or hostile-plugin attestation."
       ]
     },
     {

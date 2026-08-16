@@ -12,7 +12,7 @@ export interface CliPluginCatalogEntry {
   version: string;
   state: PluginPackageState;
   stylesheetDiscovered: boolean;
-  compatibilityLevel: 0;
+  compatibilityLevel: 0 | 1 | 2 | 3 | 4;
   compatibilityStatus: PluginCompatibilityEvidenceStatus;
 }
 

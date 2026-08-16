@@ -9,11 +9,12 @@ Registry schema: 1. Threadleaf version: 0.1.0-beta.6.
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.6 | 0 | composed | 2026-08-16 |
+| [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.26.4 | 0.1.0-beta.6 | 2 | direct | 2026-08-16 |
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0-beta.6 | 0 | direct | 2026-08-15 |
 
 ## Excalidraw 2.25.3
 
-Historical workflow gates passed for this exact release, but no reviewed authority profile currently permits construction, so current compatibility evidence is Level 0.
+An exact reviewed authority profile now permits sealed construction for this release, and historical workflow gates passed, but the required production Electron receipt was not regenerated under the current evidence policy, so current compatibility evidence remains Level 0.
 
 Bundle SHA-256: `684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6`. License: AGPL-3.0.
 
@@ -45,10 +46,39 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 
 ### Limitations
 
-- No reviewed authority profile currently binds this exact package identity; construction is denied with authority-profile-missing.
+- The exact reviewed authority profile binds this package, but no current controller-finalized production Electron receipt exists for it.
 - Inline wiki-embed rendering and export formats beyond SVG and PNG are not verified.
 - The official Obsidian to Threadleaf to Obsidian roundtrip is recorded as external evidence for one pinned Linux Flatpak and exact plugin release; it is not an executable registry gate.
 - The exact release check and host workflow checks are composed gates, not one monolithic end-to-end command.
+
+## Excalidraw 2.26.4
+
+The exact 2.26.4 package passed reviewed-profile matching, content-addressed sealed construction, plugin onload, Settings convergence, clean process-restart reconstruction, and revocation and unload on Linux, establishing Level 2 construction evidence.
+
+Bundle SHA-256: `b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a`. License: AGPL-3.0.
+
+Required static authority review: `vault-read`, `vault-write`, `network`, `clipboard`, `external-navigation`, `editor-extension`, `workspace-ui`, `dynamic-code`.
+
+### Supported workflows
+
+- **Review, seal, construct, restart-reconstruct, revoke, and unload the exact package** (passed)
+  - `pnpm test:plugin-packages-e2e:built` via [scripts/check-plugin-packages-e2e.mjs](../../scripts/check-plugin-packages-e2e.mjs)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. The exact package was constructed by the trusted desktop compatibility runtime, not a sandbox. The static capability report is a review aid, not a runtime sandbox.
+- **macos-electron**: unverified. This exact package construction and restart workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package construction and restart workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- Drawing edit, save, export, and settings workflows are not verified for 2.26.4.
+- No controller-finalized production Electron receipt currently supports a Level 4 workflow claim.
+- This is trusted same-user desktop construction evidence, not a sandbox or hostile-plugin attestation.
 
 ## Threadleaf Compatibility Fixture 0.1.0
 

@@ -80,8 +80,10 @@ import {
   type CompatibilityMode,
   compatibilityModes,
   isPluginConstructionRefusal,
+  type PluginCapabilityGrantState,
   type PluginCatalogResponse,
   type PluginConstructionPath,
+  type PluginConstructionRequest,
   parsePluginId,
   pluginCapabilityGrantMatches,
 } from "../shared/plugins";
@@ -141,9 +143,10 @@ import { OpenPluginPackageSource } from "./open-plugin-package-source";
 import { OpenAppearancePackageSource } from "./open-theme-package-source";
 import { appUpdateDisabledReason, readPackageUpdateTrust } from "./package-update-trust";
 import {
-  measureInstalledPluginConstructionRequest,
-  PluginConstructionPolicyResolver,
-} from "./plugin-construction-policy";
+  type PluginConstructionAuthoritySession,
+  PluginConstructionAuthorityStore,
+} from "./plugin-construction-authority-store";
+import { PluginConstructionPolicyResolver } from "./plugin-construction-policy";
 import { assertMainRendererPluginIpcSender } from "./plugin-ipc-sender-guard";
 import { PluginPackageManager } from "./plugin-package-manager";
 import {
@@ -162,7 +165,11 @@ import {
 import { ThemePackageManager } from "./theme-package-manager";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { VaultAppearanceWatcher } from "./vault-appearance-watcher";
-import { discoverVaultPlugins, loadVaultPluginCatalog } from "./vault-plugin-loader";
+import {
+  type DiscoveredVaultPlugin,
+  discoverVaultPlugins,
+  loadVaultPluginCatalog,
+} from "./vault-plugin-loader";
 import { WorkspaceLayoutController } from "./workspace-layout-controller";
 
 const applicationId = "org.threadleaf.Threadleaf";
@@ -250,6 +257,8 @@ let appUpdateController: AppUpdateController;
 let editorDraftStore: FileEditorDraftStore;
 let noteBookmarkController: NoteBookmarkController;
 let pluginPackageManager: PluginPackageManager;
+let pluginConstructionAuthorityStore: PluginConstructionAuthorityStore;
+const pluginConstructionAuthoritySessions = new Map<string, PluginConstructionAuthoritySession>();
 let appearancePackageSource: OpenAppearancePackageSource;
 let themePackageManager: ThemePackageManager;
 let workspaceLayoutController!: WorkspaceLayoutController;
@@ -1202,6 +1211,58 @@ function pluginSafeMode(): boolean {
   return process.argv.includes("--safe-plugins") || process.env.THREADLEAF_SAFE_PLUGINS === "1";
 }
 
+function activePluginConstructionAuthoritySession(
+  expectedVaultId: string,
+): PluginConstructionAuthoritySession {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    throw new Error("The active vault changed before plugin authority resolution.");
+  }
+  const session = pluginConstructionAuthoritySessions.get(expectedVaultId);
+  if (!session) {
+    throw new Error("The active vault has no plugin construction authority session.");
+  }
+  return session;
+}
+
+async function preparePluginConstructionRequest(
+  session: PluginConstructionAuthoritySession,
+  plugin: DiscoveredVaultPlugin,
+  constructionPath: PluginConstructionPath,
+): Promise<PluginConstructionRequest> {
+  const report = plugin.summary.capabilityReport;
+  if (plugin.summary.packageState !== "ready" || !report) {
+    throw new Error(`Plugin ${plugin.summary.id} is not a reviewable construction package.`);
+  }
+  return session.prepareConstructionRequest({
+    pluginDirectory: plugin.directoryPath,
+    reportedMainSha256: report.bundleSha256,
+    constructionPath,
+  });
+}
+
+async function resolvePluginCatalogAuthority(
+  session: PluginConstructionAuthoritySession,
+  plugin: DiscoveredVaultPlugin,
+  legacyState: PluginCapabilityGrantState,
+): Promise<{ grantState: PluginCapabilityGrantState; stylesheetPath: string | null }> {
+  const request = await preparePluginConstructionRequest(session, plugin, "first-load");
+  const grantState = await session.grantState(request, legacyState);
+  if (grantState !== "granted") {
+    return { grantState, stylesheetPath: null };
+  }
+  const snapshot = await session.readAuthoritySnapshot(request);
+  if (!snapshot.sealedPackage) {
+    return { grantState: "stale", stylesheetPath: null };
+  }
+  return {
+    grantState,
+    stylesheetPath:
+      request.packageIdentity.stylesSha256 === null
+        ? null
+        : join(snapshot.sealedPackage.sealedPackageRootPath, "styles.css"),
+  };
+}
+
 function developmentPluginOperationTimeout(): number | undefined {
   if (app.isPackaged) {
     return undefined;
@@ -1349,12 +1410,17 @@ async function currentPluginCatalog(expectedVaultId: string): Promise<PluginCata
       .filter((managed) => managed.integrity === "changed")
       .map((managed) => managed.pluginId),
   );
+  const authoritySession = pluginConstructionAuthoritySessions.get(expectedVaultId);
   const catalog = await loadVaultPluginCatalog({
     vaultPath,
     vaultId: expectedVaultId,
     preference: settingsController.getVaultPlugins(expectedVaultId),
     safeMode: pluginSafeMode(),
     blockedPluginIds,
+    resolveConstructionAuthority: authoritySession
+      ? (plugin, legacyState) =>
+          resolvePluginCatalogAuthority(authoritySession, plugin, legacyState)
+      : async () => ({ grantState: "unavailable", stylesheetPath: null }),
   });
   catalog.managedPackages = managedPackages;
   catalog.warnings.unshift(...pluginPackageManager.takeRecoveryNotices(expectedVaultId));
@@ -1489,21 +1555,48 @@ async function reconcileCompatibilityPlugins(
   );
   const packagesById = new Map(discovery.plugins.map((plugin) => [plugin.summary.id, plugin]));
   const pluginsAllowed = preference.compatibilityMode === "enabled" && !pluginSafeMode();
-  const targetIds = new Set(
-    pluginsAllowed
-      ? preference.enabledPluginIds.filter((pluginId) => {
-          const plugin = packagesById.get(pluginId);
-          const report = plugin?.summary.capabilityReport;
-          return (
-            !changedManagedIds.has(pluginId) &&
-            plugin?.summary.packageState === "ready" &&
-            report !== null &&
-            report !== undefined &&
-            pluginCapabilityGrantMatches(report, preference.capabilityGrantsByPlugin[pluginId])
-          );
-        })
-      : [],
-  );
+  const targetIds = new Set<string>();
+  const constructionRequests = new Map<string, PluginConstructionRequest>();
+  const authoritySession = pluginsAllowed
+    ? activePluginConstructionAuthoritySession(expectedVaultId)
+    : null;
+  if (pluginsAllowed) {
+    if (!authoritySession) {
+      throw new Error("Plugin construction authority is unavailable for the active vault.");
+    }
+    for (const pluginId of preference.enabledPluginIds) {
+      const installed = packagesById.get(pluginId);
+      const report = installed?.summary.capabilityReport;
+      if (
+        changedManagedIds.has(pluginId) ||
+        installed?.summary.packageState !== "ready" ||
+        !report ||
+        !pluginCapabilityGrantMatches(report, preference.capabilityGrantsByPlugin[pluginId])
+      ) {
+        continue;
+      }
+      const reloadThisPlugin = forceReload && (!reloadPluginId || reloadPluginId === pluginId);
+      const constructionPath =
+        requestedConstructionPath ?? (reloadThisPlugin ? "explicit-reload" : "first-load");
+      try {
+        const request = await preparePluginConstructionRequest(
+          authoritySession,
+          installed,
+          constructionPath,
+        );
+        if ((await authoritySession.grantState(request, "granted")) !== "granted") {
+          continue;
+        }
+        targetIds.add(pluginId);
+        constructionRequests.set(pluginId, request);
+      } catch (error) {
+        console.error(
+          `Plugin construction authority for ${pluginId} could not be verified.`,
+          error,
+        );
+      }
+    }
+  }
 
   let snapshot = await workspaceController.getSnapshot();
   const runtimePlugins = snapshot.plugins ?? (snapshot.plugin ? [snapshot.plugin] : []);
@@ -1517,9 +1610,8 @@ async function reconcileCompatibilityPlugins(
     if (!targetIds.has(pluginId)) {
       continue;
     }
-    const installed = packagesById.get(pluginId);
-    const report = installed?.summary.capabilityReport;
-    if (!installed || !report) {
+    const request = constructionRequests.get(pluginId);
+    if (!request) {
       continue;
     }
     const runtimePlugin = (snapshot.plugins ?? []).find((plugin) => plugin.id === pluginId);
@@ -1531,15 +1623,7 @@ async function reconcileCompatibilityPlugins(
       continue;
     }
     try {
-      const constructionPath =
-        requestedConstructionPath ?? (reloadThisPlugin ? "explicit-reload" : "first-load");
-      snapshot = await workspaceController.loadPlugin(
-        await measureInstalledPluginConstructionRequest(
-          installed,
-          report.bundleSha256,
-          constructionPath,
-        ),
-      );
+      snapshot = await workspaceController.loadPlugin(request);
     } catch (error) {
       const code = isPluginConstructionRefusal(error)
         ? error.code
@@ -1605,28 +1689,14 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       const vaultIdentityPath =
         process.platform === "win32" ? canonicalVaultPath.toLowerCase() : canonicalVaultPath;
       const vaultId = createHash("sha256").update(vaultIdentityPath).digest("hex");
+      const authoritySession = await pluginConstructionAuthorityStore.activateVault(
+        vaultId,
+        canonicalVaultPath,
+        pluginSafeMode(),
+      );
+      pluginConstructionAuthoritySessions.set(vaultId, authoritySession);
       const constructionPolicyResolver = new PluginConstructionPolicyResolver({
-        readAuthoritySnapshot: async () => {
-          const safeMode = pluginSafeMode();
-          return {
-            vaultId,
-            vaultGeneration: 1,
-            policyEpoch: safeMode ? 2 : 1,
-            grantEpoch: 0,
-            safeMode,
-            safeModeEpoch: safeMode ? 2 : 1,
-            packageStoreEpoch: 0,
-            platform: process.platform as "linux" | "darwin" | "win32",
-            availableExecutionProfiles:
-              process.platform === "linux" ||
-              process.platform === "darwin" ||
-              process.platform === "win32"
-                ? ["trusted-node-renderer", "trusted-desktop-escape"]
-                : [],
-            grant: null,
-            sealedPackage: null,
-          };
-        },
+        readAuthoritySnapshot: (request) => authoritySession.readAuthoritySnapshot(request),
       });
       return IsolatedPluginRuntime.open({
         create: () =>
@@ -2378,6 +2448,8 @@ function registerIpcHandlers(): void {
           const current = settingsController.getVaultPlugins(expectedVaultId);
           const capabilityGrantsByPlugin = { ...current.capabilityGrantsByPlugin };
           let enabledPluginIds = [...current.enabledPluginIds];
+          const authoritySession = activePluginConstructionAuthoritySession(expectedVaultId);
+          let constructionRequest: PluginConstructionRequest | null = null;
           if (granted) {
             const changedManagedPackage = (
               await pluginPackageManager.getManagedPackages(
@@ -2401,11 +2473,19 @@ function registerIpcHandlers(): void {
                 `Plugin ${pluginId} changed after the authority report opened. Review the current exact bundle.`,
               );
             }
+            constructionRequest = await preparePluginConstructionRequest(
+              authoritySession,
+              plugin,
+              "first-load",
+            );
             capabilityGrantsByPlugin[pluginId] = {
               bundleSha256: report.bundleSha256,
               capabilities: [...report.capabilities],
             };
           } else {
+            await authoritySession.revokePlugin(pluginId);
+            await workspaceController.unloadPlugin(pluginId);
+            await applyPluginSurfaceCss("");
             delete capabilityGrantsByPlugin[pluginId];
             enabledPluginIds = enabledPluginIds.filter((candidate) => candidate !== pluginId);
           }
@@ -2414,6 +2494,9 @@ function registerIpcHandlers(): void {
             enabledPluginIds,
             capabilityGrantsByPlugin,
           });
+          if (constructionRequest) {
+            await authoritySession.issueGrant(constructionRequest);
+          }
           return pluginUpdateResponse(expectedVaultId, settings);
         },
         "package-operation-failed",
@@ -2463,6 +2546,15 @@ function registerIpcHandlers(): void {
                 current.capabilityGrantsByPlugin[pluginId],
               )
             ) {
+              throw pluginDiagnosticError("authority-grant-required", { pluginId });
+            }
+            const authoritySession = activePluginConstructionAuthoritySession(expectedVaultId);
+            const request = await preparePluginConstructionRequest(
+              authoritySession,
+              plugin,
+              "first-load",
+            );
+            if ((await authoritySession.grantState(request, "granted")) !== "granted") {
               throw pluginDiagnosticError("authority-grant-required", { pluginId });
             }
           }
@@ -3862,6 +3954,10 @@ async function startApplicationWhenReady(): Promise<void> {
     new OpenPluginPackageSource(),
   );
   await pluginPackageManager.initialize();
+  pluginConstructionAuthorityStore = new PluginConstructionAuthorityStore(
+    join(app.getPath("userData"), "plugin-construction-authority"),
+  );
+  await pluginConstructionAuthorityStore.initialize();
   appearancePackageSource = new OpenAppearancePackageSource();
   themePackageManager = new ThemePackageManager(
     join(app.getPath("userData"), "appearance-packages"),

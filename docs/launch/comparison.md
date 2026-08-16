@@ -52,9 +52,11 @@ Threadleaf does not claim broad plugin compatibility as a single number. Its
 fail another." The [generated compatibility registry](../compatibility/registry.md) is produced
 from [`compatibility/plugin-evidence.v1.json`](../../compatibility/plugin-evidence.v1.json) by
 `pnpm compatibility:generate`, and `pnpm compatibility:check` verifies it has not drifted from that
-source. Today the registry lists two entries, each bound to an exact plugin version and an exact
+source. Today the registry lists three entries, each bound to an exact plugin version and an exact
 Threadleaf version, each with a bundle SHA-256 digest and named test files per workflow: Excalidraw
-2.25.3 at level 4, and Threadleaf's own compatibility fixture at level 4. The registry is
+2.25.3 at Level 0 with historical composed evidence pending a current receipt, Excalidraw 2.26.4 at
+Level 2 with direct sealed-construction evidence, and Threadleaf's own compatibility fixture at
+Level 0 pending its exact authority and current receipt gates. The registry is
 intentionally short right now; the discipline is that nothing enters it without a named, executable
 workflow behind it; see the contract's evidence-sources section, which excludes "third-party
 directories, feature tables, stars, and README claims" as compatibility evidence on their own.

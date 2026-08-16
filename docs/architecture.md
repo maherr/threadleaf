@@ -23,9 +23,9 @@ exits, and never gives the primary renderer Node authority. A timeout, invalid p
 failed send, or renderer exit is fatal only to the owning plugin process. Threadleaf forcibly
 terminates that realm, creates a clean replacement, and retains the culprit as stopped diagnostic
 state until the user explicitly reloads it. Healthy sibling plugins and the native workspace keep
-running, and no plugin is replayed automatically after an unknown failure point. The unchanged
-Excalidraw 2.25.3 bundle activates in this production realm
-and its registered `ItemView` now attaches to a bounded visible workspace leaf. The plugin owns the
+running, and no plugin is replayed automatically after an unknown failure point. Historical composed
+gates exercised the unchanged Excalidraw 2.25.3 bundle in this production realm, where its registered
+`ItemView` attached to a bounded visible workspace leaf. The plugin owns the
 leaf content, filename header, action icons, modal content, and canvas lifecycle; Threadleaf owns
 the surrounding layout and propagates its light/dark chrome. The normal Markdown header is not
 mounted inside a plugin-owned view. Text-file reads cache the revision delivered by the main
@@ -34,7 +34,8 @@ cached revision; validated requests cross narrow IPC, bind to the still-active v
 enter the same workspace controller and recovery-backed writer as native edits. Conflicts leave the
 original untouched and retain the plugin's proposed bytes as a labeled conflict file. Opening an
 existing Excalidraw Markdown document, mutating its scene, explicitly saving, closing the drawing
-leaf, and reopening the persisted scene reaches measured level 4 for that named workflow. Creating
+leaf, and reopening the persisted scene were exercised as supporting behavior evidence. They do not
+carry a current Level 4 claim until a controller-finalized receipt is regenerated. Creating
 a new drawing now crosses separate create-folder and create-file IPC channels into the same
 workspace controller and recovery-backed kernel used by native note creation. The kernel rejects
 private paths, symlink traversal, and existing destinations; syncs created directories; and never
@@ -42,8 +43,8 @@ activates the new file in Threadleaf's native Markdown workspace on behalf of pl
 compatibility runtime supplies Moment, Obsidian's loaded-plugin lifecycle flag, built-in Markdown
 leaves, workspace layout snapshots, and split-leaf creation so the unchanged Excalidraw command can
 create its standard folder and Markdown file, pass through a Markdown leaf, and promote that leaf
-to the registered drawing view. Creating a drawing, adding scene elements, saving, closing, and
-reopening the exact scene reaches measured level 4 for that named workflow. Opening Threadleaf's
+to the registered drawing view. Historical gates also exercised creating a drawing, adding scene
+elements, saving, closing, and reopening the exact scene as supporting evidence. Opening Threadleaf's
 command palette now detaches only the child surface presentation, not the plugin leaf or renderer,
 so a selected plugin command can act on the still-live Excalidraw view before the child surface is
 reattached. The compatibility module also supplies frontmatter-entry lookup plus `Vault.createBinary`
@@ -52,6 +53,15 @@ remain bound to the active vault and cached revision, and enter the recovery-bac
 UTF-8 conversion. Excalidraw's unchanged SVG-to-vault and PNG-to-vault actions both create and
 overwrite valid exports; PNG verification checks the exact signature and decodes the resulting
 803 by 549 image.
+
+Compatibility construction is separate from installation and discovery. The main process admits
+only a complete exact package identity with a checked-in reviewed authority profile and matching
+full-identity grant. It captures and verifies the package closure once, publishes it into an
+application-owned content-addressed read-only root, and loads JavaScript and CSS only from that
+integrity-checked root. Grant and revocation history is append-only. Safe mode, vault-session
+rotation, profile or package drift, history corruption, stale epochs, and mutable-source changes all
+fail closed before construction or force unload during reconciliation. This is a same-user trust and
+reproducibility boundary, not isolation from Node-capable plugin I/O.
 
 ### Filesystem authority
 

@@ -1376,7 +1376,7 @@ export class WorkspaceRuntime {
     }
     initialDocuments.length = 0;
     const pluginHost = options.pluginRuntimeFactory
-      ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions)
+      ? await options.pluginRuntimeFactory(kernel.paths.rootPath, actions, kernel)
       : new PluginHost(
           kernel.paths.rootPath,
           kernel,
@@ -1405,8 +1405,11 @@ export class WorkspaceRuntime {
 
     // A restored custom-document tab is only eligible while its plugin registration is live.
     // Load that authority before restore reconciliation can rewrite the persisted workspace.
-    if (options.pluginDirectory) {
-      await pluginHost.loadPlugin(options.pluginDirectory);
+    if (options.pluginConstructionRequest) {
+      await pluginHost.loadPlugin({
+        ...options.pluginConstructionRequest,
+        constructionPath: "app-restart-reconstruction",
+      });
     }
 
     if (restoredWorkspace) {
@@ -1493,12 +1496,6 @@ export class WorkspaceRuntime {
           await runtime.persistWorkspaceStateBestEffort();
         }
       }
-    }
-    if (options.pluginConstructionRequest) {
-      await pluginHost.loadPlugin({
-        ...options.pluginConstructionRequest,
-        constructionPath: "app-restart-reconstruction",
-      });
     }
     if (!runtime.readOnly) {
       if (deferredCensus) {

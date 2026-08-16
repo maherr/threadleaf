@@ -12,6 +12,10 @@ const userDataPath = path.join(testRoot, "user-data");
 const screenshotDirectory = process.env.THREADLEAF_PLUGIN_PACKAGE_SCREENSHOT_DIR;
 const pluginId = "obsidian-excalidraw-plugin";
 const pluginPath = path.join(vaultPath, ".obsidian", "plugins", pluginId);
+const atomicDataTemporaryPath = path.join(
+  pluginPath,
+  ".data.json.00c98356-991b-442b-b05d-429d3d275e87.tmp",
+);
 const output = [];
 let child;
 let exited;
@@ -19,6 +23,24 @@ let cdp;
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function makeDisposableTreeRemovable(candidatePath) {
+  const stat = await fs.lstat(candidatePath).catch(() => null);
+  if (!stat || stat.isSymbolicLink()) {
+    return;
+  }
+  if (!stat.isDirectory()) {
+    if (stat.isFile()) {
+      await fs.chmod(candidatePath, 0o600);
+    }
+    return;
+  }
+  await fs.chmod(candidatePath, 0o700);
+  const entries = await fs.readdir(candidatePath);
+  for (const entry of entries) {
+    await makeDisposableTreeRemovable(path.join(candidatePath, entry));
+  }
 }
 
 function assert(condition, message) {
@@ -278,21 +300,7 @@ async function openAuthorityReview(containerSelector) {
   );
 }
 
-try {
-  if (process.platform !== "linux") {
-    throw new Error("The plugin package E2E check currently requires Linux and Xvfb.");
-  }
-  await fs.access(electronPath);
-  await fs.mkdir(vaultPath, { recursive: true });
-  await fs.mkdir(userDataPath, { recursive: true });
-  await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Package manager fixture\n", "utf8");
-  const rendererHtml = await fs.readFile(
-    path.join(appRoot, "dist", "renderer", "index.html"),
-    "utf8",
-  );
-  const builtScript = rendererHtml.match(/assets\/index-[^"']+\.js/u)?.[0];
-  assert(builtScript, "The built renderer did not declare its hashed JavaScript asset.");
-
+async function launchApplication(builtScript) {
   const port = await availablePort();
   child = spawn(
     "xvfb-run",
@@ -342,6 +350,40 @@ try {
     }))().ready && (() => [...document.scripts].some((script) => script.src.endsWith(${JSON.stringify(builtScript)})))()`,
     "The rebuilt renderer and disposable vault were not ready.",
   );
+}
+
+async function stopApplication() {
+  if (!child || !exited || !cdp) {
+    throw new Error("Threadleaf is not running for a clean restart boundary.");
+  }
+  await evaluate("setTimeout(() => window.close(), 1000); true");
+  const exit = await Promise.race([
+    exited,
+    delay(10_000).then(() => ({ code: null, signal: "timeout" })),
+  ]);
+  assert(exit.code === 0, `Electron did not exit cleanly: ${JSON.stringify(exit)}`);
+  cdp.close();
+  child = undefined;
+  exited = undefined;
+  cdp = undefined;
+}
+
+try {
+  if (process.platform !== "linux") {
+    throw new Error("The plugin package E2E check currently requires Linux and Xvfb.");
+  }
+  await fs.access(electronPath);
+  await fs.mkdir(vaultPath, { recursive: true });
+  await fs.mkdir(userDataPath, { recursive: true });
+  await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Package manager fixture\n", "utf8");
+  const rendererHtml = await fs.readFile(
+    path.join(appRoot, "dist", "renderer", "index.html"),
+    "utf8",
+  );
+  const builtScript = rendererHtml.match(/assets\/index-[^"']+\.js/u)?.[0];
+  assert(builtScript, "The built renderer did not declare its hashed JavaScript asset.");
+
+  await launchApplication(builtScript);
 
   await click("#settings-trigger");
   await click("#settings-nav-plugins");
@@ -441,7 +483,7 @@ try {
   assert(installedState.checked === false, "A newly installed plugin was silently enabled.");
   assert(
     installedState.runtimeState === "Review required",
-    "The installed plugin did not visibly require authority review.",
+    `The installed plugin did not visibly require authority review: ${JSON.stringify(installedState)}`,
   );
   assert(
     installedState.authorityState.includes("Authority review required") &&
@@ -619,16 +661,21 @@ try {
     toggle.click();
     return true;
   })()`);
-  const profileRefusal = `Plugin construction for ${pluginId} stopped [authority-profile-missing].`;
-  const profileRefusalDeadline = Date.now() + 30_000;
-  while (Date.now() < profileRefusalDeadline && !output.join("").includes(profileRefusal)) {
-    await delay(50);
-  }
-  assert(
-    output.join("").includes(profileRefusal),
-    "An exact-bundle grant bypassed the reviewed authority-profile gate.",
+  await waitFor(
+    `window.threadleaf.getSnapshot().then((snapshot) =>
+      (snapshot.plugins ?? []).some((plugin) =>
+        plugin.id === ${JSON.stringify(pluginId)} && plugin.state === "loaded"
+      )
+    )`,
+    "The exact reviewed Excalidraw package did not construct from sealed authority.",
+    45_000,
   );
-  const deniedAfterGrant = await evaluate(`(async () => {
+  await waitFor(
+    `document.querySelector(${JSON.stringify(installedRow)})
+      ?.querySelector(".plugin-runtime-state")?.textContent?.startsWith("Active · L")`,
+    "The loaded Excalidraw runtime did not converge in the Settings row.",
+  );
+  const loadedAfterGrant = await evaluate(`(async () => {
     const snapshot = await window.threadleaf.getSnapshot();
     return {
       loaded: (snapshot.plugins ?? []).some((plugin) =>
@@ -639,8 +686,64 @@ try {
     };
   })()`);
   assert(
-    deniedAfterGrant.loaded === false,
-    `A package without a reviewed authority profile loaded through the real runtime: ${JSON.stringify(deniedAfterGrant)}`,
+    loadedAfterGrant.loaded === true && loadedAfterGrant.rowText.includes("Active · L"),
+    `The reviewed package did not expose positive runtime construction: ${JSON.stringify(loadedAfterGrant)}`,
+  );
+  assert(
+    !output.join("").includes(`Plugin construction for ${pluginId} stopped`),
+    "The positive construction path logged a policy refusal.",
+  );
+  await reveal(installedRow);
+  screenshots.push(
+    ...[
+      await screenshot("plugin-authority-granted-loaded", "dark"),
+      await screenshot("plugin-authority-granted-loaded", "light"),
+    ].filter(Boolean),
+  );
+  await stopApplication();
+  await launchApplication(builtScript);
+  await waitFor(
+    `window.threadleaf.getSnapshot().then((snapshot) =>
+      (snapshot.plugins ?? []).some((plugin) =>
+        plugin.id === ${JSON.stringify(pluginId)} && plugin.state === "loaded"
+      )
+    )`,
+    "The persisted exact grant did not reconstruct Excalidraw after process restart.",
+    45_000,
+  );
+  await click("#settings-trigger");
+  await click("#settings-nav-plugins");
+  await waitFor(
+    `(() => {
+      const row = document.querySelector(${JSON.stringify(installedRow)});
+      return row?.textContent?.includes("Exact bundle granted") &&
+        row.querySelector(".plugin-runtime-state")?.textContent?.startsWith("Active · L");
+    })()`,
+    "The restarted Settings row did not restore granted and active state.",
+  );
+  const restartedState = await evaluate(`(async () => {
+    const row = document.querySelector(${JSON.stringify(installedRow)});
+    const snapshot = await window.threadleaf.getSnapshot();
+    return {
+      checked: row?.querySelector('input[type="checkbox"]')?.checked ?? null,
+      disabled: row?.querySelector('input[type="checkbox"]')?.disabled ?? null,
+      loaded: (snapshot.plugins ?? []).some((plugin) =>
+        plugin.id === ${JSON.stringify(pluginId)} && plugin.state === "loaded"
+      ),
+    };
+  })()`);
+  assert(
+    restartedState.checked === true &&
+      restartedState.disabled === false &&
+      restartedState.loaded === true,
+    `Restart reconstruction lost exact authority or enablement: ${JSON.stringify(restartedState)}`,
+  );
+  await reveal(installedRow);
+  screenshots.push(
+    ...[
+      await screenshot("plugin-authority-restarted", "dark"),
+      await screenshot("plugin-authority-restarted", "light"),
+    ].filter(Boolean),
   );
   await waitFor(
     `(() => {
@@ -652,11 +755,34 @@ try {
     })()`,
     "The authority controls did not settle after plugin activation.",
   );
+  await fs.writeFile(atomicDataTemporaryPath, '{"pendingSave":true}\n', "utf8");
   await clickRowAction(installedRow, "Revoke grant");
-  await waitFor(
-    `document.querySelector(${JSON.stringify(installedRow)})?.textContent?.includes("Authority review required")`,
-    "Revoking authority did not return the plugin to review-required state.",
-  );
+  try {
+    await waitFor(
+      `document.querySelector(${JSON.stringify(installedRow)})?.textContent?.includes("Authority review required")`,
+      "Revoking authority did not return the plugin to review-required state.",
+    );
+  } catch (error) {
+    const diagnostic = await evaluate(`(async () => {
+      const row = document.querySelector(${JSON.stringify(installedRow)});
+      const snapshot = await window.threadleaf.getSnapshot();
+      return {
+        rowText: row?.textContent ?? "",
+        controls: [...(row?.querySelectorAll("button") ?? [])].map((button) => ({
+          label: button.textContent?.trim() ?? "",
+          disabled: button.disabled,
+        })),
+        checked: row?.querySelector('input[type="checkbox"]')?.checked ?? null,
+        status: document.querySelector("#plugin-status")?.textContent ?? "",
+        runtime: (snapshot.plugins ?? []).find((plugin) => plugin.id === ${JSON.stringify(pluginId)}) ?? null,
+      };
+    })()`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} Diagnostic: ${JSON.stringify(diagnostic)}`,
+      { cause: error },
+    );
+  }
+  await fs.rm(atomicDataTemporaryPath);
   const revokedState = await evaluate(`(async () => {
     const row = document.querySelector(${JSON.stringify(installedRow)});
     const snapshot = await window.threadleaf.getSnapshot();
@@ -671,6 +797,13 @@ try {
       revokedState.disabled === true &&
       revokedState.loaded === false,
     "Revoking the grant did not disable, unload, and lock the plugin.",
+  );
+  await reveal(installedRow);
+  screenshots.push(
+    ...[
+      await screenshot("plugin-authority-revoked", "dark"),
+      await screenshot("plugin-authority-revoked", "light"),
+    ].filter(Boolean),
   );
 
   await openReviewFrom(installedRow, "Review update");
@@ -797,19 +930,16 @@ try {
       reviewAssets: review.assets.length,
       integrityRaceBlocked: true,
       authorityGateVerified: true,
-      authorityProfileDenialVerified: true,
+      authorityProfileConstructionVerified: true,
+      authorityRestartVerified: true,
+      authorityRevocationVerified: true,
       installedDisabled: true,
       uninstallRestored: true,
       liveThemeColors,
       screenshots,
     }),
   );
-  await evaluate("setTimeout(() => window.close(), 1000); true");
-  const exit = await Promise.race([
-    exited,
-    delay(10_000).then(() => ({ code: null, signal: "timeout" })),
-  ]);
-  assert(exit.code === 0, `Electron did not exit cleanly: ${JSON.stringify(exit)}`);
+  await stopApplication();
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);
   const logs = output.join("").trim();
@@ -828,5 +958,6 @@ try {
       await Promise.race([exited, delay(2_000)]);
     }
   }
+  await makeDisposableTreeRemovable(testRoot);
   await fs.rm(testRoot, { recursive: true, force: true });
 }

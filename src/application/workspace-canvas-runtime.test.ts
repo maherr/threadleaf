@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import { WorkspaceRuntime } from "./workspace-runtime";
 import {
   createWorkspaceLayout,
@@ -15,6 +16,24 @@ import {
 let sandboxPath: string;
 let vaultPath: string;
 let runtime: WorkspaceRuntime | undefined;
+
+function filePluginConstructionRequest(): PluginConstructionRequest {
+  const digest = "a".repeat(64);
+  return {
+    constructionPath: "test-execution",
+    pluginDirectory: "fixture-plugin",
+    packageIdentity: {
+      pluginId: "drawing-fixture",
+      manifestVersion: "1.0.0",
+      distributionTag: "1.0.0",
+      manifestSha256: digest,
+      mainSha256: digest,
+      stylesSha256: null,
+      packageTreeSha256: digest,
+    },
+    packageIdentityDigest: digest,
+  };
+}
 
 const canvas = `${JSON.stringify(
   {
@@ -86,7 +105,7 @@ function registeredFilePluginRuntime(initiallyLoaded = true): PluginRuntimePort 
           name: "Drawing fixture",
           version: "1.0.0",
           state: "loaded",
-          compatibilityLevel: 4,
+          compatibilityLevel: 3,
           stylesheetDiscovered: false,
           error: null,
         }
@@ -200,7 +219,7 @@ describe("WorkspaceRuntime JSON Canvas surface", () => {
       WorkspaceRuntime.open({
         vaultRoot: vaultPath,
         stateRoot: new FixedStateRoot(path.join(sandboxPath, "state")),
-        pluginDirectory: "fixture-plugin",
+        pluginConstructionRequest: filePluginConstructionRequest(),
         pluginRuntimeFactory: async () => registeredFilePluginRuntime(false),
         workspaceStateStore: store,
       });

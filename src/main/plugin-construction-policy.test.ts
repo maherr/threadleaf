@@ -11,7 +11,9 @@ import {
   pluginConstructionPaths,
 } from "../shared/plugins";
 import {
+  capturePluginPackageTree,
   type InspectedPluginPackage,
+  inspectCapturedPluginPackage,
   inspectSealedPluginPackage,
   maxConsumedConstructionPolicyAttempts,
   measureInstalledPluginConstructionRequest,
@@ -213,6 +215,56 @@ describe("PluginConstructionPolicyResolver", () => {
     );
   });
 
+  it("atomically reserves an attempt before awaiting its authority snapshot", async () => {
+    const snapshot = snapshotFor();
+    let deferSnapshot = false;
+    let markSnapshotReadStarted: () => void = () => undefined;
+    let releaseSnapshotRead: () => void = () => undefined;
+    const snapshotReadStarted = new Promise<void>((resolve) => {
+      markSnapshotReadStarted = resolve;
+    });
+    const snapshotReadGate = new Promise<void>((resolve) => {
+      releaseSnapshotRead = resolve;
+    });
+    const readAuthoritySnapshot = vi.fn(async () => {
+      if (deferSnapshot) {
+        markSnapshotReadStarted();
+        await snapshotReadGate;
+      }
+      return snapshot;
+    });
+    const resolver = new PluginConstructionPolicyResolver({
+      readAuthoritySnapshot,
+      profileByIdentity: () => styleProfile(),
+      inspectSealedPackage: async () => inspectionFor(),
+      createAttemptId: () => "concurrent-attempt",
+      now: () => new Date("2026-08-14T12:34:56.000Z"),
+    });
+    const policy = await resolver.resolveConstructionPolicy(requestFor());
+    deferSnapshot = true;
+    const consume = async () => {
+      try {
+        return { dispatch: await resolver.consumeConstructionPolicy(policy), error: null };
+      } catch (error) {
+        return { dispatch: null, error };
+      }
+    };
+
+    const first = consume();
+    await snapshotReadStarted;
+    const second = consume();
+    releaseSnapshotRead();
+    const outcomes = await Promise.all([first, second]);
+
+    expect(outcomes.filter(({ dispatch }) => dispatch !== null)).toHaveLength(1);
+    const refusals = outcomes.filter(({ error }) => error !== null);
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]?.error).toSatisfy(
+      (error: unknown) => isPluginConstructionRefusal(error) && error.code === "policy-epoch-stale",
+    );
+    expect(readAuthoritySnapshot).toHaveBeenCalledTimes(2);
+  });
+
   it("fails closed for every identity, profile, stage, grant, safe-mode, and platform deny", async () => {
     const profile = styleProfile();
     const cases: Array<{
@@ -390,12 +442,12 @@ describe("PluginConstructionPolicyResolver", () => {
     );
   });
 
-  it("recomputes the consume-time policy digest independently of the stored object", async () => {
+  it("keeps the stored policy immutable from a caller-held resolve result", async () => {
     const { resolver } = resolverFor();
     const policy = await resolver.resolveConstructionPolicy(requestFor());
-    // The resolver stores this exact object reference. Mutating it makes the resolve-vs-consume
-    // equality guard pass, so only the independent digest recomputation can reject it.
-    policy.policyDigest = "0".repeat(64);
+    policy.requiredAuthorities.length = 0;
+    const { policyDigest: _policyDigest, ...mutatedPayload } = policy;
+    policy.policyDigest = authorityJsonSha256(mutatedPayload);
 
     await expect(resolver.consumeConstructionPolicy(policy)).rejects.toSatisfy(
       (error: unknown) => isPluginConstructionRefusal(error) && error.code === "policy-epoch-stale",
@@ -460,6 +512,65 @@ describe("sealed package inspection", () => {
     expect(after.identity.mainSha256).toBe(before.identity.mainSha256);
     expect(after.identity.packageTreeSha256).not.toBe(before.identity.packageTreeSha256);
     expect(after.identityDigest).not.toBe(before.identityDigest);
+  });
+
+  it("keeps mutable plugin data and Threadleaf package metadata outside executable identity", async () => {
+    const root = await fixturePackage("module.exports = 1;\n");
+    await fs.writeFile(path.join(root, "data.json"), '{"theme":"dark"}\n');
+    await fs.writeFile(
+      path.join(root, ".data.json.00c98356-991b-442b-b05d-429d3d275e87.tmp"),
+      '{"theme":"pending-dark"}\n',
+    );
+    await fs.writeFile(path.join(root, ".threadleaf-package.json"), '{"private":true}\n');
+    await fs.writeFile(path.join(root, "LICENSE.threadleaf.txt"), "retained license\n");
+    const stage = {
+      sealedPackageRootId: "fixture",
+      sealedPackageRootPath: root,
+      packageIdentityDigest: "0".repeat(64),
+      packageTreeSha256: "0".repeat(64),
+    };
+    const before = await inspectSealedPluginPackage(stage, "1.0.0");
+    await fs.writeFile(path.join(root, "data.json"), '{"theme":"light"}\n');
+    await fs.writeFile(
+      path.join(root, ".data.json.00c98356-991b-442b-b05d-429d3d275e87.tmp"),
+      '{"theme":"pending-light"}\n',
+    );
+    await fs.writeFile(path.join(root, ".threadleaf-package.json"), '{"private":false}\n');
+    await fs.writeFile(path.join(root, "LICENSE.threadleaf.txt"), "replacement license\n");
+    const after = await inspectSealedPluginPackage(stage, "1.0.0");
+
+    expect(after.identity).toEqual(before.identity);
+    expect(after.identityDigest).toBe(before.identityDigest);
+    expect(
+      (await capturePluginPackageTree(root)).files.map(({ path: filePath }) => filePath),
+    ).toEqual(["dependency.js", "main.js", "manifest.json"]);
+  });
+
+  it("parses and scans the same captured entrypoint bytes that define package identity", async () => {
+    const root = await fixturePackage('require("child_process");\n');
+    const captured = await capturePluginPackageTree(root);
+    const capturedMain = captured.bytesByPath.get("main.js");
+    expect(capturedMain).toBeDefined();
+    await fs.writeFile(path.join(root, "main.js"), "module.exports = 1;\n");
+
+    const inspected = inspectCapturedPluginPackage(captured, "1.0.0");
+    expect(inspected.identity.mainSha256).toBe(
+      captured.files.find(({ path: filePath }) => filePath === "main.js")?.sha256,
+    );
+    expect(inspected.staticCapabilities).toContain("subprocess");
+    expect(
+      (
+        await inspectSealedPluginPackage(
+          {
+            sealedPackageRootId: "fixture",
+            sealedPackageRootPath: root,
+            packageIdentityDigest: "0".repeat(64),
+            packageTreeSha256: "0".repeat(64),
+          },
+          "1.0.0",
+        )
+      ).staticCapabilities,
+    ).not.toContain("subprocess");
   });
 
   it("uses measured installed identity fields instead of copying a reviewed profile", async () => {

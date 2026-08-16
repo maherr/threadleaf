@@ -1,9 +1,19 @@
 import { createHash } from "node:crypto";
-import { promises as fs, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  promises as fs,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  realpathSync,
+} from "node:fs";
 import { createRequire, isBuiltin } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ActionRegistry } from "../application/action-registry";
+import { readStableFileWithinLimit } from "../kernel/durability";
 import { isPathInside } from "../kernel/path-policy";
 import type { VaultReadPort } from "../kernel/ports";
 import { authorityJsonSha256 } from "../shared/authority-json";
@@ -23,8 +33,10 @@ import {
   withPluginDiagnosticCode,
 } from "../shared/plugin-diagnostics";
 import {
+  compareCanonicalPluginPackagePaths,
   type ExactPluginPackageIdentity,
   isPluginConstructionRefusal,
+  isPluginDistributionPathIncluded,
   maxPluginBundleBytes,
   type PluginCapabilityId,
   type PluginConstructionDispatch,
@@ -52,6 +64,11 @@ import type { PluginRuntimePort } from "./plugin-runtime-port";
 
 interface CommonJsModuleRecord {
   exports: unknown;
+}
+
+interface VerifiedPluginPackageFile {
+  sha256: string;
+  size: number;
 }
 
 type PluginConstructor = new (app: App, manifest: PluginManifest) => Plugin;
@@ -187,17 +204,15 @@ export class PluginHost implements PluginRuntimePort {
     const resolvedDirectory = await this.assertSealedPackageRoot(pluginDirectory);
     const manifestPath = await this.canonicalPluginFile(resolvedDirectory, "manifest.json");
     const entryPath = await this.canonicalPluginFile(resolvedDirectory, "main.js");
-    const manifest = await this.readManifest(manifestPath);
+    const verifiedFiles = await this.verifyPackageIdentity(resolvedDirectory, policy);
+    const manifest = this.readManifest(manifestPath, resolvedDirectory, verifiedFiles);
     if (
       manifest.id !== policy.packageIdentity.pluginId ||
       manifest.version !== policy.packageIdentity.manifestVersion
     ) {
       throw new PluginConstructionRefusal(this.identityMismatchPolicy(policy));
     }
-    const stylesheetDiscovered = await this.fileExists(
-      path.join(resolvedDirectory, "styles.css"),
-      resolvedDirectory,
-    );
+    const stylesheetDiscovered = verifiedFiles.has("styles.css");
     if (this.plugins.has(manifest.id)) {
       await this.unloadPlugin(manifest.id);
     }
@@ -222,8 +237,12 @@ export class PluginHost implements PluginRuntimePort {
 
     let instance: Plugin | null = null;
     try {
-      await this.verifyPackageIdentity(resolvedDirectory, policy);
-      const PluginClass = await this.evaluatePlugin(entryPath, resolvedDirectory, policy);
+      const PluginClass = await this.evaluatePlugin(
+        entryPath,
+        resolvedDirectory,
+        policy,
+        verifiedFiles,
+      );
       instance = new PluginClass(this.app, manifest);
       if (!(instance instanceof Plugin)) {
         throw new Error("Plugin export does not extend the compatibility Plugin class.");
@@ -701,17 +720,9 @@ export class PluginHost implements PluginRuntimePort {
     entryPath: string,
     sealedPackageRoot: string,
     policy: PluginConstructionDispatch["policy"],
+    verifiedFiles: ReadonlyMap<string, VerifiedPluginPackageFile>,
   ): Promise<PluginConstructor> {
-    const bundleBytes = await this.readBoundedBytes(entryPath, maxPluginBundleBytes);
-    const actualBundleSha256 = createHash("sha256").update(bundleBytes).digest("hex");
-    if (actualBundleSha256 !== policy.packageIdentity.mainSha256) {
-      throw withPluginDiagnosticCode(
-        new Error(
-          "Plugin main.js changed after authority review and was blocked before execution.",
-        ),
-        "managed-package-changed",
-      );
-    }
+    const bundleBytes = this.readVerifiedModuleBytes(entryPath, sealedPackageRoot, verifiedFiles);
     const compatibilityModule = createObsidianCompatibilityModule(this.app);
     const moduleCache = new Map<string, CommonJsModuleRecord>();
     const loadSealedModule = (modulePath: string, knownBytes?: Uint8Array): unknown => {
@@ -761,10 +772,13 @@ export class PluginHost implements PluginRuntimePort {
         pluginRequire.main = nativeRequire.main;
 
         if (path.extname(modulePath) === ".node") {
-          moduleRecord.exports = nativeRequire(modulePath);
-          return moduleRecord.exports;
+          throw withPluginDiagnosticCode(
+            new Error("Native addons are not part of a reviewed sealed plugin package."),
+            "managed-package-changed",
+          );
         }
-        const bytes = knownBytes ?? this.readBoundedModuleBytes(modulePath);
+        const bytes =
+          knownBytes ?? this.readVerifiedModuleBytes(modulePath, sealedPackageRoot, verifiedFiles);
         if (path.extname(modulePath) === ".json") {
           moduleRecord.exports = JSON.parse(
             new TextDecoder("utf-8", { fatal: true }).decode(bytes),
@@ -804,16 +818,73 @@ export class PluginHost implements PluginRuntimePort {
     return candidate as PluginConstructor;
   }
 
-  private readBoundedModuleBytes(filePath: string): Buffer {
-    const stat = statSync(filePath);
-    if (!stat.isFile() || stat.size > maxPluginBundleBytes) {
-      throw new Error("Plugin dependency is not a bounded regular file.");
+  private readVerifiedModuleBytes(
+    filePath: string,
+    sealedPackageRoot: string,
+    verifiedFiles: ReadonlyMap<string, VerifiedPluginPackageFile>,
+  ): Buffer {
+    const relativePath = path.relative(sealedPackageRoot, filePath).split(path.sep).join("/");
+    const expected = verifiedFiles.get(relativePath);
+    if (!expected || expected.size > maxPluginBundleBytes) {
+      throw withPluginDiagnosticCode(
+        new Error("Plugin dependency is absent from the verified sealed package manifest."),
+        "managed-package-changed",
+      );
     }
-    const bytes = readFileSync(filePath);
-    if (bytes.byteLength > maxPluginBundleBytes) {
-      throw new Error("Plugin dependency grew beyond its size limit while reading.");
+    if (constants.O_NOFOLLOW === undefined && process.platform !== "win32") {
+      throw new Error("Plugin dependency verification requires no-follow file opens.");
     }
-    return bytes;
+    try {
+      const descriptor = openSync(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      try {
+        const before = fstatSync(descriptor, { bigint: true });
+        if (!before.isFile() || before.nlink !== 1n || before.size !== BigInt(expected.size)) {
+          throw new Error("Plugin dependency is not the reviewed bounded regular file.");
+        }
+        const buffer = Buffer.alloc(expected.size + 1);
+        let offset = 0;
+        while (offset < buffer.byteLength) {
+          const bytesRead = readSync(descriptor, buffer, offset, buffer.byteLength - offset, null);
+          if (bytesRead === 0) break;
+          offset += bytesRead;
+        }
+        const after = fstatSync(descriptor, { bigint: true });
+        const current = lstatSync(filePath, { bigint: true });
+        const bytes = Buffer.from(buffer.subarray(0, offset));
+        if (
+          offset !== expected.size ||
+          !current.isFile() ||
+          current.isSymbolicLink() ||
+          current.nlink !== 1n ||
+          before.dev !== after.dev ||
+          before.ino !== after.ino ||
+          before.size !== after.size ||
+          before.mtimeNs !== after.mtimeNs ||
+          before.ctimeNs !== after.ctimeNs ||
+          before.dev !== current.dev ||
+          before.ino !== current.ino ||
+          before.size !== current.size ||
+          before.mtimeNs !== current.mtimeNs ||
+          before.ctimeNs !== current.ctimeNs ||
+          createHash("sha256").update(bytes).digest("hex") !== expected.sha256
+        ) {
+          throw new Error("Plugin dependency changed after sealed package verification.");
+        }
+        return bytes;
+      } finally {
+        closeSync(descriptor);
+      }
+    } catch (error) {
+      if (attachedPluginDiagnosticCode(error)) {
+        throw error;
+      }
+      throw withPluginDiagnosticCode(
+        new Error("Plugin dependency changed after sealed package verification.", {
+          cause: error,
+        }),
+        "managed-package-changed",
+      );
+    }
   }
 
   private resolveSealedPluginModule(
@@ -992,15 +1063,18 @@ export class PluginHost implements PluginRuntimePort {
   private async verifyPackageIdentity(
     rootPath: string,
     policy: PluginConstructionDispatch["policy"],
-  ): Promise<void> {
+  ): Promise<ReadonlyMap<string, VerifiedPluginPackageFile>> {
     const expected: ExactPluginPackageIdentity = policy.packageIdentity;
     const files: Array<{ path: string; sha256: string; size: number }> = [];
     let aggregateBytes = 0;
     const visit = async (directoryPath: string, relativeDirectory: string): Promise<void> => {
       const entries = await fs.readdir(directoryPath, { withFileTypes: true });
-      entries.sort((left, right) => left.name.localeCompare(right.name, "en-US"));
+      entries.sort((left, right) => compareCanonicalPluginPackagePaths(left.name, right.name));
       for (const entry of entries) {
         const relativePath = path.posix.join(relativeDirectory, entry.name);
+        if (!isPluginDistributionPathIncluded(relativePath)) {
+          continue;
+        }
         if (entry.isSymbolicLink() || path.isAbsolute(relativePath)) {
           throw new PluginConstructionRefusal(this.identityMismatchPolicy(policy));
         }
@@ -1012,7 +1086,18 @@ export class PluginHost implements PluginRuntimePort {
         if (!entry.isFile()) {
           throw new Error("Sealed plugin package contains a non-regular entry.");
         }
-        const bytes = await this.readBoundedBytes(absolutePath, 64 * 1024 * 1024);
+        const snapshot = await readStableFileWithinLimit(absolutePath, 64 * 1024 * 1024);
+        const current = await fs.lstat(absolutePath, { bigint: true });
+        if (
+          snapshot?.status !== "ready" ||
+          !current.isFile() ||
+          current.isSymbolicLink() ||
+          current.nlink !== 1n ||
+          current.size !== BigInt(snapshot.snapshot.size)
+        ) {
+          throw new PluginConstructionRefusal(this.identityMismatchPolicy(policy));
+        }
+        const bytes = snapshot.snapshot.bytes;
         aggregateBytes += bytes.byteLength;
         if (files.length >= 4_096 || aggregateBytes > 64 * 1024 * 1024) {
           throw new Error("Sealed plugin package exceeds its bounded closure budget.");
@@ -1025,7 +1110,7 @@ export class PluginHost implements PluginRuntimePort {
       }
     };
     await visit(rootPath, "");
-    files.sort((left, right) => left.path.localeCompare(right.path, "en-US"));
+    files.sort((left, right) => compareCanonicalPluginPackagePaths(left.path, right.path));
     const byPath = new Map(files.map((file) => [file.path, file]));
     const actual = {
       manifestSha256: byPath.get("manifest.json")?.sha256,
@@ -1041,11 +1126,22 @@ export class PluginHost implements PluginRuntimePort {
     ) {
       throw new PluginConstructionRefusal(this.identityMismatchPolicy(policy));
     }
+    return new Map(
+      files.map(({ path: relativePath, sha256, size }) => [relativePath, { sha256, size }]),
+    );
   }
 
-  private async readManifest(manifestPath: string): Promise<PluginManifest> {
+  private readManifest(
+    manifestPath: string,
+    sealedPackageRoot: string,
+    verifiedFiles: ReadonlyMap<string, VerifiedPluginPackageFile>,
+  ): PluginManifest {
     const manifest = parsePluginManifest(
-      JSON.parse(await this.readBoundedText(manifestPath, 64 * 1024)),
+      JSON.parse(
+        new TextDecoder("utf-8", { fatal: true }).decode(
+          this.readVerifiedModuleBytes(manifestPath, sealedPackageRoot, verifiedFiles),
+        ),
+      ),
     );
     return {
       id: manifest.id,
@@ -1081,39 +1177,6 @@ export class PluginHost implements PluginRuntimePort {
       throw new Error(`${filename} is not a regular file.`);
     }
     return candidatePath;
-  }
-
-  private async readBoundedBytes(filePath: string, maxBytes: number): Promise<Buffer> {
-    const stat = await fs.stat(filePath);
-    if (!stat.isFile()) {
-      throw new Error(`${path.basename(filePath)} is not a regular file.`);
-    }
-    if (stat.size > maxBytes) {
-      throw new Error(`${path.basename(filePath)} exceeds its ${maxBytes} byte limit.`);
-    }
-    const bytes = await fs.readFile(filePath);
-    if (bytes.byteLength > maxBytes) {
-      throw new Error(`${path.basename(filePath)} grew beyond its size limit while reading.`);
-    }
-    return bytes;
-  }
-
-  private async readBoundedText(filePath: string, maxBytes: number): Promise<string> {
-    return new TextDecoder("utf-8", { fatal: true }).decode(
-      await this.readBoundedBytes(filePath, maxBytes),
-    );
-  }
-
-  private async fileExists(filePath: string, directoryPath: string): Promise<boolean> {
-    try {
-      await this.canonicalPluginFile(directoryPath, path.basename(filePath));
-      return true;
-    } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        return false;
-      }
-      throw error;
-    }
   }
 
   private record(kind: RuntimeEventKind, message: string): void {

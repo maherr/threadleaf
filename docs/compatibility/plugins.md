@@ -23,20 +23,23 @@ an API that Threadleaf has not implemented. Threadleaf reports that activation f
 package and keeps loading other selected plugins.
 
 Compatibility means a named, executable workflow passes against a public fixture. A package being
-listed, enabled, or activated is not by itself a workflow claim. The unchanged open Excalidraw
-2.25.3 release bundle now passes discovery and `onload` activation in Threadleaf's disposable DOM
-probe. It registers its two view types, ribbon action, settings tab, and Markdown processor without
-an uncaught activation error. The same unchanged bundle now activates at startup in Threadleaf's
-production Electron compatibility renderer. Its registered drawing view attaches to a visible
+listed, enabled, or activated is not by itself a workflow claim. Historical composed gates for the
+unchanged open Excalidraw 2.25.3 release exercised discovery and `onload` activation in Threadleaf's
+disposable DOM probe. They registered its two view types, ribbon action, settings tab, and Markdown
+processor without an uncaught activation error and activated it in Threadleaf's production Electron
+compatibility renderer. Its registered drawing view attached to a visible
 workspace leaf with the filename header, plugin action icons, release-notes modal, and real loaded
 Excalidraw canvas. Its plugin-owned header replaces the normal Markdown editor header for that leaf.
 Opening an existing drawing, mutating its scene, saving through the revision-bound compatibility
-vault, fully detaching the view on close, and reopening the exact persisted scene is measured level
-4 for that named workflow. The unchanged new-drawing command also reaches level 4: it creates the
+vault, fully detaching the view on close, and reopening the exact persisted scene were exercised by
+those historical gates. They remain supporting evidence, not a current Level 4 claim, until a
+controller-finalized receipt is regenerated under the current evidence policy. The unchanged
+new-drawing command was exercised too: it creates the
 standard Excalidraw folder and Markdown file through Threadleaf's recovery-backed kernel, opens the
 new custom leaf through the built-in Markdown handoff, saves deterministic scene elements, closes
 the leaf, and reloads those elements from the exact persisted file. Native-editor embed insertion
-and SVG/PNG vault export also reach level 4. The full unload fixture starts from an active drawing,
+and SVG/PNG vault export were exercised by the same historical gates without a current Level 4
+claim. The full unload fixture starts from an active drawing,
 removes the leaf, plugin-owned release modal, all 69 commands, and every registered integration,
 then completes two clean reload cycles with the exact original counts and no captured runtime
 error. Plugin-owned settings are now reachable through an Options control shown only for the
@@ -139,20 +142,27 @@ dynamic code evaluation. It does not copy source snippets into private settings 
 renderer. The report is conservative and explicitly not a sandbox: an omitted reference is not
 proof that the bundle lacks that authority, and a reported reference does not prove harmful use.
 
-Granting stores the exact bundle digest and observed authority classes in Threadleaf's private
-per-vault settings. JavaScript and plugin CSS remain blocked until that grant matches the current
-raw `main.js` bytes. Any byte change, including an otherwise invisible UTF-8 byte-order mark, makes
-the grant stale and requires a new review. Revocation removes the grant, disables the plugin, and
-unloads its runtime. The main process independently enforces the same gate, so renderer IPC cannot
-bypass it. The execution renderer re-hashes the bounded raw bytes immediately before CommonJS
-compilation, so replacing `main.js` after discovery also fails closed. Older version 3 settings
-migrate to version 4 without inherited grants and therefore fail closed until each selected bundle
-is reviewed.
+Construction requires both the exact-bundle UI grant and a checked-in reviewed authority profile
+for the complete package identity. Granting captures the executable package closure once through
+no-follow file handles, hashes and scans those same bytes, copies them into an application-owned
+content-addressed read-only root, and appends a full-identity grant bound to the package-tree digest,
+authority digest, static capability set, platform, and execution profile. JavaScript and plugin CSS
+load only from that sealed root after its pointer and bytes pass integrity checks. A source-package
+change, including an otherwise invisible UTF-8 byte-order mark, cannot silently change the executing
+identity and makes later reconciliation fail closed. Revocation appends a durable record, disables
+and unloads the plugin, and clears its CSS. Safe mode, vault-session rotation, stale epochs, reordered
+history, or a changed profile invalidate construction without a fallback. The main process owns this
+decision, so renderer IPC cannot bypass it. The same-user trusted desktop runtime is still not a
+sandbox. Older settings migrate without inherited grants and therefore fail closed until each
+selected exact package is reviewed and granted.
 
-Evidence never transfers silently between releases. Excalidraw 2.25.3 and Threadleaf's 0.1.0
-compatibility fixture report their measured level 4 workflows. Another Excalidraw version reports
-the tested 2.25.3 reference but remains unverified at level 0. Every unknown valid package starts at
-discovered level 0. Invalid packages explain that validation stopped before a workflow could run.
+Evidence never transfers silently between releases. Excalidraw 2.25.3 retains historical composed
+workflow evidence at Level 0 pending a current production receipt. Excalidraw 2.26.4 has direct
+Level 2 evidence for reviewed-profile matching, sealed construction, activation, clean process
+restart reconstruction, and revocation and unload on Linux. Threadleaf's 0.1.0 compatibility fixture
+remains at Level 0 until its own exact authority and current receipt gates exist. Every unknown valid
+package starts at discovered Level 0. Invalid packages explain that validation stopped before a
+workflow could run.
 
 ## Generated compatibility evidence
 
@@ -166,9 +176,11 @@ retested.
 
 This registry is not the external community package index. The package index answers what can be
 reviewed for installation. The Threadleaf registry answers what exact behavior has evidence. The
-current Excalidraw entry labels its evidence as composed because the exact-release check and the
-host workflow checks are separate gates; that limitation is public instead of being hidden behind
-a single compatibility number.
+Excalidraw 2.25.3 labels its historical evidence as composed because the exact-release check and the
+host workflow checks are separate gates. Excalidraw 2.26.4 labels the sealed construction path as
+direct because one production Electron gate performs the exact review, activation, restart, and
+revocation sequence. Those limits are public instead of being hidden behind a single compatibility
+number.
 
 ## Existing vault migration
 

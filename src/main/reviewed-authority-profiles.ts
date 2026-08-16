@@ -10,6 +10,12 @@ import inspectionSafeProfileJson from "../../scripts/compatibility/trust/inspect
 import inspectionTeardownProfileJson from "../../scripts/compatibility/trust/inspection-teardown-0.1.0.authority-profile.json" with {
   type: "json",
 };
+import excalidraw2253ProfileJson from "../../scripts/compatibility/trust/obsidian-excalidraw-plugin-2.25.3.authority-profile.json" with {
+  type: "json",
+};
+import excalidraw2264ProfileJson from "../../scripts/compatibility/trust/obsidian-excalidraw-plugin-2.26.4.authority-profile.json" with {
+  type: "json",
+};
 import styleSettingsProfileJson from "../../scripts/compatibility/trust/obsidian-style-settings-1.0.9.authority-profile.json" with {
   type: "json",
 };
@@ -249,6 +255,8 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(inspectionSafeProfileJson),
   parseReviewedAuthorityProfile(inspectionRunawayProfileJson),
   parseReviewedAuthorityProfile(inspectionTeardownProfileJson),
+  parseReviewedAuthorityProfile(excalidraw2253ProfileJson),
+  parseReviewedAuthorityProfile(excalidraw2264ProfileJson),
 ];
 
 if (

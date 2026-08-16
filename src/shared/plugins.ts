@@ -28,6 +28,32 @@ export type PluginCapabilityId = (typeof pluginCapabilityIds)[number];
 export type ReviewedAuthorityExecutionProfile = (typeof reviewedAuthorityExecutionProfiles)[number];
 export type ReviewedAuthorityPlatform = (typeof reviewedAuthorityPlatforms)[number];
 
+const pluginPackagePathEncoder = new TextEncoder();
+const mutablePluginRootFiles = new Set([
+  ".threadleaf-package.json",
+  "LICENSE.threadleaf.txt",
+  "data.json",
+]);
+const mutablePluginDataTemporaryFile =
+  /^\.data\.json\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/u;
+
+export function compareCanonicalPluginPackagePaths(left: string, right: string): number {
+  const leftBytes = pluginPackagePathEncoder.encode(left);
+  const rightBytes = pluginPackagePathEncoder.encode(right);
+  const sharedLength = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    const difference = (leftBytes[index] ?? 0) - (rightBytes[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return leftBytes.length - rightBytes.length;
+}
+
+export function isPluginDistributionPathIncluded(relativePath: string): boolean {
+  return (
+    !mutablePluginRootFiles.has(relativePath) && !mutablePluginDataTemporaryFile.test(relativePath)
+  );
+}
+
 export interface ExactPluginPackageIdentity {
   pluginId: string;
   manifestVersion: string;
@@ -277,7 +303,7 @@ export interface PluginManifestData {
 export type PluginCompatibilityEvidenceStatus = "verified" | "different-version" | "unverified";
 
 export interface PluginCompatibilityReport {
-  level: 0;
+  level: 0 | 1 | 2 | 3 | 4;
   status: PluginCompatibilityEvidenceStatus;
   testedVersion: string | null;
   testedThreadleafVersion: string | null;

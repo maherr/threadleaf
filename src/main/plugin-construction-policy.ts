@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
+import { isPathInside } from "../kernel/path-policy";
 import { authorityJsonSha256 } from "../shared/authority-json";
 import {
   type CommunityPluginGrantV2,
   type ConstructionPolicyEpoch,
+  compareCanonicalPluginPackagePaths,
   type ExactPluginPackageIdentity,
+  isPluginDistributionPathIncluded,
   maxPluginBundleBytes,
   type PluginCapabilityId,
   type PluginConstructionDenialCode,
@@ -78,10 +81,16 @@ interface PendingConstructionAttempt {
   sealedPackageRootPath: string;
 }
 
-interface TreeFile {
+export interface PluginPackageTreeFile {
   path: string;
   sha256: string;
   size: number;
+}
+
+export interface CapturedPluginPackageTree {
+  canonicalRoot: string;
+  files: PluginPackageTreeFile[];
+  bytesByPath: ReadonlyMap<string, Buffer>;
 }
 
 function sameData(left: unknown, right: unknown): boolean {
@@ -166,23 +175,93 @@ function policyEpoch(
   };
 }
 
-async function readRegularFile(filePath: string, byteLimit: number): Promise<Buffer> {
-  const stat = await fs.lstat(filePath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > byteLimit) {
-    throw new Error("Sealed plugin package contains an invalid or oversized regular file.");
+async function readStableRegularFile(filePath: string, byteLimit: number): Promise<Buffer> {
+  if (constants.O_NOFOLLOW === undefined && process.platform !== "win32") {
+    throw new Error("Plugin package capture requires no-follow file opens on this platform.");
   }
-  return fs.readFile(filePath);
+  const lexicalBefore = await fs.lstat(filePath, { bigint: true });
+  if (
+    !lexicalBefore.isFile() ||
+    lexicalBefore.isSymbolicLink() ||
+    lexicalBefore.nlink !== 1n ||
+    lexicalBefore.size > BigInt(byteLimit)
+  ) {
+    throw new Error("Sealed plugin package contains an invalid or aliased regular file.");
+  }
+  const handle = await fs.open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (
+      !before.isFile() ||
+      before.nlink !== 1n ||
+      before.size > BigInt(byteLimit) ||
+      before.dev !== lexicalBefore.dev ||
+      before.ino !== lexicalBefore.ino
+    ) {
+      throw new Error("Sealed plugin package contains an invalid or oversized regular file.");
+    }
+    const buffer = Buffer.alloc(Number(before.size) + 1);
+    let offset = 0;
+    while (offset < buffer.byteLength) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.byteLength - offset, null);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    const current = await fs.lstat(filePath, { bigint: true });
+    if (
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs ||
+      before.dev !== current.dev ||
+      before.ino !== current.ino ||
+      before.size !== current.size ||
+      before.mtimeNs !== current.mtimeNs ||
+      before.ctimeNs !== current.ctimeNs ||
+      current.nlink !== 1n ||
+      offset !== Number(before.size)
+    ) {
+      throw new Error("Sealed plugin package changed while a regular file was read.");
+    }
+    return Buffer.from(buffer.subarray(0, offset));
+  } finally {
+    await handle.close();
+  }
 }
 
-async function enumeratePackageTree(rootPath: string): Promise<TreeFile[]> {
+export async function capturePluginPackageTree(
+  rootPath: string,
+): Promise<CapturedPluginPackageTree> {
   const canonicalRoot = await fs.realpath(rootPath);
-  const files: TreeFile[] = [];
+  const root = await fs.lstat(canonicalRoot);
+  if (!root.isDirectory() || root.isSymbolicLink()) {
+    throw new Error("Sealed plugin package root must be a real directory.");
+  }
+  const files: PluginPackageTreeFile[] = [];
+  const bytesByPath = new Map<string, Buffer>();
   let totalBytes = 0;
   async function visit(directoryPath: string, relativeDirectory: string): Promise<void> {
+    const before = await fs.lstat(directoryPath, { bigint: true });
+    const canonicalDirectory = await fs.realpath(directoryPath);
+    if (
+      !before.isDirectory() ||
+      before.isSymbolicLink() ||
+      canonicalDirectory !== directoryPath ||
+      !isPathInside(canonicalRoot, canonicalDirectory)
+    ) {
+      throw new Error("Sealed plugin package contains an escaped distribution directory.");
+    }
     const entries = await fs.readdir(directoryPath, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name, "en-US"));
+    entries.sort((left, right) => compareCanonicalPluginPackagePaths(left.name, right.name));
     for (const entry of entries) {
       const relativePath = path.posix.join(relativeDirectory, entry.name);
+      if (!isPluginDistributionPathIncluded(relativePath)) {
+        continue;
+      }
       if (
         path.isAbsolute(relativePath) ||
         relativePath.split("/").includes("..") ||
@@ -198,7 +277,10 @@ async function enumeratePackageTree(rootPath: string): Promise<TreeFile[]> {
       if (!entry.isFile()) {
         throw new Error("Sealed plugin package contains a non-regular entry.");
       }
-      const bytes = await readRegularFile(absolutePath, maxPackageBytes);
+      if (path.posix.extname(relativePath).toLowerCase() === ".node") {
+        throw new Error("Sealed plugin package contains an unreviewed native addon.");
+      }
+      const bytes = await readStableRegularFile(absolutePath, maxPackageBytes);
       totalBytes += bytes.byteLength;
       if (files.length >= maxPackageFiles || totalBytes > maxPackageBytes) {
         throw new Error("Sealed plugin package exceeds its bounded closure budget.");
@@ -208,6 +290,18 @@ async function enumeratePackageTree(rootPath: string): Promise<TreeFile[]> {
         sha256: authorityBytesSha256(bytes),
         size: bytes.byteLength,
       });
+      bytesByPath.set(relativePath, bytes);
+    }
+    const after = await fs.lstat(directoryPath, { bigint: true });
+    if (
+      !after.isDirectory() ||
+      after.isSymbolicLink() ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs
+    ) {
+      throw new Error("Sealed plugin package directory changed while it was captured.");
     }
   }
   await visit(canonicalRoot, "");
@@ -219,18 +313,19 @@ async function enumeratePackageTree(rootPath: string): Promise<TreeFile[]> {
     }
     folded.add(key);
   }
-  return files.sort((left, right) => left.path.localeCompare(right.path, "en-US"));
+  files.sort((left, right) => compareCanonicalPluginPackagePaths(left.path, right.path));
+  return { canonicalRoot, files, bytesByPath };
 }
 
 function authorityBytesSha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-export async function inspectSealedPluginPackage(
-  sealedPackage: SealedPluginPackageRecord,
+export function inspectCapturedPluginPackage(
+  captured: CapturedPluginPackageTree,
   distributionTag: string,
-): Promise<InspectedPluginPackage> {
-  const files = await enumeratePackageTree(sealedPackage.sealedPackageRootPath);
+): InspectedPluginPackage {
+  const { files, bytesByPath } = captured;
   const byPath = new Map(files.map((file) => [file.path, file]));
   const manifestFile = byPath.get("manifest.json");
   const mainFile = byPath.get("main.js");
@@ -238,14 +333,16 @@ export async function inspectSealedPluginPackage(
   if (!manifestFile || !mainFile) {
     throw new Error("Sealed plugin package is missing manifest.json or main.js.");
   }
-  const manifestBytes = await readRegularFile(
-    path.join(sealedPackage.sealedPackageRootPath, "manifest.json"),
-    64 * 1024,
-  );
-  const mainBytes = await readRegularFile(
-    path.join(sealedPackage.sealedPackageRootPath, "main.js"),
-    maxPluginBundleBytes,
-  );
+  const manifestBytes = bytesByPath.get("manifest.json");
+  const mainBytes = bytesByPath.get("main.js");
+  if (
+    !manifestBytes ||
+    !mainBytes ||
+    manifestBytes.byteLength > 64 * 1024 ||
+    mainBytes.byteLength > maxPluginBundleBytes
+  ) {
+    throw new Error("Sealed plugin package contains an oversized manifest or entrypoint.");
+  }
   const manifest = parsePluginManifest(JSON.parse(manifestBytes.toString("utf8")));
   const packageTreeSha256 = authorityJsonSha256({ schemaVersion: 1, files });
   const identity: ExactPluginPackageIdentity = {
@@ -269,6 +366,16 @@ export async function inspectSealedPluginPackage(
     staticCapabilities: [...report.capabilities],
     staticScanDigest: authorityJsonSha256(report),
   };
+}
+
+export async function inspectSealedPluginPackage(
+  sealedPackage: SealedPluginPackageRecord,
+  distributionTag: string,
+): Promise<InspectedPluginPackage> {
+  return inspectCapturedPluginPackage(
+    await capturePluginPackageTree(sealedPackage.sealedPackageRootPath),
+    distributionTag,
+  );
 }
 
 export async function measureInstalledPluginConstructionRequest(
@@ -391,7 +498,6 @@ export class PluginConstructionPolicyResolver {
       grant.authorityProfileId !== profile.profileId ||
       grant.authorityProfileRevision !== profile.profileRevision ||
       grant.authorityDigest !== profile.authorityDigest ||
-      grant.grantEpoch !== snapshot.grantEpoch ||
       !sameCapabilities(grant.grantedAuthorities, profile.requiredAuthorities)
     ) {
       return deny("grant-stale", inspected.staticScanDigest);
@@ -419,46 +525,50 @@ export class PluginConstructionPolicyResolver {
       denialCode: null,
       issuedAt,
     });
+    if (this.attempts.size >= maxConsumedConstructionPolicyAttempts) {
+      return deny("replay-ledger-exhausted", inspected.staticScanDigest);
+    }
     this.attempts.set(attemptId, {
       authorityFingerprint: snapshotFingerprint(snapshot),
-      policy,
-      request,
+      policy: structuredClone(policy),
+      request: structuredClone(request),
       sealedPackageRootPath: sealedPackage.sealedPackageRootPath,
     });
-    return policy;
+    return structuredClone(policy);
   }
 
   async consumeConstructionPolicy(
     policy: PluginConstructionPolicy,
   ): Promise<PluginConstructionDispatch> {
-    if (policy.decision !== "allow" || policy.denialCode !== null) {
-      throw new PluginConstructionRefusal(policy);
+    const candidate = structuredClone(policy);
+    if (candidate.decision !== "allow" || candidate.denialCode !== null) {
+      throw new PluginConstructionRefusal(candidate);
     }
-    const attempt = this.attempts.get(policy.constructionAttemptId);
-    this.attempts.delete(policy.constructionAttemptId);
+    const attempt = this.attempts.get(candidate.constructionAttemptId);
     if (this.consumedAttempts.size >= maxConsumedConstructionPolicyAttempts) {
-      throw new PluginConstructionRefusal(replayLedgerExhaustedPolicy(policy));
+      throw new PluginConstructionRefusal(replayLedgerExhaustedPolicy(candidate));
     }
     if (
       !attempt ||
-      this.consumedAttempts.has(policy.constructionAttemptId) ||
-      !sameData(attempt.policy, policy) ||
-      policy.policyDigest !== authorityJsonSha256(policyPayloadWithoutDigest(policy))
+      this.consumedAttempts.has(candidate.constructionAttemptId) ||
+      !sameData(attempt.policy, candidate) ||
+      candidate.policyDigest !== authorityJsonSha256(policyPayloadWithoutDigest(candidate))
     ) {
-      throw new PluginConstructionRefusal(stalePolicy(policy));
+      throw new PluginConstructionRefusal(stalePolicy(candidate));
     }
-    this.consumedAttempts.add(policy.constructionAttemptId);
+    this.attempts.delete(candidate.constructionAttemptId);
+    this.consumedAttempts.add(candidate.constructionAttemptId);
     const current = await this.options.readAuthoritySnapshot(attempt.request);
     const currentProfile = this.profileByIdentity(attempt.request.packageIdentityDigest);
     if (
       snapshotFingerprint(current) !== attempt.authorityFingerprint ||
       !currentProfile ||
-      currentProfile.profileRevision !== policy.epoch.authorityProfileRevision ||
-      currentProfile.authorityDigest !== policy.authorityDigest
+      currentProfile.profileRevision !== candidate.epoch.authorityProfileRevision ||
+      currentProfile.authorityDigest !== candidate.authorityDigest
     ) {
-      throw new PluginConstructionRefusal(stalePolicy(policy));
+      throw new PluginConstructionRefusal(stalePolicy(candidate));
     }
-    return { pluginDirectory: attempt.sealedPackageRootPath, policy };
+    return { pluginDirectory: attempt.sealedPackageRootPath, policy: candidate };
   }
 
   async resolveAndConsume(request: PluginConstructionRequest): Promise<PluginConstructionDispatch> {

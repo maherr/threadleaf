@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultVaultPluginSettings,
   createPluginCompatibilityReport,
+  isPluginDistributionPathIncluded,
   type PluginCapabilityGrant,
   type PluginCapabilityReport,
   parsePluginManifest,
@@ -11,6 +12,20 @@ import {
 } from "./plugins";
 
 describe("plugin compatibility settings", () => {
+  it("excludes only recognized mutable root data files from executable identity", () => {
+    expect(isPluginDistributionPathIncluded("data.json")).toBe(false);
+    expect(
+      isPluginDistributionPathIncluded(".data.json.00c98356-991b-442b-b05d-429d3d275e87.tmp"),
+    ).toBe(false);
+    expect(isPluginDistributionPathIncluded(".data.json.not-a-uuid.tmp")).toBe(true);
+    expect(
+      isPluginDistributionPathIncluded("cache/.data.json.00c98356-991b-442b-b05d-429d3d275e87.tmp"),
+    ).toBe(true);
+    expect(
+      isPluginDistributionPathIncluded(".main.js.00c98356-991b-442b-b05d-429d3d275e87.tmp"),
+    ).toBe(true);
+  });
+
   it("defaults to restricted mode with no selected compatibility plugins", () => {
     expect(createDefaultVaultPluginSettings()).toEqual({
       compatibilityMode: "restricted",
@@ -75,11 +90,20 @@ describe("plugin compatibility settings", () => {
       lastTested: "2026-08-16",
     });
     expect(
-      createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.26.0" }),
+      createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.26.4" }),
+    ).toMatchObject({
+      level: 2,
+      status: "verified",
+      testedVersion: "2.26.4",
+      testedThreadleafVersion: "0.1.0-beta.6",
+      lastTested: "2026-08-16",
+    });
+    expect(
+      createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.27.0" }),
     ).toMatchObject({
       level: 0,
       status: "different-version",
-      testedVersion: "2.25.3",
+      testedVersion: "2.26.4",
       testedThreadleafVersion: "0.1.0-beta.6",
       lastTested: "2026-08-16",
     });

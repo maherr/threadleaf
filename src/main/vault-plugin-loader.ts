@@ -12,6 +12,7 @@ import type { PluginPackageInspectionReceipt } from "../shared/plugin-packages";
 import {
   createPluginCompatibilityReport,
   maxPluginBundleBytes,
+  type PluginCapabilityGrantState,
   type PluginCapabilityReport,
   type PluginCatalogSnapshot,
   type PluginPackageSummary,
@@ -54,6 +55,13 @@ interface VaultPluginLoaderOptions {
   preference: VaultPluginSettings;
   safeMode: boolean;
   blockedPluginIds?: ReadonlySet<string>;
+  resolveConstructionAuthority?(
+    plugin: DiscoveredVaultPlugin,
+    legacyState: PluginCapabilityGrantState,
+  ): Promise<{
+    grantState: PluginCapabilityGrantState;
+    stylesheetPath: string | null;
+  }>;
 }
 
 function errorCode(error: unknown): string | null {
@@ -485,6 +493,7 @@ export async function loadVaultPluginCatalog(
   const discovery = await discoverVaultPlugins(options.vaultPath);
   const warnings = [...discovery.warnings];
   const packagesById = new Map(discovery.plugins.map((plugin) => [plugin.summary.id, plugin]));
+  const authorityStylesheetsById = new Map<string, string | null>();
   const cssParts: string[] = [];
   let cssBytes = 0;
 
@@ -509,15 +518,30 @@ export async function loadVaultPluginCatalog(
   }
 
   for (const plugin of discovery.plugins) {
+    const legacyState =
+      plugin.summary.packageState === "ready"
+        ? pluginCapabilityGrantState(
+            plugin.summary.capabilityReport,
+            preference.capabilityGrantsByPlugin[plugin.summary.id],
+          )
+        : "unavailable";
+    let grantState = legacyState;
+    if (plugin.summary.packageState === "ready" && options.resolveConstructionAuthority) {
+      try {
+        const authority = await options.resolveConstructionAuthority(plugin, legacyState);
+        grantState = authority.grantState;
+        authorityStylesheetsById.set(plugin.summary.id, authority.stylesheetPath);
+      } catch {
+        grantState = legacyState === "unavailable" ? "unavailable" : "stale";
+        authorityStylesheetsById.set(plugin.summary.id, null);
+        warnings.push(
+          `Plugin ${plugin.summary.id} construction authority could not be verified and was treated as stale.`,
+        );
+      }
+    }
     plugin.summary = {
       ...plugin.summary,
-      capabilityGrantState:
-        plugin.summary.packageState === "ready"
-          ? pluginCapabilityGrantState(
-              plugin.summary.capabilityReport,
-              preference.capabilityGrantsByPlugin[plugin.summary.id],
-            )
-          : "unavailable",
+      capabilityGrantState: grantState,
     };
   }
 
@@ -537,16 +561,15 @@ export async function loadVaultPluginCatalog(
       );
       continue;
     }
-    if (
-      options.safeMode ||
-      preference.compatibilityMode === "restricted" ||
-      !plugin.stylesheetPath
-    ) {
+    const stylesheetPath = options.resolveConstructionAuthority
+      ? authorityStylesheetsById.get(pluginId)
+      : plugin.stylesheetPath;
+    if (options.safeMode || preference.compatibilityMode === "restricted" || !stylesheetPath) {
       continue;
     }
     try {
       const sanitized = neutralizeExternalCssUrls(
-        await readBoundedText(plugin.stylesheetPath, maxPluginStylesheetBytes),
+        await readBoundedText(stylesheetPath, maxPluginStylesheetBytes),
       );
       const css = validateAppearanceCss(sanitized.css);
       const bytes = Buffer.byteLength(css, "utf8");

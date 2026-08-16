@@ -187,13 +187,17 @@ disable, or reload operations. A full Settings catalog reports invalid packages 
 failures without hiding the rest of the inventory. Before enablement, each package reports its
 declared minimum Obsidian version, desktop-only flag, standard bundled-dependency model, and
 measured compatibility evidence. Evidence is exact to the tested plugin version: Excalidraw 2.25.3
-reports its named level 4 workflows, a different release remains unverified, and an unknown plugin
-starts at discovered level 0. Each valid package also gets a conservative static authority report over
-the exact raw `main.js` bytes. Threadleaf blocks both JavaScript and CSS until the user grants that
-exact bundle for the current vault. Any byte change makes the grant stale; revocation disables and
-unloads the plugin. The execution renderer re-hashes the raw bytes immediately before compilation,
-so a file replacement after review is blocked too. This report is an explicit trust aid, not a
-runtime permission sandbox. The same page searches the community package index without
+retains historical composed workflow evidence at Level 0 pending a current receipt, Excalidraw 2.26.4
+reports direct Level 2 sealed-construction evidence, and an unknown plugin starts at discovered Level
+0. Each valid package also gets a conservative static authority report over the exact package.
+Construction additionally requires a checked-in reviewed profile for the complete package identity.
+Granting captures the executable package closure once through no-follow file handles, hashes and
+scans those same bytes, copies them into an application-owned content-addressed read-only root, and
+appends a full-identity grant bound to that package tree and authority profile. JavaScript and CSS
+load only from that integrity-checked sealed root. Any source-package change makes later
+reconciliation fail closed; revocation appends a durable record, unloads the runtime, and clears its
+CSS. Safe mode and vault-session rotation invalidate outstanding construction tickets. This is an
+explicit trust and reproducibility boundary, not a runtime permission sandbox. The same page searches the community package index without
 downloading plugin code. Opening Review
 fetches one exact GitHub release plus its repository license into
 private, expiring staging and displays the pinned version, source, retained license, and complete
@@ -201,8 +205,9 @@ SHA-256 evidence before any vault write. Apply first removes the plugin from Thr
 set and unloads its runtime. Installs, updates, reinstalls, rollbacks, uninstalls, and restores all
 remain disabled until separately enabled. Updates preserve package data, rollback restores reviewed
 code assets while retaining current data, and uninstall keeps a complete private recovery snapshot.
-Managed code, manifest, stylesheet, receipt, and license bytes are rechecked before every load;
-changed bytes are visibly blocked until a reviewed reinstall. Every package mutation has a durable
+Managed code, manifest, stylesheet, receipt, and license bytes are rechecked before authority
+preparation; constructed code and CSS then come only from the sealed package root. Changed source
+bytes are visibly blocked until a reviewed reinstall and new exact grant. Every package mutation has a durable
 private transaction journal and up to five retained package versions. Restart recovery either
 restores the exact prior directory and private metadata or completes cleanup for an already
 committed operation. The current source adapter reads the public `obsidian-releases` registry at
@@ -243,9 +248,11 @@ existing Excalidraw Markdown document now opens through the production host as t
 loaded canvas in a visible workspace leaf, with its plugin-owned filename and action bar kept
 distinct from ordinary Markdown editor chrome. The plugin can mutate an existing drawing, save it
 through Threadleaf's revision-bound recoverable writer, close the drawing leaf, and reconstruct the
-same persisted scene after reopening. That named edit, save, close, and reopen workflow is measured
-level 4. New drawing creation, native-editor embed insertion, and SVG/PNG vault export are also
-measured level 4 workflows. Full active-view unload and reload is measured too: plugin-owned
+same persisted scene after reopening. Historical composed gates exercised that named edit, save,
+close, and reopen workflow, but it remains supporting evidence until a controller-finalized receipt
+is regenerated under the current Level 4 policy. New drawing creation, native-editor embed insertion,
+and SVG/PNG vault export were exercised by the same historical gates and do not currently carry a
+Level 4 claim. Full active-view unload and reload is measured too: plugin-owned
 transient UI, the drawing leaf, all 69 commands, and every registered integration are removed, and
 two reload cycles restore the exact command and integration counts without duplicates or runtime
 errors. Compatibility plugins can also rename and recoverably trash revision-bound attachments

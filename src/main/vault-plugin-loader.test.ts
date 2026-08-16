@@ -331,6 +331,56 @@ describe("vault plugin loader", () => {
     ]);
   });
 
+  it("uses construction authority state and sealed CSS instead of the mutable vault stylesheet", async () => {
+    await writePlugin("drawing", {
+      css: ".mutable-vault-copy { --authority-source: mutable; }",
+    });
+    const sealedStylesheetPath = path.join(sandboxPath, "sealed-styles.css");
+    await fs.writeFile(
+      sealedStylesheetPath,
+      ".sealed-package-copy { --authority-source: sealed; }",
+      "utf8",
+    );
+    const seenLegacyStates: string[] = [];
+
+    const catalog = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "1".repeat(64),
+      preference: await grantedPreference(["drawing"]),
+      safeMode: false,
+      resolveConstructionAuthority: async (_plugin, legacyState) => {
+        seenLegacyStates.push(legacyState);
+        return { grantState: "granted", stylesheetPath: sealedStylesheetPath };
+      },
+    });
+
+    expect(seenLegacyStates).toEqual(["granted"]);
+    expect(catalog.plugins[0]?.capabilityGrantState).toBe("granted");
+    expect(catalog.css).toContain(".sealed-package-copy");
+    expect(catalog.css).not.toContain(".mutable-vault-copy");
+  });
+
+  it("fails closed when construction authority cannot verify an otherwise granted package", async () => {
+    await writePlugin("drawing", {
+      css: ".mutable-vault-copy { --authority-source: mutable; }",
+    });
+
+    const catalog = await loadVaultPluginCatalog({
+      vaultPath,
+      vaultId: "2".repeat(64),
+      preference: await grantedPreference(["drawing"]),
+      safeMode: false,
+      resolveConstructionAuthority: async () => {
+        throw new Error("private authority detail");
+      },
+    });
+
+    expect(catalog.plugins[0]?.capabilityGrantState).toBe("stale");
+    expect(catalog.css).toBe("");
+    expect(catalog.warnings.join("\n")).toContain("treated as stale");
+    expect(catalog.warnings.join("\n")).not.toContain("private authority detail");
+  });
+
   it("still rejects executable plugin CSS after URL neutralization", async () => {
     await writePlugin("drawing", {
       css: '@import url("https://example.test/plugin.css"); .drawing-view { color: white; }',

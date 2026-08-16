@@ -1,4 +1,5 @@
 import type { ActionRegistry } from "../application/action-registry";
+import type { VaultReadPort } from "../kernel/ports";
 import type {
   PluginEditorContext,
   PluginMutationWaitOptions,
@@ -6,6 +7,7 @@ import type {
   RuntimeSnapshot,
 } from "../shared/contracts";
 import type { PluginConstructionDispatch, PluginConstructionRequest } from "../shared/plugins";
+import type { CompatibilityVaultWritePort } from "./obsidian-compat";
 
 export class FatalPluginRuntimeError extends Error {
   readonly operation: string;
@@ -65,4 +67,5 @@ export interface PluginConstructionPolicyResolverPort {
 export type PluginRuntimeFactory = (
   vaultPath: string,
   actions: ActionRegistry,
+  vault?: VaultReadPort & CompatibilityVaultWritePort,
 ) => Promise<PluginRuntimePort>;

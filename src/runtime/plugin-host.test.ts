@@ -390,24 +390,33 @@ describe("PluginHost", () => {
             : "module.exports = {};\n",
         );
         const dispatch = await testConstructionDispatch(pluginPath);
+        const host = new PluginHost(vaultPath);
+        const internals = host as unknown as {
+          evaluatePlugin(
+            entryPath: string,
+            sealedPackageRoot: string,
+            policy: PluginConstructionPolicy,
+            verifiedFiles: ReadonlyMap<string, { sha256: string; size: number }>,
+          ): Promise<unknown>;
+          verifyPackageIdentity(
+            rootPath: string,
+            policy: PluginConstructionPolicy,
+          ): Promise<ReadonlyMap<string, { sha256: string; size: number }>>;
+        };
+        const verifiedFiles = await internals.verifyPackageIdentity(pluginPath, dispatch.policy);
         if (mode === "symlink") {
           await fs.rename(dependencyPath, path.join(sandboxPath, "reviewed-dependency.js"));
           await fs.symlink(outsidePath, dependencyPath);
         }
         Reflect.deleteProperty(globalThis, "__threadleafModuleEscape");
-        const host = new PluginHost(vaultPath);
-        const evaluate = (
-          host as unknown as {
-            evaluatePlugin(
-              entryPath: string,
-              sealedPackageRoot: string,
-              policy: PluginConstructionPolicy,
-            ): Promise<unknown>;
-          }
-        ).evaluatePlugin.bind(host);
 
         await expect(
-          evaluate(path.join(pluginPath, "main.js"), pluginPath, dispatch.policy),
+          internals.evaluatePlugin(
+            path.join(pluginPath, "main.js"),
+            pluginPath,
+            dispatch.policy,
+            verifiedFiles,
+          ),
         ).rejects.toSatisfy(
           (error: unknown) => attachedPluginDiagnosticCode(error) === "package-path-escape",
         );
@@ -479,13 +488,6 @@ describe("PluginHost", () => {
       label: "node:v8",
       request: "node:v8",
     },
-    {
-      authority: "dynamic-code" as const,
-      dependencyBytes: Buffer.from([0, 1, 2, 3]),
-      dependencyName: "fixture.node",
-      label: "an in-root native addon",
-      request: "./fixture.node",
-    },
   ])("denies $label when its narrow profile withholds $authority", async (testCase) => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-narrow-authority-"));
     const vaultPath = path.join(sandboxPath, "vault");
@@ -513,6 +515,116 @@ describe("PluginHost", () => {
           isPluginConstructionRefusal(error) && error.code === "authority-profile-mismatch",
       );
     } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects native addons before constructing an authority profile", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-native-addon-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "native-addon-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "native-addon-fixture",
+          name: "Native addon fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        'require("./fixture.node"); module.exports = {};\n',
+      );
+      await fs.writeFile(path.join(pluginPath, "fixture.node"), Buffer.from([0, 1, 2, 3]));
+
+      await expect(testConstructionDispatch(pluginPath)).rejects.toThrow(
+        "Sealed plugin package contains an unreviewed native addon.",
+      );
+    } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("uses one bytewise package-path ordering for punctuation, case, and Unicode", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-path-order-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "path-order-fixture");
+    const dependencyDirectory = path.join(pluginPath, "Deps [β]");
+    try {
+      await fs.mkdir(dependencyDirectory, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "path-order-fixture", name: "Path order fixture", version: "1.0.0" }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `require("./Deps [β]/Álpha #2.js");
+require("./Deps [β]/alpha-10.js");
+require("./Deps [β]/alpha-2.js");
+const { Plugin } = require("obsidian");
+module.exports = class extends Plugin {};
+`,
+      );
+      await fs.writeFile(
+        path.join(dependencyDirectory, "Álpha #2.js"),
+        "globalThis.__threadleafPathOrder = ['unicode'];\n",
+      );
+      await fs.writeFile(
+        path.join(dependencyDirectory, "alpha-10.js"),
+        "globalThis.__threadleafPathOrder.push('ten');\n",
+      );
+      await fs.writeFile(
+        path.join(dependencyDirectory, "alpha-2.js"),
+        "globalThis.__threadleafPathOrder.push('two');\n",
+      );
+      Reflect.deleteProperty(globalThis, "__threadleafPathOrder");
+
+      const snapshot = await loadPlugin(new PluginHost(vaultPath), pluginPath);
+
+      expect(snapshot.plugin).toMatchObject({ id: "path-order-fixture", state: "loaded" });
+      expect(Reflect.get(globalThis, "__threadleafPathOrder")).toEqual(["unicode", "ten", "two"]);
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafPathOrder");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a dependency changed after closure verification but before delayed require", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-delayed-require-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "delayed-require-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "delayed-require-fixture",
+          name: "Delayed require fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const fs = require("node:fs");
+const path = require("node:path");
+fs.writeFileSync(path.join(__dirname, "dependency.js"), "module.exports = 2;\\n");
+require("./dependency.js");
+globalThis.__threadleafDelayedDependencyEvaluated = true;
+const { Plugin } = require("obsidian");
+module.exports = class extends Plugin {};
+`,
+      );
+      await fs.writeFile(path.join(pluginPath, "dependency.js"), "module.exports = 1;\n");
+      Reflect.deleteProperty(globalThis, "__threadleafDelayedDependencyEvaluated");
+
+      await expect(loadPlugin(new PluginHost(vaultPath), pluginPath)).rejects.toSatisfy(
+        (error: unknown) => attachedPluginDiagnosticCode(error) === "managed-package-changed",
+      );
+      expect(Reflect.has(globalThis, "__threadleafDelayedDependencyEvaluated")).toBe(false);
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafDelayedDependencyEvaluated");
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });

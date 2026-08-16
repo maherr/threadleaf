@@ -1,10 +1,12 @@
 import { promises as fs } from "node:fs";
 import type { ActionRegistry } from "../application/action-registry";
+import type { VaultReadPort } from "../kernel/ports";
 import {
   inspectSealedPluginPackage,
   PluginConstructionPolicyResolver,
 } from "../main/plugin-construction-policy";
 import { PolicyEnforcingPluginHost } from "../main/policy-enforcing-plugin-host";
+import type { CompatibilityVaultWritePort } from "../runtime/obsidian-compat";
 import { PluginHost } from "../runtime/plugin-host";
 import { authorityJsonSha256 } from "../shared/authority-json";
 import type {
@@ -155,9 +157,16 @@ export async function testConstructionDispatch(
   return resolver.resolveAndConsume(request);
 }
 
-export async function testPluginRuntimeFactory(vaultPath: string, actions: ActionRegistry) {
-  return new PolicyEnforcingPluginHost(new PluginHost(vaultPath, undefined, actions), {
-    resolveAndConsume: (request) =>
-      testConstructionDispatch(request.pluginDirectory, request.constructionPath),
-  });
+export async function testPluginRuntimeFactory(
+  vaultPath: string,
+  actions: ActionRegistry,
+  vault?: VaultReadPort & CompatibilityVaultWritePort,
+) {
+  return new PolicyEnforcingPluginHost(
+    new PluginHost(vaultPath, vault, actions, undefined, vault),
+    {
+      resolveAndConsume: (request) =>
+        testConstructionDispatch(request.pluginDirectory, request.constructionPath),
+    },
+  );
 }

@@ -8,13 +8,15 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the six exact identity-bound records", () => {
+  it("loads the eight exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
       "inspection-runaway",
       "inspection-safe",
       "inspection-teardown",
+      "obsidian-excalidraw-plugin",
+      "obsidian-excalidraw-plugin",
       "obsidian-style-settings",
       "templater-obsidian",
     ]);
@@ -31,6 +33,48 @@ describe("reviewed authority profiles", () => {
     expect(templater?.expectedStaticCapabilities).toContain("subprocess");
     expect(templater?.requiredAuthorities).toContain("subprocess");
     expect(templater?.executionProfile).toBe("trusted-desktop-escape");
+    const excalidraw2253 = profiles.find(
+      ({ packageIdentity }) =>
+        packageIdentity.pluginId === "obsidian-excalidraw-plugin" &&
+        packageIdentity.manifestVersion === "2.25.3",
+    );
+    expect(excalidraw2253).toMatchObject({
+      packageIdentity: {
+        manifestVersion: "2.25.3",
+        distributionTag: "2.25.3",
+        packageTreeSha256: "4ff38da95a78ba66e7200e1c6e34ec650e7fc1661e9fe6da3ac2aa7da251a8c3",
+      },
+      packageIdentityDigest: "eb4b823b4614be855b72198a11decd87d9eaaea7247210d74983a59ac0a82bb9",
+      executionProfile: "trusted-node-renderer",
+    });
+    const excalidraw2264 = profiles.find(
+      ({ packageIdentity }) =>
+        packageIdentity.pluginId === "obsidian-excalidraw-plugin" &&
+        packageIdentity.manifestVersion === "2.26.4",
+    );
+    expect(excalidraw2264).toMatchObject({
+      packageIdentity: {
+        manifestVersion: "2.26.4",
+        distributionTag: "2.26.4",
+        packageTreeSha256: "b5d2ce2c808a56cf668b020623c2a4a1702416214dfb898d7b2ad651ea0f8ea5",
+      },
+      packageIdentityDigest: "1075ef87ee0d8003dca8b0ed6b0fb5f5cb091d8fb6c35619319333aa3c4926e7",
+      executionProfile: "trusted-node-renderer",
+    });
+    expect(excalidraw2253?.requiredAuthorities).toEqual([
+      "vault-read",
+      "vault-write",
+      "network",
+      "filesystem",
+      "subprocess",
+      "host-environment",
+      "clipboard",
+      "external-navigation",
+      "editor-extension",
+      "workspace-ui",
+      "dynamic-code",
+    ]);
+    expect(excalidraw2264?.requiredAuthorities).toEqual(excalidraw2253?.requiredAuthorities);
   });
 
   it("recomputes deterministic identity and authority digests", () => {
