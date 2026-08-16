@@ -1194,6 +1194,84 @@ describe("WorkspaceRuntime", () => {
     expect(listVisiblePaths).toHaveBeenCalledTimes(1);
   });
 
+  it("offers and commits one revision-bound missing attachment relink through the runtime", async () => {
+    const candidateBytes = Buffer.from("%PDF-1.7\nruntime relink candidate\n", "ascii");
+    const before = "# Recovery Desk\n\n![[../Missing/report.pdf?download=1#page=2|Report]]\n";
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Assets", "recovered report.pdf"), candidateBytes);
+    await fs.writeFile(path.join(vaultPath, "Notes", "Recovery Desk.md"), before, "utf8");
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Notes/Recovery Desk.md");
+    const source = opened.workspace?.activeNote;
+    if (!source) throw new Error("Expected the recovery source note to open.");
+
+    const missing = await workspace.loadVaultAttachment(
+      source.path,
+      "../Missing/report.pdf?download=1",
+      workspace.vaultId,
+    );
+    expect(missing).toMatchObject({
+      status: "unavailable",
+      reason: "missing",
+      recovery: {
+        kind: "relink",
+        missingPath: "Missing/report.pdf",
+        sourceNoteRevision: source.revision,
+      },
+    });
+
+    const preview = await workspace.relinkAttachment(
+      source.path,
+      "../Missing/report.pdf?download=1",
+      "Assets/recovered report.pdf",
+      source.revision,
+      workspace.vaultId,
+    );
+    expect(preview.outcome).toMatchObject({
+      status: "requires-confirmation",
+      rewrite: {
+        documentPath: source.path,
+        syntax: "wiki",
+        beforeTarget: "../Missing/report.pdf?download=1",
+        afterTarget: "../Assets/recovered report.pdf?download=1",
+      },
+    });
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected a missing attachment relink confirmation.");
+    }
+    await expect(fs.readFile(path.join(vaultPath, source.path), "utf8")).resolves.toBe(before);
+
+    const committed = await workspace.relinkAttachment(
+      source.path,
+      "../Missing/report.pdf?download=1",
+      "Assets/recovered report.pdf",
+      source.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+    );
+    expect(committed.outcome).toMatchObject({
+      status: "committed",
+      path: source.path,
+      rewrite: { replacementPath: "Assets/recovered report.pdf" },
+    });
+    expect(committed.snapshot.workspace?.activeNote?.content).toBe(
+      before.replace(
+        "../Missing/report.pdf?download=1",
+        "../Assets/recovered report.pdf?download=1",
+      ),
+    );
+    await expect(
+      fs.readFile(path.join(vaultPath, "Assets", "recovered report.pdf")),
+    ).resolves.toEqual(candidateBytes);
+    await expect(fs.stat(path.join(vaultPath, "Missing", "report.pdf"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await workspace.reconcileNow();
+    expect(workspace.watcher.operations.size).toBe(0);
+  });
+
   it("binds direct ordinary-file previews to the current physical inventory generation", async () => {
     await fs.writeFile(path.join(vaultPath, "readme.data"), "ordinary text", "utf8");
     const workspace = await openRuntime();
@@ -1362,6 +1440,11 @@ describe("WorkspaceRuntime", () => {
         source: "workspace",
       },
       { id: "workspace.move-attachment", name: "Publish attachment copy", source: "workspace" },
+      {
+        id: "workspace.relink-attachment",
+        name: "Relink missing attachment",
+        source: "workspace",
+      },
       {
         id: "workspace.remove-note-property",
         name: "Remove note property",
@@ -3863,6 +3946,11 @@ module.exports = class ActionCollisionFixture extends Plugin {
         source: "workspace",
       },
       { id: "workspace.move-attachment", name: "Publish attachment copy", source: "workspace" },
+      {
+        id: "workspace.relink-attachment",
+        name: "Relink missing attachment",
+        source: "workspace",
+      },
       {
         id: "workspace.remove-note-property",
         name: "Remove note property",

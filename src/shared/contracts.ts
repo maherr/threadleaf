@@ -1098,6 +1098,73 @@ export interface AttachmentMoveResponse {
   committedVaultName?: string;
 }
 
+export interface AttachmentRelinkRewritePreview {
+  documentPath: string;
+  line: number;
+  syntax: "wiki" | "markdown";
+  beforeTarget: string;
+  afterTarget: string;
+  missingPath: string;
+  replacementPath: string;
+}
+
+export type AttachmentRelinkRefusalReason =
+  | "invalid-source"
+  | "invalid-missing-target"
+  | "invalid-replacement"
+  | "private-path"
+  | "unsupported-reference"
+  | "reference-not-found"
+  | "reference-ambiguous"
+  | "missing-target-returned"
+  | "missing-target-ambiguous"
+  | "missing-target-changed"
+  | "replacement-missing"
+  | "replacement-ambiguous"
+  | "replacement-changed"
+  | "replacement-too-large"
+  | "replacement-unreadable"
+  | "source-unreadable"
+  | "source-revision-changed"
+  | "workspace-changed"
+  | "write-conflict"
+  | "stale-vault";
+
+export type AttachmentRelinkOutcome =
+  | {
+      status: "requires-confirmation";
+      sourceNotePath: string;
+      missingPath: string;
+      replacementPath: string;
+      replacementRevision: string;
+      confirmationId: string;
+      rewrite: AttachmentRelinkRewritePreview;
+    }
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+      rewrite: AttachmentRelinkRewritePreview;
+    }
+  | {
+      status: "refused";
+      sourceNotePath: string;
+      missingPath: string;
+      replacementPath: string;
+      reason: AttachmentRelinkRefusalReason;
+      message: string;
+    };
+
+export interface AttachmentRelinkResponse {
+  outcome: AttachmentRelinkOutcome;
+  snapshot: RuntimeSnapshot;
+  /** Set when the mutation committed in a runtime replaced before reply. */
+  committedVaultId?: string;
+  /** Basename-safe identity of the vault that committed the mutation. */
+  committedVaultName?: string;
+}
+
 export type NoteDeleteOutcome =
   | { status: "committed"; from: string; to: string; transactionId: string }
   | { status: "conflict"; from: string; to: string; reason: string };
@@ -1199,6 +1266,12 @@ export type VaultAttachmentUnavailableReason =
   | "too-large"
   | "unreadable";
 
+export interface VaultAttachmentRecoveryOffer {
+  kind: "relink";
+  missingPath: string;
+  sourceNoteRevision: string;
+}
+
 export type VaultAttachmentResponse =
   | { status: "ready"; vaultId: string; attachment: VaultAttachmentMetadata }
   | {
@@ -1207,6 +1280,7 @@ export type VaultAttachmentResponse =
       reason: VaultAttachmentUnavailableReason;
       message: string;
       attachment?: Pick<VaultAttachmentMetadata, "path" | "actions">;
+      recovery?: VaultAttachmentRecoveryOffer;
     }
   | { status: "stale-vault"; vaultId: string };
 
@@ -1599,6 +1673,14 @@ export interface ThreadleafBridge {
     confirmationId?: string,
     operation?: AttachmentOperation,
   ): Promise<AttachmentMoveResponse>;
+  relinkAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    replacementPath: string,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRelinkResponse>;
   deleteNote(
     path: string,
     expectedRevision: string,

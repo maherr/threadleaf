@@ -22,6 +22,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added vault-bound native **Open** and **Reveal** attachment actions with owned-renderer IPC,
   canonical containment, exact-revision and bounded-read validation, byte-and-suffix Open approval,
   unknown-byte Reveal fallback, redacted native failures, and packaged main-receiver proof.
+- Added a two-step **Relink** action for one missing passive attachment embed, with an exact target
+  preview, source and candidate revision binding, final resolver-level namespace and containment
+  checks, recoverable conflict copies, vault-switch-safe receipts, and packaged dark/light pointer
+  and keyboard proof.
 
 ### Changed
 

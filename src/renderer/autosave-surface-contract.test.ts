@@ -80,6 +80,11 @@ describe("continuous autosave surface contract", () => {
         "window.threadleaf.moveAttachment(",
       ],
       [
+        "relinkCurrentAttachment",
+        'tryFlushAllPaneAutosaves("note-mutation")',
+        "window.threadleaf.relinkAttachment(",
+      ],
+      [
         "exportCurrentNoteAsHtml",
         'tryFlushPaneAutosave(paneId, "note-mutation")',
         "window.threadleaf.publishNote(",
@@ -97,5 +102,11 @@ describe("continuous autosave surface contract", () => {
     expect(rendererSource).toContain("onAutosaveFlushRequest");
     expect(rendererSource).toContain("completeAutosaveFlush");
     expect(rendererSource).not.toContain('addEventListener("beforeunload"');
+  });
+
+  it("takes Relink source provenance from the rendered action rather than the root note", () => {
+    const actionSource = functionSource("activatePreviewAttachmentAction");
+    expect(actionSource).toContain("actionButton.dataset.threadleafAttachmentSourceNotePath");
+    expect(actionSource).not.toContain("const sourceNotePath = loadedNote?.path;");
   });
 });

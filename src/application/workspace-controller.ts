@@ -11,6 +11,7 @@ import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
   AttachmentMoveResponse,
   AttachmentOperation,
+  AttachmentRelinkResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -190,6 +191,14 @@ export interface WorkspaceRuntimePort {
     confirmationId?: string,
     operation?: AttachmentOperation,
   ): Promise<AttachmentMoveResponse>;
+  relinkAttachment?(
+    sourceNotePath: string,
+    missingTarget: string,
+    replacementPath: string,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRelinkResponse>;
   deleteNote(
     filePath: string,
     expectedRevision: string,
@@ -950,6 +959,63 @@ export class WorkspaceController {
       }
       return {
         outcome: { status: "conflict", from: filePath, to: targetPath, reason: "stale-vault" },
+        snapshot: await this.#runtime.getSnapshot(),
+      };
+    }
+    return response;
+  }
+
+  async relinkAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    replacementPath: string,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRelinkResponse> {
+    const runtime = this.activeRuntime("relink a missing attachment");
+    if (!runtime.relinkAttachment) {
+      throw new Error("The active workspace does not support attachment relinking.");
+    }
+    if (runtime.vaultId !== expectedVaultId) {
+      return {
+        outcome: {
+          status: "refused",
+          sourceNotePath,
+          missingPath: missingTarget,
+          replacementPath,
+          reason: "stale-vault",
+          message: "The active vault changed before this attachment could be relinked.",
+        },
+        snapshot: await runtime.getSnapshot(),
+      };
+    }
+    const response = await runtime.relinkAttachment(
+      sourceNotePath,
+      missingTarget,
+      replacementPath,
+      expectedSourceRevision,
+      expectedVaultId,
+      confirmationId,
+    );
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      if (response.outcome.status === "committed") {
+        return {
+          ...response,
+          snapshot: await this.#runtime.getSnapshot(),
+          committedVaultId: runtime.vaultId,
+          committedVaultName: displaySafeVaultName(response.snapshot.vault.name),
+        };
+      }
+      return {
+        outcome: {
+          status: "refused",
+          sourceNotePath,
+          missingPath: missingTarget,
+          replacementPath,
+          reason: "stale-vault",
+          message: "The active vault changed before this attachment could be relinked.",
+        },
         snapshot: await this.#runtime.getSnapshot(),
       };
     }

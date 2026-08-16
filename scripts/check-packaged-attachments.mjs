@@ -30,8 +30,13 @@ const originalNote = [
   "",
   "![[Assets/unknown.bin|Unknown bytes]]",
   "",
+  "![[Missing/lost-report.pdf?download=1#page=2|Missing report]]",
+  "",
   "The body is a fixture and must remain byte-identical.",
 ].join("\n");
+const missingAttachmentPath = "Missing/lost-report.pdf";
+const recoveredAttachmentPath = "Assets/recovered report.pdf";
+const recoveredAttachmentBytes = Buffer.from("%PDF-1.7\nrecovered fixture\0", "binary");
 const originalAudioCanvas = `\uFEFF${[
   "{",
   '  "nodes": [',
@@ -236,6 +241,7 @@ async function waitForTarget(port, deadline) {
 function connectCdp(webSocketUrl) {
   const socket = new WebSocket(webSocketUrl);
   const pending = new Map();
+  const listeners = new Map();
   let sequence = 0;
   const opened = new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve, { once: true });
@@ -245,6 +251,9 @@ function connectCdp(webSocketUrl) {
   });
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
+    if (typeof message.method === "string") {
+      for (const listener of listeners.get(message.method) ?? []) listener(message.params ?? {});
+    }
     const request = pending.get(message.id);
     if (!request) return;
     pending.delete(message.id);
@@ -265,6 +274,11 @@ function connectCdp(webSocketUrl) {
     },
     close() {
       socket.close();
+    },
+    on(method, listener) {
+      const methodListeners = listeners.get(method) ?? [];
+      methodListeners.push(listener);
+      listeners.set(method, methodListeners);
     },
   };
 }
@@ -402,18 +416,24 @@ async function proveRendererX11() {
   return renderers;
 }
 
-async function waitForFixture(deadline) {
+async function waitForFixture(deadline, { expectedReady = 3, expectedUnavailable = 1 } = {}) {
   while (Date.now() < deadline) {
     const state = await evaluate(`(async () => {
       const snapshot = await window.threadleaf.getSnapshot();
       return {
         path: snapshot.workspace?.activeNote?.path ?? '',
         ready: document.querySelectorAll('.preview-attachment-card[data-threadleaf-attachment-status="ready"]').length,
+        unavailable: document.querySelectorAll('.preview-attachment-unavailable').length,
         pending: document.querySelectorAll('.preview-attachment-placeholder').length,
         mode: snapshot.vault?.mode ?? '',
       };
     })()`);
-    if (state.path === "Attachment Desk.md" && state.ready === 3 && state.pending === 0)
+    if (
+      state.path === "Attachment Desk.md" &&
+      state.ready === expectedReady &&
+      state.unavailable === expectedUnavailable &&
+      state.pending === 0
+    )
       return state;
     await delay(50);
   }
@@ -475,9 +495,11 @@ async function setTheme(theme) {
       ? await evaluate(`(() => ({
           source: document.querySelector('#attachment-move-current-path')?.textContent ?? '',
           target: document.querySelector('#attachment-move-target')?.value ?? '',
-          action: (document.querySelector('#attachment-move-title')?.textContent ?? '').includes('Rename')
-            ? 'rename'
-            : 'move',
+          action: (document.querySelector('#attachment-move-title')?.textContent ?? '').includes('Relink')
+            ? 'relink'
+            : (document.querySelector('#attachment-move-title')?.textContent ?? '').includes('Rename')
+              ? 'rename'
+              : 'move',
           previewed: (document.querySelector('#attachment-move-preview-message')?.textContent ?? '').length > 0,
           blocked: (document.querySelector('#attachment-move-error')?.textContent ?? '').length > 0,
         }))()`)
@@ -560,9 +582,11 @@ async function capture(name) {
 }
 
 async function openAttachmentMoveWorkbench(attachmentPath = "Assets/report.pdf", action = "move") {
-  await clickPointer(
-    `[data-threadleaf-attachment-path="${attachmentPath}"] [data-threadleaf-attachment-action="${action}"]`,
-  );
+  const selector =
+    action === "relink"
+      ? `[data-threadleaf-attachment-action="relink"][data-threadleaf-attachment-path="${attachmentPath}"]`
+      : `[data-threadleaf-attachment-path="${attachmentPath}"] [data-threadleaf-attachment-action="${action}"]`;
+  await clickPointer(selector);
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")) break;
@@ -710,6 +734,7 @@ try {
     path.join(vaultPath, "Assets", "unknown.bin"),
     Buffer.from([0xff, 0x00, 0x91, 0x22, 0x00]),
   );
+  await fs.writeFile(path.join(vaultPath, recoveredAttachmentPath), recoveredAttachmentBytes);
   await fs.writeFile(path.join(vaultPath, "Audio Board.canvas"), originalAudioCanvas, "utf8");
   await fs.writeFile(path.join(vaultPath, "Unsafe Audio.canvas"), unsafeAudioCanvas, "utf8");
   await fs.writeFile(
@@ -753,6 +778,20 @@ try {
   const deadline = Date.now() + 15_000;
   const target = await waitForTarget(port, deadline);
   cdp = connectCdp(target.webSocketDebuggerUrl);
+  const rendererErrors = [];
+  cdp.on("Runtime.exceptionThrown", (event) => {
+    rendererErrors.push(
+      event.exceptionDetails?.exception?.description ??
+        event.exceptionDetails?.text ??
+        "Unknown renderer exception",
+    );
+  });
+  cdp.on("Log.entryAdded", (event) => {
+    if (event.entry?.level === "error")
+      rendererErrors.push(event.entry.text ?? "Unknown log error");
+  });
+  await cdp.send("Runtime.enable");
+  await cdp.send("Log.enable");
   await cdp.send("Page.enable");
   const renderers = await proveRendererX11();
   const initial = await waitForReady(deadline);
@@ -779,21 +818,27 @@ try {
     await evaluate(`(() => [...document.querySelectorAll('.preview-attachment-card')].map((card) => ({
     text: card.textContent ?? '',
     path: card.getAttribute('data-threadleaf-attachment-path') ?? '',
+    status: card.getAttribute('data-threadleaf-attachment-status') ?? '',
     actionCount: card.querySelectorAll('.preview-attachment-action').length,
   })))()`);
+  const readyCards = cardState.filter((card) => card.status === "ready");
+  const missingCard = cardState.find((card) => card.status === "missing");
   assert(
-    cardState.length === 3 &&
-      cardState.find((card) => card.path === "Assets/report.pdf")?.actionCount === 4 &&
-      cardState.find((card) => card.path === "Assets/audio.mp3")?.actionCount === 4 &&
-      cardState.find((card) => card.path === "Assets/unknown.bin")?.actionCount === 3,
+    cardState.length === 4 &&
+      readyCards.length === 3 &&
+      readyCards.find((card) => card.path === "Assets/report.pdf")?.actionCount === 4 &&
+      readyCards.find((card) => card.path === "Assets/audio.mp3")?.actionCount === 4 &&
+      readyCards.find((card) => card.path === "Assets/unknown.bin")?.actionCount === 3 &&
+      missingCard?.actionCount === 1 &&
+      missingCard.text.includes("Relink"),
     "Attachment cards lost open/reveal/rename/publication metadata.",
   );
   assert(
-    cardState.every((card) => card.text.includes("Publish copy")),
+    readyCards.every((card) => card.text.includes("Publish copy")),
     "Attachment cards did not expose truthful source-retaining publication controls.",
   );
   assert(
-    cardState.every((card) => card.text.includes("Rename or move")),
+    readyCards.every((card) => card.text.includes("Rename or move")),
     "Attachment cards did not expose the explicit source-removing operation.",
   );
   assert(
@@ -1193,6 +1238,115 @@ try {
   await setTheme("light");
   screenshots.push(await capture("packaged-attachment-renamed-light.png"));
 
+  const beforeRelink = originalNote
+    .replaceAll("Assets/report.pdf", "Archive/report-renamed.pdf")
+    .replaceAll("Assets/audio.mp3", "Archive/audio-renamed.mp3");
+  await waitForFixture(Date.now() + 8_000);
+  await setTheme("dark");
+  await openAttachmentMoveWorkbench(missingAttachmentPath, "relink");
+  const relinkWorkbench = await evaluate(`(() => ({
+    title: document.querySelector('#attachment-move-title')?.textContent ?? '',
+    description: document.querySelector('#attachment-move-description')?.textContent ?? '',
+    currentLabel: document.querySelector('#attachment-move-current-label')?.textContent ?? '',
+    currentPath: document.querySelector('#attachment-move-current-path')?.textContent ?? '',
+    targetLabel: document.querySelector('#attachment-move-target-label')?.textContent ?? '',
+    closeLabel: document.querySelector('#attachment-move-close')?.getAttribute('aria-label') ?? '',
+  }))()`);
+  assert(
+    relinkWorkbench.title === "Relink this missing attachment" &&
+      relinkWorkbench.description.includes("exactly one proven missing attachment target") &&
+      relinkWorkbench.description.includes("does not copy, move, delete, or overwrite") &&
+      relinkWorkbench.currentLabel === "Missing target" &&
+      relinkWorkbench.currentPath === missingAttachmentPath &&
+      relinkWorkbench.targetLabel === "Existing attachment path" &&
+      relinkWorkbench.closeLabel === "Cancel attachment relink",
+    `The missing-attachment relink workbench was not explicit about its semantics: ${JSON.stringify(relinkWorkbench)}`,
+  );
+  const relinkPreview = await previewAttachmentPublication(recoveredAttachmentPath);
+  assert(
+    relinkPreview.list.includes("Attachment Desk.md") &&
+      relinkPreview.list.includes("Missing/lost-report.pdf?download=1") &&
+      relinkPreview.list.includes("Assets/recovered report.pdf?download=1"),
+    `The relink preview omitted its exact one-token target replacement: ${JSON.stringify(relinkPreview)}`,
+  );
+  assert(
+    (await fs.readFile(notePath, "utf8")) === beforeRelink,
+    "The relink preview changed the source note before confirmation.",
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, recoveredAttachmentPath))).equals(
+      recoveredAttachmentBytes,
+    ),
+    "The relink preview changed the existing candidate bytes.",
+  );
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, missingAttachmentPath))
+      .then(() => true)
+      .catch(() => false)),
+    "The relink preview created the missing attachment path.",
+  );
+  screenshots.push(await capture("packaged-attachment-relink-preview-dark.png"));
+  await setTheme("light");
+  screenshots.push(await capture("packaged-attachment-relink-preview-light.png"));
+
+  await clickPointer("#attachment-move-submit");
+  const afterRelink = beforeRelink.replace(
+    "Missing/lost-report.pdf?download=1",
+    "Assets/recovered report.pdf?download=1",
+  );
+  const relinkDeadline = Date.now() + 10_000;
+  while (Date.now() < relinkDeadline) {
+    const terminalUi = await evaluate(`(() => ({
+      dialogOpen: document.querySelector('#attachment-move-dialog')?.open === true,
+      toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+    }))()`);
+    if (
+      (await fs.readFile(notePath, "utf8")) === afterRelink &&
+      !terminalUi.dialogOpen &&
+      terminalUi.toast.includes("Relinked the missing attachment")
+    ) {
+      break;
+    }
+    await delay(60);
+  }
+  assert(
+    (await fs.readFile(notePath, "utf8")) === afterRelink,
+    "The confirmed relink did not rewrite exactly the missing attachment target.",
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, recoveredAttachmentPath))).equals(
+      recoveredAttachmentBytes,
+    ),
+    "The confirmed relink changed the existing candidate bytes.",
+  );
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, missingAttachmentPath))
+      .then(() => true)
+      .catch(() => false)),
+    "The confirmed relink created the formerly missing attachment path.",
+  );
+  const relinkToast = await evaluate("document.querySelector('#toast')?.textContent?.trim() ?? ''");
+  assert(
+    relinkToast.includes(`Relinked the missing attachment to ${recoveredAttachmentPath}.`),
+    `The relink toast did not identify the existing candidate path: ${relinkToast}`,
+  );
+  await waitForFixture(Date.now() + 8_000, { expectedReady: 4, expectedUnavailable: 0 });
+  assert(
+    (await evaluate(
+      `document.querySelector('[data-threadleaf-attachment-path=${JSON.stringify(recoveredAttachmentPath)}][data-threadleaf-attachment-status="ready"]') !== null && document.querySelector('[data-threadleaf-attachment-action="relink"]') === null`,
+    )) === true,
+    "The relinked Reading-view card did not become ready or retained a stale Relink action.",
+  );
+  screenshots.push(await capture("packaged-attachment-relinked-light.png"));
+  await setTheme("dark");
+  screenshots.push(await capture("packaged-attachment-relinked-dark.png"));
+  assert(
+    rendererErrors.length === 0,
+    `The packaged attachment workflow emitted renderer errors: ${JSON.stringify(rendererErrors)}`,
+  );
+
   await evaluate("setTimeout(() => window.close(), 0); true");
   const exit = await Promise.race([
     exited,
@@ -1210,6 +1364,7 @@ try {
       exactBytes: true,
       attachmentMove: true,
       attachmentRename: true,
+      attachmentRelink: true,
       nativeAttachmentOpen: true,
       nativeAttachmentRevealDispatch: true,
       canvasReferenceRewrite: true,

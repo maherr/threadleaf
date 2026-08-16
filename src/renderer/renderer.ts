@@ -31,6 +31,8 @@ import type {
   AttachmentMoveResponse,
   AttachmentMoveRewritePreview,
   AttachmentOperation,
+  AttachmentRelinkResponse,
+  AttachmentRelinkRewritePreview,
   EditorDraftSnapshot,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -513,6 +515,7 @@ const elements = {
   attachmentMoveSubmit: getButton("attachment-move-submit"),
   attachmentMoveError: getElement("attachment-move-error"),
   attachmentMovePreviewMessage: getElement("attachment-move-preview-message"),
+  attachmentMoveCurrentLabel: getElement("attachment-move-current-label"),
   attachmentMoveCurrentPath: getElement("attachment-move-current-path"),
   attachmentMoveVault: getElement("attachment-move-vault"),
   attachmentMoveBlockers: getElement("attachment-move-blockers"),
@@ -1114,9 +1117,13 @@ let attachmentMoveVaultId: string | null = null;
 let attachmentMoveSourcePath: string | null = null;
 let attachmentMoveRevision: string | null = null;
 let attachmentMoveBlockers: AttachmentMoveBlocker[] = [];
-let attachmentMoveRewrites: AttachmentMoveRewritePreview[] = [];
+let attachmentMoveRewrites: Array<AttachmentMoveRewritePreview | AttachmentRelinkRewritePreview> =
+  [];
 let attachmentMoveConfirmationId: string | null = null;
-let attachmentMoveOperation: AttachmentOperation = "publish-copy";
+type AttachmentDialogOperation = AttachmentOperation | "relink";
+let attachmentMoveOperation: AttachmentDialogOperation = "publish-copy";
+let attachmentRelinkSourceNotePath: string | null = null;
+let attachmentRelinkMissingTarget: string | null = null;
 let deleteNoteRestoreFocus: HTMLElement | null = null;
 let deleteNoteBusy = false;
 let deleteNoteVaultId: string | null = null;
@@ -3046,6 +3053,8 @@ async function openAttachmentMoveDialog(
   attachmentMoveSourcePath = sourcePath;
   attachmentMoveRevision = revision;
   attachmentMoveOperation = operation;
+  attachmentRelinkSourceNotePath = null;
+  attachmentRelinkMissingTarget = null;
   attachmentMoveBlockers = [];
   attachmentMoveRewrites = [];
   attachmentMoveConfirmationId = null;
@@ -3058,6 +3067,53 @@ async function openAttachmentMoveDialog(
     const nameStart = sourcePath.lastIndexOf("/") + 1;
     elements.attachmentMoveTarget.focus();
     elements.attachmentMoveTarget.setSelectionRange(nameStart, sourcePath.length);
+  });
+}
+
+async function openAttachmentRelinkDialog(
+  sourceNotePath: string,
+  missingTarget: string,
+  missingPath: string,
+  sourceNoteRevision: string,
+  restoreFocus?: HTMLElement,
+): Promise<void> {
+  if (elements.attachmentMoveDialog.open) {
+    elements.attachmentMoveTarget.focus();
+    elements.attachmentMoveTarget.select();
+    return;
+  }
+  if (!loadedVaultId || readOnlyVault() || busy) {
+    showToast(
+      readOnlyVault()
+        ? "Open a local vault before relinking missing attachments."
+        : "Threadleaf is finishing another action.",
+    );
+    return;
+  }
+  const expectedVaultId = loadedVaultId;
+  if (!(await tryFlushAllPaneAutosaves("note-mutation"))) return;
+  if (loadedVaultId !== expectedVaultId || readOnlyVault() || busy) return;
+  if (elements.commandPalette.open) closeCommandPalette(false);
+  if (documentViewMode === "plugin") setDocumentView(editingViewMode, false);
+  attachmentMoveRestoreFocus =
+    restoreFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  attachmentMoveBusy = false;
+  attachmentMoveVaultId = loadedVaultId;
+  attachmentMoveSourcePath = missingPath;
+  attachmentMoveRevision = sourceNoteRevision;
+  attachmentMoveOperation = "relink";
+  attachmentRelinkSourceNotePath = sourceNotePath;
+  attachmentRelinkMissingTarget = missingTarget;
+  attachmentMoveBlockers = [];
+  attachmentMoveRewrites = [];
+  attachmentMoveConfirmationId = null;
+  elements.attachmentMoveTarget.value = "";
+  elements.attachmentMoveError.textContent = "";
+  elements.attachmentMovePreviewMessage.textContent = "";
+  elements.attachmentMoveDialog.showModal();
+  renderAttachmentMoveDialog();
+  window.requestAnimationFrame(() => {
+    elements.attachmentMoveTarget.focus();
   });
 }
 
@@ -3078,6 +3134,28 @@ async function activatePreviewAttachmentAction(actionButton: HTMLButtonElement):
         actionButton,
       );
     }
+    return;
+  }
+  if (action === "relink") {
+    const card = actionButton.closest<HTMLElement>(".preview-attachment-card");
+    const sourceNoteRevision = card?.dataset.threadleafAttachmentSourceRevision;
+    const missingTarget = actionButton.dataset.threadleafAttachmentMissingTarget;
+    const sourceNotePath =
+      actionButton.dataset.threadleafAttachmentSourceNotePath ??
+      card?.dataset.threadleafAttachmentSourceNotePath;
+    if (!sourceNoteRevision || !missingTarget || !sourceNotePath) {
+      showToast(
+        "This missing attachment card is no longer current. Refresh Reading view and try again.",
+      );
+      return;
+    }
+    void openAttachmentRelinkDialog(
+      sourceNotePath,
+      missingTarget,
+      target,
+      sourceNoteRevision,
+      actionButton,
+    );
     return;
   }
   if (action !== "open" && action !== "reveal") return;
@@ -4664,27 +4742,42 @@ async function moveCurrentNote(): Promise<void> {
 
 function renderAttachmentMoveDialog(): void {
   const renaming = attachmentMoveOperation === "rename";
+  const relinking = attachmentMoveOperation === "relink";
   const linkPolicy = currentWorkspacePreference().automaticLinkUpdates;
   const staleVault = Boolean(
     attachmentMoveVaultId && attachmentMoveVaultId !== (currentSnapshot?.vault.id ?? null),
   );
   if (staleVault && !elements.attachmentMoveError.textContent) {
-    elements.attachmentMoveError.textContent = `The active vault changed. Cancel and reopen ${renaming ? "Rename or move" : "Publish copy"}.`;
+    elements.attachmentMoveError.textContent = `The active vault changed. Cancel and reopen ${relinking ? "Relink" : renaming ? "Rename or move" : "Publish copy"}.`;
   }
-  elements.attachmentMoveTitle.textContent = renaming
-    ? "Rename or move this attachment"
-    : "Publish a copy of this attachment";
-  elements.attachmentMoveDescription.textContent = renaming
-    ? linkPolicy === "never"
-      ? "Threadleaf will move the exact attachment bytes and remove the original path without updating references, matching this vault's Never setting."
-      : linkPolicy === "always"
-        ? "Threadleaf will move the exact attachment bytes, remove the original path, and update proven local Markdown and Canvas references automatically. An unreadable or unsafe Canvas blocks the operation."
-        : "Threadleaf will move the exact attachment bytes and remove the original path. It previews proven local Markdown and Canvas reference updates first; an unreadable or unsafe Canvas blocks the operation."
-    : "Threadleaf publishes the exact attachment bytes without decoding them and keeps the original source. It previews local wiki and Markdown reference updates, then applies the publication and updates as one recoverable operation.";
-  elements.attachmentMoveTargetLabel.textContent = renaming ? "New path" : "Copy path";
-  elements.attachmentMoveClose.ariaLabel = renaming
-    ? "Cancel attachment rename"
-    : "Cancel attachment publication";
+  elements.attachmentMoveTitle.textContent = relinking
+    ? "Relink this missing attachment"
+    : renaming
+      ? "Rename or move this attachment"
+      : "Publish a copy of this attachment";
+  elements.attachmentMoveDescription.textContent = relinking
+    ? "Threadleaf will replace exactly one proven missing attachment target with an existing visible vault attachment. It previews the exact Markdown change first and does not copy, move, delete, or overwrite attachment bytes."
+    : renaming
+      ? linkPolicy === "never"
+        ? "Threadleaf will move the exact attachment bytes and remove the original path without updating references, matching this vault's Never setting."
+        : linkPolicy === "always"
+          ? "Threadleaf will move the exact attachment bytes, remove the original path, and update proven local Markdown and Canvas references automatically. An unreadable or unsafe Canvas blocks the operation."
+          : "Threadleaf will move the exact attachment bytes and remove the original path. It previews proven local Markdown and Canvas reference updates first; an unreadable or unsafe Canvas blocks the operation."
+      : "Threadleaf publishes the exact attachment bytes without decoding them and keeps the original source. It previews local wiki and Markdown reference updates, then applies the publication and updates as one recoverable operation.";
+  elements.attachmentMoveCurrentLabel.textContent = relinking ? "Missing target" : "Current path";
+  elements.attachmentMoveTargetLabel.textContent = relinking
+    ? "Existing attachment path"
+    : renaming
+      ? "New path"
+      : "Copy path";
+  elements.attachmentMoveTarget.placeholder = relinking
+    ? "Attachments/existing-file.pdf"
+    : "Archive/renamed-file.pdf";
+  elements.attachmentMoveClose.ariaLabel = relinking
+    ? "Cancel attachment relink"
+    : renaming
+      ? "Cancel attachment rename"
+      : "Cancel attachment publication";
   const message = elements.attachmentMoveError.textContent ?? "";
   elements.attachmentMoveError.hidden = message.length === 0;
   const previewMessage = elements.attachmentMovePreviewMessage.textContent ?? "";
@@ -4696,20 +4789,28 @@ function renderAttachmentMoveDialog(): void {
   elements.attachmentMoveCancel.disabled = attachmentMoveBusy;
   elements.attachmentMoveSubmit.disabled = attachmentMoveBusy || staleVault || readOnlyVault();
   elements.attachmentMoveSubmit.textContent = attachmentMoveBusy
-    ? renaming
-      ? "Moving…"
-      : attachmentMoveConfirmationId
-        ? "Publishing…"
+    ? relinking
+      ? attachmentMoveConfirmationId
+        ? "Relinking…"
         : "Checking…"
-    : attachmentMoveConfirmationId
-      ? `Update ${attachmentMoveRewrites.length} ${attachmentMoveRewrites.length === 1 ? "reference" : "references"} and ${renaming ? "move" : "publish"}`
       : renaming
-        ? linkPolicy === "never"
-          ? "Move without updating references"
-          : linkPolicy === "always"
-            ? "Move and update references"
-            : "Check and move"
-        : "Check and publish";
+        ? "Moving…"
+        : attachmentMoveConfirmationId
+          ? "Publishing…"
+          : "Checking…"
+    : attachmentMoveConfirmationId
+      ? relinking
+        ? "Relink attachment"
+        : `Update ${attachmentMoveRewrites.length} ${attachmentMoveRewrites.length === 1 ? "reference" : "references"} and ${renaming ? "move" : "publish"}`
+      : relinking
+        ? "Check relink"
+        : renaming
+          ? linkPolicy === "never"
+            ? "Move without updating references"
+            : linkPolicy === "always"
+              ? "Move and update references"
+              : "Check and move"
+          : "Check and publish";
   elements.attachmentMoveForm.setAttribute("aria-busy", String(attachmentMoveBusy));
   elements.attachmentMoveVault.textContent = staleVault
     ? "Vault changed"
@@ -4794,6 +4895,8 @@ function closeAttachmentMoveDialog(restoreFocus = true): void {
   attachmentMoveRewrites = [];
   attachmentMoveConfirmationId = null;
   attachmentMoveOperation = "publish-copy";
+  attachmentRelinkSourceNotePath = null;
+  attachmentRelinkMissingTarget = null;
   elements.attachmentMoveError.textContent = "";
   elements.attachmentMovePreviewMessage.textContent = "";
   const restoreTarget = attachmentMoveRestoreFocus;
@@ -4801,8 +4904,116 @@ function closeAttachmentMoveDialog(restoreFocus = true): void {
   if (restoreFocus && restoreTarget?.isConnected) restoreTarget.focus();
 }
 
+async function relinkCurrentAttachment(): Promise<void> {
+  const expectedVaultId = attachmentMoveVaultId;
+  const sourceNotePath = attachmentRelinkSourceNotePath;
+  const missingTarget = attachmentRelinkMissingTarget;
+  const expectedSourceRevision = attachmentMoveRevision;
+  if (
+    !expectedVaultId ||
+    !sourceNotePath ||
+    !missingTarget ||
+    !expectedSourceRevision ||
+    attachmentMoveBusy
+  ) {
+    return;
+  }
+  const requestedPath = elements.attachmentMoveTarget.value.trim();
+  if (!requestedPath) {
+    elements.attachmentMoveError.textContent = "Enter an existing vault-relative attachment path.";
+    attachmentMoveBlockers = [];
+    attachmentMoveRewrites = [];
+    attachmentMoveConfirmationId = null;
+    elements.attachmentMovePreviewMessage.textContent = "";
+    renderAttachmentMoveDialog();
+    elements.attachmentMoveTarget.focus();
+    return;
+  }
+  if (!(await tryFlushAllPaneAutosaves("note-mutation"))) {
+    elements.attachmentMoveError.textContent =
+      "Autosave could not finish. Threadleaf did not start relinking the attachment.";
+    renderAttachmentMoveDialog();
+    return;
+  }
+  if (currentSnapshot?.vault.id !== expectedVaultId) {
+    elements.attachmentMoveError.textContent =
+      "The vault changed. Cancel and reopen Relink from the missing attachment card.";
+    attachmentMoveBlockers = [];
+    attachmentMoveRewrites = [];
+    attachmentMoveConfirmationId = null;
+    elements.attachmentMovePreviewMessage.textContent = "";
+    renderAttachmentMoveDialog();
+    return;
+  }
+
+  let response: AttachmentRelinkResponse | null = null;
+  let committedReplacementPath: string | null = null;
+  let committedVaultNotice: string | null = null;
+  const submittedConfirmationId = attachmentMoveConfirmationId;
+  attachmentMoveBusy = true;
+  attachmentMoveBlockers = [];
+  if (!submittedConfirmationId) {
+    attachmentMoveRewrites = [];
+    elements.attachmentMovePreviewMessage.textContent = "";
+  }
+  elements.attachmentMoveError.textContent = "";
+  renderAttachmentMoveDialog();
+  setActionState(true);
+  try {
+    response = await window.threadleaf.relinkAttachment(
+      sourceNotePath,
+      missingTarget,
+      requestedPath,
+      expectedSourceRevision,
+      expectedVaultId,
+      submittedConfirmationId ?? undefined,
+    );
+    render(response.snapshot);
+    if (response.outcome.status === "requires-confirmation") {
+      attachmentMoveRewrites = [response.outcome.rewrite];
+      attachmentMoveConfirmationId = response.outcome.confirmationId;
+      elements.attachmentMovePreviewMessage.textContent = submittedConfirmationId
+        ? "The relink plan changed on disk. Review this refreshed exact target change, then confirm it again."
+        : "Review the exact missing target replacement below. Submit again to rewrite the source note as one recoverable operation.";
+    } else if (response.outcome.status === "committed") {
+      committedReplacementPath = response.outcome.rewrite.replacementPath;
+      committedVaultNotice = attachmentMoveCommitNotice(response, "committed");
+    } else {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent = response.outcome.message;
+    }
+  } catch {
+    elements.attachmentMoveError.textContent =
+      "The attachment relink could not be confirmed. Review the current source note and attachment; Threadleaf made no further changes.";
+  } finally {
+    attachmentMoveBusy = false;
+    setActionState(false);
+    if (elements.attachmentMoveDialog.open) renderAttachmentMoveDialog();
+  }
+
+  if (committedReplacementPath) {
+    const operationNotice = `Relinked the missing attachment to ${committedReplacementPath}.`;
+    closeAttachmentMoveDialog(false);
+    showToast(
+      committedVaultNotice ? `${committedVaultNotice} ${operationNotice}` : operationNotice,
+    );
+  } else if (response?.outcome.status === "requires-confirmation") {
+    elements.attachmentMoveSubmit.focus();
+  } else if (response) {
+    elements.attachmentMoveTarget.focus();
+    elements.attachmentMoveTarget.select();
+  }
+}
+
 async function moveCurrentAttachment(): Promise<void> {
-  const renaming = attachmentMoveOperation === "rename";
+  const operation = attachmentMoveOperation;
+  if (operation === "relink") {
+    await relinkCurrentAttachment();
+    return;
+  }
+  const renaming = operation === "rename";
   const expectedVaultId = attachmentMoveVaultId;
   const sourcePath = attachmentMoveSourcePath;
   const expectedRevision = attachmentMoveRevision;
@@ -4856,7 +5067,7 @@ async function moveCurrentAttachment(): Promise<void> {
       expectedRevision,
       expectedVaultId,
       submittedConfirmationId ?? undefined,
-      attachmentMoveOperation,
+      operation,
     );
     render(response.snapshot);
     const attachmentConflictMessage =

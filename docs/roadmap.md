@@ -369,7 +369,10 @@ Exit gate: selected high-value plugins complete named workflows against public f
         previews, unrelated-byte preservation, fail-closed parsing, and recoverable transactions.
   - [x] Vault-bound native Open and Reveal with exact card revisions, canonical containment,
         byte-and-suffix Open approval, unknown-byte Reveal fallback, and packaged receiver proof.
-  - [ ] Drag-and-drop, paste, and missing-file recovery.
+  - [x] Revision-safe relinking of one missing passive attachment embed to an existing visible vault
+        attachment, with an exact target preview and no attachment-byte mutation.
+  - [ ] Transactional restoration from external bytes, drag-and-drop, and paste through one shared
+        binary-ingress authority.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
       search, and outline.
 - [x] Headless daily path/read/append/prepend, contained template listing and reads, and random-note

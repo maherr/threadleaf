@@ -38,6 +38,39 @@ export type VaultWriteResult =
       transactionId: string;
     };
 
+export interface VaultAttachmentRelinkPreconditions {
+  sourceNotePath: string;
+  missingPath: string;
+  missingResolverTarget: string;
+  replacementPath: string;
+  replacementCanonicalPath: string;
+  replacementRevision: string;
+  maxReplacementBytes: number;
+}
+
+export type VaultAttachmentRelinkPreconditionFailure =
+  | "missing-target-present"
+  | "missing-target-ambiguous"
+  | "missing-target-unsafe"
+  | "replacement-changed"
+  | "replacement-unreadable";
+
+export type VaultAttachmentRelinkWriteResult =
+  | VaultWriteResult
+  | {
+      status: "precondition-failed";
+      reason: VaultAttachmentRelinkPreconditionFailure;
+    };
+
+export interface VaultAttachmentRelinkMutationPort {
+  writeTextWithAttachmentPreconditions(
+    relativePath: string,
+    content: string,
+    expectedRevision: string,
+    preconditions: VaultAttachmentRelinkPreconditions,
+  ): Promise<VaultAttachmentRelinkWriteResult>;
+}
+
 export interface VaultDirectoryCreateResult {
   created: boolean;
   path: string;

@@ -230,6 +230,20 @@ its empty result string; Reveal is reported only as dispatched because its nativ
 completion receipt. See
 [vault-bound native attachment actions](../research/native-attachment-actions-2026-08-16.md).
 
+The same packaged gate covers one deliberately narrower missing-file recovery claim. A missing
+passive embed gets **Relink** only when Threadleaf can map the rendered card to exactly one supported
+source token. The user supplies an existing visible vault-relative passive attachment, reviews the
+exact before/after target, and confirms a revision- and index-bound plan. The committed operation
+rewrites only that source token; it does not create the missing path or alter candidate bytes. Unit
+fault injection separately proves refusal when the exact or case-equivalent missing target returns,
+candidate bytes change, a case-equivalent candidate duplicate appears, or a contained candidate
+symlink leaves the vault at the kernel's final no-source-mutation boundary. The packaged gate drives
+the control with real pointer and keyboard input in both themes, checks exact note and candidate
+bytes before and after confirmation, requires the missing card to become ready, and rejects renderer
+errors. This is not evidence for restoring bytes, drag-and-drop, paste, raster image recovery, or a
+complete attachment lifecycle. See
+[single-reference attachment relinking](../research/attachment-relink-2026-08-16.md).
+
 The Excalidraw-specific public-format extension lives in
 [Excalidraw round-trip boundary](excalidraw-roundtrip.md). It adds native `.excalidraw` JSON,
 frontmatter, compressed and uncompressed Markdown scenes, Unicode and nested attachment manifests,

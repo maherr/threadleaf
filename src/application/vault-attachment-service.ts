@@ -55,6 +55,11 @@ export type VaultAttachmentResponse =
         | "unreadable";
       message: string;
       attachment?: Pick<VaultAttachmentMetadata, "path" | "actions">;
+      recovery?: {
+        kind: "relink";
+        missingPath: string;
+        sourceNoteRevision: string;
+      };
     }
   | { status: "stale-vault"; vaultId: string };
 

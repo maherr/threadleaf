@@ -974,6 +974,86 @@ Working $y$`);
     ).toHaveLength(2);
   });
 
+  it("renders a text-labeled Relink action only for an application-authorized missing attachment", async () => {
+    const rendered = preview("![[Missing/report.pdf|Quarterly report]]");
+    await hydrateMarkdownPreviewAttachments(rendered, {
+      sourceNotePath: "Notes/Current.md",
+      expectedVaultId: "vault-a",
+      loadAttachment: async (): Promise<VaultAttachmentResponse> => ({
+        status: "unavailable",
+        vaultId: "vault-a",
+        reason: "missing",
+        message: "The attachment target does not resolve in the active vault.",
+        recovery: {
+          kind: "relink",
+          missingPath: "Notes/Missing/report.pdf",
+          sourceNoteRevision: "d".repeat(64),
+        },
+      }),
+    });
+
+    const card = rendered.querySelector<HTMLElement>(".preview-attachment-unavailable");
+    const relink = card?.querySelector<HTMLButtonElement>(
+      '[data-threadleaf-attachment-action="relink"]',
+    );
+    expect(card?.getAttribute("role")).toBe("group");
+    expect(card?.dataset.threadleafAttachmentSourceRevision).toBe("d".repeat(64));
+    expect(relink?.textContent).toBe("Relink");
+    expect(relink?.dataset.threadleafAttachmentPath).toBe("Notes/Missing/report.pdf");
+    expect(relink?.dataset.threadleafAttachmentMissingTarget).toBe("Missing/report.pdf");
+    expect(card?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
+    expect(relink?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
+
+    const inert = preview("![[Missing/other.pdf]]");
+    await hydrateMarkdownPreviewAttachments(inert, {
+      sourceNotePath: "Notes/Current.md",
+      expectedVaultId: "vault-a",
+      loadAttachment: async (): Promise<VaultAttachmentResponse> => ({
+        status: "unavailable",
+        vaultId: "vault-a",
+        reason: "missing",
+        message: "The attachment target does not resolve in the active vault.",
+      }),
+    });
+    expect(inert.querySelector('[data-threadleaf-attachment-action="relink"]')).toBeNull();
+  });
+
+  it("carries a nested note source path onto its Relink action", async () => {
+    const rendered = preview("![[Embedded]]");
+
+    await hydrateMarkdownPreview(rendered, {
+      sourceNotePath: "Root.md",
+      expectedVaultId: "vault-a",
+      loadImage: unavailableImage,
+      loadAttachment: async (sourceNotePath, target): Promise<VaultAttachmentResponse> => {
+        expect(sourceNotePath).toBe("Folder/Embedded.md");
+        expect(target).toBe("Missing/report.pdf");
+        return {
+          status: "unavailable",
+          vaultId: "vault-a",
+          reason: "missing",
+          message: "The attachment target does not resolve in the active vault.",
+          recovery: {
+            kind: "relink",
+            missingPath: "Folder/Missing/report.pdf",
+            sourceNoteRevision: "e".repeat(64),
+          },
+        };
+      },
+      loadNoteEmbed: async () => readyEmbed("Folder/Embedded.md", "![[Missing/report.pdf|Report]]"),
+      decorateLinks: () => undefined,
+    });
+
+    const rootRelink = rendered.querySelector(
+      ':scope > .preview-attachment-card [data-threadleaf-attachment-action="relink"]',
+    );
+    const nestedRelink = rendered.querySelector<HTMLButtonElement>(
+      '.preview-note-embed-body [data-threadleaf-attachment-action="relink"]',
+    );
+    expect(rootRelink).toBeNull();
+    expect(nestedRelink?.dataset.threadleafAttachmentSourceNotePath).toBe("Folder/Embedded.md");
+  });
+
   it("keeps escaped query and fragment filename bytes out of renderer subpaths", () => {
     const rendered = preview(
       "![fragment](Assets/report\\#draft.pdf)\n\n![query](Assets/report\\?draft.pdf)",

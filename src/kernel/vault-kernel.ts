@@ -37,8 +37,11 @@ import {
   type TransactionJournal,
   type WriteJournal,
 } from "./journal";
+import { VaultLinkResolver } from "./metadata-index";
 import {
   canonicalizePotentialPath,
+  hasHiddenVaultSegment,
+  hasPrivateVaultSegment,
   isPathInside,
   normalizedVaultPathIdentity,
   normalizeVaultPath,
@@ -52,6 +55,9 @@ import type {
   MultiWriteRequest,
   MultiWriteResult,
   StateRootPort,
+  VaultAttachmentRelinkPreconditionFailure,
+  VaultAttachmentRelinkPreconditions,
+  VaultAttachmentRelinkWriteResult,
   VaultDirectoryCreateResult,
   VaultMarkdownCorpus,
   VaultMutationPort,
@@ -186,6 +192,13 @@ interface InternalWriteConflict {
 }
 
 type InternalWriteResult = InternalWriteCommitted | InternalWriteConflict;
+
+interface InternalWritePreconditionFailure {
+  status: "precondition-failed";
+  reason: VaultAttachmentRelinkPreconditionFailure;
+}
+
+type WriteFinalPrecondition = () => Promise<VaultAttachmentRelinkPreconditionFailure | null>;
 
 type StrictAttachmentTargetCheck =
   | { status: "ready"; targetAbsolute: string }
@@ -519,6 +532,56 @@ export class VaultKernel implements VaultMutationPort {
       const bytes = Buffer.from(content, "utf8");
       const result = await this.performWrite(normalized, bytes, expectedRevision);
 
+      if (result.status === "committed") {
+        return {
+          status: "committed",
+          path: normalized,
+          revision: result.revision,
+          transactionId: result.transactionId,
+        };
+      }
+      return {
+        status: "conflict",
+        path: normalized,
+        currentRevision: result.currentRevision,
+        conflictPath: result.conflictPath,
+        transactionId: result.transactionId,
+      };
+    });
+  }
+
+  async writeTextWithAttachmentPreconditions(
+    relativePath: string,
+    content: string,
+    expectedRevision: string,
+    preconditions: VaultAttachmentRelinkPreconditions,
+  ): Promise<VaultAttachmentRelinkWriteResult> {
+    this.assertWritable();
+    assertExpectedRevision(expectedRevision);
+    assertExpectedRevision(preconditions.replacementRevision);
+    if (
+      !Number.isSafeInteger(preconditions.maxReplacementBytes) ||
+      preconditions.maxReplacementBytes <= 0
+    ) {
+      throw new Error("Attachment relink byte limits must be positive safe integers.");
+    }
+    return this.withMutation(async () => {
+      const normalized = normalizeVaultPath(relativePath);
+      const normalizedPreconditions: VaultAttachmentRelinkPreconditions = {
+        ...preconditions,
+        sourceNotePath: normalizeVaultPath(preconditions.sourceNotePath),
+        missingPath: normalizeVaultPath(preconditions.missingPath),
+        replacementPath: normalizeVaultPath(preconditions.replacementPath),
+        replacementCanonicalPath: normalizeVaultPath(preconditions.replacementCanonicalPath),
+      };
+      const validate = () => this.checkAttachmentRelinkPreconditions(normalizedPreconditions);
+      const initialFailure = await validate();
+      if (initialFailure) {
+        return { status: "precondition-failed", reason: initialFailure };
+      }
+      const bytes = Buffer.from(content, "utf8");
+      const result = await this.performWrite(normalized, bytes, expectedRevision, false, validate);
+      if (result.status === "precondition-failed") return result;
       if (result.status === "committed") {
         return {
           status: "committed",
@@ -2299,8 +2362,22 @@ export class VaultKernel implements VaultMutationPort {
     targetPath: string,
     bytes: Buffer,
     expectedRevision: string | null,
+    strictContainment?: boolean,
+  ): Promise<InternalWriteResult>;
+  private async performWrite(
+    targetPath: string,
+    bytes: Buffer,
+    expectedRevision: string | null,
+    strictContainment: boolean,
+    finalPrecondition: WriteFinalPrecondition,
+  ): Promise<InternalWriteResult | InternalWritePreconditionFailure>;
+  private async performWrite(
+    targetPath: string,
+    bytes: Buffer,
+    expectedRevision: string | null,
     strictContainment = false,
-  ): Promise<InternalWriteResult> {
+    finalPrecondition?: WriteFinalPrecondition,
+  ): Promise<InternalWriteResult | InternalWritePreconditionFailure> {
     // Replacing an existing file leaves the target genuinely missing between its
     // move-aside and the install that restores it. The claim is taken inside the
     // transaction, once the file is actually aside, and released here so every
@@ -2313,6 +2390,7 @@ export class VaultKernel implements VaultMutationPort {
         expectedRevision,
         strictContainment,
         absence,
+        finalPrecondition,
       );
     } finally {
       absence.release();
@@ -2325,7 +2403,8 @@ export class VaultKernel implements VaultMutationPort {
     expectedRevision: string | null,
     strictContainment: boolean,
     absence: TransientAbsenceHandle,
-  ): Promise<InternalWriteResult> {
+    finalPrecondition?: WriteFinalPrecondition,
+  ): Promise<InternalWriteResult | InternalWritePreconditionFailure> {
     const targetAbsolute = await this.paths.resolveForWrite(targetPath, !strictContainment);
     const initial = await this.readMutationFile(targetAbsolute, strictContainment);
     if (!revisionsMatch(initial, expectedRevision)) {
@@ -2396,6 +2475,24 @@ export class VaultKernel implements VaultMutationPort {
     journal.phase = "prepared";
     await this.writeJournal(journal);
     await this.inject("write:after-prepare");
+
+    // Keep cross-file authorization as close as possible to the first source
+    // mutation. Nothing at the source path has moved before this point.
+    const preconditionFailure = await finalPrecondition?.();
+    if (preconditionFailure) {
+      const retired = await this.removeExpectedFile(temporaryAbsolute, journal.nextRevision, {
+        claimAuthority: "private",
+        cleanupClaim: true,
+      });
+      if (!retired) {
+        throw new Error(
+          `Attachment relink staged bytes could not be retired safely: ${journal.targetPath}`,
+        );
+      }
+      await removeIfPresent(this.getRecoveryPath(id));
+      await this.archiveJournal(journal, "rolled-back");
+      return { status: "precondition-failed", reason: preconditionFailure };
+    }
 
     if (finalSnapshot) {
       // Claimed before the move rather than after it, so the window a watcher
@@ -3084,6 +3181,137 @@ export class VaultKernel implements VaultMutationPort {
 
   private async inject(point: KernelFaultPoint): Promise<void> {
     await this.faultInjector?.(point);
+  }
+
+  private async checkAttachmentRelinkPreconditions(
+    preconditions: VaultAttachmentRelinkPreconditions,
+  ): Promise<VaultAttachmentRelinkPreconditionFailure | null> {
+    const initialMissingState = await this.attachmentRelinkMissingPathState(
+      preconditions.missingPath,
+    );
+    if (initialMissingState === "present") return "missing-target-present";
+    if (initialMissingState === "unsafe") return "missing-target-unsafe";
+    if (
+      hasHiddenVaultSegment(preconditions.replacementPath) ||
+      hasPrivateVaultSegment(preconditions.replacementPath) ||
+      hasHiddenVaultSegment(preconditions.replacementCanonicalPath) ||
+      hasPrivateVaultSegment(preconditions.replacementCanonicalPath)
+    ) {
+      return "replacement-unreadable";
+    }
+
+    let firstCanonicalAbsolute: string;
+    try {
+      firstCanonicalAbsolute = await this.paths.resolveForRead(preconditions.replacementPath);
+      if (
+        this.paths.toVaultPath(firstCanonicalAbsolute) !== preconditions.replacementCanonicalPath
+      ) {
+        return "replacement-changed";
+      }
+      const first = await readStableFileWithinLimit(
+        firstCanonicalAbsolute,
+        preconditions.maxReplacementBytes,
+      );
+      if (
+        first?.status !== "ready" ||
+        first.snapshot.revision !== preconditions.replacementRevision
+      ) {
+        return "replacement-changed";
+      }
+      const secondCanonicalAbsolute = await this.paths.resolveForRead(
+        preconditions.replacementPath,
+      );
+      if (secondCanonicalAbsolute !== firstCanonicalAbsolute) return "replacement-changed";
+      const second = await readStableFileWithinLimit(
+        secondCanonicalAbsolute,
+        preconditions.maxReplacementBytes,
+      );
+      if (
+        second?.status !== "ready" ||
+        second.snapshot.revision !== preconditions.replacementRevision
+      ) {
+        return "replacement-changed";
+      }
+      if (
+        (await this.paths.resolveForRead(preconditions.replacementPath)) !== firstCanonicalAbsolute
+      ) {
+        return "replacement-changed";
+      }
+    } catch {
+      return "replacement-unreadable";
+    }
+
+    const finalMissingState = await this.attachmentRelinkMissingPathState(
+      preconditions.missingPath,
+    );
+    if (finalMissingState === "present") return "missing-target-present";
+    if (finalMissingState === "unsafe") return "missing-target-unsafe";
+    let visiblePaths: VisibleVaultPaths;
+    try {
+      visiblePaths = await this.paths.listVisiblePaths("");
+    } catch {
+      return "replacement-unreadable";
+    }
+    const visibleFiles = visiblePaths.files.filter(
+      (filePath) =>
+        !hasHiddenVaultSegment(filePath) &&
+        !hasPrivateVaultSegment(filePath) &&
+        !filePath.toLocaleLowerCase("en-US").endsWith(".md"),
+    );
+    const missingResolution = new VaultLinkResolver(visibleFiles).resolve(
+      preconditions.sourceNotePath,
+      preconditions.missingResolverTarget,
+    );
+    if (missingResolution.status === "resolved") return "missing-target-present";
+    if (missingResolution.status === "ambiguous") return "missing-target-ambiguous";
+    const replacementMatches = visibleFiles.filter(
+      (candidate) =>
+        normalizedVaultPathIdentity(candidate) ===
+        normalizedVaultPathIdentity(preconditions.replacementPath),
+    );
+    if (
+      replacementMatches.length !== 1 ||
+      replacementMatches[0] !== preconditions.replacementPath
+    ) {
+      return "replacement-changed";
+    }
+    return null;
+  }
+
+  private async attachmentRelinkMissingPathState(
+    relativePath: string,
+  ): Promise<"missing" | "present" | "unsafe"> {
+    if (hasHiddenVaultSegment(relativePath) || hasPrivateVaultSegment(relativePath))
+      return "unsafe";
+    const normalized = normalizeVaultPath(relativePath);
+    let current = this.paths.rootPath;
+    const segments = normalized.split("/");
+    for (let index = 0; index < segments.length; index += 1) {
+      current = path.join(current, segments[index] as string);
+      let entry: Awaited<ReturnType<typeof fs.lstat>>;
+      try {
+        entry = await fs.lstat(current);
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+          return "missing";
+        }
+        return "unsafe";
+      }
+      if (index === segments.length - 1) return "present";
+      if (entry.isSymbolicLink() || !entry.isDirectory()) return "unsafe";
+      try {
+        const canonical = await fs.realpath(current);
+        if (
+          path.resolve(canonical) !== path.resolve(current) ||
+          !isPathInside(this.paths.rootPath, canonical)
+        ) {
+          return "unsafe";
+        }
+      } catch {
+        return "unsafe";
+      }
+    }
+    return "unsafe";
   }
 
   private async withMutation<T>(operation: () => Promise<T>): Promise<T> {

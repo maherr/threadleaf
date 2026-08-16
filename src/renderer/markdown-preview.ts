@@ -7,6 +7,7 @@ import {
   type ParsedMarkdownTask,
   parseMarkdownTasks,
 } from "../kernel/markdown-tasks";
+import { isPassiveAttachmentTarget } from "../shared/attachment-targets";
 import type {
   CanvasLoadResponse,
   VaultAttachmentResponse,
@@ -418,15 +419,6 @@ function isMarkdownNoteTarget(target: string, subpath: string | null, wiki: bool
   return wiki && normalized !== "" && !/\.[^/]+$/u.test(normalized);
 }
 
-function isLocalAttachmentTarget(target: string): boolean {
-  // Plugin-owned drawing files remain ordinary links until a declared plugin
-  // renderer claims them.  These extensions are the passive formats handled by
-  // the bounded attachment metadata service.
-  return /\.(?:bin|pdf|rtf|txt|csv|docx?|xlsx?|pptx?|zip|7z|tar|gz|mp3|m4a|flac|ogg|wav|mp4|m4v|mov|avi|mkv|webm)$/iu.test(
-    target,
-  );
-}
-
 function noteEmbedPlaceholder(
   target: string,
   subpath: string | null,
@@ -594,7 +586,7 @@ markdown.renderer.rules.threadleaf_wikilink = (tokens, index, _options, env) => 
   if (link.embed && isMarkdownNoteTarget(link.target, link.subpath, true)) {
     return noteEmbedPlaceholder(link.target, link.subpath, label, renderToken);
   }
-  if (link.embed && isLocalAttachmentTarget(link.target)) {
+  if (link.embed && isPassiveAttachmentTarget(link.target)) {
     return attachmentPlaceholder(link.target, label, renderToken);
   }
   const classes = link.embed ? "internal-link preview-embed-link" : "internal-link";
@@ -912,10 +904,12 @@ function markAttachmentUnavailable(
   label: string,
   status: string,
   message: string,
+  recovery?: Extract<VaultAttachmentResponse, { status: "unavailable" }>["recovery"],
+  sourceNotePath?: string,
 ): void {
   placeholder.className = "preview-attachment-card preview-attachment-unavailable";
   placeholder.dataset.threadleafAttachmentStatus = status;
-  placeholder.setAttribute("role", "note");
+  placeholder.setAttribute("role", recovery ? "group" : "note");
   placeholder.setAttribute("aria-label", `Attachment unavailable: ${label}`);
   placeholder.title = message;
   placeholder.replaceChildren();
@@ -931,6 +925,24 @@ function markAttachmentUnavailable(
   detail.textContent = message;
   copy.append(title, detail);
   placeholder.append(marker, copy);
+  if (recovery?.kind === "relink" && sourceNotePath) {
+    placeholder.dataset.threadleafAttachmentSourceRevision = recovery.sourceNoteRevision;
+    placeholder.dataset.threadleafAttachmentSourceNotePath = sourceNotePath;
+    const actions = placeholder.ownerDocument.createElement("span");
+    actions.className = "preview-attachment-actions";
+    const button = placeholder.ownerDocument.createElement("button");
+    button.type = "button";
+    button.className = "preview-attachment-action";
+    button.dataset.threadleafAttachmentAction = "relink";
+    button.dataset.threadleafAttachmentPath = recovery.missingPath;
+    button.dataset.threadleafAttachmentMissingTarget =
+      placeholder.dataset.threadleafAttachmentTarget ?? "";
+    button.dataset.threadleafAttachmentSourceNotePath = sourceNotePath;
+    button.textContent = "Relink";
+    button.title = `Relink the missing attachment ${recovery.missingPath}`;
+    actions.append(button);
+    placeholder.append(actions);
+  }
 }
 
 function createAttachmentCard(
@@ -1048,7 +1060,14 @@ export async function hydrateMarkdownPreviewAttachments(
       continue;
     }
     if (response.status === "unavailable") {
-      markAttachmentUnavailable(placeholder, label, response.reason, response.message);
+      markAttachmentUnavailable(
+        placeholder,
+        label,
+        response.reason,
+        response.message,
+        response.recovery,
+        options.sourceNotePath,
+      );
       continue;
     }
     placeholder.replaceWith(createAttachmentCard(placeholder, response, label));

@@ -28,6 +28,8 @@ import type {
   AttachmentMoveOutcome,
   AttachmentMoveResponse,
   AttachmentOperation,
+  AttachmentRelinkOutcome,
+  AttachmentRelinkResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -106,6 +108,7 @@ import {
 } from "../shared/workspace-tree";
 import { ActionRegistry } from "./action-registry";
 import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
+import { inspectMissingAttachmentRelinkOffer, relinkMissingAttachment } from "./attachment-relink";
 import { loadCanvasAttachment } from "./canvas-attachment-service";
 import {
   isCanvasPath,
@@ -477,6 +480,15 @@ interface MoveAttachmentRequest {
   operation: AttachmentOperation;
 }
 
+interface RelinkAttachmentRequest {
+  sourceNotePath: string;
+  missingTarget: string;
+  replacementPath: string;
+  expectedSourceRevision: string;
+  expectedVaultId: string;
+  confirmationId: string | null;
+}
+
 interface DeleteNoteRequest {
   path: string;
   expectedRevision: string;
@@ -565,6 +577,40 @@ function parseMoveAttachmentRequest(payload: unknown): MoveAttachmentRequest {
         ? payload.confirmationId
         : null,
     operation: payload.operation,
+  };
+}
+
+function parseRelinkAttachmentRequest(payload: unknown): RelinkAttachmentRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("sourceNotePath" in payload) ||
+    typeof payload.sourceNotePath !== "string" ||
+    !("missingTarget" in payload) ||
+    typeof payload.missingTarget !== "string" ||
+    !("replacementPath" in payload) ||
+    typeof payload.replacementPath !== "string" ||
+    !("expectedSourceRevision" in payload) ||
+    typeof payload.expectedSourceRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string" ||
+    ("confirmationId" in payload &&
+      !(payload.confirmationId === null || typeof payload.confirmationId === "string"))
+  ) {
+    throw new Error(
+      "Relink attachment requires string note, missing target, replacement, revision, and vault values with an optional confirmation.",
+    );
+  }
+  return {
+    sourceNotePath: payload.sourceNotePath,
+    missingTarget: payload.missingTarget,
+    replacementPath: payload.replacementPath,
+    expectedSourceRevision: payload.expectedSourceRevision,
+    expectedVaultId: payload.expectedVaultId,
+    confirmationId:
+      "confirmationId" in payload && typeof payload.confirmationId === "string"
+        ? payload.confirmationId
+        : null,
   };
 }
 
@@ -1276,6 +1322,13 @@ export class WorkspaceRuntime {
         name: "Publish attachment copy",
         source: "workspace",
         execute: (payload) => this.moveAttachmentThroughKernel(parseMoveAttachmentRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.relink-attachment",
+        name: "Relink missing attachment",
+        source: "workspace",
+        execute: (payload) =>
+          this.relinkAttachmentThroughKernel(parseRelinkAttachmentRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.delete-note",
@@ -2077,6 +2130,28 @@ export class WorkspaceRuntime {
     return { outcome, snapshot: await this.publishSnapshot() };
   }
 
+  async relinkAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    replacementPath: string,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRelinkResponse> {
+    const outcome = await this.actions.dispatch<AttachmentRelinkOutcome>(
+      "workspace.relink-attachment",
+      {
+        sourceNotePath,
+        missingTarget,
+        replacementPath,
+        expectedSourceRevision,
+        expectedVaultId,
+        confirmationId: confirmationId ?? null,
+      },
+    );
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
   async deleteNote(
     filePath: string,
     expectedRevision: string,
@@ -2216,9 +2291,23 @@ export class WorkspaceRuntime {
           return this.#inventoryProjection.files;
         });
       }
-      return loadVaultAttachment(this.kernel, sourceNotePath, target, expectedVaultId, {
+      const response = await loadVaultAttachment(
+        this.kernel,
+        sourceNotePath,
+        target,
+        expectedVaultId,
+        {
+          visiblePaths,
+        },
+      );
+      if (response.status !== "unavailable" || response.reason !== "missing") return response;
+      const recovery = await inspectMissingAttachmentRelinkOffer(
+        this.kernel,
+        sourceNotePath,
+        target,
         visiblePaths,
-      });
+      );
+      return recovery ? { ...response, recovery } : response;
     } catch {
       return {
         status: "unavailable",
@@ -3749,6 +3838,55 @@ export class WorkspaceRuntime {
       });
     }
     return outcome;
+  }
+
+  private async relinkAttachmentThroughKernel(
+    request: RelinkAttachmentRequest,
+  ): Promise<AttachmentRelinkOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return {
+        status: "refused",
+        sourceNotePath: request.sourceNotePath,
+        missingPath: request.missingTarget,
+        replacementPath: request.replacementPath,
+        reason: "stale-vault",
+        message: "The active vault changed before this attachment could be relinked.",
+      };
+    }
+    this.assertWritable("relink missing attachments");
+    const expectedGeneration = await this.withIndexStateLock(
+      async () => this.indexReactor.index.generation,
+    );
+    const execution = await relinkMissingAttachment(
+      this.kernel,
+      {
+        sourceNotePath: request.sourceNotePath,
+        missingTarget: request.missingTarget,
+        replacementPath: request.replacementPath,
+        expectedSourceRevision: request.expectedSourceRevision,
+        ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+      },
+      {
+        generation: expectedGeneration,
+        currentGeneration: () => this.indexReactor.index.generation,
+      },
+    );
+    if ("writeConflict" in execution) {
+      await this.withIndexMutation(() => this.reconcileNoteWrite(execution.writeConflict));
+      const { writeConflict: _writeConflict, ...outcome } = execution;
+      return outcome;
+    }
+    if (execution.status === "committed") {
+      await this.withIndexMutation(() =>
+        this.reconcileNoteWrite({
+          status: "committed",
+          path: execution.path,
+          revision: execution.revision,
+          transactionId: execution.transactionId,
+        }),
+      );
+    }
+    return execution;
   }
 
   private async deleteNoteThroughKernel(request: DeleteNoteRequest): Promise<NoteDeleteOutcome> {

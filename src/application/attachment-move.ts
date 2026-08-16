@@ -24,6 +24,7 @@ import type {
 } from "../kernel/ports";
 import type { AttachmentOperation } from "../shared/contracts";
 import type { AutomaticLinkUpdatePolicy } from "../shared/workspace-settings";
+import { attachmentReferenceTarget } from "./attachment-reference-path";
 import { MAX_CANVAS_BYTES, parseJsonCanvas } from "./json-canvas";
 import { rewriteJsonCanvasAttachmentReferences } from "./json-canvas-reference-rewrite";
 import {
@@ -177,42 +178,6 @@ interface PlannedCandidate {
 
 function normalizedTextKey(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase("en-US");
-}
-
-function encodeWikiSegment(value: string): string {
-  return value
-    .replaceAll("%", "%25")
-    .replaceAll("?", "%3F")
-    .replaceAll("#", "%23")
-    .replaceAll("^", "%5E")
-    .replaceAll("|", "%7C")
-    .replaceAll("[", "%5B")
-    .replaceAll("]", "%5D")
-    .replaceAll("\\", "%5C");
-}
-
-function encodeWikiTarget(value: string): string {
-  return value.split("/").map(encodeWikiSegment).join("/");
-}
-
-function encodeMarkdownSegment(value: string): string {
-  if (value === "." || value === "..") return value;
-  return encodeURIComponent(value).replace(
-    /[!'()*]/gu,
-    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-}
-
-function replacementTarget(
-  syntax: "wiki" | "markdown",
-  documentPath: string,
-  targetPath: string,
-  suffix = "",
-): string {
-  const relative = path.posix.relative(path.posix.dirname(documentPath), targetPath);
-  if (syntax === "wiki") return `${encodeWikiTarget(relative)}${suffix}`;
-  const encoded = relative.split("/").map(encodeMarkdownSegment).join("/");
-  return `${encoded.includes("/") ? encoded : `./${encoded}`}${suffix}`;
 }
 
 function isAttachmentPath(filePath: string): boolean {
@@ -1028,7 +993,7 @@ export async function planBinaryAttachmentMove(
         }
         continue;
       }
-      const afterTarget = replacementTarget(
+      const afterTarget = attachmentReferenceTarget(
         link.syntax,
         documentPath,
         targetPath,

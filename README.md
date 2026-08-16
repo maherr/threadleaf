@@ -513,10 +513,13 @@ The packaged attachment gate uses an explicit X11 Xvfb display, a dedicated Elec
 fixture vault, and real CDP pointer and keyboard input with hit-target checks. It exercises
 vault-bound native Open and Reveal through an exact-path-hash main receiver, unknown-byte Open
 refusal, source-retaining publication, a visible unsafe-Canvas blocker, and a completed source-removing rename
-with visible Canvas reference previews plus exact source, target, Markdown, and Canvas bytes. Every
-run captures dark, light, and positive-control screenshots and checks that the positive control
-changes pixels; only a completed gate run is packaged UI evidence. Set the screenshot directory to
-retain those captures:
+with visible Canvas reference previews plus exact source, target, Markdown, and Canvas bytes. It
+also relinks one missing passive embed to an existing visible attachment through an exact two-step
+preview, proving that the source token alone changes while candidate bytes and the missing path stay
+untouched. Every run captures dark, light, and positive-control screenshots, checks that the
+positive control changes pixels, asserts an explicit X11 renderer, and rejects renderer errors;
+only a completed gate run is packaged UI evidence. Set the screenshot directory to retain those
+captures:
 
 ```sh
 THREADLEAF_ATTACHMENT_SCREENSHOT_DIR=/tmp/threadleaf-attachment-visual pnpm run test:packaged-attachments

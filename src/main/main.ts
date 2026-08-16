@@ -3417,6 +3417,48 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.relinkAttachment,
+    (
+      event,
+      sourceNotePath: unknown,
+      missingTarget: unknown,
+      replacementPath: unknown,
+      expectedSourceRevision: unknown,
+      expectedVaultId: unknown,
+      confirmationId: unknown,
+    ) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Attachment relinking is available only to the owned main renderer.");
+      }
+      if (
+        typeof sourceNotePath !== "string" ||
+        typeof missingTarget !== "string" ||
+        typeof replacementPath !== "string" ||
+        typeof expectedSourceRevision !== "string" ||
+        typeof expectedVaultId !== "string" ||
+        !(confirmationId === undefined || typeof confirmationId === "string") ||
+        sourceNotePath.length > 4_096 ||
+        missingTarget.length > 4_096 ||
+        replacementPath.length > 4_096 ||
+        expectedSourceRevision.length > 128 ||
+        expectedVaultId.length > 128 ||
+        (typeof confirmationId === "string" && confirmationId.length > 128)
+      ) {
+        throw new Error(
+          "Relink attachment requires bounded string note, missing target, replacement, revision, and vault values with an optional confirmation.",
+        );
+      }
+      return workspaceController.relinkAttachment(
+        sourceNotePath,
+        missingTarget,
+        replacementPath,
+        expectedSourceRevision,
+        expectedVaultId,
+        confirmationId,
+      );
+    },
+  );
+  ipcMain.handle(
     ipcChannels.deleteNote,
     (_event, filePath: unknown, expectedRevision: unknown, expectedVaultId: unknown) => {
       if (

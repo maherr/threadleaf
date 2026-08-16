@@ -84,6 +84,7 @@ export const ipcChannels = {
   reorderWorkspaceTab: "threadleaf:reorder-workspace-tab",
   moveNote: "threadleaf:move-note",
   moveAttachment: "threadleaf:move-attachment",
+  relinkAttachment: "threadleaf:relink-attachment",
   deleteNote: "threadleaf:delete-note",
   vaultTrash: "threadleaf:vault-trash",
   restoreNote: "threadleaf:restore-note",

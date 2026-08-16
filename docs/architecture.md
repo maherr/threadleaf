@@ -693,6 +693,25 @@ source-removing binary rename plus allowed Markdown and JSON Canvas writes and p
 workspace's `always`, `ask`, or `never` automatic-link policy. The `never` policy moves only the
 exact attachment bytes and does not rewrite either format.
 
+An unresolved passive attachment card may expose **Relink** only when the rendered target maps to
+exactly one supported embed token in one visible public Markdown source. The replacement must be an
+existing, non-Markdown, non-hidden passive attachment named by its full vault-relative path. The
+application performs a bounded stable read, then previews one exact target-token replacement. Its
+confirmation binds the source revision, replacement revision, target spelling, resulting content,
+and current index generation. The recovery-backed writer enters the kernel mutation lane and checks
+the exact missing path, resolver-level missing identity, replacement namespace uniqueness,
+replacement canonical identity, bounded revision, and containment both before staging and again at
+the last no-source-mutation seam immediately before source move-aside or install. A failed final
+check retires staged and recovery bytes, archives a rolled-back receipt, and leaves the source note
+unchanged. This is an optimistic filesystem boundary, not a lock against an unrelated external
+writer racing after the final check. A commit rewrites only the source note: it does not create the
+missing path or copy, move, delete, decode, or overwrite attachment bytes. Query and fragment
+suffixes, aliases, BOM, line endings, code, comments, and unrelated note bytes stay exact. Duplicate
+occurrences, changed sources or candidates, returned or ambiguous missing targets, hidden or
+outside-vault paths, oversized candidates, stale vaults, and changed workspace generations refuse.
+A final source race preserves the proposed note as a named conflict copy and reports that path
+instead of claiming no mutation.
+
 Every publication preview binds the exact Markdown path set, every note revision, and the metadata
 generation. For an `always` or `ask` rename, the reference corpus instead includes every visible
 Markdown and JSON Canvas path and revision. Valid Canvas `nodes[i].file` and group
@@ -744,6 +763,8 @@ native error detail, or shell handle crosses back to the renderer. The final rea
 preflight, not an atomic lock against an unrelated same-user writer replacing a path before an
 external application consumes it. The research and proof record is
 [vault-bound native attachment actions](research/native-attachment-actions-2026-08-16.md).
+The missing-reference recovery boundary and packaged evidence are recorded in
+[single-reference attachment relinking](research/attachment-relink-2026-08-16.md).
 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized

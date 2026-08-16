@@ -5,6 +5,7 @@ import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
   AttachmentMoveResponse,
+  AttachmentRelinkResponse,
   NoteCreateOutcome,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -145,6 +146,15 @@ class FakeRuntime implements WorkspaceRuntimePort {
     confirmationId?: string;
   } | null = null;
   attachmentMoveLoader: (() => Promise<AttachmentMoveResponse>) | null = null;
+  relinkedAttachment: {
+    sourceNotePath: string;
+    missingTarget: string;
+    replacementPath: string;
+    expectedSourceRevision: string;
+    expectedVaultId: string;
+    confirmationId?: string;
+  } | null = null;
+  attachmentRelinkLoader: (() => Promise<AttachmentRelinkResponse>) | null = null;
   deletedNote: {
     filePath: string;
     expectedRevision: string;
@@ -524,6 +534,43 @@ class FakeRuntime implements WorkspaceRuntimePort {
         transactionId: "attachment-move",
         rewrites: [],
         writes: [],
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async relinkAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    replacementPath: string,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRelinkResponse> {
+    this.relinkedAttachment = {
+      sourceNotePath,
+      missingTarget,
+      replacementPath,
+      expectedSourceRevision,
+      expectedVaultId,
+      ...(confirmationId ? { confirmationId } : {}),
+    };
+    if (this.attachmentRelinkLoader) return this.attachmentRelinkLoader();
+    return {
+      outcome: {
+        status: "committed",
+        path: sourceNotePath,
+        revision: "b".repeat(64),
+        transactionId: "attachment-relink",
+        rewrite: {
+          documentPath: sourceNotePath,
+          line: 1,
+          syntax: "wiki",
+          beforeTarget: missingTarget,
+          afterTarget: replacementPath,
+          missingPath: missingTarget,
+          replacementPath,
+        },
       },
       snapshot: this.#snapshot,
     };
@@ -1330,6 +1377,91 @@ describe("WorkspaceController", () => {
 
     expect(response).toMatchObject({
       outcome: { status: "committed", to: "Archive/report.pdf" },
+      snapshot: { vault: { path: path.resolve("/replacement/vault") } },
+      committedVaultId: oldVaultId,
+      committedVaultName: path.basename(path.resolve(fixtureVaultPath)),
+    });
+    await controller.close();
+  });
+
+  it("forwards every relink proof value to the active runtime", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+    const expectedSourceRevision = "a".repeat(64);
+    const confirmationId = "b".repeat(64);
+
+    await controller.relinkAttachment(
+      "Notes/Current.md",
+      "../Missing/report.pdf",
+      "Assets/recovered.pdf",
+      expectedSourceRevision,
+      expectedVaultId,
+      confirmationId,
+    );
+
+    expect(harness.runtimes[0]?.relinkedAttachment).toEqual({
+      sourceNotePath: "Notes/Current.md",
+      missingTarget: "../Missing/report.pdf",
+      replacementPath: "Assets/recovered.pdf",
+      expectedSourceRevision,
+      expectedVaultId,
+      confirmationId,
+    });
+    await controller.close();
+  });
+
+  it("reports a committed relink from a runtime replaced before its reply", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const oldRuntime = harness.runtimes[0];
+    if (!oldRuntime) throw new Error("Expected the bundled runtime.");
+    const oldVaultId = controller.vaultId;
+    oldRuntime.attachmentRelinkLoader = async () => {
+      await controller.switchVault("/replacement/vault");
+      return {
+        outcome: {
+          status: "committed",
+          path: "Notes/Current.md",
+          revision: "b".repeat(64),
+          transactionId: "attachment-relink",
+          rewrite: {
+            documentPath: "Notes/Current.md",
+            line: 1,
+            syntax: "wiki",
+            beforeTarget: "../Missing/report.pdf",
+            afterTarget: "../Assets/recovered.pdf",
+            missingPath: "Missing/report.pdf",
+            replacementPath: "Assets/recovered.pdf",
+          },
+        },
+        snapshot: await oldRuntime.getSnapshot(),
+      };
+    };
+
+    const response = await controller.relinkAttachment(
+      "Notes/Current.md",
+      "../Missing/report.pdf",
+      "Assets/recovered.pdf",
+      "a".repeat(64),
+      oldVaultId,
+      "c".repeat(64),
+    );
+
+    expect(response).toMatchObject({
+      outcome: { status: "committed", path: "Notes/Current.md" },
       snapshot: { vault: { path: path.resolve("/replacement/vault") } },
       committedVaultId: oldVaultId,
       committedVaultName: path.basename(path.resolve(fixtureVaultPath)),
