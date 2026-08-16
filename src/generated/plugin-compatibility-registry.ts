@@ -130,7 +130,7 @@ export const pluginCompatibilityRegistry = {
       "threadleafVersion": "0.1.0-beta.6",
       "lastTested": "2026-08-16",
       "compatibilityLevel": 2,
-      "summary": "The exact 2.26.4 package passed reviewed-profile matching, content-addressed sealed construction, plugin onload, Settings convergence, clean process-restart reconstruction, and revocation and unload on Linux, establishing Level 2 construction evidence.",
+      "summary": "The exact 2.26.4 package passed reviewed-profile matching, content-addressed sealed construction, plugin onload, Settings convergence, clean process-restart reconstruction, revocation and unload, plus a current packaged Linux drawing edit, create, embed, SVG and PNG export, pop-out recovery, vault-switch, unload-reload, and restart workflow. The published level remains 2 because no controller-finalized Level 4 receipt exists.",
       "evidenceMode": "direct",
       "requiredCapabilities": [
         "vault-read",
@@ -177,12 +177,24 @@ export const pluginCompatibilityRegistry = {
               "command": "pnpm test:plugin-packages-e2e:built"
             }
           ]
+        },
+        {
+          "id": "drawing-edit-create-export-reload",
+          "name": "Open and edit scenes, create and embed a drawing, export SVG and PNG, recover a pop-out crash, switch vaults, unload and reload, and restart",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "pnpm test:excalidraw-roundtrip"
+            }
+          ]
         }
       ],
       "failures": [],
       "limitations": [
-        "Drawing edit, save, export, and settings workflows are not verified for 2.26.4.",
-        "No controller-finalized production Electron receipt currently supports a Level 4 workflow claim.",
+        "The current drawing workflow is supporting behavior evidence, not Level 4 evidence, because no controller-finalized signed production Electron receipt exists.",
+        "Inline wiki-embed rendering and export formats beyond SVG and PNG remain unverified for 2.26.4.",
+        "The optional compatibility-renderer crash probe was not safely inducible by CDP on the tested Electron build; mandatory pop-out crash recovery passed.",
         "This is trusted same-user desktop construction evidence, not a sandbox or hostile-plugin attestation."
       ]
     },

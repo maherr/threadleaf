@@ -188,8 +188,10 @@ failures without hiding the rest of the inventory. Before enablement, each packa
 declared minimum Obsidian version, desktop-only flag, standard bundled-dependency model, and
 measured compatibility evidence. Evidence is exact to the tested plugin version: Excalidraw 2.25.3
 retains historical composed workflow evidence at Level 0 pending a current receipt, Excalidraw 2.26.4
-reports direct Level 2 sealed-construction evidence, and an unknown plugin starts at discovered Level
-0. Each valid package also gets a conservative static authority report over the exact package.
+reports direct Level 2 sealed-construction evidence plus a current packaged drawing workflow as
+supporting evidence, and an unknown plugin starts at discovered Level 0. The 2.26.4 row remains
+below Level 4 until that workflow has a controller-finalized, verifier-accepted exact-build receipt.
+Each valid package also gets a conservative static authority report over the exact package.
 Construction additionally requires a checked-in reviewed profile for the complete package identity.
 Granting captures the executable package closure once through no-follow file handles, hashes and
 scans those same bytes, copies them into an application-owned content-addressed read-only root, and
@@ -241,21 +243,22 @@ not fabricate a measurement or kill the plugin. These are trusted-host guardrail
 sandboxing or hard isolation from Node-capable plugin I/O. Threadleaf starts a clean renderer,
 keeps healthy sibling plugins and the native workspace responsive, and marks the culprit for
 explicit reload instead of assuming its in-memory state survived. The host's
-independently implemented DOM and UI base APIs activate the unchanged Excalidraw 2.25.3 release
-bundle in both a disposable DOM probe and the production compatibility renderer. Excalidraw
+independently implemented DOM and UI base APIs activate the unchanged Excalidraw 2.26.4 release
+bundle in the production compatibility renderer; the generic host boundary is separately exercised
+in disposable probes. Excalidraw
 registers two views, its commands, a ribbon action, a settings tab, and a Markdown processor. An
 existing Excalidraw Markdown document now opens through the production host as the plugin's real
 loaded canvas in a visible workspace leaf, with its plugin-owned filename and action bar kept
 distinct from ordinary Markdown editor chrome. The plugin can mutate an existing drawing, save it
 through Threadleaf's revision-bound recoverable writer, close the drawing leaf, and reconstruct the
-same persisted scene after reopening. Historical composed gates exercised that named edit, save,
-close, and reopen workflow, but it remains supporting evidence until a controller-finalized receipt
-is regenerated under the current Level 4 policy. New drawing creation, native-editor embed insertion,
-and SVG/PNG vault export were exercised by the same historical gates and do not currently carry a
-Level 4 claim. Full active-view unload and reload is measured too: plugin-owned
-transient UI, the drawing leaf, all 69 commands, and every registered integration are removed, and
-two reload cycles restore the exact command and integration counts without duplicates or runtime
-errors. Compatibility plugins can also rename and recoverably trash revision-bound attachments
+same persisted scene after reopening. The current packaged gate exercises that named edit, save,
+close, and reopen workflow against the exact 2.26.4 release, but it remains supporting evidence
+until a controller-finalized, verifier-accepted exact-build receipt exists under the Level 4 policy.
+New drawing creation, native-editor embed insertion, SVG and PNG vault export, pop-out crash
+recovery, vault switching, full unload and reload, and clean application restart are exercised by
+the same current gate without claiming universal parity. Plugin-owned transient UI, the drawing
+leaf, commands, and registered integrations are removed on unload and restored without duplicates
+or captured runtime errors. Compatibility plugins can also rename and recoverably trash revision-bound attachments
 through public `Vault.rename`, `FileManager.renameFile`, and `FileManager.trashFile` APIs. The
 unchanged Excalidraw plugin has moved and trashed real binary fixtures through those paths while
 preserving their exact SHA-256 digests, and recovery fixtures cover interrupted renames plus

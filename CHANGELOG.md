@@ -18,6 +18,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Advanced the canonical Excalidraw packaged workflow to the exact 2.26.4 release, preserving raw
+  manifest bytes, binding manifest, main, stylesheet, package-tree, and reviewed-authority identity,
+  and proving clean restart from persisted sealed authority without granting again.
 - Decoupled the Files inventory generation from the Markdown metadata generation. Physical scans
   now run outside the index mutation lock, reject invalidated candidates, retain the last complete
   tree on failure, and retry without publishing partial state.
@@ -26,6 +29,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Required the real Excalidraw canvas to be visible after detach, reattach, and pop-out crash
+  recovery before accepting screenshots, eliminating placeholder-only visual false positives.
 - Made the canonical Electron Live Preview gate wait for completed pane actions and explicitly
   prove the hidden restored-vault settings state before promoting its bounded public conformance
   record to verified.

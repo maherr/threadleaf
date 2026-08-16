@@ -53,7 +53,7 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 
 ## Excalidraw 2.26.4
 
-The exact 2.26.4 package passed reviewed-profile matching, content-addressed sealed construction, plugin onload, Settings convergence, clean process-restart reconstruction, and revocation and unload on Linux, establishing Level 2 construction evidence.
+The exact 2.26.4 package passed reviewed-profile matching, content-addressed sealed construction, plugin onload, Settings convergence, clean process-restart reconstruction, revocation and unload, plus a current packaged Linux drawing edit, create, embed, SVG and PNG export, pop-out recovery, vault-switch, unload-reload, and restart workflow. The published level remains 2 because no controller-finalized Level 4 receipt exists.
 
 Bundle SHA-256: `b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a`. License: AGPL-3.0.
 
@@ -63,6 +63,8 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 
 - **Review, seal, construct, restart-reconstruct, revoke, and unload the exact package** (passed)
   - `pnpm test:plugin-packages-e2e:built` via [scripts/check-plugin-packages-e2e.mjs](../../scripts/check-plugin-packages-e2e.mjs)
+- **Open and edit scenes, create and embed a drawing, export SVG and PNG, recover a pop-out crash, switch vaults, unload and reload, and restart** (passed)
+  - `pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
 
 ### Platform limits
 
@@ -76,8 +78,9 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 
 ### Limitations
 
-- Drawing edit, save, export, and settings workflows are not verified for 2.26.4.
-- No controller-finalized production Electron receipt currently supports a Level 4 workflow claim.
+- The current drawing workflow is supporting behavior evidence, not Level 4 evidence, because no controller-finalized signed production Electron receipt exists.
+- Inline wiki-embed rendering and export formats beyond SVG and PNG remain unverified for 2.26.4.
+- The optional compatibility-renderer crash probe was not safely inducible by CDP on the tested Electron build; mandatory pop-out crash recovery passed.
 - This is trusted same-user desktop construction evidence, not a sandbox or hostile-plugin attestation.
 
 ## Threadleaf Compatibility Fixture 0.1.0

@@ -54,21 +54,31 @@ pnpm run test:excalidraw-roundtrip
 
 The gate uses a unique temporary fixture vault, Electron user-data directory, explicit
 `--ozone-platform=x11`, an isolated Xvfb display, and an isolated CDP port. It downloads only the
-exact public Excalidraw 2.25.3 release at runtime, unless
+exact public Excalidraw 2.26.4 release at runtime, unless
 `THREADLEAF_EXCALIDRAW_PLUGIN_PATH` points to an already supplied copy. Nothing from that download
 is checked in.
 
-A supplied copy must be the exact public 2.25.3 release bytes, not an Obsidian-installed copy of
-the plugin. The gate pins and rejects any mismatch: `manifest.json` must hash to SHA-256
-`43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e`, and `main.js` must be exactly
-4,898,048 bytes with SHA-256 `684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6`.
-A copy taken from an installed Obsidian vault carries an installer-appended 18-byte
-`/* nosourcemap */` suffix on `main.js` (4,898,066 bytes), so it fails the pinned byte count and
-SHA-256 and is rejected rather than silently accepted.
+A supplied copy must contain the exact public 2.26.4 release assets. The gate preserves the raw
+manifest instead of normalizing JSON and rejects any mismatch:
 
-The copied fixture configures the plugin to retain uncompressed deterministic scene
-text, follow the host theme, and skip release notes already acknowledged at 2.25.3. The gate derives
-the authority grant from Threadleaf's own catalog, then exercises:
+- `manifest.json`: 463 bytes, SHA-256
+  `f6b817daea2fa2106671a62d7236cdc8d806f52465f1ff3ab5343231c020b703`;
+- `main.js`: 5,106,385 bytes, SHA-256
+  `b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a`; and
+- `styles.css`: 224,752 bytes, SHA-256
+  `615b560c5193b2ca4ef3ff1844d2807913bc51c40333c79fdd08a840b0c42735`.
+
+Those assets must also produce package-tree SHA-256
+`b5d2ce2c808a56cf668b020623c2a4a1702416214dfb898d7b2ad651ea0f8ea5` and package-identity
+digest `1075ef87ee0d8003dca8b0ed6b0fb5f5cb091d8fb6c35619319333aa3c4926e7`, matching reviewed
+authority profile `obsidian-excalidraw-plugin-2.26.4`. The main process independently stages and
+seals that complete identity before construction. A modified installed-vault copy therefore fails
+the exact byte or identity checks rather than being silently accepted.
+
+The copied fixture configures the plugin to retain uncompressed deterministic scene text, follow
+the host theme, and skip release notes already acknowledged at 2.26.4. The gate derives the first
+authority grant from Threadleaf's own catalog, then proves the clean application restart
+reconstructs the persisted grant and sealed package without granting again. It exercises:
 
 1. the reachable Plugin control plus open and visible canvas rendering;
 2. compressed Markdown and native `.excalidraw` scenes, with the native scene selected through the
@@ -103,7 +113,12 @@ does not expose a failed plugin state safely, the gate records that limitation a
 an ordinary plugin reload; the native pop-out crash and degraded recovery remain mandatory.
 Set `THREADLEAF_EXCALIDRAW_SCREENSHOT_DIR` to retain the PNG evidence.
 
-The unchanged 2.25.3 plugin now passes this complete packaged workflow on the Linux gate. The host
+The unchanged 2.26.4 plugin passes this complete packaged workflow on the Linux gate. This is
+current supporting behavior evidence. The public compatibility level remains 2 until a dedicated
+controller finalizes a signed, verifier-accepted, exact-build production receipt for this named
+workflow; a successful harness run does not self-promote Level 4.
+
+The host
 dispatches workspace layout-ready callbacks as events instead of waiting on plugin-owned promises,
 and it preserves Obsidian's view teardown order (`onunload` before `onClose`). Regression fixtures
 prove that a never-settling layout callback cannot block readiness, view cleanup retains plugin

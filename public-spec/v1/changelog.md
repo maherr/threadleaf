@@ -1,5 +1,13 @@
 # Public specification changelog
 
+## v1, Excalidraw 2.26.4 workflow evidence update
+
+- Rebound the packaged drawing workflow to the exact Excalidraw 2.26.4 release and recorded its
+  current edit, create, embed, SVG and PNG export, pop-out recovery, vault-switch, unload-reload,
+  and restart evidence without promoting it above Level 2 before a verified Level 4 receipt exists.
+- Required the real canvas after detach, reattach, and pop-out crash recovery before accepting
+  visual evidence, so an initialization placeholder cannot satisfy the packaged workflow.
+
 ## v1, Live Preview evidence update
 
 - Promoted the bounded Live Preview and source-mapping contract to verified after its canonical

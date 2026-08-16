@@ -6,6 +6,7 @@ import { promises as fs } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { authorityJsonSha256 } from "../src/shared/authority-json-runtime.mjs";
 
 const appRoot = process.cwd();
 const fixtureRoot = path.join(appRoot, "fixtures", "corpus", "excalidraw-roundtrip-v1");
@@ -13,14 +14,24 @@ const fixtureVault = path.join(fixtureRoot, "vault");
 const sourceVaultOverride = process.env.THREADLEAF_EXCALIDRAW_SOURCE_VAULT?.trim();
 const sourceVault = sourceVaultOverride ? path.resolve(sourceVaultOverride) : fixtureVault;
 const pluginId = "obsidian-excalidraw-plugin";
-const pluginVersion = "2.25.3";
+const pluginVersion = "2.26.4";
 const repository = "zsviczian/obsidian-excalidraw-plugin";
+const authorityProfilePath = path.join(
+  appRoot,
+  "scripts",
+  "compatibility",
+  "trust",
+  `${pluginId}-${pluginVersion}.authority-profile.json`,
+);
 const pinnedPlugin = {
   id: pluginId,
   version: pluginVersion,
-  manifestSha256: "43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e",
-  mainSha256: "684cf6da43f6e3b2a7646d5a50d14f7a43eb5d859d073dc6a375c4a1b0990dd6",
-  mainBytes: 4_898_048,
+  manifestSha256: "f6b817daea2fa2106671a62d7236cdc8d806f52465f1ff3ab5343231c020b703",
+  manifestBytes: 463,
+  mainSha256: "b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a",
+  mainBytes: 5_106_385,
+  stylesSha256: "615b560c5193b2ca4ef3ff1844d2807913bc51c40333c79fdd08a840b0c42735",
+  stylesBytes: 224_752,
 };
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const screenshotDirectoryOverride = process.env.THREADLEAF_EXCALIDRAW_SCREENSHOT_DIR;
@@ -41,6 +52,19 @@ let pluginCdp = null;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+async function makeDisposableTreeRemovable(candidatePath) {
+  const stat = await fs.lstat(candidatePath).catch(() => null);
+  if (!stat || stat.isSymbolicLink()) return;
+  if (!stat.isDirectory()) {
+    if (stat.isFile()) await fs.chmod(candidatePath, 0o600);
+    return;
+  }
+  await fs.chmod(candidatePath, 0o700);
+  for (const entry of await fs.readdir(candidatePath)) {
+    await makeDisposableTreeRemovable(path.join(candidatePath, entry));
+  }
 }
 
 function delay(milliseconds) {
@@ -419,8 +443,9 @@ function assertPinnedPlugin(plugin) {
   );
   assert(
     Buffer.isBuffer(plugin.manifestBytes) &&
+      plugin.manifestBytes.length === pinnedPlugin.manifestBytes &&
       sha256(plugin.manifestBytes) === pinnedPlugin.manifestSha256,
-    `Excalidraw manifest bytes did not match pinned SHA-256 ${pinnedPlugin.manifestSha256}.`,
+    `Excalidraw manifest bytes did not match pinned ${pinnedPlugin.manifestBytes}-byte SHA-256 ${pinnedPlugin.manifestSha256}.`,
   );
   assert(
     Buffer.isBuffer(plugin.main) && plugin.main.length === pinnedPlugin.mainBytes,
@@ -430,16 +455,73 @@ function assertPinnedPlugin(plugin) {
     sha256(plugin.main) === pinnedPlugin.mainSha256,
     `Excalidraw main.js bytes did not match pinned SHA-256 ${pinnedPlugin.mainSha256}.`,
   );
+  assert(
+    Buffer.isBuffer(plugin.styles) && plugin.styles.length === pinnedPlugin.stylesBytes,
+    `Excalidraw styles.css size did not match pinned ${pinnedPlugin.stylesBytes} bytes.`,
+  );
+  assert(
+    sha256(plugin.styles) === pinnedPlugin.stylesSha256,
+    `Excalidraw styles.css bytes did not match pinned SHA-256 ${pinnedPlugin.stylesSha256}.`,
+  );
+}
+
+async function exactReviewedIdentity(plugin) {
+  const files = [
+    {
+      path: "manifest.json",
+      sha256: sha256(plugin.manifestBytes),
+      size: plugin.manifestBytes.length,
+    },
+    { path: "main.js", sha256: sha256(plugin.main), size: plugin.main.length },
+    { path: "styles.css", sha256: sha256(plugin.styles), size: plugin.styles.length },
+  ].sort((left, right) => Buffer.from(left.path).compare(Buffer.from(right.path)));
+  const packageIdentity = {
+    pluginId,
+    manifestVersion: pluginVersion,
+    distributionTag: pluginVersion,
+    manifestSha256: pinnedPlugin.manifestSha256,
+    mainSha256: pinnedPlugin.mainSha256,
+    stylesSha256: pinnedPlugin.stylesSha256,
+    packageTreeSha256: authorityJsonSha256({ schemaVersion: 1, files }),
+  };
+  const profile = JSON.parse(await fs.readFile(authorityProfilePath, "utf8"));
+  const authorityPayload = {
+    schemaVersion: profile.schemaVersion,
+    profileId: profile.profileId,
+    profileRevision: profile.profileRevision,
+    packageIdentity: profile.packageIdentity,
+    packageIdentityDigest: profile.packageIdentityDigest,
+    expectedStaticCapabilities: profile.expectedStaticCapabilities,
+    requiredAuthorities: profile.requiredAuthorities,
+    executionProfile: profile.executionProfile,
+    allowedPlatforms: profile.allowedPlatforms,
+  };
+  const packageIdentityDigest = authorityJsonSha256(packageIdentity);
+  assert(
+    profile.profileId === `${pluginId}-${pluginVersion}` &&
+      profile.packageIdentityDigest === packageIdentityDigest &&
+      authorityJsonSha256(profile.packageIdentity) === packageIdentityDigest,
+    "The Excalidraw release bytes did not match the exact reviewed package identity.",
+  );
+  assert(
+    authorityJsonSha256(authorityPayload) === profile.authorityDigest,
+    "The Excalidraw reviewed authority profile digest was stale.",
+  );
+  return {
+    profileId: profile.profileId,
+    profileRevision: profile.profileRevision,
+    authorityDigest: profile.authorityDigest,
+    packageIdentity,
+    packageIdentityDigest,
+  };
 }
 
 async function writePluginFixture() {
   const plugin = await fetchPublicPlugin();
   assertPinnedPlugin(plugin);
+  const reviewedIdentity = await exactReviewedIdentity(plugin);
   await fs.mkdir(pluginPath, { recursive: true });
-  await fs.writeFile(
-    path.join(pluginPath, "manifest.json"),
-    JSON.stringify(plugin.manifest, null, 2),
-  );
+  await fs.writeFile(path.join(pluginPath, "manifest.json"), plugin.manifestBytes);
   await fs.writeFile(path.join(pluginPath, "main.js"), plugin.main);
   if (plugin.styles) await fs.writeFile(path.join(pluginPath, "styles.css"), plugin.styles);
   await fs.writeFile(
@@ -448,6 +530,7 @@ async function writePluginFixture() {
   );
   return {
     ...plugin,
+    ...reviewedIdentity,
     manifestSha256: sha256(plugin.manifestBytes),
     mainSha256: sha256(plugin.main),
     mainBytes: plugin.main.length,
@@ -534,7 +617,7 @@ function sceneEdit(content) {
   return synchronizeTextElementMappings(edited, scene);
 }
 
-async function startApp(port, pluginState) {
+async function startApp(port, pluginState, { prepareAuthority = true } = {}) {
   const settings = {
     version: 5,
     keyBindings: {},
@@ -616,15 +699,37 @@ async function startApp(port, pluginState) {
   assert(catalog.status === "ready", "The Excalidraw catalog was not ready.");
   const plugin = catalog.catalog.plugins.find((candidate) => candidate.id === pluginId);
   assert(plugin, "The public Excalidraw package was not discovered.");
+  assert(
+    plugin.version === pluginVersion && plugin.packageState === "ready",
+    `The discovered Excalidraw package was not the ready exact ${pluginVersion} release.`,
+  );
   assert(plugin.capabilityReport, "The Excalidraw authority report was unavailable.");
-  await evaluate(
-    cdp,
-    `window.threadleaf.setPluginCapabilityGrant(${JSON.stringify(vaultId)}, ${JSON.stringify(pluginId)}, ${JSON.stringify(plugin.capabilityReport.bundleSha256)}, true)`,
+  assert(
+    plugin.capabilityReport.bundleSha256 === pinnedPlugin.mainSha256,
+    "The discovered Excalidraw authority report did not bind the pinned main.js bytes.",
   );
-  await evaluate(
-    cdp,
-    `window.threadleaf.setPluginEnabled(${JSON.stringify(vaultId)}, ${JSON.stringify(pluginId)}, true)`,
-  );
+  if (prepareAuthority) {
+    const grant = await evaluate(
+      cdp,
+      `window.threadleaf.setPluginCapabilityGrant(${JSON.stringify(vaultId)}, ${JSON.stringify(pluginId)}, ${JSON.stringify(plugin.capabilityReport.bundleSha256)}, true)`,
+    );
+    assert(grant.status === "updated", "The exact Excalidraw authority grant did not commit.");
+    const granted = grant.catalog.plugins.find((candidate) => candidate.id === pluginId);
+    assert(
+      granted?.capabilityGrantState === "granted",
+      "The exact Excalidraw package did not expose a committed authority grant.",
+    );
+    const enabled = await evaluate(
+      cdp,
+      `window.threadleaf.setPluginEnabled(${JSON.stringify(vaultId)}, ${JSON.stringify(pluginId)}, true)`,
+    );
+    assert(enabled.status === "updated", "The exact Excalidraw enablement did not commit.");
+  } else {
+    assert(
+      plugin.capabilityGrantState === "granted",
+      "The restarted application did not reconstruct the persisted exact-package grant.",
+    );
+  }
   const activationDeadline = Date.now() + 60_000;
   let pluginSummary = null;
   while (Date.now() < activationDeadline) {
@@ -799,13 +904,17 @@ async function connectPluginSurface(port) {
   pluginCdp = connectCdp(target.webSocketDebuggerUrl);
   await pluginCdp.send("Page.enable");
   await waitFor(pluginCdp, "document.readyState === 'complete'", "plugin renderer document");
-  await waitFor(
-    pluginCdp,
-    "(() => { const canvas = document.querySelector('canvas'); if (!(canvas instanceof HTMLCanvasElement)) return false; const bounds = canvas.getBoundingClientRect(); return bounds.width > 0 && bounds.height > 0 ? { width: bounds.width, height: bounds.height } : false; })()",
-    "Excalidraw canvas",
-    30_000,
-  );
+  await waitForExcalidrawCanvas(pluginCdp, "Excalidraw canvas");
   return target;
+}
+
+async function waitForExcalidrawCanvas(connection, label, timeoutMs = 30_000) {
+  await waitFor(
+    connection,
+    "(() => { const surface = document.querySelector('.excalidraw'); const canvas = surface?.querySelector('canvas'); if (!(surface instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false; const bounds = canvas.getBoundingClientRect(); return bounds.width > 0 && bounds.height > 0 ? { width: bounds.width, height: bounds.height } : false; })()",
+    label,
+    timeoutMs,
+  );
 }
 
 async function directSceneEdit(vaultId, filePath) {
@@ -1196,6 +1305,7 @@ async function exerciseSettingsWhileDrawing(vaultId, filePath) {
 
 async function exercisePopout(port, filePath) {
   await assertDrawingChrome(filePath);
+  await waitForExcalidrawCanvas(pluginCdp, "attached Excalidraw canvas before pop-out");
   const attachedSize = await evaluate(
     pluginCdp,
     "({ width: innerWidth, height: innerHeight, canvas: document.querySelector('canvas')?.getBoundingClientRect().toJSON() ?? null })",
@@ -1218,6 +1328,7 @@ async function exercisePopout(port, filePath) {
     pluginSurfaceTarget?.webSocketDebuggerUrl,
     "Excalidraw detached plugin surface did not appear.",
   );
+  await waitForExcalidrawCanvas(pluginCdp, "detached Excalidraw canvas");
   const detachedSize = await evaluate(
     pluginCdp,
     "({ width: innerWidth, height: innerHeight, canvas: document.querySelector('canvas')?.getBoundingClientRect().toJSON() ?? null })",
@@ -1318,6 +1429,7 @@ async function exercisePopout(port, filePath) {
     })()`,
     "Excalidraw pop-out reattach",
   );
+  await waitForExcalidrawCanvas(pluginCdp, "reattached Excalidraw canvas");
   await waitFor(
     cdp,
     "document.querySelector('#pop-out-plugin-view')?.getAttribute('aria-label') === 'Pop out plugin view'",
@@ -1377,6 +1489,7 @@ async function exercisePopoutCrash(port, filePath) {
     "Excalidraw crash recovery did not restore main-window ownership.",
   );
   await assertDrawingChrome(filePath, "degraded");
+  await waitForExcalidrawCanvas(pluginCdp, "crash-recovered Excalidraw canvas");
   const responseMs = await measureResponse(cdp, "main renderer after Excalidraw pop-out crash");
   const recoveredSurfaceResponseMs = await measureResponse(
     pluginCdp,
@@ -1390,6 +1503,7 @@ async function exercisePopoutCrash(port, filePath) {
     "(async () => (await window.threadleaf.getSnapshot()).workspaceLayout?.popout.state === 'open')()",
     "Excalidraw pop-out reopen after crash",
   );
+  await waitForExcalidrawCanvas(pluginCdp, "reopened Excalidraw pop-out canvas");
   await clickSelector(cdp, "#pop-out-plugin-view");
   await waitFor(
     cdp,
@@ -1401,6 +1515,7 @@ async function exercisePopoutCrash(port, filePath) {
     })()`,
     "Excalidraw pop-out warning cleanup",
   );
+  await waitForExcalidrawCanvas(pluginCdp, "post-crash reattached Excalidraw canvas");
   await assertDrawingChrome(filePath);
   return { responseMs, recoveredSurfaceResponseMs };
 }
@@ -1646,7 +1761,7 @@ async function run() {
   await closeApp();
 
   const restartPort = await availablePort();
-  const restarted = await startApp(restartPort, pluginState);
+  const restarted = await startApp(restartPort, pluginState, { prepareAuthority: false });
   await assertRestoredNativeDrawing(nativePath, restarted.vaultId);
   await connectPluginSurface(restartPort);
   await captureCurrentTheme(cdp, "excalidraw-restart-native-app");
@@ -1703,6 +1818,11 @@ async function run() {
           mainSha256: pluginState.mainSha256,
           mainBytes: pluginState.mainBytes,
           stylesSha256: pluginState.stylesSha256,
+          packageTreeSha256: pluginState.packageIdentity.packageTreeSha256,
+          packageIdentityDigest: pluginState.packageIdentityDigest,
+          authorityProfileId: pluginState.profileId,
+          authorityProfileRevision: pluginState.profileRevision,
+          authorityDigest: pluginState.authorityDigest,
         },
         workflows: [
           "create",
@@ -1766,6 +1886,7 @@ try {
   if (keepTemporaryRoot) {
     console.error(`Excalidraw packaged workflow retained temporary root: ${testRoot}`);
   } else {
+    await makeDisposableTreeRemovable(testRoot);
     await fs.rm(testRoot, { recursive: true, force: true });
   }
 }
