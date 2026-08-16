@@ -5,8 +5,8 @@ the machine-readable [`data/`](data/) datasets. The generated [`site/`](site/) d
 static, local, offline view over those datasets.
 
 The specification is implementation-neutral. It records exact Threadleaf versions, executable
-gates, fixture hashes, provenance, licenses, and visible gaps. It does not turn discovery into
-compatibility or copy proprietary application behavior.
+gates, fixture hashes, provenance, licenses, and visible gaps. It does not turn source inspection or
+discovery into compatibility evidence, or redistribute proprietary source code or assets.
 
 ## Build and check
 

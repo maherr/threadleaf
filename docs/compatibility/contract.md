@@ -23,12 +23,10 @@ version instead of assigning an unexplained universal percentage.
 - Independently written synthetic fixtures and behavior tests.
 - User-submitted failure reports reduced to reproducible fixtures.
 
-Copied proprietary application code or assets and redistributed extracted material are out of scope
-for the compatibility runtime and its evidence corpus. Private study of application internals may
-inform an independently authored architecture or product design, but it is not compatibility
-evidence and cannot raise a compatibility level or replace a production-path fixture. Extracted
-implementation details are not published through Threadleaf documentation or datasets. Third-party
-directories, feature tables, stars, and README claims are discovery inputs only.
+Redistributed proprietary source code, assets, or extracted implementation material are out of
+scope for the compatibility runtime and its evidence corpus. Source inspection alone cannot raise a
+compatibility level or replace a production-path fixture. Third-party directories, feature tables,
+stars, and README claims are discovery inputs only.
 
 ## Pre-enablement evidence
 
