@@ -1141,7 +1141,9 @@ async function probeCues() {
       };
     };
     const active = document.querySelector('#file-list [aria-current="page"]');
-    const inactive = [...document.querySelectorAll('#file-list .file-item')].find((candidate) => candidate !== active);
+    const inactive = [...document.querySelectorAll(
+      '#file-list .file-item, #file-list .navigator-tree-row[data-kind="note"], #file-list .navigator-tree-row[data-kind="canvas"]',
+    )].find((candidate) => candidate !== active);
     const input = document.querySelector('#file-search');
     const notePreview = document.querySelector('.note-preview');
     if (
@@ -1181,7 +1183,11 @@ async function probeCues() {
     };
     const notePreviewStyle = style(notePreview);
     return {
-      active: { ...activeStyle, ariaCurrent: active.getAttribute('aria-current'), glyph: active.querySelector('.file-glyph')?.textContent ?? '' },
+      active: {
+        ...activeStyle,
+        ariaCurrent: active.getAttribute('aria-current'),
+        glyph: active.querySelector('.file-glyph, .navigator-tree-disclosure')?.textContent ?? '',
+      },
       inactive: { ...inactiveStyle, ariaCurrent: inactive.getAttribute('aria-current') },
       bodyText: { color: notePreviewStyle.color, backgroundColor: notePreviewStyle.backgroundColor },
       focus: {

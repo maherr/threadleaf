@@ -12,6 +12,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added a filesystem-truthful Files navigator for visible folders, Markdown notes, JSON Canvas
   documents, and ordinary files, including explicit empty folders, typed activation, deterministic
   natural ordering, and immediate guarded folder creation.
+- Added a transient read-only ordinary-file inspector with exact vault and inventory identity,
+  bounded inert UTF-8 text, byte-sniffed raster images, metadata-only binary formats, responsive
+  modal focus restoration, and no document, tab, history, shell, or renderer-filesystem authority.
 
 ### Changed
 
@@ -23,6 +26,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Retargeted the community-theme live cue probe and refreshed its 20 verified baselines for the
+  typed Files tree while preserving deuteranomaly, non-color, minimum-viewport, high-contrast, and
+  tampered-baseline controls.
 - Returned the JSON Canvas Save control to its clean disabled state after a committed write, and
   kept group containers behind ordinary nodes so covered file and edit controls remain pointer
   reachable.

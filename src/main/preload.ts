@@ -40,6 +40,7 @@ import type {
   RuntimeSnapshot,
   ThreadleafBridge,
   VaultAttachmentResponse,
+  VaultFilePreviewResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -313,6 +314,13 @@ const bridge: ThreadleafBridge = {
       target,
       expectedVaultId,
     ) as Promise<VaultAttachmentResponse>,
+  loadVaultFilePreview: (path, expectedVaultId, expectedInventoryGeneration) =>
+    ipcRenderer.invoke(
+      ipcChannels.loadVaultFilePreview,
+      path,
+      expectedVaultId,
+      expectedInventoryGeneration,
+    ) as Promise<VaultFilePreviewResponse>,
   loadVaultNoteEmbed: (sourceNotePath, target, subpath, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.loadVaultNoteEmbed,

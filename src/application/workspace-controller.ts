@@ -27,6 +27,7 @@ import type {
   PluginMutationWaitOptions,
   RuntimeSnapshot,
   VaultAttachmentResponse,
+  VaultFilePreviewResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -100,6 +101,11 @@ export interface WorkspaceRuntimePort {
     target: string,
     expectedVaultId: string,
   ): Promise<VaultAttachmentResponse>;
+  loadVaultFilePreview(
+    path: string,
+    expectedVaultId: string,
+    expectedInventoryGeneration: string,
+  ): Promise<VaultFilePreviewResponse>;
   loadVaultNoteEmbed(
     sourceNotePath: string,
     target: string,
@@ -673,6 +679,26 @@ export class WorkspaceController {
       return { status: "stale-vault", vaultId: runtime.vaultId };
     }
     const response = await runtime.loadVaultAttachment(sourceNotePath, target, expectedVaultId);
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: this.#runtime.vaultId };
+    }
+    return response;
+  }
+
+  async loadVaultFilePreview(
+    path: string,
+    expectedVaultId: string,
+    expectedInventoryGeneration: string,
+  ): Promise<VaultFilePreviewResponse> {
+    const runtime = this.activeRuntime("preview a file");
+    if (runtime.vaultId !== expectedVaultId) {
+      return { status: "stale-vault", vaultId: runtime.vaultId };
+    }
+    const response = await runtime.loadVaultFilePreview(
+      path,
+      expectedVaultId,
+      expectedInventoryGeneration,
+    );
     if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
       return { status: "stale-vault", vaultId: this.#runtime.vaultId };
     }

@@ -32,9 +32,16 @@ const deepRevealSegments = Array.from(
 const deepRevealActivePath = `${deepRevealSegments.join("/")}/Target.md`;
 const canvasPath = "Projects/Deep/Board.canvas";
 const genericFilePath = "File parent";
+const rasterFilePath = "Raster payload.data";
+const binaryFilePath = "Binary payload.data";
+const hostileText =
+  '<script>globalThis.previewEscaped = false</script><img src=x onerror="boom()">';
+const rasterBytes = await fs.readFile(
+  path.join(appRoot, "fixtures", "vaults", "demo", "Attachments", "brew-ratio-chart.png"),
+);
 const fixtureMarkdownCount = 1_006;
 const convergedMarkdownCount = fixtureMarkdownCount + 1;
-const fixtureVisibleFileCount = fixtureMarkdownCount + 2;
+const fixtureVisibleFileCount = fixtureMarkdownCount + 4;
 const convergedVisibleFileCount = fixtureVisibleFileCount + 1;
 const fixtureVisibleFolderCount = 132;
 
@@ -110,17 +117,21 @@ function manifestDigest(manifest) {
   return createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
 }
 
-async function setViewport(width, height) {
+async function setViewport(width, height, deviceScaleFactor = 1) {
   await cdp.send("Emulation.setDeviceMetricsOverride", {
     width,
     height,
-    deviceScaleFactor: 1,
+    deviceScaleFactor,
     mobile: false,
   });
   await waitFor(
     async () =>
-      (await evaluate(`innerWidth === ${width} && innerHeight === ${height}`)) ? true : null,
-    `The renderer did not adopt the ${width}x${height} viewport`,
+      (await evaluate(
+        `innerWidth === ${width} && innerHeight === ${height} && devicePixelRatio === ${deviceScaleFactor}`,
+      ))
+        ? true
+        : null,
+    `The renderer did not adopt the ${width}x${height} viewport at ${deviceScaleFactor}x`,
   );
 }
 
@@ -368,6 +379,7 @@ async function pressKey(key, code, modifiers = 0) {
     Backspace: 8,
     End: 35,
     Enter: 13,
+    Escape: 27,
     Home: 36,
   }[key];
   await cdp.send("Input.dispatchKeyEvent", {
@@ -648,6 +660,37 @@ async function waitForTreePath(treePath) {
   }
 }
 
+async function waitForFilePreview(filePath, preview) {
+  return waitFor(async () => {
+    const state = await evaluate(`(() => {
+      const dialog = document.querySelector("#file-preview-dialog");
+      const body = document.querySelector("#file-preview-body");
+      const image = document.querySelector("#file-preview-image");
+      const textPreview = document.querySelector("#file-preview-text");
+      return dialog instanceof HTMLDialogElement && dialog.open &&
+        document.querySelector("#file-preview-path")?.textContent === ${JSON.stringify(filePath)} &&
+        body?.getAttribute("data-preview") === ${JSON.stringify(preview)} &&
+        document.activeElement?.id === "file-preview-close" ? {
+          open: dialog.open,
+          path: document.querySelector("#file-preview-path")?.textContent ?? "",
+          preview: body?.getAttribute("data-preview") ?? "",
+          kind: document.querySelector("#file-preview-kind")?.textContent ?? "",
+          mime: document.querySelector("#file-preview-mime")?.textContent ?? "",
+          size: document.querySelector("#file-preview-size")?.textContent ?? "",
+          revision: document.querySelector("#file-preview-revision")?.textContent ?? "",
+          status: document.querySelector("#file-preview-status")?.textContent ?? "",
+          text: textPreview instanceof HTMLTextAreaElement ? textPreview.value : "",
+          imageSrc: image instanceof HTMLImageElement ? image.getAttribute("src") : null,
+          imageHidden: image instanceof HTMLImageElement ? image.hidden : null,
+          metadata: document.querySelector("#file-preview-metadata")?.textContent ?? "",
+          forbiddenElements: dialog.querySelectorAll("iframe, object, audio, video, script").length,
+          activeId: document.activeElement?.id ?? "",
+        } : null;
+    })()`);
+    return state ?? null;
+  }, `The file inspector did not render ${filePath} as ${preview}`);
+}
+
 async function waitForFocusedTreePath(treePath) {
   try {
     return await waitFor(
@@ -719,7 +762,9 @@ async function writeFixtureVault() {
       "utf8",
     ),
     fs.writeFile(path.join(vaultPath, deepRevealActivePath), "# Deep reveal target\n", "utf8"),
-    fs.writeFile(fileParentPath, "not a folder\n", "utf8"),
+    fs.writeFile(fileParentPath, hostileText, "utf8"),
+    fs.writeFile(path.join(vaultPath, rasterFilePath), rasterBytes),
+    fs.writeFile(path.join(vaultPath, binaryFilePath), "%PDF-1.7\nfixture", "ascii"),
   ]);
   const children = Array.from({ length: 1_001 }, (_, index) => {
     const name = `Child-${String(index).padStart(4, "0")}.md`;
@@ -802,7 +847,7 @@ try {
   );
   assert(
     initialSemantics.generic?.kind === "file" &&
-      initialSemantics.generic.label === `Preview unavailable for file ${genericFilePath}` &&
+      initialSemantics.generic.label === `Preview file ${genericFilePath}` &&
       initialSemantics.generic.current === null &&
       initialSemantics.generic.selected === null &&
       initialSemantics.generic.expanded === null,
@@ -1271,20 +1316,14 @@ try {
   const genericRow = await waitForTreePath(genericFilePath);
   assert(
     genericRow.kind === "file" &&
-      genericRow.label === `Preview unavailable for file ${genericFilePath}` &&
+      genericRow.label === `Preview file ${genericFilePath}` &&
       genericRow.current === null &&
       genericRow.selected === null &&
       genericRow.expanded === null,
     `The ordinary file row inherited document semantics: ${JSON.stringify(genericRow)}`,
   );
   await clickSelector(treeSelector(genericFilePath));
-  const pointerPreviewToast = await waitFor(async () => {
-    const message = await evaluate('document.querySelector("#toast")?.textContent ?? ""');
-    return message ===
-      `Preview unavailable for ${genericFilePath}. Threadleaf does not open ordinary files yet.`
-      ? message
-      : null;
-  }, "Pointer activation did not explain the ordinary-file preview boundary");
+  const textPreview = await waitForFilePreview(genericFilePath, "text");
   const genericAfterPointer = workspaceActivationState(await snapshot());
   assert(
     JSON.stringify(genericAfterPointer) === JSON.stringify(genericBeforePointer),
@@ -1297,36 +1336,142 @@ try {
     openNoteCalls.count() === genericActivationCallBaseline,
     "Pointer activation called openNote for an ordinary file.",
   );
-  assert(pointerPreviewToast.includes(genericFilePath), "The preview toast omitted the file path.");
+  assert(
+    textPreview.text === hostileText &&
+      textPreview.kind === "UTF-8 text" &&
+      textPreview.mime === "text/plain" &&
+      textPreview.forbiddenElements === 0 &&
+      textPreview.activeId === "file-preview-close" &&
+      !textPreview.imageSrc,
+    `The ordinary text inspector was not inert, bounded, and focused: ${JSON.stringify(textPreview)}`,
+  );
+  const previewLight = await captureScreenshot("file-preview-text-light");
+
+  await pressKey("Escape", "Escape");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-preview-dialog")?.open === false'))
+        ? true
+        : null,
+    "Escape did not close the ordinary text inspector",
+  );
+  await waitForFocusedTreePath(genericFilePath);
+
+  await setTheme("dark");
+  await clickSelector(treeSelector(genericFilePath));
+  await waitForFilePreview(genericFilePath, "text");
+  const previewDark = await captureScreenshot("file-preview-text-dark");
+  assert(previewDark !== previewLight, "The file inspector screenshots ignored the active theme.");
+
+  await setViewport(640, 720);
+  const previewNarrow = await captureScreenshot("file-preview-text-narrow-dark");
+  assert(previewNarrow !== previewDark, "The narrow file inspector screenshot did not change.");
+  await setViewport(900, 700, 2);
+  const previewHighDpi = await captureScreenshot("file-preview-text-hidpi-dark");
+  assert(previewHighDpi !== previewDark, "The high-DPI file inspector screenshot did not change.");
+  await clearViewport();
+  await waitFor(
+    async () => ((await evaluate("devicePixelRatio === 1")) ? true : null),
+    "The file inspector did not leave the high-DPI emulation cleanly",
+  );
+  await pressKey("Escape", "Escape");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#file-preview-dialog")?.open === false'))
+        ? true
+        : null,
+    "Escape did not close the ordinary text inspector",
+  );
+  await waitForFocusedTreePath(genericFilePath);
+  await setTheme("light");
 
   await evaluate(`(() => {
-    const toast = document.querySelector("#toast");
-    const row = document.querySelector(${JSON.stringify(treeSelector(genericFilePath))});
-    if (!(toast instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
-    toast.textContent = "KEYBOARD ACTIVATION SENTINEL";
+    const row = document.querySelector(${JSON.stringify(treeSelector(rasterFilePath))});
+    if (!(row instanceof HTMLElement)) return false;
     row.focus();
     return document.activeElement === row;
   })()`);
-  await waitForFocusedTreePath(genericFilePath);
+  await waitForFocusedTreePath(rasterFilePath);
   await pressKey("Enter", "Enter");
-  await waitFor(async () => {
-    const message = await evaluate('document.querySelector("#toast")?.textContent ?? ""');
-    return message ===
-      `Preview unavailable for ${genericFilePath}. Threadleaf does not open ordinary files yet.`
-      ? message
-      : null;
-  }, "Keyboard activation did not explain the ordinary-file preview boundary");
-  const genericAfterKeyboard = workspaceActivationState(await snapshot());
+  const rasterPreview = await waitForFilePreview(rasterFilePath, "image");
   assert(
-    JSON.stringify(genericAfterKeyboard) === JSON.stringify(genericBeforePointer),
-    `Keyboard activation mutated document state for an ordinary file: ${JSON.stringify({
-      before: genericBeforePointer,
-      after: genericAfterKeyboard,
-    })}`,
+    rasterPreview.kind === "Raster image" &&
+      rasterPreview.mime === "image/png" &&
+      rasterPreview.imageHidden === false &&
+      rasterPreview.imageSrc === `data:image/png;base64,${rasterBytes.toString("base64")}` &&
+      rasterPreview.forbiddenElements === 0,
+    `Keyboard activation did not render only the sniffed raster payload: ${JSON.stringify(rasterPreview)}`,
+  );
+  await captureScreenshot("file-preview-raster-light");
+  assert(
+    JSON.stringify(workspaceActivationState(await snapshot())) ===
+      JSON.stringify(genericBeforePointer),
+    "Keyboard raster inspection mutated the active pane or tabs.",
   );
   assert(
     openNoteCalls.count() === genericActivationCallBaseline,
-    "Keyboard activation called openNote for an ordinary file.",
+    "Keyboard activation called openNote for a raster file.",
+  );
+  await clickSelector("#file-preview-close");
+  await waitForFocusedTreePath(rasterFilePath);
+
+  await clickSelector(treeSelector(binaryFilePath));
+  const metadataPreview = await waitForFilePreview(binaryFilePath, "metadata");
+  assert(
+    metadataPreview.kind === "PDF document" &&
+      metadataPreview.mime === "application/pdf" &&
+      metadataPreview.metadata.includes("metadata-only") &&
+      !metadataPreview.imageSrc &&
+      metadataPreview.text === "" &&
+      metadataPreview.forbiddenElements === 0,
+    `Binary inspection exposed more than inert metadata: ${JSON.stringify(metadataPreview)}`,
+  );
+  await captureScreenshot("file-preview-metadata-light");
+  assert(
+    JSON.stringify(workspaceActivationState(await snapshot())) ===
+      JSON.stringify(genericBeforePointer),
+    "Metadata inspection mutated the active pane or tabs.",
+  );
+  assert(
+    openNoteCalls.count() === genericActivationCallBaseline,
+    "Pointer activation called openNote for a binary file.",
+  );
+
+  const previewInventoryBefore = (await snapshot()).workspace?.inventory;
+  if (!previewInventoryBefore) throw new Error("Missing preview inventory baseline.");
+  const previewInvalidatorPath = path.join(vaultPath, "Preview invalidator.tmp");
+  await fs.writeFile(previewInvalidatorPath, "temporary", "utf8");
+  const previewInvalidated = await waitFor(
+    async () => {
+      const current = await snapshot();
+      const dialogOpen = await evaluate(
+        'document.querySelector("#file-preview-dialog")?.open === true',
+      );
+      return !dialogOpen &&
+        current.workspace?.inventory.fileCount === previewInventoryBefore.fileCount + 1 &&
+        current.workspace.inventory.generation !== previewInventoryBefore.generation
+        ? current
+        : null;
+    },
+    "A physical inventory change did not close the transient file inspector",
+    30_000,
+  );
+  const invalidationToast = await evaluate('document.querySelector("#toast")?.textContent ?? ""');
+  assert(
+    invalidationToast.includes("visible file inventory changed"),
+    `The closed inspector did not explain its stale identity: ${invalidationToast}`,
+  );
+  await fs.rm(previewInvalidatorPath);
+  await waitFor(
+    async () => {
+      const current = await snapshot();
+      return current.workspace?.inventory.fileCount === previewInventoryBefore.fileCount &&
+        current.workspace.inventory.generation !== previewInvalidated.workspace.inventory.generation
+        ? current
+        : null;
+    },
+    "The transient file invalidator did not leave the physical inventory clean",
+    30_000,
   );
   openNoteCalls.assertHealthy();
   await openNoteCalls.close();

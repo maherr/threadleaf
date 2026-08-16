@@ -2595,6 +2595,26 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    ipcChannels.loadVaultFilePreview,
+    (event, filePath: unknown, expectedVaultId: unknown, expectedInventoryGeneration: unknown) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("File previews are available only to the owned main renderer.");
+      }
+      if (
+        typeof filePath !== "string" ||
+        typeof expectedVaultId !== "string" ||
+        typeof expectedInventoryGeneration !== "string"
+      ) {
+        throw new Error("File preview requires string path, vault, and inventory values.");
+      }
+      return workspaceController.loadVaultFilePreview(
+        filePath,
+        expectedVaultId,
+        expectedInventoryGeneration,
+      );
+    },
+  );
+  ipcMain.handle(
     ipcChannels.loadVaultNoteEmbed,
     (
       _event,

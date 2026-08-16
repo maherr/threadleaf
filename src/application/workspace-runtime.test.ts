@@ -1114,6 +1114,35 @@ describe("WorkspaceRuntime", () => {
     expect(listVisiblePaths).toHaveBeenCalledTimes(1);
   });
 
+  it("binds direct ordinary-file previews to the current physical inventory generation", async () => {
+    await fs.writeFile(path.join(vaultPath, "readme.data"), "ordinary text", "utf8");
+    const workspace = await openRuntime();
+    const snapshot = await workspace.getSnapshot();
+    const generation = snapshot.workspace?.inventory.generation;
+    if (!generation) throw new Error("Expected a current physical inventory generation.");
+    const readBinary = vi.spyOn(workspace.kernel, "readBinary");
+
+    await expect(
+      workspace.loadVaultFilePreview("readme.data", workspace.vaultId, `${generation}:stale`),
+    ).resolves.toMatchObject({
+      status: "unavailable",
+      reason: "stale-inventory",
+      path: "readme.data",
+    });
+    expect(readBinary).not.toHaveBeenCalled();
+
+    await expect(
+      workspace.loadVaultFilePreview("readme.data", workspace.vaultId, generation),
+    ).resolves.toMatchObject({
+      status: "ready",
+      path: "readme.data",
+      kind: "text",
+      preview: "text",
+      text: "ordinary text",
+    });
+    expect(readBinary).toHaveBeenCalledTimes(1);
+  });
+
   it("reuses the restored startup inventory for the first nondeferred snapshot", async () => {
     const store = new MemoryWorkspaceStateStore({
       openPaths: ["Welcome.md"],

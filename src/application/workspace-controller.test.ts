@@ -17,6 +17,7 @@ import type {
   PluginMarkdownProjectionResponse,
   RuntimeSnapshot,
   VaultAttachmentResponse,
+  VaultFilePreviewResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -101,6 +102,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
   readonly #listeners = new Set<(snapshot: RuntimeSnapshot) => void>();
   imageLoader: (() => Promise<VaultImageResponse>) | null = null;
   attachmentLoader: (() => Promise<VaultAttachmentResponse>) | null = null;
+  filePreviewLoader: (() => Promise<VaultFilePreviewResponse>) | null = null;
   noteEmbedLoader: (() => Promise<VaultNoteEmbedResponse>) | null = null;
   renderedMarkdownProjection: {
     pluginId: string;
@@ -342,6 +344,24 @@ class FakeRuntime implements WorkspaceRuntimePort {
         revision: "b".repeat(64),
         actions: { open: true, reveal: true, move: true, inline: false },
       },
+    };
+  }
+
+  async loadVaultFilePreview(): Promise<VaultFilePreviewResponse> {
+    if (this.filePreviewLoader) {
+      return this.filePreviewLoader();
+    }
+    return {
+      status: "ready",
+      vaultId: this.vaultId,
+      path: "readme.txt",
+      kind: "text",
+      mimeType: "text/plain",
+      preview: "text",
+      size: 4,
+      revision: "d".repeat(64),
+      text: "text",
+      truncated: false,
     };
   }
 
@@ -1392,6 +1412,45 @@ describe("WorkspaceController", () => {
       size: 1,
       revision: "b".repeat(64),
       base64: "AA==",
+    });
+
+    await expect(pending).resolves.toEqual({
+      status: "stale-vault",
+      vaultId: harness.runtimes[1]?.vaultId,
+    });
+    await controller.close();
+  });
+
+  it("rejects a file preview response that completes after the active vault changes", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const firstRuntime = harness.runtimes[0];
+    if (!firstRuntime) throw new Error("Expected the initial runtime.");
+    let releasePreview: ((response: VaultFilePreviewResponse) => void) | undefined;
+    firstRuntime.filePreviewLoader = () =>
+      new Promise<VaultFilePreviewResponse>((resolve) => {
+        releasePreview = resolve;
+      });
+
+    const pending = controller.loadVaultFilePreview("readme.txt", firstRuntime.vaultId, "files:1");
+    await controller.switchVault("/picked/vault");
+    releasePreview?.({
+      status: "ready",
+      vaultId: firstRuntime.vaultId,
+      path: "readme.txt",
+      kind: "text",
+      mimeType: "text/plain",
+      preview: "text",
+      size: 4,
+      revision: "d".repeat(64),
+      text: "text",
+      truncated: false,
     });
 
     await expect(pending).resolves.toEqual({

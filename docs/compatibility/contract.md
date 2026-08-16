@@ -124,6 +124,17 @@ The complex property service uses a line-range proposal rather than a serializer
 constructs remain readable and byte-identical; a mutation that would normalize one is reported as
 unsupported instead of silently choosing a winner or rewriting unknown YAML.
 
+Ordinary Files rows use a separate transient inspector, not the active-document or passive-embed
+path. A request binds the exact visible file path, vault identity, and physical-inventory
+generation. The service revalidates membership and containment around a read capped at 10 MiB,
+returns at most 64 KiB of valid UTF-8 text, returns data URLs only for byte-sniffed PNG, JPEG, GIF,
+and WebP bytes, and keeps every other recognized or unknown format metadata-only. The renderer uses
+inert text and an allowlisted raster element. It receives no absolute path, file URL, filesystem
+handle, shell, external-navigation, decoder, editor, or mutation authority. Inspection creates no
+tab, history entry, active-document transition, selection state, or layout mutation, and closes
+when vault or inventory identity changes. See
+[Ordinary file inspector](../research/ordinary-file-inspector-2026-08-16.md).
+
 Local non-note embeds are resolved only inside the active vault. A bounded read classifies PDFs,
 common documents, audio, video, text, archives, and unknown bytes by magic bytes, never by filename
 extension. The reading view shows metadata and explicit open/reveal affordances without injecting

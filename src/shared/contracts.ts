@@ -1182,6 +1182,67 @@ export type VaultAttachmentResponse =
     }
   | { status: "stale-vault"; vaultId: string };
 
+export type VaultFilePreviewUnavailableReason =
+  | "invalid"
+  | "private"
+  | "missing"
+  | "outside-vault"
+  | "too-large"
+  | "unreadable"
+  | "not-visible"
+  | "document"
+  | "stale-inventory";
+
+interface VaultFilePreviewReadyBase {
+  status: "ready";
+  vaultId: string;
+  path: string;
+  size: number;
+  revision: string;
+}
+
+export type VaultFilePreviewReadyResponse = VaultFilePreviewReadyBase &
+  (
+    | {
+        kind: "image";
+        mimeType: string;
+        preview: "image";
+        /** Present only for a sniffed PNG, JPEG, GIF, or WebP response. */
+        base64: string;
+        text?: undefined;
+        truncated?: undefined;
+      }
+    | {
+        kind: "text";
+        mimeType: "text/plain";
+        preview: "text";
+        /** A bounded, valid UTF-8, no-NUL text response. */
+        text: string;
+        truncated: boolean;
+        base64?: undefined;
+      }
+    | {
+        kind: Exclude<VaultAttachmentKind, "image" | "text">;
+        mimeType: string | null;
+        preview: "metadata";
+        base64?: undefined;
+        text?: undefined;
+        truncated?: undefined;
+      }
+  );
+
+export type VaultFilePreviewResponse =
+  | VaultFilePreviewReadyResponse
+  | {
+      status: "unavailable";
+      vaultId: string;
+      reason: VaultFilePreviewUnavailableReason;
+      message: string;
+      path?: string;
+      size?: number;
+    }
+  | { status: "stale-vault"; vaultId: string };
+
 export type VaultNoteEmbedUnavailableReason =
   | "external"
   | "invalid"
@@ -1360,6 +1421,11 @@ export interface ThreadleafBridge {
     target: string,
     expectedVaultId: string,
   ): Promise<VaultAttachmentResponse>;
+  loadVaultFilePreview(
+    path: string,
+    expectedVaultId: string,
+    expectedInventoryGeneration: string,
+  ): Promise<VaultFilePreviewResponse>;
   loadVaultNoteEmbed(
     sourceNotePath: string,
     target: string,

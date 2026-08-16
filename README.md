@@ -34,8 +34,10 @@ changes without giving the renderer filesystem access. Search results identify t
 generation that produced them, so a late response cannot cross a vault switch or overwrite newer
 derived state. The Files navigator separately inventories visible physical folders, Markdown notes,
 JSON Canvas documents, and ordinary files, including empty folders. It uses its own generation,
-keeps the last complete tree if a scan fails, and leaves ordinary files focusable but unopened until
-a native preview capability exists. The first window no longer waits for a complete restored-vault scan: it names the
+keeps the last complete tree if a scan fails, and opens ordinary files in a transient read-only
+inspector without changing the active document, panes, tabs, or history. The inspector displays
+bounded inert UTF-8 text and byte-sniffed PNG, JPEG, GIF, and WebP images; other formats remain
+explicit metadata-only results. The first window no longer waits for a complete restored-vault scan: it names the
 target, shows indexing state, blocks bootstrap writes, and lets a user choose another vault while
 the real runtime opens in the background. Revision-aware saves use the recoverable writer. If the
 file changed externally, the original is left untouched and the local edit becomes a clearly

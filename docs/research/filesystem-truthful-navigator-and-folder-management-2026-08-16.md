@@ -1,6 +1,7 @@
 # Filesystem-truthful navigator and folder management
 
 **Discovery date:** 2026-08-16
+**Last updated:** 2026-08-16 03:43:45 EDT
 **Scope:** a bounded local-source and public-HTTPS review for representing the visible physical
 vault in Threadleaf's Files navigator. No upstream repository was cloned, built, installed, or
 executed. No upstream code is copied.
@@ -18,8 +19,10 @@ then publishes only if no newer invalidation won the race. A failed scan never p
 tree: Threadleaf retains the last complete projection, marks it degraded, and retries on the next
 request.
 
-This lane remains read-only except for the existing guarded New folder action. Generic preview,
-rename, move, and trash are not inferred from note behavior and are not added here.
+This inventory lane remains read-only except for the existing guarded New folder action. Preview,
+rename, move, and trash are not inferred from note behavior. A later, separate decision added only
+the bounded transient inspector documented in
+[ordinary file inspector](ordinary-file-inspector-2026-08-16.md).
 
 ## Local invariants
 
@@ -33,7 +36,7 @@ rename, move, and trash are not inferred from note behavior and are not added he
 | Shape | Model exactly `folder`, `note`, `canvas`, and `file` | Empty folders survive. Leaf rows expose only kind, path, and title. Folder rows additionally expose immediate visible child count. |
 | Ordering | Use folder-first, locale-independent natural ordering | ASCII digit runs compare numerically. Accent and case folding is the primary key, normalized raw text is secondary, and raw code points break the final tie. Ambient locale APIs are not authority. |
 | Renderer | Keep bounded immediate-child pages and the existing virtual projection | A 200,000-entry root does not become one renderer payload or one DOM node per entry. |
-| Activation | Route notes and Canvas through the existing document action; keep ordinary files inert | An ordinary file is focusable and explains that preview is unavailable, but does not call `openNote`, create a tab, change selection, or become current. |
+| Activation | Route notes and Canvas through the existing document action; route ordinary files only through the separately bounded inspector | An ordinary file is focusable and inspectable, but does not call `openNote`, create a tab, change selection, or become current. |
 | Mutation | Keep New folder on the existing contained kernel path | An empty created folder appears after physical inventory convergence. No generic rename, move, or trash surface is introduced. |
 
 ## Coverage ledger
@@ -94,8 +97,9 @@ proof, or implementation order. The upstream decision gate is therefore closed f
 5. Tree page requests are `{ generation, parentPath, offset, limit }`. Missing physical parents are
    explicit. Tree path requests return the page locations required to reveal one current note or
    Canvas without a full renderer traversal.
-6. Renderer rows use exact typed activation and labels. Generic files are inert, notes and Canvas
-   use the established document path, and folders alone expose `aria-expanded`.
+6. Renderer rows use exact typed activation and labels. Generic files use the separately bounded
+   transient inspector, notes and Canvas use the established document path, and folders alone
+   expose `aria-expanded`.
 7. Existing flat search, tags, and Notes list remain metadata-indexed. The existing Canvas shelf
    remains available while Canvas also appears in Files.
 8. A stale or degraded tree-page response clears the bounded renderer projection and single-flights
@@ -133,8 +137,9 @@ proof, or implementation order. The upstream decision gate is therefore closed f
   physical ancestry, and unstable parent identity. A contained file symlink is a bounded leaf alias.
 - **Rejected:** add a third-party tree or file-provider dependency. Existing local paging, virtual
   list, path policy, and kernel ports already cover the required seams.
-- **Deferred:** generic file preview and OS-open behavior. This lane names the boundary and keeps the
-  row inert rather than quietly granting shell or attachment-read authority.
+- **Deferred:** persistent generic file tabs and OS-open behavior. The later transient inspector
+  grants only a bounded attachment-read result under its separate contract, with no shell or
+  active-document authority.
 - **Deferred:** file and folder rename, move, and trash. The existing Markdown operations do not
   prove no-replace publication, recovery journaling, link impact, directory ancestry, symlink, and
   cross-type behavior for arbitrary filesystem entries. Those mutations require a separate native

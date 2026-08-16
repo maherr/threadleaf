@@ -142,6 +142,7 @@ import {
   editorHistoryTarget,
   representationAtEditorText,
 } from "./editor-text-history";
+import { FilePreviewController } from "./file-preview";
 import { GraphViewController } from "./graph-view";
 import {
   createLivePreviewExtension,
@@ -306,6 +307,7 @@ const elements = {
   quickSwitcher: getDialog("quick-switcher"),
   graphDialog: getDialog("graph-dialog"),
   recoveryDialog: getDialog("recovery-dialog"),
+  filePreviewDialog: getDialog("file-preview-dialog"),
   paletteQuery: getInput("palette-query"),
   paletteClose: getButton("palette-close"),
   paletteCount: getElement("palette-count"),
@@ -9045,6 +9047,14 @@ function render(snapshot: RuntimeSnapshot): void {
       readOnly: snapshot.vault.mode === "synthetic-read-only",
     });
   }
+  filePreview.onSnapshot(
+    snapshot.vault.id && snapshot.workspace?.inventory.state === "current"
+      ? {
+          vaultId: snapshot.vault.id,
+          inventoryGeneration: snapshot.workspace.inventory.generation,
+        }
+      : null,
+  );
   if (previousVaultId !== snapshot.vault.id) {
     if (elements.quickSwitcher.open) {
       closeQuickSwitcher(false);
@@ -10309,11 +10319,10 @@ function renderNavigatorModeControls(queryActive: boolean): void {
 
 async function activateNavigatorTreeFile(
   entry: Exclude<WorkspaceTreeEntry, { kind: "folder" }>,
+  restoreFocus?: HTMLElement | null,
 ): Promise<void> {
   if (entry.kind === "file") {
-    showToast(
-      `Preview unavailable for ${entry.path}. Threadleaf does not open ordinary files yet.`,
-    );
+    await filePreview.show(entry.path, restoreFocus);
     return;
   }
   await openNote(entry.path);
@@ -10455,7 +10464,7 @@ function renderNavigatorTree(
           ? `Open note ${entry.path}`
           : entry.kind === "canvas"
             ? `Open canvas ${entry.path}`
-            : `Preview unavailable for file ${entry.path}`;
+            : `Preview file ${entry.path}`;
     }
 
     const disclosure = document.createElement("span");
@@ -10477,7 +10486,7 @@ function renderNavigatorTree(
       if (entry.kind === "folder") {
         void setNavigatorFolderExpanded(entry.path, !navigatorExpandedPaths.has(entry.path));
       } else {
-        void activateNavigatorTreeFile(entry);
+        void activateNavigatorTreeFile(entry, button);
       }
     });
     button.addEventListener("focus", () => {
@@ -10601,7 +10610,10 @@ function handleNavigatorTreeKeydown(event: KeyboardEvent, path: string): void {
     if (row.entry.kind === "folder") {
       void setNavigatorFolderExpanded(row.entry.path, !navigatorExpandedPaths.has(row.entry.path));
     } else {
-      void activateNavigatorTreeFile(row.entry);
+      void activateNavigatorTreeFile(
+        row.entry,
+        event.currentTarget instanceof HTMLElement ? event.currentTarget : null,
+      );
     }
   }
 }
@@ -12744,6 +12756,33 @@ const recoveryView = new RecoveryViewController(elements.recoveryDialog, {
   report: showToast,
 });
 
+const filePreview = new FilePreviewController(elements.filePreviewDialog, {
+  context: () => {
+    if (!currentSnapshot?.vault.id || currentSnapshot.workspace?.inventory.state !== "current") {
+      return null;
+    }
+    return {
+      vaultId: currentSnapshot.vault.id,
+      inventoryGeneration: currentSnapshot.workspace.inventory.generation,
+    };
+  },
+  load: (path, expectedVaultId, expectedInventoryGeneration) =>
+    window.threadleaf.loadVaultFilePreview(path, expectedVaultId, expectedInventoryGeneration),
+  resolveRestoreFocus: (path) =>
+    [...elements.fileList.querySelectorAll<HTMLButtonElement>(".navigator-tree-row")].find(
+      (button) => button.dataset.treePath === path,
+    ) ?? null,
+  setPluginSurfaceVisible: (visible) => {
+    if (
+      (!visible && documentViewMode === "plugin") ||
+      (visible && !pluginSurfacePresentationVisible)
+    ) {
+      setPluginSurfacePresentationVisible(visible);
+    }
+  },
+  report: showToast,
+});
+
 for (const [paneId, pane] of paneElements) {
   bindWorkspacePaneEvents(paneId, pane);
 }
@@ -13431,6 +13470,7 @@ window.addEventListener(
     pluginSurfaceResizeObserver.disconnect();
     graphView.destroy();
     recoveryView.destroy();
+    filePreview.destroy();
     for (const session of paneSessions.values()) {
       session.editor?.destroy();
     }

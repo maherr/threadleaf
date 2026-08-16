@@ -83,13 +83,19 @@ transaction artifact, private or outside target, broken link, folder symlink, an
 special file remains excluded. A contained visible file symlink may appear as a leaf alias. Tree
 pages and active-document locations bind the vault identity and inventory generation. The renderer
 receives typed bounded rows, never raw filesystem access. Notes and Canvas use the existing document
-action; an ordinary file row remains focusable and explains that preview is unavailable without
-creating a tab or changing the active document.
+action; an ordinary file row remains focusable and opens a transient inspector without creating a
+tab or changing the active document. The request binds the exact visible path to the active vault
+and inventory generation, caps the source read at 10 MiB, displays at most 64 KiB of valid UTF-8
+text or a byte-sniffed PNG, JPEG, GIF, or WebP image, and keeps every other format metadata-only. A
+vault or inventory identity change closes the inspector.
 
-The existing guarded New folder route is the only mutation in this surface. Generic preview,
-rename, move, and trash require separate native capability, no-clobber, link-impact, directory, and
-recovery contracts. The research and disposition record is
+The existing guarded New folder route is the only mutation in this surface. Persistent generic
+file tabs, OS Open or Reveal, rename, move, and trash require separate native capability,
+no-clobber, link-impact, directory, and recovery contracts. The inventory research and disposition
+record is
 [filesystem-truthful navigator and folder management](research/filesystem-truthful-navigator-and-folder-management-2026-08-16.md).
+The inspector boundary is recorded separately in
+[ordinary file inspector](research/ordinary-file-inspector-2026-08-16.md).
 
 ### JSON Canvas editor
 

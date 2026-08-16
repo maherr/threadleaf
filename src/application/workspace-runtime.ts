@@ -49,6 +49,7 @@ import type {
   PluginMutationWaitOptions,
   RuntimeSnapshot,
   VaultAttachmentResponse,
+  VaultFilePreviewResponse,
   VaultGraphRequest,
   VaultGraphResponse,
   VaultImageResponse,
@@ -130,6 +131,7 @@ import {
 } from "./note-trash";
 import { renderPluginMarkdownProjection } from "./plugin-markdown-projection-service";
 import { loadVaultAttachment } from "./vault-attachment-service";
+import { loadVaultFilePreview } from "./vault-file-preview-service";
 import { projectVaultGraph } from "./vault-graph";
 import { loadVaultImage } from "./vault-image-service";
 import {
@@ -2155,6 +2157,61 @@ export class WorkspaceRuntime {
         vaultId: this.kernel.vaultId,
         reason: "unreadable",
         message: "The attachment inventory could not be read safely.",
+      };
+    }
+  }
+
+  async loadVaultFilePreview(
+    filePath: string,
+    expectedVaultId: string,
+    expectedInventoryGeneration: string,
+  ): Promise<VaultFilePreviewResponse> {
+    if (expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    try {
+      let inventory: { generation: string; files: readonly string[] } | null = null;
+      while (inventory === null) {
+        await this.ensureVisibleInventory();
+        inventory = await this.withIndexStateLock(async () => {
+          if (this.inventoryCaptureNeedsRetry()) return null;
+          if (this.#inventoryState.state !== "current" || !this.#inventoryProjection) {
+            throw new Error("The visible file inventory is unavailable.");
+          }
+          return {
+            generation: this.#inventoryProjection.generation,
+            files: this.#inventoryProjection.files,
+          };
+        });
+      }
+      const response = await loadVaultFilePreview(this.kernel, filePath, expectedVaultId, {
+        visiblePaths: inventory.files,
+        expectedInventoryGeneration,
+        inventoryGeneration: inventory.generation,
+      });
+      const inventoryStillCurrent = await this.withIndexStateLock(
+        async () =>
+          !this.inventoryCaptureNeedsRetry() &&
+          this.#inventoryState.state === "current" &&
+          this.#inventoryProjection?.generation === inventory.generation,
+      );
+      if (!inventoryStillCurrent && response.status !== "stale-vault") {
+        return {
+          status: "unavailable",
+          vaultId: this.kernel.vaultId,
+          reason: "stale-inventory",
+          message: "The visible file inventory changed before the preview finished.",
+          path: filePath,
+        };
+      }
+      return response;
+    } catch {
+      return {
+        status: "unavailable",
+        vaultId: this.kernel.vaultId,
+        reason: "unreadable",
+        message: "The file inventory could not be read safely.",
+        path: filePath,
       };
     }
   }

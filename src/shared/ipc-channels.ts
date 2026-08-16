@@ -54,6 +54,7 @@ export const ipcChannels = {
   vaultGraph: "threadleaf:vault-graph",
   loadVaultImage: "threadleaf:load-vault-image",
   loadVaultAttachment: "threadleaf:load-vault-attachment",
+  loadVaultFilePreview: "threadleaf:load-vault-file-preview",
   loadVaultNoteEmbed: "threadleaf:load-vault-note-embed",
   loadCanvas: "threadleaf:load-canvas",
   saveCanvas: "threadleaf:save-canvas",

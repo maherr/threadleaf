@@ -46,102 +46,102 @@
   "cases": {
     "minimal:dark-laptop": {
       "path": "minimal-dark-laptop.png",
-      "sha256": "96f27876f8d12c836fb979b8ef0a0784c861c93c2d4de9ead9b6208bcd69c850",
+      "sha256": "83741e657b44401ce3f39e767fc8cd626b698d92401ee06592015072c1fd5092",
       "dimensions": [1180, 820]
     },
     "minimal:light-laptop": {
       "path": "minimal-light-laptop.png",
-      "sha256": "83cbeef95d357ec4135d03ff65e08cb951ab03ae6f259e2076565ac8d36466c9",
+      "sha256": "91798d74e3700661d745010ba47b7b268ea7150b966afa0c89c7e314629b5473",
       "dimensions": [1180, 820]
     },
     "minimal:light-minimum": {
       "path": "minimal-light-minimum.png",
-      "sha256": "c78ecb12c07718fbed6cf00b71bada1c263fcb0bc112a85e167a42e7cad6e95d",
+      "sha256": "1efc8df8ff50e6350399a8519b7b1e6cbb4e677568e46daee5121464e2602ce1",
       "dimensions": [860, 640]
     },
     "minimal:dark-high-contrast": {
       "path": "minimal-dark-high-contrast.png",
-      "sha256": "24e36bf529a69dbe8d5faac1baedee7d0b091be012cf43185e1adda77231290d",
+      "sha256": "dd3d0e4fe221d610882b217b54a96978de018282b5d65441e9815118dc225154",
       "dimensions": [1180, 820]
     },
     "minimal:light-high-contrast": {
       "path": "minimal-light-high-contrast.png",
-      "sha256": "0919d40dc362d3f5dde5965446c36158c334ca628142ebed66148e59365d8c66",
+      "sha256": "1179acaf22db5b5aaa7ae2c5c4e308c80f6bdf0c75761db8aea35fbaebb36f72",
       "dimensions": [1180, 820]
     },
     "wikipedia:dark-laptop": {
       "path": "wikipedia-dark-laptop.png",
-      "sha256": "4ac107fe7b73bd7f450754e5148eb5b8aa840c6da0283281a16a040d7661460f",
+      "sha256": "929385f6c0436be2c905d6364bacd85e8da0d1175ab834bfe89c24f4eb88ee91",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-laptop": {
       "path": "wikipedia-light-laptop.png",
-      "sha256": "fbbc5cb8170c53504b30bdb5c4f0ea3d6fb6cd502acc9b05f191cf4e12ccab1a",
+      "sha256": "c3d6c9d50adee2b7af67afdc64f38c7f5c397c887226a5b715f84efdfb8ef3e8",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-minimum": {
       "path": "wikipedia-light-minimum.png",
-      "sha256": "9158437420bc29b811d39654f7ee683b6fef21e1640e70fd598d02c88d1ec52d",
+      "sha256": "e8702abae7f93bdab7cf4ea516b0e2df504678a03c702c69c02d0e9520053048",
       "dimensions": [860, 640]
     },
     "wikipedia:dark-high-contrast": {
       "path": "wikipedia-dark-high-contrast.png",
-      "sha256": "4c4ec68fffd9ef99304e16a5bc31d9a707ad743ed6b216cc98748aaac3594ea5",
+      "sha256": "60bf22f5bb2764899b6e7eb5c2849cb35015432d02f1184d01c7c49341175e66",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-high-contrast": {
       "path": "wikipedia-light-high-contrast.png",
-      "sha256": "e69936102999532ad2aa2ef425ee6bed35d418e952f75d9e0cc5a273c7ac5521",
+      "sha256": "a7ce6a54b3da5bcb666d2bc3f363595824a1cc8df509e0a5dd8ee60b6b24c065",
       "dimensions": [1180, 820]
     },
     "sanctum:dark-laptop": {
       "path": "sanctum-dark-laptop.png",
-      "sha256": "d6ee8ccdf1e5060eeef81a7487b1a1503a258ca2006dd75ce802e2d8530d0751",
+      "sha256": "8cb2a1b36a81cc113fb8cc5300d55a9a8494109e98d713e1aecb5013a7457255",
       "dimensions": [1180, 820]
     },
     "sanctum:light-laptop": {
       "path": "sanctum-light-laptop.png",
-      "sha256": "30429282658c3780f8340ad63d0c926c2261c41cfd1fb2b8d824860c3aeaca64",
+      "sha256": "0dce99f79577a6542f9cd036b2dfd5956d178885edb18b7e24801d7d295a6f20",
       "dimensions": [1180, 820]
     },
     "sanctum:light-minimum": {
       "path": "sanctum-light-minimum.png",
-      "sha256": "bf1a57b1c0836bc7a98b1163c1f90c1a01522761050addaa7aa28cc7af124869",
+      "sha256": "9c44252de7290848b0b57f2a7d07fcb30e6d93526a2b6393fd964d36c137a94f",
       "dimensions": [860, 640]
     },
     "sanctum:dark-high-contrast": {
       "path": "sanctum-dark-high-contrast.png",
-      "sha256": "6e37874de12ae2f9561539ebcd362443e8f9d6ebd39e5421bc2e3bf8464b3b00",
+      "sha256": "4fcbd2a5879dacafadc48e5067c5db149bcc0dae55fd3e8ac05af564aed26f70",
       "dimensions": [1180, 820]
     },
     "sanctum:light-high-contrast": {
       "path": "sanctum-light-high-contrast.png",
-      "sha256": "7e143f0d1e68ba11fa41cf455c4d25ba3b533b0eabe01d043d3a036beef96971",
+      "sha256": "8e14e25ba3ad0d56dab4cf7ab2e81e6242d80a23dfe85ef19d101c45e202b5a6",
       "dimensions": [1180, 820]
     },
     "default:dark-laptop": {
       "path": "default-dark-laptop.png",
-      "sha256": "371b8dc84f53d8342fd52258b1b249787ac9a9a8b99c4df0074c04343c0777f4",
+      "sha256": "3687c14e12d7b016ff813215973f41a2880f3fcec847f74ae48c5a58938f5236",
       "dimensions": [1180, 820]
     },
     "default:light-laptop": {
       "path": "default-light-laptop.png",
-      "sha256": "71a9bcef268b2682a2b5badb444c318f4f90b17c6cc0dde2ba24d60fe5e91fc2",
+      "sha256": "f4b78b92b63ca062781fbe5009d29bfc078e515530c7fbaf2546a9e0f93dfb26",
       "dimensions": [1180, 820]
     },
     "default:light-minimum": {
       "path": "default-light-minimum.png",
-      "sha256": "dd6c3aa3ce2a29a50f3853625e259eb2f698600cf1217a82ec6bb3cb7223da3a",
+      "sha256": "bfa6e92775ba8e868fc89398db58d1fbdd65645bb67085cd56f6d58a559cca14",
       "dimensions": [860, 640]
     },
     "default:dark-high-contrast": {
       "path": "default-dark-high-contrast.png",
-      "sha256": "9e9676a06d262c8e27e86fe58166602ac0f1e9ef9ba3eb09410d2ec872aa9971",
+      "sha256": "61f2844b9e40801e8dccf96246b7652c19d9ec445d3859d73f9f8671a42d7e61",
       "dimensions": [1180, 820]
     },
     "default:light-high-contrast": {
       "path": "default-light-high-contrast.png",
-      "sha256": "2dfa588da8f345381f80b1d698c626c2135ddf43eb93a9d0db34f843ac6a79f7",
+      "sha256": "02e653a286ccf7295be9ba493fdd2de3a609c9118941e5fc6d578f8e5b19b632",
       "dimensions": [1180, 820]
     }
   },

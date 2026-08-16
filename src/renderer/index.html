@@ -729,6 +729,70 @@
     </dialog>
 
     <dialog
+      class="file-preview-dialog"
+      id="file-preview-dialog"
+      aria-labelledby="file-preview-title"
+      aria-describedby="file-preview-description"
+      aria-modal="true"
+    >
+      <div class="file-preview-shell">
+        <header class="file-preview-header">
+          <span class="file-preview-mark" aria-hidden="true">▧</span>
+          <span class="file-preview-heading-copy">
+            <small>Read-only vault file</small>
+            <strong id="file-preview-title">File preview</strong>
+            <span id="file-preview-path">Active vault</span>
+          </span>
+          <button id="file-preview-close" type="button" aria-label="Close file preview">
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+
+        <p id="file-preview-description" class="file-preview-description">
+          Threadleaf reads one bounded snapshot. Text stays inert, raster images use verified bytes,
+          and other formats remain metadata-only.
+        </p>
+
+        <dl class="file-preview-facts" aria-label="File facts">
+          <div>
+            <dt>Kind</dt>
+            <dd id="file-preview-kind">Inspecting</dd>
+          </div>
+          <div>
+            <dt>Detected type</dt>
+            <dd id="file-preview-mime">Detecting</dd>
+          </div>
+          <div>
+            <dt>Size</dt>
+            <dd id="file-preview-size">...</dd>
+          </div>
+          <div>
+            <dt>Revision</dt>
+            <dd id="file-preview-revision">...</dd>
+          </div>
+        </dl>
+
+        <section class="file-preview-body" id="file-preview-body" data-preview="loading">
+          <img id="file-preview-image" alt="" hidden />
+          <textarea
+            id="file-preview-text"
+            aria-label="File text preview"
+            readonly
+            spellcheck="false"
+            wrap="off"
+            hidden
+          ></textarea>
+          <p id="file-preview-metadata" hidden>Inspecting file...</p>
+        </section>
+
+        <footer class="file-preview-footer">
+          <span><i aria-hidden="true"></i> No file changes</span>
+          <span id="file-preview-status" role="status" aria-live="polite">Inspecting file</span>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog
       class="shortcut-settings modal"
       id="shortcut-settings"
       aria-labelledby="settings-title"

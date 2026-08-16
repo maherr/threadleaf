@@ -68,6 +68,9 @@ equivalence through the real writer-to-watcher seam.
 - [x] Filesystem-truthful desktop navigation over visible physical folders, Markdown notes, JSON
       Canvas documents, and ordinary files, with explicit empty folders, an independent inventory
       generation, last-complete degraded fallback, typed activation, and contained symlink policy.
+- [x] Transient read-only ordinary-file inspection with exact visible-inventory identity, bounded
+      inert UTF-8 text, byte-sniffed raster images, metadata-only binary formats, modal focus
+      restoration, and no active-document, tab, history, shell, or renderer-filesystem authority.
 - [x] Accessible command palette with shared core and compatibility-plugin actions, search,
       disabled-state explanations, and keyboard navigation.
 - [x] Versioned application settings and remappable hotkeys with collision validation, atomic
