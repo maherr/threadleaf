@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "uri": "urn:threadleaf:spec:v1",
-  "threadleafVersion": "0.1.0-beta.5",
+  "threadleafVersion": "0.1.0-beta.6",
   "versionPolicy": {
     "specification": "v1",
     "compatibility": "Exact Threadleaf version and exact fixture or bundle release are required for a verified claim.",

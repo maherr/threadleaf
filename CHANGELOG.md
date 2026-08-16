@@ -7,14 +7,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.0-beta.6]
+
 ### Added
 
+- First-class inline and frontmatter tags, including Reading and Live Preview pills, an incremental
+  vault-wide index, a `tag:` search operator, and a keyboard-accessible navigator with hierarchical
+  usage counts.
+- Interactive Markdown task toggles in Live Preview and Reading view for open, completed,
+  cancelled, question, nested, quoted, and custom marker states.
+- Obsidian-compatible callouts in Reading view and Live Preview, including the 13 standard types,
+  aliases, nested content, view-local folding, and strict malformed-input handling.
 - Longstitch, Threadleaf's bespoke Pressroom and Lampside design language, with a canonical token
   source, self-hosted Literata, Hanken Grotesk, and JetBrains Mono variable fonts, OFL license
   files, design foundations, and an automated WCAG plus Machado/CIEDE color gate.
 
 ### Changed
 
+- Continuous autosave now debounces Markdown writes, flushes before every data-loss transition,
+  retries failed writes while keeping them pending, preserves external on-disk changes as conflict
+  notes, and keeps Undo as the revert path.
+- Removed manual "Save or revert" transition gates in favor of the recovery-backed continuous
+  autosave model.
+- GitHub package metadata fetches optionally authenticate only to `api.github.com` with
+  `GITHUB_TOKEN` or `GH_TOKEN`; public-index and release-asset downloads remain unauthenticated.
 - Reworked the knowledge workspace around warm paper and walnut materials, a sewn navigator spine,
   brass active-note knot, square foil-label tags, theme-specific headband and lamp-pool signatures,
   book-led note typography, a two-row navigator action header, and proportionally scaling reading
@@ -26,6 +42,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Graceful shutdown now flushes queued editor changes before exit.
+- macOS native-target verification uses headless Electron Node and canonical temporary paths; build
+  helpers preserve the `lipo` result required for universal-architecture verification.
+- Frontmatter tag keys are case-insensitive, tag catalogs retry after a census transition, and leaf
+  counts are labeled as uses.
+- Live Preview callouts no longer disappear around protected inline content or unresolved
+  frontmatter, and callout type identifiers reject Unicode lookalikes.
 - Reserved native checkbox completion semantics for `x` and `X` tasks, so cancelled, question, and
   custom markers are no longer exposed as checked tasks.
 - Restored visible table-header material, eliminated navigator New-action clipping, and raised
