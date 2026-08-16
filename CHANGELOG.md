@@ -26,6 +26,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Made the canonical Electron Live Preview gate wait for completed pane actions and explicitly
+  prove the hidden restored-vault settings state before promoting its bounded public conformance
+  record to verified.
 - Retargeted the community-theme live cue probe and refreshed its 20 verified baselines for the
   typed Files tree while preserving deuteranomaly, non-color, minimum-viewport, high-contrast, and
   tampered-baseline controls.

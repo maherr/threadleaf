@@ -470,8 +470,19 @@ async function waitForShowcase() {
       path: document.querySelector("#note-path")?.textContent ?? "",
       mode: document.querySelector("#note-view")?.dataset.view ?? "",
       noteHidden: document.querySelector("#note-view")?.hidden ?? true,
+      pendingVisible:
+        document.querySelector("#note-empty")?.dataset.state === "settings-pending" &&
+        !(document.querySelector("#note-empty")?.hidden ?? true),
+      pendingHeading: document.querySelector("#note-empty h2")?.textContent ?? "",
+      pendingDetail: document.querySelector("#note-empty p")?.textContent ?? "",
+      editorHidden: document.querySelector("#note-editor-shell")?.hidden ?? true,
+      previewHidden: document.querySelector("#note-preview")?.hidden ?? true,
+      liveDisabled: document.querySelector("#edit-view")?.disabled ?? true,
+      sourceDisabled: document.querySelector("#source-view")?.disabled ?? true,
+      readDisabled: document.querySelector("#read-view")?.disabled ?? true,
       livePressed: document.querySelector("#edit-view")?.getAttribute("aria-pressed"),
       sourcePressed: document.querySelector("#source-view")?.getAttribute("aria-pressed"),
+      readPressed: document.querySelector("#read-view")?.getAttribute("aria-pressed"),
     }))()`);
     return state.ready && state.path === "Showcase.md" ? state : null;
   }, "The Live Preview showcase did not open");
@@ -1076,6 +1087,13 @@ try {
     return snapshot.workspace?.panes.length === 2 ? snapshot : null;
   }, "The Live Preview document could not be split");
   await clickSelector('[data-note-path="Linked Note.md"]');
+  await waitFor(async () => {
+    const candidate = await evaluate(`(() => ({
+      path: document.querySelector("#note-path-secondary")?.textContent ?? "",
+      sourceDisabled: document.querySelector("#source-view-secondary")?.disabled ?? true,
+    }))()`);
+    return candidate.path === "Linked Note.md" && !candidate.sourceDisabled ? candidate : null;
+  }, "The secondary pane did not finish opening Linked Note");
   await clickSelector("#source-view-secondary", 0, '[data-pane-id="secondary"]');
   await clickSelector(
     '[data-pane-id="primary"] .tl-live-heading-1',
@@ -1158,8 +1176,8 @@ try {
   await launchApplication({
     vaultPath: vaultAPath,
     env: {
-      THREADLEAF_SETTINGS_DELAY_MS: "750",
-      THREADLEAF_WORKSPACE_SETTINGS_DELAY_MS: "750",
+      THREADLEAF_SETTINGS_DELAY_MS: "3000",
+      THREADLEAF_WORKSPACE_SETTINGS_DELAY_MS: "3000",
     },
   });
   await waitFor(async () => {
@@ -1170,9 +1188,25 @@ try {
   }, "Vault A did not become ready after the delayed restart");
   const delayedA = await waitForShowcase();
   assert(
-    delayedA.mode !== "live",
-    `Vault A flashed the transient Live mode before settings arrived: ${JSON.stringify(delayedA)}`,
+    delayedA.mode === "pending" &&
+      delayedA.noteHidden &&
+      delayedA.pendingVisible &&
+      delayedA.pendingHeading === "Restoring your editing mode" &&
+      delayedA.pendingDetail.includes("private workspace settings") &&
+      delayedA.editorHidden &&
+      delayedA.previewHidden,
+    `Vault A exposed a document surface before settings arrived: ${JSON.stringify(delayedA)}`,
   );
+  assert(
+    delayedA.liveDisabled &&
+      delayedA.sourceDisabled &&
+      delayedA.readDisabled &&
+      delayedA.livePressed === "false" &&
+      delayedA.sourcePressed === "false" &&
+      delayedA.readPressed === "false",
+    `Vault A exposed an actionable mode before settings arrived: ${JSON.stringify(delayedA)}`,
+  );
+  await captureScreenshot("live-preview-light-vault-a-settings-pending");
   opened = await waitFor(async () => {
     const candidate = await waitForShowcase();
     return candidate.mode === "source" ? candidate : null;

@@ -12,6 +12,9 @@ note, stores a rendered document, or changes source merely because it was displa
   embeds.
 - Each workspace pane keeps its own current document mode. The preferred editing mode survives a
   restart.
+- A restored vault keeps its note surfaces hidden and its mode controls disabled until private
+  application settings are available. A settings read failure releases the gate to the safe Live
+  default instead of leaving an inaccessible editor.
 
 ## Reveal rule
 
@@ -99,9 +102,12 @@ The large-note regression fixture maps a note containing emphasis and inline mat
 normalizing source. The fixture asserts finite output, bounded segment shape, and source/render
 length invariants; it is not a machine-independent latency claim.
 
-The pure mapping and mounted jsdom tests are local seam evidence. They do not establish the
-canonical Electron workflow gate, which remains pending until `pnpm test:live-preview` completes;
-the public conformance record therefore remains `not-verified` until that gate passes.
+The pure mapping and mounted jsdom tests establish the local seams. `pnpm test:live-preview` adds
+the canonical Electron workflow proof: isolated virtual input, exact autosave bytes, undo and redo,
+pane-local modes, source reveal, delayed and failed settings reads, stale-localStorage rejection,
+per-vault restart isolation, both themes, and reachable mode controls. The bounded public
+conformance record is therefore verified; the unsupported constructs above remain explicit
+limitations rather than implied compatibility.
 
 ## Acceptance gates
 

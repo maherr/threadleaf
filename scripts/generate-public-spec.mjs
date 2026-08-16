@@ -591,7 +591,7 @@ function buildConformanceData(version, registry) {
     {
       id: "live-preview-source-mapping",
       title: "Live Preview and source mapping",
-      status: "not-verified",
+      status: "verified",
       label: "normative",
       scope:
         "Live, Source, and Read modes share canonical Markdown bytes, bounded UTF-16 source mappings, reveal rules, and explicit source fallbacks.",
@@ -606,13 +606,12 @@ function buildConformanceData(version, registry) {
         gate(
           "scripts/check-live-preview.mjs",
           "pnpm test:live-preview",
-          "Live Preview packaged workflow",
+          "Live Preview Electron workflow",
         ),
       ],
       fixtures: [],
       limitations: [
         "Duplicate or malformed footnotes, malformed or ambiguous tables, unknown or malformed math, HTML, diagrams, and inline Live Preview processors remain source-visible.",
-        "Canonical Electron Live Preview workflow proof is pending; local unit and static checks do not establish this public conformance claim.",
       ],
     },
     {

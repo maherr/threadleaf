@@ -2535,7 +2535,17 @@ function renderDocumentView(): void {
     // The first settings snapshot is the only source of truth for a vault's
     // persisted mode. Keep the note surface hidden until it arrives so a
     // stale transient value cannot flash before the persisted preference wins.
-    elements.noteEmpty.hidden = true;
+    const pendingHeading = elements.noteEmpty.querySelector("h2");
+    const pendingDetail = elements.noteEmpty.querySelector("p");
+    elements.noteEmpty.hidden = false;
+    elements.noteEmpty.dataset.state = "settings-pending";
+    elements.noteEmpty.setAttribute("role", "status");
+    elements.noteEmpty.setAttribute("aria-live", "polite");
+    if (pendingHeading) pendingHeading.textContent = "Restoring your editing mode";
+    if (pendingDetail) {
+      pendingDetail.textContent =
+        "Threadleaf is loading private workspace settings before showing this note.";
+    }
     elements.noteEditorShell.hidden = true;
     elements.notePreview.hidden = true;
     elements.noteView.hidden = true;
@@ -2556,6 +2566,12 @@ function renderDocumentView(): void {
     elements.noteView.dataset.view = "pending";
     elements.noteEditorShell.dataset.editorMode = "pending";
     return;
+  }
+  if (elements.noteEmpty.dataset.state === "settings-pending") {
+    delete elements.noteEmpty.dataset.state;
+    elements.noteEmpty.removeAttribute("role");
+    elements.noteEmpty.removeAttribute("aria-live");
+    renderUnavailableNotice(activeUnavailable);
   }
   const reading = hasNote && documentViewMode === "reading";
   const live = hasNote && documentViewMode === "live";

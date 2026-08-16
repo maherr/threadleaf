@@ -1,5 +1,11 @@
 # Public specification changelog
 
+## v1, Live Preview evidence update
+
+- Promoted the bounded Live Preview and source-mapping contract to verified after its canonical
+  Electron workflow passed exact-byte autosave, pane isolation, delayed settings, restart, and
+  both-theme gates.
+
 ## v1, initial publication
 
 - Published the versioned URI and conformance vocabulary.
