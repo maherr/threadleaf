@@ -422,6 +422,17 @@ async function setTheme(theme) {
     const dialogOpen = await evaluate(
       "document.querySelector('#attachment-move-dialog')?.open === true",
     );
+    const dialogState = dialogOpen
+      ? await evaluate(`(() => ({
+          source: document.querySelector('#attachment-move-current-path')?.textContent ?? '',
+          target: document.querySelector('#attachment-move-target')?.value ?? '',
+          action: (document.querySelector('#attachment-move-title')?.textContent ?? '').includes('Rename')
+            ? 'rename'
+            : 'move',
+          previewed: (document.querySelector('#attachment-move-preview-message')?.textContent ?? '').length > 0,
+          blocked: (document.querySelector('#attachment-move-error')?.textContent ?? '').length > 0,
+        }))()`)
+      : null;
     if (dialogOpen) {
       await clickPointer("#attachment-move-cancel");
       const closeDeadline = Date.now() + 5_000;
@@ -445,10 +456,8 @@ async function setTheme(theme) {
       (await evaluate("document.documentElement.dataset.theme")) === theme,
       `The packaged application did not switch to ${theme} mode.`,
     );
-    if (dialogOpen) {
-      await clickPointer(
-        '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="move"]',
-      );
+    if (dialogState) {
+      await openAttachmentMoveWorkbench(dialogState.source, dialogState.action);
       const openDeadline = Date.now() + 5_000;
       while (Date.now() < openDeadline) {
         if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"))
@@ -459,24 +468,32 @@ async function setTheme(theme) {
         await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"),
         "The attachment publication workbench could not reopen after switching theme.",
       );
-      await replaceInput("#attachment-move-target", "Archive/report-renamed.pdf");
-      await clickPointer("#attachment-move-submit");
-      const previewDeadline = Date.now() + 8_000;
-      while (Date.now() < previewDeadline) {
-        const preview = await evaluate(
-          "document.querySelector('#attachment-move-preview-message')?.textContent ?? ''",
+      await replaceInput("#attachment-move-target", dialogState.target);
+      if (dialogState.previewed || dialogState.blocked) {
+        await clickPointer("#attachment-move-submit");
+        const restoreDeadline = Date.now() + 8_000;
+        while (Date.now() < restoreDeadline) {
+          const restored = await evaluate(`(() => ({
+            preview: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
+            error: document.querySelector('#attachment-move-error')?.textContent ?? '',
+          }))()`);
+          if (
+            (dialogState.previewed && restored.preview.length > 0) ||
+            (dialogState.blocked && restored.error.length > 0)
+          ) {
+            break;
+          }
+          await delay(50);
+        }
+        const restored = await evaluate(`(() => ({
+          preview: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
+          error: document.querySelector('#attachment-move-error')?.textContent ?? '',
+        }))()`);
+        assert(
+          dialogState.previewed ? restored.preview.length > 0 : restored.error.length > 0,
+          "The attachment operation state could not be restored after switching theme.",
         );
-        if (preview.length > 0) break;
-        await delay(50);
       }
-      assert(
-        (
-          await evaluate(
-            "document.querySelector('#attachment-move-preview-message')?.textContent ?? ''",
-          )
-        ).length > 0,
-        "The attachment publication preview could not be restored after switching theme.",
-      );
     }
   }
 }
@@ -493,9 +510,9 @@ async function capture(name) {
   return destination;
 }
 
-async function openAttachmentMoveWorkbench() {
+async function openAttachmentMoveWorkbench(attachmentPath = "Assets/report.pdf", action = "move") {
   await clickPointer(
-    '[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="move"]',
+    `[data-threadleaf-attachment-path="${attachmentPath}"] [data-threadleaf-attachment-action="${action}"]`,
   );
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
@@ -645,6 +662,24 @@ try {
     Buffer.from([0xff, 0x00, 0x91, 0x22, 0x00]),
   );
   await fs.writeFile(
+    path.join(vaultPath, "Audio Board.canvas"),
+    `${JSON.stringify({
+      nodes: [
+        {
+          id: "audio-file",
+          type: "file",
+          file: "Assets/audio.mp3",
+          x: 0,
+          y: 0,
+          width: 320,
+          height: 180,
+        },
+      ],
+      edges: [],
+    })}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
     path.join(userDataPath, "workspace-selection.json"),
     `${JSON.stringify({ version: 1, vaultPath }, null, 2)}\n`,
     "utf8",
@@ -708,12 +743,16 @@ try {
     actionCount: card.querySelectorAll('.preview-attachment-action').length,
   })))()`);
   assert(
-    cardState.length === 3 && cardState.every((card) => card.actionCount === 3),
-    "Attachment cards lost open/reveal/publication metadata.",
+    cardState.length === 3 && cardState.every((card) => card.actionCount === 4),
+    "Attachment cards lost open/reveal/rename/publication metadata.",
   );
   assert(
     cardState.every((card) => card.text.includes("Publish copy")),
     "Attachment cards did not expose truthful source-retaining publication controls.",
+  );
+  assert(
+    cardState.every((card) => card.text.includes("Rename or move")),
+    "Attachment cards did not expose the explicit source-removing operation.",
   );
   assert(
     cardState.some((card) => card.text.includes("unsupported")),
@@ -930,6 +969,147 @@ try {
   await setTheme("light");
   screenshots.push(await capture("packaged-attachment-move-light.png"));
 
+  await waitForFixture(Date.now() + 8_000);
+  await setTheme("dark");
+  await openAttachmentMoveWorkbench("Assets/audio.mp3", "rename");
+  const renameWorkbench = await evaluate(`(() => ({
+    title: document.querySelector('#attachment-move-title')?.textContent ?? '',
+    description: document.querySelector('#attachment-move-description')?.textContent ?? '',
+    targetLabel: document.querySelector('#attachment-move-target-label')?.textContent ?? '',
+    closeLabel: document.querySelector('#attachment-move-close')?.getAttribute('aria-label') ?? '',
+  }))()`);
+  assert(
+    renameWorkbench.title === "Rename or move this attachment" &&
+      renameWorkbench.description.includes("remove the original path") &&
+      renameWorkbench.description.includes("Canvas") &&
+      renameWorkbench.targetLabel === "New path" &&
+      renameWorkbench.closeLabel === "Cancel attachment rename",
+    `The source-removing workbench was not explicit about its semantics: ${JSON.stringify(renameWorkbench)}`,
+  );
+  await replaceInput("#attachment-move-target", "Archive/audio-renamed.mp3");
+  await clickPointer("#attachment-move-submit");
+  const canvasBlockDeadline = Date.now() + 8_000;
+  let canvasBlockState = null;
+  while (Date.now() < canvasBlockDeadline) {
+    canvasBlockState = await evaluate(`(() => ({
+      open: document.querySelector('#attachment-move-dialog')?.open === true,
+      error: document.querySelector('#attachment-move-error')?.textContent ?? '',
+      list: document.querySelector('#attachment-move-blocker-list')?.textContent ?? '',
+    }))()`);
+    if (
+      canvasBlockState.open &&
+      canvasBlockState.error.includes("Rename blocked") &&
+      canvasBlockState.list.includes("Audio Board.canvas")
+    ) {
+      break;
+    }
+    await delay(50);
+  }
+  assert(
+    canvasBlockState?.open &&
+      canvasBlockState.error.includes("Rename blocked") &&
+      canvasBlockState.list.includes("Canvas $.nodes[0].file") &&
+      canvasBlockState.list.includes("Canvas uses this attachment path"),
+    `The Canvas reference blocker was not visible and specific: ${JSON.stringify(canvasBlockState)}`,
+  );
+  assert(
+    await fs
+      .stat(path.join(vaultPath, "Assets", "audio.mp3"))
+      .then(() => true)
+      .catch(() => false),
+    "The Canvas-blocked attachment rename removed its source.",
+  );
+  screenshots.push(await capture("packaged-attachment-rename-canvas-block-dark.png"));
+  await setTheme("light");
+  screenshots.push(await capture("packaged-attachment-rename-canvas-block-light.png"));
+  await clickPointer("#attachment-move-cancel");
+  const canvasBlockCloseDeadline = Date.now() + 5_000;
+  while (Date.now() < canvasBlockCloseDeadline) {
+    if (!(await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"))) {
+      break;
+    }
+    await delay(40);
+  }
+  await fs.unlink(path.join(vaultPath, "Audio Board.canvas"));
+  await delay(200);
+  await setTheme("dark");
+  await openAttachmentMoveWorkbench("Assets/audio.mp3", "rename");
+  await previewAttachmentPublication("Archive/audio-renamed.mp3");
+  assert(
+    await fs
+      .stat(path.join(vaultPath, "Assets", "audio.mp3"))
+      .then(() => true)
+      .catch(() => false),
+    "The attachment rename preview removed its source before confirmation.",
+  );
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, "Archive", "audio-renamed.mp3"))
+      .then(() => true)
+      .catch(() => false)),
+    "The attachment rename preview created its destination before confirmation.",
+  );
+  screenshots.push(await capture("packaged-attachment-rename-dark.png"));
+  await setTheme("light");
+  screenshots.push(await capture("packaged-attachment-rename-light.png"));
+
+  await clickPointer("#attachment-move-submit");
+  const renameDeadline = Date.now() + 10_000;
+  while (Date.now() < renameDeadline) {
+    const sourceExists = await fs
+      .stat(path.join(vaultPath, "Assets", "audio.mp3"))
+      .then(() => true)
+      .catch(() => false);
+    const targetExists = await fs
+      .stat(path.join(vaultPath, "Archive", "audio-renamed.mp3"))
+      .then(() => true)
+      .catch(() => false);
+    const terminalUi = await evaluate(`(() => ({
+      dialogOpen: document.querySelector('#attachment-move-dialog')?.open === true,
+      toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+    }))()`);
+    if (
+      !sourceExists &&
+      targetExists &&
+      !terminalUi.dialogOpen &&
+      terminalUi.toast.includes("Moved the attachment to")
+    ) {
+      break;
+    }
+    await delay(60);
+  }
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, "Assets", "audio.mp3"))
+      .then(() => true)
+      .catch(() => false)),
+    "The confirmed attachment rename retained its source file.",
+  );
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Archive", "audio-renamed.mp3"))).equals(
+      Buffer.from("ID3\x04\0\0fixture", "binary"),
+    ),
+    "The confirmed attachment rename changed the exact source bytes.",
+  );
+  assert(
+    (await fs.readFile(notePath, "utf8")) ===
+      originalNote
+        .replaceAll("Assets/report.pdf", "Archive/report-renamed.pdf")
+        .replaceAll("Assets/audio.mp3", "Archive/audio-renamed.mp3"),
+    "The confirmed attachment rename did not rewrite the expected local reference.",
+  );
+  const renameToast = await evaluate("document.querySelector('#toast')?.textContent?.trim() ?? ''");
+  assert(
+    renameToast.includes("Moved the attachment to Archive/audio-renamed.mp3") &&
+      renameToast.includes("the original path Assets/audio.mp3 was removed") &&
+      !renameToast.includes("original remains"),
+    `The attachment rename toast was not source-removal truthful: ${renameToast}`,
+  );
+  await setTheme("dark");
+  screenshots.push(await capture("packaged-attachment-renamed-dark.png"));
+  await setTheme("light");
+  screenshots.push(await capture("packaged-attachment-renamed-light.png"));
+
   await evaluate("setTimeout(() => window.close(), 0); true");
   const exit = await Promise.race([
     exited,
@@ -946,6 +1126,7 @@ try {
       renderers,
       exactBytes: true,
       attachmentMove: true,
+      attachmentRename: true,
       changedPixels,
       outlinePixels,
       screenshots,

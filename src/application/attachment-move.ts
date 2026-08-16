@@ -22,6 +22,10 @@ import type {
   VaultReadPort,
   VaultTextSnapshot,
 } from "../kernel/ports";
+import type { AttachmentOperation } from "../shared/contracts";
+import type { AutomaticLinkUpdatePolicy } from "../shared/workspace-settings";
+import { resolveCanvasAttachmentTarget } from "./canvas-attachment-service";
+import { MAX_CANVAS_BYTES, parseJsonCanvas } from "./json-canvas";
 import {
   DEFAULT_VAULT_ATTACHMENT_MAX_BYTES,
   type ParsedVaultAttachmentTarget,
@@ -63,9 +67,10 @@ export interface AttachmentMoveBlocker {
   documentPath: string;
   line: number;
   target: string;
-  syntax: "wiki" | "markdown";
-  reason: "ambiguous" | "unresolved" | "unsupported";
+  syntax: "wiki" | "markdown" | "canvas";
+  reason: "ambiguous" | "unresolved" | "unsupported" | "canvas-reference" | "canvas-unreadable";
   candidates: string[];
+  location?: string;
 }
 
 export type AttachmentMovePlan =
@@ -78,13 +83,14 @@ export type AttachmentMovePlan =
     }
   | {
       status: "planned";
+      operation: AttachmentOperation;
       from: string;
       to: string;
       sourceRevision: string;
       rewrites: AttachmentLinkRewrite[];
       blockers: AttachmentMoveBlocker[];
       writes: AttachmentMoveWriteProposal[];
-      corpus: AttachmentMoveMarkdownCorpus;
+      corpus: AttachmentMoveMarkdownCorpus | null;
       confirmationId: string | null;
     };
 
@@ -99,6 +105,14 @@ export type AttachmentMoveOutcome =
       rewrites: AttachmentLinkRewrite[];
     }
   | {
+      status: "committed";
+      from: string;
+      to: string;
+      transactionId: string;
+      rewrites: AttachmentLinkRewrite[];
+      writes: Array<{ path: string; revision: string }>;
+    }
+  | {
       status: "published-source-retained";
       from: string;
       to: string;
@@ -108,6 +122,8 @@ export type AttachmentMoveOutcome =
     };
 
 export interface AttachmentMoveOptions {
+  operation?: AttachmentOperation;
+  automaticLinkUpdates?: AutomaticLinkUpdatePolicy;
   confirmationId?: string;
   acceptCurrentRewrites?: boolean;
   /** Apply a previously displayed preview without rebuilding it over a changed external winner. */
@@ -119,12 +135,27 @@ export interface AttachmentMoveOptions {
 }
 
 export interface AttachmentMovePlanningContext {
+  operation?: AttachmentOperation;
+  automaticLinkUpdates?: AutomaticLinkUpdatePolicy;
   generation?: number;
   currentGeneration?: () => number;
 }
 
 interface AttachmentVaultReadPort extends VaultReadPort {
   listVisiblePaths?(relativeDirectory?: string): Promise<VisibleVaultPaths>;
+}
+
+interface AttachmentBinaryReadPort {
+  readBinary(
+    relativePath: string,
+    maxBytes: number,
+  ): Promise<
+    | {
+        status: "ready";
+        snapshot: { path: string; bytes: Buffer; revision: string; size: number };
+      }
+    | { status: "too-large"; path: string; size: number }
+  >;
 }
 
 interface LinkResolution {
@@ -555,6 +586,7 @@ function confirmationIdFor(
 ): string {
   const payload = {
     version: 1,
+    operation: plan.operation,
     from: plan.from,
     to: plan.to,
     sourceRevision: plan.sourceRevision,
@@ -606,14 +638,19 @@ function corpusGeneration(
     .digest("hex");
 }
 
-async function captureKernelCorpus(vault: VaultReadPort): Promise<VaultMarkdownCorpus | null> {
-  if (vault.readMarkdownCorpus) {
+async function captureKernelCorpus(
+  vault: VaultReadPort,
+  scope: "markdown" | "references" = "markdown",
+): Promise<VaultMarkdownCorpus | null> {
+  const reader = scope === "references" ? vault.readReferenceCorpus : vault.readMarkdownCorpus;
+  if (reader) {
     try {
-      return await vault.readMarkdownCorpus();
+      return await reader.call(vault);
     } catch {
       return null;
     }
   }
+  if (scope === "references") return null;
   // Test doubles and older ports may not expose the kernel's atomic corpus
   // receipt. Enumerate, read, and enumerate again so a note created while the
   // first pass is in flight cannot be mistaken for a stable corpus.
@@ -665,7 +702,10 @@ async function verifyAttachmentMoveCorpus(
   ) {
     return { ok: false, conflictPaths: [] };
   }
-  const actual = await captureKernelCorpus(vault);
+  const actual = await captureKernelCorpus(
+    vault,
+    corpus.kernel.scope === "references" ? "references" : "markdown",
+  );
   if (!actual) return { ok: false, conflictPaths: corpus.kernel.paths };
   const conflictPaths = changedCorpusPaths(
     corpus.kernel.paths,
@@ -683,25 +723,122 @@ async function verifyAttachmentMoveCorpus(
   return conflictPaths.length === 0 ? { ok: true } : { ok: false, conflictPaths };
 }
 
+interface CanvasReferenceScan {
+  paths: string[];
+  revisions: Array<{ path: string; revision: string }>;
+  blockers: AttachmentMoveBlocker[];
+}
+
+function canvasTargetMayReferenceSource(rawTarget: string, sourcePath: string): boolean {
+  const trimmed = rawTarget.trim().replace(/^<|>$/gu, "");
+  if (!trimmed || /^[a-z][a-z0-9+.-]*:/iu.test(trimmed) || trimmed.startsWith("//")) {
+    return false;
+  }
+  const pathPart = trimmed.split(/[?#]/u, 1)[0] ?? "";
+  let comparablePath = pathPart.replaceAll("\\", "/");
+  try {
+    comparablePath = decodeURIComponent(pathPart).replaceAll("\\", "/");
+  } catch {
+    // Invalid URL encoding makes the target unresolvable, but a literal local
+    // basename can still name the source on disk. Keep that case fail-closed.
+  }
+  return (
+    normalizedTextKey(path.posix.basename(comparablePath)) ===
+    normalizedTextKey(path.posix.basename(sourcePath))
+  );
+}
+
+async function scanCanvasReferences(
+  vault: AttachmentVaultReadPort & AttachmentBinaryReadPort,
+  visibleFiles: readonly string[],
+  sourcePath: string,
+): Promise<CanvasReferenceScan> {
+  const paths = visibleFiles
+    .filter((relativePath) => relativePath.toLocaleLowerCase("en-US").endsWith(".canvas"))
+    .sort((left, right) => left.localeCompare(right));
+  const revisions: Array<{ path: string; revision: string }> = [];
+  const blockers: AttachmentMoveBlocker[] = [];
+  for (const canvasPath of paths) {
+    let result: Awaited<ReturnType<AttachmentBinaryReadPort["readBinary"]>>;
+    try {
+      result = await vault.readBinary(canvasPath, MAX_CANVAS_BYTES);
+    } catch {
+      blockers.push({
+        documentPath: canvasPath,
+        line: 1,
+        target: "Canvas could not be read",
+        syntax: "canvas",
+        reason: "canvas-unreadable",
+        candidates: [],
+        location: "$",
+      });
+      continue;
+    }
+    if (result.status !== "ready") {
+      blockers.push({
+        documentPath: canvasPath,
+        line: 1,
+        target: `Canvas exceeds ${MAX_CANVAS_BYTES} bytes`,
+        syntax: "canvas",
+        reason: "canvas-unreadable",
+        candidates: [],
+        location: "$",
+      });
+      continue;
+    }
+    revisions.push({ path: canvasPath, revision: result.snapshot.revision });
+    const parsed = parseJsonCanvas(result.snapshot.bytes);
+    if (parsed.status !== "ready" || !parsed.document) {
+      const diagnostic = parsed.diagnostics[0];
+      blockers.push({
+        documentPath: canvasPath,
+        line: diagnostic?.line ?? 1,
+        target: diagnostic?.message ?? "Canvas could not be validated",
+        syntax: "canvas",
+        reason: "canvas-unreadable",
+        candidates: [],
+        location: diagnostic?.path ?? "$",
+      });
+      continue;
+    }
+    for (const [index, node] of (parsed.document.nodes ?? []).entries()) {
+      const field =
+        node.type === "file" && typeof node.file === "string"
+          ? { key: "file" as const, target: node.file }
+          : node.type === "group" && typeof node.background === "string"
+            ? { key: "background" as const, target: node.background }
+            : null;
+      if (!field) continue;
+      const resolution = resolveCanvasAttachmentTarget(canvasPath, field.target);
+      const referencesSource =
+        resolution.status === "resolved"
+          ? normalizedVaultPathIdentity(resolution.path) === normalizedVaultPathIdentity(sourcePath)
+          : canvasTargetMayReferenceSource(field.target, sourcePath);
+      if (!referencesSource) continue;
+      blockers.push({
+        documentPath: canvasPath,
+        line: 1,
+        target: field.target,
+        syntax: "canvas",
+        reason: "canvas-reference",
+        candidates: [sourcePath],
+        location: `$.nodes[${index}].${field.key}`,
+      });
+    }
+  }
+  return { paths, revisions, blockers };
+}
+
 /** Plan a non-note attachment move without ever decoding its bytes as text. */
 export async function planBinaryAttachmentMove(
-  vault: AttachmentVaultReadPort & {
-    readBinary(
-      relativePath: string,
-      maxBytes: number,
-    ): Promise<
-      | {
-          status: "ready";
-          snapshot: { path: string; bytes: Buffer; revision: string; size: number };
-        }
-      | { status: "too-large"; path: string; size: number }
-    >;
-  },
+  vault: AttachmentVaultReadPort & AttachmentBinaryReadPort,
   requestedSourcePath: string,
   requestedTargetPath: string,
   expectedSourceRevision?: string,
   context: AttachmentMovePlanningContext = {},
 ): Promise<AttachmentMovePlan> {
+  const operation = context.operation ?? "publish-copy";
+  const automaticLinkUpdates = context.automaticLinkUpdates ?? "ask";
   let sourcePath = normalizeVaultPath(requestedSourcePath);
   const targetPath = normalizeVaultPath(requestedTargetPath);
   if (!isAttachmentPath(sourcePath) || !isAttachmentPath(targetPath)) {
@@ -712,7 +849,6 @@ export async function planBinaryAttachmentMove(
   }
   if (sourcePath === targetPath)
     throw new Error("Attachment move source and destination must differ.");
-  const markdownPaths = sortedMarkdownPaths(await vault.listMarkdownPaths());
   const generation = context.generation ?? context.currentGeneration?.() ?? null;
   const visibleFiles = await collectVisibleFiles(vault);
   const sourceMatches = visibleFiles.filter(
@@ -750,7 +886,22 @@ export async function planBinaryAttachmentMove(
       reason: "source-revision-changed",
     };
   }
+  if (operation === "rename" && automaticLinkUpdates === "never") {
+    return {
+      status: "planned",
+      operation,
+      from: sourcePath,
+      to: targetPath,
+      sourceRevision: sourceResult.snapshot.revision,
+      rewrites: [],
+      blockers: [],
+      writes: [],
+      corpus: null,
+      confirmationId: null,
+    };
+  }
 
+  const markdownPaths = sortedMarkdownPaths(await vault.listMarkdownPaths());
   const rewrites: AttachmentLinkRewrite[] = [];
   const writes: AttachmentMoveWriteProposal[] = [];
   const markdownRevisions: Array<{ path: string; revision: string }> = [];
@@ -902,33 +1053,53 @@ export async function planBinaryAttachmentMove(
       }
     }
   }
-  const finalKernelCorpus = await captureKernelCorpus(vault);
+  const canvasScan =
+    operation === "rename"
+      ? await scanCanvasReferences(vault, visibleFiles, sourcePath)
+      : ({ paths: [], revisions: [], blockers: [] } satisfies CanvasReferenceScan);
+  unresolvedBlockers.push(...canvasScan.blockers);
+  const corpusScope = operation === "rename" ? "references" : "markdown";
+  const expectedCorpusPaths =
+    corpusScope === "references"
+      ? sortedMarkdownPaths([...markdownPaths, ...canvasScan.paths])
+      : markdownPaths;
+  const expectedCorpusRevisions =
+    corpusScope === "references"
+      ? [...markdownRevisions, ...canvasScan.revisions].sort((left, right) =>
+          left.path.localeCompare(right.path),
+        )
+      : markdownRevisions;
+  const canvasUnreadable = canvasScan.blockers.some(
+    (blocker) => blocker.reason === "canvas-unreadable",
+  );
+  const finalKernelCorpus = canvasUnreadable ? null : await captureKernelCorpus(vault, corpusScope);
   const corpus = {
     markdownPaths,
     markdownRevisions,
     generation,
     kernel: finalKernelCorpus ?? {
-      paths: markdownPaths,
-      revisions: markdownRevisions,
-      generation: corpusGeneration(markdownPaths, markdownRevisions),
+      paths: expectedCorpusPaths,
+      revisions: expectedCorpusRevisions,
+      generation: corpusGeneration(expectedCorpusPaths, expectedCorpusRevisions),
+      ...(corpusScope === "references" ? { scope: "references" as const } : {}),
     },
   } satisfies AttachmentMoveMarkdownCorpus;
   const corpusConflictPaths = changedCorpusPaths(
-    markdownPaths,
+    expectedCorpusPaths,
     finalKernelCorpus?.paths ?? [],
-    markdownRevisions,
+    expectedCorpusRevisions,
     finalKernelCorpus?.revisions ?? [],
   );
   if (
-    finalKernelCorpus === null ||
-    corpusConflictPaths.length > 0 ||
+    (!canvasUnreadable && finalKernelCorpus === null) ||
+    (!canvasUnreadable && corpusConflictPaths.length > 0) ||
     (context.currentGeneration && context.currentGeneration() !== generation)
   ) {
     return {
       status: "conflict",
       from: sourcePath,
       to: targetPath,
-      reason: "markdown-corpus-changed",
+      reason: corpusScope === "references" ? "reference-corpus-changed" : "markdown-corpus-changed",
       ...(corpusConflictPaths.length > 0 ? { conflictPaths: corpusConflictPaths } : {}),
     };
   }
@@ -949,39 +1120,33 @@ export async function planBinaryAttachmentMove(
   const blockers = [...unresolvedBlockers, ...ambiguousBlockers];
   const plannedWithoutId = {
     status: "planned" as const,
+    operation,
     from: sourcePath,
     to: targetPath,
     sourceRevision: sourceResult.snapshot.revision,
     rewrites: rewrites.filter((rewrite) => rewrite.afterTarget !== ""),
     blockers,
     writes,
-    corpus,
+    corpus: canvasUnreadable ? null : corpus,
     confirmationId: null,
   };
-  const confirmationId = writes.length > 0 ? confirmationIdFor(plannedWithoutId) : null;
+  const confirmationId =
+    writes.length > 0 && plannedWithoutId.corpus ? confirmationIdFor(plannedWithoutId) : null;
   return { ...plannedWithoutId, confirmationId };
 }
 
 export async function moveBinaryAttachment(
-  vault: VaultMutationPort &
-    AttachmentVaultReadPort & {
-      readBinary(
-        relativePath: string,
-        maxBytes: number,
-      ): Promise<
-        | {
-            status: "ready";
-            snapshot: { path: string; bytes: Buffer; revision: string; size: number };
-          }
-        | { status: "too-large"; path: string; size: number }
-      >;
-    },
+  vault: VaultMutationPort & AttachmentVaultReadPort & AttachmentBinaryReadPort,
   requestedSourcePath: string,
   requestedTargetPath: string,
   expectedSourceRevision?: string,
   options: AttachmentMoveOptions = {},
 ): Promise<AttachmentMoveOutcome> {
+  const operation = options.operation ?? "publish-copy";
+  const automaticLinkUpdates = options.automaticLinkUpdates ?? "ask";
   const planningContext: AttachmentMovePlanningContext = {
+    operation,
+    automaticLinkUpdates,
     ...(options.expectedGeneration !== undefined ? { generation: options.expectedGeneration } : {}),
     ...(options.currentGeneration ? { currentGeneration: options.currentGeneration } : {}),
   };
@@ -995,6 +1160,14 @@ export async function moveBinaryAttachment(
       planningContext,
     ));
   if (plan.status === "conflict") return plan;
+  if (plan.operation !== operation) {
+    return {
+      status: "conflict",
+      from: plan.from,
+      to: plan.to,
+      reason: "operation-changed",
+    };
+  }
   if (plan.blockers.length > 0)
     return { status: "blocked", from: plan.from, to: plan.to, blockers: plan.blockers };
   // A confirmation is a capability for the exact rewrite preview the user
@@ -1011,6 +1184,7 @@ export async function moveBinaryAttachment(
   if (
     plan.writes.length > 0 &&
     !options.acceptCurrentRewrites &&
+    !(operation === "rename" && automaticLinkUpdates === "always") &&
     options.confirmationId !== plan.confirmationId
   ) {
     if (!plan.confirmationId)
@@ -1023,22 +1197,27 @@ export async function moveBinaryAttachment(
       rewrites: plan.rewrites,
     };
   }
-  const corpusVerification = await verifyAttachmentMoveCorpus(
-    vault,
-    plan.corpus,
-    options.expectedGeneration ?? plan.corpus.generation ?? undefined,
-    options.currentGeneration,
-  );
-  if (!corpusVerification.ok) {
-    return {
-      status: "conflict",
-      from: plan.from,
-      to: plan.to,
-      reason: "markdown-corpus-changed",
-      ...(corpusVerification.conflictPaths.length > 0
-        ? { conflictPaths: corpusVerification.conflictPaths }
-        : {}),
-    };
+  if (plan.corpus) {
+    const corpusVerification = await verifyAttachmentMoveCorpus(
+      vault,
+      plan.corpus,
+      options.expectedGeneration ?? plan.corpus.generation ?? undefined,
+      options.currentGeneration,
+    );
+    if (!corpusVerification.ok) {
+      return {
+        status: "conflict",
+        from: plan.from,
+        to: plan.to,
+        reason:
+          plan.corpus.kernel.scope === "references"
+            ? "reference-corpus-changed"
+            : "markdown-corpus-changed",
+        ...(corpusVerification.conflictPaths.length > 0
+          ? { conflictPaths: corpusVerification.conflictPaths }
+          : {}),
+      };
+    }
   }
   const result =
     plan.writes.length > 0
@@ -1047,11 +1226,11 @@ export async function moveBinaryAttachment(
           targetPath: plan.to,
           expectedSourceRevision: plan.sourceRevision,
           writes: plan.writes,
-          expectedMarkdownCorpus: plan.corpus.kernel,
-          strictContainment: true,
+          ...(plan.corpus ? { expectedMarkdownCorpus: plan.corpus.kernel } : {}),
+          strictContainment: operation === "publish-copy",
         })
-      : await vault.renameFile(plan.from, plan.to, plan.sourceRevision, plan.corpus.kernel, {
-          strictContainment: true,
+      : await vault.renameFile(plan.from, plan.to, plan.sourceRevision, plan.corpus?.kernel, {
+          strictContainment: operation === "publish-copy",
         });
   if (result.status === "conflict") {
     return {
@@ -1066,12 +1245,16 @@ export async function moveBinaryAttachment(
         : {}),
     };
   }
-  if (result.status !== "published-source-retained") {
+  const expectedStatus = operation === "publish-copy" ? "published-source-retained" : "committed";
+  if (result.status !== expectedStatus) {
     return {
       status: "conflict",
       from: result.from,
       to: result.to,
-      reason: "source-retention-not-supported",
+      reason:
+        operation === "publish-copy"
+          ? "source-retention-not-supported"
+          : "source-removal-not-supported",
     };
   }
   const revisions: Array<{ path: string; revision: string }> =
@@ -1079,7 +1262,7 @@ export async function moveBinaryAttachment(
       ? (result.writes as Array<{ path: string; revision: string }>)
       : [];
   return {
-    status: "published-source-retained",
+    status: expectedStatus,
     from: result.from,
     to: result.to,
     transactionId: result.transactionId,

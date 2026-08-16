@@ -146,12 +146,17 @@ function isNullableRevision(value: unknown): value is string | null {
 }
 
 function isMarkdownCorpus(value: unknown): value is VaultMarkdownCorpus {
-  if (!isRecord(value) || !hasExactKeys(value, ["paths", "revisions", "generation"])) {
+  if (
+    !isRecord(value) ||
+    (!hasExactKeys(value, ["paths", "revisions", "generation"]) &&
+      !hasExactKeys(value, ["paths", "revisions", "generation", "scope"]))
+  ) {
     return false;
   }
   if (
     typeof value.generation !== "string" ||
     value.generation.length === 0 ||
+    ("scope" in value && value.scope !== "references") ||
     !Array.isArray(value.paths) ||
     !Array.isArray(value.revisions) ||
     value.paths.some((entry) => typeof entry !== "string")

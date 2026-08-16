@@ -10,6 +10,7 @@ import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
   AttachmentMoveResponse,
+  AttachmentOperation,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -187,6 +188,7 @@ export interface WorkspaceRuntimePort {
     expectedRevision: string,
     expectedVaultId: string,
     confirmationId?: string,
+    operation?: AttachmentOperation,
   ): Promise<AttachmentMoveResponse>;
   deleteNote(
     filePath: string,
@@ -912,13 +914,18 @@ export class WorkspaceController {
     expectedRevision: string,
     expectedVaultId: string,
     confirmationId?: string,
+    operation: AttachmentOperation = "publish-copy",
   ): Promise<AttachmentMoveResponse> {
     const runtime = this.activeRuntime("move an attachment");
     if (!runtime.moveAttachment) {
-      throw new Error("The active workspace does not support attachment publication.");
+      throw new Error("The active workspace does not support attachment file operations.");
     }
     if (runtime.vaultId !== expectedVaultId) {
-      throw new Error("The active vault changed before this attachment copy could be published.");
+      throw new Error(
+        operation === "rename"
+          ? "The active vault changed before this attachment could be renamed."
+          : "The active vault changed before this attachment copy could be published.",
+      );
     }
     const response = await runtime.moveAttachment(
       filePath,
@@ -926,9 +933,13 @@ export class WorkspaceController {
       expectedRevision,
       expectedVaultId,
       confirmationId,
+      operation,
     );
     if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
-      if (response.outcome.status === "published-source-retained") {
+      if (
+        response.outcome.status === "published-source-retained" ||
+        response.outcome.status === "committed"
+      ) {
         const activeRuntime = this.#runtime;
         return {
           ...response,

@@ -960,9 +960,10 @@ function createAttachmentCard(
   body.append(title, detail);
   const actions = document.createElement("span");
   actions.className = "preview-attachment-actions";
-  const actionNames: Array<"open" | "reveal" | "move"> = [];
+  const actionNames: Array<"open" | "reveal" | "rename" | "move"> = [];
   if (response.attachment.actions.open) actionNames.push("open");
   if (response.attachment.actions.reveal) actionNames.push("reveal");
+  if (response.attachment.actions.rename) actionNames.push("rename");
   if (response.attachment.actions.move) actionNames.push("move");
   for (const action of actionNames) {
     const button = document.createElement("button");
@@ -970,9 +971,16 @@ function createAttachmentCard(
     button.className = "preview-attachment-action";
     button.dataset.threadleafAttachmentAction = action;
     button.dataset.threadleafAttachmentPath = response.attachment.path;
-    button.textContent =
-      action === "open" ? "Open" : action === "reveal" ? "Reveal" : "Publish copy";
-    button.title = `${action === "open" ? "Open" : action === "reveal" ? "Reveal" : "Publish a retained copy of"} ${response.attachment.path}`;
+    const label =
+      action === "open"
+        ? "Open"
+        : action === "reveal"
+          ? "Reveal"
+          : action === "rename"
+            ? "Rename or move"
+            : "Publish copy";
+    button.textContent = label;
+    button.title = `${action === "move" ? "Publish a retained copy of" : label} ${response.attachment.path}`;
     actions.append(button);
   }
   card.append(marker, body, actions);

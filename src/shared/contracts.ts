@@ -1038,16 +1038,27 @@ export interface AttachmentMoveRewritePreview {
   afterTarget: string;
 }
 
+export type AttachmentOperation = "publish-copy" | "rename";
+
 export interface AttachmentMoveBlocker {
   documentPath: string;
   line: number;
   target: string;
-  syntax: "wiki" | "markdown";
-  reason: "ambiguous" | "unresolved" | "unsupported";
+  syntax: "wiki" | "markdown" | "canvas";
+  reason: "ambiguous" | "unresolved" | "unsupported" | "canvas-reference" | "canvas-unreadable";
   candidates: string[];
+  location?: string;
 }
 
 export type AttachmentMoveOutcome =
+  | {
+      status: "committed";
+      from: string;
+      to: string;
+      transactionId: string;
+      rewrites: AttachmentMoveRewritePreview[];
+      writes: Array<{ path: string; revision: string }>;
+    }
   | {
       status: "published-source-retained";
       from: string;
@@ -1174,7 +1185,7 @@ export interface VaultAttachmentMetadata {
   mimeType: string | null;
   size: number;
   revision: string;
-  actions: { open: boolean; reveal: boolean; move: boolean; inline: false };
+  actions: { open: boolean; reveal: boolean; rename: boolean; move: boolean; inline: false };
 }
 
 export type VaultAttachmentUnavailableReason =
@@ -1550,6 +1561,7 @@ export interface ThreadleafBridge {
     expectedRevision: string,
     expectedVaultId: string,
     confirmationId?: string,
+    operation?: AttachmentOperation,
   ): Promise<AttachmentMoveResponse>;
   deleteNote(
     path: string,

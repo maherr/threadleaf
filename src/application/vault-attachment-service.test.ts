@@ -134,7 +134,7 @@ describe("bounded attachment detection", () => {
         kind: "pdf",
         mimeType: "application/pdf",
         size: bytes.length,
-        actions: { open: true, reveal: true, move: true, inline: false },
+        actions: { open: true, reveal: true, rename: true, move: true, inline: false },
       },
     });
     expect(response.status === "ready" && "base64" in response.attachment).toBe(false);

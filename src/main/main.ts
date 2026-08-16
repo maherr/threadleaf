@@ -44,6 +44,7 @@ import {
 } from "../shared/autosave";
 import {
   type AppearancePackageApplyResponse,
+  type AttachmentOperation,
   type NotePropertyType,
   notePropertyTypes,
   type PluginPackageApplyResponse,
@@ -3320,16 +3321,18 @@ function registerIpcHandlers(): void {
       expectedRevision: unknown,
       expectedVaultId: unknown,
       confirmationId: unknown,
+      operation: unknown,
     ) => {
       if (
         typeof filePath !== "string" ||
         typeof targetPath !== "string" ||
         typeof expectedRevision !== "string" ||
         typeof expectedVaultId !== "string" ||
-        !(confirmationId === undefined || typeof confirmationId === "string")
+        !(confirmationId === undefined || typeof confirmationId === "string") ||
+        !(operation === undefined || operation === "publish-copy" || operation === "rename")
       ) {
         throw new Error(
-          "Move attachment requires string path, target, revision, and vault values with an optional confirmation.",
+          "Move attachment requires string path, target, revision, and vault values with optional confirmation and operation values.",
         );
       }
       return workspaceController.moveAttachment(
@@ -3338,6 +3341,7 @@ function registerIpcHandlers(): void {
         expectedRevision,
         expectedVaultId,
         confirmationId,
+        operation as AttachmentOperation | undefined,
       );
     },
   );

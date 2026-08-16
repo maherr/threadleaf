@@ -397,13 +397,18 @@ embeds render without exposing filesystem paths or general file access to the re
 Markdown note embeds can include a whole note, a heading and its descendants, or a block ID. Nested
 embeds retain links, local raster images, passive attachment metadata cards, and source controls;
 visible placeholders explain cycles, limits, missing targets, ambiguous targets, and unsafe paths.
-Passive attachment cards also expose Publish copy. The workbench previews exact local wiki and
-Markdown reference updates, binds the source revision, publishes an exact-byte copy without
-overwriting a claimant, retains the original source, and then applies the reference writes as one
-recoverable operation. Open and Reveal attachment affordances remain inert until a
-native capability is separately reviewed. The packaged gate exercises metadata cards for
-PDF-signature, MP3-signature, and unknown-byte fixtures; its move byte-preservation path uses the
-PDF-signature fixture only. It makes no broader attachment format support claim.
+Passive attachment cards expose separate **Publish copy** and **Rename or move** actions. Publish
+copy previews exact local wiki and Markdown reference updates, binds the source revision, publishes
+an exact-byte copy without overwriting a claimant, retains the original source, and applies the
+reference writes as one recoverable operation. Rename or move removes the original only after the
+exact target and permitted reference updates commit. It follows the workspace's `always`, `ask`, or
+`never` automatic-link policy; for `always` and `ask`, a matching, malformed, unreadable, or
+oversized JSON Canvas blocks source removal until Canvas references can be rewritten without
+loss. Every nonmatching Canvas revision remains bound into the confirmed operation. Open and Reveal
+attachment affordances remain inert until a native capability is separately reviewed. The
+packaged gate exercises metadata cards for PDF-signature, MP3-signature, and unknown-byte fixtures,
+then proves both source-retaining publication and source-removing rename with exact fixture bytes.
+It makes no broader attachment format support claim.
 Ctrl/Cmd+N opens the New note dialog
 and selects the resulting empty Markdown note for editing.
 The Properties section in the right inspector lists top-level frontmatter in source order. Add,
@@ -498,10 +503,11 @@ THREADLEAF_PROPERTY_SCREENSHOT_DIR=/tmp/threadleaf-property-visual pnpm run test
 ```
 
 The packaged attachment gate uses an explicit X11 Xvfb display, a dedicated Electron profile and
-fixture vault, and real CDP pointer and keyboard input with hit-target checks. Every run captures
-dark, light, and positive-control screenshots and checks that the positive control changes pixels;
-only a completed gate run is packaged UI evidence. Set the screenshot directory to retain those
-captures:
+fixture vault, and real CDP pointer and keyboard input with hit-target checks. It exercises
+source-retaining publication, a visible Canvas-blocked rename, and a completed source-removing
+rename with exact source, target, and Markdown bytes. Every run captures dark, light, and
+positive-control screenshots and checks that the positive control changes pixels; only a completed
+gate run is packaged UI evidence. Set the screenshot directory to retain those captures:
 
 ```sh
 THREADLEAF_ATTACHMENT_SCREENSHOT_DIR=/tmp/threadleaf-attachment-visual pnpm run test:packaged-attachments

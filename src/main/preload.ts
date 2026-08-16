@@ -13,6 +13,7 @@ import type {
   AppearancePackageLocalPreviewResponse,
   AppearanceUpdateResponse,
   AttachmentMoveResponse,
+  AttachmentOperation,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -475,7 +476,14 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       confirmationId,
     ) as Promise<NoteMoveResponse>,
-  moveAttachment: (filePath, targetPath, expectedRevision, expectedVaultId, confirmationId) =>
+  moveAttachment: (
+    filePath,
+    targetPath,
+    expectedRevision,
+    expectedVaultId,
+    confirmationId,
+    operation?: AttachmentOperation,
+  ) =>
     ipcRenderer.invoke(
       ipcChannels.moveAttachment,
       filePath,
@@ -483,6 +491,7 @@ const bridge: ThreadleafBridge = {
       expectedRevision,
       expectedVaultId,
       confirmationId,
+      operation,
     ) as Promise<AttachmentMoveResponse>,
   deleteNote: (filePath, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(

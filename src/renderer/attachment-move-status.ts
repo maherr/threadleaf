@@ -18,6 +18,12 @@ export interface VerifiedAttachmentPublicationReceipt {
   rewriteCount: number;
 }
 
+export interface VerifiedAttachmentRenameReceipt {
+  sourcePath: string;
+  targetPath: string;
+  rewriteCount: number;
+}
+
 /** Explains strict-publication conflicts without pretending they are generic failures. */
 export function attachmentPublicationConflictMessage(reason: unknown): string | null {
   if (reason === "attachment-publish-unavailable") {
@@ -42,9 +48,12 @@ function displaySafeVaultName(value: string | undefined): string {
 }
 
 /** Keeps an old-vault commit visible without exposing its path. */
-export function attachmentMoveCommitNotice(response: AttachmentMoveCommitStatus): string | null {
+export function attachmentMoveCommitNotice(
+  response: AttachmentMoveCommitStatus,
+  expectedStatus = "published-source-retained",
+): string | null {
   if (
-    response.outcome.status !== "published-source-retained" ||
+    response.outcome.status !== expectedStatus ||
     !response.committedVaultId ||
     response.committedVaultId === response.snapshot.vault.id
   ) {
@@ -59,6 +68,27 @@ export function attachmentPublicationReceipt(
 ): VerifiedAttachmentPublicationReceipt | null {
   if (
     outcome.status !== "published-source-retained" ||
+    typeof outcome.from !== "string" ||
+    outcome.from.length === 0 ||
+    typeof outcome.to !== "string" ||
+    outcome.to.length === 0 ||
+    !Array.isArray(outcome.rewrites)
+  ) {
+    return null;
+  }
+  return {
+    sourcePath: outcome.from,
+    targetPath: outcome.to,
+    rewriteCount: outcome.rewrites.length,
+  };
+}
+
+/** Refuses to turn an incomplete source-removing outcome into a rename success message. */
+export function attachmentRenameReceipt(
+  outcome: AttachmentPublicationOutcomeStatus,
+): VerifiedAttachmentRenameReceipt | null {
+  if (
+    outcome.status !== "committed" ||
     typeof outcome.from !== "string" ||
     outcome.from.length === 0 ||
     typeof outcome.to !== "string" ||

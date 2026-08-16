@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { MAX_CANVAS_BYTES } from "../shared/json-canvas";
 import {
   type AttachmentPublishCapability,
   AttachmentPublishCapabilityError,
@@ -253,7 +254,11 @@ function markdownCorpusConflictPaths(
   actual: VaultMarkdownCorpus,
 ): string[] {
   const changed = changedMarkdownCorpusPaths(expected, actual);
-  if (changed.length > 0 || expected.generation !== actual.generation) {
+  if (
+    changed.length > 0 ||
+    expected.generation !== actual.generation ||
+    (expected.scope ?? null) !== (actual.scope ?? null)
+  ) {
     return changed.length > 0 ? changed : [...expected.paths];
   }
   return [];
@@ -351,17 +356,18 @@ export class VaultKernel implements VaultMutationPort {
     return this.paths.listMarkdownPaths(relativeDirectory);
   }
 
-  async readMarkdownCorpus(): Promise<VaultMarkdownCorpus> {
+  private async readStableCorpus(
+    listPaths: () => Promise<string[]>,
+    readRevision: (relativePath: string) => Promise<string>,
+    scope?: "references",
+  ): Promise<VaultMarkdownCorpus> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const paths = (await this.listMarkdownPaths()).sort((left, right) =>
-        left.localeCompare(right),
-      );
+      const paths = (await listPaths()).sort((left, right) => left.localeCompare(right));
       const revisions: Array<{ path: string; revision: string }> = [];
       let retry = false;
       for (const relativePath of paths) {
         try {
-          const snapshot = await this.readText(relativePath);
-          revisions.push({ path: relativePath, revision: snapshot.revision });
+          revisions.push({ path: relativePath, revision: await readRevision(relativePath) });
         } catch (error) {
           if (error instanceof Error && error.message.startsWith("File does not exist:")) {
             retry = true;
@@ -371,9 +377,7 @@ export class VaultKernel implements VaultMutationPort {
         }
       }
       if (retry) continue;
-      const finalPaths = (await this.listMarkdownPaths()).sort((left, right) =>
-        left.localeCompare(right),
-      );
+      const finalPaths = (await listPaths()).sort((left, right) => left.localeCompare(right));
       if (
         finalPaths.length !== paths.length ||
         finalPaths.some((relativePath, index) => relativePath !== paths[index])
@@ -383,8 +387,10 @@ export class VaultKernel implements VaultMutationPort {
       const finalRevisions: Array<{ path: string; revision: string }> = [];
       for (const relativePath of finalPaths) {
         try {
-          const snapshot = await this.readText(relativePath);
-          finalRevisions.push({ path: relativePath, revision: snapshot.revision });
+          finalRevisions.push({
+            path: relativePath,
+            revision: await readRevision(relativePath),
+          });
         } catch (error) {
           if (error instanceof Error && error.message.startsWith("File does not exist:")) {
             retry = true;
@@ -403,16 +409,51 @@ export class VaultKernel implements VaultMutationPort {
         paths,
         revisions,
         generation: markdownCorpusGeneration(paths, revisions),
+        ...(scope ? { scope } : {}),
       };
     }
-    throw new Error("Markdown corpus kept changing while it was read.");
+    throw new Error("Reference corpus kept changing while it was read.");
+  }
+
+  async readMarkdownCorpus(): Promise<VaultMarkdownCorpus> {
+    return this.readStableCorpus(
+      () => this.listMarkdownPaths(),
+      async (relativePath) => (await this.readText(relativePath)).revision,
+    );
+  }
+
+  async readReferenceCorpus(): Promise<VaultMarkdownCorpus> {
+    return this.readStableCorpus(
+      async () => {
+        const listing = await this.listVisiblePaths("");
+        if (!listing.exists) return [];
+        return listing.files.filter((relativePath) => {
+          const folded = relativePath.toLocaleLowerCase("en-US");
+          return folded.endsWith(".md") || folded.endsWith(".canvas");
+        });
+      },
+      async (relativePath) => {
+        if (!relativePath.toLocaleLowerCase("en-US").endsWith(".canvas")) {
+          return (await this.readText(relativePath)).revision;
+        }
+        const result = await this.readBinary(relativePath, MAX_CANVAS_BYTES);
+        if (result.status !== "ready") {
+          throw new Error(`Canvas exceeds the bounded reference-corpus limit: ${relativePath}`);
+        }
+        return result.snapshot.revision;
+      },
+      "references",
+    );
   }
 
   private async verifyMarkdownCorpus(
     expected: VaultMarkdownCorpus,
   ): Promise<{ ok: true } | { ok: false; conflictPaths: string[] }> {
     try {
-      const actual = await this.readMarkdownCorpus();
+      const actual =
+        expected.scope === "references"
+          ? await this.readReferenceCorpus()
+          : await this.readMarkdownCorpus();
       const conflictPaths = markdownCorpusConflictPaths(expected, actual);
       return conflictPaths.length === 0 ? { ok: true } : { ok: false, conflictPaths };
     } catch {
@@ -1216,6 +1257,9 @@ export class VaultKernel implements VaultMutationPort {
         paths: [...request.expectedMarkdownCorpus.paths],
         revisions,
         generation: markdownCorpusGeneration(request.expectedMarkdownCorpus.paths, revisions),
+        ...(request.expectedMarkdownCorpus.scope
+          ? { scope: request.expectedMarkdownCorpus.scope }
+          : {}),
       };
     }
 

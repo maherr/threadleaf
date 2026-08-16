@@ -27,6 +27,7 @@ import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-
 import type {
   AttachmentMoveOutcome,
   AttachmentMoveResponse,
+  AttachmentOperation,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -472,6 +473,7 @@ interface MoveAttachmentRequest {
   expectedRevision: string;
   expectedVaultId: string;
   confirmationId: string | null;
+  operation: AttachmentOperation;
 }
 
 interface DeleteNoteRequest {
@@ -544,10 +546,12 @@ function parseMoveAttachmentRequest(payload: unknown): MoveAttachmentRequest {
     !("expectedVaultId" in payload) ||
     typeof payload.expectedVaultId !== "string" ||
     ("confirmationId" in payload &&
-      !(payload.confirmationId === null || typeof payload.confirmationId === "string"))
+      !(payload.confirmationId === null || typeof payload.confirmationId === "string")) ||
+    !("operation" in payload) ||
+    (payload.operation !== "publish-copy" && payload.operation !== "rename")
   ) {
     throw new Error(
-      "Move attachment requires string path, target, revision, and vault values with an optional confirmation.",
+      "Move attachment requires string path, target, revision, vault, and operation values with an optional confirmation.",
     );
   }
   return {
@@ -559,6 +563,7 @@ function parseMoveAttachmentRequest(payload: unknown): MoveAttachmentRequest {
       "confirmationId" in payload && typeof payload.confirmationId === "string"
         ? payload.confirmationId
         : null,
+    operation: payload.operation,
   };
 }
 
@@ -2054,6 +2059,7 @@ export class WorkspaceRuntime {
     expectedRevision: string,
     expectedVaultId: string,
     confirmationId?: string,
+    operation: AttachmentOperation = "publish-copy",
   ): Promise<AttachmentMoveResponse> {
     const outcome = await this.actions.dispatch<AttachmentMoveOutcome>(
       "workspace.move-attachment",
@@ -2063,6 +2069,7 @@ export class WorkspaceRuntime {
         expectedRevision,
         expectedVaultId,
         confirmationId: confirmationId ?? null,
+        operation,
       },
     );
     return { outcome, snapshot: await this.publishSnapshot() };
@@ -3668,9 +3675,15 @@ export class WorkspaceRuntime {
     request: MoveAttachmentRequest,
   ): Promise<AttachmentMoveOutcome> {
     if (request.expectedVaultId !== this.kernel.vaultId) {
-      throw new Error("The active vault changed before this attachment copy could be published.");
+      throw new Error(
+        request.operation === "rename"
+          ? "The active vault changed before this attachment could be renamed."
+          : "The active vault changed before this attachment copy could be published.",
+      );
     }
-    this.assertWritable("publish attachment copies");
+    this.assertWritable(
+      request.operation === "rename" ? "rename attachments" : "publish attachment copies",
+    );
 
     let sourcePath: string;
     let targetPath: string;
@@ -3699,6 +3712,8 @@ export class WorkspaceRuntime {
       request.expectedRevision,
       {
         ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+        operation: request.operation,
+        automaticLinkUpdates: this.#workspaceSettings.automaticLinkUpdates,
         expectedGeneration,
         // Deliberately optimistic: the attachment planner calls this while its
         // filesystem plan is in flight so any concurrent index publication
@@ -3707,7 +3722,7 @@ export class WorkspaceRuntime {
         currentGeneration: () => this.indexReactor.index.generation,
       },
     );
-    if (outcome.status !== "published-source-retained") {
+    if (outcome.status !== "published-source-retained" && outcome.status !== "committed") {
       return outcome;
     }
 

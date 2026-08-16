@@ -1,5 +1,7 @@
 /** JSON Canvas 1.0 data model shared across the application and bridge. */
 
+export const MAX_CANVAS_BYTES = 8 * 1024 * 1024;
+
 export type CanvasNodeType = "text" | "file" | "link" | "group";
 export type CanvasNodeSide = "top" | "right" | "bottom" | "left";
 export type CanvasEdgeEnd = "none" | "arrow";

@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added a transient read-only ordinary-file inspector with exact vault and inventory identity,
   bounded inert UTF-8 text, byte-sniffed raster images, metadata-only binary formats, responsive
   modal focus restoration, and no document, tab, history, shell, or renderer-filesystem authority.
+- Added an explicit source-removing **Rename or move** action for passive attachments, with
+  `always`, `ask`, and `never` link-update policy, exact rewrite previews, recoverable compound
+  transactions, complete Markdown and JSON Canvas reference-corpus receipts, and visible refusal
+  when a Canvas reference cannot yet be rewritten safely.
 
 ### Changed
 

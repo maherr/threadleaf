@@ -25,6 +25,7 @@ export type VaultAttachmentKind =
 export interface VaultAttachmentActions {
   open: boolean;
   reveal: boolean;
+  rename: boolean;
   move: boolean;
   inline: false;
 }
@@ -439,7 +440,7 @@ export async function loadVaultAttachment(
     mimeType: sniffed?.mimeType ?? null,
     size: result.snapshot.size,
     revision: result.snapshot.revision,
-    actions: { open: true, reveal: true, move: true, inline: false },
+    actions: { open: true, reveal: true, rename: true, move: true, inline: false },
   };
   return { status: "ready", vaultId: reader.vaultId, attachment };
 }

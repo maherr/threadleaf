@@ -30,6 +30,7 @@ import type {
   AttachmentMoveBlocker,
   AttachmentMoveResponse,
   AttachmentMoveRewritePreview,
+  AttachmentOperation,
   EditorDraftSnapshot,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -114,6 +115,7 @@ import {
   attachmentMoveCommitNotice,
   attachmentPublicationConflictMessage,
   attachmentPublicationReceipt,
+  attachmentRenameReceipt,
 } from "./attachment-move-status";
 import { CanvasViewController } from "./canvas-view";
 import {
@@ -502,6 +504,9 @@ const elements = {
   moveNoteBlockerList: getElement("move-note-blocker-list"),
   attachmentMoveDialog: getDialog("attachment-move-dialog"),
   attachmentMoveForm: getForm("attachment-move-form"),
+  attachmentMoveTitle: getElement("attachment-move-title"),
+  attachmentMoveDescription: getElement("attachment-move-description"),
+  attachmentMoveTargetLabel: getElement("attachment-move-target-label"),
   attachmentMoveTarget: getInput("attachment-move-target"),
   attachmentMoveClose: getButton("attachment-move-close"),
   attachmentMoveCancel: getButton("attachment-move-cancel"),
@@ -1111,6 +1116,7 @@ let attachmentMoveRevision: string | null = null;
 let attachmentMoveBlockers: AttachmentMoveBlocker[] = [];
 let attachmentMoveRewrites: AttachmentMoveRewritePreview[] = [];
 let attachmentMoveConfirmationId: string | null = null;
+let attachmentMoveOperation: AttachmentOperation = "publish-copy";
 let deleteNoteRestoreFocus: HTMLElement | null = null;
 let deleteNoteBusy = false;
 let deleteNoteVaultId: string | null = null;
@@ -3012,6 +3018,7 @@ async function activatePreviewEmbed(openButton: HTMLButtonElement): Promise<void
 async function openAttachmentMoveDialog(
   sourcePath: string,
   revision: string,
+  operation: AttachmentOperation,
   restoreFocus?: HTMLElement,
 ): Promise<void> {
   if (elements.attachmentMoveDialog.open) {
@@ -3022,7 +3029,7 @@ async function openAttachmentMoveDialog(
   if (!loadedVaultId || readOnlyVault() || busy) {
     showToast(
       readOnlyVault()
-        ? "Open a local vault before publishing attachment copies."
+        ? `Open a local vault before ${operation === "rename" ? "renaming attachments" : "publishing attachment copies"}.`
         : "Threadleaf is finishing another action.",
     );
     return;
@@ -3038,6 +3045,7 @@ async function openAttachmentMoveDialog(
   attachmentMoveVaultId = loadedVaultId;
   attachmentMoveSourcePath = sourcePath;
   attachmentMoveRevision = revision;
+  attachmentMoveOperation = operation;
   attachmentMoveBlockers = [];
   attachmentMoveRewrites = [];
   attachmentMoveConfirmationId = null;
@@ -3059,10 +3067,17 @@ function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): void 
   if (!target) {
     return;
   }
-  if (action === "move") {
+  if (action === "move" || action === "rename") {
     const card = actionButton.closest<HTMLElement>(".preview-attachment-card");
     const revision = card?.dataset.threadleafAttachmentRevision;
-    if (revision) void openAttachmentMoveDialog(target, revision, actionButton);
+    if (revision) {
+      void openAttachmentMoveDialog(
+        target,
+        revision,
+        action === "rename" ? "rename" : "publish-copy",
+        actionButton,
+      );
+    }
     return;
   }
   if (action !== "open" && action !== "reveal") return;
@@ -4624,13 +4639,28 @@ async function moveCurrentNote(): Promise<void> {
 }
 
 function renderAttachmentMoveDialog(): void {
+  const renaming = attachmentMoveOperation === "rename";
+  const linkPolicy = currentWorkspacePreference().automaticLinkUpdates;
   const staleVault = Boolean(
     attachmentMoveVaultId && attachmentMoveVaultId !== (currentSnapshot?.vault.id ?? null),
   );
   if (staleVault && !elements.attachmentMoveError.textContent) {
-    elements.attachmentMoveError.textContent =
-      "The active vault changed. Cancel and reopen Publish copy.";
+    elements.attachmentMoveError.textContent = `The active vault changed. Cancel and reopen ${renaming ? "Rename or move" : "Publish copy"}.`;
   }
+  elements.attachmentMoveTitle.textContent = renaming
+    ? "Rename or move this attachment"
+    : "Publish a copy of this attachment";
+  elements.attachmentMoveDescription.textContent = renaming
+    ? linkPolicy === "never"
+      ? "Threadleaf will move the exact attachment bytes and remove the original path without updating references, matching this vault's Never setting."
+      : linkPolicy === "always"
+        ? "Threadleaf will move the exact attachment bytes, remove the original path, and update proven local Markdown references automatically. A Canvas reference or unreadable Canvas blocks the operation."
+        : "Threadleaf will move the exact attachment bytes and remove the original path. It previews proven local Markdown reference updates first; a Canvas reference or unreadable Canvas blocks the operation."
+    : "Threadleaf publishes the exact attachment bytes without decoding them and keeps the original source. It previews local wiki and Markdown reference updates, then applies the publication and updates as one recoverable operation.";
+  elements.attachmentMoveTargetLabel.textContent = renaming ? "New path" : "Copy path";
+  elements.attachmentMoveClose.ariaLabel = renaming
+    ? "Cancel attachment rename"
+    : "Cancel attachment publication";
   const message = elements.attachmentMoveError.textContent ?? "";
   elements.attachmentMoveError.hidden = message.length === 0;
   const previewMessage = elements.attachmentMovePreviewMessage.textContent ?? "";
@@ -4642,12 +4672,20 @@ function renderAttachmentMoveDialog(): void {
   elements.attachmentMoveCancel.disabled = attachmentMoveBusy;
   elements.attachmentMoveSubmit.disabled = attachmentMoveBusy || staleVault || readOnlyVault();
   elements.attachmentMoveSubmit.textContent = attachmentMoveBusy
-    ? attachmentMoveConfirmationId
-      ? "Publishing…"
-      : "Checking…"
+    ? renaming
+      ? "Moving…"
+      : attachmentMoveConfirmationId
+        ? "Publishing…"
+        : "Checking…"
     : attachmentMoveConfirmationId
-      ? `Update ${attachmentMoveRewrites.length} ${attachmentMoveRewrites.length === 1 ? "link" : "links"} and publish`
-      : "Check and publish";
+      ? `Update ${attachmentMoveRewrites.length} ${attachmentMoveRewrites.length === 1 ? "link" : "links"} and ${renaming ? "move" : "publish"}`
+      : renaming
+        ? linkPolicy === "never"
+          ? "Move without updating links"
+          : linkPolicy === "always"
+            ? "Move and update links"
+            : "Check and move"
+        : "Check and publish";
   elements.attachmentMoveForm.setAttribute("aria-busy", String(attachmentMoveBusy));
   elements.attachmentMoveVault.textContent = staleVault
     ? "Vault changed"
@@ -4663,8 +4701,8 @@ function renderAttachmentMoveDialog(): void {
   elements.attachmentMoveBlockerSummary.textContent = showingPreview
     ? `Ready: ${attachmentMoveRewrites.length} link target ${attachmentMoveRewrites.length === 1 ? "update" : "updates"}`
     : attachmentMoveBlockers.length === 1
-      ? "Blocked: 1 internal link resolution is unsafe"
-      : `Blocked: ${attachmentMoveBlockers.length} internal link resolutions are unsafe`;
+      ? "Blocked: 1 reference cannot be handled safely"
+      : `Blocked: ${attachmentMoveBlockers.length} references cannot be handled safely`;
   for (const rewrite of attachmentMoveRewrites.slice(0, 100)) {
     const item = document.createElement("li");
     const origin = document.createElement("span");
@@ -4688,7 +4726,10 @@ function renderAttachmentMoveDialog(): void {
     const item = document.createElement("li");
     const origin = document.createElement("span");
     origin.className = "move-note-blocker-origin";
-    origin.textContent = `${blocker.documentPath}:${blocker.line} · ${blocker.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
+    origin.textContent =
+      blocker.syntax === "canvas"
+        ? `${blocker.documentPath} · Canvas ${blocker.location ?? "$"}`
+        : `${blocker.documentPath}:${blocker.line} · ${blocker.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
     const target = document.createElement("code");
     target.textContent = blocker.target;
     const detail = document.createElement("span");
@@ -4698,7 +4739,11 @@ function renderAttachmentMoveDialog(): void {
         ? `Ambiguous (${blocker.candidates.slice(0, 4).join(", ") || "multiple matches"})`
         : blocker.reason === "unsupported"
           ? "Unsupported link form"
-          : "Unresolved local link";
+          : blocker.reason === "canvas-reference"
+            ? "Canvas uses this attachment path"
+            : blocker.reason === "canvas-unreadable"
+              ? "Canvas could not be verified safely"
+              : "Unresolved local link";
     item.append(origin, target, detail);
     elements.attachmentMoveBlockerList.append(item);
   }
@@ -4719,6 +4764,7 @@ function closeAttachmentMoveDialog(restoreFocus = true): void {
   attachmentMoveBlockers = [];
   attachmentMoveRewrites = [];
   attachmentMoveConfirmationId = null;
+  attachmentMoveOperation = "publish-copy";
   elements.attachmentMoveError.textContent = "";
   elements.attachmentMovePreviewMessage.textContent = "";
   const restoreTarget = attachmentMoveRestoreFocus;
@@ -4727,6 +4773,7 @@ function closeAttachmentMoveDialog(restoreFocus = true): void {
 }
 
 async function moveCurrentAttachment(): Promise<void> {
+  const renaming = attachmentMoveOperation === "rename";
   const expectedVaultId = attachmentMoveVaultId;
   const sourcePath = attachmentMoveSourcePath;
   const expectedRevision = attachmentMoveRevision;
@@ -4743,13 +4790,12 @@ async function moveCurrentAttachment(): Promise<void> {
     return;
   }
   if (!(await tryFlushAllPaneAutosaves("note-mutation"))) {
-    elements.attachmentMoveError.textContent =
-      "Autosave could not finish. The attachment was not published; editor content remains intact.";
+    elements.attachmentMoveError.textContent = `Autosave could not finish. The attachment was not ${renaming ? "moved" : "published"}; editor content remains intact.`;
     renderAttachmentMoveDialog();
     return;
   }
   if (currentSnapshot?.vault.id !== expectedVaultId) {
-    elements.attachmentMoveError.textContent = "The vault changed. Cancel and reopen Publish copy.";
+    elements.attachmentMoveError.textContent = `The vault changed. Cancel and reopen ${renaming ? "Rename or move" : "Publish copy"}.`;
     attachmentMoveBlockers = [];
     attachmentMoveRewrites = [];
     attachmentMoveConfirmationId = null;
@@ -4761,6 +4807,7 @@ async function moveCurrentAttachment(): Promise<void> {
   let response: AttachmentMoveResponse | null = null;
   let committedPath: string | null = null;
   let retainedSourcePath: string | null = null;
+  let removedSourcePath: string | null = null;
   let committedRewriteCount = 0;
   let committedVaultNotice: string | null = null;
   const submittedConfirmationId = attachmentMoveConfirmationId;
@@ -4780,13 +4827,14 @@ async function moveCurrentAttachment(): Promise<void> {
       expectedRevision,
       expectedVaultId,
       submittedConfirmationId ?? undefined,
+      attachmentMoveOperation,
     );
     render(response.snapshot);
     const attachmentConflictMessage =
       response.outcome.status === "conflict"
         ? attachmentPublicationConflictMessage(response.outcome.reason)
         : null;
-    if (response.outcome.status === "published-source-retained") {
+    if (!renaming && response.outcome.status === "published-source-retained") {
       const receipt = attachmentPublicationReceipt(response.outcome);
       if (receipt) {
         committedPath = receipt.targetPath;
@@ -4800,6 +4848,20 @@ async function moveCurrentAttachment(): Promise<void> {
         elements.attachmentMoveError.textContent =
           "Threadleaf received an incomplete publication receipt. The workbench remains open; review both paths before continuing.";
       }
+    } else if (renaming && response.outcome.status === "committed") {
+      const receipt = attachmentRenameReceipt(response.outcome);
+      if (receipt) {
+        committedPath = receipt.targetPath;
+        committedRewriteCount = receipt.rewriteCount;
+        removedSourcePath = receipt.sourcePath;
+        committedVaultNotice = attachmentMoveCommitNotice(response, "committed");
+      } else {
+        attachmentMoveConfirmationId = null;
+        attachmentMoveRewrites = [];
+        elements.attachmentMovePreviewMessage.textContent = "";
+        elements.attachmentMoveError.textContent =
+          "Threadleaf received an incomplete rename receipt. The workbench remains open; review both paths before continuing.";
+      }
     } else if (response.outcome.status === "requires-confirmation") {
       attachmentMoveBlockers = [];
       attachmentMoveRewrites = response.outcome.rewrites;
@@ -4810,13 +4872,13 @@ async function moveCurrentAttachment(): Promise<void> {
           : "";
       elements.attachmentMovePreviewMessage.textContent = submittedConfirmationId
         ? `The link plan changed on disk. Review this refreshed preview, then confirm it again.${boundedPreviewNotice}`
-        : `Review the exact local link target updates below. Submit again to publish the copy and apply them as one recoverable operation.${boundedPreviewNotice}`;
+        : `Review the exact local link target updates below. Submit again to ${renaming ? "move the attachment" : "publish the copy"} and apply them as one recoverable operation.${boundedPreviewNotice}`;
     } else if (response.outcome.status === "blocked") {
       attachmentMoveConfirmationId = null;
       attachmentMoveRewrites = [];
       attachmentMoveBlockers = response.outcome.blockers;
       elements.attachmentMovePreviewMessage.textContent = "";
-      elements.attachmentMoveError.textContent = `Publication blocked: ${response.outcome.blockers.length} internal link resolution${response.outcome.blockers.length === 1 ? " cannot" : "s cannot"} be rewritten safely. No files were changed.`;
+      elements.attachmentMoveError.textContent = `${renaming ? "Rename" : "Publication"} blocked: ${response.outcome.blockers.length} reference check${response.outcome.blockers.length === 1 ? " is" : "s are"} unsafe. No files were changed.`;
     } else if (attachmentConflictMessage) {
       attachmentMoveConfirmationId = null;
       attachmentMoveRewrites = [];
@@ -4838,8 +4900,7 @@ async function moveCurrentAttachment(): Promise<void> {
       attachmentMoveConfirmationId = null;
       attachmentMoveRewrites = [];
       elements.attachmentMovePreviewMessage.textContent = "";
-      elements.attachmentMoveError.textContent =
-        "The attachment changed on disk while Threadleaf checked the publication. No files were changed.";
+      elements.attachmentMoveError.textContent = `The attachment changed on disk while Threadleaf checked the ${renaming ? "rename" : "publication"}. No files were changed.`;
     } else if (
       response.outcome.status === "conflict" &&
       response.outcome.reason === "rewrite-plan-changed"
@@ -4847,31 +4908,43 @@ async function moveCurrentAttachment(): Promise<void> {
       attachmentMoveConfirmationId = null;
       attachmentMoveRewrites = [];
       elements.attachmentMovePreviewMessage.textContent = "";
-      elements.attachmentMoveError.textContent =
-        "The referenced notes changed after the preview. Nothing was published; reopen the workbench to review the current links.";
-    } else {
+      elements.attachmentMoveError.textContent = `The referenced notes changed after the preview. Nothing was ${renaming ? "moved" : "published"}; reopen the workbench to review the current links.`;
+    } else if (
+      response.outcome.status === "conflict" &&
+      response.outcome.reason === "reference-corpus-changed"
+    ) {
       attachmentMoveConfirmationId = null;
       attachmentMoveRewrites = [];
       elements.attachmentMovePreviewMessage.textContent = "";
       elements.attachmentMoveError.textContent =
-        "The attachment publication did not commit. No files were overwritten; review the current vault state.";
+        "A Markdown or Canvas reference changed after the preview. Nothing was moved; reopen the workbench to review current references.";
+    } else {
+      attachmentMoveConfirmationId = null;
+      attachmentMoveRewrites = [];
+      elements.attachmentMovePreviewMessage.textContent = "";
+      elements.attachmentMoveError.textContent = `The attachment ${renaming ? "rename" : "publication"} did not commit. No files were overwritten; review the current vault state.`;
     }
   } catch {
-    elements.attachmentMoveError.textContent =
-      "The attachment publication could not be confirmed. Review the current vault state; no further files were changed.";
+    elements.attachmentMoveError.textContent = `The attachment ${renaming ? "rename" : "publication"} could not be confirmed. Review the current vault state; no further files were changed.`;
   } finally {
     attachmentMoveBusy = false;
     setActionState(false);
     if (elements.attachmentMoveDialog.open) renderAttachmentMoveDialog();
   }
 
-  if (committedPath && retainedSourcePath) {
+  if (committedPath && (retainedSourcePath || removedSourcePath)) {
+    const operationNotice = renaming
+      ? `Moved the attachment to ${committedPath}${
+          committedRewriteCount > 0
+            ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
+            : ""
+        }; the original path ${removedSourcePath} was removed.`
+      : `Published a copy at ${committedPath}${
+          committedRewriteCount > 0
+            ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
+            : ""
+        }; the original remains at ${retainedSourcePath}.`;
     closeAttachmentMoveDialog(false);
-    const operationNotice = `Published a copy at ${committedPath}${
-      committedRewriteCount > 0
-        ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
-        : ""
-    }; the original remains at ${retainedSourcePath}.`;
     showToast(
       committedVaultNotice ? `${committedVaultNotice} ${operationNotice}` : operationNotice,
     );

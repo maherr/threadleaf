@@ -9,11 +9,13 @@ export interface VaultTextSnapshot {
   size: number;
 }
 
-/** The complete lexical Markdown corpus used to authorize a compound move. */
+/** The complete lexical document corpus used to authorize a compound move. */
 export interface VaultMarkdownCorpus {
   paths: string[];
   revisions: Array<{ path: string; revision: string }>;
   generation: string;
+  /** Absent means the legacy Markdown-only corpus. */
+  scope?: "references";
 }
 
 export interface VaultReadPort {
@@ -22,6 +24,8 @@ export interface VaultReadPort {
   readText(relativePath: string): Promise<VaultTextSnapshot>;
   /** Kernels provide an authoritative full-corpus receipt; test/fake ports may not. */
   readMarkdownCorpus?(): Promise<VaultMarkdownCorpus>;
+  /** Complete visible Markdown and JSON Canvas reference corpus. */
+  readReferenceCorpus?(): Promise<VaultMarkdownCorpus>;
 }
 
 export type VaultWriteResult =

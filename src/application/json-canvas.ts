@@ -1,3 +1,5 @@
+import { MAX_CANVAS_BYTES } from "../shared/json-canvas";
+
 /**
  * JSON Canvas 1.0 domain model.
  *
@@ -7,7 +9,8 @@
  */
 
 export const JSON_CANVAS_VERSION = "1.0" as const;
-export const MAX_CANVAS_BYTES = 8 * 1024 * 1024;
+
+export { MAX_CANVAS_BYTES } from "../shared/json-canvas";
 export const MAX_CANVAS_NODES = 2_048;
 export const MAX_CANVAS_EDGES = 4_096;
 

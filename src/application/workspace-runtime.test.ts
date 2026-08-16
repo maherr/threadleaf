@@ -328,6 +328,7 @@ describe("WorkspaceRuntime", () => {
 
   it("invalidates file-page generations across direct create, rename, and delete mutations", async () => {
     const workspace = await openRuntime();
+    await workspace.watcher.close();
     const before = await workspace.getSnapshot();
     const generation = before.workspace?.filePage.generation;
     const censusGeneration = before.workspace?.census.generation ?? Number.NaN;
@@ -2686,6 +2687,55 @@ module.exports = class ActionCollisionFixture extends Plugin {
     expect(workspace.watcher.operations.size).toBe(0);
     const afterReconcile = await workspace.getSnapshot();
     expect(afterReconcile.workspace?.activeNote?.content).toContain("Archive/report-renamed.pdf");
+  });
+
+  it("routes an explicit attachment rename through the source-removing kernel outcome", async () => {
+    const bytes = Buffer.from("%PDF-1.7\nrename attachment bytes\n", "ascii");
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Assets", "rename.pdf"), bytes);
+    await fs.writeFile(
+      path.join(vaultPath, "Rename Desk.md"),
+      "# Rename Desk\n\n![[Assets/rename.pdf]]\n",
+      "utf8",
+    );
+    const workspace = await openRuntime();
+    await workspace.openNote("Rename Desk.md");
+    const source = await workspace.kernel.readBinary("Assets/rename.pdf", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected the attachment bytes.");
+
+    const preview = await workspace.moveAttachment(
+      "Assets/rename.pdf",
+      "Archive/renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+      undefined,
+      "rename",
+    );
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected an attachment rename confirmation.");
+    }
+    const moved = await workspace.moveAttachment(
+      "Assets/rename.pdf",
+      "Archive/renamed.pdf",
+      source.snapshot.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+      "rename",
+    );
+    expect(moved.outcome).toMatchObject({
+      status: "committed",
+      from: "Assets/rename.pdf",
+      to: "Archive/renamed.pdf",
+      writes: [{ path: "Rename Desk.md" }],
+    });
+    await expect(fs.stat(path.join(vaultPath, "Assets", "rename.pdf"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Archive", "renamed.pdf"))).resolves.toEqual(
+      bytes,
+    );
+    expect(moved.snapshot.workspace?.activeNote?.content).toContain("Archive/renamed.pdf");
   });
 
   it("rejects attachment publication outside visible vault containment without echoing the request", async () => {

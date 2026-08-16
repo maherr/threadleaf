@@ -3,6 +3,7 @@ import {
   attachmentMoveCommitNotice,
   attachmentPublicationConflictMessage,
   attachmentPublicationReceipt,
+  attachmentRenameReceipt,
 } from "./attachment-move-status";
 
 describe("attachment move commit status", () => {
@@ -39,6 +40,18 @@ describe("attachment move commit status", () => {
     ).toBeNull();
   });
 
+  it("names the previous vault for an explicitly expected attachment rename", () => {
+    const response = {
+      outcome: { status: "committed" },
+      snapshot: { vault: { id: "vault:new" } },
+      committedVaultId: "vault:old",
+      committedVaultName: "Old",
+    };
+    expect(attachmentMoveCommitNotice(response, "committed")).toBe(
+      'Committed in previously active vault "Old". The current view is another vault.',
+    );
+  });
+
   it("accepts only a complete source-retaining publication receipt", () => {
     expect(
       attachmentPublicationReceipt({
@@ -62,6 +75,29 @@ describe("attachment move commit status", () => {
     expect(
       attachmentPublicationReceipt({
         status: "committed",
+        from: "Assets/report.pdf",
+        to: "Archive/report.pdf",
+        rewrites: [],
+      }),
+    ).toBeNull();
+  });
+
+  it("accepts only a complete source-removing rename receipt", () => {
+    expect(
+      attachmentRenameReceipt({
+        status: "committed",
+        from: "Assets/report.pdf",
+        to: "Archive/report.pdf",
+        rewrites: [{ path: "Notes/Index.md" }],
+      }),
+    ).toEqual({
+      sourcePath: "Assets/report.pdf",
+      targetPath: "Archive/report.pdf",
+      rewriteCount: 1,
+    });
+    expect(
+      attachmentRenameReceipt({
+        status: "published-source-retained",
         from: "Assets/report.pdf",
         to: "Archive/report.pdf",
         rewrites: [],

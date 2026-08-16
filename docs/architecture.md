@@ -683,17 +683,25 @@ returns exact path, revision, source range, content bytes, and nested-link summa
 sanitizes every returned fragment through the same Markdown pipeline, then recursively hydrates its
 nested notes, raster images, and passive attachment cards.
 
-Passive attachment cards also expose the revision-bound Publish copy workbench. The application
-attachment planner uses the same local-target parser as the attachment loader, rewrites only
-resolved local wiki and Markdown references, preserves exact query and fragment suffixes, refuses
-case- or NFC-ambiguous source identities and basenames, and commits source-retaining binary
-publication plus Markdown writes through the kernel's recoverable transaction. Each preview binds
-the exact Markdown path set, every note revision, and the metadata generation. Direct write targets and the source revision
-are checked in the mutation lane. The whole-corpus receipt is a conservative preflight and
+Passive attachment cards expose distinct revision-bound **Publish copy** and **Rename or move**
+workbenches. The application attachment planner uses the same local-target parser as the attachment
+loader, rewrites only resolved local wiki and Markdown references, preserves exact query and
+fragment suffixes, and refuses case- or NFC-ambiguous source identities and basenames. Publish copy
+commits source-retaining binary publication plus Markdown writes. Rename or move commits
+source-removing binary rename plus allowed Markdown writes and preserves the workspace's `always`,
+`ask`, or `never` automatic-link policy.
+
+Every publication preview binds the exact Markdown path set, every note revision, and the metadata
+generation. For an `always` or `ask` rename, the reference corpus instead includes every visible
+Markdown and JSON Canvas path and revision. A Canvas file node or group background that resolves to
+the source blocks the rename, as does a malformed, unreadable, or oversized Canvas whose safety
+cannot be proved. Canvas rewriting is deferred until Threadleaf can replace only the exact path
+value without normalizing unrelated JSON bytes. Direct write targets and the source revision are
+checked in the mutation lane. The whole-corpus receipt is a conservative preflight and
 post-mutation check, not an atomic lock against arbitrary external writers: a change observed after
-the final preflight drives exact journaled rollback or a manual conflict, preserving surviving bytes
-and never silently retiring a pending transaction. Attachment publications intentionally do not remap
-note tabs or bookmarks, because those state entries identify Markdown notes rather than attachment
+the final preflight drives exact journaled rollback or a manual conflict, preserving surviving
+bytes and never silently retiring a pending transaction. Attachment operations do not remap note
+tabs or bookmarks, because those state entries identify Markdown notes rather than attachment
 references. Open and Reveal remain inert until a reviewed native capability is available.
 
 Reference-style ordinary links and images share one source-evidence gate. A visible, single
@@ -861,23 +869,26 @@ changes, Threadleaf returns a refreshed preview instead of applying stale consen
 nothing on its first preview and requires `--update-links` to accept the plan rebuilt in that run.
 
 The kernel stages both the before and proposed bytes for every rewrite before recording one parent
-move journal. Ordinary note moves apply revision-bound child writes, then a child rename moves the
-final source revision. Strict attachment publications publish the exact destination first, retain the
-source, and apply link rewrites only after the publication receipt. Recovery validates every parent
-blob before touching any pending child, recovers children before parents, and recognizes an already
-completed rename or source-retained publication. A rewrite or destination race rolls applied entries
-back in reverse order. An external winner is never overwritten: Threadleaf preserves the losing
-proposal or original bytes as a conflict copy and reports committed, published-source-retained,
-rolled back, or manual review truthfully.
+move journal. Ordinary note moves and source-removing attachment renames apply revision-bound child
+writes, then a child rename moves the final source revision. Strict attachment publications publish
+the exact destination first, retain the source, and apply link rewrites only after the publication
+receipt. Scoped corpus identity is persisted in the journal, so startup recovery revalidates the
+same Markdown-only or Markdown-plus-Canvas boundary chosen by the operation. Recovery validates
+every parent blob before touching any pending child, recovers children before parents, and
+recognizes an already completed rename or source-retained publication. A rewrite or destination
+race rolls applied entries back in reverse order. An external winner is never overwritten:
+Threadleaf preserves the losing proposal or original bytes as a conflict copy and reports
+committed, published-source-retained, rolled back, or manual review truthfully.
 
-The desktop Publish copy action dispatches through the same service. It flushes pending editor bytes,
-then carries the active vault identity and source revision across IPC while keeping previews,
-blockers, and conflicts in a reviewable dialog. Each rewrite names its document, source line,
-syntax, and exact target change;
-each blocker retains before and after resolution evidence. After a committed or source-retained
+The desktop actions dispatch through the same service. They flush pending editor bytes, then carry
+the selected operation, active vault identity, source revision, and automatic-link policy across
+IPC while keeping previews, blockers, and conflicts in a reviewable dialog. Each rewrite names its
+document, source line, syntax, and exact target change; each blocker names the unhandled evidence,
+including an exact JSON Canvas location when available. After a committed rename or source-retained
 publication, the runtime attributes the compound filesystem changes and refreshes every affected
-index entry before publishing its next snapshot. Attachment sources remain addressable at their
-original path; note tabs and bookmarks are not remapped for attachment publications.
+index entry before publishing its next snapshot. A successful Publish copy keeps the attachment at
+its original path; a successful Rename or move reports the removed source path explicitly. Note
+tabs and bookmarks are not remapped for attachment operations.
 
 The desktop Trash action calls the same recoverable deletion service as the CLI rather than a
 renderer-owned filesystem path. Its request carries the active vault identity and exact source

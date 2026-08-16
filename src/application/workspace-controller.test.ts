@@ -362,7 +362,7 @@ class FakeRuntime implements WorkspaceRuntimePort {
         mimeType: "application/pdf",
         size: 1,
         revision: "b".repeat(64),
-        actions: { open: true, reveal: true, move: true, inline: false },
+        actions: { open: true, reveal: true, rename: true, move: true, inline: false },
       },
     };
   }
@@ -1285,6 +1285,51 @@ describe("WorkspaceController", () => {
 
     expect(response).toMatchObject({
       outcome: { status: "published-source-retained", to: "Archive/report.pdf" },
+      snapshot: { vault: { path: path.resolve("/replacement/vault") } },
+      committedVaultId: oldVaultId,
+      committedVaultName: path.basename(path.resolve(fixtureVaultPath)),
+    });
+    await controller.close();
+  });
+
+  it("reports an explicit attachment rename from a runtime replaced before its reply", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const oldRuntime = harness.runtimes[0];
+    if (!oldRuntime) throw new Error("Expected the bundled runtime.");
+    const oldVaultId = controller.vaultId;
+    oldRuntime.attachmentMoveLoader = async () => {
+      await controller.switchVault("/replacement/vault");
+      return {
+        outcome: {
+          status: "committed",
+          from: "Assets/report.pdf",
+          to: "Archive/report.pdf",
+          transactionId: "attachment-rename",
+          rewrites: [],
+          writes: [],
+        },
+        snapshot: await oldRuntime.getSnapshot(),
+      };
+    };
+
+    const response = await controller.moveAttachment(
+      "Assets/report.pdf",
+      "Archive/report.pdf",
+      "a".repeat(64),
+      oldVaultId,
+      undefined,
+      "rename",
+    );
+
+    expect(response).toMatchObject({
+      outcome: { status: "committed", to: "Archive/report.pdf" },
       snapshot: { vault: { path: path.resolve("/replacement/vault") } },
       committedVaultId: oldVaultId,
       committedVaultName: path.basename(path.resolve(fixtureVaultPath)),
