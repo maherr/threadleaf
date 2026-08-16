@@ -14,7 +14,12 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { parseMarkdownTasks, toggleMarkdownTaskStatus } from "../kernel/markdown-tasks";
+import {
+  isCompletedMarkdownTaskStatus,
+  markdownTaskStatusLabel,
+  parseMarkdownTasks,
+  toggleMarkdownTaskStatus,
+} from "../kernel/markdown-tasks";
 import type {
   VaultImageResponse,
   VaultNoteEmbedResponse,
@@ -2328,7 +2333,9 @@ class TaskWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const checked = this.status !== " ";
+    const checked = isCompletedMarkdownTaskStatus(this.status);
+    const line = view.state.doc.lineAt(this.to);
+    const taskText = line.text.slice(this.to - line.from).trim();
     const checkbox = document.createElement("input");
     checkbox.className = "tl-live-task";
     checkbox.type = "checkbox";
@@ -2336,7 +2343,9 @@ class TaskWidget extends WidgetType {
     checkbox.disabled = view.state.readOnly;
     checkbox.dataset.task = this.status === " " ? "" : this.status;
     sourceMetadata(checkbox, this.from, this.to, "task");
-    checkbox.ariaLabel = checked ? "Completed task" : "Open task";
+    checkbox.ariaLabel = [markdownTaskStatusLabel(this.status), taskText]
+      .filter(Boolean)
+      .join(", ");
     checkbox.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();

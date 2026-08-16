@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-condition="pressroom">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Longstitch specimen</title>
+    <style>
+      @import "../tokens.css";
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        overflow-x: hidden;
+        color: var(--ink);
+        background: var(--canvas);
+        font-family: var(--font-interface);
+      }
+
+      button {
+        color: inherit;
+        font: inherit;
+      }
+
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 28px));
+        margin: 0 auto;
+        padding: 26px 0 48px;
+      }
+
+      .mast {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 0 2px 18px;
+      }
+
+      .eyebrow,
+      .machine-label,
+      .state-name,
+      .palette-label {
+        color: var(--ink-muted);
+        font-family: var(--font-monospace);
+        font-size: 0.67rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 0;
+        font-family: var(--font-text);
+        font-size: clamp(2.8rem, 7vw, 5.8rem);
+        font-weight: 480;
+        letter-spacing: -0.055em;
+        line-height: 0.92;
+      }
+
+      .theme-switch {
+        min-width: 156px;
+        padding: 10px 13px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-s);
+        color: var(--ink);
+        background: var(--surface-raised);
+        cursor: pointer;
+        font-family: var(--font-monospace);
+        font-size: 0.72rem;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 255px minmax(0, 1fr);
+        min-height: 570px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-m);
+        background: var(--surface);
+        box-shadow: var(--shadow-large);
+      }
+
+      .navigator {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        padding: 26px 12px 12px;
+        border-right: 1px solid var(--line-strong);
+        background: var(--surface-sunken);
+      }
+
+      .navigator::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 7px;
+        background: repeating-linear-gradient(
+          90deg,
+          #7a2617 0 8px,
+          #ede4cf 8px 16px
+        );
+      }
+
+      :root[data-condition="lampside"] .navigator::before {
+        opacity: 0;
+      }
+
+      .navigator h2 {
+        margin: 4px 0 18px;
+        font-family: var(--font-text);
+        font-size: 1.9rem;
+        font-weight: 500;
+      }
+
+      .tree {
+        display: grid;
+        gap: 2px;
+      }
+
+      .tree-row {
+        --depth: 0;
+        position: relative;
+        min-height: 42px;
+        padding: 7px 9px 7px calc(28px + var(--depth) * 15px);
+        border: 1px solid transparent;
+        border-radius: var(--radius-s);
+        color: var(--ink-soft);
+        background: transparent;
+      }
+
+      .tree-row::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: calc(10px + var(--depth) * 15px);
+        width: 1px;
+        background: repeating-linear-gradient(
+          to bottom,
+          var(--thread) 0 4px,
+          transparent 4px 8px
+        );
+      }
+
+      .tree-row.active {
+        border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+        color: var(--ink);
+        background: var(--accent-soft);
+      }
+
+      .tree-row.active::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: calc(10px + var(--depth) * 15px);
+        width: 8px;
+        height: 8px;
+        margin: -4px 0 0 -3.5px;
+        background: var(--brass-strong);
+        box-shadow: 0 0 0 2px var(--surface-sunken);
+        transform: rotate(45deg);
+      }
+
+      .tree-row strong,
+      .tree-row small {
+        display: block;
+      }
+
+      .tree-row strong {
+        font-size: 0.84rem;
+      }
+
+      .tree-row small {
+        margin-top: 2px;
+        color: var(--ink-muted);
+        font-family: var(--font-monospace);
+        font-size: 0.58rem;
+      }
+
+      .navigator-note {
+        margin-top: auto;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-s);
+        color: var(--ink-soft);
+        background: var(--surface-raised);
+        font-size: 0.77rem;
+        line-height: 1.45;
+      }
+
+      .leaf {
+        min-width: 0;
+        background:
+          linear-gradient(90deg, transparent 46px, color-mix(in srgb, var(--brass) 18%, transparent) 47px, transparent 48px),
+          var(--surface);
+      }
+
+      .leaf-head {
+        padding: 34px 46px 22px 72px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .leaf-head h2 {
+        margin: 5px 0 7px;
+        font-family: var(--font-text);
+        font-size: clamp(2.35rem, 6vw, 4.5rem);
+        font-weight: 480;
+        letter-spacing: -0.045em;
+        line-height: 0.98;
+      }
+
+      .leaf-head p {
+        margin-bottom: 0;
+        color: var(--ink-muted);
+        font-family: var(--font-monospace);
+        font-size: 0.64rem;
+      }
+
+      .leaf-body {
+        display: grid;
+        gap: 20px;
+        padding: 24px 46px 34px 72px;
+      }
+
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .tag {
+        padding: 3px 7px;
+        border: 1px solid var(--brass);
+        border-radius: 2px;
+        color: var(--ink-soft);
+        background: var(--surface-raised);
+        box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brass) 14%, transparent);
+        font-family: var(--font-monospace);
+        font-size: 0.66rem;
+      }
+
+      .reading {
+        max-width: 62ch;
+        margin-bottom: 0;
+        font-family: var(--font-text);
+        font-size: 1rem;
+        line-height: 1.7;
+      }
+
+      .callout {
+        overflow: hidden;
+        border: 1px solid var(--callout-note-ink);
+        border-left-width: 4px;
+        border-radius: 4px;
+        background: var(--surface-raised);
+      }
+
+      .callout-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        background: var(--surface-sunken);
+        font-family: var(--font-text);
+        font-style: italic;
+        font-weight: 650;
+      }
+
+      .callout-title i {
+        color: var(--callout-note-ink);
+        font-family: var(--font-monospace);
+        font-style: normal;
+        font-weight: 800;
+      }
+
+      .callout p {
+        margin: 0;
+        padding: 12px;
+        font-family: var(--font-text);
+        line-height: 1.55;
+      }
+
+      .tasks {
+        display: grid;
+        gap: 9px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+
+      .task {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        font-family: var(--font-text);
+      }
+
+      .box {
+        display: grid;
+        width: 15px;
+        height: 15px;
+        place-items: center;
+        border: 1.5px solid var(--ink-soft);
+        border-radius: 1px;
+        background: var(--surface);
+        font-family: var(--font-monospace);
+        font-size: 0.65rem;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .task.done .box {
+        border-color: var(--accent-strong);
+        color: var(--surface-raised);
+        background: var(--accent-strong);
+      }
+
+      .task.cancelled {
+        color: var(--ink-muted);
+        text-decoration: line-through;
+      }
+
+      .task.cancelled .box {
+        border-color: var(--ink-muted);
+        border-style: dashed;
+      }
+
+      .task.question {
+        color: var(--brass-strong);
+        font-style: italic;
+      }
+
+      .task.question .box {
+        border-color: var(--brass);
+      }
+
+      .specimens {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .panel {
+        min-width: 0;
+        padding: 20px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-m);
+        background: var(--surface);
+        box-shadow: var(--shadow-small);
+      }
+
+      .panel h3 {
+        margin-bottom: 6px;
+        font-family: var(--font-text);
+        font-size: 1.55rem;
+        font-weight: 520;
+      }
+
+      .panel-copy {
+        margin-bottom: 18px;
+        color: var(--ink-soft);
+        font-size: 0.86rem;
+        line-height: 1.55;
+      }
+
+      .palette {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+      }
+
+      .palette-item {
+        --tone: var(--callout-note-ink);
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr);
+        gap: 6px;
+        align-items: center;
+        min-width: 0;
+        padding: 8px;
+        border: 1px solid var(--tone);
+        border-left-width: 4px;
+        border-radius: var(--radius-s);
+        background: var(--surface-raised);
+      }
+
+      .palette-item i {
+        color: var(--tone);
+        font-family: var(--font-monospace);
+        font-style: normal;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .palette-label {
+        overflow: hidden;
+        color: var(--ink-soft);
+        letter-spacing: 0.04em;
+        text-overflow: ellipsis;
+      }
+
+      .type-row {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 12px;
+        align-items: baseline;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .type-row:last-child {
+        border-bottom: 0;
+      }
+
+      .type-reading {
+        font-family: var(--font-text);
+        font-size: 1.35rem;
+      }
+
+      .type-interface {
+        font-family: var(--font-interface);
+        font-size: 1rem;
+      }
+
+      .type-machine {
+        font-family: var(--font-monospace);
+        font-size: 0.76rem;
+      }
+
+      .statusbar {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 18px;
+        padding: 10px 14px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-s);
+        color: var(--ink-muted);
+        background: var(--surface-sunken);
+        font-family: var(--font-monospace);
+        font-size: 0.64rem;
+      }
+
+      :root[data-condition="lampside"] .statusbar {
+        background:
+          radial-gradient(130% 220% at 94% 100%, rgb(194 146 78 / 18%), transparent 58%),
+          var(--surface-sunken);
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          width: min(100% - 18px, 560px);
+          padding-top: 16px;
+        }
+
+        .mast {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        h1 {
+          font-size: clamp(2.8rem, 18vw, 4.8rem);
+        }
+
+        .theme-switch {
+          width: 100%;
+        }
+
+        .workspace,
+        .specimens {
+          grid-template-columns: 1fr;
+        }
+
+        .navigator {
+          min-height: 280px;
+          border-right: 0;
+          border-bottom: 1px solid var(--line-strong);
+        }
+
+        .navigator-note {
+          margin-top: 14px;
+        }
+
+        .leaf-head,
+        .leaf-body {
+          padding-right: 22px;
+          padding-left: 48px;
+        }
+
+        .palette {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .task {
+          grid-template-columns: 18px minmax(0, 1fr);
+        }
+
+        .state-name {
+          grid-column: 2;
+        }
+
+        .statusbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="mast">
+        <div>
+          <span class="eyebrow">Threadleaf / design-language specimen</span>
+          <h1>Longstitch</h1>
+        </div>
+        <button class="theme-switch" id="theme" type="button" aria-pressed="false"></button>
+      </header>
+
+      <section class="workspace" aria-label="Longstitch signature composition">
+        <aside class="navigator">
+          <span class="eyebrow">Vault</span>
+          <h2>Notes</h2>
+          <div class="tree">
+            <div class="tree-row"><strong>Bench</strong><small>1 item</small></div>
+            <div class="tree-row" style="--depth: 1"><strong>Tools</strong><small>Bench</small></div>
+            <div class="tree-row active" style="--depth: 1"><strong>Field Notes</strong><small>Vault root</small></div>
+            <div class="tree-row"><strong>Signatures</strong><small>2 items</small></div>
+          </div>
+          <p class="navigator-note">The hierarchy is sewn to a visible thread. The open leaf adds a brass knot, active material, and a current-state label.</p>
+        </aside>
+
+        <article class="leaf">
+          <header class="leaf-head">
+            <span class="eyebrow">Open document</span>
+            <h2>Field Notes</h2>
+            <p>4 headings · 1 outgoing · 0 backlinks</p>
+          </header>
+          <div class="leaf-body">
+            <nav class="tag-row" aria-label="Tags">
+              <span class="tag">#bindery</span>
+              <span class="tag">#craft/sewing</span>
+              <span class="tag">#thread</span>
+            </nav>
+            <p class="reading">A working note should feel bound into a durable place without hiding the filesystem underneath it. Prose carries the book; controls and paths stay visibly mechanical.</p>
+            <section class="callout">
+              <header class="callout-title"><i>i</i><span>Waxing the thread</span></header>
+              <p>Pull the linen twice across the block so it bites. The material stays shared; the strong spine, glyph, and title carry the callout type.</p>
+            </section>
+            <section class="tasks" aria-label="Task state specimens">
+              <div class="task"><span class="box"></span><span>fold the signatures</span><span class="state-name">Open</span></div>
+              <div class="task done"><span class="box">✓</span><span>tear the leaves to a deckle edge</span><span class="state-name">Completed</span></div>
+              <div class="task cancelled"><span class="box">-</span><span>plastic coil binding</span><span class="state-name">Cancelled</span></div>
+              <div class="task question"><span class="box">?</span><span>ask about the marbled endpapers</span><span class="state-name">Question</span></div>
+            </section>
+          </div>
+        </article>
+      </section>
+
+      <section class="specimens">
+        <article class="panel">
+          <span class="eyebrow">Strong categorical channel</span>
+          <h3>Callout folios</h3>
+          <p class="panel-copy">All body and title grounds stay shared. Label, glyph, border geometry, and a measured ink identify each category.</p>
+          <div class="palette">
+            <div class="palette-item" style="--tone: var(--callout-note-ink)"><i>i</i><span class="palette-label">Note</span></div>
+            <div class="palette-item" style="--tone: var(--callout-abstract-ink)"><i>≡</i><span class="palette-label">Abstract</span></div>
+            <div class="palette-item" style="--tone: var(--callout-info-ink)"><i>i</i><span class="palette-label">Info</span></div>
+            <div class="palette-item" style="--tone: var(--callout-todo-ink)"><i>□</i><span class="palette-label">Todo</span></div>
+            <div class="palette-item" style="--tone: var(--callout-tip-ink)"><i>✦</i><span class="palette-label">Tip</span></div>
+            <div class="palette-item" style="--tone: var(--callout-success-ink)"><i>✓</i><span class="palette-label">Success</span></div>
+            <div class="palette-item" style="--tone: var(--callout-question-ink)"><i>?</i><span class="palette-label">Question</span></div>
+            <div class="palette-item" style="--tone: var(--callout-warning-ink)"><i>!</i><span class="palette-label">Warning</span></div>
+            <div class="palette-item" style="--tone: var(--callout-failure-ink)"><i>×</i><span class="palette-label">Failure</span></div>
+            <div class="palette-item" style="--tone: var(--callout-danger-ink)"><i>△</i><span class="palette-label">Danger</span></div>
+            <div class="palette-item" style="--tone: var(--callout-bug-ink)"><i>⌘</i><span class="palette-label">Bug</span></div>
+            <div class="palette-item" style="--tone: var(--callout-example-ink)"><i>▣</i><span class="palette-label">Example</span></div>
+            <div class="palette-item" style="--tone: var(--callout-quote-ink)"><i>“</i><span class="palette-label">Quote</span></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <span class="eyebrow">Three voices</span>
+          <h3>Book, desk, machine</h3>
+          <p class="panel-copy">Each type family has one job. Their separation keeps prose inviting and file truth exact.</p>
+          <div class="type-row"><span class="machine-label">Reading</span><span class="type-reading">The leaf remembers.</span></div>
+          <div class="type-row"><span class="machine-label">Interface</span><span class="type-interface">Open note and reveal its path</span></div>
+          <div class="type-row"><span class="machine-label">Machine</span><span class="type-machine">Field Notes.md · SAVED</span></div>
+        </article>
+      </section>
+
+      <footer class="statusbar">
+        <span>Development vault · watcher sequence 0</span>
+        <span id="condition-label">PRESSROOM · FILESYSTEM AND INDEX AGREE</span>
+      </footer>
+    </main>
+
+    <script>
+      const themes = ["pressroom", "lampside"];
+
+      function applyTheme(name) {
+        const condition = themes.includes(name) ? name : themes[0];
+        const isLampside = condition === "lampside";
+        document.documentElement.dataset.condition = condition;
+        document.documentElement.dataset.theme = isLampside ? "dark" : "light";
+        const button = document.getElementById("theme");
+        button.textContent = isLampside ? "Switch to Pressroom" : "Switch to Lampside";
+        button.setAttribute("aria-pressed", String(isLampside));
+        document.getElementById("condition-label").textContent =
+          `${condition.toUpperCase()} · FILESYSTEM AND INDEX AGREE`;
+      }
+
+      window.applyTheme = applyTheme;
+      document.getElementById("theme").addEventListener("click", () => {
+        const current = document.documentElement.dataset.condition;
+        applyTheme(current === "pressroom" ? "lampside" : "pressroom");
+      });
+      const requested = new URLSearchParams(window.location.search).get("theme");
+      applyTheme(requested || "pressroom");
+    </script>
+  </body>
+</html>

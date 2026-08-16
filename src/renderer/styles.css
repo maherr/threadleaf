@@ -1,81 +1,4 @@
-:root {
-  color-scheme: light;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-synthesis: none;
-  --background-primary: #f7f5ef;
-  --background-primary-alt: #fffef9;
-  --background-secondary: #e8e6df;
-  --background-secondary-alt: #eeece5;
-  --background-modifier-border: #d5d2c8;
-  --background-modifier-border-hover: #b8b4a9;
-  --background-modifier-hover: #eeece5;
-  --background-modifier-error: #fae6d2;
-  --text-normal: #17212c;
-  --text-muted: #46515e;
-  --text-faint: #56606a;
-  --color-accent: #1769aa;
-  --interactive-accent: var(--color-accent);
-  --interactive-accent-hover: #0e4f86;
-  /* Compat: some community themes (e.g. Sanctum) read a bare --interactive as their
-     own general accent source. Sanctum also declares its own --interactive, but only
-     inside .theme-light/.theme-dark, whose inputs are declared at body and never
-     reach :root -- so at :root it has nothing valid to read either way. Map it
-     honestly to the same accent Threadleaf itself uses. */
-  --interactive: var(--interactive-accent);
-  --text-accent: #0e4f86;
-  --text-accent-hover: #073a65;
-  --text-error: #a54b00;
-  --icon-color: var(--text-muted);
-  --font-interface:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-text: var(--font-interface);
-  --font-monospace: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --file-margins: 34px;
-  --radius-s: 4px;
-  --radius-m: 8px;
-  --radius-l: 13px;
-  --canvas: var(--background-secondary);
-  --surface: var(--background-primary);
-  --surface-raised: var(--background-primary-alt);
-  --surface-sunken: var(--background-secondary-alt);
-  --ink: var(--text-normal);
-  --ink-soft: var(--text-muted);
-  --ink-muted: var(--text-faint);
-  --line: var(--background-modifier-border);
-  --line-strong: var(--background-modifier-border-hover);
-  --accent: var(--interactive-accent);
-  --accent-strong: var(--text-accent);
-  --accent-soft: color-mix(in srgb, var(--accent) 25%, var(--background-primary));
-  --signal: var(--text-error);
-  --signal-soft: var(--background-modifier-error);
-  --shadow-small: 0 8px 24px rgb(35 41 48 / 10%);
-  --shadow-large: 0 26px 64px rgb(35 41 48 / 15%);
-  --mono: var(--font-monospace);
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --background-primary: #181e27;
-  --background-primary-alt: #202733;
-  --background-secondary: #11161d;
-  --background-secondary-alt: #141a22;
-  --background-modifier-border: #303946;
-  --background-modifier-border-hover: #465363;
-  --background-modifier-hover: #202733;
-  --background-modifier-error: #4b2d1b;
-  --text-normal: #edf2f7;
-  --text-muted: #c6ced7;
-  --text-faint: #99a5b2;
-  --color-accent: #77b7ee;
-  --interactive-accent: var(--color-accent);
-  --interactive-accent-hover: #acd4f6;
-  --text-accent: #acd4f6;
-  --text-accent-hover: #d4eaff;
-  --text-error: #f3a35d;
-  --shadow-small: 0 8px 24px rgb(0 0 0 / 22%);
-  --shadow-large: 0 28px 70px rgb(0 0 0 / 38%);
-}
+@import "../../longstitch/tokens.css";
 
 /*
  * Compat: re-anchor Threadleaf's own token aliases at body.
@@ -260,19 +183,21 @@ button:disabled {
   height: 37px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 72%, var(--line));
-  border-radius: 13px 4px 13px 4px;
-  color: var(--surface-raised);
-  background: var(--accent-strong);
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 24%, transparent);
-  font-family: Georgia, "Times New Roman", serif;
+  border: 1px solid color-mix(in srgb, var(--brass) 70%, var(--line));
+  border-radius: 2px;
+  color: #f2e7d4;
+  background: #7a2617;
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--brass) 55%, transparent),
+    0 1px 0 rgb(64 50 27 / 12%);
+  font-family: var(--font-text);
   font-size: 21px;
   font-weight: 700;
 }
 
 :root[data-theme="dark"] .brand-mark {
-  color: #101820;
-  background: var(--accent);
+  color: #f2e7d4;
+  background: #822a19;
 }
 
 .brand-mark::after {
@@ -282,8 +207,8 @@ button:disabled {
   width: 9px;
   height: 1px;
   content: "";
-  background: var(--signal);
-  box-shadow: 0 4px 0 var(--signal);
+  background: var(--brass);
+  box-shadow: 0 4px 0 var(--brass);
 }
 
 .brand-copy {
@@ -293,7 +218,7 @@ button:disabled {
 }
 
 .brand strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 18px;
   letter-spacing: -0.02em;
 }
@@ -480,11 +405,30 @@ button:disabled {
 }
 
 .navigator {
+  position: relative;
   display: grid;
   grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto auto;
   overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--surface-sunken);
+}
+
+/* Pressroom's own mark: a two-colour silk headband sewn across the top of the
+   spine. Lampside goes without -- its mark is the lamp pool on the statusbar. */
+.navigator::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  background: repeating-linear-gradient(90deg, #7a2617 0 6px, #ede4cf 6px 12px);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .navigator::before {
+  content: none;
 }
 
 .workspace[data-left-dock-collapsed="true"] .navigator {
@@ -551,9 +495,13 @@ button:disabled {
   background: var(--accent-soft);
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: collapsed dock overrides are intentionally declared before the shared heading rules. */
-.navigator-heading {
+.pane-heading.navigator-heading {
+  display: grid;
   grid-row: 1;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 14px 12px 10px;
 }
 
 .pane-heading {
@@ -566,10 +514,10 @@ button:disabled {
 
 .eyebrow {
   margin: 0 0 3px;
-  color: var(--accent-strong);
+  color: var(--ink-muted);
   font-size: 9px;
-  font-weight: 850;
-  letter-spacing: 0.13em;
+  font-weight: 700;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
 }
 
@@ -583,7 +531,7 @@ p {
 h1,
 h2 {
   margin-bottom: 0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-weight: 500;
   letter-spacing: -0.025em;
 }
@@ -613,7 +561,9 @@ h2 {
 .navigator-heading-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 
 /* biome-ignore lint/style/noDescendingSpecificity: collapsed dock overrides are intentionally declared before the shared button rules. */
@@ -1068,6 +1018,7 @@ h2 {
 }
 
 .navigator-tree-row {
+  position: relative;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -1078,11 +1029,39 @@ h2 {
   min-width: 0;
   padding: 5px 8px 5px calc(8px + (var(--tree-depth) - 1) * 15px);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 3px;
   color: var(--ink-soft);
   background: transparent;
   cursor: pointer;
   text-align: left;
+}
+
+/* The sewn spine: each row shows the thread it is gathered on -- a stitched
+   vertical at its own depth station. Root rows sew along the spine edge. */
+.navigator-tree-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(2px + (var(--tree-depth) - 1) * 15px);
+  width: 1px;
+  background: repeating-linear-gradient(to bottom, var(--thread) 0 4px, transparent 4px 8px);
+  pointer-events: none;
+}
+
+/* The open leaf hangs from its stitch: a brass kettle knot on the thread. */
+.navigator-tree-row[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(2px + (var(--tree-depth) - 1) * 15px);
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3px;
+  background: var(--brass-strong);
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
 }
 
 .navigator-tree-row:hover,
@@ -1096,7 +1075,6 @@ h2 {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
   color: var(--ink);
   background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .navigator-tree-disclosure {
@@ -2287,7 +2265,11 @@ h2 {
 
 .note-header h2 {
   overflow-wrap: anywhere;
-  font-size: clamp(29px, 3.6vw, 43px);
+  font-size: clamp(
+    calc(29px * var(--threadleaf-text-font-scale, 1)),
+    calc(3.6vw * var(--threadleaf-text-font-scale, 1)),
+    calc(43px * var(--threadleaf-text-font-scale, 1))
+  );
   line-height: 1.06;
 }
 
@@ -2315,11 +2297,12 @@ h2 {
 a.tag {
   display: inline-flex;
   align-items: center;
-  padding: 3px 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
-  border-radius: 999px;
-  color: var(--accent-strong);
-  background: var(--accent-soft);
+  padding: 2px 7px 3px;
+  border: 1px solid var(--brass);
+  border-radius: 2px;
+  color: var(--ink-soft);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brass) 14%, transparent);
   cursor: pointer;
   font-family: var(--mono);
   font-size: 9px;
@@ -2330,8 +2313,9 @@ a.tag {
 
 a.tag:hover,
 a.tag:focus-visible {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface));
+  border-color: var(--brass-strong);
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface-raised));
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
@@ -2343,7 +2327,8 @@ a.tag:focus-visible {
 }
 
 .tag-row .muted-tag {
-  border-color: var(--line);
+  border-color: var(--ink-muted);
+  border-style: dashed;
   color: var(--ink-muted);
   background: var(--surface-sunken);
 }
@@ -2482,7 +2467,7 @@ a.tag:focus-visible {
 }
 
 .note-editor-shell[data-editor-mode="live"] .cm-scroller {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 16px;
   line-height: 1.72;
 }
@@ -2509,7 +2494,7 @@ a.tag:focus-visible {
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-heading-1 {
   padding-top: 0.34em;
-  font-size: clamp(30px, 3.5vw, 42px);
+  font-size: 2.1em;
   letter-spacing: -0.025em;
 }
 
@@ -2518,23 +2503,23 @@ a.tag:focus-visible {
   padding-top: 0.25em;
   padding-bottom: 0.12em;
   border-bottom: 1px solid var(--line);
-  font-size: clamp(24px, 2.8vw, 32px);
+  font-size: 1.62em;
   letter-spacing: -0.015em;
 }
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-heading-3 {
   padding-top: 0.2em;
-  font-size: 22px;
+  font-size: 1.34em;
 }
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-heading-4 {
-  font-size: 19px;
+  font-size: 1.15em;
 }
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-heading-5,
 .note-editor-shell[data-editor-mode="live"] .tl-live-heading-6 {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 0.85em;
   letter-spacing: 0.035em;
   text-transform: uppercase;
 }
@@ -2593,10 +2578,11 @@ a.tag:focus-visible {
 
 .tl-live-tag {
   padding: 0.08em 0.32em;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
-  border-radius: 999px;
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 52%, transparent);
+  border: 1px solid var(--brass);
+  border-radius: 2px;
+  color: var(--ink-soft);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brass) 14%, transparent);
   font-family: var(--mono);
   font-size: 0.82em;
 }
@@ -2690,7 +2676,6 @@ a.tag:focus-visible {
   width: 1em;
   height: 1em;
   margin: 0 0.46em 0 0;
-  accent-color: var(--accent);
   vertical-align: -0.08em;
   cursor: pointer;
 }
@@ -2754,7 +2739,7 @@ a.tag:focus-visible {
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-table-row-header {
   color: var(--ink);
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-sunken));
+  background: var(--surface-sunken);
   font-family: var(--mono);
   font-size: 0.72em;
   font-weight: 750;
@@ -2787,7 +2772,7 @@ a.tag:focus-visible {
 }
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-table-row-header .tl-live-table-cell {
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-sunken));
+  background: var(--surface-sunken);
 }
 
 .note-editor-shell[data-editor-mode="live"] .tl-live-table-cell.align-center {
@@ -2831,7 +2816,7 @@ a.tag:focus-visible {
   padding: 22px 28px 72px 14px;
   overflow: auto;
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 16px;
   line-height: 1.72;
   scroll-padding-top: 20px;
@@ -2856,115 +2841,118 @@ a.tag:focus-visible {
 .preview-block > h5,
 .preview-block > h6 {
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   line-height: 1.14;
 }
 
 .preview-block > h1 {
-  font-size: clamp(31px, 4vw, 44px);
+  font-size: clamp(
+    calc(31px * var(--threadleaf-text-font-scale, 1)),
+    calc(4vw * var(--threadleaf-text-font-scale, 1)),
+    calc(44px * var(--threadleaf-text-font-scale, 1))
+  );
   letter-spacing: -0.025em;
 }
 
 .preview-block > h2 {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
-  font-size: clamp(24px, 3vw, 32px);
+  font-size: clamp(
+    calc(24px * var(--threadleaf-text-font-scale, 1)),
+    calc(3vw * var(--threadleaf-text-font-scale, 1)),
+    calc(32px * var(--threadleaf-text-font-scale, 1))
+  );
 }
 
 .preview-block > h3 {
-  font-size: 22px;
+  font-size: calc(22px * var(--threadleaf-text-font-scale, 1));
 }
 
 .preview-block > h4,
 .preview-block > h5,
 .preview-block > h6 {
-  font-size: 17px;
+  font-size: calc(17px * var(--threadleaf-text-font-scale, 1));
 }
 
 .callout {
-  --callout-color: #0072b2;
-  --callout-icon: "i";
-  --callout-icon-color: color-mix(in srgb, var(--callout-color) 52%, black);
+  --callout-color: var(--callout-note-ink);
+  --tl-callout-glyph: "i";
+  --callout-icon-color: var(--callout-color);
   --callout-border-width: 1px;
   --callout-title-color: var(--ink);
   box-sizing: border-box;
   margin: 0.85rem 0;
   overflow: hidden;
-  border: var(--callout-border-width) solid
-    color-mix(in srgb, var(--callout-color) 35%, var(--line));
+  border: var(--callout-border-width) solid var(--callout-icon-color);
   border-left-width: max(4px, var(--callout-border-width));
-  border-radius: 7px;
+  border-radius: 4px;
   color: var(--ink);
-  background: color-mix(in srgb, var(--callout-color) 10%, var(--surface-raised));
+  background: var(--surface-raised);
 }
 
 .callout[data-callout-style="note"] {
-  --callout-color: #13138b;
-  --callout-icon: "i";
+  --callout-color: var(--callout-note-ink);
+  --tl-callout-glyph: "i";
 }
 
 .callout[data-callout-style="abstract"] {
-  --callout-color: #7deded;
-  --callout-icon: "≡";
+  --callout-color: var(--callout-abstract-ink);
+  --tl-callout-glyph: "≡";
 }
 
 .callout[data-callout-style="info"] {
-  --callout-color: #329f69;
-  --callout-icon: "ℹ";
+  --callout-color: var(--callout-info-ink);
+  --tl-callout-glyph: "ℹ";
 }
 
 .callout[data-callout-style="todo"] {
-  --callout-color: #7650e7;
-  --callout-icon: "☐";
+  --callout-color: var(--callout-todo-ink);
+  --tl-callout-glyph: "☐";
 }
 
 .callout[data-callout-style="tip"] {
-  --callout-color: #e1e123;
-  --callout-icon: "✦";
+  --callout-color: var(--callout-tip-ink);
+  --tl-callout-glyph: "✦";
 }
 
 .callout[data-callout-style="success"] {
-  --callout-color: #7dedb5;
-  --callout-icon: "✓";
+  --callout-color: var(--callout-success-ink);
+  --tl-callout-glyph: "✓";
 }
 
 .callout[data-callout-style="question"] {
-  --callout-color: #cf68cf;
-  --callout-icon: "?";
+  --callout-color: var(--callout-question-ink);
+  --tl-callout-glyph: "?";
 }
 
 .callout[data-callout-style="warning"] {
-  --callout-color: #e15323;
-  --callout-icon: "!";
+  --callout-color: var(--callout-warning-ink);
+  --tl-callout-glyph: "!";
 }
 
 .callout[data-callout-style="failure"] {
-  --callout-color: #e12382;
-  --callout-icon: "×";
+  --callout-color: var(--callout-failure-ink);
+  --tl-callout-glyph: "×";
 }
 
 .callout[data-callout-style="danger"] {
-  --callout-color: #8b1313;
-  --callout-icon: "⚠";
+  --callout-color: var(--callout-danger-ink);
+  --tl-callout-glyph: "⚠";
 }
 
 .callout[data-callout-style="bug"] {
-  --callout-color: #782664;
-  --callout-icon: "⌘";
+  --callout-color: var(--callout-bug-ink);
+  --tl-callout-glyph: "⌘";
 }
 
 .callout[data-callout-style="example"] {
-  --callout-color: #696969;
-  --callout-icon: "▣";
+  --callout-color: var(--callout-example-ink);
+  --tl-callout-glyph: "▣";
 }
 
 .callout[data-callout-style="quote"] {
-  --callout-color: #dc8f8f;
-  --callout-icon: "❝";
-}
-
-:root[data-theme="dark"] .callout {
-  --callout-icon-color: color-mix(in srgb, var(--callout-color) 42%, white);
+  --callout-color: var(--callout-quote-ink);
+  --tl-callout-glyph: "❝";
 }
 
 .callout-title {
@@ -2974,8 +2962,10 @@ a.tag:focus-visible {
   min-height: 2.15rem;
   padding: 0.48rem 0.68rem;
   color: var(--callout-title-color);
-  background: color-mix(in srgb, var(--callout-color) 14%, var(--surface-raised));
-  font-weight: 760;
+  background: var(--surface-sunken);
+  font-family: var(--font-text);
+  font-style: italic;
+  font-weight: 640;
 }
 
 .callout.is-collapsible .callout-title {
@@ -2983,7 +2973,7 @@ a.tag:focus-visible {
 }
 
 .callout-title:focus-visible {
-  outline: 2px solid var(--callout-color);
+  outline: 2px solid var(--callout-icon-color);
   outline-offset: -3px;
 }
 
@@ -3000,7 +2990,7 @@ a.tag:focus-visible {
 }
 
 .callout-icon::before {
-  content: var(--callout-icon);
+  content: var(--tl-callout-glyph);
 }
 
 .callout-title-inner {
@@ -3080,13 +3070,89 @@ a.tag:focus-visible {
   list-style: none;
 }
 
-.preview-block .task-list-item-checkbox {
+input.task-list-item-checkbox,
+input.tl-live-task {
   width: 1em;
   height: 1em;
   margin: 0 0.46em 0 0;
-  accent-color: var(--accent);
-  vertical-align: -0.08em;
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  border: 1.5px solid var(--ink-soft);
+  border-radius: 1px;
+  background: var(--surface);
+  vertical-align: -0.12em;
   cursor: pointer;
+}
+
+input.task-list-item-checkbox:checked,
+input.tl-live-task:checked {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+input.task-list-item-checkbox:checked::before,
+input.tl-live-task:checked::before {
+  content: "";
+  width: 0.52em;
+  height: 0.28em;
+  border: 0.14em solid var(--surface-raised);
+  border-top: 0;
+  border-right: 0;
+  transform: rotate(-45deg) translateY(-18%);
+}
+
+/* Custom stitches: a cancelled task is struck through on an open box; a
+   question mark waits in brass. Both pipelines stamp data-task on the input
+   and its containing source/reading row. */
+input.task-list-item-checkbox[data-task="-"],
+input.tl-live-task[data-task="-"] {
+  border-color: var(--ink-muted);
+  border-style: dashed;
+  background: var(--surface);
+}
+
+input.task-list-item-checkbox[data-task="-"]::before,
+input.tl-live-task[data-task="-"]::before {
+  width: 0.62em;
+  height: 0;
+  border: 0;
+  border-top: 0.14em solid var(--ink-muted);
+  transform: none;
+}
+
+input.task-list-item-checkbox[data-task="?"],
+input.tl-live-task[data-task="?"] {
+  border-color: var(--brass);
+  background: var(--surface);
+}
+
+input.task-list-item-checkbox[data-task="?"]::before,
+input.tl-live-task[data-task="?"]::before {
+  content: "?";
+  width: auto;
+  height: auto;
+  border: 0;
+  color: var(--brass-strong);
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 800;
+  line-height: 1;
+  transform: none;
+}
+
+.note-editor-shell[data-editor-mode="live"] .cm-line.tl-live-task-line[data-task="-"],
+.preview-block li.task-list-item[data-task="-"] {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-muted);
+  text-decoration-thickness: 1px;
+}
+
+.note-editor-shell[data-editor-mode="live"] .cm-line.tl-live-task-line[data-task="?"],
+.preview-block li.task-list-item[data-task="?"] {
+  color: var(--brass-strong);
+  font-style: italic;
 }
 
 .preview-block .task-list-item-checkbox:disabled {
@@ -3245,7 +3311,7 @@ a.tag:focus-visible {
 
 .plugin-markdown-projection-body {
   color: var(--ink-soft);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 15px;
   line-height: 1.6;
 }
@@ -3424,7 +3490,7 @@ a.tag:focus-visible {
     ),
     var(--surface-raised);
   box-shadow: 0 8px 22px color-mix(in srgb, var(--ink) 7%, transparent);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
 }
 
 .preview-note-embed-header {
@@ -3504,15 +3570,23 @@ a.tag:focus-visible {
 }
 
 .preview-note-embed-body .preview-block > h1 {
-  font-size: clamp(24px, 3vw, 32px);
+  font-size: clamp(
+    calc(24px * var(--threadleaf-text-font-scale, 1)),
+    calc(3vw * var(--threadleaf-text-font-scale, 1)),
+    calc(32px * var(--threadleaf-text-font-scale, 1))
+  );
 }
 
 .preview-note-embed-body .preview-block > h2 {
-  font-size: clamp(20px, 2.4vw, 26px);
+  font-size: clamp(
+    calc(20px * var(--threadleaf-text-font-scale, 1)),
+    calc(2.4vw * var(--threadleaf-text-font-scale, 1)),
+    calc(26px * var(--threadleaf-text-font-scale, 1))
+  );
 }
 
 .preview-note-embed-body .preview-block > h3 {
-  font-size: 19px;
+  font-size: calc(19px * var(--threadleaf-text-font-scale, 1));
 }
 
 .preview-note-embed-body .preview-note-embed {
@@ -4154,8 +4228,16 @@ button.inspector-item:hover {
   color: var(--ink-muted);
   background: var(--surface-sunken);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9px;
+  letter-spacing: 0.05em;
   white-space: nowrap;
+}
+
+/* Lampside's own mark: the desk lamp pools warm light along the colophon. */
+:root[data-theme="dark"] .statusbar {
+  background:
+    radial-gradient(130% 220% at 94% 100%, rgb(194 146 78 / 14%), transparent 58%),
+    var(--surface-sunken);
 }
 
 .statusbar > span {
@@ -4330,7 +4412,7 @@ button.inspector-item:hover {
 
 .quick-switcher-title-row strong {
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 17px;
 }
 
@@ -4513,7 +4595,7 @@ button.inspector-item:hover {
 }
 
 .graph-heading-copy strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 21px;
   line-height: 1.05;
 }
@@ -4712,7 +4794,7 @@ button.inspector-item:hover {
 }
 
 .graph-note-browser header strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 14px;
 }
 
@@ -5107,7 +5189,7 @@ button.inspector-item:hover {
 }
 
 .recovery-heading-copy strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 20px;
   line-height: 1.05;
 }
@@ -5558,7 +5640,7 @@ button.inspector-item:hover {
 
 .palette-title-row strong {
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 17px;
 }
 
@@ -5765,7 +5847,7 @@ button.inspector-item:hover {
   border-radius: 8px 3px 8px 3px;
   color: var(--accent-strong);
   background: var(--accent-soft);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 16px;
   font-weight: 800;
 }
@@ -5779,7 +5861,7 @@ button.inspector-item:hover {
 
 .settings-sidebar-header strong {
   overflow: hidden;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 19px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5863,7 +5945,7 @@ button.inspector-item:hover {
 }
 
 .settings-header strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 24px;
   line-height: 1.08;
 }
@@ -6008,7 +6090,7 @@ button.inspector-item:hover {
 }
 
 .note-workflow-intro strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 16px;
 }
 
@@ -6202,7 +6284,7 @@ button.inspector-item:hover {
 }
 
 .app-update-copy strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 18px;
 }
 
@@ -6447,7 +6529,7 @@ button.inspector-item:hover {
 }
 
 .settings-section-heading strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 19px;
 }
 
@@ -8250,7 +8332,7 @@ button.inspector-item:hover {
 }
 
 .new-note-header strong {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-text);
   font-size: 23px;
   line-height: 1.12;
 }
@@ -8774,16 +8856,16 @@ button.inspector-item:hover {
     grid-template-columns: 205px minmax(0, 1fr) 238px;
   }
 
-  .navigator-heading {
+  .pane-heading.navigator-heading {
     gap: 6px;
     padding: 12px 10px 8px;
   }
 
   .navigator-heading-actions {
-    max-width: 130px;
+    max-width: none;
     min-width: 0;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
     gap: 4px;
   }
 

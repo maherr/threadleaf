@@ -8,6 +8,9 @@ community plugins people already depend on.
 
 Threadleaf is not affiliated with or endorsed by Obsidian.
 
+The desktop interface uses the bespoke [Longstitch design language](longstitch/README.md), with
+Pressroom and Lampside themes grounded in the structure of a hand-bound working book.
+
 ## Status
 
 Threadleaf 0.1.0-beta.3 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture

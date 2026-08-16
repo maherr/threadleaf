@@ -7,6 +7,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Longstitch, Threadleaf's bespoke Pressroom and Lampside design language, with a canonical token
+  source, self-hosted Literata, Hanken Grotesk, and JetBrains Mono variable fonts, OFL license
+  files, design foundations, and an automated WCAG plus Machado/CIEDE color gate.
+
+### Changed
+
+- Reworked the knowledge workspace around warm paper and walnut materials, a sewn navigator spine,
+  brass active-note knot, square foil-label tags, theme-specific headband and lamp-pool signatures,
+  book-led note typography, a two-row navigator action header, and proportionally scaling reading
+  headings.
+- Callouts now use shared paper or walnut grounds plus a measured strong border and icon ink,
+  distinct glyph, and visible title instead of relying on pale categorical tints.
+- Completed, cancelled, question, open, nested, and custom Markdown tasks now retain distinct text,
+  shape, and accessible-state treatments in Live Preview and Reading view.
+
+### Fixed
+
+- Reserved native checkbox completion semantics for `x` and `X` tasks, so cancelled, question, and
+  custom markers are no longer exposed as checked tasks.
+- Restored visible table-header material, eliminated navigator New-action clipping, and raised
+  callout border and focus contrast in both themes.
+
 ## [0.1.0-beta.5]
 
 ### Added

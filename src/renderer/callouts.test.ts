@@ -56,7 +56,7 @@ describe("Obsidian-compatible callouts", () => {
     const icons = new Set<string>();
     for (const type of standardCalloutTypes) {
       const selector = new RegExp(
-        String.raw`\.callout\[data-callout-style="${type}"\]\s*\{\s*--callout-color:\s*([^;]+);\s*--callout-icon:\s*([^;]+);`,
+        String.raw`\.callout\[data-callout-style="${type}"\]\s*\{\s*--callout-color:\s*([^;]+);\s*--tl-callout-glyph:\s*([^;]+);`,
         "u",
       );
       const match = selector.exec(stylesheet);
@@ -67,6 +67,23 @@ describe("Obsidian-compatible callouts", () => {
     }
     expect(accents).toHaveLength(standardCalloutTypes.length);
     expect(icons).toHaveLength(standardCalloutTypes.length);
+    expect(stylesheet).not.toMatch(/--callout-icon\s*:/u);
+  });
+
+  it("uses the measured icon ink for the visible border and focus ring", () => {
+    expect(stylesheet).toMatch(
+      /border:\s*var\(--callout-border-width\)\s+solid\s+var\(--callout-icon-color\)/u,
+    );
+    expect(stylesheet).toMatch(
+      /\.callout-title:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--callout-icon-color\)/su,
+    );
+    expect(stylesheet).toMatch(/--callout-icon-color:\s*var\(--callout-color\)/u);
+  });
+
+  it("keeps the pale callout materials shared instead of making them a categorical color channel", () => {
+    expect(stylesheet).toMatch(/\.callout\s*\{[^}]*background:\s*var\(--surface-raised\)/su);
+    expect(stylesheet).toMatch(/\.callout-title\s*\{[^}]*background:\s*var\(--surface-sunken\)/su);
+    expect(stylesheet).not.toMatch(/background:\s*color-mix\([^;]*var\(--callout-color\)/u);
   });
 
   it("recognizes fold variants and keeps an exact default title for empty headers", () => {

@@ -1,7 +1,12 @@
 import DOMPurify, { type Config } from "dompurify";
 import MarkdownIt, { type RendererRule, type StateBlock, type StateInline } from "markdown-it";
 import { parseMarkdownLinks, splitMarkdownDestinationTarget } from "../kernel/markdown-links";
-import { type ParsedMarkdownTask, parseMarkdownTasks } from "../kernel/markdown-tasks";
+import {
+  isCompletedMarkdownTaskStatus,
+  markdownTaskStatusLabel,
+  type ParsedMarkdownTask,
+  parseMarkdownTasks,
+} from "../kernel/markdown-tasks";
 import type {
   CanvasLoadResponse,
   VaultAttachmentResponse,
@@ -517,8 +522,9 @@ function taskForToken(
 }
 
 function renderTaskCheckbox(task: ParsedMarkdownTask, renderToken: string | undefined): string {
-  const checked = task.status !== " ";
-  return `<input type="checkbox" class="task-list-item-checkbox" data-threadleaf-task="true" data-task="${escapeAttribute(task.status)}" aria-label="${checked ? "Completed task" : "Open task"}"${checked ? " checked" : ""}${renderTokenAttribute(renderToken)}>`;
+  const checked = isCompletedMarkdownTaskStatus(task.status);
+  const label = [markdownTaskStatusLabel(task.status), task.text].filter(Boolean).join(", ");
+  return `<input type="checkbox" class="task-list-item-checkbox" data-threadleaf-task="true" data-task="${escapeAttribute(task.status)}" aria-label="${escapeAttribute(label)}"${checked ? " checked" : ""}${renderTokenAttribute(renderToken)}>`;
 }
 
 markdown.core.ruler.after("inline", "threadleaf_task_markers", (state) => {

@@ -482,6 +482,7 @@ describe("Live Preview task controls", () => {
     const source = [
       "- [ ] open",
       "  - [x] nested",
+      "- [-] cancelled",
       "> - [?] quoted",
       "    1. [🟡] indented unicode",
     ].join("\n");
@@ -492,13 +493,26 @@ describe("Live Preview task controls", () => {
 
     await flushAsyncWork();
     const checkboxes = [...host.querySelectorAll<HTMLInputElement>(".tl-live-task")];
-    expect(checkboxes.map((checkbox) => checkbox.dataset.task)).toEqual(["", "x", "?", "🟡"]);
-    expect(checkboxes.map((checkbox) => checkbox.checked)).toEqual([false, true, true, true]);
+    expect(checkboxes.map((checkbox) => checkbox.dataset.task)).toEqual(["", "x", "-", "?", "🟡"]);
+    expect(checkboxes.map((checkbox) => checkbox.checked)).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(checkboxes.map((checkbox) => checkbox.ariaLabel)).toEqual([
+      "Open task, open",
+      "Completed task, nested",
+      "Cancelled task, cancelled",
+      "Question task, quoted",
+      "Task with custom status 🟡, indented unicode",
+    ]);
     const taskLines = [...host.querySelectorAll<HTMLElement>(".cm-line")];
     expect(taskLines.some((line) => line.dataset.task === "?")).toBe(true);
     expect(taskLines.some((line) => line.dataset.task === "🟡")).toBe(true);
 
-    const custom = checkboxes[2];
+    const custom = checkboxes[3];
     if (!custom) {
       throw new Error("Expected the custom task checkbox.");
     }

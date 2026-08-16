@@ -374,14 +374,14 @@ function pluginAccessibilityCss(): string {
       font-size: calc(1em * var(--threadleaf-ui-font-scale)) !important;
     }
     html[data-threadleaf-accessibility="true"][data-threadleaf-accent="blue"] {
-      --interactive-accent: #005a8c !important;
-      --interactive-accent-hover: #003f66 !important;
-      --text-accent: #005a8c !important;
+      --interactive-accent: #1c5c8c !important;
+      --interactive-accent-hover: #14486f !important;
+      --text-accent: #1c5c8c !important;
     }
     html[data-theme="dark"][data-threadleaf-accessibility="true"][data-threadleaf-accent="blue"] {
-      --interactive-accent: #76c7f0 !important;
-      --interactive-accent-hover: #a8e0fa !important;
-      --text-accent: #a8e0fa !important;
+      --interactive-accent: #85b2dc !important;
+      --interactive-accent-hover: #a9cbe9 !important;
+      --text-accent: #a9cbe9 !important;
     }
     html[data-threadleaf-accessibility="true"][data-threadleaf-accent="teal"] {
       --interactive-accent: #006b5d !important;

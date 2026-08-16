@@ -29,6 +29,20 @@ export function isCompletedMarkdownTaskStatus(status: string): boolean {
   return status === "x" || status === "X";
 }
 
+/**
+ * Give the editing surfaces an honest accessible name for the status they
+ * visibly render. Custom markers remain checked-style controls for toggling,
+ * but they must not all be announced as completed tasks.
+ */
+export function markdownTaskStatusLabel(status: string): string {
+  const normalized = normalizeMarkdownTaskStatus(status);
+  if (normalized === " ") return "Open task";
+  if (isCompletedMarkdownTaskStatus(normalized)) return "Completed task";
+  if (normalized === "-") return "Cancelled task";
+  if (normalized === "?") return "Question task";
+  return `Task with custom status ${normalized}`;
+}
+
 export function parseMarkdownTasks(content: string): ParsedMarkdownTask[] {
   const searchable = maskMarkdownCodeAndComments(content);
   const sourceLines = content.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];

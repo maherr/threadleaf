@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isCompletedMarkdownTaskStatus,
+  markdownTaskStatusLabel,
   normalizeMarkdownTaskStatus,
   parseMarkdownTasks,
   toggleMarkdownTaskStatus,
@@ -30,6 +31,14 @@ describe("Markdown tasks", () => {
     expect(isCompletedMarkdownTaskStatus("x")).toBe(true);
     expect(isCompletedMarkdownTaskStatus("X")).toBe(true);
     expect(isCompletedMarkdownTaskStatus("-")).toBe(false);
+    expect([" ", "x", "X", "-", "?", "🟡"].map(markdownTaskStatusLabel)).toEqual([
+      "Open task",
+      "Completed task",
+      "Completed task",
+      "Cancelled task",
+      "Question task",
+      "Task with custom status 🟡",
+    ]);
   });
 
   it("ignores fenced code, inline code, HTML comments, and tab statuses without shifting offsets", () => {

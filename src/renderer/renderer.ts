@@ -1382,7 +1382,7 @@ const systemHighContrast = window.matchMedia("(prefers-contrast: more)");
 const systemReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const systemReducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
 const sourceHighlight = HighlightStyle.define([
-  { tag: tags.heading, color: "var(--accent-strong)", fontWeight: "700" },
+  { tag: tags.heading, color: "var(--ink)", fontWeight: "700" },
   {
     tag: [tags.link, tags.url],
     color: "var(--accent-strong)",
@@ -5457,7 +5457,7 @@ const accessibilityAccentColors: Record<
   // Each ink is independently chosen for both schemes. The light values are
   // dark enough for text and controls on the light ground; the dark values are
   // bright enough for text and controls on the dark ground.
-  blue: { light: "#005a8c", dark: "#76c7f0", lightHover: "#003f66", darkHover: "#a8e0fa" },
+  blue: { light: "#1c5c8c", dark: "#85b2dc", lightHover: "#14486f", darkHover: "#a9cbe9" },
   teal: { light: "#006b5d", dark: "#62d4c3", lightHover: "#004f46", darkHover: "#a0f1e3" },
   orange: { light: "#9a4b00", dark: "#ffb45f", lightHover: "#713400", darkHover: "#ffd29a" },
 };
@@ -5512,7 +5512,7 @@ function accessibilityCss(state: EffectiveAccessibilityPreferences): string {
     }
     :root[data-threadleaf-accessibility="true"] .cm-editor,
     :root[data-threadleaf-accessibility="true"] .cm-content,
-    :root[data-threadleaf-accessibility="true"] .cm-line {
+    :root[data-threadleaf-accessibility="true"] .cm-line:not(.tl-live-heading) {
       font-size: var(--threadleaf-editor-font-size) !important;
       line-height: var(--threadleaf-editor-line-height) !important;
     }

@@ -381,21 +381,41 @@ Working $y$`);
 
   it("renders standard and custom Markdown task markers as source-addressable checkboxes", () => {
     const rendered = preview(
-      ["- [ ] open", "  - [x] nested", "> - [?] quoted", ">   1. [🟡] quoted unicode"].join("\n"),
+      [
+        "- [ ] open",
+        "  - [x] nested",
+        "- [-] cancelled",
+        "> - [?] quoted",
+        ">   1. [🟡] quoted unicode",
+      ].join("\n"),
     );
     const tasks = [...rendered.querySelectorAll<HTMLLIElement>("li.task-list-item")];
     const checkboxes = [
       ...rendered.querySelectorAll<HTMLInputElement>('input[data-threadleaf-task="true"]'),
     ];
 
-    expect(tasks.map((task) => task.getAttribute("data-task"))).toEqual(["", "x", "?", "🟡"]);
-    expect(tasks.map((task) => task.dataset.sourceLine)).toEqual(["1", "2", "3", "4"]);
-    expect(checkboxes.map((checkbox) => checkbox.checked)).toEqual([false, true, true, true]);
+    expect(tasks.map((task) => task.getAttribute("data-task"))).toEqual(["", "x", "-", "?", "🟡"]);
+    expect(tasks.map((task) => task.dataset.sourceLine)).toEqual(["1", "2", "3", "4", "5"]);
+    expect(checkboxes.map((checkbox) => checkbox.checked)).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+    ]);
     expect(checkboxes.map((checkbox) => checkbox.getAttribute("data-task"))).toEqual([
       "",
       "x",
+      "-",
       "?",
       "🟡",
+    ]);
+    expect(checkboxes.map((checkbox) => checkbox.getAttribute("aria-label"))).toEqual([
+      "Open task, open",
+      "Completed task, nested",
+      "Cancelled task, cancelled",
+      "Question task, quoted",
+      "Task with custom status 🟡, quoted unicode",
     ]);
     expect(rendered.textContent).not.toContain("[ ] open");
     expect(rendered.textContent).not.toContain("[?] quoted");
