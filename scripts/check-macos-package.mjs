@@ -60,7 +60,9 @@ async function verifyNativeArtifact(appPath, executablePath) {
     "darwin",
     architecture,
   ]);
-  const probeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-macos-native-probe-"));
+  const probeRoot = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-macos-native-probe-")),
+  );
   try {
     const lockPath = path.join(probeRoot, "state.lock");
     const probe = command(executablePath, ["--native-lock-probe", lockPath]);

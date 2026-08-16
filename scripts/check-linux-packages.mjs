@@ -24,7 +24,9 @@ async function verifyExtractedNative(extractedPath, executable, label) {
     "linux",
     "x64",
   ]);
-  const probeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-linux-native-probe-"));
+  const probeRoot = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-linux-native-probe-")),
+  );
   try {
     const lockPath = path.join(probeRoot, "state.lock");
     assert(statSync(executable).isFile(), `${label} extracted executable is missing.`);

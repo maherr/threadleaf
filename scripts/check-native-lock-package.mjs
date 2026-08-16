@@ -1,5 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "yaml";
@@ -60,7 +70,9 @@ assert(
   "macOS and Windows package verifiers must retain signed native-artifact inventory checks.",
 );
 
-const packageRoot = await mkdtemp(path.join(os.tmpdir(), "threadleaf-native-package-"));
+const packageRoot = await realpath(
+  await mkdtemp(path.join(os.tmpdir(), "threadleaf-native-package-")),
+);
 try {
   const resourcesPath = path.join(packageRoot, "resources");
   const packagedNativePath = path.join(

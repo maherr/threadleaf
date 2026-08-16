@@ -9,6 +9,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -179,7 +180,7 @@ async function waitForExit(child, label) {
   });
 }
 
-const root = mkdtempSync(path.join(os.tmpdir(), "threadleaf-extracted-state-lock-"));
+const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "threadleaf-extracted-state-lock-")));
 try {
   const parent = path.join(root, "private");
   mkdirSync(parent);

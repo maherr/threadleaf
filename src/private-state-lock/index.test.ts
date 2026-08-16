@@ -15,7 +15,9 @@ import {
 const temporaryRoots: string[] = [];
 
 async function temporaryRoot(): Promise<string> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-state-lock-test-"));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-state-lock-test-")),
+  );
   temporaryRoots.push(root);
   return root;
 }

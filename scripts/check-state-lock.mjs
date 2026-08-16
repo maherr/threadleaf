@@ -6,6 +6,7 @@ import {
   open,
   readdir,
   readFile,
+  realpath,
   rename,
   rm,
   stat,
@@ -84,7 +85,7 @@ async function runChild(mode, lockPath) {
 }
 
 async function main() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "threadleaf-state-lock-"));
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "threadleaf-state-lock-")));
   const lockPath = path.join(root, "state.lock");
   const legacyPath = path.join(root, "legacy.lock");
   const replacementPath = path.join(root, "replacement.lock");

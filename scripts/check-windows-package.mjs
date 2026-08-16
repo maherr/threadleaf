@@ -59,7 +59,9 @@ async function verifyNativeArtifact(rootPath, executablePath, label) {
     "win32",
     "x64",
   ]);
-  const probeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-windows-native-probe-"));
+  const probeRoot = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-windows-native-probe-")),
+  );
   try {
     const lockPath = path.join(probeRoot, "state.lock");
     const probe = command(executablePath, ["--native-lock-probe", lockPath]);
