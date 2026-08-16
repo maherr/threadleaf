@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
@@ -34,6 +35,9 @@ function editorFor(source: string): { view: EditorView; host: HTMLElement } {
     }),
     parent: host,
   });
+  if (!forceParsing(view, view.state.doc.length, 1_000)) {
+    throw new Error("The callout fixture did not finish parsing within its explicit bound.");
+  }
   return { view, host };
 }
 

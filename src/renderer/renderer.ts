@@ -54,6 +54,7 @@ import type {
   WorkspaceSplitDirection,
   WorkspaceTabSummary,
   WorkspaceTagCatalogResponse,
+  WorkspaceTreeEntry,
   WorkspaceUnavailableEntry,
 } from "../shared/contracts";
 import {
@@ -186,6 +187,7 @@ import {
   type NavigatorTreeState,
   navigatorTreePageRequestsForRange,
   navigatorTreeParentPath,
+  navigatorTreeResponseNeedsSnapshotRefresh,
   reconcileNavigatorTreeState,
   retainNavigatorTreePages,
 } from "./navigator-tree";
@@ -1054,6 +1056,7 @@ let navigatorTreeProjection: NavigatorTreeProjection | null = null;
 let navigatorTreeRenderFrame: number | undefined;
 let navigatorTreeRenderKey = "";
 let navigatorTreeRevision = 0;
+let navigatorTreeSnapshotRefresh: Promise<void> | null = null;
 let navigatorExpandedPaths = new Set<string>();
 let navigatorFocusedPath: string | null = null;
 let navigatorPendingFocusIndex: number | null = null;
@@ -1362,6 +1365,14 @@ function workspacePaneSnapshot(
   snapshot: RuntimeSnapshot | null = currentSnapshot,
 ): WorkspacePaneSnapshot | null {
   return snapshot?.workspace?.panes.find((pane) => pane.id === paneId) ?? null;
+}
+
+function activeWorkspaceDocumentPath(
+  snapshot: RuntimeSnapshot | null = currentSnapshot,
+): string | null {
+  const workspace = snapshot?.workspace;
+  const pane = workspace?.panes.find((candidate) => candidate.id === workspace.activePaneId);
+  return pane?.activeCanvas?.path ?? pane?.activeNote?.path ?? null;
 }
 
 const editorStyleNonce = "threadleaf-codemirror";
@@ -3768,11 +3779,7 @@ async function createNewFolder(): Promise<void> {
     return;
   }
   closeNewFolderDialog(false);
-  showToast(
-    response.created
-      ? `Created ${response.path}. It appears in the tree after it contains a Markdown note.`
-      : `${response.path} already exists.`,
-  );
+  showToast(response.created ? `Created ${response.path}.` : `${response.path} already exists.`);
 }
 
 async function openTodaysDailyNote(): Promise<void> {
@@ -9170,13 +9177,19 @@ function render(snapshot: RuntimeSnapshot): void {
   const needsAttention =
     !opening && (workspace?.state === "degraded" || snapshot.vault.warning !== null);
   const warming = workspace?.state === "warming";
+  const treeCounterVisible =
+    navigatorContentMode === "notes" &&
+    navigatorViewMode === "tree" &&
+    elements.fileSearch.value.trim() === "";
   elements.fileCount.textContent = opening
     ? "…"
-    : String(
-        warming
-          ? workspace.census.indexed
-          : (workspace?.filePage.total ?? snapshot.vault.markdownFileCount),
-      );
+    : treeCounterVisible
+      ? String(workspace?.inventory.fileCount ?? 0)
+      : String(
+          warming
+            ? workspace.census.indexed
+            : (workspace?.filePage.total ?? snapshot.vault.markdownFileCount),
+        );
   elements.runtimeState.textContent = opening
     ? "Opening"
     : warming
@@ -9768,7 +9781,11 @@ function reconcileNavigatorTree(snapshot: RuntimeSnapshot): void {
     navigatorTreeRevealLocations = [];
     return;
   }
-  const next = reconcileNavigatorTreeState(navigatorTreeState, vaultId, workspace.indexGeneration);
+  const next = reconcileNavigatorTreeState(
+    navigatorTreeState,
+    vaultId,
+    workspace.inventory.generation,
+  );
   if (next !== navigatorTreeState) {
     navigatorFocusedPath = null;
     navigatorPendingFocusIndex = null;
@@ -9852,6 +9869,30 @@ function scheduleNavigatorTreeRender(): void {
   });
 }
 
+function refreshNavigatorTreeSnapshot(state: NavigatorTreeState): void {
+  if (navigatorTreeState !== state) return;
+  navigatorTreeState = null;
+  navigatorTreeProjection = null;
+  navigatorFocusedPath = null;
+  navigatorPendingFocusIndex = null;
+  navigatorTreeRevealPath = null;
+  navigatorTreeRevealLocations = [];
+  navigatorTreeRevision += 1;
+  renderNavigatorTree(activeWorkspaceDocumentPath(), true);
+  if (navigatorTreeSnapshotRefresh) return;
+
+  const refresh = window.threadleaf
+    .getSnapshot()
+    .then(render)
+    .catch((error: unknown) => {
+      showToast(error instanceof Error ? error.message : String(error));
+    })
+    .finally(() => {
+      if (navigatorTreeSnapshotRefresh === refresh) navigatorTreeSnapshotRefresh = null;
+    });
+  navigatorTreeSnapshotRefresh = refresh;
+}
+
 function requestNavigatorTreePage(request: {
   parentPath: string | null;
   offset: number;
@@ -9866,6 +9907,18 @@ function requestNavigatorTreePage(request: {
       ...request,
     })
     .then((response) => {
+      if (navigatorTreeResponseNeedsSnapshotRefresh(response.status)) {
+        refreshNavigatorTreeSnapshot(state);
+        return;
+      }
+      if (response.status === "missing-parent") {
+        if (navigatorTreeState === state) {
+          showToast(
+            `The folder is no longer present in the visible Files tree: ${response.parentPath}`,
+          );
+        }
+        return;
+      }
       if (
         response.status !== "ready" ||
         navigatorTreeState !== state ||
@@ -9875,7 +9928,7 @@ function requestNavigatorTreePage(request: {
       }
       if (!applyNavigatorTreePage(state, response.page, response.entries)) return;
       navigatorTreeRevision += 1;
-      renderNavigatorTree(loadedNote?.path ?? null, true);
+      renderNavigatorTree(activeWorkspaceDocumentPath(), true);
       const pendingFocusIndex = navigatorPendingFocusIndex;
       if (pendingFocusIndex !== null) {
         navigatorPendingFocusIndex = null;
@@ -10211,10 +10264,18 @@ function handleNavigatorTagKeydown(event: KeyboardEvent, tagKey: string): void {
 function renderNavigatorModeControls(queryActive: boolean): void {
   const tagsVisible = navigatorContentMode === "tags";
   const treeVisible = !tagsVisible && navigatorViewMode === "tree" && !queryActive;
-  elements.filesHeading.textContent = tagsVisible ? "Tags" : "Notes";
+  elements.filesHeading.textContent = tagsVisible ? "Tags" : treeVisible ? "Files" : "Notes";
   elements.navigatorTagToggle.setAttribute("aria-pressed", String(tagsVisible));
-  elements.navigatorTagToggle.textContent = tagsVisible ? "Notes" : "Tags";
-  elements.navigatorTagToggle.ariaLabel = tagsVisible ? "Browse vault notes" : "Browse vault tags";
+  elements.navigatorTagToggle.textContent = tagsVisible
+    ? navigatorViewMode === "tree"
+      ? "Files"
+      : "Notes"
+    : "Tags";
+  elements.navigatorTagToggle.ariaLabel = tagsVisible
+    ? navigatorViewMode === "tree"
+      ? "Browse vault files"
+      : "Browse vault notes"
+    : "Browse vault tags";
   elements.navigatorTagToggle.title = elements.navigatorTagToggle.ariaLabel;
   elements.navigatorTagToggle.disabled = vaultOpening() || busy;
   elements.navigatorViewToggle.hidden = tagsVisible;
@@ -10225,13 +10286,15 @@ function renderNavigatorModeControls(queryActive: boolean): void {
     ? "…"
     : tagsVisible
       ? (navigatorTagCatalog?.tags.length.toLocaleString() ?? "…")
-      : String(
-          currentSnapshot?.workspace?.state === "warming"
-            ? (currentSnapshot.workspace?.census.indexed ?? 0)
-            : (currentSnapshot?.workspace?.filePage.total ??
-                currentSnapshot?.vault.markdownFileCount ??
-                0),
-        );
+      : treeVisible
+        ? String(currentSnapshot?.workspace?.inventory.fileCount ?? 0)
+        : String(
+            currentSnapshot?.workspace?.state === "warming"
+              ? (currentSnapshot.workspace?.census.indexed ?? 0)
+              : (currentSnapshot?.workspace?.filePage.total ??
+                  currentSnapshot?.vault.markdownFileCount ??
+                  0),
+          );
   elements.navigatorViewToggle.setAttribute("aria-pressed", String(navigatorViewMode === "tree"));
   elements.navigatorViewToggle.textContent = navigatorViewMode === "tree" ? "Tree" : "List";
   elements.navigatorViewToggle.ariaLabel =
@@ -10239,26 +10302,39 @@ function renderNavigatorModeControls(queryActive: boolean): void {
   elements.navigatorViewToggle.title = elements.navigatorViewToggle.ariaLabel;
   elements.navigatorTreeToolbar.hidden = !treeVisible;
   elements.bookmarkShelf.hidden = tagsVisible || bookmarkPaths.length === 0;
+  const activePath = activeWorkspaceDocumentPath();
   elements.revealActiveNote.disabled =
-    !treeVisible || !loadedNote || !navigatorTreeState || navigatorRevealRequest !== 0;
+    !treeVisible || !activePath || !navigatorTreeState || navigatorRevealRequest !== 0;
+}
+
+async function activateNavigatorTreeFile(
+  entry: Exclude<WorkspaceTreeEntry, { kind: "folder" }>,
+): Promise<void> {
+  if (entry.kind === "file") {
+    showToast(
+      `Preview unavailable for ${entry.path}. Threadleaf does not open ordinary files yet.`,
+    );
+    return;
+  }
+  await openNote(entry.path);
 }
 
 function renderNavigatorTree(
-  activePath: string | null = loadedNote?.path ?? null,
+  activePath: string | null = activeWorkspaceDocumentPath(),
   force = false,
 ): void {
   const workspace = currentSnapshot?.workspace;
   const state = navigatorTreeState;
   elements.fileList.dataset.mode = "tree";
   elements.fileList.setAttribute("role", "tree");
-  elements.fileList.setAttribute("aria-label", "Vault note hierarchy");
-  if (!workspace || !state || workspace.census.state !== "current") {
+  elements.fileList.setAttribute("aria-label", "Vault files and folders");
+  if (!workspace || !state || workspace.inventory.state !== "current") {
     elements.fileList.setAttribute("aria-busy", "true");
     renderEmpty(
       elements.fileList,
-      workspace?.census.state === "degraded"
-        ? "The note index is degraded, so the folder tree is unavailable."
-        : "Indexing Markdown notes in the background.",
+      workspace?.inventory.state === "degraded"
+        ? "The visible file inventory is degraded. The last complete Files tree was retained."
+        : "Scanning visible files and folders in the background.",
     );
     return;
   }
@@ -10314,7 +10390,7 @@ function renderNavigatorTree(
   navigatorTreeRenderKey = renderKey;
   elements.fileList.setAttribute("aria-busy", String(state.pendingRequests.size > 0));
   if (projection.length === 0) {
-    renderEmpty(elements.fileList, "No Markdown notes found.");
+    renderEmpty(elements.fileList, "No visible files or folders found.");
     return;
   }
 
@@ -10370,9 +10446,16 @@ function renderNavigatorTree(
       button.setAttribute("aria-expanded", String(row.expanded));
       button.ariaLabel = `${entry.path}, folder with ${entry.childCount} ${entry.childCount === 1 ? "item" : "items"}`;
     } else {
-      button.setAttribute("aria-selected", String(entry.path === activePath));
-      if (entry.path === activePath) button.setAttribute("aria-current", "page");
-      button.ariaLabel = `Open ${entry.path}`;
+      if (entry.kind !== "file") {
+        button.setAttribute("aria-selected", String(entry.path === activePath));
+        if (entry.path === activePath) button.setAttribute("aria-current", "page");
+      }
+      button.ariaLabel =
+        entry.kind === "note"
+          ? `Open note ${entry.path}`
+          : entry.kind === "canvas"
+            ? `Open canvas ${entry.path}`
+            : `Preview unavailable for file ${entry.path}`;
     }
 
     const disclosure = document.createElement("span");
@@ -10394,7 +10477,7 @@ function renderNavigatorTree(
       if (entry.kind === "folder") {
         void setNavigatorFolderExpanded(entry.path, !navigatorExpandedPaths.has(entry.path));
       } else {
-        void openNote(entry.path);
+        void activateNavigatorTreeFile(entry);
       }
     });
     button.addEventListener("focus", () => {
@@ -10443,7 +10526,7 @@ function focusNavigatorTreeIndex(index: number): void {
     elements.fileList.scrollTop,
     Math.max(navigatorTreeRowHeight, elements.fileList.clientHeight),
   );
-  renderNavigatorTree(loadedNote?.path ?? null, true);
+  renderNavigatorTree(activeWorkspaceDocumentPath(), true);
   const focusRenderedPath = (): void => {
     for (const button of elements.fileList.querySelectorAll<HTMLButtonElement>(
       ".navigator-tree-row",
@@ -10518,7 +10601,7 @@ function handleNavigatorTreeKeydown(event: KeyboardEvent, path: string): void {
     if (row.entry.kind === "folder") {
       void setNavigatorFolderExpanded(row.entry.path, !navigatorExpandedPaths.has(row.entry.path));
     } else {
-      void openNote(row.entry.path);
+      void activateNavigatorTreeFile(row.entry);
     }
   }
 }
@@ -10564,7 +10647,7 @@ async function setNavigatorFolderExpanded(folderPath: string, expanded: boolean)
     nextPaths.delete(folderPath);
   }
   if (!(await persistNavigatorExpandedPaths(nextPaths, folderPath))) return;
-  renderNavigatorTree(loadedNote?.path ?? null, true);
+  renderNavigatorTree(activeWorkspaceDocumentPath(), true);
   const focusedIndex = navigatorTreeProjection?.indexOfPath(folderPath) ?? null;
   if (focusedIndex !== null) {
     focusNavigatorTreeIndex(focusedIndex);
@@ -10572,7 +10655,7 @@ async function setNavigatorFolderExpanded(folderPath: string, expanded: boolean)
 }
 
 async function revealActiveNavigatorNote(): Promise<void> {
-  const activePath = loadedNote?.path ?? null;
+  const activePath = activeWorkspaceDocumentPath();
   const state = navigatorTreeState;
   if (!activePath || !state || navigatorRevealRequest !== 0) return;
   const request = ++navigatorRevealRequest;
@@ -10585,11 +10668,16 @@ async function revealActiveNavigatorNote(): Promise<void> {
     });
     if (request !== navigatorRevealRequest || navigatorTreeState !== state) return;
     if (response.status === "missing") {
-      showToast("The active note is no longer present in the indexed vault tree.");
+      showToast("The active file is no longer present in the visible Files tree.");
+      return;
+    }
+    if (navigatorTreeResponseNeedsSnapshotRefresh(response.status)) {
+      refreshNavigatorTreeSnapshot(state);
+      showToast("The Files tree is still catching up with the active document.");
       return;
     }
     if (response.status !== "ready") {
-      showToast("The folder tree is still catching up with the active note.");
+      showToast("The Files tree is still catching up with the active document.");
       return;
     }
     const folderPaths: string[] = [];
@@ -10722,8 +10810,11 @@ function renderFiles(
   const indexed = currentSnapshot?.workspace?.census.indexed ?? files.length;
   if (navigatorViewMode === "tree") {
     cancelVirtualFileRender();
-    elements.filterSummary.textContent = `${indexed.toLocaleString()} ${indexed === 1 ? "note" : "notes"} indexed`;
-    renderNavigatorTree(activePath, true);
+    const inventory = currentSnapshot?.workspace?.inventory;
+    const fileCount = inventory?.fileCount ?? 0;
+    const folderCount = inventory?.folderCount ?? 0;
+    elements.filterSummary.textContent = `${fileCount.toLocaleString()} ${fileCount === 1 ? "file" : "files"} · ${folderCount.toLocaleString()} ${folderCount === 1 ? "folder" : "folders"}`;
+    renderNavigatorTree(activeWorkspaceDocumentPath(), true);
     return;
   }
 

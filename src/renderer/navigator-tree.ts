@@ -30,6 +30,15 @@ export interface NavigatorTreePageRequest {
   limit: number;
 }
 
+export function navigatorTreeResponseNeedsSnapshotRefresh(status: string): boolean {
+  return (
+    status === "warming" ||
+    status === "degraded" ||
+    status === "stale-generation" ||
+    status === "stale-vault"
+  );
+}
+
 /** A single row needed to keep an active-note reveal chain visible. */
 export interface NavigatorTreeEntryLocation {
   parentPath: string | null;

@@ -4,7 +4,7 @@ import path from "node:path";
 import moment from "moment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
-import type { KernelFaultInjector } from "../kernel/vault-kernel";
+import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
@@ -424,13 +424,24 @@ describe("WorkspaceRuntime", () => {
     expect(current).toMatchObject({ status: "ready", page: { total: 2 } });
   });
 
-  it("pages index-derived tree children and locates a deep active-note path without filesystem discovery", async () => {
+  it("pages the physical Files tree with exact typed rows and explicit missing parents", async () => {
     const workspace = await openRuntime();
     await workspace.createNote("Projects/2", "# Two\n", workspace.vaultId);
     await workspace.createNote("Projects/مرحبا/10", "# Ten\n", workspace.vaultId);
+    await workspace.createPluginFile(
+      "Projects/image.PNG",
+      new Uint8Array([1, 2, 3]),
+      workspace.vaultId,
+    );
+    await workspace.createPluginFolder("Empty", workspace.vaultId);
     const snapshot = await workspace.getSnapshot();
-    const generation = snapshot.workspace?.indexGeneration;
+    const generation = snapshot.workspace?.inventory.generation;
     expect(generation).toEqual(expect.any(String));
+    expect(snapshot.workspace?.inventory).toMatchObject({
+      state: "current",
+      fileCount: 6,
+      folderCount: 4,
+    });
 
     const root = await workspace.getWorkspaceTreePage({
       expectedVaultId: workspace.vaultId,
@@ -443,9 +454,19 @@ describe("WorkspaceRuntime", () => {
       status: "ready",
       page: { parentPath: null },
       entries: expect.arrayContaining([
-        expect.objectContaining({ kind: "folder", path: "Projects", childCount: 2 }),
+        { kind: "folder", path: "Boards", title: "Boards", childCount: 1 },
+        { kind: "folder", path: "Empty", title: "Empty", childCount: 0 },
+        { kind: "folder", path: "Projects", title: "Projects", childCount: 3 },
       ]),
     });
+    if (root.status !== "ready") throw new Error("Expected a ready root Files page.");
+    for (const entry of root.entries) {
+      expect(Object.keys(entry).sort()).toEqual(
+        entry.kind === "folder"
+          ? ["childCount", "kind", "path", "title"]
+          : ["kind", "path", "title"],
+      );
+    }
 
     const projects = await workspace.getWorkspaceTreePage({
       expectedVaultId: workspace.vaultId,
@@ -457,9 +478,38 @@ describe("WorkspaceRuntime", () => {
     expect(projects).toMatchObject({
       status: "ready",
       entries: [
-        expect.objectContaining({ kind: "folder", path: "Projects/مرحبا", childCount: 1 }),
-        expect.objectContaining({ kind: "note", path: "Projects/2.md" }),
+        { kind: "folder", path: "Projects/مرحبا", title: "مرحبا", childCount: 1 },
+        { kind: "note", path: "Projects/2.md", title: "2" },
+        { kind: "file", path: "Projects/image.PNG", title: "image.PNG" },
       ],
+    });
+
+    await expect(
+      workspace.getWorkspaceTreePage({
+        expectedVaultId: workspace.vaultId,
+        generation: generation ?? "missing",
+        parentPath: "Boards",
+        offset: 0,
+        limit: 256,
+      }),
+    ).resolves.toMatchObject({
+      status: "ready",
+      entries: [{ kind: "canvas", path: "Boards/Overview.canvas", title: "Overview" }],
+    });
+
+    await expect(
+      workspace.getWorkspaceTreePage({
+        expectedVaultId: workspace.vaultId,
+        generation: generation ?? "missing",
+        parentPath: "Missing",
+        offset: 0,
+        limit: 256,
+      }),
+    ).resolves.toEqual({
+      status: "missing-parent",
+      vaultId: workspace.vaultId,
+      generation,
+      parentPath: "Missing",
     });
 
     await expect(
@@ -497,6 +547,10 @@ describe("WorkspaceRuntime", () => {
       "---\ntags: [Project/Alpha]\n---\n#project/Beta #PROJECT\n",
       workspace.vaultId,
     );
+    // The lazy-catalog contract is independent of watcher scheduling. Quiesce
+    // the watcher before capturing the ready token, then advance that token
+    // deliberately with the direct create below.
+    await workspace.watcher.close();
     const snapshot = await workspace.getSnapshot();
     const generation = snapshot.workspace?.indexGeneration ?? "missing";
     expect(JSON.stringify(snapshot.workspace)).not.toContain("directCount");
@@ -614,6 +668,7 @@ describe("WorkspaceRuntime", () => {
         files: [],
         tabs: [],
         filePage: { total: 0, complete: true },
+        inventory: { state: "warming", fileCount: 0, folderCount: 0, error: null },
       });
 
       releaseCensus?.();
@@ -622,6 +677,7 @@ describe("WorkspaceRuntime", () => {
       expect(current.workspace).toMatchObject({
         state: "ready",
         census: { state: "current", total: 2, indexed: 2 },
+        inventory: { state: "current", fileCount: 3, folderCount: 1, error: null },
         activeNote: { path: "Linked Note.md" },
       });
     } finally {
@@ -650,7 +706,14 @@ describe("WorkspaceRuntime", () => {
       filePage: { total: 2 },
     });
     const initialCensusGeneration = initial.workspace?.census.generation ?? Number.NaN;
+    const initialInventoryGeneration = initial.workspace?.inventory.generation ?? "missing";
+    const initialIndexGeneration = initial.workspace?.indexGeneration ?? "missing";
     expect(initialCensusGeneration).toBeGreaterThan(0);
+    expect(initial.workspace?.inventory).toMatchObject({
+      state: "current",
+      fileCount: 3,
+      folderCount: 1,
+    });
 
     await fs.writeFile(path.join(vaultPath, "External.md"), "# External\n", "utf8");
     const created = await runtime.reconcileNow();
@@ -666,6 +729,20 @@ describe("WorkspaceRuntime", () => {
       filePage: { total: 3 },
     });
     expect(created.vault.markdownFileCount).toBe(3);
+    expect(created.workspace?.inventory).toMatchObject({ fileCount: 4, folderCount: 1 });
+    expect(created.workspace?.inventory.generation).not.toBe(initialInventoryGeneration);
+    expect(created.workspace?.indexGeneration).not.toBe(initialIndexGeneration);
+    const createdInventoryGeneration = created.workspace?.inventory.generation ?? "missing";
+
+    await expect(
+      runtime.getWorkspaceTreePage({
+        expectedVaultId: runtime.vaultId,
+        generation: initialInventoryGeneration,
+        parentPath: null,
+        offset: 0,
+        limit: 64,
+      }),
+    ).resolves.toMatchObject({ status: "stale-generation" });
 
     await fs.writeFile(path.join(vaultPath, "preview.bin"), Buffer.from([0x01, 0x02, 0x03]));
     const attachment = await runtime.reconcileNow();
@@ -678,6 +755,19 @@ describe("WorkspaceRuntime", () => {
       },
       filePage: { total: 3 },
     });
+    expect(attachment.workspace?.inventory).toMatchObject({ fileCount: 5, folderCount: 1 });
+    expect(attachment.workspace?.inventory.generation).not.toBe(createdInventoryGeneration);
+    const attachmentInventoryGeneration = attachment.workspace?.inventory.generation ?? "missing";
+
+    await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome changed\n", "utf8");
+    const contentOnly = await runtime.reconcileNow();
+    expect(contentOnly.workspace?.indexGeneration).not.toBe(attachment.workspace?.indexGeneration);
+    expect(contentOnly.workspace?.inventory.generation).toBe(attachmentInventoryGeneration);
+    expect(contentOnly.workspace?.inventory).toMatchObject({ fileCount: 5, folderCount: 1 });
+
+    const noOp = await runtime.reconcileNow();
+    expect(noOp.workspace?.indexGeneration).toBe(contentOnly.workspace?.indexGeneration);
+    expect(noOp.workspace?.inventory.generation).toBe(attachmentInventoryGeneration);
 
     await fs.unlink(path.join(vaultPath, "External.md"));
     const deleted = await runtime.reconcileNow();
@@ -693,64 +783,104 @@ describe("WorkspaceRuntime", () => {
       filePage: { total: 2 },
     });
     expect(deleted.vault.markdownFileCount).toBe(2);
+    expect(deleted.workspace?.inventory).toMatchObject({ fileCount: 4, folderCount: 1 });
+    expect(deleted.workspace?.inventory.generation).not.toBe(attachmentInventoryGeneration);
   });
 
-  it("finishes one coherent snapshot before publishing an overlapping reconciliation", async () => {
+  it("scans inventory outside the index lock and rejects a result invalidated in flight", async () => {
     runtime = await WorkspaceRuntime.open({
       vaultRoot: vaultPath,
       stateRoot: new FixedStateRoot(statePath),
     });
     const before = await runtime.getSnapshot();
-    const beforeGeneration = before.workspace?.indexGeneration;
+    const beforeGeneration = before.workspace?.inventory.generation;
     expect(beforeGeneration).toEqual(expect.any(String));
 
-    const snapshotSeam = runtime as unknown as {
-      visibleVaultFiles: () => Promise<readonly string[]>;
+    const inventorySeam = runtime as unknown as {
+      invalidateVisibleInventory: () => void;
     };
-    const visibleVaultFiles = snapshotSeam.visibleVaultFiles.bind(runtime);
-    let pauseNextSnapshot = true;
-    let releaseSnapshot: () => void = () => undefined;
-    const snapshotGate = new Promise<void>((resolve) => {
-      releaseSnapshot = resolve;
+    const listVisiblePaths = runtime.kernel.listVisiblePaths.bind(runtime.kernel);
+    let pauseNextScan = true;
+    let releaseScan: () => void = () => undefined;
+    const scanGate = new Promise<void>((resolve) => {
+      releaseScan = resolve;
     });
-    let reportSnapshotPaused: () => void = () => undefined;
-    const snapshotPaused = new Promise<void>((resolve) => {
-      reportSnapshotPaused = resolve;
+    let reportScanPaused: () => void = () => undefined;
+    const scanPaused = new Promise<void>((resolve) => {
+      reportScanPaused = resolve;
     });
-    snapshotSeam.visibleVaultFiles = async () => {
-      const files = await visibleVaultFiles();
-      if (pauseNextSnapshot) {
-        pauseNextSnapshot = false;
-        reportSnapshotPaused();
-        await snapshotGate;
+    runtime.kernel.listVisiblePaths = async (...args) => {
+      const visible = await listVisiblePaths(...args);
+      if (pauseNextScan) {
+        pauseNextScan = false;
+        reportScanPaused();
+        await scanGate;
       }
-      return files;
+      return visible;
     };
 
+    inventorySeam.invalidateVisibleInventory();
     const overlappingSnapshot = runtime.getSnapshot();
-    await snapshotPaused;
-    await fs.writeFile(path.join(vaultPath, "Overlap.md"), "# Overlap\n", "utf8");
-    const reconciliation = runtime.reconcileNow();
-    const reconciledBeforeSnapshotRelease = await Promise.race([
-      reconciliation.then(() => true),
+    await scanPaused;
+    const mutation = runtime.createPluginFile(
+      "Overlap.bin",
+      new Uint8Array([1, 2, 3]),
+      runtime.vaultId,
+    );
+    const mutatedBeforeScanRelease = await Promise.race([
+      mutation.then(() => true),
       new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
     ]);
-    releaseSnapshot();
-    const [during, after] = await Promise.all([overlappingSnapshot, reconciliation]);
+    expect(mutatedBeforeScanRelease).toBe(true);
+    releaseScan();
+    const during = await overlappingSnapshot;
 
-    expect(reconciledBeforeSnapshotRelease).toBe(false);
     expect(during.workspace).toMatchObject({
-      indexGeneration: beforeGeneration,
-      filePage: { generation: beforeGeneration, total: 2 },
-      census: { discovered: 2, indexed: 2, total: 2 },
+      inventory: { state: "current", fileCount: 4, folderCount: 1 },
     });
+    expect(during.workspace?.inventory.generation).not.toBe(beforeGeneration);
+    expect(during.workspace?.census).toMatchObject({ discovered: 2, indexed: 2, total: 2 });
     expect(during.vault.markdownFileCount).toBe(2);
-    expect(after.workspace).toMatchObject({
-      filePage: { total: 3 },
-      census: { discovered: 3, indexed: 3, total: 3 },
+  });
+
+  it("retains the last good inventory on scan failure and retries without generation churn", async () => {
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
     });
-    expect(after.workspace?.indexGeneration).not.toBe(beforeGeneration);
-    expect(after.vault.markdownFileCount).toBe(3);
+    const before = await runtime.getSnapshot();
+    const beforeGeneration = before.workspace?.inventory.generation ?? "missing";
+    const inventorySeam = runtime as unknown as {
+      invalidateVisibleInventory: () => void;
+    };
+    const listVisiblePaths = runtime.kernel.listVisiblePaths.bind(runtime.kernel);
+    let failNextScan = true;
+    runtime.kernel.listVisiblePaths = async (...args) => {
+      if (failNextScan) {
+        failNextScan = false;
+        throw new Error("intentional inventory scan failure");
+      }
+      return listVisiblePaths(...args);
+    };
+
+    inventorySeam.invalidateVisibleInventory();
+    const degraded = await runtime.getSnapshot();
+    expect(degraded.workspace?.inventory).toEqual({
+      state: "degraded",
+      generation: beforeGeneration,
+      fileCount: 3,
+      folderCount: 1,
+      error: "The visible file inventory could not be read.",
+    });
+
+    const recovered = await runtime.getSnapshot();
+    expect(recovered.workspace?.inventory).toEqual({
+      state: "current",
+      generation: beforeGeneration,
+      fileCount: 3,
+      folderCount: 1,
+      error: null,
+    });
   });
 
   it("marks partial search and graph results warming and rotates their generation after census", async () => {
@@ -843,7 +973,21 @@ describe("WorkspaceRuntime", () => {
 
     const snapshot = await runtime.getSnapshot();
     const generation = snapshot.workspace?.filePage.generation;
-    expect(snapshot.workspace).toMatchObject({ state: "degraded", census: { state: "degraded" } });
+    const inventoryGeneration = snapshot.workspace?.inventory.generation;
+    expect(snapshot.workspace).toMatchObject({
+      state: "degraded",
+      census: { state: "degraded" },
+      inventory: { state: "current", fileCount: 3, folderCount: 1, error: null },
+    });
+    await expect(
+      runtime.getWorkspaceTreePage({
+        expectedVaultId: runtime.vaultId,
+        generation: inventoryGeneration ?? "missing",
+        parentPath: null,
+        offset: 0,
+        limit: 64,
+      }),
+    ).resolves.toMatchObject({ status: "ready", page: { total: 3 } });
     await expect(
       runtime.getWorkspaceFilePage({
         expectedVaultId: runtime.vaultId,
@@ -968,6 +1112,33 @@ describe("WorkspaceRuntime", () => {
     });
     expect(second).toMatchObject({ status: "ready" });
     expect(listVisiblePaths).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses the restored startup inventory for the first nondeferred snapshot", async () => {
+    const store = new MemoryWorkspaceStateStore({
+      openPaths: ["Welcome.md"],
+      activePath: "Welcome.md",
+    });
+    const listVisiblePaths = vi.spyOn(VaultKernel.prototype, "listVisiblePaths");
+    try {
+      const workspace = await openRuntime(store);
+      expect(
+        listVisiblePaths.mock.calls.filter(([relative]) => relative === undefined),
+      ).toHaveLength(1);
+
+      const snapshot = await workspace.getSnapshot();
+
+      expect(snapshot.workspace?.inventory).toMatchObject({
+        state: "current",
+        fileCount: 3,
+        folderCount: 1,
+      });
+      expect(
+        listVisiblePaths.mock.calls.filter(([relative]) => relative === undefined),
+      ).toHaveLength(1);
+    } finally {
+      listVisiblePaths.mockRestore();
+    }
   });
 
   it("keeps the bundled demo vault read-only across native and plugin mutation paths", async () => {
@@ -1269,6 +1440,35 @@ describe("WorkspaceRuntime", () => {
     await runtime.close();
     runtime = undefined;
     expect(closed).toBe(true);
+  });
+
+  it("settles queued watcher and snapshot work when close wins an inventory invalidation race", async () => {
+    const workspace = await openRuntime();
+    await workspace.getSnapshot();
+
+    const accept = workspace.indexReactor.accept.bind(workspace.indexReactor);
+    let markAcceptEntered: () => void = () => undefined;
+    let releaseAccept: () => void = () => undefined;
+    const acceptEntered = new Promise<void>((resolve) => {
+      markAcceptEntered = resolve;
+    });
+    const acceptGate = new Promise<void>((resolve) => {
+      releaseAccept = resolve;
+    });
+    vi.spyOn(workspace.indexReactor, "accept").mockImplementation(async (batch) => {
+      markAcceptEntered();
+      await acceptGate;
+      return accept(batch);
+    });
+
+    const overflow = workspace.watcher.reportOverflow();
+    await acceptEntered;
+    const closing = workspace.close();
+    const snapshot = workspace.getSnapshot();
+    releaseAccept();
+
+    await Promise.all([overflow, closing, snapshot]);
+    runtime = undefined;
   });
 
   it("keeps a plugin command projected once when its local ID collides with a workspace action", async () => {

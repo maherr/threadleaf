@@ -7,10 +7,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Added a filesystem-truthful Files navigator for visible folders, Markdown notes, JSON Canvas
+  documents, and ordinary files, including explicit empty folders, typed activation, deterministic
+  natural ordering, and immediate guarded folder creation.
+
+### Changed
+
+- Decoupled the Files inventory generation from the Markdown metadata generation. Physical scans
+  now run outside the index mutation lock, reject invalidated candidates, retain the last complete
+  tree on failure, and retry without publishing partial state.
+- Reused the physical inventory captured during restored startup and made stale tree pages
+  single-flight an authoritative snapshot refresh.
+
 ### Fixed
 
 - Kept the visible note census, paginated file total, and vault count synchronized after external
   note additions, deletions, and sync-style event bursts.
+- Rejected traversal through a relative folder symlink at any path ancestor while retaining safe
+  contained file aliases and excluding broken, private, outside-vault, and special-file targets.
 
 ## [0.1.0-beta.6]
 

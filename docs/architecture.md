@@ -63,6 +63,34 @@ compatibility input when needed but is never Threadleaf's state directory. The v
 the state root through a port so tests can isolate it and each operating system can use its standard
 application-data location.
 
+### Visible physical inventory
+
+The desktop Files navigator has a read-only physical inventory separate from the Markdown metadata
+index. Its complete projection represents visible physical folders, Markdown notes, JSON Canvas
+documents, and ordinary files. It preserves explicit empty folders and gives folders an immediate
+visible-child count. Search, tags, links, note summaries, and the flat Notes view remain projections
+of saved Markdown metadata.
+
+The inventory has its own opaque generation. A path-set change rotates that generation, while a
+content-only Markdown edit does not. Initial inventory work waits until the first metadata census
+succeeds or fails, then scans outside the index mutation lock. Publication is a short guarded step:
+if a newer invalidation arrived, the candidate is discarded and rebuilt. A failed scan exposes a
+degraded state while retaining the last complete projection, never a partial result or invented
+empty vault, and the next request retries.
+
+Visible inventory uses the kernel's contained broad path policy. Every dot-prefixed segment,
+transaction artifact, private or outside target, broken link, folder symlink, and unsupported
+special file remains excluded. A contained visible file symlink may appear as a leaf alias. Tree
+pages and active-document locations bind the vault identity and inventory generation. The renderer
+receives typed bounded rows, never raw filesystem access. Notes and Canvas use the existing document
+action; an ordinary file row remains focusable and explains that preview is unavailable without
+creating a tab or changing the active document.
+
+The existing guarded New folder route is the only mutation in this surface. Generic preview,
+rename, move, and trash require separate native capability, no-clobber, link-impact, directory, and
+recovery contracts. The research and disposition record is
+[filesystem-truthful navigator and folder management](research/filesystem-truthful-navigator-and-folder-management-2026-08-16.md).
+
 ### Behavior migration boundary
 
 Migration is separate from vault opening and plugin discovery. A read-only main-process loader

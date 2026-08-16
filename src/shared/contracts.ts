@@ -344,7 +344,22 @@ export type WorkspaceTreeEntry =
       title: string;
       childCount: number;
     }
-  | ({ kind: "note" } & WorkspaceFileSummary);
+  | {
+      kind: "note" | "canvas" | "file";
+      path: string;
+      title: string;
+    };
+
+export interface WorkspaceVisibleInventorySnapshot {
+  state: "warming" | "current" | "degraded";
+  /** Runtime-scoped physical-path-set generation. Treat as an opaque validator. */
+  generation: string;
+  /** Visible non-folder entries, including Markdown, Canvas, and ordinary files. */
+  fileCount: number;
+  /** Visible physical folders, including explicit empty folders. */
+  folderCount: number;
+  error: string | null;
+}
 
 export interface WorkspaceTreePageDescriptor {
   generation: string;
@@ -374,7 +389,13 @@ export type WorkspaceTreePageResponse =
       status: "warming" | "degraded" | "stale-generation";
       vaultId: string;
       generation: string;
-      census: WorkspaceCensusSnapshot;
+      inventory: WorkspaceVisibleInventorySnapshot;
+    }
+  | {
+      status: "missing-parent";
+      vaultId: string;
+      generation: string;
+      parentPath: string;
     }
   | { status: "stale-vault"; vaultId: string };
 
@@ -429,7 +450,7 @@ export type WorkspaceTreePathResponse =
       status: "warming" | "degraded" | "stale-generation";
       vaultId: string;
       generation: string;
-      census: WorkspaceCensusSnapshot;
+      inventory: WorkspaceVisibleInventorySnapshot;
     }
   | { status: "stale-vault"; vaultId: string };
 
@@ -638,6 +659,8 @@ export interface WorkspaceSnapshot {
   files: WorkspaceFileSummary[];
   filePage: WorkspaceFilePageDescriptor;
   census: WorkspaceCensusSnapshot;
+  /** Physical visible-vault authority for the Files navigator. */
+  inventory: WorkspaceVisibleInventorySnapshot;
   canvasFiles?: WorkspaceCanvasSummary[];
   panes: WorkspacePaneSnapshot[];
   activePaneId: WorkspacePaneId;

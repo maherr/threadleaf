@@ -3,6 +3,10 @@
 **Discovery date:** 2026-08-14
 **Scope:** a bounded public-HTTPS and local-source pass for the left navigator tree. No upstream repository was cloned, fetched, built, installed, or executed. No upstream code will be copied.
 
+> This is the original metadata-indexed tree record. The current Files authority and the closed
+> empty-folder/non-Markdown gap are documented in
+> [filesystem-truthful navigator and folder management](filesystem-truthful-navigator-and-folder-management-2026-08-16.md).
+
 ## Decision in one screen
 
 **Adapt a flattened, virtual visible-row tree backed by generation-tagged, immediate-child pages from Threadleaf's existing metadata-index projection.** Keep the renderer as a bounded consumer. It will hold expanded paths plus fetched child pages, not a full vault tree or a filesystem mirror.
@@ -65,4 +69,5 @@ MDN and React Spectrum independently confirm dynamic-tree metadata, collapsed in
 - **Rejected:** a recursive filesystem IPC. It would create a second authority/discovery surface, leak excluded/private paths, and bypass watcher/index generation semantics.
 - **Rejected:** materializing a nested DOM tree. It fails the 200K scale requirement before paint.
 - **Rejected:** a third-party virtual tree package. Existing project primitives cover the bounded behavior with less dependency and compatibility surface.
-- **Gap, consciously bounded:** empty folders and non-Markdown-only folders do not appear. A future requirement can add an explicit, contained directory inventory with its own watcher/reconciliation contract; it is not inferred from this navigator request.
+- **Closed by the later physical-inventory lane:** empty folders and non-Markdown-only folders now
+  appear under the independent contained inventory contract linked above.

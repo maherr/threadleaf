@@ -10,7 +10,9 @@ import {
   maximumNavigatorTreeLruPages,
   type NavigatorTreeState,
   navigatorTreePageRequestsForRange,
+  navigatorTreeResponseNeedsSnapshotRefresh,
   navigatorTreeRetentionCounts,
+  reconcileNavigatorTreeState,
   retainNavigatorTreePages,
 } from "./navigator-tree";
 
@@ -23,11 +25,15 @@ function note(path: string): WorkspaceTreeEntry {
     kind: "note",
     path,
     title: path.slice(path.lastIndexOf("/") + 1, -3),
-    tags: [],
-    backlinkCount: 0,
-    outgoingCount: 0,
-    unresolvedCount: 0,
   };
+}
+
+function canvas(path: string): WorkspaceTreeEntry {
+  return { kind: "canvas", path, title: path.slice(path.lastIndexOf("/") + 1, -7) };
+}
+
+function file(path: string): WorkspaceTreeEntry {
+  return { kind: "file", path, title: path.slice(path.lastIndexOf("/") + 1) };
 }
 
 function page(parentPath: string | null, total: number, offset = 0): WorkspaceTreePageDescriptor {
@@ -47,6 +53,52 @@ function expectHonestRetentionBound(state: NavigatorTreeState, pageSize = 256) {
 }
 
 describe("navigator tree projection", () => {
+  it("refreshes the authoritative snapshot after every tree authority drift response", () => {
+    expect(
+      ["warming", "degraded", "stale-generation", "stale-vault"].filter(
+        navigatorTreeResponseNeedsSnapshotRefresh,
+      ),
+    ).toEqual(["warming", "degraded", "stale-generation", "stale-vault"]);
+    expect(
+      ["ready", "missing", "missing-parent"].filter(navigatorTreeResponseNeedsSnapshotRefresh),
+    ).toEqual([]);
+  });
+
+  it("preserves only the same vault and physical inventory generation", () => {
+    const state = createNavigatorTreeState("vault", "inventory:1");
+    expect(reconcileNavigatorTreeState(state, "vault", "inventory:1")).toBe(state);
+    expect(reconcileNavigatorTreeState(state, "vault", "inventory:2")).not.toBe(state);
+    expect(reconcileNavigatorTreeState(state, "other-vault", "inventory:1")).not.toBe(state);
+  });
+
+  it("keeps folders, notes, canvases, and ordinary files typed through paging", () => {
+    const state = createNavigatorTreeState("vault", "tree:1");
+    const entries = [
+      folder("Empty", 0),
+      note("Note.md"),
+      canvas("Board.canvas"),
+      file("photo.avif"),
+    ];
+    expect(applyNavigatorTreePage(state, { ...page(null, 4), complete: true }, entries)).toBe(true);
+    expect(
+      applyNavigatorTreePage(
+        state,
+        { ...page(null, 4), generation: "stale", complete: true },
+        entries,
+      ),
+    ).toBe(false);
+    expect(applyNavigatorTreePage(state, { ...page("Empty", 0), complete: true }, [])).toBe(true);
+
+    const projection = buildNavigatorTreeProjection(state, new Set(["Empty"]));
+    expect(
+      Array.from({ length: projection.length }, (_, index) => projection.rowAt(index)),
+    ).toEqual(
+      entries.map((entry, index) =>
+        expect.objectContaining({ kind: "entry", entry, siblingIndex: index }),
+      ),
+    );
+  });
+
   it("keeps a 200K root as compact virtual ranges while expanding a 1,001-child folder", () => {
     const state = createNavigatorTreeState("vault", "tree:1");
     applyNavigatorTreePage(state, page(null, 200_000), [folder("Archive", 1_001)]);

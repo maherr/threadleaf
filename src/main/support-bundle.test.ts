@@ -191,6 +191,13 @@ function runtimeFixture(): RuntimeSnapshot {
         total: 1,
         error: null,
       },
+      inventory: {
+        state: "degraded",
+        generation: "PRIVATE_INVENTORY_GENERATION",
+        fileCount: 2,
+        folderCount: 1,
+        error: "PRIVATE_INVENTORY_ERROR",
+      },
       panes: [
         {
           id: "primary",

@@ -15,7 +15,6 @@ import {
 } from "../src/renderer/navigator-tree";
 import {
   maximumWorkspaceFilePageSize,
-  type WorkspaceFileSummary,
   type WorkspaceTreeEntry,
   type WorkspaceTreePageDescriptor,
 } from "../src/shared/contracts";
@@ -30,26 +29,11 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-function syntheticNote(path: string, title: string): WorkspaceFileSummary {
-  return {
-    path,
-    title,
-    tags: [],
-    backlinkCount: 0,
-    outgoingCount: 0,
-    unresolvedCount: 0,
-  };
-}
-
 function syntheticTreeNote(path: string): WorkspaceTreeEntry {
   return {
     kind: "note",
     path,
     title: path.slice(path.lastIndexOf("/") + 1, -3),
-    tags: [],
-    backlinkCount: 0,
-    outgoingCount: 0,
-    unresolvedCount: 0,
   };
 }
 
@@ -57,20 +41,31 @@ function syntheticTreeFolder(path: string, childCount: number): WorkspaceTreeEnt
   return { kind: "folder", path, title: path.slice(path.lastIndexOf("/") + 1), childCount };
 }
 
-function createCorpus(): WorkspaceFileSummary[] {
-  const files: WorkspaceFileSummary[] = [];
+function createCorpus(): string[] {
+  const files: string[] = [];
   for (let index = 0; index < rootNoteCount; index += 1) {
     const title = `Root note ${String(index).padStart(6, "0")}`;
-    files.push(syntheticNote(`${title}.md`, title));
+    files.push(`${title}.md`);
   }
   for (let index = 0; index < libraryChildCount; index += 1) {
     const title = `Child ${String(index).padStart(4, "0")}`;
-    files.push(syntheticNote(`Library/${title}.md`, title));
+    files.push(`Library/${title}.md`);
   }
-  files.push(syntheticNote("Projects/Deep/Active.md", "Active"));
-  files.push(syntheticNote("Reference/Read me.md", "Read me"));
+  files.push("Projects/Deep/Active.md");
+  files.push("Reference/Read me.md");
   assert(files.length === noteCount, `Expected ${noteCount} synthetic notes.`);
   return files;
+}
+
+function visibleInput(files: readonly string[]) {
+  const folders = new Set<string>();
+  for (const filePath of files) {
+    const segments = filePath.split("/");
+    for (let index = 1; index < segments.length; index += 1) {
+      folders.add(segments.slice(0, index).join("/"));
+    }
+  }
+  return { files, folders: [...folders] };
 }
 
 function pageEntries(entries: readonly WorkspaceTreeEntry[], offset: number): WorkspaceTreeEntry[] {
@@ -257,7 +252,7 @@ function runMultiParentDeepViewport(): {
 
 const started = performance.now();
 const files = createCorpus();
-const indexed = buildWorkspaceTreeIndex(files);
+const indexed = buildWorkspaceTreeIndex(visibleInput(files));
 const treeBuildMs = performance.now() - started;
 const rootEntries = indexed.childrenByParent.get(null) ?? [];
 const libraryEntries = indexed.childrenByParent.get("Library") ?? [];
@@ -399,7 +394,7 @@ const deepSegments = Array.from(
   (_, index) => `Depth-${String(index).padStart(3, "0")}`,
 );
 const deepActivePath = `${deepSegments.join("/")}/Active.md`;
-const deepIndex = buildWorkspaceTreeIndex([syntheticNote(deepActivePath, "Active")]);
+const deepIndex = buildWorkspaceTreeIndex(visibleInput([deepActivePath]));
 const deepLocation = deepIndex.pathLocations.get(deepActivePath);
 assert(deepLocation, "The deep active note has no tree location.");
 const deepState = createNavigatorTreeState("synthetic-deep", "generation-1");

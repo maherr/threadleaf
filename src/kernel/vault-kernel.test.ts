@@ -286,6 +286,7 @@ describe("VaultKernel path policy", () => {
     await fs.writeFile(path.join(vaultPath, "Root.md"), "root", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "image.PNG"), "image", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "Board.canvas"), "{}", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "Nested", "Inside.md"), "inside", "utf8");
     await fs.writeFile(path.join(vaultPath, ".obsidian", "appearance.json"), "{}", "utf8");
     await fs.writeFile(path.join(vaultPath, ".obsidian", "Secret.md"), "private", "utf8");
     await fs.writeFile(path.join(vaultPath, ".archive", "Hidden.md"), "hidden", "utf8");
@@ -295,20 +296,42 @@ describe("VaultKernel path policy", () => {
     await fs.symlink("../Root.md", path.join(vaultPath, "Folder", "root-link.txt"));
     await fs.symlink("../.obsidian/Secret.md", path.join(vaultPath, "Folder", "private-link.md"));
     await fs.symlink("missing.txt", path.join(vaultPath, "Folder", "broken-link.txt"));
+    const outsidePath = path.join(sandboxPath, "outside-visible.txt");
+    await fs.writeFile(outsidePath, "outside", "utf8");
+    await fs.symlink(outsidePath, path.join(vaultPath, "Folder", "outside-link.txt"));
+    await fs.symlink("Folder/Nested", path.join(vaultPath, "Nested alias"), "dir");
     const kernel = await openKernel();
 
     await expect(kernel.listVisiblePaths()).resolves.toEqual({
       directory: "",
       exists: true,
-      files: ["Folder/image.PNG", "Folder/Nested/Board.canvas", "Folder/root-link.txt", "Root.md"],
+      files: [
+        "Folder/image.PNG",
+        "Folder/Nested/Board.canvas",
+        "Folder/Nested/Inside.md",
+        "Folder/root-link.txt",
+        "Root.md",
+      ],
       folders: ["Empty", "Folder", "Folder/Nested"],
     });
     await expect(kernel.listVisiblePaths("Folder/")).resolves.toEqual({
       directory: "Folder",
       exists: true,
-      files: ["Folder/image.PNG", "Folder/Nested/Board.canvas", "Folder/root-link.txt"],
+      files: [
+        "Folder/image.PNG",
+        "Folder/Nested/Board.canvas",
+        "Folder/Nested/Inside.md",
+        "Folder/root-link.txt",
+      ],
       folders: ["Folder/Nested"],
     });
+    await expect(kernel.listVisiblePaths("Nested alias")).resolves.toEqual({
+      directory: "Nested alias",
+      exists: false,
+      files: [],
+      folders: [],
+    });
+    await expect(kernel.listMarkdownPaths("Nested alias")).resolves.toEqual([]);
     await expect(kernel.listVisiblePaths(".obsidian")).resolves.toEqual({
       directory: ".obsidian",
       exists: false,
@@ -322,9 +345,61 @@ describe("VaultKernel path policy", () => {
       folders: [],
     });
     await expect(kernel.listVisiblePaths("Missing")).resolves.toMatchObject({ exists: false });
-    await expect(kernel.listMarkdownPaths()).resolves.toEqual(["Root.md"]);
+    await expect(kernel.listMarkdownPaths()).resolves.toEqual([
+      "Folder/Nested/Inside.md",
+      "Root.md",
+    ]);
     await expect(kernel.listVisiblePaths("../")).rejects.toBeInstanceOf(VaultPathError);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects relative directory listings through every symlinked ancestor",
+    async () => {
+      await fs.mkdir(path.join(vaultPath, "Contained", "Child"), { recursive: true });
+      await fs.writeFile(path.join(vaultPath, "Contained", "Child", "Inside.md"), "inside", "utf8");
+      await fs.symlink("Contained", path.join(vaultPath, "Contained alias"), "dir");
+
+      const outsideDirectory = path.join(sandboxPath, "outside-directory");
+      await fs.mkdir(path.join(outsideDirectory, "Child"), { recursive: true });
+      await fs.writeFile(path.join(outsideDirectory, "Child", "Outside.md"), "outside", "utf8");
+      await fs.symlink(outsideDirectory, path.join(vaultPath, "Outside alias"), "dir");
+      const kernel = await openKernel();
+
+      await expect(kernel.listVisiblePaths("Contained/Child")).resolves.toMatchObject({
+        directory: "Contained/Child",
+        exists: true,
+        files: ["Contained/Child/Inside.md"],
+      });
+      for (const alias of ["Contained alias/Child", "Outside alias/Child"]) {
+        await expect(kernel.listVisiblePaths(alias)).resolves.toEqual({
+          directory: alias,
+          exists: false,
+          files: [],
+          folders: [],
+        });
+        await expect(kernel.listMarkdownPaths(alias)).resolves.toEqual([]);
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "excludes visible special files from the physical census",
+    async () => {
+      const socketPath = path.join(vaultPath, "ordinary-looking.sock");
+      const socket = await createNamespaceSocket(socketPath);
+      try {
+        const kernel = await openKernel();
+        await expect(kernel.listVisiblePaths()).resolves.toEqual({
+          directory: "",
+          exists: true,
+          files: [],
+          folders: [],
+        });
+      } finally {
+        await closeNamespaceSocket(socket);
+      }
+    },
+  );
 
   it("creates nested public directories while rejecting private, linked, and file paths", async () => {
     const kernel = await openKernel();

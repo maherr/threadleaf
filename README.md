@@ -32,7 +32,10 @@ Markdown folder, restore the last successful selection, edit through CodeMirror,
 tags, links, and backlinks, search saved Markdown with contextual line matches, and reflect external
 changes without giving the renderer filesystem access. Search results identify the vault and index
 generation that produced them, so a late response cannot cross a vault switch or overwrite newer
-derived state. The first window no longer waits for a complete restored-vault scan: it names the
+derived state. The Files navigator separately inventories visible physical folders, Markdown notes,
+JSON Canvas documents, and ordinary files, including empty folders. It uses its own generation,
+keeps the last complete tree if a scan fails, and leaves ordinary files focusable but unopened until
+a native preview capability exists. The first window no longer waits for a complete restored-vault scan: it names the
 target, shows indexing state, blocks bootstrap writes, and lets a user choose another vault while
 the real runtime opens in the background. Revision-aware saves use the recoverable writer. If the
 file changed externally, the original is left untouched and the local edit becomes a clearly

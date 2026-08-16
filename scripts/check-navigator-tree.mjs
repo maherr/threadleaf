@@ -30,13 +30,102 @@ const deepRevealSegments = Array.from(
   (_, index) => `Deep reveal ${String(index).padStart(3, "0")}`,
 );
 const deepRevealActivePath = `${deepRevealSegments.join("/")}/Target.md`;
+const canvasPath = "Projects/Deep/Board.canvas";
+const genericFilePath = "File parent";
 const fixtureMarkdownCount = 1_006;
 const convergedMarkdownCount = fixtureMarkdownCount + 1;
+const fixtureVisibleFileCount = fixtureMarkdownCount + 2;
+const convergedVisibleFileCount = fixtureVisibleFileCount + 1;
+const fixtureVisibleFolderCount = 132;
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function compareCodePoints(left, right) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function workspaceActivationState(current) {
+  return {
+    activePaneId: current.workspace?.activePaneId ?? null,
+    panes:
+      current.workspace?.panes.map((pane) => ({
+        id: pane.id,
+        active: pane.active,
+        activeNote: pane.activeNote?.path ?? null,
+        activeCanvas: pane.activeCanvas?.path ?? null,
+        tabs: pane.tabs.map((tab) => ({
+          path: tab.path,
+          active: tab.active,
+          pinned: tab.pinned,
+        })),
+      })) ?? [],
+  };
+}
+
+async function vaultManifest() {
+  const entries = [];
+  const visit = async (absolutePath, relativePath) => {
+    const metadata = await fs.lstat(absolutePath);
+    const manifestPath = relativePath || ".";
+    if (metadata.isSymbolicLink()) {
+      entries.push({
+        path: manifestPath,
+        kind: "symlink",
+        mode: metadata.mode & 0o777,
+        target: await fs.readlink(absolutePath),
+      });
+      return;
+    }
+    if (metadata.isDirectory()) {
+      entries.push({ path: manifestPath, kind: "directory", mode: metadata.mode & 0o777 });
+      const names = (await fs.readdir(absolutePath)).sort(compareCodePoints);
+      for (const name of names) {
+        await visit(path.join(absolutePath, name), relativePath ? `${relativePath}/${name}` : name);
+      }
+      return;
+    }
+    if (metadata.isFile()) {
+      const bytes = await fs.readFile(absolutePath);
+      entries.push({
+        path: manifestPath,
+        kind: "file",
+        mode: metadata.mode & 0o777,
+        size: bytes.byteLength,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      });
+      return;
+    }
+    entries.push({ path: manifestPath, kind: "special", mode: metadata.mode & 0o777 });
+  };
+  await visit(vaultPath, "");
+  return entries;
+}
+
+function manifestDigest(manifest) {
+  return createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
+}
+
+async function setViewport(width, height) {
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width,
+    height,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitFor(
+    async () =>
+      (await evaluate(`innerWidth === ${width} && innerHeight === ${height}`)) ? true : null,
+    `The renderer did not adopt the ${width}x${height} viewport`,
+  );
+}
+
+async function clearViewport() {
+  await cdp.send("Emulation.clearDeviceMetricsOverride");
 }
 
 function treeSelector(treePath) {
@@ -93,6 +182,7 @@ async function waitForMainTarget(port) {
 function connectCdp(webSocketUrl) {
   const socket = new WebSocket(webSocketUrl);
   const pending = new Map();
+  const listeners = new Map();
   let sequence = 0;
   const opened = new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve, { once: true });
@@ -103,10 +193,15 @@ function connectCdp(webSocketUrl) {
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
     const request = pending.get(message.id);
-    if (!request) return;
-    pending.delete(message.id);
-    if (message.error) request.reject(new Error(message.error.message));
-    else request.resolve(message.result);
+    if (request) {
+      pending.delete(message.id);
+      if (message.error) request.reject(new Error(message.error.message));
+      else request.resolve(message.result);
+      return;
+    }
+    for (const listener of listeners.get(message.method) ?? []) {
+      listener(message.params ?? {});
+    }
   });
   socket.addEventListener("close", () => {
     for (const request of pending.values()) request.reject(new Error("CDP WebSocket closed."));
@@ -119,6 +214,15 @@ function connectCdp(webSocketUrl) {
       const result = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
       socket.send(JSON.stringify({ id, method, params }));
       return result;
+    },
+    on(method, listener) {
+      const current = listeners.get(method) ?? new Set();
+      current.add(listener);
+      listeners.set(method, current);
+      return () => {
+        current.delete(listener);
+        if (current.size === 0) listeners.delete(method);
+      };
     },
     close() {
       socket.close();
@@ -142,6 +246,35 @@ async function evaluate(expression) {
 
 async function snapshot() {
   return evaluate("window.threadleaf.getSnapshot()");
+}
+
+async function instrumentRendererFunctionCalls(expression) {
+  const remote = await cdp.send("Runtime.evaluate", {
+    expression,
+    returnByValue: false,
+  });
+  const objectId = remote.result?.objectId;
+  assert(objectId, `Could not resolve a renderer function for instrumentation: ${expression}`);
+  const { breakpointId } = await cdp.send("Debugger.setBreakpointOnFunctionCall", { objectId });
+  let calls = 0;
+  let resumeError = null;
+  const unsubscribe = cdp.on("Debugger.paused", (event) => {
+    if ((event.hitBreakpoints ?? []).includes(breakpointId)) calls += 1;
+    void cdp.send("Debugger.resume").catch((error) => {
+      resumeError = error;
+    });
+  });
+  return {
+    count: () => calls,
+    assertHealthy: () => {
+      if (resumeError) throw resumeError;
+    },
+    async close() {
+      unsubscribe();
+      await cdp.send("Debugger.removeBreakpoint", { breakpointId });
+      if (resumeError) throw resumeError;
+    },
+  };
 }
 
 async function targetCenter(selector) {
@@ -430,6 +563,7 @@ async function launchApplication() {
   const target = await waitForMainTarget(port);
   cdp = connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Runtime.enable");
+  await cdp.send("Debugger.enable");
   await cdp.send("Page.enable");
 }
 
@@ -450,7 +584,11 @@ async function closeApplication() {
   exited = undefined;
 }
 
-async function waitForReady(expectedMarkdownCount) {
+async function waitForReady(
+  expectedMarkdownCount,
+  expectedVisibleFileCount,
+  expectedVisibleFolderCount,
+) {
   return waitFor(
     async () => {
       const current = await snapshot();
@@ -460,7 +598,10 @@ async function waitForReady(expectedMarkdownCount) {
         current?.workspace?.census?.indexed === expectedMarkdownCount &&
         current?.workspace?.census?.total === expectedMarkdownCount &&
         current?.workspace?.filePage?.total === expectedMarkdownCount &&
-        current?.vault?.markdownFileCount === expectedMarkdownCount
+        current?.vault?.markdownFileCount === expectedMarkdownCount &&
+        current?.workspace?.inventory?.state === "current" &&
+        current?.workspace?.inventory?.fileCount === expectedVisibleFileCount &&
+        current?.workspace?.inventory?.folderCount === expectedVisibleFolderCount
         ? current
         : null;
     },
@@ -474,7 +615,17 @@ async function waitForTreePath(treePath) {
     return await waitFor(
       async () =>
         (await evaluate(
-          `(() => { const item = document.querySelector(${JSON.stringify(treeSelector(treePath))}); return item instanceof HTMLElement ? { expanded: item.getAttribute("aria-expanded"), current: item.getAttribute("aria-current"), selected: item.getAttribute("aria-selected") } : null; })()`,
+          `(() => { const item = document.querySelector(${JSON.stringify(treeSelector(treePath))}); return item instanceof HTMLElement ? {
+            kind: item.getAttribute("data-kind"),
+            label: item.getAttribute("aria-label"),
+            level: item.getAttribute("aria-level"),
+            position: item.getAttribute("aria-posinset"),
+            setSize: item.getAttribute("aria-setsize"),
+            tabIndex: item.getAttribute("tabindex"),
+            expanded: item.getAttribute("aria-expanded"),
+            current: item.getAttribute("aria-current"),
+            selected: item.getAttribute("aria-selected"),
+          } : null; })()`,
         )) ?? null,
       `The tree did not render ${treePath}`,
     );
@@ -521,9 +672,32 @@ async function waitForFocusedTreePath(treePath) {
   }
 }
 
+async function ensureTreeFolderExpanded(treePath) {
+  const row = await waitForTreePath(treePath);
+  if (row.expanded !== "true") {
+    await clickSelector(treeSelector(treePath));
+  }
+  return waitFor(async () => {
+    const current = await waitForTreePath(treePath);
+    return current.expanded === "true" ? current : null;
+  }, `The tree folder did not expand: ${treePath}`);
+}
+
+async function ensureTreeFolderCollapsed(treePath) {
+  const row = await waitForTreePath(treePath);
+  if (row.expanded !== "false") {
+    await clickSelector(treeSelector(treePath));
+  }
+  return waitFor(async () => {
+    const current = await waitForTreePath(treePath);
+    return current.expanded === "false" ? current : null;
+  }, `The tree folder did not collapse: ${treePath}`);
+}
+
 async function writeFixtureVault() {
   await fs.mkdir(path.join(vaultPath, "Projects", "Deep"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, "Library"), { recursive: true });
+  await fs.mkdir(path.join(vaultPath, "Empty folder"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, ...deepRevealSegments), { recursive: true });
   await fs.mkdir(outsidePath, { recursive: true });
   await fs.symlink(outsidePath, symlinkParentPath, "dir");
@@ -539,6 +713,11 @@ async function writeFixtureVault() {
     ),
     fs.writeFile(path.join(vaultPath, "Projects", "Reference.md"), "# Reference\n", "utf8"),
     fs.writeFile(path.join(vaultPath, activeNotePath), "# Active deep note\n", "utf8"),
+    fs.writeFile(
+      path.join(vaultPath, canvasPath),
+      '{"nodes":[],"edges":[],"threadleafFixture":true}\n',
+      "utf8",
+    ),
     fs.writeFile(path.join(vaultPath, deepRevealActivePath), "# Deep reveal target\n", "utf8"),
     fs.writeFile(fileParentPath, "not a folder\n", "utf8"),
   ]);
@@ -561,7 +740,7 @@ try {
 
   phase = "isolated X11 launch";
   await launchApplication();
-  await waitForReady(fixtureMarkdownCount);
+  await waitForReady(fixtureMarkdownCount, fixtureVisibleFileCount, fixtureVisibleFolderCount);
   await assertIsolatedX11Renderer();
 
   phase = "initial collapsed tree";
@@ -579,26 +758,88 @@ try {
     return tree?.toggle === "true" ? tree : null;
   }, "The tree did not start with only top-level entries visible");
   assert(initialTree.rows < 12, "The initial navigator eagerly rendered nested entries.");
+  const initialSemantics = await evaluate(`(() => {
+    const list = document.querySelector("#file-list");
+    const rows = [...document.querySelectorAll(".navigator-tree-row")];
+    const generic = document.querySelector(${JSON.stringify(treeSelector(genericFilePath))});
+    const emptyFolder = document.querySelector(${JSON.stringify(treeSelector("Empty folder"))});
+    return {
+      listRole: list?.getAttribute("role"),
+      listLabel: list?.getAttribute("aria-label"),
+      allTreeItems: rows.every((row) => row.getAttribute("role") === "treeitem"),
+      tabStops: rows.filter((row) => row.getAttribute("tabindex") === "0").length,
+      rootCoordinates: rows.every((row) =>
+        row.getAttribute("aria-level") === "1" &&
+        Number(row.getAttribute("aria-posinset")) > 0 &&
+        Number(row.getAttribute("aria-setsize")) === rows.length
+      ),
+      leafExpansionAttributes: rows
+        .filter((row) => row.getAttribute("data-kind") !== "folder")
+        .map((row) => row.getAttribute("aria-expanded")),
+      generic: generic instanceof HTMLElement ? {
+        kind: generic.dataset.kind,
+        label: generic.getAttribute("aria-label"),
+        current: generic.getAttribute("aria-current"),
+        selected: generic.getAttribute("aria-selected"),
+        expanded: generic.getAttribute("aria-expanded"),
+      } : null,
+      emptyFolder: emptyFolder instanceof HTMLElement ? {
+        kind: emptyFolder.dataset.kind,
+        label: emptyFolder.getAttribute("aria-label"),
+        expanded: emptyFolder.getAttribute("aria-expanded"),
+        summary: emptyFolder.querySelector("small")?.textContent ?? "",
+      } : null,
+    };
+  })()`);
+  assert(
+    initialSemantics?.listRole === "tree" &&
+      initialSemantics.listLabel === "Vault files and folders" &&
+      initialSemantics.allTreeItems &&
+      initialSemantics.tabStops === 1 &&
+      initialSemantics.rootCoordinates &&
+      initialSemantics.leafExpansionAttributes.every((value) => value === null),
+    `The Files tree did not expose a coherent ARIA hierarchy: ${JSON.stringify(initialSemantics)}`,
+  );
+  assert(
+    initialSemantics.generic?.kind === "file" &&
+      initialSemantics.generic.label === `Preview unavailable for file ${genericFilePath}` &&
+      initialSemantics.generic.current === null &&
+      initialSemantics.generic.selected === null &&
+      initialSemantics.generic.expanded === null,
+    `The ordinary file row exposed note semantics: ${JSON.stringify(initialSemantics.generic)}`,
+  );
+  assert(
+    initialSemantics.emptyFolder?.kind === "folder" &&
+      initialSemantics.emptyFolder.label === "Empty folder, folder with 0 items" &&
+      initialSemantics.emptyFolder.expanded === "false" &&
+      initialSemantics.emptyFolder.summary === "0 items",
+    `The explicit empty folder was not represented truthfully: ${JSON.stringify(initialSemantics.emptyFolder)}`,
+  );
 
   phase = "external census convergence";
   const beforeCensus = await snapshot();
   const beforeCensusGeneration = beforeCensus.workspace?.census.generation ?? Number.NaN;
   const beforeIndexGeneration = beforeCensus.workspace?.indexGeneration;
   const beforeFilePageGeneration = beforeCensus.workspace?.filePage.generation;
+  const beforeInventoryGeneration = beforeCensus.workspace?.inventory.generation;
   const beforeSequence = beforeCensus.workspace?.watcher.lastSequence ?? 0;
   assert(
     beforeCensus.workspace?.census.discovered === fixtureMarkdownCount &&
       beforeCensus.workspace.census.indexed === fixtureMarkdownCount &&
       beforeCensus.workspace.census.total === fixtureMarkdownCount &&
       beforeCensus.workspace.filePage.total === fixtureMarkdownCount &&
-      beforeCensus.vault.markdownFileCount === fixtureMarkdownCount,
+      beforeCensus.vault.markdownFileCount === fixtureMarkdownCount &&
+      beforeCensus.workspace.inventory.state === "current" &&
+      beforeCensus.workspace.inventory.fileCount === fixtureVisibleFileCount &&
+      beforeCensus.workspace.inventory.folderCount === fixtureVisibleFolderCount,
     "The navigator census baseline did not match the independent fixture count.",
   );
   assert(
     Number.isSafeInteger(beforeCensusGeneration) &&
       typeof beforeIndexGeneration === "string" &&
+      typeof beforeInventoryGeneration === "string" &&
       beforeFilePageGeneration === beforeIndexGeneration,
-    "The navigator census baseline did not expose one coherent generation.",
+    "The navigator baseline did not expose independent metadata and inventory generations.",
   );
   await fs.writeFile(
     path.join(vaultPath, "Census Convergence.md"),
@@ -612,6 +853,9 @@ try {
       current.workspace?.census.total === convergedMarkdownCount &&
       current.workspace?.filePage.total === convergedMarkdownCount &&
       current.vault.markdownFileCount === convergedMarkdownCount &&
+      current.workspace?.inventory.state === "current" &&
+      current.workspace?.inventory.fileCount === convergedVisibleFileCount &&
+      current.workspace?.inventory.folderCount === fixtureVisibleFolderCount &&
       (current.workspace?.watcher.lastSequence ?? 0) > beforeSequence
       ? current
       : null;
@@ -624,8 +868,9 @@ try {
     convergedCensus.workspace?.census.generation === beforeCensusGeneration + 1 &&
       convergedCensus.workspace.indexGeneration !== beforeIndexGeneration &&
       convergedCensus.workspace.filePage.generation !== beforeFilePageGeneration &&
-      convergedCensus.workspace.filePage.generation === convergedCensus.workspace.indexGeneration,
-    "The converged census did not rotate one coherent generation.",
+      convergedCensus.workspace.filePage.generation === convergedCensus.workspace.indexGeneration &&
+      convergedCensus.workspace.inventory.generation !== beforeInventoryGeneration,
+    "The converged path mutation did not rotate both independent generations.",
   );
   const staleFilePage = await evaluate(`window.threadleaf.getWorkspaceFilePage({
     expectedVaultId: ${JSON.stringify(beforeCensus.vault.id)},
@@ -637,16 +882,49 @@ try {
     staleFilePage?.status === "stale-generation",
     "The navigator accepted a file-page token from before census convergence.",
   );
+  const staleTreePage = await evaluate(`window.threadleaf.getWorkspaceTreePage({
+    expectedVaultId: ${JSON.stringify(beforeCensus.vault.id)},
+    generation: ${JSON.stringify(beforeInventoryGeneration)},
+    parentPath: null,
+    offset: 0,
+    limit: 64,
+  })`);
+  assert(
+    staleTreePage?.status === "stale-generation",
+    "The navigator accepted a tree-page token from before visible inventory convergence.",
+  );
+
+  phase = "content-only generation isolation";
+  const pathMutationInventoryGeneration = convergedCensus.workspace.inventory.generation;
+  const pathMutationIndexGeneration = convergedCensus.workspace.indexGeneration;
+  const contentSequence = convergedCensus.workspace.watcher.lastSequence;
+  await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome changed\n", "utf8");
+  const contentOnly = await waitFor(async () => {
+    const current = await snapshot();
+    return current.workspace?.indexGeneration !== pathMutationIndexGeneration &&
+      current.workspace?.inventory.generation === pathMutationInventoryGeneration &&
+      current.workspace?.inventory.fileCount === convergedVisibleFileCount &&
+      current.workspace?.filePage.total === convergedMarkdownCount &&
+      (current.workspace?.watcher.lastSequence ?? 0) > contentSequence
+      ? current
+      : null;
+  }, "A content-only Markdown edit did not preserve the physical inventory generation");
+  assert(
+    contentOnly.workspace.inventory.generation === pathMutationInventoryGeneration,
+    "A content-only Markdown edit churned the Files tree generation.",
+  );
+
   const visibleCensus = await waitFor(async () => {
     const current = await evaluate(`(() => ({
       fileCount: document.querySelector("#file-count")?.textContent ?? "",
       summary: document.querySelector("#filter-summary")?.textContent ?? "",
     }))()`);
-    return current.fileCount === String(convergedMarkdownCount) &&
-      current.summary === `${convergedMarkdownCount.toLocaleString()} notes indexed`
+    return current.fileCount === String(convergedVisibleFileCount) &&
+      current.summary ===
+        `${convergedVisibleFileCount.toLocaleString()} files · ${fixtureVisibleFolderCount.toLocaleString()} folders`
       ? current
       : null;
-  }, "The rendered navigator count did not match the current census");
+  }, "The rendered Files summary did not match the physical inventory");
   await setTheme("dark");
   const censusDark = await captureScreenshot("navigator-census-converged-dark");
   const originalSummary = visibleCensus.summary;
@@ -722,6 +1000,29 @@ try {
     const item = await waitForTreePath("Projects/Deep");
     return item.expanded === "true" ? item : null;
   }, "The deep folder did not reopen");
+  const deepFolderSemantics = await waitForTreePath("Projects/Deep");
+  const noteSemantics = await waitForTreePath(activeNotePath);
+  const canvasSemantics = await waitForTreePath(canvasPath);
+  assert(
+    deepFolderSemantics.kind === "folder" &&
+      deepFolderSemantics.level === "2" &&
+      deepFolderSemantics.expanded === "true" &&
+      noteSemantics.kind === "note" &&
+      noteSemantics.level === "3" &&
+      noteSemantics.label === `Open note ${activeNotePath}` &&
+      noteSemantics.expanded === null &&
+      canvasSemantics.kind === "canvas" &&
+      canvasSemantics.level === "3" &&
+      canvasSemantics.label === `Open canvas ${canvasPath}` &&
+      canvasSemantics.expanded === null &&
+      Number(noteSemantics.position) > 0 &&
+      noteSemantics.setSize === canvasSemantics.setSize,
+    `Typed nested rows did not expose stable tree semantics: ${JSON.stringify({
+      deepFolderSemantics,
+      noteSemantics,
+      canvasSemantics,
+    })}`,
+  );
 
   const firstTreePath = await evaluate(
     'document.querySelector(".navigator-tree-row")?.getAttribute("data-tree-path") ?? null',
@@ -739,6 +1040,12 @@ try {
   await waitForFocusedTreePath(lastTreePath);
 
   phase = "context actions and guarded folder creation";
+  const folderInventoryBefore = (await snapshot()).workspace?.inventory;
+  assert(
+    folderInventoryBefore?.state === "current" &&
+      folderInventoryBefore.folderCount === fixtureVisibleFolderCount,
+    "The folder-create control did not start from a current physical inventory.",
+  );
   await rightClickSelector(treeSelector("Projects"));
   await waitFor(
     async () =>
@@ -794,6 +1101,33 @@ try {
     async () =>
       await evaluate('document.querySelector("#new-folder-dialog")?.open === false ? true : null'),
     "The committed folder dialog did not close",
+  );
+  const createdFolderSnapshot = await waitFor(
+    async () => {
+      const current = await snapshot();
+      return current.workspace?.inventory.state === "current" &&
+        current.workspace.inventory.folderCount === fixtureVisibleFolderCount + 1 &&
+        current.workspace.inventory.generation !== folderInventoryBefore.generation
+        ? current
+        : null;
+    },
+    "The created empty folder did not converge into the physical inventory",
+    30_000,
+  );
+  const createdFolderRow = await waitForTreePath("Projects/Created from navigator");
+  const createdFolderToast = await evaluate('document.querySelector("#toast")?.textContent ?? ""');
+  assert(
+    createdFolderSnapshot.workspace.inventory.fileCount === convergedVisibleFileCount &&
+      createdFolderRow.kind === "folder" &&
+      createdFolderRow.level === "2" &&
+      createdFolderRow.expanded === "false" &&
+      createdFolderRow.label === "Projects/Created from navigator, folder with 0 items" &&
+      createdFolderToast === "Created Projects/Created from navigator.",
+    `The created empty folder was not rendered immediately and truthfully: ${JSON.stringify({
+      inventory: createdFolderSnapshot.workspace.inventory,
+      row: createdFolderRow,
+      toast: createdFolderToast,
+    })}`,
   );
 
   phase = "workspace folder containment rejections";
@@ -870,6 +1204,132 @@ try {
     (await fs.stat(fileParentPath)).isFile(),
     "The rejected file-parent folder attempt changed its parent.",
   );
+
+  const vaultPreservationBaseline = await vaultManifest();
+  const vaultPreservationDigest = manifestDigest(vaultPreservationBaseline);
+
+  phase = "typed Canvas and ordinary-file activation";
+  await ensureTreeFolderExpanded("Projects");
+  await ensureTreeFolderExpanded("Projects/Deep");
+  await clickSelector(treeSelector(canvasPath));
+  const canvasSnapshot = await waitFor(async () => {
+    const current = await snapshot();
+    const pane = current.workspace?.panes.find(
+      (candidate) => candidate.id === current.workspace?.activePaneId,
+    );
+    return pane?.activeCanvas?.path === canvasPath ? current : null;
+  }, "The Canvas row did not activate the existing Canvas document path");
+  const activeCanvasRow = await waitFor(async () => {
+    const row = await waitForTreePath(canvasPath);
+    return row.current === "page" && row.selected === "true" ? row : null;
+  }, "The active Canvas did not receive current and selected tree semantics");
+  const activeCanvasPane = canvasSnapshot.workspace.panes.find(
+    (pane) => pane.id === canvasSnapshot.workspace.activePaneId,
+  );
+  assert(
+    activeCanvasRow.kind === "canvas" &&
+      activeCanvasRow.label === `Open canvas ${canvasPath}` &&
+      activeCanvasPane?.activeNote === null &&
+      activeCanvasPane?.tabs.some((tab) => tab.path === canvasPath && tab.active),
+    `Canvas activation did not use the existing document path: ${JSON.stringify({
+      row: activeCanvasRow,
+      pane: activeCanvasPane,
+    })}`,
+  );
+
+  await ensureTreeFolderCollapsed("Projects/Deep");
+  await ensureTreeFolderCollapsed("Projects");
+  await waitFor(
+    async () =>
+      (await evaluate('document.querySelector("#reveal-active-note")?.disabled === false'))
+        ? true
+        : null,
+    "The Files toolbar did not make the active Canvas revealable",
+  );
+  await clickSelector("#reveal-active-note");
+  const revealedCanvas = await waitFor(async () => {
+    const row = await waitForTreePath(canvasPath);
+    return row.current === "page" && row.selected === "true" ? row : null;
+  }, "The Files reveal action did not restore the active Canvas ancestor chain");
+  assert(
+    revealedCanvas.kind === "canvas",
+    `The revealed Canvas changed kind: ${JSON.stringify(revealedCanvas)}`,
+  );
+
+  const openNoteCalls = await instrumentRendererFunctionCalls("window.threadleaf.openNote");
+  const positiveControlBaseline = openNoteCalls.count();
+  await evaluate(
+    `window.threadleaf.openNote(${JSON.stringify(canvasPath)}, undefined, false).then(() => true)`,
+  );
+  await waitFor(
+    async () => (openNoteCalls.count() === positiveControlBaseline + 1 ? true : null),
+    "The openNote bridge-call counter did not arm on its positive control",
+  );
+  openNoteCalls.assertHealthy();
+  const genericActivationCallBaseline = openNoteCalls.count();
+  const genericBeforePointer = workspaceActivationState(await snapshot());
+  const genericRow = await waitForTreePath(genericFilePath);
+  assert(
+    genericRow.kind === "file" &&
+      genericRow.label === `Preview unavailable for file ${genericFilePath}` &&
+      genericRow.current === null &&
+      genericRow.selected === null &&
+      genericRow.expanded === null,
+    `The ordinary file row inherited document semantics: ${JSON.stringify(genericRow)}`,
+  );
+  await clickSelector(treeSelector(genericFilePath));
+  const pointerPreviewToast = await waitFor(async () => {
+    const message = await evaluate('document.querySelector("#toast")?.textContent ?? ""');
+    return message ===
+      `Preview unavailable for ${genericFilePath}. Threadleaf does not open ordinary files yet.`
+      ? message
+      : null;
+  }, "Pointer activation did not explain the ordinary-file preview boundary");
+  const genericAfterPointer = workspaceActivationState(await snapshot());
+  assert(
+    JSON.stringify(genericAfterPointer) === JSON.stringify(genericBeforePointer),
+    `Pointer activation mutated document state for an ordinary file: ${JSON.stringify({
+      before: genericBeforePointer,
+      after: genericAfterPointer,
+    })}`,
+  );
+  assert(
+    openNoteCalls.count() === genericActivationCallBaseline,
+    "Pointer activation called openNote for an ordinary file.",
+  );
+  assert(pointerPreviewToast.includes(genericFilePath), "The preview toast omitted the file path.");
+
+  await evaluate(`(() => {
+    const toast = document.querySelector("#toast");
+    const row = document.querySelector(${JSON.stringify(treeSelector(genericFilePath))});
+    if (!(toast instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
+    toast.textContent = "KEYBOARD ACTIVATION SENTINEL";
+    row.focus();
+    return document.activeElement === row;
+  })()`);
+  await waitForFocusedTreePath(genericFilePath);
+  await pressKey("Enter", "Enter");
+  await waitFor(async () => {
+    const message = await evaluate('document.querySelector("#toast")?.textContent ?? ""');
+    return message ===
+      `Preview unavailable for ${genericFilePath}. Threadleaf does not open ordinary files yet.`
+      ? message
+      : null;
+  }, "Keyboard activation did not explain the ordinary-file preview boundary");
+  const genericAfterKeyboard = workspaceActivationState(await snapshot());
+  assert(
+    JSON.stringify(genericAfterKeyboard) === JSON.stringify(genericBeforePointer),
+    `Keyboard activation mutated document state for an ordinary file: ${JSON.stringify({
+      before: genericBeforePointer,
+      after: genericAfterKeyboard,
+    })}`,
+  );
+  assert(
+    openNoteCalls.count() === genericActivationCallBaseline,
+    "Keyboard activation called openNote for an ordinary file.",
+  );
+  openNoteCalls.assertHealthy();
+  await openNoteCalls.close();
 
   phase = "reveal active note and truncated active row";
   await clickSelector(treeSelector(activeNotePath));
@@ -966,6 +1426,69 @@ try {
   assert(
     darkActive !== lightActive && darkLibrary !== lightLibrary,
     "Dark and light navigator screenshots are pixel-identical.",
+  );
+
+  phase = "narrow Files rendering";
+  const wideViewport = await evaluate("({ width: innerWidth, height: innerHeight })");
+  await setViewport(720, 840);
+  await setTheme("dark");
+  const narrowDark = await captureScreenshot("navigator-tree-narrow-dark");
+  const narrowLayout = await evaluate(`(() => {
+    const list = document.querySelector("#file-list");
+    const navigator = document.querySelector(".navigator");
+    const summary = document.querySelector("#filter-summary");
+    const heading = document.querySelector("#files-heading");
+    if (!(list instanceof HTMLElement) || !(navigator instanceof HTMLElement) ||
+        !(summary instanceof HTMLElement) || !(heading instanceof HTMLElement)) return null;
+    const listBounds = list.getBoundingClientRect();
+    const navigatorBounds = navigator.getBoundingClientRect();
+    const summaryBounds = summary.getBoundingClientRect();
+    const rowBounds = [...list.querySelectorAll(".navigator-tree-row")].map((row) =>
+      row.getBoundingClientRect()
+    );
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      documentScrollWidth: document.documentElement.scrollWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+      listClientWidth: list.clientWidth,
+      listScrollWidth: list.scrollWidth,
+      navigatorBounds: { left: navigatorBounds.left, right: navigatorBounds.right },
+      summaryBounds: { left: summaryBounds.left, right: summaryBounds.right },
+      rowsBounded: rowBounds.every((bounds) =>
+        bounds.left >= listBounds.left - 1 && bounds.right <= listBounds.right + 1
+      ),
+      summary: summary.textContent ?? "",
+      heading: heading.textContent ?? "",
+    };
+  })()`);
+  assert(
+    narrowLayout?.viewport.width === 720 &&
+      narrowLayout.viewport.height === 840 &&
+      narrowLayout.documentScrollWidth <= 720 &&
+      narrowLayout.bodyScrollWidth <= 720 &&
+      narrowLayout.listScrollWidth <= narrowLayout.listClientWidth + 1 &&
+      narrowLayout.navigatorBounds.left >= 0 &&
+      narrowLayout.navigatorBounds.right <= 720 &&
+      narrowLayout.summaryBounds.left >= narrowLayout.navigatorBounds.left &&
+      narrowLayout.summaryBounds.right <= narrowLayout.navigatorBounds.right &&
+      narrowLayout.rowsBounded &&
+      narrowLayout.summary ===
+        `${convergedVisibleFileCount.toLocaleString()} files · ${(fixtureVisibleFolderCount + 1).toLocaleString()} folders` &&
+      narrowLayout.heading === "Files",
+    `The Files navigator overflowed or lost its truthful summary at 720px: ${JSON.stringify(narrowLayout)}`,
+  );
+  await setTheme("light");
+  const narrowLight = await captureScreenshot("navigator-tree-narrow-light");
+  assert(narrowDark !== narrowLight, "The narrow Files screenshots ignored the active theme.");
+  await clearViewport();
+  await waitFor(
+    async () =>
+      (await evaluate(
+        `innerWidth === ${wideViewport.width} && innerHeight === ${wideViewport.height}`,
+      ))
+        ? true
+        : null,
+    "The renderer did not restore its wide viewport",
   );
 
   phase = "flat list and flat search reachability";
@@ -1086,7 +1609,11 @@ try {
   );
   await closeApplication();
   await launchApplication();
-  await waitForReady(convergedMarkdownCount);
+  await waitForReady(
+    convergedMarkdownCount,
+    convergedVisibleFileCount,
+    fixtureVisibleFolderCount + 1,
+  );
   await assertIsolatedX11Renderer();
   await waitFor(
     async () =>
@@ -1128,12 +1655,36 @@ try {
   );
   await closeApplication();
 
+  phase = "source vault preservation";
+  const vaultPreservationAfter = await vaultManifest();
+  const vaultPreservationAfterDigest = manifestDigest(vaultPreservationAfter);
+  if (vaultPreservationAfterDigest !== vaultPreservationDigest) {
+    const changedIndex = Array.from(
+      { length: Math.max(vaultPreservationBaseline.length, vaultPreservationAfter.length) },
+      (_, index) => index,
+    ).find(
+      (index) =>
+        JSON.stringify(vaultPreservationBaseline[index]) !==
+        JSON.stringify(vaultPreservationAfter[index]),
+    );
+    throw new Error(
+      `Browsing the Files tree changed the source vault: ${JSON.stringify({
+        beforeDigest: vaultPreservationDigest,
+        afterDigest: vaultPreservationAfterDigest,
+        index: changedIndex,
+        before: changedIndex === undefined ? null : vaultPreservationBaseline[changedIndex],
+        after: changedIndex === undefined ? null : vaultPreservationAfter[changedIndex],
+      })}`,
+    );
+  }
+
   console.log(`NAVIGATOR_TREE_LIVE_MOUNTED_ROWS=${libraryVisual.rows}`);
   console.log(
     `NAVIGATOR_TREE_DEEP_REVEAL elapsed_ms=${deepReveal.elapsedMs} layout_writes=${deepLayoutEvents.length}`,
   );
+  console.log(`NAVIGATOR_TREE_SOURCE_VAULT_SHA256=${vaultPreservationAfterDigest}`);
   console.log(
-    "Verified isolated X11 navigator tree: external census convergence, initial collapse, ARIA hierarchy, keyboard traversal, guarded folder rejections, batched deep reveal, context creation, per-vault layout persistence, flat search/list fallback, dark/light screenshots, truncation, active highlight, and 1,001-child virtualization.",
+    "Verified isolated X11 Files navigator: independent physical-inventory convergence, explicit empty folders, typed Note/Canvas/file activation with an armed openNote bridge counter, source-vault preservation, ARIA hierarchy, keyboard traversal, guarded folder rejections, batched deep reveal, context creation, per-vault layout persistence, flat search/list fallback, wide/narrow dark/light screenshots, truncation, active highlight, and 1,001-child virtualization.",
   );
   if (screenshotDirectory) {
     console.log(`NAVIGATOR_TREE_SCREENSHOTS=${screenshotDirectory}`);

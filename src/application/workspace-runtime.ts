@@ -11,6 +11,7 @@ import {
   hasHiddenVaultSegment,
   hasPrivateVaultSegment,
   normalizeVaultPath,
+  type VisibleVaultPaths,
 } from "../kernel/path-policy";
 import type {
   StateRootPort,
@@ -73,6 +74,7 @@ import type {
   WorkspaceTreePageResponse,
   WorkspaceTreePathRequest,
   WorkspaceTreePathResponse,
+  WorkspaceVisibleInventorySnapshot,
 } from "../shared/contracts";
 import { maximumWorkspaceFilePageSize } from "../shared/contracts";
 import {
@@ -91,7 +93,11 @@ import {
   parseVaultWorkspaceSettings,
   type VaultWorkspaceSettings,
 } from "../shared/workspace-settings";
-import { buildWorkspaceTreeIndex, type WorkspaceTreeIndex } from "../shared/workspace-tree";
+import {
+  buildWorkspaceTreeIndex,
+  compareWorkspaceInventoryPaths,
+  type WorkspaceTreeIndex,
+} from "../shared/workspace-tree";
 import { ActionRegistry } from "./action-registry";
 import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
 import { loadCanvasAttachment } from "./canvas-attachment-service";
@@ -255,12 +261,30 @@ interface WorkspaceIndexProjection {
   files: WorkspaceFileSummary[];
   interactiveFiles: WorkspaceFileSummary[];
   tags: WorkspaceTagSummary[];
+}
+
+interface WorkspaceInventoryProjection {
+  generation: string;
+  files: readonly string[];
+  folders: readonly string[];
   tree: WorkspaceTreeIndex;
+}
+
+function visibleInventoryProjection(
+  visible: VisibleVaultPaths,
+): Omit<WorkspaceInventoryProjection, "generation"> {
+  const tree = buildWorkspaceTreeIndex(visible);
+  return {
+    files: [...tree.filePaths].sort(compareWorkspaceInventoryPaths),
+    folders: [...tree.folderPaths].sort(compareWorkspaceInventoryPaths),
+    tree,
+  };
 }
 
 interface WorkspaceSnapshotIndexCapture {
   projection: WorkspaceIndexProjection;
   census: WorkspaceCensusSnapshot;
+  inventory: WorkspaceVisibleInventorySnapshot;
   indexGeneration: string;
   watcherError: string | null;
   lastWatchSequence: number;
@@ -950,7 +974,19 @@ export class WorkspaceRuntime {
   #lastWatchSequence = 0;
   #lastRescanReason: string | null = null;
   #indexProjection: WorkspaceIndexProjection | null = null;
-  #visibleVaultFiles: { sequence: number; promise: Promise<readonly string[]> } | null = null;
+  #inventoryProjection: WorkspaceInventoryProjection | null = null;
+  #inventoryInvalidationSequence = 1;
+  #inventoryPublishedSequence = 0;
+  #inventoryRefresh: Promise<void> | null = null;
+  #inventoryGenerationEpoch = 0;
+  #inventoryScanAllowed = true;
+  #inventoryState: WorkspaceVisibleInventorySnapshot = {
+    state: "warming",
+    generation: "pending",
+    fileCount: 0,
+    folderCount: 0,
+    error: null,
+  };
   /**
    * Tracked paths the workspace has not accepted as gone. Closing a tab is not
    * reversible, and both the kernel and outside writers replace a file by
@@ -977,7 +1013,6 @@ export class WorkspaceRuntime {
    * exactly as it was rather than emptied and rebuilt for a gap nobody caused.
    */
   readonly #retainedCanvases = new Map<string, WorkspaceCanvasSnapshot>();
-  #reconcilePass = 0;
   readonly #now: () => number;
   readonly #diagnostics: WorkspaceOpenDiagnostics | undefined;
   #census: WorkspaceCensusSnapshot = {
@@ -1055,6 +1090,11 @@ export class WorkspaceRuntime {
     this.#workspaceSettings = workspaceSettings;
     this.#workspaceLoadWarning = workspaceLoadWarning;
     this.#diagnostics = diagnostics;
+    this.#inventoryScanAllowed = !deferredCensus;
+    this.#inventoryState = {
+      ...this.#inventoryState,
+      generation: this.workspaceInventoryGeneration(),
+    };
     for (const filePath of warmingVisiblePaths) this.#warmingVisiblePaths.add(filePath);
     this.#activateFirstNoteAfterCensus = activateFirstNoteAfterCensus;
     if (deferredCensus) {
@@ -1319,6 +1359,7 @@ export class WorkspaceRuntime {
         runtime.applyWorkspaceState(restoredWorkspace);
       } else {
         const visible = await kernel.listVisiblePaths();
+        runtime.seedVisibleInventory(visible);
         const availablePaths = new Set([
           ...indexReactor.index.snapshot().documents.map((document) => document.path),
           ...visible.files.filter(isCanvasPath),
@@ -1472,8 +1513,16 @@ export class WorkspaceRuntime {
     };
   }
 
-  getWorkspaceTreePage(request: WorkspaceTreePageRequest): Promise<WorkspaceTreePageResponse> {
-    return this.withIndexStateLock(() => this.getWorkspaceTreePageLocked(request));
+  async getWorkspaceTreePage(
+    request: WorkspaceTreePageRequest,
+  ): Promise<WorkspaceTreePageResponse> {
+    while (true) {
+      await this.ensureVisibleInventory();
+      const response = await this.withIndexStateLock(async () =>
+        this.inventoryCaptureNeedsRetry() ? null : this.getWorkspaceTreePageLocked(request),
+      );
+      if (response) return response;
+    }
   }
 
   private async getWorkspaceTreePageLocked(
@@ -1500,18 +1549,30 @@ export class WorkspaceRuntime {
         status: "stale-generation",
         vaultId: this.kernel.vaultId,
         generation,
-        census: this.censusSnapshot(),
+        inventory: this.inventorySnapshot(),
       };
     }
-    if (this.#census.state !== "current") {
+    if (this.#inventoryState.state !== "current") {
       return {
-        status: this.#census.state === "degraded" ? "degraded" : "warming",
+        status: this.#inventoryState.state,
         vaultId: this.kernel.vaultId,
         generation,
-        census: this.censusSnapshot(),
+        inventory: this.inventorySnapshot(),
       };
     }
-    const entries = this.workspaceIndexProjection().tree.childrenByParent.get(parentPath) ?? [];
+    const tree = this.#inventoryProjection?.tree;
+    if (!tree) {
+      throw new Error("The current visible file inventory has no tree projection.");
+    }
+    if (parentPath !== null && !tree.folderPaths.has(parentPath)) {
+      return {
+        status: "missing-parent",
+        vaultId: this.kernel.vaultId,
+        generation,
+        parentPath,
+      };
+    }
+    const entries = tree.childrenByParent.get(parentPath) ?? [];
     const pageEntries = entries.slice(request.offset, request.offset + request.limit);
     return {
       status: "ready",
@@ -1565,8 +1626,16 @@ export class WorkspaceRuntime {
     };
   }
 
-  getWorkspaceTreePath(request: WorkspaceTreePathRequest): Promise<WorkspaceTreePathResponse> {
-    return this.withIndexStateLock(() => this.getWorkspaceTreePathLocked(request));
+  async getWorkspaceTreePath(
+    request: WorkspaceTreePathRequest,
+  ): Promise<WorkspaceTreePathResponse> {
+    while (true) {
+      await this.ensureVisibleInventory();
+      const response = await this.withIndexStateLock(async () =>
+        this.inventoryCaptureNeedsRetry() ? null : this.getWorkspaceTreePathLocked(request),
+      );
+      if (response) return response;
+    }
   }
 
   private async getWorkspaceTreePathLocked(
@@ -1582,18 +1651,18 @@ export class WorkspaceRuntime {
         status: "stale-generation",
         vaultId: this.kernel.vaultId,
         generation,
-        census: this.censusSnapshot(),
+        inventory: this.inventorySnapshot(),
       };
     }
-    if (this.#census.state !== "current") {
+    if (this.#inventoryState.state !== "current") {
       return {
-        status: this.#census.state === "degraded" ? "degraded" : "warming",
+        status: this.#inventoryState.state,
         vaultId: this.kernel.vaultId,
         generation,
-        census: this.censusSnapshot(),
+        inventory: this.inventorySnapshot(),
       };
     }
-    const location = this.workspaceIndexProjection().tree.pathLocations.get(path);
+    const location = this.#inventoryProjection?.tree.pathLocations.get(path);
     if (!location) {
       return { status: "missing", vaultId: this.kernel.vaultId };
     }
@@ -1611,26 +1680,116 @@ export class WorkspaceRuntime {
     await this.#censusPromise;
   }
 
-  private visibleVaultFiles(): Promise<readonly string[]> {
-    // Keyed on the reconcile pass rather than the watcher's sequence. The
-    // watcher snapshots Markdown only, so a canvas appearing or disappearing
-    // moves no sequence, and an inventory held against one was reused across the
-    // very reconciliation meant to notice. Every pass advances this, so no look
-    // at the vault is answered from before it - and a pass is still one pass, so
-    // a single snapshot build still lists the vault once.
-    const sequence = this.#reconcilePass;
-    if (this.#visibleVaultFiles?.sequence === sequence) {
-      return this.#visibleVaultFiles.promise;
-    }
-    const promise = this.kernel.listVisiblePaths().then(
-      (visible) => visible.files,
-      (error) => {
-        if (this.#visibleVaultFiles?.promise === promise) this.#visibleVaultFiles = null;
-        throw error;
-      },
+  private workspaceInventoryGeneration(): string {
+    return `${this.#indexGenerationInstanceNonce}:files:${this.#inventoryGenerationEpoch}`;
+  }
+
+  private inventorySnapshot(): WorkspaceVisibleInventorySnapshot {
+    return { ...this.#inventoryState };
+  }
+
+  private invalidateVisibleInventory(): void {
+    this.#inventoryInvalidationSequence += 1;
+  }
+
+  private seedVisibleInventory(visible: VisibleVaultPaths): void {
+    const candidate = visibleInventoryProjection(visible);
+    this.#inventoryGenerationEpoch += 1;
+    const generation = this.workspaceInventoryGeneration();
+    this.#inventoryProjection = { ...candidate, generation };
+    this.#inventoryPublishedSequence = this.#inventoryInvalidationSequence;
+    this.#inventoryState = {
+      state: "current",
+      generation,
+      fileCount: candidate.files.length,
+      folderCount: candidate.folders.length,
+      error: null,
+    };
+  }
+
+  private inventoryCaptureNeedsRetry(): boolean {
+    return (
+      !this.#closed &&
+      this.#inventoryScanAllowed &&
+      this.#inventoryPublishedSequence !== this.#inventoryInvalidationSequence
     );
-    this.#visibleVaultFiles = { sequence, promise };
-    return promise;
+  }
+
+  private ensureVisibleInventory(): Promise<void> {
+    if (this.#closed || !this.#inventoryScanAllowed) return Promise.resolve();
+    if (
+      this.#inventoryProjection &&
+      this.#inventoryState.state === "current" &&
+      !this.inventoryCaptureNeedsRetry()
+    ) {
+      return Promise.resolve();
+    }
+    if (this.#inventoryRefresh) return this.#inventoryRefresh;
+
+    const refresh = this.refreshVisibleInventoryUntilSettled();
+    const tracked = refresh.finally(() => {
+      if (this.#inventoryRefresh === tracked) this.#inventoryRefresh = null;
+    });
+    this.#inventoryRefresh = tracked;
+    return tracked;
+  }
+
+  private async refreshVisibleInventoryUntilSettled(): Promise<void> {
+    while (this.#inventoryScanAllowed && !this.#closed) {
+      const invalidationSequence = this.#inventoryInvalidationSequence;
+      let candidate: Omit<WorkspaceInventoryProjection, "generation">;
+      try {
+        const visible = await this.kernel.listVisiblePaths();
+        candidate = visibleInventoryProjection(visible);
+      } catch {
+        const outcome = await this.withIndexStateLock(async () => {
+          if (invalidationSequence !== this.#inventoryInvalidationSequence) return "retry" as const;
+          this.#inventoryPublishedSequence = invalidationSequence;
+          this.#inventoryState = {
+            state: "degraded",
+            generation:
+              this.#inventoryProjection?.generation ?? this.workspaceInventoryGeneration(),
+            fileCount: this.#inventoryProjection?.files.length ?? 0,
+            folderCount: this.#inventoryProjection?.folders.length ?? 0,
+            error: "The visible file inventory could not be read.",
+          };
+          return "done" as const;
+        });
+        if (outcome === "retry") continue;
+        return;
+      }
+
+      const outcome = await this.withIndexStateLock(async () => {
+        if (invalidationSequence !== this.#inventoryInvalidationSequence) return "retry" as const;
+        const previous = this.#inventoryProjection;
+        const unchanged =
+          previous !== null &&
+          previous.files.length === candidate.files.length &&
+          previous.folders.length === candidate.folders.length &&
+          previous.files.every((filePath, index) => filePath === candidate.files[index]) &&
+          previous.folders.every((folderPath, index) => folderPath === candidate.folders[index]);
+        if (!unchanged) {
+          this.#inventoryGenerationEpoch += 1;
+          this.#inventoryProjection = {
+            ...candidate,
+            generation: this.workspaceInventoryGeneration(),
+          };
+        }
+        const projection = this.#inventoryProjection;
+        if (!projection) throw new Error("The visible file inventory was not published.");
+        this.#inventoryPublishedSequence = invalidationSequence;
+        this.#inventoryState = {
+          state: "current",
+          generation: projection.generation,
+          fileCount: projection.files.length,
+          folderCount: projection.folders.length,
+          error: null,
+        };
+        return "done" as const;
+      });
+      if (outcome === "retry") continue;
+      return;
+    }
   }
 
   private async snapshotWithPluginState(pluginSnapshot: RuntimeSnapshot): Promise<RuntimeSnapshot> {
@@ -1886,6 +2045,7 @@ export class WorkspaceRuntime {
     this.assertWritable("restore notes from trash");
     const outcome = await restoreTrashedMarkdownNote(this.kernel, filePath, expectedRevision);
     if (outcome.status === "committed") {
+      this.invalidateVisibleInventory();
       const restored = await this.kernel.readText(outcome.to);
       await this.withIndexMutation(async () => {
         this.watcher.operations.expect({
@@ -1975,7 +2135,17 @@ export class WorkspaceRuntime {
       return { status: "stale-vault", vaultId: this.kernel.vaultId };
     }
     try {
-      const visiblePaths = await this.withIndexStateLock(() => this.visibleVaultFiles());
+      let visiblePaths: readonly string[] | null = null;
+      while (visiblePaths === null) {
+        await this.ensureVisibleInventory();
+        visiblePaths = await this.withIndexStateLock(async () => {
+          if (this.inventoryCaptureNeedsRetry()) return null;
+          if (this.#inventoryState.state !== "current" || !this.#inventoryProjection) {
+            throw new Error("The visible file inventory is unavailable.");
+          }
+          return this.#inventoryProjection.files;
+        });
+      }
       return loadVaultAttachment(this.kernel, sourceNotePath, target, expectedVaultId, {
         visiblePaths,
       });
@@ -2106,6 +2276,7 @@ export class WorkspaceRuntime {
         revision: outcome.revision,
       });
     } else if (outcome.status === "conflict") {
+      this.invalidateVisibleInventory();
       const conflict = await this.kernel.readBinary(outcome.conflictPath, 8 * 1024 * 1024);
       if (conflict.status === "ready") {
         this.watcher.operations.expect({
@@ -2284,7 +2455,7 @@ export class WorkspaceRuntime {
       throw new Error(`Plugin file creation cannot target private application paths: ${filePath}`);
     }
     const outcome = await this.kernel.createBinary(normalizedPath, content);
-    this.#visibleVaultFiles = null;
+    this.invalidateVisibleInventory();
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
     await this.withIndexMutation(async () => {
       if (outcome.status === "committed") {
@@ -2342,7 +2513,7 @@ export class WorkspaceRuntime {
       throw new Error(`Plugin file saves cannot target private application paths: ${filePath}`);
     }
     const outcome = await this.kernel.writeBinary(normalizedPath, content, expectedRevision);
-    this.#visibleVaultFiles = null;
+    this.invalidateVisibleInventory();
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
     await this.withIndexMutation(async () => {
       if (outcome.status === "committed") {
@@ -2412,7 +2583,7 @@ export class WorkspaceRuntime {
       normalizedTarget,
       expectedRevision,
     );
-    this.#visibleVaultFiles = null;
+    this.invalidateVisibleInventory();
     await this.withIndexMutation(async () => {
       if (outcome.status === "committed") {
         this.watcher.operations.expect({
@@ -2463,7 +2634,7 @@ export class WorkspaceRuntime {
       `${vaultTrashDirectory}/${normalizedSource}`,
       expectedRevision,
     );
-    this.#visibleVaultFiles = null;
+    this.invalidateVisibleInventory();
     await this.withIndexMutation(async () => {
       if (outcome.status === "committed") {
         this.watcher.operations.expect({
@@ -2490,7 +2661,9 @@ export class WorkspaceRuntime {
       throw new Error("The active vault changed before this folder could be created.");
     }
     this.assertWritable("create plugin folders");
-    return this.kernel.createDirectory(folderPath);
+    const outcome = await this.kernel.createDirectory(folderPath);
+    if (outcome.created) this.invalidateVisibleInventory();
+    return outcome;
   }
 
   async runPluginCommand(
@@ -2558,7 +2731,7 @@ export class WorkspaceRuntime {
       // A scan with nothing to report is still a look at the vault, and it is the
       // look that confirms an absence observed on the pass before it.
       await this.withIndexMutation(async () => {
-        this.#reconcilePass += 1;
+        this.invalidateVisibleInventory();
         if (await this.settleUnconfirmedAbsences()) {
           await this.persistWorkspaceStateBestEffort();
         }
@@ -3268,6 +3441,7 @@ export class WorkspaceRuntime {
         };
       }
       const target = await this.kernel.readText(result.to);
+      this.invalidateVisibleInventory();
       await this.withIndexMutation(async () => {
         this.watcher.operations.expect({
           id: result.transactionId,
@@ -3310,6 +3484,7 @@ export class WorkspaceRuntime {
       return outcome;
     }
 
+    this.invalidateVisibleInventory();
     const target = await this.kernel.readText(outcome.to);
     await this.withIndexMutation(async () => {
       if (outcome.writes.length === 0) {
@@ -3396,6 +3571,7 @@ export class WorkspaceRuntime {
       return outcome;
     }
 
+    this.invalidateVisibleInventory();
     if (outcome.writes.length > 0) {
       await this.withIndexMutation(async () => {
         this.watcher.operations.expect({
@@ -3423,6 +3599,7 @@ export class WorkspaceRuntime {
       return outcome;
     }
 
+    this.invalidateVisibleInventory();
     await this.withIndexMutation(async () => {
       this.watcher.operations.expect({
         id: outcome.transactionId,
@@ -3553,6 +3730,7 @@ export class WorkspaceRuntime {
       return;
     }
 
+    this.invalidateVisibleInventory();
     const conflictCopy = await this.kernel.readText(outcome.conflictPath);
     this.watcher.operations.expect({
       id: outcome.transactionId,
@@ -3614,6 +3792,7 @@ export class WorkspaceRuntime {
       }
       return;
     }
+    this.invalidateVisibleInventory();
     if (outcome.status === "committed") {
       this.watcher.operations.expect({
         id: outcome.transactionId,
@@ -3653,14 +3832,13 @@ export class WorkspaceRuntime {
   private async handleWatchBatch(batch: VaultChangeBatch, publish = true): Promise<void> {
     if (this.#closed) return;
     await this.withIndexMutation(() => this.acceptWatchBatch(batch));
-    if (publish) {
+    if (publish && !this.#closed) {
       await this.publishSnapshot();
     }
   }
 
   private async acceptWatchBatch(batch: VaultChangeBatch): Promise<void> {
-    this.#visibleVaultFiles = null;
-    this.#reconcilePass += 1;
+    this.invalidateVisibleInventory();
     // The metadata index keeps applying deletions as they are observed. During a
     // transient absence the file really is missing, so removing it keeps the
     // index honest about the vault, and the upsert that follows refreshes it. The
@@ -4004,105 +4182,112 @@ export class WorkspaceRuntime {
 
   private async getWorkspaceSnapshot(): Promise<NonNullable<RuntimeSnapshot["workspace"]>> {
     const snapshotStartedAt = this.#diagnostics?.now();
-    const capture = await this.withIndexStateLock(
-      async (): Promise<WorkspaceSnapshotIndexCapture> => {
-        const projection = this.workspaceIndexProjection();
-        const census = this.censusSnapshot();
-        const indexGeneration = this.workspaceIndexGeneration();
-        const visibleFiles =
-          census.state === "current"
-            ? await this.visibleVaultFiles()
-            : [...this.#warmingVisiblePaths];
-        const canvasPaths = visibleFiles.filter(isCanvasPath);
-        const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
-          path: filePath,
-          title: titleForJsonCanvasPath(filePath),
-        }));
-        const availablePaths = new Set([...projection.documents.keys(), ...canvasPaths]);
-        // Reconciliation closes a tab here and in the two sibling call sites that
-        // reconcile against the vault listing, so all three ask the same authority
-        // what may still be held. Only the confirmed-absent path in
-        // settleUnconfirmedAbsences may take a retained path out of the panes.
-        const trackedPaths = this.trackedWorkspacePaths();
-        let retainedPaths: ReadonlySet<string>;
-        let trackedMissing: string[];
-        if (census.state === "current") {
-          const retained = this.retainTrackedPaths(
-            availablePaths,
-            trackedPaths,
-            this.#reconcileStartupPathsAfterCensus ? "startup" : "transient",
-          );
-          retainedPaths = retained.retainedPaths;
-          trackedMissing = retained.trackedMissing;
-          this.#reconcileStartupPathsAfterCensus = false;
-        } else {
-          trackedMissing = [...trackedPaths].filter((filePath) => !availablePaths.has(filePath));
-          retainedPaths =
+    let capture: WorkspaceSnapshotIndexCapture | null = null;
+    while (capture === null) {
+      await this.ensureVisibleInventory();
+      capture = await this.withIndexStateLock(
+        async (): Promise<WorkspaceSnapshotIndexCapture | null> => {
+          if (this.inventoryCaptureNeedsRetry()) return null;
+          const projection = this.workspaceIndexProjection();
+          const census = this.censusSnapshot();
+          const inventory = this.inventorySnapshot();
+          const indexGeneration = this.workspaceIndexGeneration();
+          const visibleFiles = this.#inventoryProjection?.files ?? [...this.#warmingVisiblePaths];
+          const canvasPaths = visibleFiles.filter(isCanvasPath);
+          const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
+            path: filePath,
+            title: titleForJsonCanvasPath(filePath),
+          }));
+          const availablePaths = new Set([...projection.documents.keys(), ...canvasPaths]);
+          // Reconciliation closes a tab here and in the two sibling call sites that
+          // reconcile against the vault listing, so all three ask the same authority
+          // what may still be held. Only the confirmed-absent path in
+          // settleUnconfirmedAbsences may take a retained path out of the panes.
+          const trackedPaths = this.trackedWorkspacePaths();
+          let retainedPaths: ReadonlySet<string>;
+          let trackedMissing: string[];
+          if (census.state === "current" && inventory.state === "current") {
+            const retained = this.retainTrackedPaths(
+              availablePaths,
+              trackedPaths,
+              this.#reconcileStartupPathsAfterCensus ? "startup" : "transient",
+            );
+            retainedPaths = retained.retainedPaths;
+            trackedMissing = retained.trackedMissing;
+            this.#reconcileStartupPathsAfterCensus = false;
+          } else {
+            trackedMissing = [...trackedPaths].filter((filePath) => !availablePaths.has(filePath));
+            retainedPaths =
+              trackedMissing.length === 0
+                ? availablePaths
+                : new Set([...availablePaths, ...trackedMissing]);
+          }
+          // A retained path can still be unrenderable: nothing readable was ever
+          // published for it. It may hold the selection anyway - the pane says what it
+          // is waiting for instead of rendering a document - because a selection this
+          // pane was given is not something reconciliation gets to overwrite for an
+          // absence it has not confirmed. What renderability decides is which tab is
+          // picked when the pane has to choose one for itself.
+          const renderablePaths =
             trackedMissing.length === 0
               ? availablePaths
-              : new Set([...availablePaths, ...trackedMissing]);
-        }
-        // A retained path can still be unrenderable: nothing readable was ever
-        // published for it. It may hold the selection anyway - the pane says what it
-        // is waiting for instead of rendering a document - because a selection this
-        // pane was given is not something reconciliation gets to overwrite for an
-        // absence it has not confirmed. What renderability decides is which tab is
-        // picked when the pane has to choose one for itself.
-        const renderablePaths =
-          trackedMissing.length === 0
-            ? availablePaths
-            : new Set([
-                ...availablePaths,
-                ...trackedMissing.filter(
-                  (filePath) =>
-                    this.#retainedNotes.has(filePath) || this.#retainedCanvases.has(filePath),
-                ),
-              ]);
-        const reconciledPanes = this.#panes.map((pane) => {
-          const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
-          const activePath =
-            pane.activePath && openPaths.includes(pane.activePath)
-              ? pane.activePath
-              : (openPaths.filter((filePath) => renderablePaths.has(filePath)).at(-1) ??
-                openPaths.at(-1) ??
-                null);
-          const navigationHistory = navigationHistoryForPaths(
-            pane.navigationHistory,
-            retainedPaths,
-            activePath,
+              : new Set([
+                  ...availablePaths,
+                  ...trackedMissing.filter(
+                    (filePath) =>
+                      this.#retainedNotes.has(filePath) || this.#retainedCanvases.has(filePath),
+                  ),
+                ]);
+          const reconciledPanes = this.#panes.map((pane) => {
+            const openPaths = pane.openPaths.filter((filePath) => retainedPaths.has(filePath));
+            const activePath =
+              pane.activePath && openPaths.includes(pane.activePath)
+                ? pane.activePath
+                : (openPaths.filter((filePath) => renderablePaths.has(filePath)).at(-1) ??
+                  openPaths.at(-1) ??
+                  null);
+            const navigationHistory = navigationHistoryForPaths(
+              pane.navigationHistory,
+              retainedPaths,
+              activePath,
+            );
+            return {
+              id: pane.id,
+              openPaths,
+              pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
+              activePath,
+              ...(navigationHistory ? { navigationHistory } : {}),
+            };
+          });
+          const snapshotState = createWorkspaceLayout(
+            this.kernel.vaultId,
+            reconciledPanes,
+            this.#activePaneId,
+            this.#splitDirection,
           );
+          const workspaceChanged = !workspaceStatesEqual(
+            this.currentWorkspaceState(),
+            snapshotState,
+          );
+          if (workspaceChanged) {
+            this.applyWorkspaceState(snapshotState);
+          }
           return {
-            id: pane.id,
-            openPaths,
-            pinnedPaths: pane.pinnedPaths.filter((filePath) => openPaths.includes(filePath)),
-            activePath,
-            ...(navigationHistory ? { navigationHistory } : {}),
+            projection,
+            census,
+            inventory,
+            indexGeneration,
+            watcherError: this.#watcherError,
+            lastWatchSequence: this.#lastWatchSequence,
+            lastRescanReason: this.#lastRescanReason,
+            canvasFiles,
+            renderablePaths,
+            snapshotState,
+            workspaceChanged,
           };
-        });
-        const snapshotState = createWorkspaceLayout(
-          this.kernel.vaultId,
-          reconciledPanes,
-          this.#activePaneId,
-          this.#splitDirection,
-        );
-        const workspaceChanged = !workspaceStatesEqual(this.currentWorkspaceState(), snapshotState);
-        if (workspaceChanged) {
-          this.applyWorkspaceState(snapshotState);
-        }
-        return {
-          projection,
-          census,
-          indexGeneration,
-          watcherError: this.#watcherError,
-          lastWatchSequence: this.#lastWatchSequence,
-          lastRescanReason: this.#lastRescanReason,
-          canvasFiles,
-          renderablePaths,
-          snapshotState,
-          workspaceChanged,
-        };
-      },
-    );
+        },
+      );
+    }
     if (capture.workspaceChanged) {
       await this.persistWorkspaceStateBestEffort();
     }
@@ -4116,6 +4301,7 @@ export class WorkspaceRuntime {
     const {
       projection,
       census,
+      inventory,
       indexGeneration,
       watcherError,
       lastWatchSequence,
@@ -4291,7 +4477,7 @@ export class WorkspaceRuntime {
     }
     const snapshot: NonNullable<RuntimeSnapshot["workspace"]> = {
       state:
-        watcherError || census.state === "degraded"
+        watcherError || census.state === "degraded" || inventory.state === "degraded"
           ? "degraded"
           : census.state === "current"
             ? "ready"
@@ -4306,6 +4492,7 @@ export class WorkspaceRuntime {
         complete: files.length <= maximumWorkspaceFilePageSize,
       },
       census,
+      inventory,
       ...(canvasFiles.length > 0 ? { canvasFiles } : {}),
       panes,
       activePaneId: snapshotState.activePaneId,
@@ -4363,7 +4550,6 @@ export class WorkspaceRuntime {
         files,
         interactiveFiles: files.slice(0, maximumWorkspaceFilePageSize),
         tags: index.tags.map((tag) => ({ ...tag })),
-        tree: buildWorkspaceTreeIndex(files),
       };
       this.#indexProjection = projection;
     }
@@ -4379,7 +4565,7 @@ export class WorkspaceRuntime {
   }
 
   private workspaceTreePageGeneration(): string {
-    return this.workspaceIndexGeneration();
+    return this.#inventoryState.generation;
   }
 
   private withIndexStateLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -4487,6 +4673,7 @@ export class WorkspaceRuntime {
           });
         }
         bootstrap.documents.length = 0;
+        let activatedFirstNote = false;
         const installed = await this.withIndexStateLock(async () => {
           if (this.#closed || this.#censusAbort.signal.aborted) return false;
           this.indexReactor = nextReactor;
@@ -4498,7 +4685,7 @@ export class WorkspaceRuntime {
           ) {
             const firstPath = this.indexReactor.index.snapshot().documents[0]?.path;
             if (firstPath && this.activatePath(firstPath, "primary", false)) {
-              await this.persistWorkspaceStateBestEffort();
+              activatedFirstNote = true;
             }
           }
           this.#activateFirstNoteAfterCensus = false;
@@ -4507,6 +4694,9 @@ export class WorkspaceRuntime {
           return true;
         });
         if (!installed) return;
+        if (activatedFirstNote) {
+          await this.persistWorkspaceStateBestEffort();
+        }
         await this.watcher.startWithInitialScan((batch) => this.handleWatchBatch(batch), {
           signal: this.#censusAbort.signal,
           onProgress: ({ scanned, total }) => {
@@ -4526,6 +4716,8 @@ export class WorkspaceRuntime {
             error: null,
           };
           this.#reconcileStartupPathsAfterCensus = true;
+          this.#inventoryScanAllowed = true;
+          this.invalidateVisibleInventory();
           return true;
         });
         if (!completed) return;
@@ -4543,6 +4735,8 @@ export class WorkspaceRuntime {
         await this.withIndexStateLock(async () => {
           this.#census = { ...this.#census, state: "degraded", error: message };
           this.recordWatcherError(error);
+          this.#inventoryScanAllowed = true;
+          this.invalidateVisibleInventory();
         });
         await this.publishSnapshot();
       }

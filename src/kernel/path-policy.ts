@@ -266,9 +266,16 @@ export class VaultPathPolicy {
 
   async listMarkdownPaths(relativeDirectory = ""): Promise<string[]> {
     const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
+    if ((await this.lexicalDirectoryPathKind(normalizedDirectory)) !== "plain") {
+      return [];
+    }
     const startDirectory = normalizedDirectory
       ? path.resolve(this.rootPath, ...normalizedDirectory.split("/"))
       : this.rootPath;
+    const lexicalStat = await lstatOrNull(startDirectory);
+    if (!lexicalStat || (normalizedDirectory !== "" && lexicalStat.isSymbolicLink())) {
+      return [];
+    }
     let canonicalDirectory: string;
     try {
       canonicalDirectory = await fs.realpath(startDirectory);
@@ -277,6 +284,9 @@ export class VaultPathPolicy {
         return [];
       }
       throw error;
+    }
+    if (path.resolve(canonicalDirectory) !== path.resolve(startDirectory)) {
+      return [];
     }
     if (!isPathInside(this.rootPath, canonicalDirectory)) {
       throw new VaultPathError(`Directory resolves outside the vault: ${relativeDirectory}`);
@@ -295,9 +305,16 @@ export class VaultPathPolicy {
     if (hasPrivateVaultSegment(normalizedDirectory) || hasHiddenVaultSegment(normalizedDirectory)) {
       return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
     }
+    if ((await this.lexicalDirectoryPathKind(normalizedDirectory)) !== "plain") {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
     const startDirectory = normalizedDirectory
       ? path.resolve(this.rootPath, ...normalizedDirectory.split("/"))
       : this.rootPath;
+    const lexicalStat = await lstatOrNull(startDirectory);
+    if (!lexicalStat || (normalizedDirectory !== "" && lexicalStat.isSymbolicLink())) {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
     let canonicalDirectory: string;
     try {
       canonicalDirectory = await fs.realpath(startDirectory);
@@ -306,6 +323,9 @@ export class VaultPathPolicy {
         return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
       }
       throw error;
+    }
+    if (path.resolve(canonicalDirectory) !== path.resolve(startDirectory)) {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
     }
     if (!isPathInside(this.rootPath, canonicalDirectory)) {
       throw new VaultPathError(`Directory resolves outside the vault: ${relativeDirectory}`);
@@ -329,6 +349,19 @@ export class VaultPathPolicy {
       files: files.sort((left, right) => left.localeCompare(right)),
       folders: folders.sort((left, right) => left.localeCompare(right)),
     };
+  }
+
+  private async lexicalDirectoryPathKind(
+    normalizedDirectory: string,
+  ): Promise<"plain" | "missing" | "symlink"> {
+    let currentDirectory = this.rootPath;
+    for (const segment of normalizedDirectory ? normalizedDirectory.split("/") : []) {
+      currentDirectory = path.join(currentDirectory, segment);
+      const stat = await lstatOrNull(currentDirectory);
+      if (!stat) return "missing";
+      if (stat.isSymbolicLink()) return "symlink";
+    }
+    return "plain";
   }
 
   /**

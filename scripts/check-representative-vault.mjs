@@ -467,12 +467,15 @@ async function launchProbe() {
 }
 
 function renderedStateExpression() {
-  return `(() => {
+  return `(async () => {
+    const snapshot = await window.threadleaf.getSnapshot();
     const summary = document.querySelector("#filter-summary")?.textContent ?? "";
-    const digits = summary.replace(/[^0-9]/g, "");
     return {
       ready: document.querySelector("#runtime-state")?.textContent === "Ready",
-      count: digits ? Number(digits) : 0,
+      count: snapshot.workspace?.census.indexed ?? 0,
+      visibleFileCount: snapshot.workspace?.inventory.fileCount ?? 0,
+      visibleFolderCount: snapshot.workspace?.inventory.folderCount ?? 0,
+      summary,
       activePath: document.querySelector("#note-path")?.textContent ?? "",
       editState: document.querySelector("#edit-state")?.textContent ?? "",
       draftState: document.querySelector("#edit-state")?.getAttribute("data-draft-state") ?? "",

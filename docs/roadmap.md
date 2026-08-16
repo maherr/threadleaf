@@ -65,6 +65,9 @@ equivalence through the real writer-to-watcher seam.
       plus clean shutdown against a 20,621-note working vault.
 - [x] Virtualized file navigation with bounded mounted rows, retained native scroll geometry,
       active-note reveal, and absolute accessible set positions.
+- [x] Filesystem-truthful desktop navigation over visible physical folders, Markdown notes, JSON
+      Canvas documents, and ordinary files, with explicit empty folders, an independent inventory
+      generation, last-complete degraded fallback, typed activation, and contained symlink policy.
 - [x] Accessible command palette with shared core and compatibility-plugin actions, search,
       disabled-state explanations, and keyboard navigation.
 - [x] Versioned application settings and remappable hotkeys with collision validation, atomic
@@ -349,8 +352,8 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [ ] Complete the existing Source, Live Preview, and Reading modes with footnotes, rendered
       tables, math, diagrams, and large-document editing beyond the current partial and
       source-fallback behavior, with reliable IME and undo.
-- [ ] JSON Canvas editing and embedding plus first-class attachment browsing, rename, preview,
-      drag-and-drop, paste, and missing-file recovery.
+- [ ] JSON Canvas editing and embedding plus first-class attachment rename, preview, drag-and-drop,
+      paste, and missing-file recovery.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
       search, and outline.
 - [x] Headless daily path/read/append/prepend, contained template listing and reads, and random-note
