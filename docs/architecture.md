@@ -688,21 +688,26 @@ workbenches. The application attachment planner uses the same local-target parse
 loader, rewrites only resolved local wiki and Markdown references, preserves exact query and
 fragment suffixes, and refuses case- or NFC-ambiguous source identities and basenames. Publish copy
 commits source-retaining binary publication plus Markdown writes. Rename or move commits
-source-removing binary rename plus allowed Markdown writes and preserves the workspace's `always`,
-`ask`, or `never` automatic-link policy.
+source-removing binary rename plus allowed Markdown and JSON Canvas writes and preserves the
+workspace's `always`, `ask`, or `never` automatic-link policy. The `never` policy moves only the
+exact attachment bytes and does not rewrite either format.
 
 Every publication preview binds the exact Markdown path set, every note revision, and the metadata
 generation. For an `always` or `ask` rename, the reference corpus instead includes every visible
-Markdown and JSON Canvas path and revision. A Canvas file node or group background that resolves to
-the source blocks the rename, as does a malformed, unreadable, or oversized Canvas whose safety
-cannot be proved. Canvas rewriting is deferred until Threadleaf can replace only the exact path
-value without normalizing unrelated JSON bytes. Direct write targets and the source revision are
-checked in the mutation lane. The whole-corpus receipt is a conservative preflight and
-post-mutation check, not an atomic lock against arbitrary external writers: a change observed after
-the final preflight drives exact journaled rollback or a manual conflict, preserving surviving
-bytes and never silently retiring a pending transaction. Attachment operations do not remap note
-tabs or bookmarks, because those state entries identify Markdown notes rather than attachment
-references. Open and Reveal remain inert until a reviewed native capability is available.
+Markdown and JSON Canvas path and revision. Valid Canvas `nodes[i].file` and group
+`nodes[i].background` references are rewritten by replacing only their complete JSON string tokens.
+The strict scanner rejects comments, trailing commas, duplicate object keys, invalid UTF-8,
+scanner/domain disagreement, and unsupported target spellings. Malformed, unreadable, oversized,
+or otherwise unprovable Canvas files block source removal. Supported root and explicit relative
+targets retain query and fragment suffixes, while BOM, line endings, whitespace, property order,
+unknown fields, number spellings, and every unrelated byte remain exact. Direct write targets and
+the source revision are checked in the mutation lane. The whole-corpus receipt is a conservative
+preflight and post-mutation check, not an atomic lock against arbitrary external writers: a change
+observed after the final preflight drives exact journaled rollback or a manual conflict, preserving
+surviving bytes and never silently retiring a pending transaction. Attachment operations do not
+remap note tabs or bookmarks, because those state entries identify Markdown notes rather than
+attachment references. Open and Reveal remain inert until a reviewed native capability is
+available.
 
 Reference-style ordinary links and images share one source-evidence gate. A visible, single
 definition that resolves to the source may be rewritten once. A source-only, opaque, unresolved,
@@ -883,12 +888,14 @@ committed, published-source-retained, rolled back, or manual review truthfully.
 The desktop actions dispatch through the same service. They flush pending editor bytes, then carry
 the selected operation, active vault identity, source revision, and automatic-link policy across
 IPC while keeping previews, blockers, and conflicts in a reviewable dialog. Each rewrite names its
-document, source line, syntax, and exact target change; each blocker names the unhandled evidence,
-including an exact JSON Canvas location when available. After a committed rename or source-retained
-publication, the runtime attributes the compound filesystem changes and refreshes every affected
-index entry before publishing its next snapshot. A successful Publish copy keeps the attachment at
-its original path; a successful Rename or move reports the removed source path explicitly. Note
-tabs and bookmarks are not remapped for attachment operations.
+document, source line, syntax, and exact target change; a Canvas rewrite also names its exact JSON
+location. Each blocker names the unhandled evidence, including an exact JSON Canvas location when
+available. After a committed rename or source-retained publication, the runtime attributes the
+compound filesystem changes and refreshes every affected index entry before publishing its next
+snapshot. A committed Canvas child write also advances the active-payload epoch so a snapshot that
+captured the old Canvas bytes cannot publish after the rename. A successful Publish copy keeps the
+attachment at its original path; a successful Rename or move reports the removed source path
+explicitly. Note tabs and bookmarks are not remapped for attachment operations.
 
 The desktop Trash action calls the same recoverable deletion service as the CLI rather than a
 renderer-owned filesystem path. Its request carries the active vault identity and exact source

@@ -4654,8 +4654,8 @@ function renderAttachmentMoveDialog(): void {
     ? linkPolicy === "never"
       ? "Threadleaf will move the exact attachment bytes and remove the original path without updating references, matching this vault's Never setting."
       : linkPolicy === "always"
-        ? "Threadleaf will move the exact attachment bytes, remove the original path, and update proven local Markdown references automatically. A Canvas reference or unreadable Canvas blocks the operation."
-        : "Threadleaf will move the exact attachment bytes and remove the original path. It previews proven local Markdown reference updates first; a Canvas reference or unreadable Canvas blocks the operation."
+        ? "Threadleaf will move the exact attachment bytes, remove the original path, and update proven local Markdown and Canvas references automatically. An unreadable or unsafe Canvas blocks the operation."
+        : "Threadleaf will move the exact attachment bytes and remove the original path. It previews proven local Markdown and Canvas reference updates first; an unreadable or unsafe Canvas blocks the operation."
     : "Threadleaf publishes the exact attachment bytes without decoding them and keeps the original source. It previews local wiki and Markdown reference updates, then applies the publication and updates as one recoverable operation.";
   elements.attachmentMoveTargetLabel.textContent = renaming ? "New path" : "Copy path";
   elements.attachmentMoveClose.ariaLabel = renaming
@@ -4678,12 +4678,12 @@ function renderAttachmentMoveDialog(): void {
         ? "Publishing…"
         : "Checking…"
     : attachmentMoveConfirmationId
-      ? `Update ${attachmentMoveRewrites.length} ${attachmentMoveRewrites.length === 1 ? "link" : "links"} and ${renaming ? "move" : "publish"}`
+      ? `Update ${attachmentMoveRewrites.length} ${attachmentMoveRewrites.length === 1 ? "reference" : "references"} and ${renaming ? "move" : "publish"}`
       : renaming
         ? linkPolicy === "never"
-          ? "Move without updating links"
+          ? "Move without updating references"
           : linkPolicy === "always"
-            ? "Move and update links"
+            ? "Move and update references"
             : "Check and move"
         : "Check and publish";
   elements.attachmentMoveForm.setAttribute("aria-busy", String(attachmentMoveBusy));
@@ -4699,7 +4699,7 @@ function renderAttachmentMoveDialog(): void {
   elements.attachmentMoveBlockers.hidden = visibleChanges.length === 0;
   elements.attachmentMoveBlockers.dataset.mode = showingPreview ? "preview" : "blocked";
   elements.attachmentMoveBlockerSummary.textContent = showingPreview
-    ? `Ready: ${attachmentMoveRewrites.length} link target ${attachmentMoveRewrites.length === 1 ? "update" : "updates"}`
+    ? `Ready: ${attachmentMoveRewrites.length} reference target ${attachmentMoveRewrites.length === 1 ? "update" : "updates"}`
     : attachmentMoveBlockers.length === 1
       ? "Blocked: 1 reference cannot be handled safely"
       : `Blocked: ${attachmentMoveBlockers.length} references cannot be handled safely`;
@@ -4707,7 +4707,10 @@ function renderAttachmentMoveDialog(): void {
     const item = document.createElement("li");
     const origin = document.createElement("span");
     origin.className = "move-note-blocker-origin";
-    origin.textContent = `${rewrite.documentPath}:${rewrite.line} · ${rewrite.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
+    origin.textContent =
+      rewrite.syntax === "canvas"
+        ? `${rewrite.documentPath} · Canvas ${rewrite.location ?? "$"}`
+        : `${rewrite.documentPath}:${rewrite.line} · ${rewrite.syntax === "wiki" ? "Wikilink" : "Markdown link"}`;
     const change = document.createElement("span");
     change.className = "move-note-blocker-change";
     const before = document.createElement("span");
@@ -4738,7 +4741,9 @@ function renderAttachmentMoveDialog(): void {
       blocker.reason === "ambiguous"
         ? `Ambiguous (${blocker.candidates.slice(0, 4).join(", ") || "multiple matches"})`
         : blocker.reason === "unsupported"
-          ? "Unsupported link form"
+          ? blocker.syntax === "canvas"
+            ? "Unsupported Canvas attachment path spelling"
+            : "Unsupported link form"
           : blocker.reason === "canvas-reference"
             ? "Canvas uses this attachment path"
             : blocker.reason === "canvas-unreadable"
@@ -4871,8 +4876,8 @@ async function moveCurrentAttachment(): Promise<void> {
           ? ` The list shows the first 100 of ${response.outcome.rewrites.length} exact updates.`
           : "";
       elements.attachmentMovePreviewMessage.textContent = submittedConfirmationId
-        ? `The link plan changed on disk. Review this refreshed preview, then confirm it again.${boundedPreviewNotice}`
-        : `Review the exact local link target updates below. Submit again to ${renaming ? "move the attachment" : "publish the copy"} and apply them as one recoverable operation.${boundedPreviewNotice}`;
+        ? `The reference plan changed on disk. Review this refreshed preview, then confirm it again.${boundedPreviewNotice}`
+        : `Review the exact local reference target updates below. Submit again to ${renaming ? "move the attachment" : "publish the copy"} and apply them as one recoverable operation.${boundedPreviewNotice}`;
     } else if (response.outcome.status === "blocked") {
       attachmentMoveConfirmationId = null;
       attachmentMoveRewrites = [];
@@ -4908,7 +4913,7 @@ async function moveCurrentAttachment(): Promise<void> {
       attachmentMoveConfirmationId = null;
       attachmentMoveRewrites = [];
       elements.attachmentMovePreviewMessage.textContent = "";
-      elements.attachmentMoveError.textContent = `The referenced notes changed after the preview. Nothing was ${renaming ? "moved" : "published"}; reopen the workbench to review the current links.`;
+      elements.attachmentMoveError.textContent = `The referenced files changed after the preview. Nothing was ${renaming ? "moved" : "published"}; reopen the workbench to review the current references.`;
     } else if (
       response.outcome.status === "conflict" &&
       response.outcome.reason === "reference-corpus-changed"
@@ -4936,12 +4941,12 @@ async function moveCurrentAttachment(): Promise<void> {
     const operationNotice = renaming
       ? `Moved the attachment to ${committedPath}${
           committedRewriteCount > 0
-            ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
+            ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "reference" : "references"}`
             : ""
         }; the original path ${removedSourcePath} was removed.`
       : `Published a copy at ${committedPath}${
           committedRewriteCount > 0
-            ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "link" : "links"}`
+            ? ` and updated ${committedRewriteCount} ${committedRewriteCount === 1 ? "reference" : "references"}`
             : ""
         }; the original remains at ${retainedSourcePath}.`;
     closeAttachmentMoveDialog(false);

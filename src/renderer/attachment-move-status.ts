@@ -24,6 +24,31 @@ export interface VerifiedAttachmentRenameReceipt {
   rewriteCount: number;
 }
 
+function isCompleteAttachmentRewrite(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const rewrite = value as Record<string, unknown>;
+  if (
+    typeof rewrite.documentPath !== "string" ||
+    rewrite.documentPath.length === 0 ||
+    !Number.isInteger(rewrite.line) ||
+    (rewrite.line as number) < 1 ||
+    (rewrite.syntax !== "wiki" && rewrite.syntax !== "markdown" && rewrite.syntax !== "canvas") ||
+    typeof rewrite.embed !== "boolean" ||
+    typeof rewrite.beforeTarget !== "string" ||
+    typeof rewrite.afterTarget !== "string"
+  ) {
+    return false;
+  }
+  return (
+    rewrite.syntax !== "canvas" ||
+    (typeof rewrite.location === "string" && rewrite.location.length > 0)
+  );
+}
+
+function hasCompleteAttachmentRewrites(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.every(isCompleteAttachmentRewrite);
+}
+
 /** Explains strict-publication conflicts without pretending they are generic failures. */
 export function attachmentPublicationConflictMessage(reason: unknown): string | null {
   if (reason === "attachment-publish-unavailable") {
@@ -72,7 +97,7 @@ export function attachmentPublicationReceipt(
     outcome.from.length === 0 ||
     typeof outcome.to !== "string" ||
     outcome.to.length === 0 ||
-    !Array.isArray(outcome.rewrites)
+    !hasCompleteAttachmentRewrites(outcome.rewrites)
   ) {
     return null;
   }
@@ -93,7 +118,7 @@ export function attachmentRenameReceipt(
     outcome.from.length === 0 ||
     typeof outcome.to !== "string" ||
     outcome.to.length === 0 ||
-    !Array.isArray(outcome.rewrites)
+    !hasCompleteAttachmentRewrites(outcome.rewrites)
   ) {
     return null;
   }

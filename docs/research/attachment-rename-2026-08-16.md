@@ -1,6 +1,10 @@
 # Attachment rename decision gate
 
-**Last updated:** 2026-08-16 11:25:23 EDT
+**Last updated:** 2026-08-16 12:47:52 EDT
+
+**Follow-up:** [Byte-local JSON Canvas attachment reference rewriting](canvas-reference-rewrite-2026-08-16.md)
+closes the Canvas deferral recorded by this original rename gate. The remaining contract and proof
+history below are retained as the decision record for the first slice.
 
 ## Outcome
 

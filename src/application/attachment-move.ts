@@ -24,8 +24,8 @@ import type {
 } from "../kernel/ports";
 import type { AttachmentOperation } from "../shared/contracts";
 import type { AutomaticLinkUpdatePolicy } from "../shared/workspace-settings";
-import { resolveCanvasAttachmentTarget } from "./canvas-attachment-service";
 import { MAX_CANVAS_BYTES, parseJsonCanvas } from "./json-canvas";
+import { rewriteJsonCanvasAttachmentReferences } from "./json-canvas-reference-rewrite";
 import {
   DEFAULT_VAULT_ATTACHMENT_MAX_BYTES,
   type ParsedVaultAttachmentTarget,
@@ -38,12 +38,13 @@ export const MAX_ATTACHMENT_MOVE_BYTES = DEFAULT_VAULT_ATTACHMENT_MAX_BYTES;
 export interface AttachmentLinkRewrite {
   documentPath: string;
   line: number;
-  syntax: "wiki" | "markdown";
+  syntax: "wiki" | "markdown" | "canvas";
   embed: boolean;
   beforeTarget: string;
   afterTarget: string;
   sourcePath: string;
   targetPath: string;
+  location?: string;
 }
 
 export interface AttachmentMoveWriteProposal {
@@ -726,37 +727,23 @@ async function verifyAttachmentMoveCorpus(
 interface CanvasReferenceScan {
   paths: string[];
   revisions: Array<{ path: string; revision: string }>;
+  rewrites: AttachmentLinkRewrite[];
+  writes: AttachmentMoveWriteProposal[];
   blockers: AttachmentMoveBlocker[];
-}
-
-function canvasTargetMayReferenceSource(rawTarget: string, sourcePath: string): boolean {
-  const trimmed = rawTarget.trim().replace(/^<|>$/gu, "");
-  if (!trimmed || /^[a-z][a-z0-9+.-]*:/iu.test(trimmed) || trimmed.startsWith("//")) {
-    return false;
-  }
-  const pathPart = trimmed.split(/[?#]/u, 1)[0] ?? "";
-  let comparablePath = pathPart.replaceAll("\\", "/");
-  try {
-    comparablePath = decodeURIComponent(pathPart).replaceAll("\\", "/");
-  } catch {
-    // Invalid URL encoding makes the target unresolvable, but a literal local
-    // basename can still name the source on disk. Keep that case fail-closed.
-  }
-  return (
-    normalizedTextKey(path.posix.basename(comparablePath)) ===
-    normalizedTextKey(path.posix.basename(sourcePath))
-  );
 }
 
 async function scanCanvasReferences(
   vault: AttachmentVaultReadPort & AttachmentBinaryReadPort,
   visibleFiles: readonly string[],
   sourcePath: string,
+  targetPath: string,
 ): Promise<CanvasReferenceScan> {
   const paths = visibleFiles
     .filter((relativePath) => relativePath.toLocaleLowerCase("en-US").endsWith(".canvas"))
     .sort((left, right) => left.localeCompare(right));
   const revisions: Array<{ path: string; revision: string }> = [];
+  const rewrites: AttachmentLinkRewrite[] = [];
+  const writes: AttachmentMoveWriteProposal[] = [];
   const blockers: AttachmentMoveBlocker[] = [];
   for (const canvasPath of paths) {
     let result: Awaited<ReturnType<AttachmentBinaryReadPort["readBinary"]>>;
@@ -801,32 +788,53 @@ async function scanCanvasReferences(
       });
       continue;
     }
-    for (const [index, node] of (parsed.document.nodes ?? []).entries()) {
-      const field =
-        node.type === "file" && typeof node.file === "string"
-          ? { key: "file" as const, target: node.file }
-          : node.type === "group" && typeof node.background === "string"
-            ? { key: "background" as const, target: node.background }
-            : null;
-      if (!field) continue;
-      const resolution = resolveCanvasAttachmentTarget(canvasPath, field.target);
-      const referencesSource =
-        resolution.status === "resolved"
-          ? normalizedVaultPathIdentity(resolution.path) === normalizedVaultPathIdentity(sourcePath)
-          : canvasTargetMayReferenceSource(field.target, sourcePath);
-      if (!referencesSource) continue;
+    const rewriteResult = rewriteJsonCanvasAttachmentReferences(
+      result.snapshot.bytes,
+      parsed.document,
+      canvasPath,
+      sourcePath,
+      targetPath,
+    );
+    if (rewriteResult.status === "blocked") {
       blockers.push({
         documentPath: canvasPath,
-        line: 1,
-        target: field.target,
+        line: rewriteResult.line,
+        target: rewriteResult.target,
         syntax: "canvas",
-        reason: "canvas-reference",
-        candidates: [sourcePath],
-        location: `$.nodes[${index}].${field.key}`,
+        reason:
+          rewriteResult.kind === "unreadable"
+            ? "canvas-unreadable"
+            : rewriteResult.kind === "unsupported"
+              ? "unsupported"
+              : "canvas-reference",
+        candidates: rewriteResult.kind === "unreadable" ? [] : [sourcePath],
+        location: rewriteResult.location,
       });
+      continue;
     }
+    if (rewriteResult.rewrites.length === 0) continue;
+    writes.push({
+      path: canvasPath,
+      expectedRevision: result.snapshot.revision,
+      content: rewriteResult.content,
+    });
+    rewrites.push(
+      ...rewriteResult.rewrites.map(
+        (rewrite): AttachmentLinkRewrite => ({
+          documentPath: canvasPath,
+          line: rewrite.line,
+          syntax: "canvas",
+          embed: false,
+          beforeTarget: rewrite.beforeTarget,
+          afterTarget: rewrite.afterTarget,
+          sourcePath,
+          targetPath,
+          location: rewrite.location,
+        }),
+      ),
+    );
   }
-  return { paths, revisions, blockers };
+  return { paths, revisions, rewrites, writes, blockers };
 }
 
 /** Plan a non-note attachment move without ever decoding its bytes as text. */
@@ -1055,8 +1063,16 @@ export async function planBinaryAttachmentMove(
   }
   const canvasScan =
     operation === "rename"
-      ? await scanCanvasReferences(vault, visibleFiles, sourcePath)
-      : ({ paths: [], revisions: [], blockers: [] } satisfies CanvasReferenceScan);
+      ? await scanCanvasReferences(vault, visibleFiles, sourcePath, targetPath)
+      : ({
+          paths: [],
+          revisions: [],
+          rewrites: [],
+          writes: [],
+          blockers: [],
+        } satisfies CanvasReferenceScan);
+  rewrites.push(...canvasScan.rewrites);
+  writes.push(...canvasScan.writes);
   unresolvedBlockers.push(...canvasScan.blockers);
   const corpusScope = operation === "rename" ? "references" : "markdown";
   const expectedCorpusPaths =

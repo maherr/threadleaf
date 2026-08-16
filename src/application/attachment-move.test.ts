@@ -92,6 +92,10 @@ describe("attachment rename execution", () => {
   });
 
   it("honors always and never automatic-link policies without conflating them", async () => {
+    const canvasPath = path.join(vaultPath, "Policy.canvas");
+    const canvasBefore =
+      '{"nodes":[{"id":"file-node","type":"file","file":"Assets/Report PDF.bin","x":0,"y":0,"width":200,"height":120}],"edges":[]}\n';
+    await fs.writeFile(canvasPath, canvasBefore, "utf8");
     const source = await kernel.readBinary("Assets/Report PDF.bin", Number.MAX_SAFE_INTEGER);
     if (source.status !== "ready") throw new Error("Expected binary fixture.");
 
@@ -106,9 +110,14 @@ describe("attachment rename execution", () => {
     await expect(fs.readFile(path.join(vaultPath, "Notes", "Index.md"), "utf8")).resolves.toBe(
       "![[../Archive/Always.pdf]]\n[download](../Archive/Always.pdf)\n",
     );
+    await expect(fs.readFile(canvasPath, "utf8")).resolves.toBe(
+      canvasBefore.replace("Assets/Report PDF.bin", "Archive/Always.pdf"),
+    );
 
     const renamed = await kernel.readBinary("Archive/Always.pdf", Number.MAX_SAFE_INTEGER);
     if (renamed.status !== "ready") throw new Error("Expected renamed binary fixture.");
+    const malformedCanvas = '{"nodes":[{"id":"file-node","type":"file","file":"Archive/Always.pdf"';
+    await fs.writeFile(canvasPath, malformedCanvas, "utf8");
     const neverResult = await moveBinaryAttachment(
       kernel,
       "Archive/Always.pdf",
@@ -123,36 +132,27 @@ describe("attachment rename execution", () => {
     await expect(fs.readFile(path.join(vaultPath, "Archive", "Never.pdf"))).resolves.toEqual(
       pdfBytes,
     );
+    await expect(fs.readFile(canvasPath, "utf8")).resolves.toBe(malformedCanvas);
   });
 
-  it("blocks source-removing renames referenced by Canvas file nodes or group backgrounds", async () => {
-    await fs.writeFile(
-      path.join(vaultPath, "Board.canvas"),
-      `${JSON.stringify({
-        nodes: [
-          {
-            id: "file-node",
-            type: "file",
-            file: "Assets/Report PDF.bin",
-            x: 0,
-            y: 0,
-            width: 200,
-            height: 120,
-          },
-          {
-            id: "group-node",
-            type: "group",
-            background: "Assets/Report PDF.bin",
-            x: 240,
-            y: 0,
-            width: 320,
-            height: 240,
-          },
-        ],
-        edges: [],
-      })}\n`,
-      "utf8",
-    );
+  it("rewrites only matching Canvas file and group-background string tokens", async () => {
+    const canvasPath = path.join(vaultPath, "Board.canvas");
+    const canvasBefore =
+      "\uFEFF{\r\n" +
+      '  "unknown": { "pathLike": "Assets/Report PDF.bin", "number": 1.00e+2 },\r\n' +
+      '  "nodes": [\r\n' +
+      '    {"id":"file-node","type":"file","file":"Assets/Report%20PDF.bin?view=fit#page=2","x":0,"y":0,"width":200,"height":120,"future":"keep"},\r\n' +
+      '    {"id":"group-node","type":"group","background":"./Assets/Report PDF.bin","x":240,"y":0,"width":320,"height":240}\r\n' +
+      "  ],\r\n" +
+      '  "edges": []\r\n' +
+      "}\r\n";
+    const canvasAfter = canvasBefore
+      .replace(
+        '"Assets/Report%20PDF.bin?view=fit#page=2"',
+        '"Archive/Canvas-bound.pdf?view=fit#page=2"',
+      )
+      .replace('"./Assets/Report PDF.bin"', '"./Archive/Canvas-bound.pdf"');
+    await fs.writeFile(canvasPath, canvasBefore, "utf8");
     const source = await kernel.readBinary("Assets/Report PDF.bin", Number.MAX_SAFE_INTEGER);
     if (source.status !== "ready") throw new Error("Expected binary fixture.");
 
@@ -165,32 +165,95 @@ describe("attachment rename execution", () => {
     );
     expect(plan).toMatchObject({
       status: "planned",
-      blockers: expect.arrayContaining([
+      blockers: [],
+      rewrites: expect.arrayContaining([
         expect.objectContaining({
           documentPath: "Board.canvas",
           syntax: "canvas",
-          reason: "canvas-reference",
+          beforeTarget: "Assets/Report%20PDF.bin?view=fit#page=2",
+          afterTarget: "Archive/Canvas-bound.pdf?view=fit#page=2",
           location: "$.nodes[0].file",
         }),
         expect.objectContaining({
           documentPath: "Board.canvas",
           syntax: "canvas",
-          reason: "canvas-reference",
+          beforeTarget: "./Assets/Report PDF.bin",
+          afterTarget: "./Archive/Canvas-bound.pdf",
           location: "$.nodes[1].background",
         }),
       ]),
+      writes: expect.arrayContaining([expect.objectContaining({ path: "Board.canvas" })]),
+      corpus: {
+        kernel: {
+          scope: "references",
+          paths: expect.arrayContaining(["Board.canvas"]),
+        },
+      },
     });
+    if (plan.status !== "planned" || !plan.confirmationId) {
+      throw new Error("Expected a revision-bound Canvas rewrite preview.");
+    }
+    const preview = await moveBinaryAttachment(
+      kernel,
+      "Assets/Report PDF.bin",
+      "Archive/Canvas-bound.pdf",
+      source.snapshot.revision,
+      { operation: "rename", automaticLinkUpdates: "ask", plan },
+    );
+    expect(preview).toMatchObject({
+      status: "requires-confirmation",
+      confirmationId: plan.confirmationId,
+    });
+
     const result = await moveBinaryAttachment(
       kernel,
       "Assets/Report PDF.bin",
       "Archive/Canvas-bound.pdf",
       source.snapshot.revision,
-      { operation: "rename", automaticLinkUpdates: "ask" },
+      {
+        operation: "rename",
+        automaticLinkUpdates: "ask",
+        confirmationId: plan.confirmationId,
+        plan,
+      },
     );
-    expect(result.status).toBe("blocked");
-    await expect(fs.readFile(path.join(vaultPath, "Assets", "Report PDF.bin"))).resolves.toEqual(
+    expect(result).toMatchObject({ status: "committed", rewrites: { length: 4 } });
+    await expect(fs.readFile(canvasPath, "utf8")).resolves.toBe(canvasAfter);
+    await expect(
+      fs.readFile(path.join(vaultPath, "Assets", "Report PDF.bin")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(path.join(vaultPath, "Archive", "Canvas-bound.pdf"))).resolves.toEqual(
       pdfBytes,
     );
+  });
+
+  it("blocks duplicate Canvas object keys instead of choosing a parser-specific winner", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Duplicate.canvas"),
+      '{"nodes":[{"id":"file-node","type":"file","file":"Assets/Other.bin","file":"Assets/Report PDF.bin","x":0,"y":0,"width":200,"height":120}],"edges":[]}\n',
+      "utf8",
+    );
+    const source = await kernel.readBinary("Assets/Report PDF.bin", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected binary fixture.");
+
+    const result = await moveBinaryAttachment(
+      kernel,
+      "Assets/Report PDF.bin",
+      "Archive/Duplicate-blocked.pdf",
+      source.snapshot.revision,
+      { operation: "rename", automaticLinkUpdates: "always" },
+    );
+    expect(result).toMatchObject({
+      status: "blocked",
+      blockers: [
+        expect.objectContaining({
+          documentPath: "Duplicate.canvas",
+          syntax: "canvas",
+          reason: "canvas-unreadable",
+          location: "$.nodes[0].file",
+        }),
+      ],
+    });
   });
 
   it("blocks source-removing renames when any visible Canvas is malformed", async () => {
@@ -306,9 +369,24 @@ describe("attachment rename execution", () => {
   it("recovers an interrupted rename from a journal bound to the Canvas corpus", async () => {
     const canvasPath = path.join(vaultPath, "Board.canvas");
     const canvasContent = `${JSON.stringify({
-      nodes: [{ id: "text", type: "text", text: "unrelated", x: 0, y: 0, width: 200, height: 120 }],
+      future: { keep: "exact" },
+      nodes: [
+        {
+          id: "file",
+          type: "file",
+          file: "Assets/Report PDF.bin",
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 120,
+        },
+      ],
       edges: [],
     })}\n`;
+    const rewrittenCanvasContent = canvasContent.replace(
+      '"Assets/Report PDF.bin"',
+      '"Archive/Recovered%20rename.pdf"',
+    );
     await fs.writeFile(canvasPath, canvasContent, "utf8");
     const interrupted = await VaultKernel.open({
       vaultRoot: vaultPath,
@@ -329,6 +407,15 @@ describe("attachment rename execution", () => {
       { operation: "rename", automaticLinkUpdates: "always" },
     );
     if (plan.status !== "planned") throw new Error("Expected a planned rename.");
+    expect(plan.rewrites).toContainEqual(
+      expect.objectContaining({
+        documentPath: "Board.canvas",
+        syntax: "canvas",
+        location: "$.nodes[0].file",
+        afterTarget: "Archive/Recovered%20rename.pdf",
+      }),
+    );
+    expect(plan.writes).toContainEqual(expect.objectContaining({ path: "Board.canvas" }));
     expect(plan.corpus?.kernel).toMatchObject({
       scope: "references",
       paths: expect.arrayContaining(["Board.canvas", "Notes/Index.md", "Notes/Other.md"]),
@@ -357,11 +444,13 @@ describe("attachment rename execution", () => {
       ),
     ) as {
       kind?: unknown;
+      entries?: Array<{ targetPath?: unknown }>;
       expectedMarkdownCorpusBeforeWrites?: { scope?: unknown; paths?: unknown };
       expectedMarkdownCorpus?: { scope?: unknown; paths?: unknown };
     };
     expect(pendingJournal).toMatchObject({
       kind: "move-with-writes",
+      entries: expect.arrayContaining([expect.objectContaining({ targetPath: "Board.canvas" })]),
       expectedMarkdownCorpusBeforeWrites: {
         scope: "references",
         paths: expect.arrayContaining(["Board.canvas"]),
@@ -390,12 +479,16 @@ describe("attachment rename execution", () => {
     await expect(fs.readFile(path.join(vaultPath, "Notes", "Index.md"), "utf8")).resolves.toBe(
       "![[../Archive/Recovered rename.pdf]]\n[download](../Archive/Recovered%20rename.pdf)\n",
     );
-    await expect(fs.readFile(canvasPath, "utf8")).resolves.toBe(canvasContent);
+    await expect(fs.readFile(canvasPath, "utf8")).resolves.toBe(rewrittenCanvasContent);
   });
 });
 
 describe("attachment move planning", () => {
   it("rewrites relative Markdown links and wiki embeds in one recoverable plan", async () => {
+    const canvasPath = path.join(vaultPath, "Publish.canvas");
+    const canvasBefore =
+      '{"nodes":[{"id":"file-node","type":"file","file":"Assets/Report PDF.bin","x":0,"y":0,"width":200,"height":120}],"edges":[]}\n';
+    await fs.writeFile(canvasPath, canvasBefore, "utf8");
     const source = await kernel.readBinary("Assets/Report PDF.bin", Number.MAX_SAFE_INTEGER);
     if (source.status !== "ready") throw new Error("Expected binary fixture.");
     const plan = await planBinaryAttachmentMove(
@@ -446,6 +539,7 @@ describe("attachment move planning", () => {
     await expect(fs.readFile(path.join(vaultPath, "Notes", "Index.md"), "utf8")).resolves.toBe(
       "![[../Archive/Renamed Report.pdf]]\n[download](../Archive/Renamed%20Report.pdf)\n",
     );
+    await expect(fs.readFile(canvasPath, "utf8")).resolves.toBe(canvasBefore);
   });
 
   it("uses relative-first then vault-root fallback for slash-containing wiki targets", async () => {

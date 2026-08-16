@@ -3732,6 +3732,9 @@ export class WorkspaceRuntime {
       return outcome;
     }
 
+    if (outcome.writes.some((write) => write.path.toLocaleLowerCase("en-US").endsWith(".canvas"))) {
+      this.#activePayloadEpoch += 1;
+    }
     this.invalidateVisibleInventory();
     if (outcome.writes.length > 0) {
       await this.withIndexMutation(async () => {

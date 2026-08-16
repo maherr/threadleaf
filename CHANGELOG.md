@@ -17,8 +17,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   modal focus restoration, and no document, tab, history, shell, or renderer-filesystem authority.
 - Added an explicit source-removing **Rename or move** action for passive attachments, with
   `always`, `ask`, and `never` link-update policy, exact rewrite previews, recoverable compound
-  transactions, complete Markdown and JSON Canvas reference-corpus receipts, and visible refusal
-  when a Canvas reference cannot yet be rewritten safely.
+  transactions, complete Markdown and JSON Canvas reference-corpus receipts, byte-local Canvas file
+  and group-background reference rewrites, and visible refusal when Canvas safety cannot be proved.
 
 ### Changed
 

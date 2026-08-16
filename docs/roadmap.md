@@ -364,9 +364,10 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [ ] Complete first-class attachment lifecycle and richer Canvas interaction beyond the current
       control-based editor.
   - [x] Explicit source-removing attachment rename or move with exact-byte recovery, automatic-link
-        policy, revision-bound previews, and safe refusal for matching or unprovable Canvas
-        references.
-  - [ ] Drag-and-drop, paste, missing-file recovery, and byte-local Canvas reference rewriting.
+        policy, revision-bound previews, and safe refusal for unprovable Canvas references.
+  - [x] Byte-local JSON Canvas file-node and group-background reference rewriting with exact-token
+        previews, unrelated-byte preservation, fail-closed parsing, and recoverable transactions.
+  - [ ] Drag-and-drop, paste, and missing-file recovery.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
       search, and outline.
 - [x] Headless daily path/read/append/prepend, contained template listing and reads, and random-note

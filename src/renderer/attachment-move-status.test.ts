@@ -58,7 +58,16 @@ describe("attachment move commit status", () => {
         status: "published-source-retained",
         from: "Assets/report.pdf",
         to: "Archive/report.pdf",
-        rewrites: [{ path: "Notes/Index.md" }],
+        rewrites: [
+          {
+            documentPath: "Notes/Index.md",
+            line: 1,
+            syntax: "wiki",
+            embed: true,
+            beforeTarget: "Assets/report.pdf",
+            afterTarget: "Archive/report.pdf",
+          },
+        ],
       }),
     ).toEqual({
       sourcePath: "Assets/report.pdf",
@@ -88,12 +97,30 @@ describe("attachment move commit status", () => {
         status: "committed",
         from: "Assets/report.pdf",
         to: "Archive/report.pdf",
-        rewrites: [{ path: "Notes/Index.md" }],
+        rewrites: [
+          {
+            documentPath: "Notes/Index.md",
+            line: 1,
+            syntax: "wiki",
+            embed: true,
+            beforeTarget: "Assets/report.pdf",
+            afterTarget: "Archive/report.pdf",
+          },
+          {
+            documentPath: "Board.canvas",
+            line: 4,
+            syntax: "canvas",
+            embed: false,
+            beforeTarget: "Assets/report.pdf",
+            afterTarget: "Archive/report.pdf",
+            location: "$.nodes[0].file",
+          },
+        ],
       }),
     ).toEqual({
       sourcePath: "Assets/report.pdf",
       targetPath: "Archive/report.pdf",
-      rewriteCount: 1,
+      rewriteCount: 2,
     });
     expect(
       attachmentRenameReceipt({
@@ -101,6 +128,23 @@ describe("attachment move commit status", () => {
         from: "Assets/report.pdf",
         to: "Archive/report.pdf",
         rewrites: [],
+      }),
+    ).toBeNull();
+    expect(
+      attachmentRenameReceipt({
+        status: "committed",
+        from: "Assets/report.pdf",
+        to: "Archive/report.pdf",
+        rewrites: [
+          {
+            documentPath: "Board.canvas",
+            line: 1,
+            syntax: "canvas",
+            embed: false,
+            beforeTarget: "Assets/report.pdf",
+            afterTarget: "Archive/report.pdf",
+          },
+        ],
       }),
     ).toBeNull();
   });

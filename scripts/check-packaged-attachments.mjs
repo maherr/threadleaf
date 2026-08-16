@@ -31,6 +31,20 @@ const originalNote = [
   "",
   "The body is a fixture and must remain byte-identical.",
 ].join("\n");
+const originalAudioCanvas = `\uFEFF${[
+  "{",
+  '  "nodes": [',
+  '    {"id": "audio-file", "type": "file", "file": "Assets/audio.mp3", "x": 0, "y": 0, "width": 320, "height": 180, "unknown": "Assets/audio.mp3"},',
+  '    {"id": "audio-group", "type": "group", "background": "./Assets/audio.mp3", "backgroundStyle": "cover", "x": 360, "y": 0, "width": 320, "height": 180}',
+  "  ],",
+  '  "edges": [],',
+  '  "threadleafFixture": {"numberSpelling": 1.00e+2, "pathLikeText": "Assets/audio.mp3"}',
+  "}",
+].join("\r\n")}\r\n`;
+const renamedAudioCanvas = originalAudioCanvas
+  .replace('"file": "Assets/audio.mp3"', '"file": "Archive/audio-renamed.mp3"')
+  .replace('"background": "./Assets/audio.mp3"', '"background": "./Archive/audio-renamed.mp3"');
+const unsafeAudioCanvas = '{"nodes":[{"id":"unsafe","type":"file","file":"Assets/audio.mp3"';
 const attachmentPublishUnavailableMessage =
   "Threadleaf could not verify strict no-overwrite publication at that destination. Use an existing contained folder on this vault filesystem that supports attachment publication. Review both attachment paths; Markdown references were not updated.";
 let child;
@@ -661,24 +675,8 @@ try {
     path.join(vaultPath, "Assets", "unknown.bin"),
     Buffer.from([0xff, 0x00, 0x91, 0x22, 0x00]),
   );
-  await fs.writeFile(
-    path.join(vaultPath, "Audio Board.canvas"),
-    `${JSON.stringify({
-      nodes: [
-        {
-          id: "audio-file",
-          type: "file",
-          file: "Assets/audio.mp3",
-          x: 0,
-          y: 0,
-          width: 320,
-          height: 180,
-        },
-      ],
-      edges: [],
-    })}\n`,
-    "utf8",
-  );
+  await fs.writeFile(path.join(vaultPath, "Audio Board.canvas"), originalAudioCanvas, "utf8");
+  await fs.writeFile(path.join(vaultPath, "Unsafe Audio.canvas"), unsafeAudioCanvas, "utf8");
   await fs.writeFile(
     path.join(userDataPath, "workspace-selection.json"),
     `${JSON.stringify({ version: 1, vaultPath }, null, 2)}\n`,
@@ -999,7 +997,7 @@ try {
     if (
       canvasBlockState.open &&
       canvasBlockState.error.includes("Rename blocked") &&
-      canvasBlockState.list.includes("Audio Board.canvas")
+      canvasBlockState.list.includes("Unsafe Audio.canvas")
     ) {
       break;
     }
@@ -1008,20 +1006,24 @@ try {
   assert(
     canvasBlockState?.open &&
       canvasBlockState.error.includes("Rename blocked") &&
-      canvasBlockState.list.includes("Canvas $.nodes[0].file") &&
-      canvasBlockState.list.includes("Canvas uses this attachment path"),
-    `The Canvas reference blocker was not visible and specific: ${JSON.stringify(canvasBlockState)}`,
+      canvasBlockState.list.includes("Canvas $") &&
+      canvasBlockState.list.includes("Canvas could not be verified safely"),
+    `The unsafe Canvas blocker was not visible and specific: ${JSON.stringify(canvasBlockState)}`,
   );
   assert(
     await fs
       .stat(path.join(vaultPath, "Assets", "audio.mp3"))
       .then(() => true)
       .catch(() => false),
-    "The Canvas-blocked attachment rename removed its source.",
+    "The unsafe-Canvas-blocked attachment rename removed its source.",
   );
-  screenshots.push(await capture("packaged-attachment-rename-canvas-block-dark.png"));
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Audio Board.canvas"), "utf8")) === originalAudioCanvas,
+    "The unsafe-Canvas-blocked attachment rename changed the valid Canvas bytes.",
+  );
+  screenshots.push(await capture("packaged-attachment-rename-unsafe-canvas-block-dark.png"));
   await setTheme("light");
-  screenshots.push(await capture("packaged-attachment-rename-canvas-block-light.png"));
+  screenshots.push(await capture("packaged-attachment-rename-unsafe-canvas-block-light.png"));
   await clickPointer("#attachment-move-cancel");
   const canvasBlockCloseDeadline = Date.now() + 5_000;
   while (Date.now() < canvasBlockCloseDeadline) {
@@ -1030,11 +1032,21 @@ try {
     }
     await delay(40);
   }
-  await fs.unlink(path.join(vaultPath, "Audio Board.canvas"));
-  await delay(200);
+  await fs.unlink(path.join(vaultPath, "Unsafe Audio.canvas"));
+  await delay(500);
   await setTheme("dark");
   await openAttachmentMoveWorkbench("Assets/audio.mp3", "rename");
-  await previewAttachmentPublication("Archive/audio-renamed.mp3");
+  const renamePreview = await previewAttachmentPublication("Archive/audio-renamed.mp3");
+  assert(
+    renamePreview.list.includes("Audio Board.canvas") &&
+      renamePreview.list.includes("Canvas $.nodes[0].file") &&
+      renamePreview.list.includes("Canvas $.nodes[1].background") &&
+      renamePreview.list.includes("Assets/audio.mp3") &&
+      renamePreview.list.includes("Archive/audio-renamed.mp3") &&
+      renamePreview.list.includes("./Assets/audio.mp3") &&
+      renamePreview.list.includes("./Archive/audio-renamed.mp3"),
+    `The attachment rename preview omitted its exact Canvas reference updates: ${JSON.stringify(renamePreview)}`,
+  );
   assert(
     await fs
       .stat(path.join(vaultPath, "Assets", "audio.mp3"))
@@ -1049,9 +1061,13 @@ try {
       .catch(() => false)),
     "The attachment rename preview created its destination before confirmation.",
   );
-  screenshots.push(await capture("packaged-attachment-rename-dark.png"));
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Audio Board.canvas"), "utf8")) === originalAudioCanvas,
+    "The attachment rename preview changed Canvas bytes before confirmation.",
+  );
+  screenshots.push(await capture("packaged-attachment-rename-canvas-preview-dark.png"));
   await setTheme("light");
-  screenshots.push(await capture("packaged-attachment-rename-light.png"));
+  screenshots.push(await capture("packaged-attachment-rename-canvas-preview-light.png"));
 
   await clickPointer("#attachment-move-submit");
   const renameDeadline = Date.now() + 10_000;
@@ -1098,9 +1114,14 @@ try {
         .replaceAll("Assets/audio.mp3", "Archive/audio-renamed.mp3"),
     "The confirmed attachment rename did not rewrite the expected local reference.",
   );
+  assert(
+    (await fs.readFile(path.join(vaultPath, "Audio Board.canvas"), "utf8")) === renamedAudioCanvas,
+    "The confirmed attachment rename did not preserve and rewrite the exact Canvas bytes.",
+  );
   const renameToast = await evaluate("document.querySelector('#toast')?.textContent?.trim() ?? ''");
   assert(
     renameToast.includes("Moved the attachment to Archive/audio-renamed.mp3") &&
+      renameToast.includes("updated 3 references") &&
       renameToast.includes("the original path Assets/audio.mp3 was removed") &&
       !renameToast.includes("original remains"),
     `The attachment rename toast was not source-removal truthful: ${renameToast}`,
@@ -1127,6 +1148,8 @@ try {
       exactBytes: true,
       attachmentMove: true,
       attachmentRename: true,
+      canvasReferenceRewrite: true,
+      unsafeCanvasBlocker: true,
       changedPixels,
       outlinePixels,
       screenshots,

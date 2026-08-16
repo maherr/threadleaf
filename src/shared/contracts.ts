@@ -1032,10 +1032,11 @@ export interface NoteMoveResponse {
 export interface AttachmentMoveRewritePreview {
   documentPath: string;
   line: number;
-  syntax: "wiki" | "markdown";
+  syntax: "wiki" | "markdown" | "canvas";
   embed: boolean;
   beforeTarget: string;
   afterTarget: string;
+  location?: string;
 }
 
 export type AttachmentOperation = "publish-copy" | "rename";

@@ -152,6 +152,15 @@ publication receipt, and success is reported as `published-source-retained`. A c
 replacement, containment failure, unsupported sharing primitive, crash, or recovery mismatch keeps
 external bytes and retained evidence and returns a conflict or recovery result instead of claiming a
 rename.
+The separate Rename or move action reports success only after the exact target, source removal, and
+every authorized reference write commit as one recoverable operation. Under `ask` and `always`, its
+reference corpus includes every visible Markdown and JSON Canvas path and revision. Proven Canvas
+file-node and group-background references are rewritten by replacing only their exact JSON string
+tokens, with query and fragment suffixes retained. BOM, line endings, whitespace, property order,
+unknown fields, number spellings, and unrelated values remain byte-identical. Malformed, unreadable,
+oversized, duplicate-keyed, invalidly encoded, or otherwise unprovable Canvas files block source
+removal. The `never` policy moves the exact attachment bytes without rewriting references. Publish
+copy remains source-retaining and does not acquire Canvas rewrite behavior.
 Ordinary and image reference-style usages share a source-evidence safety policy. A visible single
 source definition rewrites once; source-only, opaque, unresolved, ambiguous, or source-related
 duplicate definitions block publication. CommonMark's deterministic first-definition precedence does

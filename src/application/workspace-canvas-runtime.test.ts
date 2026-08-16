@@ -395,6 +395,109 @@ describe("WorkspaceRuntime JSON Canvas surface", () => {
     });
   });
 
+  it("rejects a stale active Canvas payload after an attachment rename rewrites it", async () => {
+    const attachmentBytes = Buffer.from("canvas attachment bytes", "utf8");
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Archive"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Assets", "diagram.bin"), attachmentBytes);
+    const canvasWithAttachment = `${JSON.stringify({
+      future: { keep: "exact" },
+      nodes: [
+        {
+          id: "file",
+          type: "file",
+          file: "Assets/diagram.bin",
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 120,
+        },
+      ],
+      edges: [],
+    })}\n`;
+    await fs.writeFile(path.join(vaultPath, "Board.canvas"), canvasWithAttachment, "utf8");
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Board.canvas");
+    expect(opened.workspace?.panes[0]?.activeCanvas?.document?.nodes?.[0]).toMatchObject({
+      file: "Assets/diagram.bin",
+    });
+    await workspace.watcher.close();
+
+    const originalReadBinary = workspace.kernel.readBinary.bind(workspace.kernel);
+    let releaseRead: () => void = () => undefined;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let markReadStarted: () => void = () => undefined;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    let blockFirstActiveRead = true;
+    vi.spyOn(workspace.kernel, "readBinary").mockImplementation(async (filePath, maxBytes) => {
+      if (blockFirstActiveRead && filePath === "Board.canvas") {
+        blockFirstActiveRead = false;
+        const captured = await originalReadBinary(filePath, maxBytes);
+        markReadStarted();
+        await readGate;
+        return captured;
+      }
+      return originalReadBinary(filePath, maxBytes);
+    });
+
+    const pending = workspace.getSnapshot();
+    await readStarted;
+    const source = await originalReadBinary("Assets/diagram.bin", Number.MAX_SAFE_INTEGER);
+    if (source.status !== "ready") throw new Error("Expected attachment bytes.");
+    const preview = await workspace.moveAttachment(
+      "Assets/diagram.bin",
+      "Archive/diagram-renamed.bin",
+      source.snapshot.revision,
+      workspace.vaultId,
+      undefined,
+      "rename",
+    );
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected a Canvas reference rewrite preview.");
+    }
+    let moved: Awaited<ReturnType<WorkspaceRuntime["moveAttachment"]>>;
+    try {
+      moved = await workspace.moveAttachment(
+        "Assets/diagram.bin",
+        "Archive/diagram-renamed.bin",
+        source.snapshot.revision,
+        workspace.vaultId,
+        preview.outcome.confirmationId,
+        "rename",
+      );
+    } finally {
+      releaseRead();
+    }
+    const assembled = await pending;
+
+    expect(moved.outcome).toMatchObject({
+      status: "committed",
+      rewrites: [
+        expect.objectContaining({
+          syntax: "canvas",
+          documentPath: "Board.canvas",
+          location: "$.nodes[0].file",
+        }),
+      ],
+    });
+    expect(assembled.workspace?.panes[0]?.activeCanvas).toMatchObject({
+      document: {
+        future: { keep: "exact" },
+        nodes: [expect.objectContaining({ file: "Archive/diagram-renamed.bin" })],
+      },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "diagram.bin"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      fs.readFile(path.join(vaultPath, "Archive", "diagram-renamed.bin")),
+    ).resolves.toEqual(attachmentBytes);
+  });
+
   it("retries a snapshot whose active plugin-file revision predates a committed write", async () => {
     const nativeScene = '{"type":"excalidraw","version":2,"elements":[]}\n';
     await fs.writeFile(path.join(vaultPath, "Native Scene.excalidraw"), nativeScene, "utf8");
