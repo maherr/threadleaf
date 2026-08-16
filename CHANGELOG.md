@@ -30,6 +30,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   external-byte ingress authority, with renderer-owned file selection, byte-bound two-step review,
   source-note preservation, strict no-overwrite publication, crash recovery, retained uncertain
   evidence, and packaged dark/light exact-byte proof.
+- Added card-scoped single-file drag-and-drop and file-backed **Paste file** recovery as thin
+  adapters over the same Restore file preview and ingress transaction, with directory, multi-file,
+  text, HTML, URL, unsafe-name, unreadable, and oversized-input refusal.
 
 ### Changed
 

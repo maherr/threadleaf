@@ -241,7 +241,7 @@ symlink leaves the vault at the kernel's final no-source-mutation boundary. The 
 the control with real pointer and keyboard input in both themes, checks exact note and candidate
 bytes before and after confirmation, requires the missing card to become ready, and rejects renderer
 errors. That relink result does not establish byte restoration; the independent Restore file claim
-below does. It is not evidence for drag-and-drop, paste, raster image recovery, or a complete
+below does. It is not evidence for external-byte restoration, raster image recovery, or a complete
 attachment lifecycle. See
 [single-reference attachment relinking](../research/attachment-relink-2026-08-16.md).
 
@@ -258,12 +258,18 @@ The dedicated ingress journal persists source and missing-target authorization w
 bytes. Recovery never infers success merely because the target exists: a crash before the
 publication receipt with an observed target becomes manual review with retained private evidence.
 Fault injection covers every journal phase, final source and target races, normalized aliases, and
-restart recovery. The packaged Linux gate drives the real file chooser and two-step dialog in both
-themes, proves exact NUL, high-bit, and BOM bytes, absent target before confirmation, unchanged
-source note, ready-card rehydration, renderer-error rejection, and a restore-specific screenshot
-positive control. This is not evidence for drag-and-drop, clipboard paste, automatic naming,
-parent creation, raster image recovery, multiple matching references, or a complete attachment
-lifecycle. See
+restart recovery. The authorized missing card also accepts exactly one regular file through a
+card-local drop or focused **Paste file** control. Both are renderer-only adapters over the same
+preview and ingress authority. Text, HTML, URLs, directories, multiple files, unsafe names,
+unreadable inputs, and oversized inputs are refused without becoming restore bytes.
+
+The packaged Linux gate drives the real file chooser, a trusted CDP file drop, and a deterministic
+file-backed ClipboardEvent through the two-step dialog. It proves both themes, exact NUL, high-bit,
+and BOM bytes, absent targets before confirmation, unchanged source Markdown, ready-card
+rehydration, renderer-error rejection, and a restore-specific screenshot positive control. The
+clipboard fixture proves the renderer event adapter, not physical OS clipboard integration. This
+is not evidence for arbitrary editor ingestion, automatic naming or placement, parent creation,
+raster image recovery, multiple matching references, or a complete attachment lifecycle. See
 [exact-path attachment restoration](../research/attachment-restore-2026-08-16.md).
 
 The Excalidraw-specific public-format extension lives in

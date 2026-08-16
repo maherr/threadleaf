@@ -32,6 +32,10 @@ const originalNote = [
   "",
   "![[Restored/exact.bin|Restore target]]",
   "",
+  "![[Restored/drop.bin|Drop target]]",
+  "",
+  "![[Restored/paste.bin|Paste target]]",
+  "",
   "![[Missing/lost-report.pdf?download=1#page=2|Missing report]]",
   "",
   "The body is a fixture and must remain byte-identical.",
@@ -40,6 +44,12 @@ const missingAttachmentPath = "Missing/lost-report.pdf";
 const restoreAttachmentPath = "Restored/exact.bin";
 const externalRestorePath = path.join(testRoot, "external-recovery.bin");
 const externalRestoreBytes = Buffer.from([0x00, 0xff, 0x80, 0x42, 0xef, 0xbb, 0xbf, 0x0a]);
+const dropAttachmentPath = "Restored/drop.bin";
+const externalDropPath = path.join(testRoot, "external-drop.bin");
+const externalDropBytes = Buffer.from([0x44, 0x00, 0xfe, 0x52, 0xef, 0xbb, 0xbf, 0x0a]);
+const pasteAttachmentPath = "Restored/paste.bin";
+const externalPasteName = "clipboard-recovery.bin";
+const externalPasteBytes = Buffer.from([0x50, 0x00, 0xfd, 0x53, 0xef, 0xbb, 0xbf, 0x0a]);
 const recoveredAttachmentPath = "Assets/recovered report.pdf";
 const recoveredAttachmentBytes = Buffer.from("%PDF-1.7\nrecovered fixture\0", "binary");
 const originalAudioCanvas = `\uFEFF${[
@@ -308,6 +318,7 @@ async function clickPointer(selector) {
     const selector = ${JSON.stringify(selector)};
     const element = document.querySelector(selector);
     if (!(element instanceof HTMLElement)) return { ok: false, reason: 'missing' };
+    element.scrollIntoView({ block: 'center', inline: 'nearest' });
     const rect = element.getBoundingClientRect();
     const x = Math.floor(rect.left + rect.width / 2);
     const y = Math.floor(rect.top + rect.height / 2);
@@ -346,6 +357,210 @@ async function clickPointer(selector) {
     buttons: 0,
     clickCount: 1,
   });
+}
+
+async function attachmentDropTarget(selector) {
+  const target = await evaluate(`(() => {
+    const selector = ${JSON.stringify(selector)};
+    const element = document.querySelector(selector);
+    if (!(element instanceof HTMLElement)) return { ok: false, reason: 'missing' };
+    element.scrollIntoView({ block: 'center' });
+    const rect = element.getBoundingClientRect();
+    const x = Math.floor(rect.left + rect.width / 2);
+    const y = Math.floor(rect.top + rect.height / 2);
+    const hit = document.elementFromPoint(x, y);
+    const style = getComputedStyle(element);
+    return {
+      ok: rect.width > 0 && rect.height > 0 && style.pointerEvents !== 'none',
+      x,
+      y,
+      hit: hit instanceof Element && (hit === element || element.contains(hit)),
+      reason: hit instanceof Element ? hit.tagName : 'empty',
+    };
+  })()`);
+  assert(target?.ok, `Attachment drop target ${selector} is missing, hidden, or inert.`);
+  assert(target.hit, `Attachment drop hit-target check failed for ${selector}: ${target.reason}.`);
+  return target;
+}
+
+async function beginFileDrag(selector, sourcePath) {
+  const target = await attachmentDropTarget(selector);
+  const data = fileDragData([sourcePath]);
+  await cdp.send("Input.dispatchDragEvent", {
+    type: "dragEnter",
+    x: target.x,
+    y: target.y,
+    data,
+  });
+  await cdp.send("Input.dispatchDragEvent", {
+    type: "dragOver",
+    x: target.x,
+    y: target.y,
+    data,
+  });
+  const state = await evaluate(`(() => {
+    const card = document.querySelector(${JSON.stringify(selector)});
+    return {
+      active: card?.classList.contains('preview-attachment-drop-active') === true,
+      hint: card?.querySelector('.preview-attachment-input-hint')?.textContent ?? '',
+    };
+  })()`);
+  assert(
+    state.active && state.hint.includes("Release to review this file"),
+    `The card-scoped drop state was not visibly armed: ${JSON.stringify(state)}`,
+  );
+  return { target, data };
+}
+
+function fileDragData(sourcePaths) {
+  const data = {
+    items: sourcePaths.map((sourcePath) => ({
+      mimeType: "application/octet-stream",
+      data: "",
+      title: path.basename(sourcePath),
+      baseURL: "",
+    })),
+    files: sourcePaths,
+    dragOperationsMask: 1,
+  };
+  return data;
+}
+
+async function cancelFileDrag(drag) {
+  await cdp.send("Input.dispatchDragEvent", {
+    type: "dragCancel",
+    x: drag.target.x,
+    y: drag.target.y,
+    data: drag.data,
+  });
+}
+
+async function finishFileDrop(drag) {
+  await cdp.send("Input.dispatchDragEvent", {
+    type: "drop",
+    x: drag.target.x,
+    y: drag.target.y,
+    data: drag.data,
+  });
+}
+
+async function dispatchRejectedCardDrop(selector, data) {
+  const target = await attachmentDropTarget(selector);
+  const beforeHref = await evaluate("location.href");
+  for (const type of ["dragEnter", "dragOver"]) {
+    await cdp.send("Input.dispatchDragEvent", {
+      type,
+      x: target.x,
+      y: target.y,
+      data,
+    });
+  }
+  assert(
+    !(await evaluate(
+      `document.querySelector(${JSON.stringify(selector)})?.classList.contains('preview-attachment-drop-active') === true`,
+    )),
+    "A multi-file drag incorrectly armed the one-file drop state.",
+  );
+  await cdp.send("Input.dispatchDragEvent", {
+    type: "drop",
+    x: target.x,
+    y: target.y,
+    data,
+  });
+  await delay(150);
+  return evaluate(`(() => ({
+    sameDocument: location.href === ${JSON.stringify(beforeHref)},
+    cardPresent: document.querySelector(${JSON.stringify(selector)}) !== null,
+    dialogOpen: document.querySelector('#attachment-move-dialog')?.open === true,
+  }))()`);
+}
+
+function textAndUrlDragData() {
+  return {
+    items: [
+      {
+        mimeType: "text/uri-list",
+        data: "https://example.invalid/not-a-file",
+        title: "",
+        baseURL: "",
+      },
+      {
+        mimeType: "text/plain",
+        data: "not a file",
+        title: "",
+        baseURL: "",
+      },
+    ],
+    files: [],
+    dragOperationsMask: 1,
+  };
+}
+
+async function waitForAttachmentRestoreDialog(message) {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")) return;
+    await delay(40);
+  }
+  throw new Error(message);
+}
+
+async function dispatchFilePaste(selector, sourceFileName, bytes) {
+  await clickPointer(selector);
+  const result = await evaluate(`(() => {
+    const control = document.querySelector(${JSON.stringify(selector)});
+    if (!(control instanceof HTMLButtonElement)) return { dispatched: false, reason: 'missing' };
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([Uint8Array.from(${JSON.stringify([...bytes])})], ${JSON.stringify(sourceFileName)}, {
+      type: 'application/octet-stream',
+    }));
+    const event = new ClipboardEvent('paste', {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: transfer,
+    });
+    const dispatchResult = control.dispatchEvent(event);
+    return {
+      dispatched: true,
+      focused: document.activeElement === control,
+      defaultPrevented: event.defaultPrevented,
+      dispatchResult,
+    };
+  })()`);
+  assert(
+    result?.dispatched &&
+      result.focused &&
+      result.defaultPrevented &&
+      result.dispatchResult === false,
+    `The file-backed clipboard event did not enter the focused Paste file control: ${JSON.stringify(result)}`,
+  );
+  await waitForAttachmentRestoreDialog(
+    "The file-backed clipboard event did not reach the attachment restore workbench.",
+  );
+}
+
+async function dispatchTextOnlyPaste(selector) {
+  await clickPointer(selector);
+  return evaluate(`(() => {
+    const control = document.querySelector(${JSON.stringify(selector)});
+    if (!(control instanceof HTMLButtonElement)) return { dispatched: false, reason: 'missing' };
+    const transfer = new DataTransfer();
+    transfer.setData('text/plain', 'https://example.invalid/not-a-file');
+    transfer.setData('text/html', '<strong>not a file</strong>');
+    const event = new ClipboardEvent('paste', {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: transfer,
+    });
+    const dispatchResult = control.dispatchEvent(event);
+    return {
+      dispatched: true,
+      focused: document.activeElement === control,
+      defaultPrevented: event.defaultPrevented,
+      dispatchResult,
+      dialogOpen: document.querySelector('#attachment-move-dialog')?.open === true,
+    };
+  })()`);
 }
 
 async function replaceInput(selector, value) {
@@ -422,7 +637,7 @@ async function proveRendererX11() {
   return renderers;
 }
 
-async function waitForFixture(deadline, { expectedReady = 4, expectedUnavailable = 1 } = {}) {
+async function waitForFixture(deadline, { expectedReady = 6, expectedUnavailable = 1 } = {}) {
   while (Date.now() < deadline) {
     const state = await evaluate(`(async () => {
       const snapshot = await window.threadleaf.getSnapshot();
@@ -621,18 +836,12 @@ async function openAttachmentRestoreWorkbench(attachmentPath, selectedFilePath) 
     backendNodeId: chooser.backendNodeId,
   });
   await cdp.send("Page.setInterceptFileChooserDialog", { enabled: false });
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    if (await evaluate("document.querySelector('#attachment-move-dialog')?.open === true")) break;
-    await delay(40);
-  }
-  assert(
-    await evaluate("document.querySelector('#attachment-move-dialog')?.open === true"),
+  await waitForAttachmentRestoreDialog(
     "The selected restore file did not reach the attachment workbench.",
   );
 }
 
-async function previewAttachmentRestore() {
+async function previewAttachmentRestore(targetPath, sourceFileName) {
   await clickPointer("#attachment-move-submit");
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
@@ -640,18 +849,110 @@ async function previewAttachmentRestore() {
       open: document.querySelector('#attachment-move-dialog')?.open === true,
       message: document.querySelector('#attachment-move-preview-message')?.textContent ?? '',
       list: document.querySelector('#attachment-move-blocker-list')?.textContent ?? '',
+      hashTitle: document.querySelector('#attachment-move-blocker-list .move-note-blocker-origin')?.getAttribute('title') ?? '',
     }))()`);
     if (
       state.open &&
       state.message.length > 0 &&
-      state.list.includes("external-recovery.bin") &&
-      state.list.includes(restoreAttachmentPath)
+      state.list.includes(sourceFileName) &&
+      state.list.includes(targetPath) &&
+      /^SHA-256 [a-f0-9]{64}$/u.test(state.hashTitle)
     ) {
       return state;
     }
     await delay(50);
   }
-  throw new Error("The exact-byte attachment restore preview did not render.");
+  throw new Error(`The exact-byte attachment restore preview did not render for ${targetPath}.`);
+}
+
+async function assertAdapterRestoreWorkbench({
+  targetPath,
+  sourceFileName,
+  bytes,
+  forbiddenSourcePath,
+}) {
+  const state = await evaluate(`(() => ({
+    title: document.querySelector('#attachment-move-title')?.textContent ?? '',
+    description: document.querySelector('#attachment-move-description')?.textContent ?? '',
+    currentPath: document.querySelector('#attachment-move-current-path')?.textContent ?? '',
+    targetValue: document.querySelector('#attachment-move-target')?.value ?? '',
+    targetReadOnly: document.querySelector('#attachment-move-target')?.readOnly === true,
+    bodyText: document.querySelector('#attachment-move-dialog')?.textContent ?? '',
+    dialogHtml: document.querySelector('#attachment-move-dialog')?.outerHTML ?? '',
+  }))()`);
+  assert(
+    state.title === "Restore this missing attachment" &&
+      state.description.includes("exact bytes") &&
+      state.description.includes("leaves the source note unchanged") &&
+      state.currentPath === targetPath &&
+      state.targetValue === `${sourceFileName} · ${bytes.byteLength} B` &&
+      state.targetReadOnly &&
+      !state.bodyText.includes(forbiddenSourcePath) &&
+      !state.bodyText.includes(vaultPath) &&
+      !state.dialogHtml.includes(forbiddenSourcePath) &&
+      !state.dialogHtml.includes(vaultPath),
+    `The external-file adapter workbench was not target-bound or path-private: ${JSON.stringify(state)}`,
+  );
+  const preview = await previewAttachmentRestore(targetPath, sourceFileName);
+  assert(
+    (await fs.readFile(notePath, "utf8")) === originalNote,
+    `The ${targetPath} adapter preview changed the source note.`,
+  );
+  assert(
+    !(await fs
+      .stat(path.join(vaultPath, targetPath))
+      .then(() => true)
+      .catch(() => false)),
+    `The ${targetPath} adapter published bytes before confirmation.`,
+  );
+  return preview;
+}
+
+async function confirmAdapterRestore({
+  targetPath,
+  sourceFileName,
+  bytes,
+  expectedReady,
+  expectedUnavailable,
+}) {
+  await clickPointer("#attachment-move-submit");
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const targetExists = await fs
+      .stat(path.join(vaultPath, targetPath))
+      .then(() => true)
+      .catch(() => false);
+    const terminalUi = await evaluate(`(() => ({
+      dialogOpen: document.querySelector('#attachment-move-dialog')?.open === true,
+      toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+    }))()`);
+    if (
+      targetExists &&
+      !terminalUi.dialogOpen &&
+      terminalUi.toast.includes(`Restored ${targetPath} from ${sourceFileName}.`)
+    ) {
+      break;
+    }
+    await delay(60);
+  }
+  assert(
+    (await fs.readFile(path.join(vaultPath, targetPath))).equals(bytes),
+    `The confirmed ${targetPath} adapter did not preserve external bytes exactly.`,
+  );
+  assert(
+    (await fs.readFile(notePath, "utf8")) === originalNote,
+    `The confirmed ${targetPath} adapter rewrote the source note.`,
+  );
+  await waitForFixture(Date.now() + 8_000, { expectedReady, expectedUnavailable });
+  assert(
+    (await evaluate(
+      `(() => {
+        const card = document.querySelector('[data-threadleaf-attachment-path=${JSON.stringify(targetPath)}][data-threadleaf-attachment-status="ready"]');
+        return card !== null && card.querySelector('[data-threadleaf-attachment-action="restore"], [data-threadleaf-attachment-action="paste"], [data-threadleaf-attachment-action="relink"]') === null;
+      })()`,
+    )) === true,
+    `The restored ${targetPath} card did not become ready or retained stale recovery controls.`,
+  );
 }
 
 async function previewAttachmentPublication(targetPath) {
@@ -793,6 +1094,7 @@ try {
   );
   await fs.writeFile(path.join(vaultPath, recoveredAttachmentPath), recoveredAttachmentBytes);
   await fs.writeFile(externalRestorePath, externalRestoreBytes);
+  await fs.writeFile(externalDropPath, externalDropBytes);
   await fs.writeFile(path.join(vaultPath, "Audio Board.canvas"), originalAudioCanvas, "utf8");
   await fs.writeFile(path.join(vaultPath, "Unsafe Audio.canvas"), unsafeAudioCanvas, "utf8");
   await fs.writeFile(
@@ -863,7 +1165,7 @@ try {
   );
 
   await clickPointer("#read-view");
-  await waitForFixture(deadline, { expectedReady: 3, expectedUnavailable: 2 });
+  await waitForFixture(deadline, { expectedReady: 3, expectedUnavailable: 4 });
   const screenshots = [];
   await fs.mkdir(screenshotDirectory, { recursive: true });
   await cdp.send("Emulation.setDeviceMetricsOverride", {
@@ -882,16 +1184,18 @@ try {
   const readyCards = cardState.filter((card) => card.status === "ready");
   const missingCards = cardState.filter((card) => card.status === "missing");
   assert(
-    cardState.length === 5 &&
+    cardState.length === 7 &&
       readyCards.length === 3 &&
       readyCards.find((card) => card.path === "Assets/report.pdf")?.actionCount === 4 &&
       readyCards.find((card) => card.path === "Assets/audio.mp3")?.actionCount === 4 &&
       readyCards.find((card) => card.path === "Assets/unknown.bin")?.actionCount === 3 &&
-      missingCards.length === 2 &&
+      missingCards.length === 4 &&
       missingCards.every(
         (card) =>
-          card.actionCount === 2 &&
+          card.actionCount === 3 &&
           card.text.includes("Restore file") &&
+          card.text.includes("Paste file") &&
+          card.text.includes("Drop one file here") &&
           card.text.includes("Relink"),
       ),
     "Attachment cards lost open/reveal/rename/publication metadata.",
@@ -986,7 +1290,7 @@ try {
       !restoreWorkbench.bodyText.includes(vaultPath),
     `The exact-byte restore workbench was not truthful or path-private: ${JSON.stringify(restoreWorkbench)}`,
   );
-  await previewAttachmentRestore();
+  await previewAttachmentRestore(restoreAttachmentPath, "external-recovery.bin");
   assert(
     (await fs.readFile(notePath, "utf8")) === originalNote,
     "The restore preview changed the source note.",
@@ -1035,7 +1339,7 @@ try {
   }
   await setTheme("light");
   await openAttachmentRestoreWorkbench(restoreAttachmentPath, externalRestorePath);
-  await previewAttachmentRestore();
+  await previewAttachmentRestore(restoreAttachmentPath, "external-recovery.bin");
   screenshots.push(await capture("packaged-attachment-restore-preview-light.png"));
   assert(
     (await fs.readFile(notePath, "utf8")) === originalNote &&
@@ -1073,12 +1377,12 @@ try {
     (await fs.readFile(notePath, "utf8")) === originalNote,
     "The confirmed exact-path restore rewrote the source note.",
   );
-  await waitForFixture(Date.now() + 8_000);
+  await waitForFixture(Date.now() + 8_000, { expectedReady: 4, expectedUnavailable: 3 });
   assert(
     (await evaluate(
       `(() => {
         const card = document.querySelector('[data-threadleaf-attachment-path=${JSON.stringify(restoreAttachmentPath)}][data-threadleaf-attachment-status="ready"]');
-        return card !== null && card.querySelector('[data-threadleaf-attachment-action="restore"], [data-threadleaf-attachment-action="relink"]') === null;
+        return card !== null && card.querySelector('[data-threadleaf-attachment-action="restore"], [data-threadleaf-attachment-action="paste"], [data-threadleaf-attachment-action="relink"]') === null;
       })()`,
     )) === true,
     "The restored Reading-view card did not become ready or retained stale recovery controls.",
@@ -1086,6 +1390,102 @@ try {
   screenshots.push(await capture("packaged-attachment-restored-light.png"));
   await setTheme("dark");
   screenshots.push(await capture("packaged-attachment-restored-dark.png"));
+
+  const dropCardSelector = `.preview-attachment-card[data-threadleaf-attachment-path="${dropAttachmentPath}"][data-threadleaf-attachment-external-input="true"]`;
+  const textAndUrlDrop = await dispatchRejectedCardDrop(dropCardSelector, textAndUrlDragData());
+  assert(
+    textAndUrlDrop?.sameDocument && textAndUrlDrop.cardPresent && !textAndUrlDrop.dialogOpen,
+    `A refused text/URL drop escaped the card boundary: ${JSON.stringify(textAndUrlDrop)}`,
+  );
+  await waitForToast("does not contain one file", Date.now() + 5_000);
+  const multiFileDrop = await dispatchRejectedCardDrop(
+    dropCardSelector,
+    fileDragData([externalRestorePath, externalDropPath]),
+  );
+  assert(
+    multiFileDrop?.sameDocument && multiFileDrop.cardPresent && !multiFileDrop.dialogOpen,
+    `A refused multi-file drop escaped the card boundary: ${JSON.stringify(multiFileDrop)}`,
+  );
+  await waitForToast("Restore one file at a time", Date.now() + 5_000);
+  assert(
+    (await fs.readFile(notePath, "utf8")) === originalNote &&
+      !(await fs
+        .stat(path.join(vaultPath, dropAttachmentPath))
+        .then(() => true)
+        .catch(() => false)),
+    "The multi-file drop refusal mutated the source note or missing target.",
+  );
+  screenshots.push(await capture("packaged-attachment-drop-multiple-refused-dark.png"));
+  const darkDrag = await beginFileDrag(dropCardSelector, externalDropPath);
+  screenshots.push(await capture("packaged-attachment-drop-target-dark.png"));
+  await cancelFileDrag(darkDrag);
+  await setTheme("light");
+  const lightDrag = await beginFileDrag(dropCardSelector, externalDropPath);
+  screenshots.push(await capture("packaged-attachment-drop-target-light.png"));
+  await finishFileDrop(lightDrag);
+  await waitForAttachmentRestoreDialog(
+    "The trusted CDP file drop did not reach the attachment restore workbench.",
+  );
+  await assertAdapterRestoreWorkbench({
+    targetPath: dropAttachmentPath,
+    sourceFileName: path.basename(externalDropPath),
+    bytes: externalDropBytes,
+    forbiddenSourcePath: externalDropPath,
+  });
+  screenshots.push(await capture("packaged-attachment-drop-preview-light.png"));
+  await confirmAdapterRestore({
+    targetPath: dropAttachmentPath,
+    sourceFileName: path.basename(externalDropPath),
+    bytes: externalDropBytes,
+    expectedReady: 5,
+    expectedUnavailable: 2,
+  });
+
+  await setTheme("dark");
+  const pasteActionSelector = `[data-threadleaf-attachment-action="paste"][data-threadleaf-attachment-path="${pasteAttachmentPath}"]`;
+  await dispatchFilePaste(pasteActionSelector, externalPasteName, externalPasteBytes);
+  await assertAdapterRestoreWorkbench({
+    targetPath: pasteAttachmentPath,
+    sourceFileName: externalPasteName,
+    bytes: externalPasteBytes,
+    forbiddenSourcePath: testRoot,
+  });
+  screenshots.push(await capture("packaged-attachment-paste-preview-dark.png"));
+  await confirmAdapterRestore({
+    targetPath: pasteAttachmentPath,
+    sourceFileName: externalPasteName,
+    bytes: externalPasteBytes,
+    expectedReady: 6,
+    expectedUnavailable: 1,
+  });
+
+  await setTheme("light");
+  const remainingPasteActionSelector = `[data-threadleaf-attachment-action="paste"][data-threadleaf-attachment-path="${missingAttachmentPath}"]`;
+  const textPaste = await dispatchTextOnlyPaste(remainingPasteActionSelector);
+  assert(
+    textPaste?.dispatched &&
+      textPaste.focused &&
+      textPaste.defaultPrevented === false &&
+      textPaste.dispatchResult === true &&
+      textPaste.dialogOpen === false,
+    `Text-only clipboard input was not left untouched: ${JSON.stringify(textPaste)}`,
+  );
+  await waitForToast("does not contain one file", Date.now() + 5_000);
+  assert(
+    (await fs.readFile(notePath, "utf8")) === originalNote &&
+      !(await fs
+        .stat(path.join(vaultPath, missingAttachmentPath))
+        .then(() => true)
+        .catch(() => false)),
+    "The text-only clipboard negative control mutated the source note or missing target.",
+  );
+  assert(
+    (await evaluate(
+      `document.querySelector('[data-threadleaf-attachment-action="paste"][data-threadleaf-attachment-path=${JSON.stringify(missingAttachmentPath)}]') !== null`,
+    )) === true,
+    "The text-only clipboard negative control removed the authorized missing card.",
+  );
+  screenshots.push(await capture("packaged-attachment-paste-text-refused-light.png"));
 
   await openAttachmentMoveWorkbench();
   const workbenchDom = await evaluate(`(() => {
@@ -1522,10 +1922,10 @@ try {
     relinkToast.includes(`Relinked the missing attachment to ${recoveredAttachmentPath}.`),
     `The relink toast did not identify the existing candidate path: ${relinkToast}`,
   );
-  await waitForFixture(Date.now() + 8_000, { expectedReady: 5, expectedUnavailable: 0 });
+  await waitForFixture(Date.now() + 8_000, { expectedReady: 7, expectedUnavailable: 0 });
   assert(
     (await evaluate(
-      `document.querySelector('[data-threadleaf-attachment-path=${JSON.stringify(recoveredAttachmentPath)}][data-threadleaf-attachment-status="ready"]') !== null && document.querySelector('[data-threadleaf-attachment-action="relink"]') === null`,
+      `document.querySelector('[data-threadleaf-attachment-path=${JSON.stringify(recoveredAttachmentPath)}][data-threadleaf-attachment-status="ready"]') !== null && document.querySelector('[data-threadleaf-attachment-action="restore"], [data-threadleaf-attachment-action="paste"], [data-threadleaf-attachment-action="relink"]') === null`,
     )) === true,
     "The relinked Reading-view card did not become ready or retained a stale Relink action.",
   );
@@ -1556,6 +1956,11 @@ try {
       attachmentRename: true,
       attachmentRelink: true,
       attachmentRestore: true,
+      unsupportedDropRefusal: true,
+      multiFileDropRefusal: true,
+      attachmentDropRestore: true,
+      attachmentPasteRestore: true,
+      unsupportedExternalInput: true,
       nativeAttachmentOpen: true,
       nativeAttachmentRevealDispatch: true,
       canvasReferenceRewrite: true,

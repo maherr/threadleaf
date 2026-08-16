@@ -122,6 +122,13 @@ import {
   attachmentPublicationReceipt,
   attachmentRenameReceipt,
 } from "./attachment-move-status";
+import {
+  type AttachmentRestoreFileInput,
+  canAcceptSingleAttachmentFileDrag,
+  hasAttachmentRestoreFileTransfer,
+  selectSingleAttachmentRestoreFile,
+  stageAttachmentRestoreFile,
+} from "./attachment-restore-input";
 import { CanvasViewController } from "./canvas-view";
 import {
   filterPaletteCommands,
@@ -3191,16 +3198,12 @@ async function openAttachmentRestoreDialog(
   window.requestAnimationFrame(() => elements.attachmentMoveSubmit.focus());
 }
 
-function startAttachmentRestoreSelection(
+function attachmentRestoreSelectionForAction(
   actionButton: HTMLButtonElement,
-  sourceNotePath: string,
-  missingTarget: string,
-  missingPath: string,
-  sourceNoteRevision: string,
-): void {
+): PendingAttachmentRestoreSelection | null {
   if (elements.attachmentMoveDialog.open) {
     showToast("Finish the current attachment operation before restoring another file.");
-    return;
+    return null;
   }
   if (!loadedVaultId || readOnlyVault() || busy) {
     showToast(
@@ -3208,9 +3211,27 @@ function startAttachmentRestoreSelection(
         ? "Open a local vault before restoring missing attachments."
         : "Threadleaf is finishing another action.",
     );
-    return;
+    return null;
   }
-  pendingAttachmentRestoreSelection = {
+  const card = actionButton.closest<HTMLElement>(
+    '.preview-attachment-card[data-threadleaf-attachment-external-input="true"]',
+  );
+  const sourceNoteRevision = card?.dataset.threadleafAttachmentSourceRevision;
+  const sourceNotePath =
+    actionButton.dataset.threadleafAttachmentSourceNotePath ??
+    card?.dataset.threadleafAttachmentSourceNotePath;
+  const missingTarget =
+    actionButton.dataset.threadleafAttachmentMissingTarget ??
+    card?.dataset.threadleafAttachmentTarget;
+  const missingPath =
+    actionButton.dataset.threadleafAttachmentPath ?? card?.dataset.threadleafAttachmentPath;
+  if (!card || !sourceNoteRevision || !sourceNotePath || !missingTarget || !missingPath) {
+    showToast(
+      "This missing attachment card is no longer current. Refresh Reading view and try again.",
+    );
+    return null;
+  }
+  return {
     vaultId: loadedVaultId,
     sourceNotePath,
     missingTarget,
@@ -3218,8 +3239,42 @@ function startAttachmentRestoreSelection(
     sourceNoteRevision,
     restoreFocus: actionButton,
   };
+}
+
+function startAttachmentRestoreSelection(actionButton: HTMLButtonElement): void {
+  const selection = attachmentRestoreSelectionForAction(actionButton);
+  if (!selection) return;
+  pendingAttachmentRestoreSelection = selection;
   elements.attachmentRestoreFile.value = "";
   elements.attachmentRestoreFile.click();
+}
+
+async function acceptAttachmentRestoreExternalFile(
+  selection: PendingAttachmentRestoreSelection,
+  selectedFile: AttachmentRestoreFileInput,
+): Promise<void> {
+  if (!selection.restoreFocus.isConnected) {
+    showToast("The missing attachment card changed before the external file could be staged.");
+    return;
+  }
+  const staged = await stageAttachmentRestoreFile(selectedFile);
+  if (staged.status === "invalid-file-name") {
+    showToast(
+      "That file name is empty, unsafe, or longer than 255 UTF-8 bytes. No vault bytes were staged.",
+    );
+  } else if (staged.status === "too-large") {
+    showToast(
+      staged.phase === "declared"
+        ? `That file is ${formatByteCount(staged.byteLength)}. Attachment restore is limited to ${formatByteCount(MAX_VAULT_ATTACHMENT_BYTES)}.`
+        : `That file exceeds the ${formatByteCount(MAX_VAULT_ATTACHMENT_BYTES)} attachment restore limit.`,
+    );
+  } else if (staged.status === "unreadable") {
+    showToast("Threadleaf could not read that file. No vault bytes were staged.");
+  } else {
+    await openAttachmentRestoreDialog(selection, staged.sourceFileName, staged.bytes);
+    return;
+  }
+  if (selection.restoreFocus.isConnected) selection.restoreFocus.focus();
 }
 
 async function acceptAttachmentRestoreFileSelection(): Promise<void> {
@@ -3232,29 +3287,40 @@ async function acceptAttachmentRestoreFileSelection(): Promise<void> {
     if (selection?.restoreFocus.isConnected) selection.restoreFocus.focus();
     return;
   }
-  if (selectedFile.size > MAX_VAULT_ATTACHMENT_BYTES) {
-    showToast(
-      `That file is ${formatByteCount(selectedFile.size)}. Attachment restore is limited to ${formatByteCount(MAX_VAULT_ATTACHMENT_BYTES)}.`,
-    );
-    if (selection.restoreFocus.isConnected) selection.restoreFocus.focus();
-    return;
+  await acceptAttachmentRestoreExternalFile(selection, selectedFile);
+}
+
+function attachmentRestoreDropCard(event: DragEvent): HTMLElement | null {
+  if (!(event.target instanceof Element)) return null;
+  return event.target.closest<HTMLElement>(
+    '.preview-attachment-card[data-threadleaf-attachment-external-input="true"]',
+  );
+}
+
+function setAttachmentRestoreDropActive(card: HTMLElement, active: boolean): void {
+  card.classList.toggle("preview-attachment-drop-active", active);
+  const hint = card.querySelector<HTMLElement>(".preview-attachment-input-hint");
+  if (hint) {
+    hint.textContent = active
+      ? "Release to review this file. Nothing is written before confirmation."
+      : "Drop one file here, or focus Paste file and press Ctrl/Cmd+V.";
   }
-  let bytes: ArrayBuffer;
-  try {
-    bytes = await selectedFile.arrayBuffer();
-  } catch {
-    showToast("Threadleaf could not read the selected file. No vault bytes were staged.");
-    if (selection.restoreFocus.isConnected) selection.restoreFocus.focus();
-    return;
+}
+
+function clearAttachmentRestoreDropState(root: HTMLElement): void {
+  for (const card of root.querySelectorAll<HTMLElement>(".preview-attachment-drop-active")) {
+    setAttachmentRestoreDropActive(card, false);
   }
-  if (bytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES) {
-    showToast(
-      `That file exceeds the ${formatByteCount(MAX_VAULT_ATTACHMENT_BYTES)} attachment restore limit.`,
-    );
-    if (selection.restoreFocus.isConnected) selection.restoreFocus.focus();
-    return;
+}
+
+function attachmentRestoreTransferRefusal(status: "none" | "multiple" | "directory"): void {
+  if (status === "multiple") {
+    showToast("Restore one file at a time. No vault bytes were staged.");
+  } else if (status === "directory") {
+    showToast("Folders cannot restore a missing attachment. No vault bytes were staged.");
+  } else {
+    showToast("That input does not contain one file. Text, HTML, and links were left untouched.");
   }
-  await openAttachmentRestoreDialog(selection, selectedFile.name, bytes);
 }
 
 async function activatePreviewAttachmentAction(actionButton: HTMLButtonElement): Promise<void> {
@@ -3276,7 +3342,7 @@ async function activatePreviewAttachmentAction(actionButton: HTMLButtonElement):
     }
     return;
   }
-  if (action === "relink" || action === "restore") {
+  if (action === "relink" || action === "restore" || action === "paste") {
     const card = actionButton.closest<HTMLElement>(".preview-attachment-card");
     const sourceNoteRevision = card?.dataset.threadleafAttachmentSourceRevision;
     const missingTarget = actionButton.dataset.threadleafAttachmentMissingTarget;
@@ -3290,13 +3356,10 @@ async function activatePreviewAttachmentAction(actionButton: HTMLButtonElement):
       return;
     }
     if (action === "restore") {
-      startAttachmentRestoreSelection(
-        actionButton,
-        sourceNotePath,
-        missingTarget,
-        target,
-        sourceNoteRevision,
-      );
+      startAttachmentRestoreSelection(actionButton);
+    } else if (action === "paste") {
+      actionButton.focus();
+      showToast("Paste one copied file now. Text, HTML, and links are not treated as files.");
     } else {
       void openAttachmentRelinkDialog(
         sourceNotePath,
@@ -13344,6 +13407,98 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   pane.popOutPluginView.addEventListener("click", () => {
     if (!activate()) return;
     void togglePluginPopout();
+  });
+  pane.notePreview.addEventListener("dragenter", (event) => {
+    const card = attachmentRestoreDropCard(event);
+    const transfer = event.dataTransfer;
+    if (!card || !transfer) return;
+    event.preventDefault();
+    const canStageFile =
+      Boolean(loadedVaultId) && !readOnlyVault() && !busy && !elements.attachmentMoveDialog.open;
+    const canAcceptFile =
+      hasAttachmentRestoreFileTransfer(transfer.files, transfer.items) &&
+      canAcceptSingleAttachmentFileDrag(transfer.items);
+    if (!canStageFile || !canAcceptFile) {
+      transfer.dropEffect = "none";
+      setAttachmentRestoreDropActive(card, false);
+      if (canStageFile && !canAcceptFile) {
+        const refusal = selectSingleAttachmentRestoreFile(transfer.files, transfer.items);
+        if (refusal.status !== "ready") attachmentRestoreTransferRefusal(refusal.status);
+      }
+      return;
+    }
+    transfer.dropEffect = "copy";
+    clearAttachmentRestoreDropState(pane.notePreview);
+    setAttachmentRestoreDropActive(card, true);
+  });
+  pane.notePreview.addEventListener("dragover", (event) => {
+    const card = attachmentRestoreDropCard(event);
+    const transfer = event.dataTransfer;
+    if (!card || !transfer) return;
+    event.preventDefault();
+    if (
+      !loadedVaultId ||
+      readOnlyVault() ||
+      busy ||
+      elements.attachmentMoveDialog.open ||
+      !hasAttachmentRestoreFileTransfer(transfer.files, transfer.items) ||
+      !canAcceptSingleAttachmentFileDrag(transfer.items)
+    ) {
+      transfer.dropEffect = "none";
+      setAttachmentRestoreDropActive(card, false);
+      return;
+    }
+    transfer.dropEffect = "copy";
+    setAttachmentRestoreDropActive(card, true);
+  });
+  pane.notePreview.addEventListener("dragleave", (event) => {
+    const card = attachmentRestoreDropCard(event);
+    if (!card) return;
+    if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) return;
+    setAttachmentRestoreDropActive(card, false);
+  });
+  pane.notePreview.addEventListener("dragend", () => {
+    clearAttachmentRestoreDropState(pane.notePreview);
+  });
+  pane.notePreview.addEventListener("drop", (event) => {
+    const card = attachmentRestoreDropCard(event);
+    const transfer = event.dataTransfer;
+    clearAttachmentRestoreDropState(pane.notePreview);
+    if (!card || !transfer) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const transferred = selectSingleAttachmentRestoreFile(transfer.files, transfer.items);
+    if (transferred.status !== "ready") {
+      attachmentRestoreTransferRefusal(transferred.status);
+      return;
+    }
+    const pasteAction = card.querySelector<HTMLButtonElement>(
+      '.preview-attachment-action[data-threadleaf-attachment-action="paste"]',
+    );
+    if (!pasteAction) return;
+    const selection = attachmentRestoreSelectionForAction(pasteAction);
+    if (!selection) return;
+    void acceptAttachmentRestoreExternalFile(selection, transferred.file);
+  });
+  pane.notePreview.addEventListener("paste", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const pasteAction = event.target.closest<HTMLButtonElement>(
+      '.preview-attachment-action[data-threadleaf-attachment-action="paste"]',
+    );
+    if (!pasteAction || !event.clipboardData) return;
+    const transferred = selectSingleAttachmentRestoreFile(
+      event.clipboardData.files,
+      event.clipboardData.items,
+    );
+    if (transferred.status !== "ready") {
+      attachmentRestoreTransferRefusal(transferred.status);
+      return;
+    }
+    const selection = attachmentRestoreSelectionForAction(pasteAction);
+    if (!selection) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void acceptAttachmentRestoreExternalFile(selection, transferred.file);
   });
   pane.notePreview.addEventListener("click", (event) => {
     if (!activate()) return;

@@ -1,7 +1,8 @@
 # Exact-path attachment restoration
 
 **Date:** 2026-08-16
-**Status:** Implemented and packaged-proof complete for one missing passive embed
+**Status:** Implemented and packaged-proof complete for one missing passive embed and its bounded
+external-file adapters
 
 ## Outcome
 
@@ -10,9 +11,10 @@ authorized missing passive attachment card. The source note stays byte-identical
 not relink the token, invent a filename, create a directory, decode the payload, or overwrite an
 existing or equivalent vault name.
 
-This is the first user-facing adapter over a shared external-byte ingress authority. Drag-and-drop
-and clipboard paste remain open work and must reuse the same authority rather than add renderer or
-runtime filesystem writers.
+The card's Restore file chooser, card-scoped single-file drop, and focused Paste file control are
+three input adapters over one shared external-byte ingress authority. They do not add renderer or
+runtime filesystem writers. General editor ingestion remains open because choosing a new
+destination and inserting a new Markdown token require a separate recoverable compound transaction.
 
 ## Authorization boundary
 
@@ -27,9 +29,13 @@ following:
   a card nested inside an embedded note;
 - the target path is public, non-Markdown, non-Canvas, and has an already-existing contained parent.
 
-The renderer owns file selection and reads at most 16 MiB. It passes only the selected filename and
-a copied `ArrayBuffer`; no selected absolute path, file URL, or filesystem handle crosses IPC. The
-main handler accepts only the owned main renderer, rechecks all string and byte bounds, copies the
+The renderer owns file selection and reads at most 16 MiB. The authorized card also accepts exactly
+one regular dragged file, or exactly one file from a ClipboardEvent while the Paste file button is
+focused. Text, HTML, URLs, directories, multiple files, unsafe names, unreadable files, and
+oversized files are refused. Ordinary editor paste and workspace tab dragging are outside the
+card-local handlers. Every accepted adapter passes only the selected basename and a copied
+`ArrayBuffer`; no selected absolute path, file URL, or filesystem handle crosses IPC. The main
+handler accepts only the owned main renderer, rechecks all string and byte bounds, copies the
 payload again, and dispatches through the active workspace controller.
 
 ## Two-step restore
@@ -81,7 +87,10 @@ This refuses to turn existence after a crash into an unearned success claim.
 Focused tests cover application validation, exact-byte preview and commit, source-note preservation,
 source and target drift, case/NFC aliases, invalid filenames, stale vaults and generations,
 controller replacement races, owned-renderer IPC, renderer file-size checks before byte reads,
-autosave ordering, runtime inventory invalidation, and ready-card rehydration.
+autosave ordering, runtime inventory invalidation, and ready-card rehydration. Renderer adapter
+tests additionally cover one-file selection with companion string flavors, empty and multiple
+selections, directory-shaped transfers, exact bytes, unsafe and overlong names, declared and
+post-read size overflow, and read failure.
 
 Kernel interruption tests inject failure after intent, stage, publication, and commit boundaries.
 They cover exact NUL, high-bit, and BOM bytes, no source rewrite, pre-publication source and target
@@ -95,12 +104,21 @@ The packaged Linux Electron gate adds the real user path:
 
 - explicit X11 Xvfb renderer with a dedicated profile and disposable vault;
 - real pointer activation of **Restore file** and an intercepted native file chooser;
+- trusted CDP file drag onto the exact authorized missing card, including visible non-color drop
+  state in both themes;
+- URL/text and multi-file drop refusal that keeps the packaged renderer on the same document,
+  opens no workbench, and mutates no source or target bytes;
+- deterministic file-backed ClipboardEvent delivery to the focused **Paste file** button, plus a
+  text-only negative control that remains uncancelled and opens no workbench;
 - selected filename and byte count with no absolute source path in visible renderer state;
 - dark and light two-step previews with an independently measured pixel-changing positive control;
 - absent target and byte-identical source note before confirmation;
 - exact restored bytes after confirmation and byte-identical source note;
-- ready-card rehydration with stale Restore file and Relink controls removed;
+- ready-card rehydration with stale Restore file, Paste file, and Relink controls removed;
 - renderer exception and error-log rejection.
+
+The clipboard fixture proves the browser event adapter. It does not claim physical OS clipboard
+integration, filename synthesis for generic ClipboardItem blobs, or arbitrary editor insertion.
 
 Private product study may directly inform Threadleaf's architecture and interaction choices. This
 proof comes from Threadleaf's own authority checks, journal, fixtures, fault injection, and packaged

@@ -907,6 +907,7 @@ function markAttachmentUnavailable(
   recovery?: Extract<VaultAttachmentResponse, { status: "unavailable" }>["recovery"],
   sourceNotePath?: string,
 ): void {
+  placeholder.ariaBusy = "false";
   placeholder.className = "preview-attachment-card preview-attachment-unavailable";
   placeholder.dataset.threadleafAttachmentStatus = status;
   placeholder.setAttribute("role", recovery ? "group" : "note");
@@ -926,12 +927,19 @@ function markAttachmentUnavailable(
   copy.append(title, detail);
   placeholder.append(marker, copy);
   if (recovery?.kind === "missing-attachment" && sourceNotePath) {
+    placeholder.dataset.threadleafAttachmentPath = recovery.missingPath;
     placeholder.dataset.threadleafAttachmentSourceRevision = recovery.sourceNoteRevision;
     placeholder.dataset.threadleafAttachmentSourceNotePath = sourceNotePath;
+    placeholder.dataset.threadleafAttachmentExternalInput = "true";
+    const inputHint = placeholder.ownerDocument.createElement("span");
+    inputHint.className = "preview-attachment-input-hint";
+    inputHint.textContent = "Drop one file here, or focus Paste file and press Ctrl/Cmd+V.";
+    copy.append(inputHint);
     const actions = placeholder.ownerDocument.createElement("span");
     actions.className = "preview-attachment-actions";
     for (const [action, label] of [
       ["restore", "Restore file"],
+      ["paste", "Paste file"],
       ["relink", "Relink"],
     ] as const) {
       const button = placeholder.ownerDocument.createElement("button");
@@ -946,7 +954,10 @@ function markAttachmentUnavailable(
       button.title =
         action === "restore"
           ? `Restore selected bytes at ${recovery.missingPath}`
-          : `Relink the missing attachment ${recovery.missingPath}`;
+          : action === "paste"
+            ? `Focus here, then paste one copied file to review it for ${recovery.missingPath}`
+            : `Relink the missing attachment ${recovery.missingPath}`;
+      if (action === "paste") button.setAttribute("aria-keyshortcuts", "Control+V Meta+V");
       actions.append(button);
     }
     placeholder.append(actions);

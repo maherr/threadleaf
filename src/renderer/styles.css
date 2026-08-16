@@ -3424,6 +3424,28 @@ input.tl-live-task[data-task="?"]::before {
   background: var(--accent-soft);
 }
 
+.preview-attachment-card[data-threadleaf-attachment-external-input="true"] {
+  transition:
+    outline-color 120ms ease,
+    outline-offset 120ms ease;
+}
+
+.preview-attachment-copy .preview-attachment-input-hint {
+  overflow: visible;
+  font-weight: 750;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.preview-attachment-card.preview-attachment-drop-active {
+  outline: 2px dashed var(--accent-strong);
+  outline-offset: 3px;
+}
+
+.preview-attachment-card.preview-attachment-drop-active .preview-attachment-input-hint {
+  color: var(--ink);
+}
+
 .preview-attachment-placeholder {
   display: inline-flex;
   align-items: center;

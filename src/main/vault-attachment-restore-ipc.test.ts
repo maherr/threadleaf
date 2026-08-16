@@ -5,6 +5,10 @@ const mainSource = readFileSync(new URL("./main.ts", import.meta.url), "utf8");
 const preloadSource = readFileSync(new URL("./preload.ts", import.meta.url), "utf8");
 const rendererSource = readFileSync(new URL("../renderer/renderer.ts", import.meta.url), "utf8");
 const rendererHtml = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
+const rendererInputSource = readFileSync(
+  new URL("../renderer/attachment-restore-input.ts", import.meta.url),
+  "utf8",
+);
 
 function handlerSource(channel: string): string {
   const token = `ipcChannels.${channel}`;
@@ -43,15 +47,15 @@ describe("missing attachment restore IPC", () => {
   it("keeps file selection renderer-owned and rejects oversize input before reading bytes", () => {
     const selection = functionSource("acceptAttachmentRestoreFileSelection");
     expect(rendererHtml).toMatch(/id="attachment-restore-file"[\s\S]*type="file"/u);
-    expect(
-      selection.indexOf("selectedFile.size > MAX_VAULT_ATTACHMENT_BYTES"),
-    ).toBeGreaterThanOrEqual(0);
-    expect(selection.indexOf("selectedFile.arrayBuffer()")).toBeGreaterThan(
-      selection.indexOf("selectedFile.size > MAX_VAULT_ATTACHMENT_BYTES"),
+    expect(selection).toContain("acceptAttachmentRestoreExternalFile(selection, selectedFile)");
+    expect(rendererInputSource.indexOf("file.size > boundedMaxBytes")).toBeGreaterThanOrEqual(0);
+    expect(rendererInputSource.indexOf("file.arrayBuffer()")).toBeGreaterThan(
+      rendererInputSource.indexOf("file.size > boundedMaxBytes"),
     );
     expect(rendererSource).toContain("window.threadleaf.restoreAttachment(");
     expect(rendererSource).toContain("bytes.slice(0)");
     expect(rendererSource).not.toContain("selectedFile.path");
+    expect(rendererSource).not.toContain("navigator.clipboard");
     expect(rendererSource).not.toContain("ipcRenderer");
   });
 

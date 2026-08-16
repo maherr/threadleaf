@@ -17,7 +17,10 @@ import type {
   VaultReadPort,
   VaultTextSnapshot,
 } from "../kernel/ports";
-import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
+import {
+  isSafeAttachmentDisplayFileName,
+  MAX_VAULT_ATTACHMENT_BYTES,
+} from "../shared/attachment-limits";
 import { isPassiveAttachmentTarget } from "../shared/attachment-targets";
 import type {
   AttachmentRestoreOutcome,
@@ -70,20 +73,6 @@ function refused(
     reason,
     message,
   };
-}
-
-function isSafeDisplayFileName(fileName: string): boolean {
-  const hasUnsafeCharacter = [...fileName].some((character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return character === "/" || character === "\\" || codePoint <= 0x1f || codePoint === 0x7f;
-  });
-  return (
-    fileName.length > 0 &&
-    Buffer.byteLength(fileName, "utf8") <= 255 &&
-    fileName !== "." &&
-    fileName !== ".." &&
-    !hasUnsafeCharacter
-  );
 }
 
 function passiveVisibleFiles(listing: VisibleVaultPaths): string[] {
@@ -156,7 +145,7 @@ async function planAttachmentRestore(
     );
   }
   const normalizedRequest = { ...request, sourceNotePath };
-  if (!isSafeDisplayFileName(request.sourceFileName)) {
+  if (!isSafeAttachmentDisplayFileName(request.sourceFileName)) {
     return refused(
       normalizedRequest,
       request.missingTarget,

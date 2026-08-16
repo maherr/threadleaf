@@ -974,7 +974,7 @@ Working $y$`);
     ).toHaveLength(2);
   });
 
-  it("renders text-labeled Restore file and Relink actions only for an authorized missing attachment", async () => {
+  it("renders card-scoped Restore, Paste file, and Relink actions only for an authorized missing attachment", async () => {
     const rendered = preview("![[Missing/report.pdf|Quarterly report]]");
     await hydrateMarkdownPreviewAttachments(rendered, {
       sourceNotePath: "Notes/Current.md",
@@ -999,7 +999,13 @@ Working $y$`);
     const restore = card?.querySelector<HTMLButtonElement>(
       '[data-threadleaf-attachment-action="restore"]',
     );
+    const paste = card?.querySelector<HTMLButtonElement>(
+      '[data-threadleaf-attachment-action="paste"]',
+    );
     expect(card?.getAttribute("role")).toBe("group");
+    expect(card?.getAttribute("aria-busy")).toBe("false");
+    expect(card?.dataset.threadleafAttachmentExternalInput).toBe("true");
+    expect(card?.dataset.threadleafAttachmentPath).toBe("Notes/Missing/report.pdf");
     expect(card?.dataset.threadleafAttachmentSourceRevision).toBe("d".repeat(64));
     expect(relink?.textContent).toBe("Relink");
     expect(relink?.dataset.threadleafAttachmentPath).toBe("Notes/Missing/report.pdf");
@@ -1007,9 +1013,17 @@ Working $y$`);
     expect(restore?.textContent).toBe("Restore file");
     expect(restore?.dataset.threadleafAttachmentPath).toBe("Notes/Missing/report.pdf");
     expect(restore?.dataset.threadleafAttachmentMissingTarget).toBe("Missing/report.pdf");
+    expect(paste?.textContent).toBe("Paste file");
+    expect(paste?.dataset.threadleafAttachmentPath).toBe("Notes/Missing/report.pdf");
+    expect(paste?.dataset.threadleafAttachmentMissingTarget).toBe("Missing/report.pdf");
+    expect(paste?.getAttribute("aria-keyshortcuts")).toBe("Control+V Meta+V");
+    expect(card?.querySelector(".preview-attachment-input-hint")?.textContent).toContain(
+      "Drop one file here",
+    );
     expect(card?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
     expect(relink?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
     expect(restore?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
+    expect(paste?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
 
     const inert = preview("![[Missing/other.pdf]]");
     await hydrateMarkdownPreviewAttachments(inert, {
@@ -1024,6 +1038,8 @@ Working $y$`);
     });
     expect(inert.querySelector('[data-threadleaf-attachment-action="relink"]')).toBeNull();
     expect(inert.querySelector('[data-threadleaf-attachment-action="restore"]')).toBeNull();
+    expect(inert.querySelector('[data-threadleaf-attachment-action="paste"]')).toBeNull();
+    expect(inert.dataset.threadleafAttachmentExternalInput).toBeUndefined();
   });
 
   it("carries a nested note source path onto its restore and relink actions", async () => {
@@ -1061,9 +1077,13 @@ Working $y$`);
     const nestedRestore = rendered.querySelector<HTMLButtonElement>(
       '.preview-note-embed-body [data-threadleaf-attachment-action="restore"]',
     );
+    const nestedPaste = rendered.querySelector<HTMLButtonElement>(
+      '.preview-note-embed-body [data-threadleaf-attachment-action="paste"]',
+    );
     expect(rootRelink).toBeNull();
     expect(nestedRelink?.dataset.threadleafAttachmentSourceNotePath).toBe("Folder/Embedded.md");
     expect(nestedRestore?.dataset.threadleafAttachmentSourceNotePath).toBe("Folder/Embedded.md");
+    expect(nestedPaste?.dataset.threadleafAttachmentSourceNotePath).toBe("Folder/Embedded.md");
   });
 
   it("keeps escaped query and fragment filename bytes out of renderer subpaths", () => {

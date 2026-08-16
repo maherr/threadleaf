@@ -731,8 +731,18 @@ published revision and complete normalized namespace before the durable commit r
 before staged evidence rolls back. A staged recovery with an unexpected exact target, any
 post-publication ambiguity, or an uncertain receipt preserves private evidence and reports manual
 review rather than upgrading uncertainty to success. Only a durable terminal receipt permits blob
-cleanup. Drag-and-drop and clipboard paste remain future adapters over this authority rather than
-new filesystem writers.
+cleanup.
+
+The authorized missing card adds two thin input adapters over that same authority. A card-local
+drop accepts exactly one regular external file. **Paste file** accepts exactly one file-backed
+clipboard event while its real button is focused. Both copy bounded bytes in the renderer and open
+the unchanged Restore file preview; the card still supplies the exact destination, source note,
+revision, raw missing target, and vault binding. The incoming basename remains display and
+authorization metadata, never destination authority. Text, HTML, URLs, directories, multiple
+files, unsafe names, unreadable inputs, and oversized inputs are refused. The handlers are bound to
+authorized missing cards rather than the document or editor, so ordinary text paste and workspace
+tab dragging remain outside this feature. Arbitrary editor drop or paste still requires an explicit
+naming and placement policy plus a recoverable compound note-and-byte transaction.
 
 Every publication preview binds the exact Markdown path set, every note revision, and the metadata
 generation. For an `always` or `ask` rename, the reference corpus instead includes every visible
