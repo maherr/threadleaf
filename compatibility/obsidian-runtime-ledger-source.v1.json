@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "authority": {
+    "version": "Obsidian 1.13.7",
+    "source": "public-api/obsidian.d.ts",
+    "sha256": "ed358aa05694582597726321352494a9833b77c117991189e55761ced8326027",
+    "bytes": 204109,
+    "lines": 8498
+  },
+  "exports": {
+    "BaseComponent": {
+      "implementation": {
+        "source": "src/runtime/obsidian-components.ts",
+        "exportName": "BaseComponent"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.base-component.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    },
+    "Component": {
+      "implementation": {
+        "source": "src/runtime/obsidian-components.ts",
+        "exportName": "Component"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.component.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    },
+    "Plugin": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "Plugin"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.plugin.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    },
+    "Platform": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "Platform"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.platform.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    },
+    "normalizePath": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "normalizePath"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.normalize-path.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    }
+  },
+  "extras": {
+    "sleep": {
+      "status": "internal-extra",
+      "reason": "The compatibility factory retains a private host helper that is not a public Obsidian 1.13.7 runtime export.",
+      "evidence": [
+        {
+          "id": "obsidian-runtime.sleep-extra.v1",
+          "path": "scripts/obsidian-runtime-ledger.test.mjs"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "markers": [
+    {
+      "id": "obsidian-runtime.base-component.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 11
+    },
+    {
+      "id": "obsidian-runtime.component.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 12
+    },
+    {
+      "id": "obsidian-runtime.normalize-path.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 15
+    },
+    {
+      "id": "obsidian-runtime.platform.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 14
+    },
+    {
+      "id": "obsidian-runtime.plugin.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 13
+    },
+    {
+      "id": "obsidian-runtime.sleep-extra.v1",
+      "path": "scripts/obsidian-runtime-ledger.test.mjs",
+      "line": 38
+    }
+  ]
+}

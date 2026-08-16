@@ -26,8 +26,11 @@
     {
       "includes": [
         "compatibility/registry.v1.json",
+        "compatibility/obsidian-runtime-ledger.v1.json",
+        "compatibility/obsidian-runtime-test-index.v1.json",
         "src/generated/plugin-compatibility-registry.ts",
         "src/generated/case-folding-table.ts",
+        "src/generated/obsidian-runtime-ledger.ts",
         "benchmarks/results/*.json",
         "fixtures/search-golden/full-text-search-golden.json",
         "fixtures/corpus/same-vault-v1/cases.json",
@@ -37,6 +40,15 @@
         "fixtures/corpus/excalidraw-roundtrip-v1/vault/.obsidian/workspace.json"
       ],
       "formatter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["compatibility/authority/obsidian-1.13.7.d.ts"],
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
         "enabled": false
       }
     }
