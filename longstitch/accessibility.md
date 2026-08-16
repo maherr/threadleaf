@@ -18,15 +18,21 @@ with CIEDE2000.
 | Theme | Check | Minimum | Limiting pair or state |
 | --- | --- | ---: | --- |
 | Pressroom | UI contrast | 3.2997:1 | warning ink against title material |
+| Pressroom | Small text contrast | 5.073:1 | active navigator metadata against the selected-row ground |
 | Pressroom | CIEDE2000, deutan 0.6 | 12.0834 | abstract / success |
 | Pressroom | CIEDE2000, deutan 0.8 | 11.0267 | bug / example |
 | Lampside | UI contrast | 3.1944:1 | danger ink against body material |
+| Lampside | Small text contrast | 6.129:1 | active navigator metadata against the selected-row ground |
 | Lampside | CIEDE2000, deutan 0.6 | 11.2409 | note / todo |
 | Lampside | CIEDE2000, deutan 0.8 | 11.5207 | info / danger |
 
 The hard gates are 3:1 for graphical boundaries and focus indicators, and CIEDE2000 11 or greater
 for every categorical pair after simulation. All 78 pairs clear the stronger 11-point threshold in
 both themes and at both severities.
+
+The callout glyphs are graphical category marks and therefore use the 3:1 non-text threshold. A
+live computed-style audit separately applies the 4.5:1 text threshold; selected navigator metadata,
+the limiting small-text case, clears it in both themes.
 
 The callout title and body backgrounds intentionally have no categorical separation. They are
 shared material channels. Category is communicated by border and icon ink, a unique glyph, and the
@@ -44,4 +50,3 @@ Rendered verification also covers Pressroom and Lampside at desktop and narrow w
 table headers, callouts, tags, font loading, overflow, and proportional text scaling. The production
 Electron gates remain `pnpm run test:live-preview` and `pnpm run test:tasks`; the design color gate is
 additionally part of `pnpm run check`.
-

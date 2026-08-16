@@ -1111,6 +1111,10 @@ h2 {
   font: 7px / 1.2 var(--mono);
 }
 
+.navigator-tree-row[aria-current="page"] .navigator-tree-copy small {
+  color: var(--ink-soft);
+}
+
 .navigator-tree-placeholder {
   box-sizing: border-box;
   height: 40px;
