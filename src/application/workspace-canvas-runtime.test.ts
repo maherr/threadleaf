@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
 import type { RuntimeSnapshot } from "../shared/contracts";
@@ -341,6 +341,119 @@ describe("WorkspaceRuntime JSON Canvas surface", () => {
         fs.readFile(path.join(vaultPath, conflict.outcome.conflictPath), "utf8"),
       ).resolves.toContain("proposal");
     }
+  });
+
+  it("retries a snapshot whose active Canvas bytes were captured before a committed save", async () => {
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Board.canvas");
+    const active = opened.workspace?.panes[0]?.activeCanvas;
+    if (!active) throw new Error("Expected Board.canvas to open before the snapshot race.");
+    await workspace.watcher.close();
+
+    const originalReadBinary = workspace.kernel.readBinary.bind(workspace.kernel);
+    let releaseRead: () => void = () => undefined;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let markReadStarted: () => void = () => undefined;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    let blockFirstActiveRead = true;
+    vi.spyOn(workspace.kernel, "readBinary").mockImplementation(async (filePath, maxBytes) => {
+      if (blockFirstActiveRead && filePath === "Board.canvas") {
+        blockFirstActiveRead = false;
+        const captured = await originalReadBinary(filePath, maxBytes);
+        markReadStarted();
+        await readGate;
+        return captured;
+      }
+      return originalReadBinary(filePath, maxBytes);
+    });
+
+    const pending = workspace.getSnapshot();
+    await readStarted;
+    const edited = JSON.stringify({ nodes: [], edges: [], future: { keep: "committed" } });
+    let saved: Awaited<ReturnType<WorkspaceRuntime["saveCanvas"]>>;
+    try {
+      saved = await workspace.saveCanvas(
+        "Board.canvas",
+        edited,
+        active.revision,
+        workspace.vaultId,
+      );
+    } finally {
+      releaseRead();
+    }
+    const assembled = await pending;
+
+    expect(saved.outcome.status).toBe("committed");
+    if (saved.outcome.status !== "committed") throw new Error("Expected a committed Canvas save.");
+    expect(assembled.workspace?.panes[0]?.activeCanvas).toMatchObject({
+      revision: saved.outcome.revision,
+      document: { future: { keep: "committed" } },
+    });
+  });
+
+  it("retries a snapshot whose active plugin-file revision predates a committed write", async () => {
+    const nativeScene = '{"type":"excalidraw","version":2,"elements":[]}\n';
+    await fs.writeFile(path.join(vaultPath, "Native Scene.excalidraw"), nativeScene, "utf8");
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(path.join(sandboxPath, "state")),
+      pluginRuntimeFactory: async () => registeredFilePluginRuntime(),
+    });
+    const opened = await runtime.openNote("Native Scene.excalidraw");
+    const active = opened.workspace?.panes[0]?.activePluginFile;
+    if (!active) {
+      throw new Error("Expected Native Scene.excalidraw to open before the snapshot race.");
+    }
+    await runtime.watcher.close();
+
+    const originalReadBinary = runtime.kernel.readBinary.bind(runtime.kernel);
+    let releaseRead: () => void = () => undefined;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let markReadStarted: () => void = () => undefined;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    let blockFirstActiveRead = true;
+    vi.spyOn(runtime.kernel, "readBinary").mockImplementation(async (filePath, maxBytes) => {
+      if (blockFirstActiveRead && filePath === "Native Scene.excalidraw") {
+        blockFirstActiveRead = false;
+        const captured = await originalReadBinary(filePath, maxBytes);
+        markReadStarted();
+        await readGate;
+        return captured;
+      }
+      return originalReadBinary(filePath, maxBytes);
+    });
+
+    const pending = runtime.getSnapshot();
+    await readStarted;
+    let written: Awaited<ReturnType<WorkspaceRuntime["writePluginFile"]>>;
+    try {
+      written = await runtime.writePluginFile(
+        "Native Scene.excalidraw",
+        new TextEncoder().encode('{"type":"excalidraw","version":3,"elements":[]}\n'),
+        active.revision,
+        runtime.vaultId,
+      );
+      await runtime.getSnapshot();
+    } finally {
+      releaseRead();
+    }
+    const assembled = await pending;
+
+    expect(written.status).toBe("committed");
+    if (written.status !== "committed") throw new Error("Expected a committed plugin-file write.");
+    expect(assembled.workspace?.panes[0]?.activePluginFile).toMatchObject({
+      path: "Native Scene.excalidraw",
+      revision: written.revision,
+      viewType: "excalidraw",
+    });
   });
 
   it("keeps malformed canvases visible but non-writable", async () => {

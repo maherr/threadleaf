@@ -305,6 +305,7 @@ interface WorkspaceSnapshotIndexCapture {
   census: WorkspaceCensusSnapshot;
   inventory: WorkspaceVisibleInventorySnapshot;
   indexGeneration: string;
+  activePayloadEpoch: number;
   watcherError: string | null;
   lastWatchSequence: number;
   lastRescanReason: string | null;
@@ -1028,6 +1029,7 @@ export class WorkspaceRuntime {
   #inventoryPublishedSequence = 0;
   #inventoryRefresh: Promise<void> | null = null;
   #inventoryGenerationEpoch = 0;
+  #activePayloadEpoch = 0;
   #inventoryScanAllowed = true;
   #inventoryState: WorkspaceVisibleInventorySnapshot = {
     state: "warming",
@@ -2392,6 +2394,7 @@ export class WorkspaceRuntime {
       expectedVaultId,
     );
     if (outcome.status === "committed") {
+      this.#activePayloadEpoch += 1;
       this.watcher.operations.expect({
         id: outcome.transactionId,
         kind: "write",
@@ -2636,6 +2639,9 @@ export class WorkspaceRuntime {
       throw new Error(`Plugin file saves cannot target private application paths: ${filePath}`);
     }
     const outcome = await this.kernel.writeBinary(normalizedPath, content, expectedRevision);
+    if (outcome.status === "committed") {
+      this.#activePayloadEpoch += 1;
+    }
     this.invalidateVisibleInventory();
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
     await this.withIndexMutation(async () => {
@@ -4451,6 +4457,7 @@ export class WorkspaceRuntime {
             census,
             inventory,
             indexGeneration,
+            activePayloadEpoch: this.#activePayloadEpoch,
             watcherError: this.#watcherError,
             lastWatchSequence: this.#lastWatchSequence,
             lastRescanReason: this.#lastRescanReason,
@@ -4793,6 +4800,7 @@ export class WorkspaceRuntime {
     const inventory = this.inventorySnapshot();
     return (
       capture.indexGeneration === this.workspaceIndexGeneration() &&
+      capture.activePayloadEpoch === this.#activePayloadEpoch &&
       capture.projection.generation === this.indexReactor.index.generation &&
       !this.inventoryCaptureNeedsRetry() &&
       capture.census.state === census.state &&
