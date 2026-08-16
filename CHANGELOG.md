@@ -26,6 +26,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   preview, source and candidate revision binding, final resolver-level namespace and containment
   checks, recoverable conflict copies, vault-switch-safe receipts, and packaged dark/light pointer
   and keyboard proof.
+- Added exact-path **Restore file** for one missing passive attachment embed through a shared
+  external-byte ingress authority, with renderer-owned file selection, byte-bound two-step review,
+  source-note preservation, strict no-overwrite publication, crash recovery, retained uncertain
+  evidence, and packaged dark/light exact-byte proof.
 
 ### Changed
 

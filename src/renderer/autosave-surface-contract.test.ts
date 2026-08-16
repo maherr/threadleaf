@@ -85,6 +85,11 @@ describe("continuous autosave surface contract", () => {
         "window.threadleaf.relinkAttachment(",
       ],
       [
+        "restoreCurrentAttachment",
+        'tryFlushAllPaneAutosaves("note-mutation")',
+        "window.threadleaf.restoreAttachment(",
+      ],
+      [
         "exportCurrentNoteAsHtml",
         'tryFlushPaneAutosave(paneId, "note-mutation")',
         "window.threadleaf.publishNote(",

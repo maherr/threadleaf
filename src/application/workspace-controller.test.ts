@@ -6,6 +6,7 @@ import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
   AttachmentMoveResponse,
   AttachmentRelinkResponse,
+  AttachmentRestoreResponse,
   NoteCreateOutcome,
   NoteCreateResponse,
   NoteDeleteResponse,
@@ -155,6 +156,16 @@ class FakeRuntime implements WorkspaceRuntimePort {
     confirmationId?: string;
   } | null = null;
   attachmentRelinkLoader: (() => Promise<AttachmentRelinkResponse>) | null = null;
+  restoredMissingAttachment: {
+    sourceNotePath: string;
+    missingTarget: string;
+    sourceFileName: string;
+    bytes: number[];
+    expectedSourceRevision: string;
+    expectedVaultId: string;
+    confirmationId?: string;
+  } | null = null;
+  attachmentRestoreLoader: (() => Promise<AttachmentRestoreResponse>) | null = null;
   deletedNote: {
     filePath: string;
     expectedRevision: string;
@@ -570,6 +581,43 @@ class FakeRuntime implements WorkspaceRuntimePort {
           afterTarget: replacementPath,
           missingPath: missingTarget,
           replacementPath,
+        },
+      },
+      snapshot: this.#snapshot,
+    };
+  }
+
+  async restoreAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRestoreResponse> {
+    this.restoredMissingAttachment = {
+      sourceNotePath,
+      missingTarget,
+      sourceFileName,
+      bytes: [...bytes],
+      expectedSourceRevision,
+      expectedVaultId,
+      ...(confirmationId ? { confirmationId } : {}),
+    };
+    if (this.attachmentRestoreLoader) return this.attachmentRestoreLoader();
+    return {
+      outcome: {
+        status: "committed",
+        path: missingTarget,
+        revision: "c".repeat(64),
+        transactionId: "attachment-restore",
+        preview: {
+          sourceNotePath,
+          targetPath: missingTarget,
+          sourceFileName,
+          byteLength: bytes.byteLength,
+          contentRevision: "d".repeat(64),
         },
       },
       snapshot: this.#snapshot,
@@ -1465,6 +1513,93 @@ describe("WorkspaceController", () => {
       snapshot: { vault: { path: path.resolve("/replacement/vault") } },
       committedVaultId: oldVaultId,
       committedVaultName: path.basename(path.resolve(fixtureVaultPath)),
+    });
+    await controller.close();
+  });
+
+  it("forwards every external-byte restore proof value to the active runtime", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const expectedVaultId = controller.vaultId;
+    const expectedSourceRevision = "a".repeat(64);
+    const confirmationId = "b".repeat(64);
+    const bytes = Uint8Array.from([0, 255, 128, 66]);
+
+    await controller.restoreAttachment(
+      "Notes/Current.md",
+      "../Missing/report.bin",
+      "external-report.bin",
+      bytes,
+      expectedSourceRevision,
+      expectedVaultId,
+      confirmationId,
+    );
+
+    expect(harness.runtimes[0]?.restoredMissingAttachment).toEqual({
+      sourceNotePath: "Notes/Current.md",
+      missingTarget: "../Missing/report.bin",
+      sourceFileName: "external-report.bin",
+      bytes: [0, 255, 128, 66],
+      expectedSourceRevision,
+      expectedVaultId,
+      confirmationId,
+    });
+    await controller.close();
+  });
+
+  it("reports a committed byte restore from a runtime replaced before its reply", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const oldRuntime = harness.runtimes[0];
+    if (!oldRuntime) throw new Error("Expected the bundled runtime.");
+    const oldVaultId = controller.vaultId;
+    oldRuntime.attachmentRestoreLoader = async () => {
+      await controller.switchVault("/replacement/vault");
+      return {
+        outcome: {
+          status: "committed",
+          path: "Missing/report.bin",
+          revision: "c".repeat(64),
+          transactionId: "attachment-restore",
+          preview: {
+            sourceNotePath: "Notes/Current.md",
+            targetPath: "Missing/report.bin",
+            sourceFileName: "external-report.bin",
+            byteLength: 4,
+            contentRevision: "d".repeat(64),
+          },
+        },
+        snapshot: await oldRuntime.getSnapshot(),
+      };
+    };
+
+    const response = await controller.restoreAttachment(
+      "Notes/Current.md",
+      "../Missing/report.bin",
+      "external-report.bin",
+      Uint8Array.from([0, 255, 128, 66]),
+      "a".repeat(64),
+      oldVaultId,
+      "b".repeat(64),
+    );
+
+    expect(response).toMatchObject({
+      outcome: { status: "committed", path: "Missing/report.bin" },
+      snapshot: { vault: { path: path.resolve("/replacement/vault") } },
+      affectedVaultId: oldVaultId,
+      affectedVaultName: path.basename(path.resolve(fixtureVaultPath)),
     });
     await controller.close();
   });

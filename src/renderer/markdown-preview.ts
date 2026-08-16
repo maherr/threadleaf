@@ -925,22 +925,30 @@ function markAttachmentUnavailable(
   detail.textContent = message;
   copy.append(title, detail);
   placeholder.append(marker, copy);
-  if (recovery?.kind === "relink" && sourceNotePath) {
+  if (recovery?.kind === "missing-attachment" && sourceNotePath) {
     placeholder.dataset.threadleafAttachmentSourceRevision = recovery.sourceNoteRevision;
     placeholder.dataset.threadleafAttachmentSourceNotePath = sourceNotePath;
     const actions = placeholder.ownerDocument.createElement("span");
     actions.className = "preview-attachment-actions";
-    const button = placeholder.ownerDocument.createElement("button");
-    button.type = "button";
-    button.className = "preview-attachment-action";
-    button.dataset.threadleafAttachmentAction = "relink";
-    button.dataset.threadleafAttachmentPath = recovery.missingPath;
-    button.dataset.threadleafAttachmentMissingTarget =
-      placeholder.dataset.threadleafAttachmentTarget ?? "";
-    button.dataset.threadleafAttachmentSourceNotePath = sourceNotePath;
-    button.textContent = "Relink";
-    button.title = `Relink the missing attachment ${recovery.missingPath}`;
-    actions.append(button);
+    for (const [action, label] of [
+      ["restore", "Restore file"],
+      ["relink", "Relink"],
+    ] as const) {
+      const button = placeholder.ownerDocument.createElement("button");
+      button.type = "button";
+      button.className = "preview-attachment-action";
+      button.dataset.threadleafAttachmentAction = action;
+      button.dataset.threadleafAttachmentPath = recovery.missingPath;
+      button.dataset.threadleafAttachmentMissingTarget =
+        placeholder.dataset.threadleafAttachmentTarget ?? "";
+      button.dataset.threadleafAttachmentSourceNotePath = sourceNotePath;
+      button.textContent = label;
+      button.title =
+        action === "restore"
+          ? `Restore selected bytes at ${recovery.missingPath}`
+          : `Relink the missing attachment ${recovery.missingPath}`;
+      actions.append(button);
+    }
     placeholder.append(actions);
   }
 }

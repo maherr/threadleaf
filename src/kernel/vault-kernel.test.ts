@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, renameSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -491,6 +491,315 @@ describe("VaultKernel writes", () => {
     }
     expect(retained.snapshot.bytes).toEqual(Buffer.from(proposed));
   });
+
+  it.runIf(process.platform === "linux")(
+    "restores exact external attachment bytes through the strict ingress journal",
+    async () => {
+      await fs.mkdir(path.join(vaultPath, "Notes"));
+      await fs.mkdir(path.join(vaultPath, "Missing"));
+      await fs.writeFile(
+        path.join(vaultPath, "Notes", "Current.md"),
+        "\uFEFF# Current\r\n![[Missing/report.pdf?download=1]]\r\n",
+        "utf8",
+      );
+      const kernel = await openKernel();
+      const source = await kernel.readText("Notes/Current.md");
+      const bytes = Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0, 0xff, 0xef, 0xbb, 0xbf]);
+
+      const result = await kernel.ingressAttachmentBytes("Missing/report.pdf", bytes, {
+        operation: "restore-missing",
+        sourceNotePath: source.path,
+        sourceNoteRevision: source.revision,
+        missingPath: "Missing/report.pdf",
+        missingResolverTarget: "Missing/report.pdf",
+      });
+
+      expect(result).toMatchObject({
+        status: "committed",
+        path: "Missing/report.pdf",
+      });
+      await expect(fs.readFile(path.join(vaultPath, "Missing", "report.pdf"))).resolves.toEqual(
+        Buffer.from(bytes),
+      );
+      await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+        "\uFEFF# Current\r\n![[Missing/report.pdf?download=1]]\r\n",
+      );
+      await expect(fs.readdir(path.join(kernel.stateRoot, "journal"))).resolves.toEqual([]);
+      await expect(fs.readdir(path.join(kernel.stateRoot, "transactions"))).resolves.toEqual([]);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "retains staged evidence when a completed publication becomes unobservable",
+    async () => {
+      const missingDirectory = path.join(vaultPath, "Missing");
+      const shiftedDirectory = path.join(vaultPath, "Missing shifted after publication");
+      await fs.mkdir(missingDirectory);
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "![[Missing/report.pdf]]\n", "utf8");
+      const kernel = await openKernel();
+      const source = await kernel.readText("Current.md");
+      const proposed = Buffer.from("retained uncertain publication");
+      const originalPublish = nativeFilesystem.publishBufferNoReplace;
+      const publish = vi
+        .spyOn(nativeFilesystem, "publishBufferNoReplace")
+        .mockImplementation((targetDirectoryFd, targetName, bytes) => {
+          originalPublish(targetDirectoryFd, targetName, bytes);
+          renameSync(missingDirectory, shiftedDirectory);
+          throw new nativeFilesystem.NativeFilesystemError(
+            "unsupported",
+            "injected post-publication observation failure",
+          );
+        });
+
+      try {
+        const result = await kernel.ingressAttachmentBytes("Missing/report.pdf", proposed, {
+          operation: "restore-missing",
+          sourceNotePath: "Current.md",
+          sourceNoteRevision: source.revision,
+          missingPath: "Missing/report.pdf",
+          missingResolverTarget: "Missing/report.pdf",
+        });
+
+        expect(result).toMatchObject({
+          status: "manual-conflict",
+          reason: "publish-state-diverged",
+          path: "Missing/report.pdf",
+        });
+        await expect(fs.readFile(path.join(shiftedDirectory, "report.pdf"))).resolves.toEqual(
+          proposed,
+        );
+        const histories = await fs.readdir(path.join(kernel.stateRoot, "history"));
+        expect(histories).toHaveLength(1);
+        const historyName = histories[0];
+        if (!historyName) throw new Error("uncertain attachment-ingress history is missing");
+        await expect(
+          fs
+            .readFile(path.join(kernel.stateRoot, "history", historyName), "utf8")
+            .then((contents) => JSON.parse(contents)),
+        ).resolves.toMatchObject({ kind: "attachment-ingress", outcome: "manual-conflict" });
+        const transactionId = path.basename(historyName, ".json");
+        await expect(
+          fs.readFile(
+            path.join(kernel.stateRoot, "transactions", transactionId, "attachment-ingress.bin"),
+          ),
+        ).resolves.toEqual(proposed);
+      } finally {
+        publish.mockRestore();
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "refuses a final source or target race without publishing a conflict copy",
+    async () => {
+      await fs.mkdir(path.join(vaultPath, "Missing"));
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "![[Missing/report.pdf]]\n", "utf8");
+      let race: "source" | "target" = "source";
+      const kernel = await openKernel(async (point) => {
+        if (point !== "attachment-ingress:before-publish") return;
+        if (race === "source") {
+          await fs.writeFile(path.join(vaultPath, "Current.md"), "changed externally\n", "utf8");
+        } else {
+          await fs.writeFile(path.join(vaultPath, "Missing", "report.pdf"), "external winner");
+        }
+      });
+      const firstSource = await kernel.readText("Current.md");
+      const first = await kernel.ingressAttachmentBytes(
+        "Missing/report.pdf",
+        Buffer.from("first proposal"),
+        {
+          operation: "restore-missing",
+          sourceNotePath: "Current.md",
+          sourceNoteRevision: firstSource.revision,
+          missingPath: "Missing/report.pdf",
+          missingResolverTarget: "Missing/report.pdf",
+        },
+      );
+      expect(first).toMatchObject({ status: "refused", reason: "source-note-changed" });
+      await expect(fs.stat(path.join(vaultPath, "Missing", "report.pdf"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "![[Missing/report.pdf]]\n", "utf8");
+      const secondSource = await kernel.readText("Current.md");
+      race = "target";
+      const second = await kernel.ingressAttachmentBytes(
+        "Missing/report.pdf",
+        Buffer.from("second proposal"),
+        {
+          operation: "restore-missing",
+          sourceNotePath: "Current.md",
+          sourceNoteRevision: secondSource.revision,
+          missingPath: "Missing/report.pdf",
+          missingResolverTarget: "Missing/report.pdf",
+        },
+      );
+      expect(second).toMatchObject({ status: "refused", reason: "missing-target-present" });
+      await expect(
+        fs.readFile(path.join(vaultPath, "Missing", "report.pdf"), "utf8"),
+      ).resolves.toBe("external winner");
+      expect(
+        (await fs.readdir(path.join(vaultPath, "Missing"))).filter((entry) =>
+          entry.includes("threadleaf-conflict"),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it.runIf(process.platform === "linux").each([
+    ["attachment-ingress:after-intent", "rolled-back", false],
+    ["attachment-ingress:after-stage", "committed", true],
+    ["attachment-ingress:before-publish", "committed", true],
+    ["attachment-ingress:after-publish", "committed", true],
+    ["attachment-ingress:after-commit", "committed", true],
+  ] as const)(
+    "recovers attachment ingress after %s",
+    async (faultPoint, expectedOutcome, expectsTarget) => {
+      await fs.mkdir(path.join(vaultPath, "Missing"));
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "![[Missing/report.pdf]]\n", "utf8");
+      const kernel = await openKernel((point) => {
+        if (point === faultPoint) throw new Error(`interrupted at ${faultPoint}`);
+      });
+      const source = await kernel.readText("Current.md");
+      await expect(
+        kernel.ingressAttachmentBytes("Missing/report.pdf", Buffer.from("recover me"), {
+          operation: "restore-missing",
+          sourceNotePath: "Current.md",
+          sourceNoteRevision: source.revision,
+          missingPath: "Missing/report.pdf",
+          missingResolverTarget: "Missing/report.pdf",
+        }),
+      ).rejects.toThrow(`interrupted at ${faultPoint}`);
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions).toMatchObject([
+        {
+          kind: "attachment-ingress",
+          outcome: expectedOutcome,
+          path: "Missing/report.pdf",
+        },
+      ]);
+      if (expectsTarget) {
+        await expect(
+          fs.readFile(path.join(vaultPath, "Missing", "report.pdf"), "utf8"),
+        ).resolves.toBe("recover me");
+      } else {
+        await expect(fs.stat(path.join(vaultPath, "Missing", "report.pdf"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "revalidates source evidence before recovering staged ingress",
+    async () => {
+      await fs.mkdir(path.join(vaultPath, "Missing"));
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "![[Missing/report.pdf]]\n", "utf8");
+      const kernel = await openKernel((point) => {
+        if (point === "attachment-ingress:after-stage") throw new Error("staged interruption");
+      });
+      const source = await kernel.readText("Current.md");
+      await expect(
+        kernel.ingressAttachmentBytes("Missing/report.pdf", Buffer.from("staged bytes"), {
+          operation: "restore-missing",
+          sourceNotePath: "Current.md",
+          sourceNoteRevision: source.revision,
+          missingPath: "Missing/report.pdf",
+          missingResolverTarget: "Missing/report.pdf",
+        }),
+      ).rejects.toThrow("staged interruption");
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "reference removed\n", "utf8");
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions).toMatchObject([
+        { kind: "attachment-ingress", outcome: "rolled-back", path: "Missing/report.pdf" },
+      ]);
+      await expect(fs.stat(path.join(vaultPath, "Missing", "report.pdf"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "retains uncertain staged evidence when an exact target appears before recovery",
+    async () => {
+      await fs.mkdir(path.join(vaultPath, "Missing"));
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "![[Missing/report.pdf]]\n", "utf8");
+      const kernel = await openKernel((point) => {
+        if (point === "attachment-ingress:after-stage") throw new Error("staged interruption");
+      });
+      const source = await kernel.readText("Current.md");
+      await expect(
+        kernel.ingressAttachmentBytes("Missing/report.pdf", Buffer.from("staged proposal"), {
+          operation: "restore-missing",
+          sourceNotePath: "Current.md",
+          sourceNoteRevision: source.revision,
+          missingPath: "Missing/report.pdf",
+          missingResolverTarget: "Missing/report.pdf",
+        }),
+      ).rejects.toThrow("staged interruption");
+      await fs.writeFile(path.join(vaultPath, "Missing", "report.pdf"), "external winner");
+
+      const recovered = await openKernel();
+      expect(recovered.startupRecoveryActions).toMatchObject([
+        { kind: "attachment-ingress", outcome: "manual-conflict", path: "Missing/report.pdf" },
+      ]);
+      await expect(
+        fs.readFile(path.join(vaultPath, "Missing", "report.pdf"), "utf8"),
+      ).resolves.toBe("external winner");
+      const history = recovered.startupRecoveryActions[0];
+      expect(history?.transactionId).toBeTypeOf("string");
+      await expect(
+        fs.readFile(
+          path.join(
+            recovered.stateRoot,
+            "transactions",
+            history?.transactionId ?? "missing",
+            "attachment-ingress.bin",
+          ),
+          "utf8",
+        ),
+      ).resolves.toBe("staged proposal");
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "detects a normalized alias that appears after publication and retains both claims",
+    async () => {
+      await fs.mkdir(path.join(vaultPath, "Missing"));
+      await fs.writeFile(path.join(vaultPath, "Current.md"), "![[Missing/Report.pdf]]\n", "utf8");
+      const kernel = await openKernel(async (point) => {
+        if (point === "attachment-ingress:after-publish") {
+          await fs.writeFile(path.join(vaultPath, "Missing", "report.PDF"), "external alias");
+        }
+      });
+      const source = await kernel.readText("Current.md");
+      const result = await kernel.ingressAttachmentBytes(
+        "Missing/Report.pdf",
+        Buffer.from("published bytes"),
+        {
+          operation: "restore-missing",
+          sourceNotePath: "Current.md",
+          sourceNoteRevision: source.revision,
+          missingPath: "Missing/Report.pdf",
+          missingResolverTarget: "Missing/Report.pdf",
+        },
+      );
+
+      expect(result).toMatchObject({
+        status: "manual-conflict",
+        reason: "target-normalized-exists",
+        path: "Missing/Report.pdf",
+      });
+      await expect(
+        fs.readFile(path.join(vaultPath, "Missing", "Report.pdf"), "utf8"),
+      ).resolves.toBe("published bytes");
+      await expect(
+        fs.readFile(path.join(vaultPath, "Missing", "report.PDF"), "utf8"),
+      ).resolves.toBe("external alias");
+    },
+  );
 
   it.each([
     ["write:after-intent", "rolled-back", "original", false],

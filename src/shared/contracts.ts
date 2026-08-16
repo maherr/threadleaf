@@ -1165,6 +1165,70 @@ export interface AttachmentRelinkResponse {
   committedVaultName?: string;
 }
 
+export interface AttachmentRestorePreview {
+  sourceNotePath: string;
+  targetPath: string;
+  sourceFileName: string;
+  byteLength: number;
+  contentRevision: string;
+}
+
+export type AttachmentRestoreRefusalReason =
+  | "invalid-source"
+  | "invalid-missing-target"
+  | "private-path"
+  | "unsupported-reference"
+  | "reference-not-found"
+  | "reference-ambiguous"
+  | "source-unreadable"
+  | "source-revision-changed"
+  | "invalid-file-name"
+  | "attachment-too-large"
+  | "missing-target-returned"
+  | "missing-target-ambiguous"
+  | "missing-target-changed"
+  | "attachment-publish-unavailable"
+  | "workspace-changed"
+  | "stale-vault";
+
+export type AttachmentRestoreOutcome =
+  | {
+      status: "requires-confirmation";
+      preview: AttachmentRestorePreview;
+      confirmationId: string;
+    }
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+      preview: AttachmentRestorePreview;
+    }
+  | {
+      status: "refused";
+      sourceNotePath: string;
+      missingPath: string;
+      sourceFileName: string;
+      reason: AttachmentRestoreRefusalReason;
+      message: string;
+    }
+  | {
+      status: "manual-conflict";
+      path: string;
+      transactionId: string;
+      reason: string;
+      message: string;
+    };
+
+export interface AttachmentRestoreResponse {
+  outcome: AttachmentRestoreOutcome;
+  snapshot: RuntimeSnapshot;
+  /** Set when the affected runtime was replaced before its reply. */
+  affectedVaultId?: string;
+  /** Basename-safe identity of the vault affected by the operation. */
+  affectedVaultName?: string;
+}
+
 export type NoteDeleteOutcome =
   | { status: "committed"; from: string; to: string; transactionId: string }
   | { status: "conflict"; from: string; to: string; reason: string };
@@ -1267,7 +1331,7 @@ export type VaultAttachmentUnavailableReason =
   | "unreadable";
 
 export interface VaultAttachmentRecoveryOffer {
-  kind: "relink";
+  kind: "missing-attachment";
   missingPath: string;
   sourceNoteRevision: string;
 }
@@ -1681,6 +1745,15 @@ export interface ThreadleafBridge {
     expectedVaultId: string,
     confirmationId?: string,
   ): Promise<AttachmentRelinkResponse>;
+  restoreAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    sourceFileName: string,
+    bytes: ArrayBuffer,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRestoreResponse>;
   deleteNote(
     path: string,
     expectedRevision: string,

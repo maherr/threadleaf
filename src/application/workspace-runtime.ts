@@ -24,12 +24,15 @@ import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
+import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
 import type {
   AttachmentMoveOutcome,
   AttachmentMoveResponse,
   AttachmentOperation,
   AttachmentRelinkOutcome,
   AttachmentRelinkResponse,
+  AttachmentRestoreOutcome,
+  AttachmentRestoreResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -109,6 +112,7 @@ import {
 import { ActionRegistry } from "./action-registry";
 import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
 import { inspectMissingAttachmentRelinkOffer, relinkMissingAttachment } from "./attachment-relink";
+import { restoreMissingAttachment } from "./attachment-restore";
 import { loadCanvasAttachment } from "./canvas-attachment-service";
 import {
   isCanvasPath,
@@ -489,6 +493,16 @@ interface RelinkAttachmentRequest {
   confirmationId: string | null;
 }
 
+interface RestoreAttachmentRequest {
+  sourceNotePath: string;
+  missingTarget: string;
+  sourceFileName: string;
+  bytes: Uint8Array;
+  expectedSourceRevision: string;
+  expectedVaultId: string;
+  confirmationId: string | null;
+}
+
 interface DeleteNoteRequest {
   path: string;
   expectedRevision: string;
@@ -605,6 +619,44 @@ function parseRelinkAttachmentRequest(payload: unknown): RelinkAttachmentRequest
     sourceNotePath: payload.sourceNotePath,
     missingTarget: payload.missingTarget,
     replacementPath: payload.replacementPath,
+    expectedSourceRevision: payload.expectedSourceRevision,
+    expectedVaultId: payload.expectedVaultId,
+    confirmationId:
+      "confirmationId" in payload && typeof payload.confirmationId === "string"
+        ? payload.confirmationId
+        : null,
+  };
+}
+
+function parseRestoreAttachmentRequest(payload: unknown): RestoreAttachmentRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("sourceNotePath" in payload) ||
+    typeof payload.sourceNotePath !== "string" ||
+    !("missingTarget" in payload) ||
+    typeof payload.missingTarget !== "string" ||
+    !("sourceFileName" in payload) ||
+    typeof payload.sourceFileName !== "string" ||
+    !("bytes" in payload) ||
+    !(payload.bytes instanceof Uint8Array) ||
+    payload.bytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES ||
+    !("expectedSourceRevision" in payload) ||
+    typeof payload.expectedSourceRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string" ||
+    ("confirmationId" in payload &&
+      !(payload.confirmationId === null || typeof payload.confirmationId === "string"))
+  ) {
+    throw new Error(
+      "Restore attachment requires string note, missing target, file name, revision, and vault values plus bounded bytes and an optional confirmation.",
+    );
+  }
+  return {
+    sourceNotePath: payload.sourceNotePath,
+    missingTarget: payload.missingTarget,
+    sourceFileName: payload.sourceFileName,
+    bytes: new Uint8Array(payload.bytes),
     expectedSourceRevision: payload.expectedSourceRevision,
     expectedVaultId: payload.expectedVaultId,
     confirmationId:
@@ -1329,6 +1381,13 @@ export class WorkspaceRuntime {
         source: "workspace",
         execute: (payload) =>
           this.relinkAttachmentThroughKernel(parseRelinkAttachmentRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.restore-attachment",
+        name: "Restore missing attachment",
+        source: "workspace",
+        execute: (payload) =>
+          this.restoreAttachmentThroughKernel(parseRestoreAttachmentRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.delete-note",
@@ -2144,6 +2203,30 @@ export class WorkspaceRuntime {
         sourceNotePath,
         missingTarget,
         replacementPath,
+        expectedSourceRevision,
+        expectedVaultId,
+        confirmationId: confirmationId ?? null,
+      },
+    );
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async restoreAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRestoreResponse> {
+    const outcome = await this.actions.dispatch<AttachmentRestoreOutcome>(
+      "workspace.restore-attachment",
+      {
+        sourceNotePath,
+        missingTarget,
+        sourceFileName,
+        bytes,
         expectedSourceRevision,
         expectedVaultId,
         confirmationId: confirmationId ?? null,
@@ -3887,6 +3970,44 @@ export class WorkspaceRuntime {
       );
     }
     return execution;
+  }
+
+  private async restoreAttachmentThroughKernel(
+    request: RestoreAttachmentRequest,
+  ): Promise<AttachmentRestoreOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return {
+        status: "refused",
+        sourceNotePath: request.sourceNotePath,
+        missingPath: request.missingTarget,
+        sourceFileName: request.sourceFileName,
+        reason: "stale-vault",
+        message: "The active vault changed before this attachment could be restored.",
+      };
+    }
+    this.assertWritable("restore missing attachments");
+    const expectedGeneration = await this.withIndexStateLock(
+      async () => this.indexReactor.index.generation,
+    );
+    const outcome = await restoreMissingAttachment(
+      this.kernel,
+      {
+        sourceNotePath: request.sourceNotePath,
+        missingTarget: request.missingTarget,
+        sourceFileName: request.sourceFileName,
+        bytes: request.bytes,
+        expectedSourceRevision: request.expectedSourceRevision,
+        ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+      },
+      {
+        generation: expectedGeneration,
+        currentGeneration: () => this.indexReactor.index.generation,
+      },
+    );
+    if (outcome.status === "committed" || outcome.status === "manual-conflict") {
+      this.invalidateVisibleInventory();
+    }
+    return outcome;
   }
 
   private async deleteNoteThroughKernel(request: DeleteNoteRequest): Promise<NoteDeleteOutcome> {

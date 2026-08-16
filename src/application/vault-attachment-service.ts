@@ -5,9 +5,10 @@ import { parseMarkdownDestinationTarget } from "../kernel/markdown-links";
 import { VaultLinkResolver } from "../kernel/metadata-index";
 import { normalizeVaultPath, VaultPathError, type VisibleVaultPaths } from "../kernel/path-policy";
 import type { BinaryReadResult } from "../kernel/vault-kernel";
+import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
 import { sniffVaultImageMime } from "./vault-image-service";
 
-export const DEFAULT_VAULT_ATTACHMENT_MAX_BYTES = 16 * 1024 * 1024;
+export const DEFAULT_VAULT_ATTACHMENT_MAX_BYTES = MAX_VAULT_ATTACHMENT_BYTES;
 export const DEFAULT_MEDIA_PROBE_TIMEOUT_MS = 5_000;
 const maxTargetLength = 4_096;
 const maxSignatureBytes = 64 * 1024;
@@ -56,7 +57,7 @@ export type VaultAttachmentResponse =
       message: string;
       attachment?: Pick<VaultAttachmentMetadata, "path" | "actions">;
       recovery?: {
-        kind: "relink";
+        kind: "missing-attachment";
         missingPath: string;
         sourceNoteRevision: string;
       };

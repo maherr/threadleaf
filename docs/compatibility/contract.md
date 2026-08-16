@@ -240,9 +240,31 @@ candidate bytes change, a case-equivalent candidate duplicate appears, or a cont
 symlink leaves the vault at the kernel's final no-source-mutation boundary. The packaged gate drives
 the control with real pointer and keyboard input in both themes, checks exact note and candidate
 bytes before and after confirmation, requires the missing card to become ready, and rejects renderer
-errors. This is not evidence for restoring bytes, drag-and-drop, paste, raster image recovery, or a
-complete attachment lifecycle. See
+errors. That relink result does not establish byte restoration; the independent Restore file claim
+below does. It is not evidence for drag-and-drop, paste, raster image recovery, or a complete
+attachment lifecycle. See
 [single-reference attachment relinking](../research/attachment-relink-2026-08-16.md).
+
+An independently authorized **Restore file** action covers exact-path restoration for one missing
+passive embed. The renderer-owned file picker sends no selected filesystem path across IPC. The
+first submission validates the source revision, one supported missing target, the selected filename
+and 16 MiB byte bound, exact and normalized namespace absence, contained existing parent, and
+current index generation. It returns the exact target, byte count, and SHA-256 content revision for
+review. A matching second submission publishes the selected bytes at that target and leaves the
+source note byte-identical. It never chooses a new name, creates a parent, rewrites Markdown, or
+overwrites an exact, case-equivalent, or Unicode-equivalent claimant.
+
+The dedicated ingress journal persists source and missing-target authorization with its staged
+bytes. Recovery never infers success merely because the target exists: a crash before the
+publication receipt with an observed target becomes manual review with retained private evidence.
+Fault injection covers every journal phase, final source and target races, normalized aliases, and
+restart recovery. The packaged Linux gate drives the real file chooser and two-step dialog in both
+themes, proves exact NUL, high-bit, and BOM bytes, absent target before confirmation, unchanged
+source note, ready-card rehydration, renderer-error rejection, and a restore-specific screenshot
+positive control. This is not evidence for drag-and-drop, clipboard paste, automatic naming,
+parent creation, raster image recovery, multiple matching references, or a complete attachment
+lifecycle. See
+[exact-path attachment restoration](../research/attachment-restore-2026-08-16.md).
 
 The Excalidraw-specific public-format extension lives in
 [Excalidraw round-trip boundary](excalidraw-roundtrip.md). It adds native `.excalidraw` JSON,

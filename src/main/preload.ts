@@ -15,6 +15,7 @@ import type {
   AttachmentMoveResponse,
   AttachmentOperation,
   AttachmentRelinkResponse,
+  AttachmentRestoreResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -518,6 +519,25 @@ const bridge: ThreadleafBridge = {
       expectedVaultId,
       confirmationId,
     ) as Promise<AttachmentRelinkResponse>,
+  restoreAttachment: (
+    sourceNotePath,
+    missingTarget,
+    sourceFileName,
+    bytes,
+    expectedSourceRevision,
+    expectedVaultId,
+    confirmationId,
+  ) =>
+    ipcRenderer.invoke(
+      ipcChannels.restoreAttachment,
+      sourceNotePath,
+      missingTarget,
+      sourceFileName,
+      bytes,
+      expectedSourceRevision,
+      expectedVaultId,
+      confirmationId,
+    ) as Promise<AttachmentRestoreResponse>,
   deleteNote: (filePath, expectedRevision, expectedVaultId) =>
     ipcRenderer.invoke(
       ipcChannels.deleteNote,

@@ -712,6 +712,28 @@ outside-vault paths, oversized candidates, stale vaults, and changed workspace g
 A final source race preserves the proposed note as a named conflict copy and reports that path
 instead of claiming no mutation.
 
+The same authorized missing card may expose **Restore file**. File selection stays in the sandboxed
+renderer: the bridge receives only the basename-safe selected name, a copied `ArrayBuffer`, source
+note identity, raw missing target, and active vault identity. No selected absolute path or file URL
+crosses IPC. The application accepts at most 16 MiB, requires one supported source token and the
+same revision, resolves the exact missing path again, and returns a read-only preview containing the
+target, byte count, and SHA-256 content revision. Confirmation binds those facts plus the index
+generation. A matching second submission does not rewrite the note. It enters the kernel's shared
+external-byte ingress authority with persisted authorization for the source revision, exact missing
+path, and resolver target.
+
+The ingress journal advances through `intent`, `staged`, `published`, and `committed`. The kernel
+revalidates the source note, resolver-level absence, exact-path absence, contained existing parent,
+public non-Markdown target, case and NFC namespace uniqueness, and strict publication capability at
+the last pre-publication seam. Linux publication uses the same descriptor-contained unnamed-inode
+and absent-name `linkat` boundary as other strict attachment publication. It then verifies the
+published revision and complete normalized namespace before the durable commit receipt. A crash
+before staged evidence rolls back. A staged recovery with an unexpected exact target, any
+post-publication ambiguity, or an uncertain receipt preserves private evidence and reports manual
+review rather than upgrading uncertainty to success. Only a durable terminal receipt permits blob
+cleanup. Drag-and-drop and clipboard paste remain future adapters over this authority rather than
+new filesystem writers.
+
 Every publication preview binds the exact Markdown path set, every note revision, and the metadata
 generation. For an `always` or `ask` rename, the reference corpus instead includes every visible
 Markdown and JSON Canvas path and revision. Valid Canvas `nodes[i].file` and group
@@ -765,6 +787,8 @@ external application consumes it. The research and proof record is
 [vault-bound native attachment actions](research/native-attachment-actions-2026-08-16.md).
 The missing-reference recovery boundary and packaged evidence are recorded in
 [single-reference attachment relinking](research/attachment-relink-2026-08-16.md).
+The external-byte recovery boundary and packaged evidence are recorded in
+[exact-path attachment restoration](research/attachment-restore-2026-08-16.md).
 
 Every rendered top-level block carries its source line. A visible line control switches back to
 source mode and selects that CodeMirror line. Internal wiki and Markdown links carry normalized

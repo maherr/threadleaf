@@ -42,6 +42,7 @@ import {
   type AppearanceSnapshot,
   parseVaultAppearanceSettings,
 } from "../shared/appearance";
+import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
 import {
   type AutosaveFlushReason,
   type AutosaveFlushResult,
@@ -3452,6 +3453,52 @@ function registerIpcHandlers(): void {
         sourceNotePath,
         missingTarget,
         replacementPath,
+        expectedSourceRevision,
+        expectedVaultId,
+        confirmationId,
+      );
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.restoreAttachment,
+    (
+      event,
+      sourceNotePath: unknown,
+      missingTarget: unknown,
+      sourceFileName: unknown,
+      bytes: unknown,
+      expectedSourceRevision: unknown,
+      expectedVaultId: unknown,
+      confirmationId: unknown,
+    ) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Attachment restoration is available only to the owned main renderer.");
+      }
+      if (
+        typeof sourceNotePath !== "string" ||
+        typeof missingTarget !== "string" ||
+        typeof sourceFileName !== "string" ||
+        !(bytes instanceof ArrayBuffer) ||
+        typeof expectedSourceRevision !== "string" ||
+        typeof expectedVaultId !== "string" ||
+        !(confirmationId === undefined || typeof confirmationId === "string") ||
+        sourceNotePath.length > 4_096 ||
+        missingTarget.length > 4_096 ||
+        Buffer.byteLength(sourceFileName, "utf8") > 255 ||
+        bytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES ||
+        expectedSourceRevision.length > 128 ||
+        expectedVaultId.length > 128 ||
+        (typeof confirmationId === "string" && confirmationId.length > 128)
+      ) {
+        throw new Error(
+          "Restore attachment requires bounded string note, missing target, file name, revision, and vault values plus an ArrayBuffer payload and an optional confirmation.",
+        );
+      }
+      return workspaceController.restoreAttachment(
+        sourceNotePath,
+        missingTarget,
+        sourceFileName,
+        new Uint8Array(bytes.slice(0)),
         expectedSourceRevision,
         expectedVaultId,
         confirmationId,

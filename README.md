@@ -416,6 +416,12 @@ packaged gate exercises metadata cards for PDF-signature, MP3-signature, and unk
 observes exact canonical-path hashes at the main receiver for real Open and Reveal clicks, then
 proves source-retaining publication and source-removing rename with
 exact attachment, Markdown, and Canvas bytes. It makes no broader attachment format support claim.
+An application-authorized missing passive attachment card also exposes **Restore file** and
+**Relink**. Restore file uses a renderer-owned file picker, previews the selected filename, byte
+count, and exact missing target, then publishes those exact bytes without changing the source note
+or exposing the selected filesystem path across IPC. It never overwrites an exact, case-equivalent,
+or Unicode-equivalent claimant. Relink instead previews and rewrites one proven source target to an
+existing visible vault attachment without changing attachment bytes.
 Ctrl/Cmd+N opens the New note dialog
 and selects the resulting empty Markdown note for editing.
 The Properties section in the right inspector lists top-level frontmatter in source order. Add,
@@ -514,12 +520,14 @@ fixture vault, and real CDP pointer and keyboard input with hit-target checks. I
 vault-bound native Open and Reveal through an exact-path-hash main receiver, unknown-byte Open
 refusal, source-retaining publication, a visible unsafe-Canvas blocker, and a completed source-removing rename
 with visible Canvas reference previews plus exact source, target, Markdown, and Canvas bytes. It
-also relinks one missing passive embed to an existing visible attachment through an exact two-step
-preview, proving that the source token alone changes while candidate bytes and the missing path stay
-untouched. Every run captures dark, light, and positive-control screenshots, checks that the
-positive control changes pixels, asserts an explicit X11 renderer, and rejects renderer errors;
-only a completed gate run is packaged UI evidence. Set the screenshot directory to retain those
-captures:
+also selects external bytes through the real Restore file control, previews them in both themes,
+proves the target stays absent before confirmation, commits byte-exact restoration without changing
+the source note, and requires the restored card to become ready. A separate missing passive embed
+is relinked to an existing visible attachment through an exact two-step preview, proving that the
+source token alone changes while candidate bytes and the missing path stay untouched. Every run
+captures dark, light, and positive-control screenshots, checks that both positive controls change
+pixels, asserts an explicit X11 renderer, and rejects renderer errors; only a completed gate run is
+packaged UI evidence. Set the screenshot directory to retain those captures:
 
 ```sh
 THREADLEAF_ATTACHMENT_SCREENSHOT_DIR=/tmp/threadleaf-attachment-visual pnpm run test:packaged-attachments

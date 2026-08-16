@@ -12,6 +12,7 @@ import type {
   AttachmentMoveResponse,
   AttachmentOperation,
   AttachmentRelinkResponse,
+  AttachmentRestoreResponse,
   CanvasAttachmentResponse,
   CanvasLoadResponse,
   CanvasSaveResponse,
@@ -199,6 +200,15 @@ export interface WorkspaceRuntimePort {
     expectedVaultId: string,
     confirmationId?: string,
   ): Promise<AttachmentRelinkResponse>;
+  restoreAttachment?(
+    sourceNotePath: string,
+    missingTarget: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRestoreResponse>;
   deleteNote(
     filePath: string,
     expectedRevision: string,
@@ -1018,6 +1028,56 @@ export class WorkspaceController {
         },
         snapshot: await this.#runtime.getSnapshot(),
       };
+    }
+    return response;
+  }
+
+  async restoreAttachment(
+    sourceNotePath: string,
+    missingTarget: string,
+    sourceFileName: string,
+    bytes: Uint8Array,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentRestoreResponse> {
+    const runtime = this.activeRuntime("restore a missing attachment");
+    if (!runtime.restoreAttachment) {
+      throw new Error("The active workspace does not support attachment restoration.");
+    }
+    const staleOutcome = () => ({
+      status: "refused" as const,
+      sourceNotePath,
+      missingPath: missingTarget,
+      sourceFileName,
+      reason: "stale-vault" as const,
+      message: "The active vault changed before this attachment could be restored.",
+    });
+    if (runtime.vaultId !== expectedVaultId) {
+      return { outcome: staleOutcome(), snapshot: await runtime.getSnapshot() };
+    }
+    const response = await runtime.restoreAttachment(
+      sourceNotePath,
+      missingTarget,
+      sourceFileName,
+      bytes,
+      expectedSourceRevision,
+      expectedVaultId,
+      confirmationId,
+    );
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      if (
+        response.outcome.status === "committed" ||
+        response.outcome.status === "manual-conflict"
+      ) {
+        return {
+          ...response,
+          snapshot: await this.#runtime.getSnapshot(),
+          affectedVaultId: runtime.vaultId,
+          affectedVaultName: displaySafeVaultName(response.snapshot.vault.name),
+        };
+      }
+      return { outcome: staleOutcome(), snapshot: await this.#runtime.getSnapshot() };
     }
     return response;
   }

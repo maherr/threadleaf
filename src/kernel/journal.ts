@@ -1,6 +1,6 @@
 import path from "node:path";
-import { normalizeVaultPath } from "./path-policy";
-import type { VaultMarkdownCorpus } from "./ports";
+import { hasHiddenVaultSegment, hasPrivateVaultSegment, normalizeVaultPath } from "./path-policy";
+import type { VaultAttachmentIngressAuthorization, VaultMarkdownCorpus } from "./ports";
 
 export type WritePhase = "intent" | "staged" | "backed-up" | "prepared" | "installed" | "committed";
 export type RenamePhase = "intent" | "staged" | "linked" | "published" | "committed";
@@ -13,6 +13,7 @@ export type MoveWithWritesPhase =
   | "renaming"
   | "rolling-back"
   | "committed";
+export type AttachmentIngressPhase = "intent" | "staged" | "published" | "committed";
 
 interface JournalBase {
   version: 1;
@@ -92,11 +93,21 @@ export interface MoveWithWritesJournal extends JournalBase {
   sourceRetained?: boolean;
 }
 
+export interface AttachmentIngressJournal extends JournalBase {
+  kind: "attachment-ingress";
+  phase: AttachmentIngressPhase;
+  targetPath: string;
+  contentRevision: string;
+  byteLength: number;
+  authorization: VaultAttachmentIngressAuthorization;
+}
+
 export type TransactionJournal =
   | WriteJournal
   | RenameJournal
   | MultiWriteJournal
-  | MoveWithWritesJournal;
+  | MoveWithWritesJournal
+  | AttachmentIngressJournal;
 
 const revisionPattern = /^[a-f0-9]{64}$/;
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -125,6 +136,12 @@ const moveWithWritesStatuses = new Set<MoveWithWritesEntryStatus>([
   "applied",
   "rolled-back",
   "conflict",
+]);
+const attachmentIngressPhases = new Set<AttachmentIngressPhase>([
+  "intent",
+  "staged",
+  "published",
+  "committed",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -192,6 +209,47 @@ function isMarkdownCorpus(value: unknown): value is VaultMarkdownCorpus {
 
 function isOptionalMarkdownCorpus(value: unknown): value is VaultMarkdownCorpus | null {
   return value === null || isMarkdownCorpus(value);
+}
+
+function isAttachmentIngressAuthorization(
+  value: unknown,
+  targetPath: string,
+): value is VaultAttachmentIngressAuthorization {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "operation",
+      "sourceNotePath",
+      "sourceNoteRevision",
+      "missingPath",
+      "missingResolverTarget",
+    ]) ||
+    value.operation !== "restore-missing" ||
+    typeof value.sourceNotePath !== "string" ||
+    typeof value.missingPath !== "string" ||
+    typeof value.missingResolverTarget !== "string" ||
+    value.missingResolverTarget.length === 0 ||
+    value.missingResolverTarget.length > 4_096 ||
+    !isRevision(value.sourceNoteRevision)
+  ) {
+    return false;
+  }
+  try {
+    const sourceNotePath = normalizeVaultPath(value.sourceNotePath);
+    const missingPath = normalizeVaultPath(value.missingPath);
+    return (
+      sourceNotePath === value.sourceNotePath &&
+      sourceNotePath.toLocaleLowerCase("en-US").endsWith(".md") &&
+      !hasHiddenVaultSegment(sourceNotePath) &&
+      !hasPrivateVaultSegment(sourceNotePath) &&
+      missingPath === value.missingPath &&
+      missingPath === targetPath &&
+      !hasHiddenVaultSegment(missingPath) &&
+      !hasPrivateVaultSegment(missingPath)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isIsoTimestamp(value: unknown): value is string {
@@ -603,6 +661,42 @@ export function parseTransactionJournal(
       throw new Error("Publishing move journals must retain the source.");
     }
     return input as unknown as MoveWithWritesJournal;
+  }
+
+  if (input.kind === "attachment-ingress") {
+    const expectedKeys = [
+      "version",
+      "id",
+      "vaultId",
+      "createdAt",
+      "kind",
+      "phase",
+      "targetPath",
+      "contentRevision",
+      "byteLength",
+      "authorization",
+    ] as const;
+    if (
+      !hasExactKeys(input, expectedKeys) ||
+      typeof input.phase !== "string" ||
+      !attachmentIngressPhases.has(input.phase as AttachmentIngressPhase) ||
+      typeof input.targetPath !== "string" ||
+      !isRevision(input.contentRevision) ||
+      !Number.isSafeInteger(input.byteLength) ||
+      (input.byteLength as number) < 0
+    ) {
+      throw new Error("Attachment-ingress journal shape is invalid.");
+    }
+    const targetPath = normalizeVaultPath(input.targetPath);
+    if (
+      targetPath !== input.targetPath ||
+      hasHiddenVaultSegment(targetPath) ||
+      hasPrivateVaultSegment(targetPath) ||
+      !isAttachmentIngressAuthorization(input.authorization, targetPath)
+    ) {
+      throw new Error("Attachment-ingress journal authorization is invalid.");
+    }
+    return input as unknown as AttachmentIngressJournal;
   }
 
   throw new Error("Journal kind is invalid.");

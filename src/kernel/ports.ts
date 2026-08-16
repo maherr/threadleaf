@@ -71,6 +71,50 @@ export interface VaultAttachmentRelinkMutationPort {
   ): Promise<VaultAttachmentRelinkWriteResult>;
 }
 
+export interface VaultAttachmentIngressAuthorization {
+  operation: "restore-missing";
+  sourceNotePath: string;
+  sourceNoteRevision: string;
+  missingPath: string;
+  missingResolverTarget: string;
+}
+
+export type VaultAttachmentIngressFailureReason =
+  | "source-note-changed"
+  | "missing-target-present"
+  | "missing-target-ambiguous"
+  | "missing-target-unsafe"
+  | "target-normalized-exists"
+  | "attachment-publish-unavailable"
+  | "publish-state-diverged";
+
+export type VaultAttachmentIngressResult =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      transactionId: string;
+    }
+  | {
+      status: "refused";
+      path: string;
+      reason: VaultAttachmentIngressFailureReason;
+    }
+  | {
+      status: "manual-conflict";
+      path: string;
+      reason: VaultAttachmentIngressFailureReason;
+      transactionId: string;
+    };
+
+export interface VaultAttachmentIngressMutationPort {
+  ingressAttachmentBytes(
+    relativePath: string,
+    content: Uint8Array,
+    authorization: VaultAttachmentIngressAuthorization,
+  ): Promise<VaultAttachmentIngressResult>;
+}
+
 export interface VaultDirectoryCreateResult {
   created: boolean;
   path: string;

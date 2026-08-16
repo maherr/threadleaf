@@ -85,6 +85,7 @@ export const ipcChannels = {
   moveNote: "threadleaf:move-note",
   moveAttachment: "threadleaf:move-attachment",
   relinkAttachment: "threadleaf:relink-attachment",
+  restoreAttachment: "threadleaf:restore-attachment",
   deleteNote: "threadleaf:delete-note",
   vaultTrash: "threadleaf:vault-trash",
   restoreNote: "threadleaf:restore-note",

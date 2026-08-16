@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
 import type { PluginRuntimePort } from "../runtime/plugin-runtime-port";
+import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
@@ -1215,7 +1216,7 @@ describe("WorkspaceRuntime", () => {
       status: "unavailable",
       reason: "missing",
       recovery: {
-        kind: "relink",
+        kind: "missing-attachment",
         missingPath: "Missing/report.pdf",
         sourceNoteRevision: source.revision,
       },
@@ -1270,6 +1271,84 @@ describe("WorkspaceRuntime", () => {
 
     await workspace.reconcileNow();
     expect(workspace.watcher.operations.size).toBe(0);
+  });
+
+  it("previews and restores exact external bytes without rewriting the source note", async () => {
+    const restoredBytes = Uint8Array.from([0x00, 0xff, 0x80, 0x42, 0xef, 0xbb, 0xbf, 0x0a]);
+    const before = "# Recovery Desk\n\n![[../Missing/report.bin|Report]]\n";
+    await fs.mkdir(path.join(vaultPath, "Missing"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Notes", "Recovery Desk.md"), before, "utf8");
+    const workspace = await openRuntime();
+    const opened = await workspace.openNote("Notes/Recovery Desk.md");
+    const source = opened.workspace?.activeNote;
+    if (!source) throw new Error("Expected the recovery source note to open.");
+
+    const preview = await workspace.restoreAttachment(
+      source.path,
+      "../Missing/report.bin",
+      "external-recovery.bin",
+      restoredBytes,
+      source.revision,
+      workspace.vaultId,
+    );
+    expect(preview.outcome).toMatchObject({
+      status: "requires-confirmation",
+      preview: {
+        sourceNotePath: source.path,
+        targetPath: "Missing/report.bin",
+        sourceFileName: "external-recovery.bin",
+        byteLength: restoredBytes.byteLength,
+      },
+    });
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected a missing attachment restore confirmation.");
+    }
+    await expect(fs.stat(path.join(vaultPath, "Missing", "report.bin"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.readFile(path.join(vaultPath, source.path), "utf8")).resolves.toBe(before);
+
+    const committed = await workspace.restoreAttachment(
+      source.path,
+      "../Missing/report.bin",
+      "external-recovery.bin",
+      restoredBytes,
+      source.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+    );
+    expect(committed.outcome).toMatchObject({
+      status: "committed",
+      path: "Missing/report.bin",
+      preview: { sourceFileName: "external-recovery.bin" },
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Missing", "report.bin"))).resolves.toEqual(
+      Buffer.from(restoredBytes),
+    );
+    await expect(fs.readFile(path.join(vaultPath, source.path), "utf8")).resolves.toBe(before);
+    await expect(
+      workspace.loadVaultAttachment(source.path, "../Missing/report.bin", workspace.vaultId),
+    ).resolves.toMatchObject({
+      status: "ready",
+      attachment: { path: "Missing/report.bin", size: restoredBytes.byteLength },
+    });
+    expect(workspace.watcher.operations.size).toBe(0);
+  });
+
+  it("rejects oversized restore bytes at the action boundary", async () => {
+    const workspace = await openRuntime();
+
+    await expect(
+      workspace.restoreAttachment(
+        "Welcome.md",
+        "Missing/oversized.bin",
+        "oversized.bin",
+        new Uint8Array(MAX_VAULT_ATTACHMENT_BYTES + 1),
+        "revision",
+        workspace.vaultId,
+      ),
+    ).rejects.toThrow("plus bounded bytes");
   });
 
   it("binds direct ordinary-file previews to the current physical inventory generation", async () => {
@@ -1451,6 +1530,11 @@ describe("WorkspaceRuntime", () => {
         source: "workspace",
       },
       { id: "workspace.reorder-tab", name: "Reorder workspace tab", source: "workspace" },
+      {
+        id: "workspace.restore-attachment",
+        name: "Restore missing attachment",
+        source: "workspace",
+      },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
       {
         id: "workspace.set-note-property",
@@ -3957,6 +4041,11 @@ module.exports = class ActionCollisionFixture extends Plugin {
         source: "workspace",
       },
       { id: "workspace.reorder-tab", name: "Reorder workspace tab", source: "workspace" },
+      {
+        id: "workspace.restore-attachment",
+        name: "Restore missing attachment",
+        source: "workspace",
+      },
       { id: "workspace.save-note", name: "Save note", source: "workspace" },
       {
         id: "workspace.set-note-property",

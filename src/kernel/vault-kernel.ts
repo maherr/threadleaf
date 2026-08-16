@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
 import { MAX_CANVAS_BYTES } from "../shared/json-canvas";
 import {
   type AttachmentPublishCapability,
@@ -28,6 +29,7 @@ import {
   syncDirectory,
 } from "./durability";
 import {
+  type AttachmentIngressJournal,
   type MoveWithWritesJournal,
   type MoveWithWritesJournalEntry,
   type MultiWriteJournal,
@@ -55,6 +57,9 @@ import type {
   MultiWriteRequest,
   MultiWriteResult,
   StateRootPort,
+  VaultAttachmentIngressAuthorization,
+  VaultAttachmentIngressFailureReason,
+  VaultAttachmentIngressResult,
   VaultAttachmentRelinkPreconditionFailure,
   VaultAttachmentRelinkPreconditions,
   VaultAttachmentRelinkWriteResult,
@@ -104,7 +109,12 @@ export type KernelFaultPoint =
   | "move-with-writes:after-publish"
   | "move-with-writes:after-rename"
   | "move-with-writes:after-rollback-entry"
-  | "move-with-writes:after-commit";
+  | "move-with-writes:after-commit"
+  | "attachment-ingress:after-intent"
+  | "attachment-ingress:after-stage"
+  | "attachment-ingress:before-publish"
+  | "attachment-ingress:after-publish"
+  | "attachment-ingress:after-commit";
 
 export type KernelFaultInjector = (point: KernelFaultPoint) => void | Promise<void>;
 
@@ -156,7 +166,7 @@ export type {
 
 export interface RecoveryAction {
   transactionId: string;
-  kind: "write" | "rename" | "multi-write" | "move-with-writes";
+  kind: "write" | "rename" | "multi-write" | "move-with-writes" | "attachment-ingress";
   outcome:
     | "committed"
     | "published-source-retained"
@@ -204,6 +214,10 @@ type StrictAttachmentTargetCheck =
   | { status: "ready"; targetAbsolute: string }
   | { status: "attachment-publish-unavailable" }
   | { status: "target-normalized-exists" };
+
+type AttachmentIngressPreflight =
+  | { status: "ready"; targetAbsolute: string }
+  | { status: "refused"; reason: VaultAttachmentIngressFailureReason };
 
 interface MoveWithWritesBlobs {
   before: Buffer;
@@ -661,6 +675,82 @@ export class VaultKernel implements VaultMutationPort {
     });
   }
 
+  async ingressAttachmentBytes(
+    relativePath: string,
+    content: Uint8Array,
+    authorization: VaultAttachmentIngressAuthorization,
+  ): Promise<VaultAttachmentIngressResult> {
+    this.assertWritable();
+    if (content.byteLength > MAX_VAULT_ATTACHMENT_BYTES) {
+      throw new Error(
+        `Attachment ingress is limited to ${MAX_VAULT_ATTACHMENT_BYTES} bytes per operation.`,
+      );
+    }
+    assertExpectedRevision(authorization.sourceNoteRevision);
+    return this.withMutation(async () => {
+      const targetPath = normalizeVaultPath(relativePath);
+      const normalizedAuthorization: VaultAttachmentIngressAuthorization = {
+        operation: authorization.operation,
+        sourceNotePath: normalizeVaultPath(authorization.sourceNotePath),
+        sourceNoteRevision: authorization.sourceNoteRevision,
+        missingPath: normalizeVaultPath(authorization.missingPath),
+        missingResolverTarget: authorization.missingResolverTarget,
+      };
+      const foldedTarget = targetPath.toLocaleLowerCase("en-US");
+      if (
+        normalizedAuthorization.operation !== "restore-missing" ||
+        normalizedAuthorization.missingPath !== targetPath ||
+        normalizedAuthorization.missingResolverTarget.length === 0 ||
+        normalizedAuthorization.missingResolverTarget.length > 4_096 ||
+        !normalizedAuthorization.sourceNotePath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        foldedTarget.endsWith(".md") ||
+        foldedTarget.endsWith(".canvas") ||
+        hasHiddenVaultSegment(targetPath) ||
+        hasPrivateVaultSegment(targetPath) ||
+        hasHiddenVaultSegment(normalizedAuthorization.sourceNotePath) ||
+        hasPrivateVaultSegment(normalizedAuthorization.sourceNotePath)
+      ) {
+        return { status: "refused", path: targetPath, reason: "missing-target-unsafe" };
+      }
+
+      const initial = await this.checkAttachmentIngressBeforePublish(normalizedAuthorization);
+      if (initial.status === "refused") {
+        return { status: "refused", path: targetPath, reason: initial.reason };
+      }
+
+      const bytes = Buffer.from(content);
+      const id = randomUUID();
+      const journal: AttachmentIngressJournal = {
+        version: 1,
+        id,
+        vaultId: this.vaultId,
+        kind: "attachment-ingress",
+        phase: "intent",
+        targetPath,
+        contentRevision: revisionOf(bytes),
+        byteLength: bytes.byteLength,
+        authorization: normalizedAuthorization,
+        createdAt: this.clock().toISOString(),
+      };
+      await this.writeJournal(journal);
+      await this.inject("attachment-ingress:after-intent");
+
+      const blobDirectory = this.getTransactionBlobDirectory(id);
+      try {
+        await fs.mkdir(blobDirectory);
+        await syncDirectory(this.transactionDirectory);
+        await durableCreate(this.getAttachmentIngressBlobPath(id), bytes);
+      } catch (error) {
+        await this.archiveAttachmentIngress(journal, "rolled-back");
+        throw error;
+      }
+      journal.phase = "staged";
+      await this.writeJournal(journal);
+      await this.inject("attachment-ingress:after-stage");
+      return this.continueAttachmentIngress(journal, bytes);
+    });
+  }
+
   async createDirectory(relativeDirectory: string): Promise<VaultDirectoryCreateResult> {
     this.assertWritable();
     return this.withMutation(() => this.paths.createDirectory(relativeDirectory));
@@ -1106,9 +1196,10 @@ export class VaultKernel implements VaultMutationPort {
 
     const recoveryPriority: Record<TransactionJournal["kind"], number> = {
       write: 0,
-      rename: 1,
-      "multi-write": 2,
-      "move-with-writes": 3,
+      "attachment-ingress": 1,
+      rename: 2,
+      "multi-write": 3,
+      "move-with-writes": 4,
     };
     journals.sort(
       (left, right) =>
@@ -1134,6 +1225,8 @@ export class VaultKernel implements VaultMutationPort {
       try {
         if (journal.kind === "write") {
           actions.push(await this.recoverWrite(journal));
+        } else if (journal.kind === "attachment-ingress") {
+          actions.push(await this.recoverAttachmentIngress(journal));
         } else if (journal.kind === "rename") {
           actions.push(await this.recoverRename(journal));
         } else if (journal.kind === "multi-write") {
@@ -1143,7 +1236,7 @@ export class VaultKernel implements VaultMutationPort {
               preparedMultiWriteBlobs.get(journal.id) ?? new Map(),
             ),
           );
-        } else {
+        } else if (journal.kind === "move-with-writes") {
           actions.push(
             await this.recoverMoveWithWrites(
               journal,
@@ -1167,6 +1260,7 @@ export class VaultKernel implements VaultMutationPort {
       fs.mkdir(this.transactionDirectory, { recursive: true }),
     ]);
     await this.cleanupTerminalRollbackClaims();
+    await this.cleanupTerminalAttachmentIngressBlobs();
     const identityPath = path.join(this.stateRoot, "vault.json");
     const identity = {
       version: 1,
@@ -1245,6 +1339,44 @@ export class VaultKernel implements VaultMutationPort {
         force: true,
       });
       await syncDirectory(this.rollbackClaimsDirectory).catch(() => undefined);
+    }
+  }
+
+  private async cleanupTerminalAttachmentIngressBlobs(): Promise<void> {
+    const entries = await fs.readdir(this.transactionDirectory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !/^[a-f0-9-]{36}$/i.test(entry.name)) continue;
+      const journalPath = path.join(this.journalDirectory, `${entry.name}.json`);
+      try {
+        await fs.lstat(journalPath);
+        continue;
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) continue;
+      }
+      let history: unknown;
+      try {
+        history = JSON.parse(
+          await fs.readFile(path.join(this.historyDirectory, `${entry.name}.json`), "utf8"),
+        );
+      } catch {
+        continue;
+      }
+      if (
+        typeof history !== "object" ||
+        history === null ||
+        Array.isArray(history) ||
+        !("kind" in history) ||
+        history.kind !== "attachment-ingress" ||
+        !("outcome" in history) ||
+        (history.outcome !== "committed" && history.outcome !== "rolled-back")
+      ) {
+        continue;
+      }
+      await fs.rm(path.join(this.transactionDirectory, entry.name), {
+        recursive: true,
+        force: true,
+      });
+      await syncDirectory(this.transactionDirectory).catch(() => undefined);
     }
   }
 
@@ -2358,6 +2490,143 @@ export class VaultKernel implements VaultMutationPort {
     return path.join(this.getTransactionBlobDirectory(transactionId), "rename-restore");
   }
 
+  private getAttachmentIngressBlobPath(transactionId: string): string {
+    return path.join(this.getTransactionBlobDirectory(transactionId), "attachment-ingress.bin");
+  }
+
+  private async loadAttachmentIngressBlob(journal: AttachmentIngressJournal): Promise<Buffer> {
+    const blobPath = this.getAttachmentIngressBlobPath(journal.id);
+    const stat = await fs.lstat(blobPath);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error("Attachment-ingress evidence is not a regular file.");
+    }
+    const snapshot = await readStableFile(blobPath);
+    if (
+      !snapshot ||
+      snapshot.revision !== journal.contentRevision ||
+      snapshot.size !== journal.byteLength ||
+      snapshot.size > MAX_VAULT_ATTACHMENT_BYTES
+    ) {
+      throw new Error("Attachment-ingress evidence failed its bounded revision check.");
+    }
+    return snapshot.bytes;
+  }
+
+  private async continueAttachmentIngress(
+    journal: AttachmentIngressJournal,
+    preparedBytes: Buffer,
+  ): Promise<VaultAttachmentIngressResult> {
+    if (
+      preparedBytes.byteLength !== journal.byteLength ||
+      revisionOf(preparedBytes) !== journal.contentRevision
+    ) {
+      throw new Error("Attachment-ingress prepared bytes do not match their journal.");
+    }
+    if (journal.phase === "committed") {
+      await this.archiveAttachmentIngress(journal, "committed");
+      return {
+        status: "committed",
+        path: journal.targetPath,
+        revision: journal.contentRevision,
+        transactionId: journal.id,
+      };
+    }
+
+    if (journal.phase === "staged") {
+      let preflight = await this.checkAttachmentIngressBeforePublish(journal.authorization);
+      if (preflight.status === "refused") {
+        return this.rollbackAttachmentIngress(journal, preflight.reason);
+      }
+      await this.inject("attachment-ingress:before-publish");
+      preflight = await this.checkAttachmentIngressBeforePublish(journal.authorization);
+      if (preflight.status === "refused") {
+        return this.rollbackAttachmentIngress(journal, preflight.reason);
+      }
+
+      let installed = false;
+      try {
+        installed = await this.installPreparedFile(
+          this.getAttachmentIngressBlobPath(journal.id),
+          preflight.targetAbsolute,
+          true,
+        );
+      } catch {
+        // The strict installer can throw after its native publication call.
+        // Even an absent lexical target does not prove that no publication
+        // happened because a concurrent parent rename can move the linked
+        // inode before observation. Preserve the staged evidence rather than
+        // upgrading an uncertain receipt to a rollback.
+        return this.manualAttachmentIngress(journal, "publish-state-diverged");
+      }
+      if (!installed) {
+        const target = await this.readAttachmentIngressTarget(journal).catch(() => null);
+        if (target) {
+          return this.rollbackAttachmentIngress(journal, "missing-target-present");
+        }
+        return this.rollbackAttachmentIngress(journal, "attachment-publish-unavailable");
+      }
+
+      const published = await this.checkAttachmentIngressPublished(journal);
+      if (published) {
+        return this.manualAttachmentIngress(journal, published);
+      }
+      journal.phase = "published";
+      await this.writeJournal(journal);
+      await this.inject("attachment-ingress:after-publish");
+    }
+
+    if (journal.phase !== "published") {
+      throw new Error(`Attachment-ingress phase cannot continue: ${journal.phase}`);
+    }
+    const published = await this.checkAttachmentIngressPublished(journal);
+    if (published) {
+      return this.manualAttachmentIngress(journal, published);
+    }
+    journal.phase = "committed";
+    await this.writeJournal(journal);
+    await this.inject("attachment-ingress:after-commit");
+    await this.archiveAttachmentIngress(journal, "committed");
+    return {
+      status: "committed",
+      path: journal.targetPath,
+      revision: journal.contentRevision,
+      transactionId: journal.id,
+    };
+  }
+
+  private async rollbackAttachmentIngress(
+    journal: AttachmentIngressJournal,
+    reason: VaultAttachmentIngressFailureReason,
+  ): Promise<VaultAttachmentIngressResult> {
+    await this.archiveAttachmentIngress(journal, "rolled-back");
+    return { status: "refused", path: journal.targetPath, reason };
+  }
+
+  private async manualAttachmentIngress(
+    journal: AttachmentIngressJournal,
+    reason: VaultAttachmentIngressFailureReason,
+  ): Promise<VaultAttachmentIngressResult> {
+    await this.archiveAttachmentIngress(journal, "manual-conflict");
+    return {
+      status: "manual-conflict",
+      path: journal.targetPath,
+      reason,
+      transactionId: journal.id,
+    };
+  }
+
+  private async archiveAttachmentIngress(
+    journal: AttachmentIngressJournal,
+    outcome: "committed" | "rolled-back" | "manual-conflict",
+  ): Promise<void> {
+    await this.archiveJournal(journal, outcome);
+    if (outcome === "manual-conflict") return;
+    await fs
+      .rm(this.getTransactionBlobDirectory(journal.id), { recursive: true, force: true })
+      .catch(() => undefined);
+    await syncDirectory(this.transactionDirectory).catch(() => undefined);
+  }
+
   private async performWrite(
     targetPath: string,
     bytes: Buffer,
@@ -2811,6 +3080,59 @@ export class VaultKernel implements VaultMutationPort {
       outcome,
       path: journal.targetPath,
       ...(conflictPath ? { conflictPath } : {}),
+    };
+  }
+
+  private async recoverAttachmentIngress(
+    journal: AttachmentIngressJournal,
+  ): Promise<RecoveryAction> {
+    if (journal.phase === "intent") {
+      let prepared: Buffer | null = null;
+      try {
+        prepared = await this.loadAttachmentIngressBlob(journal);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+          throw error;
+        }
+      }
+      if (!prepared) {
+        await this.archiveAttachmentIngress(journal, "rolled-back");
+        return {
+          transactionId: journal.id,
+          kind: "attachment-ingress",
+          outcome: "rolled-back",
+          path: journal.targetPath,
+        };
+      }
+      journal.phase = "staged";
+      await this.writeJournal(journal);
+    }
+
+    const prepared = await this.loadAttachmentIngressBlob(journal);
+    if (journal.phase === "staged") {
+      const target = await this.readAttachmentIngressTarget(journal).catch(() => null);
+      if (target) {
+        await this.archiveAttachmentIngress(journal, "manual-conflict");
+        return {
+          transactionId: journal.id,
+          kind: "attachment-ingress",
+          outcome: "manual-conflict",
+          path: journal.targetPath,
+        };
+      }
+    }
+
+    const result = await this.continueAttachmentIngress(journal, prepared);
+    return {
+      transactionId: result.status === "refused" ? journal.id : result.transactionId,
+      kind: "attachment-ingress",
+      outcome:
+        result.status === "committed"
+          ? "committed"
+          : result.status === "manual-conflict"
+            ? "manual-conflict"
+            : "rolled-back",
+      path: journal.targetPath,
     };
   }
 
@@ -3312,6 +3634,84 @@ export class VaultKernel implements VaultMutationPort {
       }
     }
     return "unsafe";
+  }
+
+  private async checkAttachmentIngressBeforePublish(
+    authorization: VaultAttachmentIngressAuthorization,
+  ): Promise<AttachmentIngressPreflight> {
+    let source: VaultTextSnapshot;
+    try {
+      source = await this.readText(authorization.sourceNotePath);
+    } catch {
+      return { status: "refused", reason: "source-note-changed" };
+    }
+    if (source.revision !== authorization.sourceNoteRevision) {
+      return { status: "refused", reason: "source-note-changed" };
+    }
+
+    const missingState = await this.attachmentRelinkMissingPathState(authorization.missingPath);
+    if (missingState === "present") {
+      return { status: "refused", reason: "missing-target-present" };
+    }
+    if (missingState === "unsafe") {
+      return { status: "refused", reason: "missing-target-unsafe" };
+    }
+
+    let visiblePaths: VisibleVaultPaths;
+    try {
+      visiblePaths = await this.paths.listVisiblePaths("");
+    } catch {
+      return { status: "refused", reason: "missing-target-unsafe" };
+    }
+    const visibleFiles = visiblePaths.files.filter(
+      (filePath) =>
+        !hasHiddenVaultSegment(filePath) &&
+        !hasPrivateVaultSegment(filePath) &&
+        !filePath.toLocaleLowerCase("en-US").endsWith(".md"),
+    );
+    const missingResolution = new VaultLinkResolver(visibleFiles).resolve(
+      authorization.sourceNotePath,
+      authorization.missingResolverTarget,
+    );
+    if (missingResolution.status === "resolved") {
+      return { status: "refused", reason: "missing-target-present" };
+    }
+    if (missingResolution.status === "ambiguous") {
+      return { status: "refused", reason: "missing-target-ambiguous" };
+    }
+
+    const targetCheck = await this.checkStrictAttachmentTarget(authorization.missingPath);
+    if (targetCheck.status !== "ready") {
+      return { status: "refused", reason: targetCheck.status };
+    }
+    return targetCheck;
+  }
+
+  private async readAttachmentIngressTarget(
+    journal: AttachmentIngressJournal,
+  ): Promise<FileSnapshot | null> {
+    return this.readMutationFile(this.paths.resolveLexical(journal.targetPath), true);
+  }
+
+  private async checkAttachmentIngressPublished(
+    journal: AttachmentIngressJournal,
+  ): Promise<VaultAttachmentIngressFailureReason | null> {
+    const targetCheck = await this.checkStrictAttachmentTarget(journal.targetPath);
+    if (targetCheck.status !== "ready") return targetCheck.status;
+    let target: FileSnapshot | null;
+    try {
+      target = await this.readMutationFile(targetCheck.targetAbsolute, true);
+    } catch {
+      return "publish-state-diverged";
+    }
+    if (
+      !target ||
+      target.revision !== journal.contentRevision ||
+      target.size !== journal.byteLength
+    ) {
+      return "publish-state-diverged";
+    }
+    return null;
   }
 
   private async withMutation<T>(operation: () => Promise<T>): Promise<T> {

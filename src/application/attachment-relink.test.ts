@@ -81,7 +81,7 @@ describe("missing attachment relinking", () => {
         listing.files,
       ),
     ).resolves.toMatchObject({
-      kind: "relink",
+      kind: "missing-attachment",
       missingPath: "Missing/report.pdf",
       sourceNoteRevision: expect.stringMatching(/^[a-f0-9]{64}$/u),
     });

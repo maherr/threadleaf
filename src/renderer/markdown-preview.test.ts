@@ -974,7 +974,7 @@ Working $y$`);
     ).toHaveLength(2);
   });
 
-  it("renders a text-labeled Relink action only for an application-authorized missing attachment", async () => {
+  it("renders text-labeled Restore file and Relink actions only for an authorized missing attachment", async () => {
     const rendered = preview("![[Missing/report.pdf|Quarterly report]]");
     await hydrateMarkdownPreviewAttachments(rendered, {
       sourceNotePath: "Notes/Current.md",
@@ -985,7 +985,7 @@ Working $y$`);
         reason: "missing",
         message: "The attachment target does not resolve in the active vault.",
         recovery: {
-          kind: "relink",
+          kind: "missing-attachment",
           missingPath: "Notes/Missing/report.pdf",
           sourceNoteRevision: "d".repeat(64),
         },
@@ -996,13 +996,20 @@ Working $y$`);
     const relink = card?.querySelector<HTMLButtonElement>(
       '[data-threadleaf-attachment-action="relink"]',
     );
+    const restore = card?.querySelector<HTMLButtonElement>(
+      '[data-threadleaf-attachment-action="restore"]',
+    );
     expect(card?.getAttribute("role")).toBe("group");
     expect(card?.dataset.threadleafAttachmentSourceRevision).toBe("d".repeat(64));
     expect(relink?.textContent).toBe("Relink");
     expect(relink?.dataset.threadleafAttachmentPath).toBe("Notes/Missing/report.pdf");
     expect(relink?.dataset.threadleafAttachmentMissingTarget).toBe("Missing/report.pdf");
+    expect(restore?.textContent).toBe("Restore file");
+    expect(restore?.dataset.threadleafAttachmentPath).toBe("Notes/Missing/report.pdf");
+    expect(restore?.dataset.threadleafAttachmentMissingTarget).toBe("Missing/report.pdf");
     expect(card?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
     expect(relink?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
+    expect(restore?.dataset.threadleafAttachmentSourceNotePath).toBe("Notes/Current.md");
 
     const inert = preview("![[Missing/other.pdf]]");
     await hydrateMarkdownPreviewAttachments(inert, {
@@ -1016,9 +1023,10 @@ Working $y$`);
       }),
     });
     expect(inert.querySelector('[data-threadleaf-attachment-action="relink"]')).toBeNull();
+    expect(inert.querySelector('[data-threadleaf-attachment-action="restore"]')).toBeNull();
   });
 
-  it("carries a nested note source path onto its Relink action", async () => {
+  it("carries a nested note source path onto its restore and relink actions", async () => {
     const rendered = preview("![[Embedded]]");
 
     await hydrateMarkdownPreview(rendered, {
@@ -1034,7 +1042,7 @@ Working $y$`);
           reason: "missing",
           message: "The attachment target does not resolve in the active vault.",
           recovery: {
-            kind: "relink",
+            kind: "missing-attachment",
             missingPath: "Folder/Missing/report.pdf",
             sourceNoteRevision: "e".repeat(64),
           },
@@ -1050,8 +1058,12 @@ Working $y$`);
     const nestedRelink = rendered.querySelector<HTMLButtonElement>(
       '.preview-note-embed-body [data-threadleaf-attachment-action="relink"]',
     );
+    const nestedRestore = rendered.querySelector<HTMLButtonElement>(
+      '.preview-note-embed-body [data-threadleaf-attachment-action="restore"]',
+    );
     expect(rootRelink).toBeNull();
     expect(nestedRelink?.dataset.threadleafAttachmentSourceNotePath).toBe("Folder/Embedded.md");
+    expect(nestedRestore?.dataset.threadleafAttachmentSourceNotePath).toBe("Folder/Embedded.md");
   });
 
   it("keeps escaped query and fragment filename bytes out of renderer subpaths", () => {

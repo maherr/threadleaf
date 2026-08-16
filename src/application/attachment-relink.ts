@@ -194,7 +194,7 @@ export async function inspectMissingAttachmentRelinkOffer(
   );
   if (matches.length !== 1) return null;
   return {
-    kind: "relink",
+    kind: "missing-attachment",
     missingPath: parsedMissing.path,
     sourceNoteRevision: source.revision,
   };
