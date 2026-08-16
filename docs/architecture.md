@@ -91,6 +91,33 @@ rename, move, and trash require separate native capability, no-clobber, link-imp
 recovery contracts. The research and disposition record is
 [filesystem-truthful navigator and folder management](research/filesystem-truthful-navigator-and-folder-management-2026-08-16.md).
 
+### JSON Canvas editor
+
+JSON Canvas documents remain ordinary JSON Canvas 1.0 files in the vault. The bounded loader
+validates UTF-8, JSON structure, node and edge references, identifiers, geometry, and document
+limits before enabling edits. Invalid or unsupported documents retain their parsed objects when
+possible, surface path-specific diagnostics, and stay read-only without rewriting their original
+bytes. Valid documents use a cloned plain-JSON model, so unknown document, node, and edge fields
+survive every supported mutation and serialized round trip.
+
+Canvas commits use the same revision-bound, recovery-backed writer as other native mutations. A
+save based on a stale revision leaves the external winner at the original path and writes the local
+proposal to an explicit conflict copy. While a local model is dirty, watcher snapshots for the same
+path do not replace it; the old revision remains the save precondition that makes the race
+recoverable. A successful commit advances that revision and returns the editor to a clean state.
+
+Markdown and Canvas file nodes open through the typed workspace action. Other file nodes cross a
+separate vault-bound attachment service that resolves contained targets, rejects private and
+external paths, caps reads, and classifies content from magic bytes. The renderer receives either a
+bounded raster data URL, escaped UTF-8 text, inert binary metadata, or an explicit unavailable
+state. It never receives filesystem authority. External link nodes remain visible but inactive.
+
+The desktop presents equivalent object-list navigation beside the spatial board, explicit controls
+for supported text, file, link, group, geometry, and edge mutations, and keeps group containers
+below ordinary nodes in the interaction stack. The isolated X11 behavior gate performs real
+pointer and keyboard edits, saves and reloads exact bytes, exercises malformed and externally
+changed files, and captures light, dark, high-DPI, zoomed, and two-pane surfaces.
+
 ### Behavior migration boundary
 
 Migration is separate from vault opening and plugin discovery. A read-only main-process loader

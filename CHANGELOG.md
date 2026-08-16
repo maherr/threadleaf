@@ -23,6 +23,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Returned the JSON Canvas Save control to its clean disabled state after a committed write, and
+  kept group containers behind ordinary nodes so covered file and edit controls remain pointer
+  reachable.
 - Added truthful, type-specific keyboard instructions and shortcut metadata to Live Preview
   callouts while preserving Enter/Space exact-source reveal.
 - Restored visible keyboard-focus frames around command palette and quick-switcher queries, and

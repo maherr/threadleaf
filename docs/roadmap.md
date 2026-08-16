@@ -352,8 +352,11 @@ Exit gate: selected high-value plugins complete named workflows against public f
 - [ ] Complete the existing Source, Live Preview, and Reading modes with footnotes, rendered
       tables, math, diagrams, and large-document editing beyond the current partial and
       source-fallback behavior, with reliable IME and undo.
-- [ ] JSON Canvas editing and embedding plus first-class attachment rename, preview, drag-and-drop,
-      paste, and missing-file recovery.
+- [x] JSON Canvas opening, bounded editing and Markdown embedding, restart persistence,
+      unknown-field preservation, malformed-file refusal, safe attachment previews, external-edit
+      conflict recovery, and isolated X11 proof across themes, high-DPI, zoom, and two panes.
+- [ ] First-class attachment rename, drag-and-drop, paste, missing-file recovery, and richer Canvas
+      interaction beyond the current control-based editor.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
       search, and outline.
 - [x] Headless daily path/read/append/prepend, contained template listing and reads, and random-note

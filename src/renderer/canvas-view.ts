@@ -485,7 +485,7 @@ export class CanvasViewController {
       this.#revision = response.outcome.revision;
       this.#dirty = false;
       if (this.#status) this.#status.textContent = "Saved";
-      if (this.#saveButton) this.#saveButton.disabled = false;
+      if (this.#saveButton) this.#saveButton.disabled = true;
     } else if (response.outcome.status === "conflict") {
       if (this.#status) {
         this.#status.textContent = `Conflict preserved at ${response.outcome.conflictPath}`;

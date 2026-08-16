@@ -2120,9 +2120,14 @@ h2 {
 }
 
 .canvas-node-group {
+  z-index: 0;
   border-style: dashed;
   border-color: var(--ink-muted);
   background: color-mix(in srgb, var(--surface) 84%, var(--accent-soft));
+}
+
+.canvas-node:not(.canvas-node-group) {
+  z-index: 1;
 }
 
 .canvas-node-file {
