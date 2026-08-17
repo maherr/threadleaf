@@ -3081,6 +3081,74 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.secret-component.v1 */
+  it('proves SecretComponent through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-secret-component-"),
+    );
+    const pluginPath = path.join(sandboxPath, "secret-component-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "secret-component-ledger-fixture",
+          name: "Secret component ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, SecretComponent } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const root = document.createElement("main");',
+          "    document.body.append(root);",
+          "    const changes = [];",
+          "    const component = new SecretComponent(this.app, root).onChange((value) => changes.push(value));",
+          '    const input = root.querySelector("input");',
+          '    component.setValue("opaque");',
+          '    input.dispatchEvent(new input.ownerDocument.defaultView.Event("input", { bubbles: true }));',
+          '    component.setValue("");',
+          '    input.dispatchEvent(new input.ownerDocument.defaultView.Event("input", { bubbles: true }));',
+          "    globalThis.__threadleafRuntimeLedgerSecretComponentProbe = {",
+          "      isSecretComponent: component instanceof SecretComponent,",
+          "      inputType: input.type,",
+          "      autocomplete: input.autocomplete,",
+          "      className: input.className,",
+          "      changes,",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerSecretComponentProbe?: unknown })
+              .__threadleafRuntimeLedgerSecretComponentProbe,
+          ).toEqual({
+            isSecretComponent: true,
+            inputType: "password",
+            autocomplete: "off",
+            className: "secret-input",
+            changes: ["opaque", null],
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerSecretComponentProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.setting-tabs.v1 */
   it('proves setting-tab definition and plugin-settings behavior through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-tabs-"));

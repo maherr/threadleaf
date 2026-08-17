@@ -3758,6 +3758,49 @@
         ]
       }
     },
+    "SecretComponent": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "SecretComponent"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.secret-component.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.secret-component.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "c8143ad7e383a382af4b0cad96654cb7b24aa06f5bb3777dc0c9743376b9d034",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.secret-component.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "58e5c4e1c7bac9de63706e4763bd874701c6a59e88c681802797d267388f02d0",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.secret-component.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "Setting": {
       "implementation": {
         "source": "src/runtime/obsidian-ui-compat.ts",

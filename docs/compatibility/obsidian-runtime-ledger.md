@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 107 (106 public, 1 internal extra)
+- Factory keys: 108 (107 public, 1 internal extra)
 
 ## Export status
 
@@ -132,7 +132,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | sanitizeHTMLToDom | function | implemented | 1bdf091e2ab0377e |
 | Scope | class | implemented | cd031d650ae6bd69 |
 | SearchComponent | class | implemented | 72938e4f2898847d |
-| SecretComponent | class | missing | f3133f6f9328e3cb |
+| SecretComponent | class | implemented | f3133f6f9328e3cb |
 | SecretStorage | class | implemented | cd03c227b70ca8e0 |
 | setIcon | function | implemented | 74dab0a196e4515a |
 | Setting | class | implemented | 28f9e763ee1bc0e3 |

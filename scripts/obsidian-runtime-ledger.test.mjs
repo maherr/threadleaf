@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 98,
+  implemented: 99,
   partial: 7,
   unsupported: 0,
-  missing: 53,
+  missing: 52,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 574,
+  implementedObligations: 577,
 });
-assert.equal(ledger.factory.keys.length, 107);
+assert.equal(ledger.factory.keys.length, 108);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -127,6 +127,7 @@ assert.deepEqual(
     ["sanitizeHTMLToDom", "implemented"],
     ["Scope", "implemented"],
     ["SearchComponent", "implemented"],
+    ["SecretComponent", "implemented"],
     ["SecretStorage", "implemented"],
     ["setIcon", "implemented"],
     ["Setting", "implemented"],

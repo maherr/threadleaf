@@ -55,6 +55,7 @@ import {
   ProgressBarComponent,
   Scope,
   SearchComponent,
+  SecretComponent,
   Setting,
   SettingGroup,
   SettingPage,
@@ -3286,6 +3287,7 @@ export interface ObsidianCompatibilityModule {
   Scope: typeof Scope;
   SearchComponent: typeof SearchComponent;
   SecretStorage: typeof SecretStorage;
+  SecretComponent: typeof SecretComponent;
   Setting: typeof Setting;
   SettingGroup: typeof SettingGroup;
   SettingPage: typeof SettingPage;
@@ -3951,6 +3953,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Scope,
     SearchComponent,
     SecretStorage,
+    SecretComponent,
     Setting,
     SettingGroup,
     SettingPage,

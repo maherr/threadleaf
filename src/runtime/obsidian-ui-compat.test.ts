@@ -5,6 +5,7 @@ import {
   type ButtonComponent,
   type DropdownComponent,
   Editor,
+  SecretComponent,
   Setting,
   SettingGroup,
   SettingPage,
@@ -281,6 +282,31 @@ describe("Obsidian settings compatibility", () => {
     expect(toggleControl.toggleEl.disabled).toBe(true);
     expect(textControl.inputEl.disabled).toBe(true);
     expect(buttonControl.buttonEl.disabled).toBe(true);
+    dom.window.close();
+  });
+
+  it("renders secret inputs and reports empty values as null", () => {
+    const dom = new JSDOM("<!doctype html><body><main></main></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const container = dom.window.document.querySelector("main");
+    expect(container).not.toBeNull();
+    if (!container) {
+      return;
+    }
+
+    const changes: Array<string | null> = [];
+    const component = new SecretComponent({} as never, container).onChange((value) => {
+      changes.push(value);
+    });
+    expect(component.inputEl.type).toBe("password");
+    expect(component.inputEl.autocomplete).toBe("off");
+    expect(component.inputEl.className).toBe("secret-input");
+    component.setValue("opaque");
+    component.inputEl.dispatchEvent(new dom.window.Event("input"));
+    component.setValue("");
+    component.inputEl.dispatchEvent(new dom.window.Event("input"));
+    expect(changes).toEqual(["opaque", null]);
     dom.window.close();
   });
 });

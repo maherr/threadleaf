@@ -652,6 +652,38 @@ export class MomentFormatComponent extends TextComponent {
   }
 }
 
+export class SecretComponent extends BaseComponent {
+  readonly inputEl: HTMLInputElement;
+  readonly app: App;
+  private readonly changeCallbacks: Array<(value: string | null) => unknown> = [];
+
+  constructor(app: App, containerEl: HTMLElement) {
+    super();
+    this.app = app;
+    this.inputEl = containerEl.ownerDocument.createElement("input");
+    this.inputEl.type = "password";
+    this.inputEl.autocomplete = "off";
+    this.inputEl.className = "secret-input";
+    this.inputEl.addEventListener("input", () => {
+      const value = this.inputEl.value;
+      for (const callback of this.changeCallbacks) {
+        callback(value.length > 0 ? value : null);
+      }
+    });
+    containerEl.append(this.inputEl);
+  }
+
+  setValue(value: string): this {
+    this.inputEl.value = value;
+    return this;
+  }
+
+  onChange(callback: (value: string | null) => unknown): this {
+    this.changeCallbacks.push(callback);
+    return this;
+  }
+}
+
 export class Setting {
   readonly settingEl: HTMLElement;
   readonly infoEl: HTMLElement;

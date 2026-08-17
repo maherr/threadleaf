@@ -13,15 +13,15 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 98,
+    "implemented": 99,
     "partial": 7,
     "unsupported": 0,
-    "missing": 53,
+    "missing": 52,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 574
+    "implementedObligations": 577
   },
   "factory": {
     "keys": [
@@ -82,6 +82,7 @@
       "Scope",
       "SearchComponent",
       "SecretStorage",
+      "SecretComponent",
       "Setting",
       "SettingGroup",
       "SettingPage",
@@ -191,6 +192,7 @@
       "Scope",
       "SearchComponent",
       "SecretStorage",
+      "SecretComponent",
       "Setting",
       "SettingGroup",
       "SettingPage",
@@ -4634,15 +4636,23 @@
       "exportId": "export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623",
       "name": "SecretComponent",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623",
       "location": {
         "line": 5613,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.secret-component.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "SecretComponent"
+      },
       "obligationIds": [
         "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
         "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:c8143ad7e383a382af4b0cad96654cb7b24aa06f5bb3777dc0c9743376b9d034",
@@ -4651,8 +4661,16 @@
       "heritageEdgeIds": [
         "heritage:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:7105e8d50c796591d8e6f0fe775a3610b4c2e654fed7c6eea9fa5389275f3b56"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
+        "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:c8143ad7e383a382af4b0cad96654cb7b24aa06f5bb3777dc0c9743376b9d034",
+        "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:58e5c4e1c7bac9de63706e4763bd874701c6a59e88c681802797d267388f02d0"
+      ],
+      "coveredObligationSignatureHashes": [
+        "2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
+        "c8143ad7e383a382af4b0cad96654cb7b24aa06f5bb3777dc0c9743376b9d034",
+        "58e5c4e1c7bac9de63706e4763bd874701c6a59e88c681802797d267388f02d0"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -15121,7 +15139,7 @@
     {
       "exportId": "export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623",
       "name": "SecretComponent",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
@@ -15181,8 +15199,16 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
+        "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:c8143ad7e383a382af4b0cad96654cb7b24aa06f5bb3777dc0c9743376b9d034",
+        "obligation:export:class:SecretComponent:f3133f6f9328e3cb1db2ee4ff5e64d28610cbad39351735082b8ffacda7fa623:58e5c4e1c7bac9de63706e4763bd874701c6a59e88c681802797d267388f02d0"
+      ],
+      "coveredObligationSignatureHashes": [
+        "2f7bda7fcbcea08bed96bcd4dcf5a06c141ea3655c5d287b92b54835faf59b26",
+        "c8143ad7e383a382af4b0cad96654cb7b24aa06f5bb3777dc0c9743376b9d034",
+        "58e5c4e1c7bac9de63706e4763bd874701c6a59e88c681802797d267388f02d0"
+      ]
     },
     {
       "exportId": "export:class:SecretStorage:cd03c227b70ca8e0d5c76594295057a148616d2aeef1ac549c10ec175cb7281b",
