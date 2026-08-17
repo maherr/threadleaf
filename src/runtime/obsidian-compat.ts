@@ -1196,8 +1196,23 @@ export class FileManager {
 
 export interface CachedMetadata {
   frontmatter?: Record<string, unknown>;
+  links?: ReferenceCache[];
+  embeds?: ReferenceCache[];
   tags?: TagCache[];
 }
+
+export interface Reference {
+  displayText?: string;
+  link: string;
+  original: string;
+}
+
+export interface ReferenceCache extends Reference {
+  position: CachePosition;
+}
+
+// biome-ignore lint/suspicious/noConfusingVoidType: Obsidian callbacks may intentionally omit a return value.
+type ReferenceIterator<T extends Reference> = (reference: T) => boolean | void;
 
 export interface CacheLocation {
   col: number;
@@ -1208,6 +1223,10 @@ export interface CacheLocation {
 export interface CachePosition {
   end: CacheLocation;
   start: CacheLocation;
+}
+
+export interface SearchResultContainer {
+  match: SearchResult;
 }
 
 export interface TagCache {
@@ -2942,6 +2961,8 @@ export interface ObsidianCompatibilityModule {
   debounce: typeof debounce;
   getIcon(id: string): SVGSVGElement | null;
   getIconIds(): string[];
+  iterateCacheRefs(cache: CachedMetadata, callback: ReferenceIterator<ReferenceCache>): boolean;
+  iterateRefs(refs: Reference[], callback: ReferenceIterator<Reference>): boolean;
   normalizePath(filePath: string): string;
   parseFrontMatterAliases: typeof parseFrontMatterAliases;
   parseFrontMatterEntry: typeof parseFrontMatterEntry;
@@ -2954,6 +2975,7 @@ export interface ObsidianCompatibilityModule {
   prepareSimpleSearch: typeof prepareSimpleSearch;
   requireApiVersion(version: string): boolean;
   removeIcon(id: string): void;
+  sortSearchResults(results: SearchResultContainer[]): void;
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
   setTooltip: typeof setTooltip;
@@ -3152,8 +3174,33 @@ export function getIconIds(): string[] {
   return requireActiveCompatibilityApp().compatibility.getIconIds();
 }
 
+export function iterateRefs(refs: Reference[], callback: ReferenceIterator<Reference>): boolean {
+  for (const reference of refs) {
+    if (callback(reference) === true) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function iterateCacheRefs(
+  cache: CachedMetadata,
+  callback: ReferenceIterator<ReferenceCache>,
+): boolean {
+  for (const reference of [...(cache.links ?? []), ...(cache.embeds ?? [])]) {
+    if (callback(reference) === true) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function removeIcon(id: string): void {
   requireActiveCompatibilityApp().compatibility.removeIcon(id);
+}
+
+export function sortSearchResults(results: SearchResultContainer[]): void {
+  results.sort((left, right) => right.match.score - left.match.score);
 }
 
 export function setIcon(parent: HTMLElement, iconId: string): void {
@@ -3517,6 +3564,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     getIconIds,
     getLanguage,
     htmlToMarkdown,
+    iterateCacheRefs,
+    iterateRefs,
     normalizePath,
     parseLinktext,
     Platform,
@@ -3528,6 +3577,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     setIcon,
     setTooltip,
     sleep,
+    sortSearchResults,
     stringifyYaml,
   };
 }

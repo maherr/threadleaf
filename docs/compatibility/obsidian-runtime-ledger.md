@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 93 (92 public, 1 internal extra)
+- Factory keys: 96 (95 public, 1 internal extra)
 
 ## Export status
 
@@ -72,8 +72,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | IconValue | class | missing | 16f7cb525be03222 |
 | ImageValue | class | missing | c20741072bf8a144 |
 | ItemView | class | implemented | eed72ec50d5d3f3c |
-| iterateCacheRefs | function | missing | fc3366f3dd699432 |
-| iterateRefs | function | missing | 882efbf3735f3d6a |
+| iterateCacheRefs | function | implemented | fc3366f3dd699432 |
+| iterateRefs | function | implemented | 882efbf3735f3d6a |
 | Keymap | class | implemented | f1db66e779392942 |
 | LinkValue | class | missing | 9b8b264f5a8cf96c |
 | ListValue | class | missing | 22393019e553322f |
@@ -141,7 +141,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | SettingTab | class | partial | b685ce410ff8ca87 |
 | setTooltip | function | implemented | d2b2dabab058f3d2 |
 | SliderComponent | class | implemented | d90844d55c39379d |
-| sortSearchResults | function | missing | b51b5d221f8562ad |
+| sortSearchResults | function | implemented | b51b5d221f8562ad |
 | stringifyYaml | function | implemented | 9fd7dc20723b04e0 |
 | StringValue | class | missing | 5a8c7f34710de2a3 |
 | stripHeading | function | missing | f21325fbff066d0b |

@@ -14,10 +14,10 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 79,
+    "implemented": 82,
     "partial": 9,
     "unsupported": 0,
-    "missing": 70,
+    "missing": 67,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -107,6 +107,8 @@ export const obsidianRuntimeLedger = {
       "getIconIds",
       "getLanguage",
       "htmlToMarkdown",
+      "iterateCacheRefs",
+      "iterateRefs",
       "normalizePath",
       "parseLinktext",
       "Platform",
@@ -118,6 +120,7 @@ export const obsidianRuntimeLedger = {
       "setIcon",
       "setTooltip",
       "sleep",
+      "sortSearchResults",
       "stringifyYaml"
     ],
     "publicKeys": [
@@ -202,6 +205,8 @@ export const obsidianRuntimeLedger = {
       "getIconIds",
       "getLanguage",
       "htmlToMarkdown",
+      "iterateCacheRefs",
+      "iterateRefs",
       "normalizePath",
       "parseLinktext",
       "Platform",
@@ -212,6 +217,7 @@ export const obsidianRuntimeLedger = {
       "sanitizeHTMLToDom",
       "setIcon",
       "setTooltip",
+      "sortSearchResults",
       "stringifyYaml"
     ],
     "internalExtras": [
@@ -2316,41 +2322,69 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:iterateCacheRefs:fc3366f3dd699432ea0c15e9eaef520096886267fe36312d0b17a02c1657ab34",
       "name": "iterateCacheRefs",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "fc3366f3dd699432ea0c15e9eaef520096886267fe36312d0b17a02c1657ab34",
       "location": {
         "line": 3615,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.reference-search-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "iterateCacheRefs"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "references.links-then-embeds",
+        "references.early-stop"
+      ],
+      "coveredBehaviorIds": [
+        "references.links-then-embeds",
+        "references.early-stop"
+      ]
     },
     {
       "exportId": "export:function:iterateRefs:882efbf3735f3d6a7289c72ad5ce2e4436276802d5cb537d0634a47cb15eb5d1",
       "name": "iterateRefs",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "882efbf3735f3d6a7289c72ad5ce2e4436276802d5cb537d0634a47cb15eb5d1",
       "location": {
         "line": 3622,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.reference-search-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "iterateRefs"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "references.each-in-order",
+        "references.early-stop"
+      ],
+      "coveredBehaviorIds": [
+        "references.each-in-order",
+        "references.early-stop"
+      ]
     },
     {
       "exportId": "export:class:Keymap:f1db66e7793929423b587162b1ab6529cbda4ca77365a9aabce8d729e4b4625a",
@@ -4863,21 +4897,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:sortSearchResults:b51b5d221f8562ada54039843a7d5308326ac3f7c80c26e33961e453ad17e5fa",
       "name": "sortSearchResults",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "b51b5d221f8562ada54039843a7d5308326ac3f7c80c26e33961e453ad17e5fa",
       "location": {
         "line": 6802,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.reference-search-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "sortSearchResults"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "search-results.score-descending"
+      ],
+      "coveredBehaviorIds": [
+        "search-results.score-descending"
+      ]
     },
     {
       "exportId": "export:function:stringifyYaml:9fd7dc20723b04e0ef64d5fec81cbba98142076f7cec864b52ada34bcc2b332d",

@@ -370,6 +370,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
   });
 
   /** @compatibility-test-id obsidian-runtime.utility-functions.v1 */
+  /** @compatibility-test-id obsidian-runtime.reference-search-utilities.v1 */
   it('proves public link and search utilities through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(
       path.join(os.tmpdir(), "threadleaf-runtime-ledger-utils-"),
@@ -388,11 +389,18 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         [
-          'const { Plugin, getLinkpath, normalizePath, parseLinktext, prepareFuzzySearch, prepareSimpleSearch } = require("obsidian");',
+          'const { Plugin, getLinkpath, iterateCacheRefs, iterateRefs, normalizePath, parseLinktext, prepareFuzzySearch, prepareSimpleSearch, sortSearchResults } = require("obsidian");',
           "class LedgerPlugin extends Plugin {",
           "  async onload() {",
           '    const fuzzy = prepareFuzzySearch("dng");',
           '    const simple = prepareSimpleSearch("alpha beta");',
+          '    const refs = [{ link: "one", original: "One" }, { link: "two", original: "Two" }];',
+          "    const visitedRefs = [];",
+          '    const refsStopped = iterateRefs(refs, (reference) => { visitedRefs.push(reference.link); return reference.link === "two"; });',
+          "    const cacheVisited = [];",
+          '    const cacheStopped = iterateCacheRefs({ links: [{ link: "link", original: "Link", position: {} }], embeds: [{ link: "embed", original: "Embed", position: {} }] }, (reference) => { cacheVisited.push(reference.link); });',
+          "    const searchResults = [{ match: { score: 0.2, matches: [] } }, { match: { score: 0.9, matches: [] } }, { match: { score: 0.5, matches: [] } }];",
+          "    sortSearchResults(searchResults);",
           "    globalThis.__threadleafRuntimeLedgerUtilityProbe = {",
           '      pathOnly: parseLinktext("Folder/Note"),',
           '      nestedSubpath: parseLinktext("Folder/Note#Heading#Nested"),',
@@ -405,6 +413,11 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           '      simpleMatches: simple("alpha beta alpha").matches,',
           '      simpleNoMatch: simple("alpha only") === null,',
           '      simpleEmpty: prepareSimpleSearch("")("Anything"),',
+          "      visitedRefs,",
+          "      refsStopped,",
+          "      cacheVisited,",
+          "      cacheStopped,",
+          "      sortedScores: searchResults.map((result) => result.match.score),",
           "    };",
           "  }",
           "}",
@@ -437,6 +450,11 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           ],
           simpleNoMatch: true,
           simpleEmpty: { score: 0, matches: [] },
+          visitedRefs: ["one", "two"],
+          refsStopped: true,
+          cacheVisited: ["link", "embed"],
+          cacheStopped: false,
+          sortedScores: [0.9, 0.5, 0.2],
         });
       } finally {
         await host.close();

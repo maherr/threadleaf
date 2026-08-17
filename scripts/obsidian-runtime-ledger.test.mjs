@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 79,
+  implemented: 82,
   partial: 9,
   unsupported: 0,
-  missing: 70,
+  missing: 67,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
   implementedObligations: 433,
 });
-assert.equal(ledger.factory.keys.length, 93);
+assert.equal(ledger.factory.keys.length, 96);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -86,6 +86,8 @@ assert.deepEqual(
     ["hexToArrayBuffer", "implemented"],
     ["htmlToMarkdown", "implemented"],
     ["ItemView", "implemented"],
+    ["iterateCacheRefs", "implemented"],
+    ["iterateRefs", "implemented"],
     ["Keymap", "implemented"],
     ["MarkdownEditView", "implemented"],
     ["MarkdownPreviewRenderer", "implemented"],
@@ -126,6 +128,7 @@ assert.deepEqual(
     ["SettingTab", "partial"],
     ["setTooltip", "implemented"],
     ["SliderComponent", "implemented"],
+    ["sortSearchResults", "implemented"],
     ["stringifyYaml", "implemented"],
     ["SuggestModal", "implemented"],
     ["TAbstractFile", "implemented"],
