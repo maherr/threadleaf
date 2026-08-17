@@ -1,11 +1,45 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import { testConstructionDispatch } from "../test-support/plugin-construction";
 import { PluginHost } from "./plugin-host";
 
 const fixtureVault = path.resolve("fixtures/vaults/basic");
+
+async function withTestDocument<T>(callback: () => Promise<T>): Promise<T> {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "http://threadleaf.test/",
+  });
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: dom.window.document,
+    writable: true,
+  });
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: dom.window,
+    writable: true,
+  });
+  try {
+    return await callback();
+  } finally {
+    if (previousDocument) {
+      Object.defineProperty(globalThis, "document", previousDocument);
+    } else {
+      Reflect.deleteProperty(globalThis, "document");
+    }
+    if (previousWindow) {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+    dom.window.close();
+  }
+}
 
 describe("Obsidian 1.13.7 runtime ledger evidence", () => {
   /** @compatibility-test-id obsidian-runtime.base-component.v1 */
@@ -302,6 +336,137 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       }
     } finally {
       Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerCoreProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  /** @compatibility-test-id obsidian-runtime.render-views.v1 */
+  it('proves real workspace leaf and file-view bindings through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-views-"),
+    );
+    const pluginPath = path.join(sandboxPath, "render-views-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "render-views-ledger-fixture",
+          name: "Render views ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Editor, FileView, ItemView, MarkdownView, Plugin, TextFileView, View, WorkspaceLeaf } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const vault = this.app.vault;",
+          "    const workspace = this.app.workspace;",
+          '    const welcome = vault.getFileByPath("Welcome.md");',
+          "    const leaf = workspace.getLeaf(false);",
+          "    await leaf.openFile(welcome);",
+          "    const view = leaf.view;",
+          "    const actionCalls = [];",
+          '    const action = view.addAction("document", "Ledger action", () => actionCalls.push("clicked"));',
+          "    action.click();",
+          "    view.onResize();",
+          "    const originalViewData = view.getViewData();",
+          '    view.setViewData("temporary", true);',
+          "    const viewDataAfterSet = view.getViewData();",
+          "    view.clear();",
+          "    const viewDataAfterClear = view.getViewData();",
+          "    view.setViewData(originalViewData, true);",
+          "    await view.onRename(welcome);",
+          "    globalThis.__threadleafRuntimeLedgerViewsProbe = {",
+          "      leafIsWorkspaceLeaf: leaf instanceof WorkspaceLeaf,",
+          "      viewIsView: view instanceof View,",
+          "      itemViewIsItemView: view instanceof ItemView,",
+          "      fileViewIsFileView: view instanceof FileView,",
+          "      textFileViewIsTextFileView: view instanceof TextFileView,",
+          "      markdownViewIsMarkdownView: view instanceof MarkdownView,",
+          "      viewType: view.getViewType(),",
+          "      displayText: view.getDisplayText(),",
+          "      filePath: view.file && view.file.path,",
+          "      fileState: view.getState(),",
+          "      allowNoFile: view.allowNoFile,",
+          '      canAcceptMarkdown: view.canAcceptExtension("md"),',
+          "      viewState: leaf.getViewState(),",
+          "      viewData: view.getViewData(),",
+          "      data: view.data,",
+          '      requestSaveIsFunction: typeof view.requestSave === "function",',
+          "      viewDataAfterSet,",
+          "      viewDataAfterClear,",
+          "      editorIsEditor: view.editor instanceof Editor,",
+          "      navigation: view.navigation,",
+          "      icon: view.getIcon(),",
+          "      hoverPopoverIsNull: view.hoverPopover === null,",
+          "      contentClass: view.contentEl.className,",
+          "      action: {",
+          "        className: action.className,",
+          "        title: action.title,",
+          '        ariaLabel: action.getAttribute("aria-label"),',
+          "        calls: actionCalls,",
+          "      },",
+          "      activeLeafMatches: workspace.activeLeaf === leaf,",
+          "    };",
+          "    await leaf.detach();",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerViewsProbe?: unknown })
+              .__threadleafRuntimeLedgerViewsProbe,
+          ).toEqual({
+            leafIsWorkspaceLeaf: true,
+            viewIsView: true,
+            itemViewIsItemView: true,
+            fileViewIsFileView: true,
+            textFileViewIsTextFileView: true,
+            markdownViewIsMarkdownView: true,
+            viewType: "markdown",
+            displayText: "Welcome",
+            filePath: "Welcome.md",
+            fileState: { file: "Welcome.md" },
+            allowNoFile: false,
+            canAcceptMarkdown: true,
+            viewState: {
+              type: "markdown",
+              state: { file: "Welcome.md" },
+            },
+            viewData:
+              "---\nkind: compatibility-fixture\n---\n\n# Welcome to Threadleaf\n\nThis synthetic vault proves that the runtime can discover ordinary Markdown without changing it.\n\nContinue to [[Linked Note]].\n\n## Quick start\n\nOpen any local folder, write in Source, then switch to Reading. Your Markdown remains the authority.\n\n## Compatibility in motion\n\nThe section below is transcluded from another ordinary note. Its nested section comes back here,\nwithout converting either file.\n\n![[Linked Note#Project brief]]\n",
+            data: "---\nkind: compatibility-fixture\n---\n\n# Welcome to Threadleaf\n\nThis synthetic vault proves that the runtime can discover ordinary Markdown without changing it.\n\nContinue to [[Linked Note]].\n\n## Quick start\n\nOpen any local folder, write in Source, then switch to Reading. Your Markdown remains the authority.\n\n## Compatibility in motion\n\nThe section below is transcluded from another ordinary note. Its nested section comes back here,\nwithout converting either file.\n\n![[Linked Note#Project brief]]\n",
+            requestSaveIsFunction: true,
+            viewDataAfterSet: "temporary",
+            viewDataAfterClear: "",
+            editorIsEditor: true,
+            navigation: true,
+            icon: "document",
+            hoverPopoverIsNull: true,
+            contentClass: "view-content",
+            action: {
+              className: "view-action clickable-icon",
+              title: "Ledger action",
+              ariaLabel: "Ledger action",
+              calls: ["clicked"],
+            },
+            activeLeafMatches: true,
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerViewsProbe");
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });

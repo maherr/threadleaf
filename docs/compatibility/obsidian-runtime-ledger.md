@@ -55,7 +55,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | FileManager | class | missing | f131be3eb6de3df2 |
 | FileSystemAdapter | class | missing | a11e4e56f43d1ba4 |
 | FileValue | class | missing | 90a3b3e1fcd40461 |
-| FileView | class | missing | 1a7d777aaddc3cb1 |
+| FileView | class | partial | 1a7d777aaddc3cb1 |
 | finishRenderMath | function | missing | 58b4e9583b344203 |
 | FuzzySuggestModal | class | missing | 042ca80827cde1a8 |
 | getAllTags | function | missing | c253ffb6b75bcc9e |
@@ -71,7 +71,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | HTMLValue | class | missing | 2f7862bd0bf0879d |
 | IconValue | class | missing | 16f7cb525be03222 |
 | ImageValue | class | missing | c20741072bf8a144 |
-| ItemView | class | missing | eed72ec50d5d3f3c |
+| ItemView | class | implemented | eed72ec50d5d3f3c |
 | iterateCacheRefs | function | missing | fc3366f3dd699432 |
 | iterateRefs | function | missing | 882efbf3735f3d6a |
 | Keymap | class | missing | f1db66e779392942 |
@@ -87,7 +87,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | MarkdownPreviewView | class | missing | d2b4b65cecca9dfd |
 | MarkdownRenderChild | class | missing | 96bd6907c45bbddb |
 | MarkdownRenderer | class | missing | b1aa10784da3ab86 |
-| MarkdownView | class | missing | dae51444710c4853 |
+| MarkdownView | class | partial | dae51444710c4853 |
 | Menu | class | missing | 0a7cec2e1715d55b |
 | MenuItem | class | missing | 4b0f05262839c353 |
 | MenuSeparator | class | missing | 8d76cd93d0b4b14a |
@@ -152,7 +152,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Tasks | class | missing | 7471c3f0a015a76d |
 | TextAreaComponent | class | missing | 82022a25c1d9b869 |
 | TextComponent | class | missing | 4f2a68c9738f82e5 |
-| TextFileView | class | missing | 0a4a4ba88dddacf0 |
+| TextFileView | class | partial | 0a4a4ba88dddacf0 |
 | TFile | class | implemented | 059690fe62a6783f |
 | TFolder | class | implemented | 46f08a943675f948 |
 | ToggleComponent | class | missing | a39eaf18ee6900de |
@@ -160,12 +160,12 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Value | class | missing | 7c58c01f8b955627 |
 | ValueComponent | class | missing | 529ce7aae6a57c84 |
 | Vault | class | partial | 8041bc89ef9d718b |
-| View | class | missing | b8f2d48cb007660e |
+| View | class | partial | b8f2d48cb007660e |
 | Workspace | class | partial | 678ad5eacec977ed |
 | WorkspaceContainer | class | missing | 111dc7e1f6366fe3 |
 | WorkspaceFloating | class | missing | e7ce5a480a9e4cc1 |
 | WorkspaceItem | class | missing | 792134b77a9c1bb5 |
-| WorkspaceLeaf | class | missing | ba2f830d93cd9670 |
+| WorkspaceLeaf | class | partial | ba2f830d93cd9670 |
 | WorkspaceMobileDrawer | class | missing | d18a5e362fc9f67a |
 | WorkspaceParent | class | missing | 1fb7060d911d2603 |
 | WorkspaceRibbon | class | missing | ffebe640f57faebe |
