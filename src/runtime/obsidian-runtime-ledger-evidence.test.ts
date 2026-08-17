@@ -1073,6 +1073,106 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.utility-extended.v1 */
+  it('proves heading, subpath, tooltip, and math utilities through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-utility-extended-"),
+    );
+    const pluginPath = path.join(sandboxPath, "utility-extended-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "utility-extended-ledger-fixture",
+          name: "Utility extended ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, displayTooltip, finishRenderMath, renderMath, resolveSubpath, stripHeading, stripHeadingForLink } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const button = document.createElement("button");',
+          "    button.getBoundingClientRect = () => ({ top: 10, bottom: 20, left: 30, right: 40 });",
+          '    displayTooltip(button, "Ledger tooltip", { placement: "top", classes: ["mod-ledger"], gap: 4 });',
+          "    const position = (start, end) => ({ start: { line: 0, col: start, offset: start }, end: { line: 0, col: end, offset: end } });",
+          "    const cache = {",
+          "      headings: [",
+          '        { heading: "Parent: One", level: 1, position: position(0, 12) },',
+          '        { heading: "Child", level: 2, position: position(13, 18) },',
+          '        { heading: "Sibling", level: 1, position: position(19, 26) },',
+          "      ],",
+          '      blocks: { "Block-ID": { id: "Block-ID", position: position(30, 38) } },',
+          '      listItems: [{ id: "block-id", parent: -1, position: position(30, 38) }],',
+          '      footnotes: [{ id: "fn-1", position: position(40, 48) }],',
+          "    };",
+          '    const heading = resolveSubpath(cache, "#Parent One#Child");',
+          '    const block = resolveSubpath(cache, "#^block-id");',
+          '    const footnote = resolveSubpath(cache, "#[^fn-1]");',
+          '    const inlineMath = renderMath("x^2", false);',
+          '    const fallbackMath = renderMath("\\\\unknown{", true);',
+          "    await finishRenderMath();",
+          '    const tooltip = document.querySelector("[data-threadleaf-tooltip=\\"active\\"]");',
+          "    globalThis.__threadleafRuntimeLedgerUtilityExtendedProbe = {",
+          '      stripped: stripHeading("  Hello: [world]  "),',
+          '      linkStripped: stripHeadingForLink("[[Hello#World]]"),',
+          "      heading: { type: heading?.type, current: heading?.current.heading, next: heading?.next?.heading, end: heading?.end?.offset },",
+          "      block: { type: block?.type, id: block?.block.id, listId: block?.list?.id, start: block?.start.offset },",
+          "      footnote: { type: footnote?.type, id: footnote?.footnote.id, end: footnote?.end.offset },",
+          '      tooltip: { text: tooltip?.textContent, className: tooltip?.className, role: tooltip?.getAttribute("role"), placement: tooltip?.dataset.tooltipPlacement, top: tooltip?.style.top, left: tooltip?.style.left, describedBy: button.getAttribute("aria-describedby") },',
+          '      math: { inlineTag: inlineMath.tagName, inlineClass: inlineMath.className, inlineRole: inlineMath.getAttribute("role"), fallbackTag: fallbackMath.tagName, fallbackClass: fallbackMath.className, fallbackText: fallbackMath.textContent, finished: true },',
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerUtilityExtendedProbe?: unknown })
+              .__threadleafRuntimeLedgerUtilityExtendedProbe,
+          ).toEqual({
+            stripped: "Hello world",
+            linkStripped: "Hello World",
+            heading: { type: "heading", current: "Child", next: "Sibling", end: 19 },
+            block: { type: "block", id: "Block-ID", listId: "block-id", start: 30 },
+            footnote: { type: "footnote", id: "fn-1", end: 48 },
+            tooltip: {
+              text: "Ledger tooltip",
+              className: "tooltip mod-ledger",
+              role: "tooltip",
+              placement: "top",
+              top: "6px",
+              left: "44px",
+              describedBy: expect.any(String),
+            },
+            math: {
+              inlineTag: "SPAN",
+              inlineClass: "tl-live-math",
+              inlineRole: "math",
+              fallbackTag: "DIV",
+              fallbackClass: "tl-live-math-block",
+              fallbackText: "\\unknown{",
+              finished: true,
+            },
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerUtilityExtendedProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.icon-utilities.v1 */
   it('proves icon registration, lookup, rendering, listing, and removal through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(

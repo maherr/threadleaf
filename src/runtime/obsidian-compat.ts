@@ -24,6 +24,7 @@ import type {
   VaultRenameResult,
   VaultWriteResult,
 } from "../kernel/ports";
+import { createSafeMathElement } from "../renderer/markdown-extensions";
 import type { CommandSummary, NoteCreateOutcome } from "../shared/contracts";
 import type { PluginMutationWaitOptions } from "../shared/plugin-runtime-protocol";
 import { Component } from "./obsidian-components";
@@ -1509,6 +1510,10 @@ export interface CachedMetadata {
   links?: ReferenceCache[];
   embeds?: ReferenceCache[];
   tags?: TagCache[];
+  headings?: HeadingCache[];
+  footnotes?: FootnoteCache[];
+  blocks?: Record<string, BlockCache>;
+  listItems?: ListItemCache[];
 }
 
 export interface Reference {
@@ -1549,6 +1554,50 @@ export interface BasesProperty {
 export interface TagCache {
   position: CachePosition;
   tag: string;
+}
+
+export interface HeadingCache {
+  heading: string;
+  level: number;
+  position: CachePosition;
+}
+
+export interface BlockCache {
+  id: string;
+  position: CachePosition;
+}
+
+export interface FootnoteCache {
+  id: string;
+  position: CachePosition;
+}
+
+export interface ListItemCache {
+  id?: string;
+  parent: number;
+  position: CachePosition;
+}
+
+export interface SubpathResult {
+  start: CacheLocation;
+  end: CacheLocation | null;
+}
+
+export interface HeadingSubpathResult extends SubpathResult {
+  type: "heading";
+  current: HeadingCache;
+  next: HeadingCache | null;
+}
+
+export interface BlockSubpathResult extends SubpathResult {
+  type: "block";
+  block: BlockCache;
+  list?: ListItemCache;
+}
+
+export interface FootnoteSubpathResult extends SubpathResult {
+  type: "footnote";
+  footnote: FootnoteCache;
 }
 
 interface CachedMetadataRecord {
@@ -1698,6 +1747,99 @@ export function parseLinktext(linktext: string): { path: string; subpath: string
         path: linktext.slice(0, subpathStart),
         subpath: linktext.slice(subpathStart),
       };
+}
+
+export function stripHeading(heading: string): string {
+  return heading.replace(stripHeadingPattern, " ").replace(/\s+/gu, " ").trim();
+}
+
+export function stripHeadingForLink(heading: string): string {
+  return heading
+    .replace(/([:#|^\\\r\n]|%%|\[\[|\])/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+const stripHeadingPattern = /[!"#$%&()*+,.:;<=>?@^`{|}~/[\]\\\r\n]/gu;
+
+export function resolveSubpath(
+  cache: CachedMetadata,
+  subpath: string,
+): HeadingSubpathResult | BlockSubpathResult | FootnoteSubpathResult | null {
+  if (!cache || !subpath) {
+    return null;
+  }
+  const parts = subpath.split("#").filter(Boolean);
+  if (parts.length === 0) {
+    return null;
+  }
+  if (parts.length === 1) {
+    const part = parts[0] ?? "";
+    if (part.startsWith("^")) {
+      const id = part.slice(1).toLowerCase();
+      const block = Object.entries(cache.blocks ?? {}).find(
+        ([key]) => key.toLowerCase() === id,
+      )?.[1];
+      if (block) {
+        const list = cache.listItems?.find((item) => item.id?.toLowerCase() === id);
+        return {
+          type: "block",
+          block,
+          ...(list ? { list } : {}),
+          start: block.position.start,
+          end: block.position.end,
+        };
+      }
+    } else if (part.startsWith("[^")) {
+      const id = part.slice(2, -1);
+      const footnote = cache.footnotes?.find((candidate) => candidate.id === id);
+      if (footnote) {
+        return {
+          type: "footnote",
+          footnote,
+          start: footnote.position.start,
+          end: footnote.position.end,
+        };
+      }
+    }
+  }
+
+  const headings = cache.headings;
+  if (!headings?.length) {
+    return null;
+  }
+  let partIndex = 0;
+  let matched: HeadingCache | null = null;
+  let next: HeadingCache | null = null;
+  let matchedLevel = 0;
+  for (const heading of headings) {
+    if (matched && heading.level <= matchedLevel) {
+      next = heading;
+      break;
+    }
+    const requested = parts[partIndex];
+    if (
+      !matched &&
+      requested !== undefined &&
+      heading.level > matchedLevel &&
+      stripHeading(heading.heading).toLowerCase() === stripHeading(requested).toLowerCase()
+    ) {
+      partIndex += 1;
+      matchedLevel = heading.level;
+      if (partIndex === parts.length) {
+        matched = heading;
+      }
+    }
+  }
+  return matched
+    ? {
+        type: "heading",
+        current: matched,
+        next,
+        start: matched.position.start,
+        end: next?.position.start ?? null,
+      }
+    : null;
 }
 
 export function parsePropertyId(propertyId: string): BasesProperty {
@@ -3385,6 +3527,8 @@ export interface ObsidianCompatibilityModule {
   WorkspaceWindow: typeof WorkspaceWindow;
   addIcon(id: string, svgContent: string): void;
   debounce: typeof debounce;
+  displayTooltip: typeof displayTooltip;
+  finishRenderMath: typeof finishRenderMath;
   getIcon(id: string): SVGSVGElement | null;
   getIconIds(): string[];
   iterateCacheRefs(cache: CachedMetadata, callback: ReferenceIterator<ReferenceCache>): boolean;
@@ -3408,13 +3552,17 @@ export interface ObsidianCompatibilityModule {
   ): void;
   renderResults(element: HTMLElement, text: string, result: SearchResult, offset?: number): void;
   requireApiVersion(version: string): boolean;
+  resolveSubpath: typeof resolveSubpath;
   removeIcon(id: string): void;
+  renderMath: typeof renderMath;
   sortSearchResults(results: SearchResultContainer[]): void;
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
   setTooltip: typeof setTooltip;
   sleep(milliseconds: number): Promise<void>;
   stringifyYaml: typeof stringifyYaml;
+  stripHeading: typeof stripHeading;
+  stripHeadingForLink: typeof stripHeadingForLink;
 }
 
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -3452,6 +3600,25 @@ const htmlMarkdownConverter = new TurndownService({
 
 export function htmlToMarkdown(html: string | HTMLElement | Document | DocumentFragment): string {
   return htmlMarkdownConverter.turndown(html);
+}
+
+export function renderMath(source: string, display: boolean): HTMLElement {
+  const document = requireCompatibilityDocument();
+  return (
+    createSafeMathElement(document, source, display) ??
+    (() => {
+      const fallback = document.createElement(display ? "div" : "span");
+      fallback.className = display ? "tl-live-math-block" : "tl-live-math";
+      fallback.setAttribute("role", "math");
+      fallback.setAttribute("aria-label", source);
+      fallback.textContent = source;
+      return fallback;
+    })()
+  );
+}
+
+export function finishRenderMath(): Promise<void> {
+  return Promise.resolve();
 }
 
 export interface Debouncer<T extends unknown[], V> {
@@ -3585,6 +3752,49 @@ export function setTooltip(
   }
   if (!element.getAttribute("aria-label") && !element.textContent?.trim()) {
     element.setAttribute("aria-label", tooltip);
+  }
+}
+
+let displayedTooltipId = 0;
+
+export function displayTooltip(
+  newTargetEl: HTMLElement,
+  content: string | DocumentFragment,
+  options: TooltipOptions = {},
+): void {
+  const document = newTargetEl.ownerDocument;
+  for (const tooltip of document.querySelectorAll<HTMLElement>(
+    '[data-threadleaf-tooltip="active"]',
+  )) {
+    tooltip.remove();
+  }
+  const tooltip = document.createElement("div");
+  const placement = options.placement ?? "bottom";
+  tooltip.className = ["tooltip", ...(options.classes ?? [])].join(" ");
+  tooltip.dataset.threadleafTooltip = "active";
+  tooltip.dataset.tooltipPlacement = placement;
+  tooltip.setAttribute("role", "tooltip");
+  if (typeof content === "string") {
+    tooltip.textContent = content;
+  } else {
+    tooltip.append(content);
+  }
+  const id = `threadleaf-tooltip-${++displayedTooltipId}`;
+  tooltip.id = id;
+  newTargetEl.setAttribute("aria-describedby", id);
+  const show = (): void => {
+    const rect = newTargetEl.getBoundingClientRect();
+    const gap = options.gap ?? 8;
+    const top = placement === "top" ? rect.top - gap : rect.bottom + gap;
+    const left = placement === "left" ? rect.left - gap : rect.right + gap;
+    tooltip.style.top = `${Math.max(0, top)}px`;
+    tooltip.style.left = `${Math.max(0, left)}px`;
+    (document.body ?? document.documentElement).append(tooltip);
+  };
+  if ((options.delay ?? 0) > 0) {
+    globalThis.setTimeout(show, options.delay);
+  } else {
+    show();
   }
 }
 
@@ -3978,6 +4188,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Component,
     DateValue,
     DurationValue,
+    displayTooltip,
     debounce,
     DropdownComponent,
     DisplayValueComponent,
@@ -3985,6 +4196,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     EditorSuggest,
     Events,
     ExtraButtonComponent,
+    finishRenderMath,
     FileManager,
     FileSystemAdapter,
     FileView,
@@ -4084,12 +4296,16 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     renderMatches,
     renderResults,
     requireApiVersion,
+    resolveSubpath,
     removeIcon,
+    renderMath,
     sanitizeHTMLToDom,
     setIcon,
     setTooltip,
     sleep,
     sortSearchResults,
     stringifyYaml,
+    stripHeading,
+    stripHeadingForLink,
   };
 }

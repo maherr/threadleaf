@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 128 (127 public, 1 internal extra)
+- Factory keys: 134 (133 public, 1 internal extra)
 
 ## Export status
 
@@ -39,7 +39,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ConfirmationModal | class | implemented | 16d786038936266a |
 | DateValue | class | implemented | 45dce24b565b761c |
 | debounce | function | implemented | a72e0eb10fc8a651 |
-| displayTooltip | function | missing | dee2b380f1fef0a9 |
+| displayTooltip | function | implemented | dee2b380f1fef0a9 |
 | DisplayValueComponent | class | implemented | 8eadc4fafb416556 |
 | DropdownComponent | class | implemented | 563d13fef3a6b00c |
 | DurationValue | class | implemented | 1b6e3eccbd6b278b |
@@ -56,7 +56,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | FileSystemAdapter | class | partial | a11e4e56f43d1ba4 |
 | FileValue | class | missing | 90a3b3e1fcd40461 |
 | FileView | class | implemented | 1a7d777aaddc3cb1 |
-| finishRenderMath | function | missing | 58b4e9583b344203 |
+| finishRenderMath | function | partial | 58b4e9583b344203 |
 | FuzzySuggestModal | class | implemented | 042ca80827cde1a8 |
 | getAllTags | function | implemented | c253ffb6b75bcc9e |
 | getBlobArrayBuffer | function | implemented | 36e0f8e9725fc3ae |
@@ -123,12 +123,12 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | removeIcon | function | implemented | 1b1690db3c4ed092 |
 | RenderContext | class | implemented | beb981213ad00faf |
 | renderMatches | function | implemented | f868e63e141ad46b |
-| renderMath | function | missing | bdf8f2074b169c02 |
+| renderMath | function | partial | bdf8f2074b169c02 |
 | renderResults | function | implemented | 4dfb992b9bec08fd |
 | request | function | missing | bbd290f3567bac5f |
 | requestUrl | function | missing | e0c2b7ee43b9a78d |
 | requireApiVersion | function | implemented | 0686387471c2904a |
-| resolveSubpath | function | missing | 46690fc4ac8ecb44 |
+| resolveSubpath | function | implemented | 46690fc4ac8ecb44 |
 | sanitizeHTMLToDom | function | implemented | 1bdf091e2ab0377e |
 | Scope | class | implemented | cd031d650ae6bd69 |
 | SearchComponent | class | implemented | 72938e4f2898847d |
@@ -144,8 +144,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | sortSearchResults | function | implemented | b51b5d221f8562ad |
 | stringifyYaml | function | implemented | 9fd7dc20723b04e0 |
 | StringValue | class | implemented | 5a8c7f34710de2a3 |
-| stripHeading | function | missing | f21325fbff066d0b |
-| stripHeadingForLink | function | missing | 609f52c3520cfb71 |
+| stripHeading | function | implemented | f21325fbff066d0b |
+| stripHeadingForLink | function | implemented | 609f52c3520cfb71 |
 | SuggestModal | class | implemented | 4282e1a8e74dc8a6 |
 | TAbstractFile | class | implemented | 33e1dba7bf6c6e2f |
 | TagValue | class | implemented | c6c6bafd2fd50797 |

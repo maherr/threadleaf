@@ -8288,6 +8288,156 @@
           }
         ]
       }
+    },
+    "displayTooltip": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "displayTooltip"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["tooltip.display-dom"],
+        "behaviors": [
+          {
+            "id": "tooltip.display-dom",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "finishRenderMath": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "finishRenderMath"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    },
+    "renderMath": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "renderMath"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    },
+    "resolveSubpath": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "resolveSubpath"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "subpath.heading-nesting",
+          "subpath.block-and-list",
+          "subpath.footnote"
+        ],
+        "behaviors": [
+          {
+            "id": "subpath.heading-nesting",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "subpath.block-and-list",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "subpath.footnote",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "stripHeading": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "stripHeading"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["heading.strip-punctuation"],
+        "behaviors": [
+          {
+            "id": "heading.strip-punctuation",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "stripHeadingForLink": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "stripHeadingForLink"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["heading.strip-link-markers"],
+        "behaviors": [
+          {
+            "id": "heading.strip-link-markers",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     }
   },
   "extras": {

@@ -14,10 +14,10 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 113,
-    "partial": 13,
+    "implemented": 117,
+    "partial": 15,
     "unsupported": 0,
-    "missing": 32,
+    "missing": 26,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -41,6 +41,7 @@ export const obsidianRuntimeLedger = {
       "Component",
       "DateValue",
       "DurationValue",
+      "displayTooltip",
       "debounce",
       "DropdownComponent",
       "DisplayValueComponent",
@@ -48,6 +49,7 @@ export const obsidianRuntimeLedger = {
       "EditorSuggest",
       "Events",
       "ExtraButtonComponent",
+      "finishRenderMath",
       "FileManager",
       "FileSystemAdapter",
       "FileView",
@@ -147,13 +149,17 @@ export const obsidianRuntimeLedger = {
       "renderMatches",
       "renderResults",
       "requireApiVersion",
+      "resolveSubpath",
       "removeIcon",
+      "renderMath",
       "sanitizeHTMLToDom",
       "setIcon",
       "setTooltip",
       "sleep",
       "sortSearchResults",
-      "stringifyYaml"
+      "stringifyYaml",
+      "stripHeading",
+      "stripHeadingForLink"
     ],
     "publicKeys": [
       "AbstractInputSuggest",
@@ -171,6 +177,7 @@ export const obsidianRuntimeLedger = {
       "Component",
       "DateValue",
       "DurationValue",
+      "displayTooltip",
       "debounce",
       "DropdownComponent",
       "DisplayValueComponent",
@@ -178,6 +185,7 @@ export const obsidianRuntimeLedger = {
       "EditorSuggest",
       "Events",
       "ExtraButtonComponent",
+      "finishRenderMath",
       "FileManager",
       "FileSystemAdapter",
       "FileView",
@@ -277,12 +285,16 @@ export const obsidianRuntimeLedger = {
       "renderMatches",
       "renderResults",
       "requireApiVersion",
+      "resolveSubpath",
       "removeIcon",
+      "renderMath",
       "sanitizeHTMLToDom",
       "setIcon",
       "setTooltip",
       "sortSearchResults",
-      "stringifyYaml"
+      "stringifyYaml",
+      "stripHeading",
+      "stripHeadingForLink"
     ],
     "internalExtras": [
       "sleep"
@@ -1266,21 +1278,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:displayTooltip:dee2b380f1fef0a99fe4b178a3cff3b52ed1b1a2cdd86d6adc806bca9be7dcb3",
       "name": "displayTooltip",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "dee2b380f1fef0a99fe4b178a3cff3b52ed1b1a2cdd86d6adc806bca9be7dcb3",
       "location": {
         "line": 2258,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "displayTooltip"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "tooltip.display-dom"
+      ],
+      "coveredBehaviorIds": [
+        "tooltip.display-dom"
+      ]
     },
     {
       "exportId": "export:class:DisplayValueComponent:8eadc4fafb416556a0aedb81702ff4a39031f10f78901384edb0cbaf068e2af9",
@@ -2057,15 +2081,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:finishRenderMath:58b4e9583b344203c37a7acc1376ab339641d34ebc60f5f75e9ae18e0a022d14",
       "name": "finishRenderMath",
       "kind": "function",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "58b4e9583b344203c37a7acc1376ab339641d34ebc60f5f75e9ae18e0a022d14",
       "location": {
         "line": 3193,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "finishRenderMath"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
@@ -4617,15 +4649,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:renderMath:bdf8f2074b169c02d315058a5198110b8130966c7c21a80753d11360b4fef8ff",
       "name": "renderMath",
       "kind": "function",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "bdf8f2074b169c02d315058a5198110b8130966c7c21a80753d11360b4fef8ff",
       "location": {
         "line": 5423,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "renderMath"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
@@ -4747,21 +4787,37 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:resolveSubpath:46690fc4ac8ecb442f227549c3ee3c1f0b688dd93bf5cb7fb44cc3f37ef4a2ec",
       "name": "resolveSubpath",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "46690fc4ac8ecb442f227549c3ee3c1f0b688dd93bf5cb7fb44cc3f37ef4a2ec",
       "location": {
         "line": 5500,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "resolveSubpath"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "subpath.heading-nesting",
+        "subpath.block-and-list",
+        "subpath.footnote"
+      ],
+      "coveredBehaviorIds": [
+        "subpath.heading-nesting",
+        "subpath.block-and-list",
+        "subpath.footnote"
+      ]
     },
     {
       "exportId": "export:function:sanitizeHTMLToDom:1bdf091e2ab0377ef593916d56f9f04e430fe0e08bdcd5f419ea51424020629a",
@@ -5491,41 +5547,65 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:stripHeading:f21325fbff066d0b2096f6ce96e01757edd0457848cee6ab6371d126a5de8abe",
       "name": "stripHeading",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "f21325fbff066d0b2096f6ce96e01757edd0457848cee6ab6371d126a5de8abe",
       "location": {
         "line": 6851,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "stripHeading"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "heading.strip-punctuation"
+      ],
+      "coveredBehaviorIds": [
+        "heading.strip-punctuation"
+      ]
     },
     {
       "exportId": "export:function:stripHeadingForLink:609f52c3520cfb71dbd816cdcde3702aeed67eba4ecd0611eefdd523cd1b97ef",
       "name": "stripHeadingForLink",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "609f52c3520cfb71dbd816cdcde3702aeed67eba4ecd0611eefdd523cd1b97ef",
       "location": {
         "line": 6857,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "stripHeadingForLink"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "heading.strip-link-markers"
+      ],
+      "coveredBehaviorIds": [
+        "heading.strip-link-markers"
+      ]
     },
     {
       "exportId": "export:class:SuggestModal:4282e1a8e74dc8a6cc5092a10d976dc86a748bac0d52ad8125f44ee2fe06a7c1",
