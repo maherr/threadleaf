@@ -1524,7 +1524,19 @@
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
-      "coverage": {}
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "WorkspaceTabs": {
       "implementation": {

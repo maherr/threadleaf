@@ -1575,6 +1575,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "      workspace: {",
           "        isEvents: workspace instanceof Events,",
           "        rootSplitIsSplit: workspace.rootSplit instanceof WorkspaceSplit,",
+          "        rootSplitParentIsNull: workspace.rootSplit.parent === null,",
           "        rootDirection: workspace.rootSplit.direction,",
           "        activeLeafIsNull: workspace.activeLeaf === null,",
           "        activeEditorIsNull: workspace.activeEditor === null,",
@@ -1682,6 +1683,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           workspace: {
             isEvents: true,
             rootSplitIsSplit: true,
+            rootSplitParentIsNull: true,
             rootDirection: "vertical",
             activeLeafIsNull: true,
             activeEditorIsNull: true,

@@ -31,15 +31,15 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 86,
-  partial: 8,
+  implemented: 88,
+  partial: 6,
   unsupported: 0,
   missing: 64,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 456,
+  implementedObligations: 457,
 });
 assert.equal(ledger.factory.keys.length, 99);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -124,7 +124,7 @@ assert.deepEqual(
     ["requireApiVersion", "implemented"],
     ["sanitizeHTMLToDom", "implemented"],
     ["Scope", "implemented"],
-    ["SearchComponent", "partial"],
+    ["SearchComponent", "implemented"],
     ["SecretStorage", "implemented"],
     ["setIcon", "implemented"],
     ["Setting", "implemented"],
@@ -147,7 +147,7 @@ assert.deepEqual(
     ["WorkspaceItem", "implemented"],
     ["WorkspaceLeaf", "implemented"],
     ["WorkspaceParent", "partial"],
-    ["WorkspaceSplit", "partial"],
+    ["WorkspaceSplit", "implemented"],
     ["WorkspaceTabs", "implemented"],
   ],
 );

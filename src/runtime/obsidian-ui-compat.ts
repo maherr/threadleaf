@@ -206,6 +206,10 @@ export class SearchComponent extends AbstractTextComponent<HTMLInputElement> {
       this.inputEl.focus();
     });
   }
+
+  override onChanged(): void {
+    super.onChanged();
+  }
 }
 
 export class DropdownComponent extends ValueComponent<string> {

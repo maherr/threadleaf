@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 86,
-    "partial": 8,
+    "implemented": 88,
+    "partial": 6,
     "unsupported": 0,
     "missing": 64,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 456
+    "implementedObligations": 457
   },
   "factory": {
     "keys": [
@@ -4495,7 +4495,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:SearchComponent:72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2",
       "name": "SearchComponent",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2",
       "location": {
         "line": 5558,
@@ -6250,7 +6250,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
       "name": "WorkspaceSplit",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
       "location": {
         "line": 8442,
@@ -6273,8 +6273,12 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:1bea966066947fdd2c463e68b5c8a432209056774523f477e179337c03423812"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -14612,7 +14616,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:SearchComponent:72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2",
       "name": "SearchComponent",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:SearchComponent:72938e4f2898847da720b9cdca1ed77d301bfe36196d00a9217674c199739cf2:30d5f9c5009e1a80d92e4ded7af5c213fc51bb655b56a57d19b7c8a8eccc8f84",
@@ -19881,7 +19885,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
       "name": "WorkspaceSplit",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8",
@@ -19911,8 +19915,12 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8"
+      ]
     },
     {
       "exportId": "export:class:WorkspaceTabs:351384193e50748c3cce47b0209cd285d81c20df177fb151135fb2ca5514cc49",

@@ -131,7 +131,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | resolveSubpath | function | missing | 46690fc4ac8ecb44 |
 | sanitizeHTMLToDom | function | implemented | 1bdf091e2ab0377e |
 | Scope | class | implemented | cd031d650ae6bd69 |
-| SearchComponent | class | partial | 72938e4f2898847d |
+| SearchComponent | class | implemented | 72938e4f2898847d |
 | SecretComponent | class | missing | f3133f6f9328e3cb |
 | SecretStorage | class | implemented | cd03c227b70ca8e0 |
 | setIcon | function | implemented | 74dab0a196e4515a |
@@ -171,7 +171,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | WorkspaceRibbon | class | missing | ffebe640f57faebe |
 | WorkspaceRoot | class | missing | cbd16d72040e24ec |
 | WorkspaceSidedock | class | missing | 7290bfc648754714 |
-| WorkspaceSplit | class | partial | c27a20947773139a |
+| WorkspaceSplit | class | implemented | c27a20947773139a |
 | WorkspaceTabs | class | implemented | 351384193e50748c |
 | WorkspaceWindow | class | missing | 4d8f442507ed4e2b |
 
