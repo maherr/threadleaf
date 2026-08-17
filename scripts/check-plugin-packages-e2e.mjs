@@ -198,6 +198,21 @@ async function setInput(selector, value) {
   })()`);
 }
 
+async function setSelect(selector, value) {
+  await evaluate(`(() => {
+    const select = document.querySelector(${JSON.stringify(selector)});
+    if (!(select instanceof HTMLSelectElement) || select.disabled) {
+      throw new Error("Select is missing or disabled: " + ${JSON.stringify(selector)});
+    }
+    if (![...select.options].some((option) => option.value === ${JSON.stringify(value)})) {
+      throw new Error("Select option is missing: " + ${JSON.stringify(value)});
+    }
+    select.value = ${JSON.stringify(value)};
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return select.value;
+  })()`);
+}
+
 async function setTheme(theme) {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
@@ -530,10 +545,10 @@ try {
     ].filter(Boolean),
   );
 
-  await click("#plugin-mode-toggle");
+  await setSelect("#plugin-compatibility-profile", "isolated");
   await waitFor(
-    'document.querySelector("#plugin-mode-state")?.textContent === "Enabled"',
-    "Compatibility mode did not enable for the authority probe.",
+    'document.querySelector("#plugin-mode-state")?.textContent === "Isolated"',
+    "Isolated compatibility did not enable for the authority probe.",
   );
   const rejectedWithoutGrant = await evaluate(`window.threadleaf
     .setPluginEnabled(${JSON.stringify(await evaluate("window.threadleaf.getSnapshot().then((snapshot) => snapshot.vault.id)"))}, ${JSON.stringify(pluginId)}, true)
