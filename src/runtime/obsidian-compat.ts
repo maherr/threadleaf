@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   type Dirent,
@@ -10,6 +11,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import MarkdownIt from "markdown-it";
 import momentLibrary from "moment";
 import TurndownService from "turndown";
@@ -132,6 +134,8 @@ import {
   WorkspaceTabs,
   WorkspaceWindow,
 } from "./obsidian-workspace-compat";
+
+const execFileAsync = promisify(execFile);
 
 export const moment = momentLibrary;
 
@@ -332,6 +336,15 @@ export class FileSystemAdapter {
     return this.basePath;
   }
 
+  static async readLocalFile(filePath: string): Promise<ArrayBuffer> {
+    const bytes = await fs.readFile(filePath);
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  }
+
+  static mkdir(directoryPath: string): Promise<void> {
+    return fs.mkdir(directoryPath, { recursive: true }).then(() => undefined);
+  }
+
   getFullPath(normalizedPath: string): string {
     const lexicalPath = this.vault.resolveVaultPath(normalizePath(normalizedPath));
     this.assertExistingAncestorContained(normalizedPath, lexicalPath);
@@ -458,10 +471,57 @@ export class FileSystemAdapter {
     await this.vault.trash(file);
   }
 
+  async trashSystem(normalizedPath: string): Promise<boolean> {
+    let absolutePath: string;
+    try {
+      absolutePath = this.resolveExistingPath(normalizedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
+
+    // Keep this best-effort. The public adapter contract permits a false result when the
+    // platform trash service is unavailable, and Threadleaf's recoverable .trash path remains
+    // the authoritative fallback used by Vault.trash.
+    if (process.platform !== "linux") {
+      return false;
+    }
+    try {
+      await execFileAsync("gio", ["trash", absolutePath], { timeout: 5_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async rmdir(normalizedPath: string, recursive: boolean): Promise<void> {
+    const absolutePath = this.resolveExistingPath(normalizedPath);
+    const stats = await fs.stat(absolutePath);
+    if (!stats.isDirectory()) {
+      throw new Error(`Plugin adapter rmdir requires a folder: ${normalizePath(normalizedPath)}`);
+    }
+    if (recursive) {
+      await fs.rm(absolutePath, { recursive: true, force: false });
+    } else {
+      await fs.rmdir(absolutePath);
+    }
+  }
+
   async mkdir(normalizedPath: string): Promise<void> {
     const normalized = normalizePath(normalizedPath);
     this.getFullPath(normalized);
     await this.vault.createFolder(normalized);
+  }
+
+  async remove(normalizedPath: string): Promise<void> {
+    const absolutePath = this.resolveExistingPath(normalizedPath);
+    const stats = await fs.stat(absolutePath);
+    if (!stats.isFile()) {
+      throw new Error(`Plugin adapter remove requires a file: ${normalizePath(normalizedPath)}`);
+    }
+    await fs.rm(absolutePath, { force: false });
   }
 
   async copy(source: string, target: string): Promise<void> {

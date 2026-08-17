@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 136,
-    "partial": 17,
+    "implemented": 137,
+    "partial": 16,
     "unsupported": 5,
     "missing": 0,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 668
+    "implementedObligations": 673
   },
   "factory": {
     "keys": [
@@ -2092,7 +2092,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
       "name": "FileSystemAdapter",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
       "location": {
         "line": 2996,
@@ -2157,7 +2157,12 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
-        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:320c60e51a40b95d2bbff88a0bb61fb50d4dc8b97a8769a39617fe7105a15074",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:22b9e6b397ce39b982ffd8b049e3514cd9c756857a9e6307013ebd4ecf100e12",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:e90397cb4b0c21ae57aab9f6ae45312ef683266cc51caffe0407df8d8990b906",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:5ff4f942676e8885a5ab0400048945f2ef4631598fd9948ce980ae6f9af8dcf6",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:a87c66b90c2a0d12f13f794a5d98155652ce7757fb74a35d07199c68fad188c7"
       ],
       "coveredObligationSignatureHashes": [
         "16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
@@ -2178,7 +2183,12 @@ export const obsidianRuntimeLedger = {
         "b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
         "517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
         "16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
-        "986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+        "986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85",
+        "320c60e51a40b95d2bbff88a0bb61fb50d4dc8b97a8769a39617fe7105a15074",
+        "22b9e6b397ce39b982ffd8b049e3514cd9c756857a9e6307013ebd4ecf100e12",
+        "e90397cb4b0c21ae57aab9f6ae45312ef683266cc51caffe0407df8d8990b906",
+        "5ff4f942676e8885a5ab0400048945f2ef4631598fd9948ce980ae6f9af8dcf6",
+        "a87c66b90c2a0d12f13f794a5d98155652ce7757fb74a35d07199c68fad188c7"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -11444,7 +11454,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
       "name": "FileSystemAdapter",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
@@ -11842,7 +11852,12 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
-        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:320c60e51a40b95d2bbff88a0bb61fb50d4dc8b97a8769a39617fe7105a15074",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:22b9e6b397ce39b982ffd8b049e3514cd9c756857a9e6307013ebd4ecf100e12",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:e90397cb4b0c21ae57aab9f6ae45312ef683266cc51caffe0407df8d8990b906",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:5ff4f942676e8885a5ab0400048945f2ef4631598fd9948ce980ae6f9af8dcf6",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:a87c66b90c2a0d12f13f794a5d98155652ce7757fb74a35d07199c68fad188c7"
       ],
       "coveredObligationSignatureHashes": [
         "16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
@@ -11863,7 +11878,12 @@ export const obsidianRuntimeLedger = {
         "b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
         "517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
         "16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
-        "986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+        "986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85",
+        "320c60e51a40b95d2bbff88a0bb61fb50d4dc8b97a8769a39617fe7105a15074",
+        "22b9e6b397ce39b982ffd8b049e3514cd9c756857a9e6307013ebd4ecf100e12",
+        "e90397cb4b0c21ae57aab9f6ae45312ef683266cc51caffe0407df8d8990b906",
+        "5ff4f942676e8885a5ab0400048945f2ef4631598fd9948ce980ae6f9af8dcf6",
+        "a87c66b90c2a0d12f13f794a5d98155652ce7757fb74a35d07199c68fad188c7"
       ]
     },
     {
