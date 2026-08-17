@@ -15,14 +15,14 @@ export const obsidianRuntimeLedger = {
     "enums": 1,
     "variables": 8,
     "implemented": 90,
-    "partial": 4,
+    "partial": 5,
     "unsupported": 0,
-    "missing": 64,
+    "missing": 63,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 513
+    "implementedObligations": 517
   },
   "factory": {
     "keys": [
@@ -1660,15 +1660,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de",
       "name": "FileManager",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de",
       "location": {
         "line": 2881,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.file-manager-mutations.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "FileManager"
+      },
       "obligationIds": [
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:9c02cecd73636d8a96b69b728f0faddcaa29c37f17cf7b0d4e145e4b533b8653",
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:898a29f2de1f27b41990e09950282e9271cebab2fada1973f44c707675f21f6c",
@@ -1679,8 +1687,18 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
+        "da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
+        "909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
+        "2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -10137,7 +10155,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de",
       "name": "FileManager",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:9c02cecd73636d8a96b69b728f0faddcaa29c37f17cf7b0d4e145e4b533b8653",
@@ -10246,8 +10264,18 @@ export const obsidianRuntimeLedger = {
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
+        "da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
+        "909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
+        "2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+      ]
     },
     {
       "exportId": "export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",

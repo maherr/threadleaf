@@ -1226,6 +1226,44 @@ export class FileManager {
     return this.promptForDeletion(file);
   }
 
+  async processFrontMatter(
+    file: TFile,
+    callback: (frontmatter: Record<string, unknown>) => void,
+    _options?: DataWriteOptions,
+  ): Promise<void> {
+    if (file.vault !== this.vault) {
+      throw new Error("Frontmatter writes require a file from the active compatibility vault.");
+    }
+    if (!(file instanceof TFile) || file.extension.toLocaleLowerCase("en-US") !== "md") {
+      throw new Error("Frontmatter writes require a Markdown file.");
+    }
+
+    const current = await this.vault.read(file);
+    const info = getFrontMatterInfo(current);
+    let frontmatter: Record<string, unknown>;
+    if (!info.exists) {
+      frontmatter = {};
+    } else {
+      const parsed = parseYamlDocument(info.frontmatter, { maxAliasCount: 100 });
+      if (parsed === null) {
+        frontmatter = {};
+      } else if (typeof parsed === "object" && !Array.isArray(parsed)) {
+        frontmatter = parsed as Record<string, unknown>;
+      } else {
+        throw new Error("Frontmatter must contain a YAML object.");
+      }
+    }
+
+    callback(frontmatter);
+
+    const lineEnding = current.includes("\r\n") ? "\r\n" : "\n";
+    const serialized = stringifyYaml(frontmatter).trimEnd();
+    const yaml = serialized ? `${serialized.replaceAll("\n", lineEnding)}${lineEnding}` : "";
+    const body = info.exists ? current.slice(info.contentStart) : current;
+    const bom = current.startsWith("\ufeff") ? "\ufeff" : "";
+    await this.vault.modify(file, `${bom}---${lineEnding}${yaml}---${lineEnding}${body}`);
+  }
+
   generateMarkdownLink(_file: TFile, _sourcePath: string, _subpath = "", _alias = ""): string {
     throw new Error(
       "FileManager.generateMarkdownLink is not yet supported: this compatibility runtime does not read Obsidian link-format preferences.",

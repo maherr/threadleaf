@@ -32,14 +32,14 @@ assert.deepEqual(ledger.counts, {
   enums: 1,
   variables: 8,
   implemented: 90,
-  partial: 4,
+  partial: 5,
   unsupported: 0,
-  missing: 64,
+  missing: 63,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 513,
+  implementedObligations: 517,
 });
 assert.equal(ledger.factory.keys.length, 99);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -74,6 +74,7 @@ assert.deepEqual(
     ["EditorSuggest", "implemented"],
     ["Events", "implemented"],
     ["ExtraButtonComponent", "implemented"],
+    ["FileManager", "partial"],
     ["FileView", "implemented"],
     ["FuzzySuggestModal", "implemented"],
     ["getAllTags", "implemented"],

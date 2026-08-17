@@ -1450,6 +1450,58 @@
         ]
       }
     },
+    "FileManager": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "FileManager"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.file-manager-mutations.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.file-manager-mutations.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.file-manager-mutations.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.file-manager-mutations.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.file-manager-mutations.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "MetadataCache": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",

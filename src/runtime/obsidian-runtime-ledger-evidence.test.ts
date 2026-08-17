@@ -1453,6 +1453,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
   });
 
   /** @compatibility-test-id obsidian-runtime.vault-mutations.v1 */
+  /** @compatibility-test-id obsidian-runtime.file-manager-mutations.v1 */
   it('proves writable Vault mutations through require("obsidian")', async () => {
     await withTestDocument(async () => {
       const sandboxPath = await fs.mkdtemp(
@@ -1536,6 +1537,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             "class LedgerPlugin extends Plugin {",
             "  async onload() {",
             "    const vault = this.app.vault;",
+            "    const fileManager = this.app.fileManager;",
             '    const welcome = vault.getFileByPath("Welcome.md");',
             '    const canvas = vault.getFileByPath("Boards/Overview.canvas");',
             '    const boards = vault.getFolderByPath("Boards");',
@@ -1544,20 +1546,30 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             '    await vault.modify(created, "modified");',
             '    const createdBinary = await vault.createBinary("Mutation.bin", Uint8Array.from([1, 2]).buffer);',
             "    await vault.modifyBinary(createdBinary, Uint8Array.from([3, 4]).buffer);",
+            '    const managedBinary = await vault.createBinary("Managed.bin", Uint8Array.from([5]).buffer);',
             '    await vault.createFolder("Created folder");',
             '    await vault.append(welcome, "\\nappended");',
             '    const processed = await vault.process(welcome, (data) => data.replace("Welcome", "Ledger"));',
+            '    await fileManager.processFrontMatter(welcome, (frontmatter) => { frontmatter.kind = "file-manager"; frontmatter.processed = true; });',
+            "    const processedFrontmatterContent = await vault.read(welcome);",
+            '    const processedFrontmatter = processedFrontmatterContent.includes("kind: file-manager") && processedFrontmatterContent.includes("processed: true");',
             "    await vault.appendBinary(canvas, Uint8Array.from([254, 253]).buffer);",
             '    const copiedFile = await vault.copy(welcome, "Copies/Welcome.md");',
             '    const copiedFolder = await vault.copy(boards, "Copies/Boards");',
             '    await vault.rename(created, "Renamed.md");',
-            "    await vault.trash(created);",
+            '    const attachmentPath = await fileManager.getAvailablePathForAttachment("Mutation.bin", "Welcome.md");',
+            "    globalThis.confirm = () => true;",
+            "    const prompted = await fileManager.promptForDeletion(created);",
+            "    await fileManager.trashFile(managedBinary);",
             "    globalThis.__threadleafRuntimeLedgerVaultProbe = {",
             '      processed: processed.includes("Ledger") && processed.includes("appended"),',
+            "      processedFrontmatter,",
             "      copiedFile: copiedFile.path,",
             "      copiedFolder: copiedFolder.path,",
             '      createdFolder: vault.getFolderByPath("Created folder")?.path,',
-            '      trashed: vault.getFileByPath("Renamed.md") === null,',
+            "      attachmentPath,",
+            "      prompted,",
+            '      trashed: vault.getFileByPath("Renamed.md") === null && vault.getFileByPath("Managed.bin") === null,',
             "    };",
             "  }",
             "}",
@@ -1642,9 +1654,12 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
               .__threadleafRuntimeLedgerVaultProbe,
           ).toEqual({
             processed: true,
+            processedFrontmatter: true,
             copiedFile: "Copies/Welcome.md",
             copiedFolder: "Copies/Boards",
             createdFolder: "Created folder",
+            attachmentPath: "Mutation 1.bin",
+            prompted: true,
             trashed: true,
           });
           await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toContain(

@@ -468,6 +468,66 @@ describe("Obsidian FileManager compatibility wedge", () => {
     expect(promptForDeletion).toHaveBeenCalledWith(file);
   });
 
+  it("processes Markdown frontmatter through the vault revisioned write path", async () => {
+    const vault = await createVault({
+      "Notes/Frontmatter.md": "\ufeff---\r\ntitle: Old\r\nremove: true\r\n---\r\nBody\r\n",
+    });
+    const file = vault.getFileByPath("Notes/Frontmatter.md");
+    if (!file) {
+      throw new Error("Frontmatter fixture file was not discovered.");
+    }
+    const modify = vi.spyOn(vault, "modify").mockResolvedValue();
+
+    await new FileManager(vault).processFrontMatter(file, (frontmatter) => {
+      expect(frontmatter).toEqual({ title: "Old", remove: true });
+      frontmatter.title = "New";
+      frontmatter.tags = ["one", "two"];
+      delete frontmatter.remove;
+    });
+
+    expect(modify).toHaveBeenCalledWith(
+      file,
+      "\ufeff---\r\ntitle: New\r\ntags:\r\n  - one\r\n  - two\r\n---\r\nBody\r\n",
+    );
+  });
+
+  it("creates frontmatter for a Markdown file without a frontmatter block", async () => {
+    const vault = await createVault({ "No-frontmatter.md": "# Body\n" });
+    const file = vault.getFileByPath("No-frontmatter.md");
+    if (!file) {
+      throw new Error("No-frontmatter fixture file was not discovered.");
+    }
+    const modify = vi.spyOn(vault, "modify").mockResolvedValue();
+
+    await new FileManager(vault).processFrontMatter(file, (frontmatter) => {
+      frontmatter.kind = "created";
+    });
+
+    expect(modify).toHaveBeenCalledWith(file, "---\nkind: created\n---\n# Body\n");
+  });
+
+  it("rejects non-Markdown and non-object YAML without writing", async () => {
+    const vault = await createVault({
+      "image.png": "bytes",
+      "scalar.md": "---\n- one\n- two\n---\nBody\n",
+    });
+    const image = vault.getFileByPath("image.png");
+    const scalar = vault.getFileByPath("scalar.md");
+    if (!image || !scalar) {
+      throw new Error("Frontmatter rejection fixtures were not discovered.");
+    }
+    const modify = vi.spyOn(vault, "modify").mockResolvedValue();
+    const fileManager = new FileManager(vault);
+
+    await expect(fileManager.processFrontMatter(image, () => undefined)).rejects.toThrow(
+      "Markdown file",
+    );
+    await expect(fileManager.processFrontMatter(scalar, () => undefined)).rejects.toThrow(
+      "YAML object",
+    );
+    expect(modify).not.toHaveBeenCalled();
+  });
+
   it("createNewMarkdownFile creates an empty unique Markdown file inside the supplied folder", async () => {
     const vault = await createVault({
       "Notes/Topic.md": "existing",
