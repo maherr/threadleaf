@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 76 (75 public, 1 internal extra)
+- Factory keys: 78 (77 public, 1 internal extra)
 
 ## Export status
 
@@ -20,7 +20,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | AbstractTextComponent | class | implemented | d3e7b4b7f2ccfbae |
 | addIcon | function | missing | ec68d56929fc1f6d |
 | apiVersion | variable | missing | 9939efa4020032ad |
-| App | class | missing | b71058fef0a041bf |
+| App | class | implemented | b71058fef0a041bf |
 | arrayBufferToBase64 | function | missing | 6d32d259293c66cd |
 | arrayBufferToHex | function | missing | b08fc77997d83ccd |
 | base64ToArrayBuffer | function | missing | 62e0d860d41c4011 |
@@ -121,7 +121,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | RegExpValue | class | missing | edb0177eb288015b |
 | RelativeDateValue | class | missing | 3d0594b4e5ab24e2 |
 | removeIcon | function | missing | 1b1690db3c4ed092 |
-| RenderContext | class | missing | beb981213ad00faf |
+| RenderContext | class | implemented | beb981213ad00faf |
 | renderMatches | function | missing | f868e63e141ad46b |
 | renderMath | function | missing | bdf8f2074b169c02 |
 | renderResults | function | missing | 4dfb992b9bec08fd |
@@ -133,7 +133,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Scope | class | missing | cd031d650ae6bd69 |
 | SearchComponent | class | partial | 72938e4f2898847d |
 | SecretComponent | class | missing | f3133f6f9328e3cb |
-| SecretStorage | class | missing | cd03c227b70ca8e0 |
+| SecretStorage | class | implemented | cd03c227b70ca8e0 |
 | setIcon | function | missing | 74dab0a196e4515a |
 | Setting | class | implemented | 28f9e763ee1bc0e3 |
 | SettingGroup | class | missing | c78bde6786f4650c |

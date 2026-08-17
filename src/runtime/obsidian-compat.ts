@@ -2132,6 +2132,30 @@ function createInternalPlugins() {
   };
 }
 
+export class RenderContext {
+  hoverPopover: unknown | null = null;
+}
+
+export class SecretStorage extends Events {
+  private readonly secrets = new Map<string, string>();
+
+  setSecret(id: string, secret: string): void {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id)) {
+      throw new Error(`Invalid secret identifier: ${id}`);
+    }
+    this.secrets.set(id, secret);
+    this.trigger("changed", id);
+  }
+
+  getSecret(id: string): string | null {
+    return this.secrets.get(id) ?? null;
+  }
+
+  listSecrets(): string[] {
+    return [...this.secrets.keys()].sort((left, right) => left.localeCompare(right));
+  }
+}
+
 export class App {
   readonly vault: Vault;
   readonly fileManager: FileManager;
@@ -2144,6 +2168,10 @@ export class App {
   readonly keymap: Keymap;
   readonly scope: Scope;
   readonly plugins = new PluginManager();
+  lastEvent: unknown | null = null;
+  readonly renderContext = new RenderContext();
+  readonly secretStorage = new SecretStorage();
+  private readonly localStorageFallback = new Map<string, string>();
   private readonly pluginModals = new Map<string, Set<{ close(): void }>>();
 
   constructor(vault: Vault, commands: CommandRegistry, notices: NoticeBus) {
@@ -2247,6 +2275,77 @@ export class App {
     const color = document.defaultView?.getComputedStyle(probe).color.trim();
     probe.remove();
     return color || "#0072b2";
+  }
+
+  isDarkMode(): boolean {
+    if (typeof document === "undefined") {
+      return false;
+    }
+    return [document.documentElement, document.body].some((element) => {
+      if (!element) {
+        return false;
+      }
+      return (
+        element.dataset.theme === "dark" ||
+        element.classList.contains("theme-dark") ||
+        element.classList.contains("dark")
+      );
+    });
+  }
+
+  loadLocalStorage(key: string): unknown | null {
+    const serialized = this.readLocalStorageValue(key);
+    if (serialized === null) {
+      return null;
+    }
+    try {
+      return JSON.parse(serialized) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  saveLocalStorage(key: string, data: unknown | null): void {
+    if (data === null) {
+      this.writeLocalStorageValue(key, null);
+      return;
+    }
+    const serialized = JSON.stringify(data);
+    if (serialized === undefined) {
+      throw new Error(`Local storage value for ${key} is not JSON serializable.`);
+    }
+    this.writeLocalStorageValue(key, serialized);
+  }
+
+  private readLocalStorageValue(key: string): string | null {
+    try {
+      if (typeof globalThis.localStorage !== "undefined") {
+        return globalThis.localStorage.getItem(key);
+      }
+    } catch {
+      // Fall through to the renderer-lifetime fallback when storage is unavailable.
+    }
+    return this.localStorageFallback.get(key) ?? null;
+  }
+
+  private writeLocalStorageValue(key: string, value: string | null): void {
+    try {
+      if (typeof globalThis.localStorage !== "undefined") {
+        if (value === null) {
+          globalThis.localStorage.removeItem(key);
+        } else {
+          globalThis.localStorage.setItem(key, value);
+        }
+        return;
+      }
+    } catch {
+      // Fall through to the renderer-lifetime fallback when storage is unavailable.
+    }
+    if (value === null) {
+      this.localStorageFallback.delete(key);
+    } else {
+      this.localStorageFallback.set(key, value);
+    }
   }
 }
 
@@ -2493,8 +2592,10 @@ export interface ObsidianCompatibilityModule {
   PluginSettingTab: typeof PluginSettingTab;
   PopoverSuggest: typeof PopoverSuggest;
   ProgressBarComponent: typeof ProgressBarComponent;
+  RenderContext: typeof RenderContext;
   Scope: typeof Scope;
   SearchComponent: typeof SearchComponent;
+  SecretStorage: typeof SecretStorage;
   Setting: typeof Setting;
   SettingTab: typeof SettingTab;
   SliderComponent: typeof SliderComponent;
@@ -2975,8 +3076,10 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     PluginSettingTab,
     PopoverSuggest,
     ProgressBarComponent,
+    RenderContext,
     Scope,
     SearchComponent,
+    SecretStorage,
     Setting,
     SettingTab,
     SliderComponent,

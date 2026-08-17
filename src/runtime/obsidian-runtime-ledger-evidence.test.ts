@@ -150,6 +150,120 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.app-context.v1 */
+  it('proves App context, secret storage, theme, and local-storage behavior through require("obsidian")', async () => {
+    await withTestDocument(async () => {
+      const sandboxPath = await fs.mkdtemp(
+        path.join(os.tmpdir(), "threadleaf-runtime-ledger-app-"),
+      );
+      const pluginPath = path.join(sandboxPath, "app-ledger-fixture");
+      try {
+        await fs.mkdir(pluginPath, { recursive: true });
+        await fs.writeFile(
+          path.join(pluginPath, "manifest.json"),
+          JSON.stringify({
+            id: "app-ledger-fixture",
+            name: "App ledger fixture",
+            version: "1.0.0",
+          }),
+        );
+        await fs.writeFile(
+          path.join(pluginPath, "main.js"),
+          [
+            'const { App, Events, Plugin, RenderContext, SecretStorage } = require("obsidian");',
+            "class LedgerPlugin extends Plugin {",
+            "  async onload() {",
+            "    const changed = [];",
+            '    const eventRef = this.app.secretStorage.on("changed", (id) => changed.push(id));',
+            '    this.app.secretStorage.setSecret("ledger-token", "opaque-value");',
+            '    this.app.secretStorage.setSecret("ledger-token", "rotated-value");',
+            '    const secretValue = this.app.secretStorage.getSecret("ledger-token");',
+            "    const secretListBeforeOff = this.app.secretStorage.listSecrets();",
+            "    eventRef.off();",
+            '    this.app.secretStorage.setSecret("ledger-after-off", "later");',
+            "    let invalidSecretId = false;",
+            "    try {",
+            '      this.app.secretStorage.setSecret("Invalid ID", "rejected");',
+            "    } catch {",
+            "      invalidSecretId = true;",
+            "    }",
+            '    this.app.saveLocalStorage("ledger-settings", { enabled: true, count: 2 });',
+            '    const localStorageValue = this.app.loadLocalStorage("ledger-settings");',
+            '    this.app.saveLocalStorage("ledger-settings", null);',
+            '    const localStorageCleared = this.app.loadLocalStorage("ledger-settings") === null;',
+            "    let nonSerializable = false;",
+            "    try {",
+            '      this.app.saveLocalStorage("ledger-invalid", () => undefined);',
+            "    } catch {",
+            "      nonSerializable = true;",
+            "    }",
+            '    document.documentElement.dataset.theme = "dark";',
+            '    document.documentElement.classList.add("theme-dark");',
+            "    const dark = this.app.isDarkMode();",
+            '    document.documentElement.dataset.theme = "light";',
+            '    document.documentElement.classList.remove("theme-dark");',
+            '    document.body.classList.remove("theme-dark");',
+            "    const light = this.app.isDarkMode();",
+            "    globalThis.__threadleafRuntimeLedgerAppProbe = {",
+            "      appIsApp: this.app instanceof App,",
+            "      renderContextIsPublicClass: this.app.renderContext instanceof RenderContext,",
+            "      renderContextStartsEmpty: this.app.renderContext.hoverPopover === null,",
+            "      secretStorageIsPublicClass: this.app.secretStorage instanceof SecretStorage,",
+            "      secretStorageIsEvents: this.app.secretStorage instanceof Events,",
+            '      secretValueWasRotated: secretValue === "rotated-value",',
+            "      secretListBeforeOff,",
+            "      secretEventsBeforeOff: changed,",
+            "      secretEventsStopAfterOff: changed.length === 2,",
+            "      secretListAfterOff: this.app.secretStorage.listSecrets(),",
+            "      invalidSecretId,",
+            "      localStorageValue,",
+            "      localStorageCleared,",
+            "      nonSerializable,",
+            "      dark,",
+            "      light,",
+            "      lastEventStartsNull: this.app.lastEvent === null,",
+            "    };",
+            "  }",
+            "}",
+            "module.exports = LedgerPlugin;",
+            "",
+          ].join("\n"),
+        );
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerAppProbe?: unknown })
+              .__threadleafRuntimeLedgerAppProbe,
+          ).toEqual({
+            appIsApp: true,
+            renderContextIsPublicClass: true,
+            renderContextStartsEmpty: true,
+            secretStorageIsPublicClass: true,
+            secretStorageIsEvents: true,
+            secretValueWasRotated: true,
+            secretListBeforeOff: ["ledger-token"],
+            secretEventsBeforeOff: ["ledger-token", "ledger-token"],
+            secretEventsStopAfterOff: true,
+            secretListAfterOff: ["ledger-after-off", "ledger-token"],
+            invalidSecretId: true,
+            localStorageValue: { enabled: true, count: 2 },
+            localStorageCleared: true,
+            nonSerializable: true,
+            dark: true,
+            light: false,
+            lastEventStartsNull: true,
+          });
+        } finally {
+          await host.close();
+        }
+      } finally {
+        Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerAppProbe");
+        await fs.rm(sandboxPath, { recursive: true, force: true });
+      }
+    });
+  });
+
   /** @compatibility-test-id obsidian-runtime.utility-functions.v1 */
   it('proves public link and search utilities through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(

@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 30,
+  implemented: 33,
   partial: 12,
   unsupported: 0,
-  missing: 116,
+  missing: 113,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 300,
+  implementedObligations: 316,
 });
-assert.equal(ledger.factory.keys.length, 76);
+assert.equal(ledger.factory.keys.length, 78);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -57,6 +57,7 @@ assert.deepEqual(
   [
     ["AbstractInputSuggest", "implemented"],
     ["AbstractTextComponent", "implemented"],
+    ["App", "implemented"],
     ["BaseComponent", "implemented"],
     ["ButtonComponent", "implemented"],
     ["ColorComponent", "implemented"],
@@ -81,7 +82,9 @@ assert.deepEqual(
     ["prepareFuzzySearch", "implemented"],
     ["prepareSimpleSearch", "implemented"],
     ["ProgressBarComponent", "implemented"],
+    ["RenderContext", "implemented"],
     ["SearchComponent", "partial"],
+    ["SecretStorage", "implemented"],
     ["Setting", "implemented"],
     ["SettingTab", "partial"],
     ["SliderComponent", "implemented"],
