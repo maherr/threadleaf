@@ -2869,6 +2869,7 @@ export interface ObsidianCompatibilityModule {
   AbstractInputSuggest: typeof AbstractInputSuggest;
   AbstractTextComponent: typeof AbstractTextComponent;
   App: typeof App;
+  apiVersion: string;
   arrayBufferToBase64: typeof arrayBufferToBase64;
   arrayBufferToHex: typeof arrayBufferToHex;
   BaseComponent: typeof BaseComponent;
@@ -3054,6 +3055,9 @@ export function debounce<T extends unknown[], V>(
 
 const currentPlatform = process.platform;
 
+// biome-ignore lint/style/useConst: Obsidian exposes apiVersion as a mutable public binding.
+export let apiVersion = "1.13.7";
+
 export const Platform = Object.freeze({
   isDesktop: true,
   isMobile: false,
@@ -3069,6 +3073,30 @@ export const Platform = Object.freeze({
   isSafari: false,
   resourcePathPrefix: "file:///",
 });
+
+function parseApiVersion(version: string): [number, number, number] | null {
+  const match = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$/u.exec(version.trim());
+  if (!match) {
+    return null;
+  }
+  return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
+}
+
+export function requireApiVersion(version: string): boolean {
+  const requested = parseApiVersion(version);
+  const current = parseApiVersion(apiVersion);
+  if (!requested || !current) {
+    return false;
+  }
+  for (let index = 0; index < current.length; index += 1) {
+    const currentPart = current[index] ?? 0;
+    const requestedPart = requested[index] ?? 0;
+    if (currentPart !== requestedPart) {
+      return currentPart > requestedPart;
+    }
+  }
+  return true;
+}
 
 export interface TooltipOptions {
   placement?: "bottom" | "right" | "left" | "top";
@@ -3411,6 +3439,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     AbstractInputSuggest,
     AbstractTextComponent,
     App,
+    apiVersion,
     arrayBufferToBase64,
     arrayBufferToHex,
     BaseComponent,
@@ -3493,7 +3522,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Platform,
     prepareFuzzySearch,
     prepareSimpleSearch,
-    requireApiVersion: () => true,
+    requireApiVersion,
     removeIcon,
     sanitizeHTMLToDom,
     setIcon,

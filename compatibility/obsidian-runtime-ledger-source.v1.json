@@ -570,6 +570,32 @@
         ]
       }
     },
+    "apiVersion": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "apiVersion"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.api-version.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["api-version.pinned"],
+        "behaviors": [
+          {
+            "id": "api-version.pinned",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.api-version.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "App": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
@@ -5074,6 +5100,91 @@
             "evidence": [
               {
                 "id": "obsidian-runtime.platform.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "platform.isDesktopApp",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.platform.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "platform.isMobile",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.platform.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "platform.os",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.platform.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "requireApiVersion": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "requireApiVersion"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.api-version.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "api-version.equal",
+          "api-version.older",
+          "api-version.future",
+          "api-version.invalid"
+        ],
+        "behaviors": [
+          {
+            "id": "api-version.equal",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.api-version.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "api-version.older",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.api-version.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "api-version.future",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.api-version.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "api-version.invalid",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.api-version.v1",
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]

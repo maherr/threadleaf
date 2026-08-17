@@ -13,10 +13,10 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 76,
-    "partial": 10,
+    "implemented": 79,
+    "partial": 9,
     "unsupported": 0,
-    "missing": 72,
+    "missing": 70,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -28,6 +28,7 @@
       "AbstractInputSuggest",
       "AbstractTextComponent",
       "App",
+      "apiVersion",
       "arrayBufferToBase64",
       "arrayBufferToHex",
       "BaseComponent",
@@ -122,6 +123,7 @@
       "AbstractInputSuggest",
       "AbstractTextComponent",
       "App",
+      "apiVersion",
       "arrayBufferToBase64",
       "arrayBufferToHex",
       "BaseComponent",
@@ -363,21 +365,33 @@
       "exportId": "export:variable:apiVersion:9939efa4020032ad99680f2ee8412eb6f938d8ed68b122c5e19cf198ea4e86dd",
       "name": "apiVersion",
       "kind": "variable",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "9939efa4020032ad99680f2ee8412eb6f938d8ed68b122c5e19cf198ea4e86dd",
       "location": {
         "line": 400,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.api-version.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "apiVersion"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "api-version.pinned"
+      ],
+      "coveredBehaviorIds": [
+        "api-version.pinned"
+      ]
     },
     {
       "exportId": "export:class:App:b71058fef0a041bf6135e145ef8acaf3602a63bf1fb93a719c1f86dc049c8041",
@@ -3638,7 +3652,7 @@
       "exportId": "export:variable:Platform:ce92658397c816faa5ca84e482b7007f9254dcb82318595625c42245c74557c4",
       "name": "Platform",
       "kind": "variable",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "ce92658397c816faa5ca84e482b7007f9254dcb82318595625c42245c74557c4",
       "location": {
         "line": 4823,
@@ -3666,7 +3680,10 @@
         "platform.os"
       ],
       "coveredBehaviorIds": [
-        "platform.isDesktop"
+        "platform.isDesktop",
+        "platform.isDesktopApp",
+        "platform.isMobile",
+        "platform.os"
       ]
     },
     {
@@ -4229,21 +4246,39 @@
       "exportId": "export:function:requireApiVersion:0686387471c2904a41b047d06617804700a3090d42af57664bd036d52103305a",
       "name": "requireApiVersion",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "0686387471c2904a41b047d06617804700a3090d42af57664bd036d52103305a",
       "location": {
         "line": 5494,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.api-version.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "requireApiVersion"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "api-version.equal",
+        "api-version.older",
+        "api-version.future",
+        "api-version.invalid"
+      ],
+      "coveredBehaviorIds": [
+        "api-version.equal",
+        "api-version.older",
+        "api-version.future",
+        "api-version.invalid"
+      ]
     },
     {
       "exportId": "export:function:resolveSubpath:46690fc4ac8ecb442f227549c3ee3c1f0b688dd93bf5cb7fb44cc3f37ef4a2ec",

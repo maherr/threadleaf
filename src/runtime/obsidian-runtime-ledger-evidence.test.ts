@@ -46,6 +46,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
   /** @compatibility-test-id obsidian-runtime.component.v1 */
   /** @compatibility-test-id obsidian-runtime.plugin.v1 */
   /** @compatibility-test-id obsidian-runtime.platform.v1 */
+  /** @compatibility-test-id obsidian-runtime.api-version.v1 */
   /** @compatibility-test-id obsidian-runtime.normalize-path.v1 */
   it('delivers the bounded core slice through the real require("obsidian") binding', async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-"));
@@ -60,7 +61,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         [
-          'const { BaseComponent, Component, Plugin, Platform, normalizePath } = require("obsidian");',
+          'const { apiVersion, BaseComponent, Component, Plugin, Platform, normalizePath, requireApiVersion } = require("obsidian");',
           "class LedgerPlugin extends Plugin {",
           "  async onload() {",
           "    const base = new BaseComponent().setDisabled(true);",
@@ -106,6 +107,14 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "      componentIsComponent: parent instanceof Component,",
           "      pluginIsPlugin: this instanceof Plugin,",
           "      desktop: Platform.isDesktop === true,",
+          "      desktopApp: Platform.isDesktopApp === true,",
+          "      mobile: Platform.isMobile === false,",
+          "      linux: Platform.isLinux === true,",
+          "      apiVersion,",
+          '      apiVersionEqual: requireApiVersion("1.13.7"),',
+          '      apiVersionOlder: requireApiVersion("1.13.6"),',
+          '      apiVersionFuture: requireApiVersion("1.13.8"),',
+          '      apiVersionInvalid: requireApiVersion("not-a-version"),',
           '      normalized: normalizePath("\\\\Folder\\\\Note.md"),',
           '      normalizedLeading: normalizePath("//Folder/Note.md"),',
           '      normalizedEmpty: normalizePath(""),',
@@ -136,6 +145,14 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           componentIsComponent: true,
           pluginIsPlugin: true,
           desktop: true,
+          desktopApp: true,
+          mobile: true,
+          linux: true,
+          apiVersion: "1.13.7",
+          apiVersionEqual: true,
+          apiVersionOlder: true,
+          apiVersionFuture: false,
+          apiVersionInvalid: false,
           normalized: "Folder/Note.md",
           normalizedLeading: "Folder/Note.md",
           normalizedEmpty: "",

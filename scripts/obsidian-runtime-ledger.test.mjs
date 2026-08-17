@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 76,
-  partial: 10,
+  implemented: 79,
+  partial: 9,
   unsupported: 0,
-  missing: 72,
+  missing: 70,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
   implementedObligations: 433,
 });
-assert.equal(ledger.factory.keys.length, 92);
+assert.equal(ledger.factory.keys.length, 93);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -58,6 +58,7 @@ assert.deepEqual(
     ["AbstractInputSuggest", "implemented"],
     ["AbstractTextComponent", "implemented"],
     ["addIcon", "implemented"],
+    ["apiVersion", "implemented"],
     ["App", "implemented"],
     ["arrayBufferToBase64", "implemented"],
     ["arrayBufferToHex", "implemented"],
@@ -106,7 +107,7 @@ assert.deepEqual(
     ["parseFrontMatterTags", "implemented"],
     ["parseLinktext", "implemented"],
     ["parseYaml", "implemented"],
-    ["Platform", "partial"],
+    ["Platform", "implemented"],
     ["Plugin", "partial"],
     ["PluginSettingTab", "implemented"],
     ["PopoverSuggest", "implemented"],
@@ -115,6 +116,7 @@ assert.deepEqual(
     ["ProgressBarComponent", "implemented"],
     ["removeIcon", "implemented"],
     ["RenderContext", "implemented"],
+    ["requireApiVersion", "implemented"],
     ["sanitizeHTMLToDom", "implemented"],
     ["Scope", "implemented"],
     ["SearchComponent", "partial"],

@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 92 (91 public, 1 internal extra)
+- Factory keys: 93 (92 public, 1 internal extra)
 
 ## Export status
 
@@ -19,7 +19,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | AbstractInputSuggest | class | implemented | 1961df74c7585fcf |
 | AbstractTextComponent | class | implemented | d3e7b4b7f2ccfbae |
 | addIcon | function | implemented | ec68d56929fc1f6d |
-| apiVersion | variable | missing | 9939efa4020032ad |
+| apiVersion | variable | implemented | 9939efa4020032ad |
 | App | class | implemented | b71058fef0a041bf |
 | arrayBufferToBase64 | function | implemented | 6d32d259293c66cd |
 | arrayBufferToHex | function | implemented | b08fc77997d83ccd |
@@ -108,7 +108,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | parseLinktext | function | implemented | fd10e8b7ba73e829 |
 | parsePropertyId | function | missing | 260ec28552701cc8 |
 | parseYaml | function | implemented | 48af828ae472e2e3 |
-| Platform | variable | partial | ce92658397c816fa |
+| Platform | variable | implemented | ce92658397c816fa |
 | Plugin | class | partial | e771e8ff5a3f8cba |
 | PluginSettingTab | class | implemented | 0afb03b5ff995364 |
 | PopoverState | enum | missing | 1994d816d82c6a0c |
@@ -127,7 +127,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | renderResults | function | missing | 4dfb992b9bec08fd |
 | request | function | missing | bbd290f3567bac5f |
 | requestUrl | function | missing | e0c2b7ee43b9a78d |
-| requireApiVersion | function | missing | 0686387471c2904a |
+| requireApiVersion | function | implemented | 0686387471c2904a |
 | resolveSubpath | function | missing | 46690fc4ac8ecb44 |
 | sanitizeHTMLToDom | function | implemented | 1bdf091e2ab0377e |
 | Scope | class | implemented | cd031d650ae6bd69 |
