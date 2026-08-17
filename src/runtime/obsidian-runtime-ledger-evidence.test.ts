@@ -430,6 +430,82 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.binary-dom-utilities.v1 */
+  it('proves binary, DOM, locale, Markdown, and YAML utilities through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-binary-dom-utilities-"),
+    );
+    const pluginPath = path.join(sandboxPath, "binary-dom-utilities-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "binary-dom-utilities-ledger-fixture",
+          name: "Binary DOM utilities ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, arrayBufferToBase64, arrayBufferToHex, base64ToArrayBuffer, getLanguage, htmlToMarkdown, sanitizeHTMLToDom, stringifyYaml } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const input = new Uint8Array([0, 1, 2, 255]).buffer;",
+          "    const encoded = arrayBufferToBase64(input);",
+          '    const decoded = Array.from(new Uint8Array(base64ToArrayBuffer("AAEC/w==")));',
+          '    const fragment = sanitizeHTMLToDom("<div onclick=\\"bad()\\"><script>bad</script><a href=\\"javascript:bad()\\">Safe</a><span>OK</span></div>");',
+          '    const markdown = htmlToMarkdown("<h1>Title</h1><p>Body <strong>bold</strong></p>").trim();',
+          '    const yaml = stringifyYaml({ title: "Example", tags: ["alpha", "beta"] }).trim();',
+          '    const anchor = fragment.querySelector("a");',
+          "    globalThis.__threadleafRuntimeLedgerBinaryDomUtilitiesProbe = {",
+          "      base64: encoded,",
+          "      hex: arrayBufferToHex(input),",
+          "      decoded,",
+          '      languageIsString: typeof getLanguage() === "string" && getLanguage().length > 0,',
+          "      markdown,",
+          '      scriptRemoved: fragment.querySelector("script") === null,',
+          '      eventAttributeRemoved: fragment.querySelector("div").getAttribute("onclick") === null,',
+          '      unsafeHrefRemoved: anchor?.getAttribute("href") === null,',
+          '      textPreserved: fragment.textContent === "SafeOK",',
+          "      yaml,",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerBinaryDomUtilitiesProbe?: unknown })
+              .__threadleafRuntimeLedgerBinaryDomUtilitiesProbe,
+          ).toEqual({
+            base64: "AAEC/w==",
+            hex: "000102ff",
+            decoded: [0, 1, 2, 255],
+            languageIsString: true,
+            markdown: "# Title\n\nBody **bold**",
+            scriptRemoved: true,
+            eventAttributeRemoved: true,
+            unsafeHrefRemoved: true,
+            textPreserved: true,
+            yaml: "title: Example\ntags:\n  - alpha\n  - beta",
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerBinaryDomUtilitiesProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
   /** @compatibility-test-id obsidian-runtime.workspace-core.v1 */
   /** @compatibility-test-id obsidian-runtime.editor-core.v1 */

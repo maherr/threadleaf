@@ -21,9 +21,9 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | addIcon | function | missing | ec68d56929fc1f6d |
 | apiVersion | variable | missing | 9939efa4020032ad |
 | App | class | implemented | b71058fef0a041bf |
-| arrayBufferToBase64 | function | missing | 6d32d259293c66cd |
-| arrayBufferToHex | function | missing | b08fc77997d83ccd |
-| base64ToArrayBuffer | function | missing | 62e0d860d41c4011 |
+| arrayBufferToBase64 | function | implemented | 6d32d259293c66cd |
+| arrayBufferToHex | function | implemented | b08fc77997d83ccd |
+| base64ToArrayBuffer | function | implemented | 62e0d860d41c4011 |
 | BaseComponent | class | implemented | d5ca1a2d7335232a |
 | BasesEntry | class | missing | c2adff844b8f99f5 |
 | BasesEntryGroup | class | missing | 1593d0338da949ce |
@@ -63,11 +63,11 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | getFrontMatterInfo | function | missing | bc0a1032b37fb45b |
 | getIcon | function | missing | 68c885a5426e9933 |
 | getIconIds | function | missing | 1d6f1c811f777079 |
-| getLanguage | function | missing | bb51d9b13d4bc56f |
+| getLanguage | function | implemented | bb51d9b13d4bc56f |
 | getLinkpath | function | implemented | a0344dabcbd756f0 |
 | hexToArrayBuffer | function | missing | dd08182366ea08da |
 | HoverPopover | class | missing | d8787e67d7235c2c |
-| htmlToMarkdown | function | missing | 22ec65ef974aafbe |
+| htmlToMarkdown | function | implemented | 22ec65ef974aafbe |
 | HTMLValue | class | missing | 2f7862bd0bf0879d |
 | IconValue | class | missing | 16f7cb525be03222 |
 | ImageValue | class | missing | c20741072bf8a144 |
@@ -129,7 +129,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | requestUrl | function | missing | e0c2b7ee43b9a78d |
 | requireApiVersion | function | missing | 0686387471c2904a |
 | resolveSubpath | function | missing | 46690fc4ac8ecb44 |
-| sanitizeHTMLToDom | function | missing | 1bdf091e2ab0377e |
+| sanitizeHTMLToDom | function | implemented | 1bdf091e2ab0377e |
 | Scope | class | missing | cd031d650ae6bd69 |
 | SearchComponent | class | partial | 72938e4f2898847d |
 | SecretComponent | class | missing | f3133f6f9328e3cb |
@@ -142,7 +142,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | setTooltip | function | missing | d2b2dabab058f3d2 |
 | SliderComponent | class | implemented | d90844d55c39379d |
 | sortSearchResults | function | missing | b51b5d221f8562ad |
-| stringifyYaml | function | missing | 9fd7dc20723b04e0 |
+| stringifyYaml | function | implemented | 9fd7dc20723b04e0 |
 | StringValue | class | missing | 5a8c7f34710de2a3 |
 | stripHeading | function | missing | f21325fbff066d0b |
 | stripHeadingForLink | function | missing | 609f52c3520cfb71 |

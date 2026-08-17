@@ -13,10 +13,10 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 36,
+    "implemented": 43,
     "partial": 12,
     "unsupported": 0,
-    "missing": 110,
+    "missing": 103,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -416,61 +416,97 @@
       "exportId": "export:function:arrayBufferToBase64:6d32d259293c66cd68ba5685fd21eca8d2615f88f6f7d2851d04ac7c2d5eafb4",
       "name": "arrayBufferToBase64",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "6d32d259293c66cd68ba5685fd21eca8d2615f88f6f7d2851d04ac7c2d5eafb4",
       "location": {
         "line": 485,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "arrayBufferToBase64"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "binary.base64-encode"
+      ],
+      "coveredBehaviorIds": [
+        "binary.base64-encode"
+      ]
     },
     {
       "exportId": "export:function:arrayBufferToHex:b08fc77997d83ccde2ca04f796d57737ff5fb348824e0c690cc7ddedac543c95",
       "name": "arrayBufferToHex",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "b08fc77997d83ccde2ca04f796d57737ff5fb348824e0c690cc7ddedac543c95",
       "location": {
         "line": 488,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "arrayBufferToHex"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "binary.hex-encode"
+      ],
+      "coveredBehaviorIds": [
+        "binary.hex-encode"
+      ]
     },
     {
       "exportId": "export:function:base64ToArrayBuffer:62e0d860d41c4011db0cc753c4b6444fcb8da1a0fd0ee73532ca3b59ad6986cb",
       "name": "base64ToArrayBuffer",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "62e0d860d41c4011db0cc753c4b6444fcb8da1a0fd0ee73532ca3b59ad6986cb",
       "location": {
         "line": 491,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "base64ToArrayBuffer"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "binary.base64-decode"
+      ],
+      "coveredBehaviorIds": [
+        "binary.base64-decode"
+      ]
     },
     {
       "exportId": "export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb",
@@ -1845,21 +1881,33 @@
       "exportId": "export:function:getLanguage:bb51d9b13d4bc56fbcd5006df57e830739674f94c923b3e14eaec963e60e9b45",
       "name": "getLanguage",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "bb51d9b13d4bc56fbcd5006df57e830739674f94c923b3e14eaec963e60e9b45",
       "location": {
         "line": 3365,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getLanguage"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "language.non-empty-locale"
+      ],
+      "coveredBehaviorIds": [
+        "language.non-empty-locale"
+      ]
     },
     {
       "exportId": "export:function:getLinkpath:a0344dabcbd756f0444cff7b95e0dd970359ab7a394884bbba73802d554eeec5",
@@ -1943,21 +1991,33 @@
       "exportId": "export:function:htmlToMarkdown:22ec65ef974aafbe3c312f0e3eafecbdd2fd61b9409257d8591664a14c2b793c",
       "name": "htmlToMarkdown",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "22ec65ef974aafbe3c312f0e3eafecbdd2fd61b9409257d8591664a14c2b793c",
       "location": {
         "line": 3523,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "htmlToMarkdown"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "markdown.heading-and-strong"
+      ],
+      "coveredBehaviorIds": [
+        "markdown.heading-and-strong"
+      ]
     },
     {
       "exportId": "export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
@@ -3695,21 +3755,35 @@
       "exportId": "export:function:sanitizeHTMLToDom:1bdf091e2ab0377ef593916d56f9f04e430fe0e08bdcd5f419ea51424020629a",
       "name": "sanitizeHTMLToDom",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "1bdf091e2ab0377ef593916d56f9f04e430fe0e08bdcd5f419ea51424020629a",
       "location": {
         "line": 5525,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "sanitizeHTMLToDom"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "dom.remove-script",
+        "dom.remove-unsafe-attributes"
+      ],
+      "coveredBehaviorIds": [
+        "dom.remove-script",
+        "dom.remove-unsafe-attributes"
+      ]
     },
     {
       "exportId": "export:class:Scope:cd031d650ae6bd697d35a546d66560edde8222f97ce7636eebee02186c317824",
@@ -4217,21 +4291,33 @@
       "exportId": "export:function:stringifyYaml:9fd7dc20723b04e0ef64d5fec81cbba98142076f7cec864b52ada34bcc2b332d",
       "name": "stringifyYaml",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "9fd7dc20723b04e0ef64d5fec81cbba98142076f7cec864b52ada34bcc2b332d",
       "location": {
         "line": 6831,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "stringifyYaml"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "yaml.serialize-object"
+      ],
+      "coveredBehaviorIds": [
+        "yaml.serialize-object"
+      ]
     },
     {
       "exportId": "export:class:StringValue:5a8c7f34710de2a3b01f7f1c3a8c7467bf3319a7543cd8e832cda04e660fabf1",

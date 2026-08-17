@@ -132,6 +132,84 @@
         ]
       }
     },
+    "arrayBufferToBase64": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "arrayBufferToBase64"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["binary.base64-encode"],
+        "behaviors": [
+          {
+            "id": "binary.base64-encode",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "arrayBufferToHex": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "arrayBufferToHex"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["binary.hex-encode"],
+        "behaviors": [
+          {
+            "id": "binary.hex-encode",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "base64ToArrayBuffer": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "base64ToArrayBuffer"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["binary.base64-decode"],
+        "behaviors": [
+          {
+            "id": "binary.base64-decode",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "BaseComponent": {
       "implementation": {
         "source": "src/runtime/obsidian-components.ts",
@@ -3638,6 +3716,32 @@
         ]
       }
     },
+    "htmlToMarkdown": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "htmlToMarkdown"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["markdown.heading-and-strong"],
+        "behaviors": [
+          {
+            "id": "markdown.heading-and-strong",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "normalizePath": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
@@ -3689,6 +3793,32 @@
             "evidence": [
               {
                 "id": "obsidian-runtime.normalize-path.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "getLanguage": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getLanguage"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["language.non-empty-locale"],
+        "behaviors": [
+          {
+            "id": "language.non-empty-locale",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
@@ -3763,6 +3893,67 @@
             "evidence": [
               {
                 "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "sanitizeHTMLToDom": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "sanitizeHTMLToDom"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["dom.remove-script", "dom.remove-unsafe-attributes"],
+        "behaviors": [
+          {
+            "id": "dom.remove-script",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "dom.remove-unsafe-attributes",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "stringifyYaml": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "stringifyYaml"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.binary-dom-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["yaml.serialize-object"],
+        "behaviors": [
+          {
+            "id": "yaml.serialize-object",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.binary-dom-utilities.v1",
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
