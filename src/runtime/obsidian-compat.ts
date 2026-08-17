@@ -2704,6 +2704,7 @@ export class App {
 export class Plugin extends Component {
   readonly app: App;
   readonly manifest: PluginManifest;
+  settings?: unknown;
   private readonly commandReleases = new Map<string, () => void>();
 
   constructor(app: App, manifest: PluginManifest) {

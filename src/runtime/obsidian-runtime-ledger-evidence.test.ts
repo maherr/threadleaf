@@ -167,6 +167,150 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.plugin-surface.v1 */
+  it('proves the implemented Plugin surface through require("obsidian")', async () => {
+    await withTestDocument(async () => {
+      const sandboxPath = await fs.mkdtemp(
+        path.join(os.tmpdir(), "threadleaf-runtime-ledger-plugin-surface-"),
+      );
+      const vaultPath = path.join(sandboxPath, "vault");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "plugin-ledger-fixture");
+      try {
+        await fs.mkdir(pluginPath, { recursive: true });
+        await fs.writeFile(
+          path.join(pluginPath, "manifest.json"),
+          JSON.stringify({
+            id: "plugin-ledger-fixture",
+            name: "Plugin ledger fixture",
+            version: "1.0.0",
+          }),
+        );
+        await fs.writeFile(
+          path.join(pluginPath, "main.js"),
+          [
+            'const { App, EditorSuggest, ItemView, Plugin, PluginSettingTab, addIcon } = require("obsidian");',
+            "class LedgerPlugin extends Plugin {",
+            "  async onload() {",
+            "    await super.onload();",
+            "    const initialSettings = await this.loadData();",
+            '    if (initialSettings !== null) throw new Error("fixture data should start empty");',
+            "    this.settings = { enabled: true, runs: 1 };",
+            "    await this.saveData(this.settings);",
+            "    const persistedSettings = await this.loadData();",
+            '    addIcon("plugin-ledger-icon", "<path d=\\"M0 0h1v1z\\"/>");',
+            '    const ribbon = this.addRibbonIcon("plugin-ledger-icon", "Ledger", () => {});',
+            "    const status = this.addStatusBarItem();",
+            '    status.textContent = "Ready";',
+            '    const removedCommand = this.addCommand({ id: "removed-command", name: "Removed command", callback() {} });',
+            "    this.removeCommand(removedCommand.id);",
+            '    const activeCommand = this.addCommand({ id: "active-command", name: "Active command", callback() {} });',
+            "    const settingTab = new PluginSettingTab(this.app, this);",
+            "    this.addSettingTab(settingTab);",
+            '    this.registerView("plugin-ledger-view", (leaf) => new ItemView(leaf));',
+            '    this.registerExtensions([".ledger"], "plugin-ledger-view");',
+            '    const postProcessor = (element) => { element.querySelector("h1")?.setAttribute("data-plugin-ledger-post", "yes"); };',
+            "    const returnedPostProcessor = this.registerMarkdownPostProcessor(postProcessor, 3);",
+            '    const returnedCodeProcessor = this.registerMarkdownCodeBlockProcessor("ledger", (source, element) => { element.textContent = "code:" + source; }, 4);',
+            "    const editorExtension = { pluginLedgerExtension: true };",
+            "    this.registerEditorExtension(editorExtension);",
+            "    const editorSuggest = new (class extends EditorSuggest {})(this.app);",
+            "    this.registerEditorSuggest(editorSuggest);",
+            "    globalThis.__threadleafRuntimeLedgerPluginProbe = {",
+            "      appIsApp: this.app instanceof App,",
+            "      manifest: { id: this.manifest.id, name: this.manifest.name },",
+            "      settings: this.settings,",
+            "      persistedSettings,",
+            "      ribbon: { tagName: ribbon.tagName, title: ribbon.title, icon: ribbon.dataset.icon },",
+            "      statusText: status.textContent,",
+            "      activeCommand: { id: activeCommand.id, name: activeCommand.name },",
+            "      returnedPostProcessor: returnedPostProcessor === postProcessor,",
+            "      returnedCodeProcessor: returnedCodeProcessor.sortOrder === 4,",
+            "      editorExtensionRegistered: this.app.compatibility.getEditorExtensions().includes(editorExtension),",
+            "      editorSuggestApp: editorSuggest.app === this.app,",
+            "    };",
+            "  }",
+            "}",
+            "module.exports = LedgerPlugin;",
+            "",
+          ].join("\n"),
+        );
+
+        const host = new PluginHost(vaultPath);
+        try {
+          const loaded = await host.loadAuthorizedPlugin(
+            await testConstructionDispatch(pluginPath),
+          );
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerPluginProbe?: unknown })
+              .__threadleafRuntimeLedgerPluginProbe,
+          ).toEqual({
+            appIsApp: true,
+            manifest: { id: "plugin-ledger-fixture", name: "Plugin ledger fixture" },
+            settings: { enabled: true, runs: 1 },
+            persistedSettings: { enabled: true, runs: 1 },
+            ribbon: { tagName: "BUTTON", title: "Ledger", icon: "plugin-ledger-icon" },
+            statusText: "Ready",
+            activeCommand: {
+              id: "plugin-ledger-fixture:active-command",
+              name: "Plugin ledger fixture: Active command",
+            },
+            returnedPostProcessor: true,
+            returnedCodeProcessor: true,
+            editorExtensionRegistered: true,
+            editorSuggestApp: true,
+          });
+          expect(host.app.compatibility.snapshot()).toEqual({
+            editorSuggests: 1,
+            extensions: [{ extension: "ledger", viewType: "plugin-ledger-view" }],
+            markdownPostProcessors: 2,
+            ribbonItems: 1,
+            settingTabs: 1,
+            settingTabPluginIds: ["plugin-ledger-fixture"],
+            statusBarItems: 1,
+            viewTypes: ["plugin-ledger-view"],
+          });
+          expect(loaded.commands.map(({ id }) => id)).toEqual([
+            "plugin-ledger-fixture:active-command",
+          ]);
+          expect(
+            loaded.events.some(({ message }) =>
+              message.includes("Editor extensions are registered but unavailable"),
+            ),
+          ).toBe(true);
+          expect(JSON.parse(await fs.readFile(path.join(pluginPath, "data.json"), "utf8"))).toEqual(
+            { enabled: true, runs: 1 },
+          );
+
+          const projection = await host.renderMarkdownProjection(
+            "plugin-ledger-fixture",
+            "Welcome.md",
+            "# Ledger\n\n```ledger\nhello\n```",
+          );
+          expect(projection.markdownProjection?.html).toContain("code:hello");
+          expect(projection.markdownProjection?.html).toContain('data-plugin-ledger-post="yes"');
+
+          await host.unloadPlugin();
+          expect(host.app.compatibility.snapshot()).toEqual({
+            editorSuggests: 0,
+            extensions: [],
+            markdownPostProcessors: 0,
+            ribbonItems: 0,
+            settingTabs: 0,
+            settingTabPluginIds: [],
+            statusBarItems: 0,
+            viewTypes: [],
+          });
+          expect((await host.getSnapshot()).commands).toEqual([]);
+        } finally {
+          await host.close();
+        }
+      } finally {
+        Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerPluginProbe");
+        await fs.rm(sandboxPath, { recursive: true, force: true });
+      }
+    });
+  });
+
   /** @compatibility-test-id obsidian-runtime.app-context.v1 */
   it('proves App context, secret storage, theme, and local-storage behavior through require("obsidian")', async () => {
     await withTestDocument(async () => {
