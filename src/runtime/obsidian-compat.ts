@@ -2801,6 +2801,12 @@ export class Plugin extends Component {
 
   async onload(): Promise<void> {}
 
+  onUserEnable(): void {}
+
+  onExternalSettingsChange(): unknown {
+    return undefined;
+  }
+
   async onunload(): Promise<void> {}
 
   addCommand(command: Command): Command {

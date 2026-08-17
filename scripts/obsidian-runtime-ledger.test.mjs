@@ -31,15 +31,15 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 88,
-  partial: 6,
+  implemented: 89,
+  partial: 5,
   unsupported: 0,
   missing: 64,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 468,
+  implementedObligations: 471,
 });
 assert.equal(ledger.factory.keys.length, 99);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -128,7 +128,7 @@ assert.deepEqual(
     ["SecretStorage", "implemented"],
     ["setIcon", "implemented"],
     ["Setting", "implemented"],
-    ["SettingTab", "partial"],
+    ["SettingTab", "implemented"],
     ["setTooltip", "implemented"],
     ["SliderComponent", "implemented"],
     ["sortSearchResults", "implemented"],

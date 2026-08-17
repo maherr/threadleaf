@@ -138,7 +138,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Setting | class | implemented | 28f9e763ee1bc0e3 |
 | SettingGroup | class | missing | c78bde6786f4650c |
 | SettingPage | class | missing | 731418280376fc92 |
-| SettingTab | class | partial | b685ce410ff8ca87 |
+| SettingTab | class | implemented | b685ce410ff8ca87 |
 | setTooltip | function | implemented | d2b2dabab058f3d2 |
 | SliderComponent | class | implemented | d90844d55c39379d |
 | sortSearchResults | function | implemented | b51b5d221f8562ad |

@@ -3241,6 +3241,15 @@
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
+          },
+          {
+            "signatureHash": "33f7de12dc5faced58c8aacd6a071c14a944ae8c5b56a16514c199ffd3c7de58",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
           }
         ]
       }
@@ -4744,6 +4753,24 @@
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
+          },
+          {
+            "signatureHash": "733bdde7c4f4b1edec18264eb1e6a45b9577e27bae319ae6a802c037612e20c3",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.plugin-surface.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "c490c68a67066caf50933fd52ebe759e09825f7ab53455569236ac0f2972fff0",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.plugin-surface.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
           }
         ]
       }
@@ -5819,7 +5846,11 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": ["search-render.highlight-ranges", "search-render.plain-text", "search-render.offset"],
+        "requiredBehaviorIds": [
+          "search-render.highlight-ranges",
+          "search-render.plain-text",
+          "search-render.offset"
+        ],
         "behaviors": [
           {
             "id": "search-render.highlight-ranges",
