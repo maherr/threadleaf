@@ -31,7 +31,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | BasesView | class | missing | 64c9be20c2cc3198 |
 | BasesViewConfig | class | missing | 430e1421ac6a4cb4 |
 | BooleanValue | class | missing | fdd077f4df28f630 |
-| ButtonComponent | class | missing | 3329c8e457d23c16 |
+| ButtonComponent | class | partial | 3329c8e457d23c16 |
 | CapacitorAdapter | class | missing | b468049f7adeaf0c |
 | ColorComponent | class | missing | aa471211ee3a3891 |
 | Component | class | partial | 66c65c8e55598f6c |
@@ -41,7 +41,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | debounce | function | missing | a72e0eb10fc8a651 |
 | displayTooltip | function | missing | dee2b380f1fef0a9 |
 | DisplayValueComponent | class | missing | 8eadc4fafb416556 |
-| DropdownComponent | class | missing | 563d13fef3a6b00c |
+| DropdownComponent | class | implemented | 563d13fef3a6b00c |
 | DurationValue | class | missing | 1b6e3eccbd6b278b |
 | EditableFileView | class | missing | c32178dc1207763b |
 | Editor | class | partial | 31acadd4b10e478b |
@@ -135,12 +135,12 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | SecretComponent | class | missing | f3133f6f9328e3cb |
 | SecretStorage | class | missing | cd03c227b70ca8e0 |
 | setIcon | function | missing | 74dab0a196e4515a |
-| Setting | class | missing | 28f9e763ee1bc0e3 |
+| Setting | class | partial | 28f9e763ee1bc0e3 |
 | SettingGroup | class | missing | c78bde6786f4650c |
 | SettingPage | class | missing | 731418280376fc92 |
 | SettingTab | class | missing | b685ce410ff8ca87 |
 | setTooltip | function | missing | d2b2dabab058f3d2 |
-| SliderComponent | class | missing | d90844d55c39379d |
+| SliderComponent | class | partial | d90844d55c39379d |
 | sortSearchResults | function | missing | b51b5d221f8562ad |
 | stringifyYaml | function | missing | 9fd7dc20723b04e0 |
 | StringValue | class | missing | 5a8c7f34710de2a3 |
@@ -151,11 +151,11 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | TagValue | class | missing | c6c6bafd2fd50797 |
 | Tasks | class | missing | 7471c3f0a015a76d |
 | TextAreaComponent | class | missing | 82022a25c1d9b869 |
-| TextComponent | class | missing | 4f2a68c9738f82e5 |
+| TextComponent | class | implemented | 4f2a68c9738f82e5 |
 | TextFileView | class | partial | 0a4a4ba88dddacf0 |
 | TFile | class | implemented | 059690fe62a6783f |
 | TFolder | class | implemented | 46f08a943675f948 |
-| ToggleComponent | class | missing | a39eaf18ee6900de |
+| ToggleComponent | class | implemented | a39eaf18ee6900de |
 | UrlValue | class | missing | 23e0604a73cec0f1 |
 | Value | class | missing | 7c58c01f8b955627 |
 | ValueComponent | class | missing | 529ce7aae6a57c84 |

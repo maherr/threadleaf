@@ -28,13 +28,13 @@
     {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 96,
+      "line": 102,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 95,
+      "line": 101,
       "status": "positive"
     },
     {
@@ -59,6 +59,12 @@
       "id": "obsidian-runtime.render-views.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
       "line": 343,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.settings-components.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 502,
       "status": "positive"
     },
     {

@@ -498,4 +498,184 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });
+
+  /** @compatibility-test-id obsidian-runtime.settings-components.v1 */
+  it('proves DOM-backed settings components through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-settings-"),
+    );
+    const pluginPath = path.join(sandboxPath, "settings-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "settings-ledger-fixture",
+          name: "Settings ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { ButtonComponent, DropdownComponent, Plugin, Setting, SliderComponent, TextComponent, ToggleComponent } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const root = document.createElement("main");',
+          "    document.body.append(root);",
+          "    const textChanges = [];",
+          "    const dropdownChanges = [];",
+          "    const toggleChanges = [];",
+          "    const sliderChanges = [];",
+          "    let buttonClicks = 0;",
+          "    let thenSame = false;",
+          "    const setting = new Setting(root);",
+          '    setting.setName("Initial name");',
+          "    const nameFragment = document.createDocumentFragment();",
+          '    nameFragment.append("Settings fixture");',
+          "    setting.setName(nameFragment);",
+          '    setting.setDesc("A settings fixture").setClass("fixture-setting").setTooltip("Setting tooltip").setHeading().setVisibility(true);',
+          "    setting.then((value) => { thenSame = value === setting; });",
+          "    let text, toggle, dropdown, slider, button, extra;",
+          '    setting.addText((component) => { text = component.setValue("draft").setPlaceholder("placeholder").onChange((value) => textChanges.push(value)); });',
+          '    text.inputEl.value = "typed";',
+          '    text.inputEl.dispatchEvent(new text.inputEl.ownerDocument.defaultView.Event("input", { bubbles: true }));',
+          '    setting.addToggle((component) => { toggle = component.setValue(false).setTooltip("Toggle tooltip").onChange((value) => toggleChanges.push(value)); });',
+          "    toggle.onClick();",
+          '    setting.addDropdown((component) => { dropdown = component.addOption("one", "One").addOptions({ two: "Two" }).setValue("two").onChange((value) => dropdownChanges.push(value)); });',
+          '    dropdown.selectEl.dispatchEvent(new dropdown.selectEl.ownerDocument.defaultView.Event("change", { bubbles: true }));',
+          "    dropdown.setDisabled(true);",
+          "    const dropdownDisabled = dropdown.selectEl.disabled;",
+          "    dropdown.setDisabled(false);",
+          "    setting.addSlider((component) => { slider = component.setLimits(0, 10, 1).setValue(3).setInstant(true).setDynamicTooltip().onChange((value) => sliderChanges.push(value)); });",
+          '    slider.sliderEl.value = "7";',
+          '    slider.sliderEl.dispatchEvent(new slider.sliderEl.ownerDocument.defaultView.Event("input", { bubbles: true }));',
+          "    slider.showTooltip();",
+          '    setting.addButton((component) => { button = component.setButtonText("Run").setCta().setWarning().setTooltip("Button tooltip").setIcon("check").setClass("fixture-button").onClick(() => buttonClicks += 1); });',
+          "    button.buttonEl.click();",
+          "    button.removeCta();",
+          "    button.setDisabled(true);",
+          '    setting.addExtraButton((component) => { extra = component.setTooltip("Extra tooltip").setIcon("x").onClick(() => buttonClicks += 10); });',
+          "    const beforeClear = {",
+          "      settingIsSetting: setting instanceof Setting,",
+          "      textIsText: text instanceof TextComponent,",
+          "      toggleIsToggle: toggle instanceof ToggleComponent,",
+          "      dropdownIsDropdown: dropdown instanceof DropdownComponent,",
+          "      sliderIsSlider: slider instanceof SliderComponent,",
+          "      buttonIsButton: button instanceof ButtonComponent,",
+          "      name: setting.nameEl.textContent,",
+          "      desc: setting.descEl.textContent,",
+          "      settingClass: setting.settingEl.className,",
+          '      heading: setting.settingEl.classList.contains("setting-item-heading"),',
+          "      hidden: setting.settingEl.hidden,",
+          "      componentCount: setting.components.length,",
+          "      textValue: text.getValue(),",
+          "      textPlaceholder: text.inputEl.placeholder,",
+          "      textChanges,",
+          "      toggleValue: toggle.getValue(),",
+          "      toggleTooltip: toggle.toggleEl.title,",
+          "      toggleChanges,",
+          "      dropdownValue: dropdown.getValue(),",
+          "      dropdownOptions: [...dropdown.selectEl.options].map((option) => [option.value, option.textContent]),",
+          "      dropdownDisabled,",
+          "      dropdownChanges,",
+          "      sliderValue: slider.getValue(),",
+          "      sliderPretty: slider.getValuePretty(),",
+          "      sliderLimits: [slider.sliderEl.min, slider.sliderEl.max, slider.sliderEl.step],",
+          "      sliderTooltip: slider.sliderEl.title,",
+          "      sliderChanges,",
+          "      buttonText: button.buttonEl.textContent,",
+          "      buttonTitle: button.buttonEl.title,",
+          "      buttonClass: button.buttonEl.className,",
+          "      buttonDisabled: button.buttonEl.disabled,",
+          "      extraClass: extra.extraSettingsEl.className,",
+          "      extraTitle: extra.extraSettingsEl.title,",
+          "      buttonClicks,",
+          "      thenSame,",
+          "    };",
+          "    setting.setDisabled(true);",
+          '    const settingDisabled = setting.settingEl.classList.contains("is-disabled");',
+          "    setting.setDisabled(false);",
+          "    setting.clear();",
+          "    globalThis.__threadleafRuntimeLedgerSettingsProbe = {",
+          "      beforeClear,",
+          "      settingDisabled,",
+          "      afterClear: {",
+          "        componentCount: setting.components.length,",
+          "        name: setting.nameEl.textContent,",
+          "        desc: setting.descEl.textContent,",
+          "        controls: setting.controlEl.childElementCount,",
+          "      },",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerSettingsProbe?: unknown })
+              .__threadleafRuntimeLedgerSettingsProbe,
+          ).toEqual({
+            beforeClear: {
+              settingIsSetting: true,
+              textIsText: true,
+              toggleIsToggle: true,
+              dropdownIsDropdown: true,
+              sliderIsSlider: true,
+              buttonIsButton: true,
+              name: "Settings fixture",
+              desc: "A settings fixture",
+              settingClass: "setting-item fixture-setting setting-item-heading",
+              heading: true,
+              hidden: false,
+              componentCount: 6,
+              textValue: "typed",
+              textPlaceholder: "placeholder",
+              textChanges: ["typed"],
+              toggleValue: true,
+              toggleTooltip: "Toggle tooltip",
+              toggleChanges: [true],
+              dropdownValue: "two",
+              dropdownOptions: [
+                ["one", "One"],
+                ["two", "Two"],
+              ],
+              dropdownDisabled: true,
+              dropdownChanges: ["two"],
+              sliderValue: 7,
+              sliderPretty: "7",
+              sliderLimits: ["0", "10", "1"],
+              sliderTooltip: "7",
+              sliderChanges: [7],
+              buttonText: "",
+              buttonTitle: "Button tooltip",
+              buttonClass: "mod-warning fixture-button",
+              buttonDisabled: true,
+              extraClass: "clickable-icon extra-setting-button",
+              extraTitle: "Extra tooltip",
+              buttonClicks: 1,
+              thenSame: true,
+            },
+            settingDisabled: true,
+            afterClear: {
+              componentCount: 0,
+              name: "",
+              desc: "",
+              controls: 0,
+            },
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerSettingsProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
 });
