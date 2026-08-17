@@ -21,7 +21,7 @@
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 517
+    "implementedObligations": 518
   },
   "factory": {
     "keys": [
@@ -1690,13 +1690,15 @@
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
-        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:0808bfca4b24b309352298b8790661a311d77e25f9ea6819fcabe96a1575515e"
       ],
       "coveredObligationSignatureHashes": [
         "d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
         "da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
         "909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
-        "2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+        "2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff",
+        "0808bfca4b24b309352298b8790661a311d77e25f9ea6819fcabe96a1575515e"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -10267,13 +10269,15 @@
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
         "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
-        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff",
+        "obligation:export:class:FileManager:f131be3eb6de3df2bf16b2b2a16c9aff3c704768324dbc2ff6963eabb10a44de:0808bfca4b24b309352298b8790661a311d77e25f9ea6819fcabe96a1575515e"
       ],
       "coveredObligationSignatureHashes": [
         "d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
         "da1d3086cb16a554e4ac26802977d6ec6ee7c56ff229288573e2c1f0de2cf5eb",
         "909e60e6bdec2655d9c7402fe3b195f5db2f56568ae2c539723365cedc167fbc",
-        "2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff"
+        "2f7e99a7e86768c80816a1b068a85f2b603b925c5e007d64dd7e41ad6df040ff",
+        "0808bfca4b24b309352298b8790661a311d77e25f9ea6819fcabe96a1575515e"
       ]
     },
     {

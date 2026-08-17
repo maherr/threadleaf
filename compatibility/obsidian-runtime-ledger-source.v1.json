@@ -1498,6 +1498,15 @@
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
+          },
+          {
+            "signatureHash": "0808bfca4b24b309352298b8790661a311d77e25f9ea6819fcabe96a1575515e",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.file-manager-mutations.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
           }
         ]
       }

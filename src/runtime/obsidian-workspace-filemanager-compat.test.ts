@@ -371,8 +371,9 @@ describe("Obsidian workspace compatibility wedge", () => {
 });
 
 describe("Obsidian FileManager compatibility wedge", () => {
-  it("honestly refuses preference-backed path and Markdown-link helpers until the real preferences are available", async () => {
+  it("refuses preference-backed parent selection but generates configured Markdown links", async () => {
     const vault = await createVault({
+      ".obsidian/app.json": JSON.stringify({ newLinkFormat: "shortest" }),
       "Notes/Current.md": "current",
       "Notes/Target.md": "target",
     });
@@ -384,10 +385,29 @@ describe("Obsidian FileManager compatibility wedge", () => {
     const getConfig = vi.spyOn(vault, "getConfig").mockReturnValue("fabricated preference");
 
     expect(() => fileManager.getNewFileParent("Notes/Current.md")).toThrow("not yet supported");
-    expect(() => fileManager.generateMarkdownLink(file, "Notes/Current.md")).toThrow(
-      "not yet supported",
+    expect(fileManager.generateMarkdownLink(file, "Notes/Current.md", "#Heading", "Alias")).toBe(
+      "[[Target#Heading|Alias]]",
     );
     expect(getConfig).not.toHaveBeenCalled();
+  });
+
+  it("generates relative Markdown links with encoded paths when the vault requests Markdown links", async () => {
+    const vault = await createVault({
+      ".obsidian/app.json": JSON.stringify({
+        newLinkFormat: "relative",
+        useMarkdownLinks: true,
+      }),
+      "Notes/Current.md": "current",
+      "Assets/Target file.pdf": "target",
+    });
+    const file = vault.getFileByPath("Assets/Target file.pdf");
+    if (!file) {
+      throw new Error("Markdown-link target fixture was not discovered.");
+    }
+
+    expect(new FileManager(vault).generateMarkdownLink(file, "Notes/Current.md", "#page=2")).toBe(
+      "[Target file.pdf](../Assets/Target%20file.pdf#page=2)",
+    );
   });
 
   it("visibly refuses rename when link-bearing vault files could require Obsidian preference-controlled rewrites", async () => {

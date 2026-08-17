@@ -1177,6 +1177,19 @@ export class Vault extends Events {
   }
 }
 
+function readVaultAppSettings(vault: Vault): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(
+      readFileSync(path.join(vault.rootPath, vault.configDir, "app.json"), "utf8"),
+    );
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 export class FileManager {
   readonly vault: Vault;
 
@@ -1264,10 +1277,29 @@ export class FileManager {
     await this.vault.modify(file, `${bom}---${lineEnding}${yaml}---${lineEnding}${body}`);
   }
 
-  generateMarkdownLink(_file: TFile, _sourcePath: string, _subpath = "", _alias = ""): string {
-    throw new Error(
-      "FileManager.generateMarkdownLink is not yet supported: this compatibility runtime does not read Obsidian link-format preferences.",
-    );
+  generateMarkdownLink(file: TFile, sourcePath: string, subpath = "", alias = ""): string {
+    if (file.vault !== this.vault) {
+      throw new Error("Markdown links require a file from the active compatibility vault.");
+    }
+    const metadata = new MetadataCache(this.vault);
+    const settings = readVaultAppSettings(this.vault);
+    const useMarkdownLinks = settings.useMarkdownLinks === true;
+    const target = metadata.fileToLinktext(file, sourcePath, !useMarkdownLinks);
+    const destination = `${target}${subpath}`;
+    if (!useMarkdownLinks) {
+      return alias ? `[[${destination}|${alias}]]` : `[[${destination}]]`;
+    }
+
+    const encodedPath = target
+      .split("/")
+      .map((segment) =>
+        segment === "." || segment === ".." ? segment : encodeURIComponent(segment),
+      )
+      .join("/");
+    const display =
+      alias || (file.extension.toLocaleLowerCase("en-US") === "md" ? file.basename : file.name);
+    const escapedDisplay = display.replaceAll("\\", "\\\\").replaceAll("]", "\\]");
+    return `[${escapedDisplay}](${encodedPath}${subpath})`;
   }
 
   async createNewMarkdownFile(parent: TFolder, name: string): Promise<TFile> {
