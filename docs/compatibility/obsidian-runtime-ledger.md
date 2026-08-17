@@ -48,7 +48,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | editorEditorField | variable | missing | 916f430eb29e5f68 |
 | editorInfoField | variable | missing | 3b001a5075d8b718 |
 | editorLivePreviewField | variable | missing | 9dc2e8d15892552f |
-| EditorSuggest | class | missing | b03c36d2fa50ced5 |
+| EditorSuggest | class | implemented | b03c36d2fa50ced5 |
 | editorViewField | variable | missing | 576bc7a8290cb120 |
 | Events | class | implemented | 69b49be903499033 |
 | ExtraButtonComponent | class | implemented | 60577a4b3a5c4ed2 |
@@ -57,7 +57,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | FileValue | class | missing | 90a3b3e1fcd40461 |
 | FileView | class | partial | 1a7d777aaddc3cb1 |
 | finishRenderMath | function | missing | 58b4e9583b344203 |
-| FuzzySuggestModal | class | missing | 042ca80827cde1a8 |
+| FuzzySuggestModal | class | implemented | 042ca80827cde1a8 |
 | getAllTags | function | implemented | c253ffb6b75bcc9e |
 | getBlobArrayBuffer | function | missing | 36e0f8e9725fc3ae |
 | getFrontMatterInfo | function | missing | bc0a1032b37fb45b |
@@ -85,12 +85,12 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | MarkdownEditView | class | missing | b641199f259b1459 |
 | MarkdownPreviewRenderer | class | missing | c2230cc5f92f968f |
 | MarkdownPreviewView | class | missing | d2b4b65cecca9dfd |
-| MarkdownRenderChild | class | missing | 96bd6907c45bbddb |
+| MarkdownRenderChild | class | implemented | 96bd6907c45bbddb |
 | MarkdownRenderer | class | missing | b1aa10784da3ab86 |
 | MarkdownView | class | partial | dae51444710c4853 |
-| Menu | class | missing | 0a7cec2e1715d55b |
-| MenuItem | class | missing | 4b0f05262839c353 |
-| MenuSeparator | class | missing | 8d76cd93d0b4b14a |
+| Menu | class | implemented | 0a7cec2e1715d55b |
+| MenuItem | class | implemented | 4b0f05262839c353 |
+| MenuSeparator | class | partial | 8d76cd93d0b4b14a |
 | MetadataCache | class | implemented | 4f2d6786f29d03b5 |
 | Modal | class | missing | 0ecda97644af4e27 |
 | moment | variable | missing | 9ee051521ccd8991 |
@@ -130,7 +130,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | requireApiVersion | function | missing | 0686387471c2904a |
 | resolveSubpath | function | missing | 46690fc4ac8ecb44 |
 | sanitizeHTMLToDom | function | implemented | 1bdf091e2ab0377e |
-| Scope | class | missing | cd031d650ae6bd69 |
+| Scope | class | implemented | cd031d650ae6bd69 |
 | SearchComponent | class | partial | 72938e4f2898847d |
 | SecretComponent | class | missing | f3133f6f9328e3cb |
 | SecretStorage | class | implemented | cd03c227b70ca8e0 |

@@ -3554,6 +3554,457 @@
         ]
       }
     },
+    "EditorSuggest": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "EditorSuggest"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.ui-interaction-classes.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "c4e1cbd6c591a787c8fc57d23de3c373b8411283e169c437e2f9dc96fb020bf7",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "ddbc5278186dc2d9af025da7a59a9dc47db8ccb7b6e8b6ad53205021427b2fc3",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "dcf06b33c837e92186ba5b536e72afab521a6df43380ac00aa7fdb8c9c427566",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "dd7e921b6f13fd883fe67f54dae9b2a9fe7de7cebd52d517b96070a4d6e6529a",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "ad541661a3a115ad7d02d8cdd3bcf16318ca35e55592ee31de09580dda175773",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "FuzzySuggestModal": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "FuzzySuggestModal"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.ui-interaction-classes.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "133ff4578bfdffe0b93b2073be7983ede7cb6f0a50bb9fdd446247f7e240df1a",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "5e7ca359eb2156c3f887f72dca696f09cb135f76d9e0b951da82645e14ef6512",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "f05ca84e4fc0067daa453976ec1f630c28a0c800bfb1f547645b17abfe001cf4",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "bc4a746c8cb53270030d48c5c03f9499da5bc96c45725da1eb1532248e76b008",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "7a06d2ef4a74f2cb495be0abcfc2d1575f1d10c244f7377760c94834e82861b5",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "6628d04cf5005cc0e331b8e6f50124e9e49defe5c54ce59cb36f059299261142",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "MarkdownRenderChild": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "MarkdownRenderChild"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.ui-interaction-classes.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Menu": {
+      "implementation": {
+        "source": "src/runtime/obsidian-menu-compat.ts",
+        "exportName": "Menu"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.ui-interaction-classes.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "aa2e84c1045c9c884581137eb6ccc6a66476eb0b40ae56fcf47c92267b307554",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "29daa6ccbe26f37be7404b01fb0bcf64cb23a5f51e55d780c6a09dd8a333b916",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "572c9e493103150ccc5451ee61e872888c955922480700b3628b68d1ca47479e",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "440d4a27346cdafbd4f29684e15b3f8cd277e3b69a0ab46701dbf6551afeb148",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "480496bbdb89efd2c2e51f7fec6e380b8268be8dd70cb00cb7601538ea50ca7a",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "0dee4b67ef51b031041db0903c4fe161b9740f2c30196842166509568832455e",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "2baa05a84863511d3dec578d6e1dfab41b9fd898f6603ec0164ba211c570ea91",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "b7269ede81ce8d5308f65a452dab7fc73f0c3ec3f83d58ecf5fb920ce90bda1d",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "16574468bf0c6439a5133471b7ea37c9f9fc32545615a9c3f073a4db8efab8b2",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "35ba73126c3454a53dd5f8527f6e9075122ffdfeffd1b14c04df827b6db17f69",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "6429fa4b390c53ca5d4467d1945f51fe08fc8d49f2f4cfc71a969288df53205c",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "dab4814ba7f4d75a8d5e820d9c60216ec9ddec6fa9841d02b3360f4c83f1fe73",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "MenuItem": {
+      "implementation": {
+        "source": "src/runtime/obsidian-menu-compat.ts",
+        "exportName": "MenuItem"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.ui-interaction-classes.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "977372f979d09268ce2f8869c085dfe0d46377f98a272abe0cce3930e0c78e4a",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "9697a73b23ec8583a3b79be1a65c5bac407c727f4f886bd708a630883cc674dc",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "a3b6e062ed68a6f7841dcf126a70f834fd9ae8dfbbe42d3c6905dbe42d81b496",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "30ca9c4398a7dbd03969f262be6873640701dff26cde24879b22cafd556bfe8c",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "2bed0d6b74769c14285baa0f92794337a064da1c0a2d4bbfe4a6ce111fd51050",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "d7b0a4293c0100dfda2029090bab1e283327b07087feca2a5677865e68130bfa",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "0ca05263f99bcfad0c784f9f2056575c65fed3afd8d1926fa5e30bb50171714a",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "MenuSeparator": {
+      "implementation": {
+        "source": "src/runtime/obsidian-menu-compat.ts",
+        "exportName": "MenuSeparator"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.ui-interaction-classes.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {}
+    },
+    "Scope": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "Scope"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.ui-interaction-classes.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "dfbbe0bf52ff241e1a8a4311d76a365c6d39de93cb61d2a27df90f2f2d865536",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "3f846d9d942fc5eb24cd8f20d22411d8734d12a1e9d576fc363eae243038534c",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "29f1893403b727950c360ac40eb3f64818ae715ac6ec0b11bcf0355a6be070e4",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "PopoverSuggest": {
       "implementation": {
         "source": "src/runtime/obsidian-ui-compat.ts",

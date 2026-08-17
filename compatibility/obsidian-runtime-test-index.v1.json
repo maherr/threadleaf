@@ -28,13 +28,13 @@
     {
       "id": "obsidian-runtime.core-events-files-vault.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 659,
+      "line": 812,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.editor-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 661,
+      "line": 814,
       "status": "positive"
     },
     {
@@ -46,13 +46,13 @@
     {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 136,
+      "line": 143,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 135,
+      "line": 142,
       "status": "positive"
     },
     {
@@ -76,19 +76,19 @@
     {
       "id": "obsidian-runtime.render-views.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1005,
+      "line": 1158,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.setting-tabs.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1471,
+      "line": 1624,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.settings-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1164,
+      "line": 1317,
       "status": "positive"
     },
     {
@@ -100,7 +100,13 @@
     {
       "id": "obsidian-runtime.suggest-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1580,
+      "line": 1733,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.ui-interaction-classes.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 659,
       "status": "positive"
     },
     {
@@ -118,7 +124,7 @@
     {
       "id": "obsidian-runtime.workspace-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 660,
+      "line": 813,
       "status": "positive"
     },
     {

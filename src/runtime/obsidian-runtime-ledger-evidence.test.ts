@@ -656,6 +656,159 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.ui-interaction-classes.v1 */
+  it('proves scope, menu, editor-suggest, fuzzy-modal, and render-child classes through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-ui-interaction-classes-"),
+    );
+    const pluginPath = path.join(sandboxPath, "ui-interaction-classes-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "ui-interaction-classes-ledger-fixture",
+          name: "UI interaction classes ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { EditorSuggest, FuzzySuggestModal, MarkdownRenderChild, Menu, Plugin, Scope } = require("obsidian");',
+          "class TestEditorSuggest extends EditorSuggest {",
+          '  onTrigger() { return { start: { line: 0, ch: 0 }, end: { line: 0, ch: 1 }, query: "@" }; }',
+          '  getSuggestions() { return ["alpha"]; }',
+          "}",
+          "class TestFuzzySuggestModal extends FuzzySuggestModal {",
+          '  getItems() { return ["Alpha", "Beta"]; }',
+          "  getItemText(item) { return item; }",
+          "  onChooseItem(item) { this.chosen = item; }",
+          "}",
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const scope = new Scope();",
+          "    const childScope = new Scope(scope);",
+          "    const scopeCalls = [];",
+          '    const handler = scope.register(["Ctrl"], "k", (event, context) => { scopeCalls.push([event.key, context.modifiers, context.vkey]); return "handled"; });',
+          "    const KeyboardEvent = document.defaultView.KeyboardEvent;",
+          '    const dispatched = scope.handleKeyEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));',
+          "    scope.unregister(handler);",
+          '    const afterUnregister = scope.handleKeyEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));',
+          '    const childElement = document.createElement("div");',
+          "    const renderChild = new MarkdownRenderChild(childElement);",
+          "    let clickCount = 0;",
+          "    let hideCount = 0;",
+          "    const menu = new Menu();",
+          "    const chained = menu.setNoIcon().setUseNativeMenu(true).setParentElement(document.body) === menu;",
+          "    menu.onHide(() => hideCount += 1);",
+          '    menu.addItem((item) => item.setTitle("Run").setIcon("check").setChecked(true).setDisabled(false).setWarning(true).setIsLabel(false).onClick(() => clickCount += 1).setSection("actions"));',
+          "    menu.addSeparator();",
+          "    menu.showAtPosition({ x: 10, y: 12, width: 120 }, document);",
+          '    const renderedMenu = document.querySelector(".threadleaf-compat-menu");',
+          '    const button = renderedMenu.querySelector(".menu-item");',
+          '    const separator = renderedMenu.querySelector(".menu-separator");',
+          '    const menuBeforeClick = { role: button.getAttribute("role"), checked: button.getAttribute("aria-checked"), warning: button.classList.contains("is-warning"), section: button.dataset.section, svg: button.querySelector("svg") !== null, disabled: button.disabled, native: renderedMenu.dataset.nativeRequested, width: renderedMenu.style.width, separatorRole: separator.getAttribute("role") };',
+          "    button.click();",
+          '    const forEventMenu = Menu.forEvent(new document.defaultView.MouseEvent("click", { clientX: 1, clientY: 2 }));',
+          "    const forEventIsMenu = forEventMenu instanceof Menu;",
+          "    forEventMenu.close();",
+          "    const suggest = new TestEditorSuggest(this.app);",
+          '    suggest.context = { query: "@" };',
+          "    suggest.limit = 5;",
+          '    suggest.setInstructions([{ command: "Enter", purpose: "choose" }]);',
+          "    const trigger = suggest.onTrigger(null, null, null);",
+          "    const suggestions = await suggest.getSuggestions({});",
+          "    const instructions = suggest.getInstructions();",
+          "    suggest.close();",
+          "    const fuzzy = new TestFuzzySuggestModal(this.app);",
+          '    const matches = fuzzy.getSuggestions("al");',
+          '    const suggestionElement = document.createElement("div");',
+          "    fuzzy.renderSuggestion(matches[0], suggestionElement);",
+          '    fuzzy.onChooseSuggestion(matches[0], new document.defaultView.MouseEvent("click"));',
+          "    globalThis.__threadleafRuntimeLedgerUiInteractionClassesProbe = {",
+          "      scopeParentIsNull: scope.parent === null,",
+          "      childScopeParent: childScope.parent === scope,",
+          "      dispatched: { matched: dispatched.matched, result: dispatched.result },",
+          "      afterUnregisterMatched: afterUnregister.matched,",
+          "      scopeCalls,",
+          "      renderChildContainer: renderChild.containerEl === childElement,",
+          "      chained,",
+          "      menuBeforeClick,",
+          "      clickCount,",
+          "      hideCount,",
+          "      menuClosed: !document.body.contains(renderedMenu),",
+          "      forEventIsMenu,",
+          "      suggestApp: suggest.app === this.app,",
+          "      suggestLimit: suggest.limit,",
+          "      suggestContextAfterClose: suggest.context,",
+          "      trigger,",
+          "      suggestions,",
+          "      instructions,",
+          "      fuzzyMatches: matches.map((match) => ({ item: match.item, ranges: match.match.matches })),",
+          "      fuzzyRendered: suggestionElement.textContent,",
+          "      fuzzyChosen: fuzzy.chosen,",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerUiInteractionClassesProbe?: unknown })
+              .__threadleafRuntimeLedgerUiInteractionClassesProbe,
+          ).toEqual({
+            scopeParentIsNull: true,
+            childScopeParent: true,
+            dispatched: { matched: true, result: "handled" },
+            afterUnregisterMatched: false,
+            scopeCalls: [["k", "Ctrl", "k"]],
+            renderChildContainer: true,
+            chained: true,
+            menuBeforeClick: {
+              role: "menuitemcheckbox",
+              checked: "true",
+              warning: true,
+              section: "actions",
+              svg: true,
+              disabled: false,
+              native: "true",
+              width: "120px",
+              separatorRole: "separator",
+            },
+            clickCount: 1,
+            hideCount: 1,
+            menuClosed: true,
+            forEventIsMenu: true,
+            suggestApp: true,
+            suggestLimit: 5,
+            suggestContextAfterClose: null,
+            trigger: {
+              start: { line: 0, ch: 0 },
+              end: { line: 0, ch: 1 },
+              query: "@",
+            },
+            suggestions: ["alpha"],
+            instructions: [{ command: "Enter", purpose: "choose" }],
+            fuzzyMatches: [{ item: "Alpha", ranges: [[0, 2]] }],
+            fuzzyRendered: "Alpha",
+            fuzzyChosen: "Alpha",
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerUiInteractionClassesProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
   /** @compatibility-test-id obsidian-runtime.workspace-core.v1 */
   /** @compatibility-test-id obsidian-runtime.editor-core.v1 */
