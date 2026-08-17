@@ -17,7 +17,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Export | Kind | Status | Signature |
 | --- | --- | --- | --- |
 | AbstractInputSuggest | class | missing | 1961df74c7585fcf |
-| AbstractTextComponent | class | missing | d3e7b4b7f2ccfbae |
+| AbstractTextComponent | class | implemented | d3e7b4b7f2ccfbae |
 | addIcon | function | missing | ec68d56929fc1f6d |
 | apiVersion | variable | missing | 9939efa4020032ad |
 | App | class | missing | b71058fef0a041bf |

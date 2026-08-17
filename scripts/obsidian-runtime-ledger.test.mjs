@@ -31,15 +31,15 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 23,
+  implemented: 24,
   partial: 16,
   unsupported: 0,
-  missing: 119,
+  missing: 118,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 241,
+  implementedObligations: 249,
 });
 assert.equal(ledger.factory.keys.length, 76);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -55,6 +55,7 @@ assert.deepEqual(
     .filter((entry) => entry.status !== "missing")
     .map((entry) => [entry.name, entry.status]),
   [
+    ["AbstractTextComponent", "implemented"],
     ["BaseComponent", "partial"],
     ["ButtonComponent", "implemented"],
     ["ColorComponent", "implemented"],
