@@ -109,7 +109,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | parsePropertyId | function | implemented | 260ec28552701cc8 |
 | parseYaml | function | implemented | 48af828ae472e2e3 |
 | Platform | variable | implemented | ce92658397c816fa |
-| Plugin | class | partial | e771e8ff5a3f8cba |
+| Plugin | class | implemented | e771e8ff5a3f8cba |
 | PluginSettingTab | class | implemented | 0afb03b5ff995364 |
 | PopoverState | enum | missing | 1994d816d82c6a0c |
 | PopoverSuggest | class | implemented | 380470a80b007a51 |

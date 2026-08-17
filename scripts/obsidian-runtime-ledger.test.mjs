@@ -31,15 +31,15 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 89,
-  partial: 5,
+  implemented: 90,
+  partial: 4,
   unsupported: 0,
   missing: 64,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 485,
+  implementedObligations: 489,
 });
 assert.equal(ledger.factory.keys.length, 99);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -111,7 +111,7 @@ assert.deepEqual(
     ["parsePropertyId", "implemented"],
     ["parseYaml", "implemented"],
     ["Platform", "implemented"],
-    ["Plugin", "partial"],
+    ["Plugin", "implemented"],
     ["PluginSettingTab", "implemented"],
     ["PopoverSuggest", "implemented"],
     ["prepareFuzzySearch", "implemented"],

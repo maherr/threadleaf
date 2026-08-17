@@ -210,6 +210,10 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             "    const settingTab = new PluginSettingTab(this.app, this);",
             "    this.addSettingTab(settingTab);",
             '    this.registerView("plugin-ledger-view", (leaf) => new ItemView(leaf));',
+            '    this.registerHoverLinkSource("plugin-ledger-hover", { display: "Plugin ledger", defaultMod: true });',
+            '    const basesEnabled = this.registerBasesView("plugin-ledger-base", { name: "Ledger base", icon: "table", factory: () => ({}) });',
+            '    this.registerObsidianProtocolHandler("plugin-ledger-open", (params) => "protocol:" + params.note);',
+            '    this.registerCliHandler("plugin-ledger:check", "Run the ledger check", { path: { value: "<path>", description: "A vault path" } }, (params) => "cli:" + params.path);',
             '    this.registerExtensions([".ledger"], "plugin-ledger-view");',
             '    const postProcessor = (element) => { element.querySelector("h1")?.setAttribute("data-plugin-ledger-post", "yes"); };',
             "    const returnedPostProcessor = this.registerMarkdownPostProcessor(postProcessor, 3);",
@@ -218,6 +222,8 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             "    this.registerEditorExtension(editorExtension);",
             "    const editorSuggest = new (class extends EditorSuggest {})(this.app);",
             "    this.registerEditorSuggest(editorSuggest);",
+            '    const protocolResult = this.app.compatibility.invokeObsidianProtocol({ action: "plugin-ledger-open", note: "Welcome.md" });',
+            '    const cliResult = await this.app.compatibility.invokeCliHandler("plugin-ledger:check", { path: "Welcome.md" });',
             "    globalThis.__threadleafRuntimeLedgerPluginProbe = {",
             "      appIsApp: this.app instanceof App,",
             "      manifest: { id: this.manifest.id, name: this.manifest.name },",
@@ -231,6 +237,10 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             "      returnedCodeProcessor: returnedCodeProcessor.sortOrder === 4,",
             "      editorExtensionRegistered: this.app.compatibility.getEditorExtensions().includes(editorExtension),",
             "      editorSuggestApp: editorSuggest.app === this.app,",
+            '      hoverLinkSource: this.app.compatibility.getHoverLinkSource("plugin-ledger-hover"),',
+            "      basesEnabled,",
+            "      protocolResult,",
+            "      cliResult,",
             "    };",
             "  }",
             "}",
@@ -263,6 +273,10 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             returnedCodeProcessor: true,
             editorExtensionRegistered: true,
             editorSuggestApp: true,
+            hoverLinkSource: { display: "Plugin ledger", defaultMod: true },
+            basesEnabled: false,
+            protocolResult: "protocol:Welcome.md",
+            cliResult: "cli:Welcome.md",
           });
           expect(host.app.compatibility.snapshot()).toEqual({
             editorSuggests: 1,
@@ -295,6 +309,18 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           expect(projection.markdownProjection?.html).toContain('data-plugin-ledger-post="yes"');
 
           await host.unloadPlugin();
+          expect(host.app.compatibility.getHoverLinkSource("plugin-ledger-hover")).toBeNull();
+          expect(() =>
+            host.app.compatibility.invokeObsidianProtocol({
+              action: "plugin-ledger-open",
+              note: "Welcome.md",
+            }),
+          ).toThrow("Obsidian protocol action is not registered");
+          await expect(
+            host.app.compatibility.invokeCliHandler("plugin-ledger:check", {
+              path: "Welcome.md",
+            }),
+          ).rejects.toThrow("CLI command is not registered");
           expect(host.app.compatibility.snapshot()).toEqual({
             editorSuggests: 0,
             extensions: [],

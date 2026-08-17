@@ -942,6 +942,54 @@ interface SettingTabRegistration extends OwnedRegistration {
   tab: CompatibilitySettingTab;
 }
 
+export interface CompatibilityHoverLinkSource {
+  display: string;
+  defaultMod: boolean;
+}
+
+export interface CompatibilityBasesViewRegistration {
+  name: string;
+  icon: string;
+  factory: (controller: unknown, containerEl: HTMLElement) => unknown;
+  options?: (config: unknown) => unknown[];
+}
+
+export interface CompatibilityObsidianProtocolData {
+  action: string;
+  [key: string]: string | "true";
+}
+
+export type CompatibilityObsidianProtocolHandler = (
+  params: CompatibilityObsidianProtocolData,
+) => unknown;
+
+export interface CompatibilityCliFlag {
+  value?: string;
+  description: string;
+  required?: boolean;
+}
+
+export type CompatibilityCliFlags = Record<string, CompatibilityCliFlag>;
+export type CompatibilityCliData = Record<string, string | "true">;
+export type CompatibilityCliHandler = (params: CompatibilityCliData) => string | Promise<string>;
+
+interface HoverLinkSourceRegistration extends OwnedRegistration {
+  id: string;
+  info: CompatibilityHoverLinkSource;
+}
+
+interface ObsidianProtocolRegistration extends OwnedRegistration {
+  action: string;
+  handler: CompatibilityObsidianProtocolHandler;
+}
+
+interface CliRegistration extends OwnedRegistration {
+  command: string;
+  description: string;
+  flags: CompatibilityCliFlags | null;
+  handler: CompatibilityCliHandler;
+}
+
 export class CompatibilityIntegrationRegistry {
   private readonly editorExtensions: EditorExtensionRegistration[] = [];
   private readonly editorSuggests = new Set<unknown>();
@@ -951,6 +999,9 @@ export class CompatibilityIntegrationRegistry {
   private readonly settingTabs = new Set<SettingTabRegistration>();
   private readonly statusBarItems = new Set<HTMLElement>();
   private readonly views = new Map<string, ViewRegistration>();
+  private readonly hoverLinkSources = new Map<string, HoverLinkSourceRegistration>();
+  private readonly obsidianProtocolHandlers = new Map<string, ObsidianProtocolRegistration>();
+  private readonly cliHandlers = new Map<string, CliRegistration>();
   private readonly icons = new Map<string, string>();
   private nextMarkdownProcessorSequence = 0;
   private nextEditorExtensionSequence = 0;
@@ -983,6 +1034,129 @@ export class CompatibilityIntegrationRegistry {
         this.extensions.splice(index, 1);
       }
     };
+  }
+
+  registerHoverLinkSource(
+    ownerId: string,
+    id: string,
+    info: CompatibilityHoverLinkSource,
+  ): () => void {
+    const normalizedId = requireNonEmptyRegistrationId(id, "hover link source");
+    if (!info || typeof info.display !== "string" || typeof info.defaultMod !== "boolean") {
+      throw new Error(`Invalid hover link source registration: ${normalizedId}`);
+    }
+    if (this.hoverLinkSources.has(normalizedId)) {
+      throw new Error(`Hover link source already registered: ${normalizedId}`);
+    }
+    const registration: HoverLinkSourceRegistration = {
+      ownerId,
+      id: normalizedId,
+      info: { display: info.display, defaultMod: info.defaultMod },
+    };
+    this.hoverLinkSources.set(normalizedId, registration);
+    return () => {
+      if (this.hoverLinkSources.get(normalizedId) === registration) {
+        this.hoverLinkSources.delete(normalizedId);
+      }
+    };
+  }
+
+  getHoverLinkSource(id: string): CompatibilityHoverLinkSource | null {
+    const registration = this.hoverLinkSources.get(id);
+    return registration ? { ...registration.info } : null;
+  }
+
+  registerBasesView(
+    _ownerId: string,
+    viewId: string,
+    registration: CompatibilityBasesViewRegistration,
+  ): boolean {
+    const normalizedId = requireNonEmptyRegistrationId(viewId, "Bases view");
+    if (
+      !registration ||
+      typeof registration.name !== "string" ||
+      typeof registration.icon !== "string" ||
+      typeof registration.factory !== "function"
+    ) {
+      throw new Error(`Invalid Bases view registration: ${normalizedId}`);
+    }
+    return false;
+  }
+
+  registerObsidianProtocolHandler(
+    ownerId: string,
+    action: string,
+    handler: CompatibilityObsidianProtocolHandler,
+  ): () => void {
+    const normalizedAction = requireNonEmptyRegistrationId(action, "Obsidian protocol action");
+    if (typeof handler !== "function") {
+      throw new Error(`Invalid Obsidian protocol handler: ${normalizedAction}`);
+    }
+    if (this.obsidianProtocolHandlers.has(normalizedAction)) {
+      throw new Error(`Obsidian protocol action already registered: ${normalizedAction}`);
+    }
+    const registration: ObsidianProtocolRegistration = {
+      ownerId,
+      action: normalizedAction,
+      handler,
+    };
+    this.obsidianProtocolHandlers.set(normalizedAction, registration);
+    return () => {
+      if (this.obsidianProtocolHandlers.get(normalizedAction) === registration) {
+        this.obsidianProtocolHandlers.delete(normalizedAction);
+      }
+    };
+  }
+
+  invokeObsidianProtocol(params: CompatibilityObsidianProtocolData): unknown {
+    const registration = this.obsidianProtocolHandlers.get(params.action);
+    if (!registration) {
+      throw new Error(`Obsidian protocol action is not registered: ${params.action}`);
+    }
+    return registration.handler({ ...params });
+  }
+
+  registerCliHandler(
+    ownerId: string,
+    command: string,
+    description: string,
+    flags: CompatibilityCliFlags | null,
+    handler: CompatibilityCliHandler,
+  ): () => void {
+    const normalizedCommand = validateCliCommand(command);
+    if (typeof description !== "string") {
+      throw new Error(`Invalid CLI description: ${normalizedCommand}`);
+    }
+    if (flags !== null && (typeof flags !== "object" || Array.isArray(flags))) {
+      throw new Error(`Invalid CLI flags: ${normalizedCommand}`);
+    }
+    if (typeof handler !== "function") {
+      throw new Error(`Invalid CLI handler: ${normalizedCommand}`);
+    }
+    if (this.cliHandlers.has(normalizedCommand)) {
+      throw new Error(`CLI command already registered: ${normalizedCommand}`);
+    }
+    const registration: CliRegistration = {
+      ownerId,
+      command: normalizedCommand,
+      description,
+      flags: flags ? { ...flags } : null,
+      handler,
+    };
+    this.cliHandlers.set(normalizedCommand, registration);
+    return () => {
+      if (this.cliHandlers.get(normalizedCommand) === registration) {
+        this.cliHandlers.delete(normalizedCommand);
+      }
+    };
+  }
+
+  async invokeCliHandler(command: string, params: CompatibilityCliData): Promise<string> {
+    const registration = this.cliHandlers.get(command);
+    if (!registration) {
+      throw new Error(`CLI command is not registered: ${command}`);
+    }
+    return await registration.handler({ ...params });
   }
 
   addSettingTab(ownerId: string, settingTab: CompatibilitySettingTab): () => void {
@@ -1317,4 +1491,20 @@ function codeBlockLanguage(codeBlock: HTMLElement): string | null {
 
 function asciiLowercase(value: string): string {
   return value.replace(/[A-Z]/gu, (character) => character.toLowerCase());
+}
+
+function requireNonEmptyRegistrationId(value: string, kind: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(`${kind} registration requires a non-empty identifier.`);
+  }
+  return normalized;
+}
+
+function validateCliCommand(command: string): string {
+  const normalized = requireNonEmptyRegistrationId(command, "CLI command");
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*(?::[A-Za-z0-9][A-Za-z0-9_-]*)*$/u.test(normalized)) {
+    throw new Error(`Invalid CLI command: ${command}`);
+  }
+  return normalized;
 }

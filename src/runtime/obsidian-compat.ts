@@ -68,7 +68,12 @@ import {
   WorkspaceLeaf,
 } from "./obsidian-ui-compat";
 import {
+  type CompatibilityBasesViewRegistration,
+  type CompatibilityCliFlags,
+  type CompatibilityCliHandler,
+  type CompatibilityHoverLinkSource,
   CompatibilityIntegrationRegistry,
+  type CompatibilityObsidianProtocolHandler,
   Workspace,
   WorkspaceItem,
   WorkspaceParent,
@@ -2902,10 +2907,18 @@ export class Plugin extends Component {
     );
   }
 
+  registerHoverLinkSource(id: string, info: CompatibilityHoverLinkSource): void {
+    this.register(this.app.compatibility.registerHoverLinkSource(this.manifest.id, id, info));
+  }
+
   registerExtensions(extensions: string[], viewType: string): void {
     this.register(
       this.app.compatibility.registerExtensions(this.manifest.id, extensions, viewType),
     );
+  }
+
+  registerBasesView(viewId: string, registration: CompatibilityBasesViewRegistration): boolean {
+    return this.app.compatibility.registerBasesView(this.manifest.id, viewId, registration);
   }
 
   registerMarkdownPostProcessor(
@@ -2951,8 +2964,34 @@ export class Plugin extends Component {
     this.register(this.app.compatibility.registerEditorExtension(this.manifest.id, extension));
   }
 
+  registerObsidianProtocolHandler(
+    action: string,
+    handler: CompatibilityObsidianProtocolHandler,
+  ): void {
+    this.register(
+      this.app.compatibility.registerObsidianProtocolHandler(this.manifest.id, action, handler),
+    );
+  }
+
   registerEditorSuggest(editorSuggest: EditorSuggest<unknown>): void {
     this.register(this.app.compatibility.registerEditorSuggest(editorSuggest));
+  }
+
+  registerCliHandler(
+    command: string,
+    description: string,
+    flags: CompatibilityCliFlags | null,
+    handler: CompatibilityCliHandler,
+  ): void {
+    this.register(
+      this.app.compatibility.registerCliHandler(
+        this.manifest.id,
+        command,
+        description,
+        flags,
+        handler,
+      ),
+    );
   }
 
   async loadData(): Promise<unknown | null> {
