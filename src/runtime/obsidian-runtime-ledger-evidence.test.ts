@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
+import { revisionOf } from "../kernel/durability";
 import { testConstructionDispatch } from "../test-support/plugin-construction";
 import { PluginHost } from "./plugin-host";
 
@@ -1419,6 +1420,226 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerModalNoticeKeymapProbe");
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
+  });
+
+  /** @compatibility-test-id obsidian-runtime.vault-mutations.v1 */
+  it('proves writable Vault mutations through require("obsidian")', async () => {
+    await withTestDocument(async () => {
+      const sandboxPath = await fs.mkdtemp(
+        path.join(os.tmpdir(), "threadleaf-runtime-ledger-vault-"),
+      );
+      const vaultPath = path.join(sandboxPath, "vault");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "vault-ledger-fixture");
+      const resolvePath = (relativePath: string): string => {
+        const absolutePath = path.resolve(vaultPath, relativePath);
+        const relative = path.relative(vaultPath, absolutePath);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) {
+          throw new Error(`Fixture writer path escaped the vault: ${relativePath}`);
+        }
+        return absolutePath;
+      };
+      let transactionSequence = 0;
+      const committed = async (
+        relativePath: string,
+        bytes: Uint8Array,
+        expectedRevision: string,
+        kind: string,
+      ) => {
+        const absolutePath = resolvePath(relativePath);
+        const current = await fs.readFile(absolutePath);
+        if (revisionOf(current) !== expectedRevision) {
+          return {
+            status: "conflict" as const,
+            path: relativePath,
+            currentRevision: revisionOf(current),
+            conflictPath: `${relativePath}.threadleaf-conflict`,
+            transactionId: `${kind}-conflict`,
+          };
+        }
+        await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+        await fs.writeFile(absolutePath, bytes);
+        return {
+          status: "committed" as const,
+          path: relativePath,
+          revision: revisionOf(bytes),
+          transactionId: `${kind}-${++transactionSequence}`,
+        };
+      };
+      const create = async (relativePath: string, bytes: Uint8Array, kind: string) => {
+        const absolutePath = resolvePath(relativePath);
+        try {
+          const current = await fs.readFile(absolutePath);
+          return {
+            status: "exists" as const,
+            path: relativePath,
+            currentRevision: revisionOf(current),
+          };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw error;
+          }
+        }
+        await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+        await fs.writeFile(absolutePath, bytes, { flag: "wx" });
+        return {
+          status: "committed" as const,
+          path: relativePath,
+          revision: revisionOf(bytes),
+          transactionId: `${kind}-${++transactionSequence}`,
+        };
+      };
+      try {
+        await fs.cp(fixtureVault, vaultPath, { recursive: true });
+        await fs.mkdir(pluginPath, { recursive: true });
+        await fs.writeFile(
+          path.join(pluginPath, "manifest.json"),
+          JSON.stringify({
+            id: "vault-ledger-fixture",
+            name: "Vault ledger fixture",
+            version: "1.0.0",
+          }),
+        );
+        await fs.writeFile(
+          path.join(pluginPath, "main.js"),
+          [
+            'const { Plugin } = require("obsidian");',
+            "class LedgerPlugin extends Plugin {",
+            "  async onload() {",
+            "    const vault = this.app.vault;",
+            '    const welcome = vault.getFileByPath("Welcome.md");',
+            '    const canvas = vault.getFileByPath("Boards/Overview.canvas");',
+            '    const boards = vault.getFolderByPath("Boards");',
+            '    if (!welcome || !canvas || !boards) throw new Error("Vault fixture files are missing");',
+            '    const created = await vault.create("Mutation.md", "created");',
+            '    await vault.modify(created, "modified");',
+            '    const createdBinary = await vault.createBinary("Mutation.bin", Uint8Array.from([1, 2]).buffer);',
+            "    await vault.modifyBinary(createdBinary, Uint8Array.from([3, 4]).buffer);",
+            '    await vault.createFolder("Created folder");',
+            '    await vault.append(welcome, "\\nappended");',
+            '    const processed = await vault.process(welcome, (data) => data.replace("Welcome", "Ledger"));',
+            "    await vault.appendBinary(canvas, Uint8Array.from([254, 253]).buffer);",
+            '    const copiedFile = await vault.copy(welcome, "Copies/Welcome.md");',
+            '    const copiedFolder = await vault.copy(boards, "Copies/Boards");',
+            '    await vault.rename(created, "Renamed.md");',
+            "    await vault.trash(created);",
+            "    globalThis.__threadleafRuntimeLedgerVaultProbe = {",
+            '      processed: processed.includes("Ledger") && processed.includes("appended"),',
+            "      copiedFile: copiedFile.path,",
+            "      copiedFolder: copiedFolder.path,",
+            '      createdFolder: vault.getFolderByPath("Created folder")?.path,',
+            '      trashed: vault.getFileByPath("Renamed.md") === null,',
+            "    };",
+            "  }",
+            "}",
+            "module.exports = LedgerPlugin;",
+            "",
+          ].join("\n"),
+        );
+        const writer = {
+          createText: (relativePath: string, content: string) =>
+            create(relativePath, Buffer.from(content, "utf8"), "create-text"),
+          createBinary: (relativePath: string, content: Uint8Array) =>
+            create(relativePath, content, "create-binary"),
+          createFolder: async (relativePath: string) => {
+            const absolutePath = resolvePath(relativePath);
+            let created = false;
+            try {
+              await fs.stat(absolutePath);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+                throw error;
+              }
+              created = true;
+            }
+            await fs.mkdir(absolutePath, { recursive: true });
+            return { path: relativePath, created };
+          },
+          writeText: (relativePath: string, content: string, expectedRevision: string) =>
+            committed(relativePath, Buffer.from(content, "utf8"), expectedRevision, "write-text"),
+          writeBinary: (relativePath: string, content: Uint8Array, expectedRevision: string) =>
+            committed(relativePath, content, expectedRevision, "write-binary"),
+          renameFile: async (sourcePath: string, targetPath: string, expectedRevision: string) => {
+            const sourceAbsolutePath = resolvePath(sourcePath);
+            const targetAbsolutePath = resolvePath(targetPath);
+            const current = await fs.readFile(sourceAbsolutePath);
+            if (revisionOf(current) !== expectedRevision) {
+              return {
+                status: "conflict" as const,
+                from: sourcePath,
+                to: targetPath,
+                reason: "source-changed",
+                conflictPaths: [],
+              };
+            }
+            await fs.mkdir(path.dirname(targetAbsolutePath), { recursive: true });
+            await fs.rename(sourceAbsolutePath, targetAbsolutePath);
+            return {
+              status: "committed" as const,
+              from: sourcePath,
+              to: targetPath,
+              transactionId: `rename-${++transactionSequence}`,
+            };
+          },
+          trashFile: async (sourcePath: string, expectedRevision: string) => {
+            const sourceAbsolutePath = resolvePath(sourcePath);
+            const targetPath = `.trash/${sourcePath}`;
+            const targetAbsolutePath = resolvePath(targetPath);
+            const current = await fs.readFile(sourceAbsolutePath);
+            if (revisionOf(current) !== expectedRevision) {
+              return {
+                status: "conflict" as const,
+                from: sourcePath,
+                to: targetPath,
+                reason: "source-changed",
+                conflictPaths: [],
+              };
+            }
+            await fs.mkdir(path.dirname(targetAbsolutePath), { recursive: true });
+            await fs.rename(sourceAbsolutePath, targetAbsolutePath);
+            return {
+              status: "committed" as const,
+              from: sourcePath,
+              to: targetPath,
+              transactionId: `trash-${++transactionSequence}`,
+            };
+          },
+        };
+        const host = new PluginHost(vaultPath, undefined, undefined, undefined, writer);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerVaultProbe?: unknown })
+              .__threadleafRuntimeLedgerVaultProbe,
+          ).toEqual({
+            processed: true,
+            copiedFile: "Copies/Welcome.md",
+            copiedFolder: "Copies/Boards",
+            createdFolder: "Created folder",
+            trashed: true,
+          });
+          await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toContain(
+            "Ledger",
+          );
+          await expect(
+            fs.readFile(path.join(vaultPath, "Boards/Overview.canvas")),
+          ).resolves.toEqual(expect.any(Buffer));
+          await expect(fs.readFile(path.join(vaultPath, "Mutation.bin"))).resolves.toEqual(
+            Buffer.from([3, 4]),
+          );
+          await expect(
+            fs.readFile(path.join(vaultPath, ".trash/Renamed.md"), "utf8"),
+          ).resolves.toBe("modified");
+          await expect(
+            fs.readFile(path.join(vaultPath, "Copies/Boards/Overview.canvas")),
+          ).resolves.toEqual(expect.any(Buffer));
+        } finally {
+          await host.close();
+        }
+      } finally {
+        Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerVaultProbe");
+        await fs.rm(sandboxPath, { recursive: true, force: true });
+      }
+    });
   });
 
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */

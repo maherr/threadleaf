@@ -758,6 +758,92 @@ export class Vault extends Events {
     this.trigger("modify", file);
   }
 
+  async append(file: TFile, content: string, _options?: DataWriteOptions): Promise<void> {
+    const current = await this.read(file);
+    await this.modify(file, current + content);
+  }
+
+  async appendBinary(
+    file: TFile,
+    content: ArrayBuffer,
+    _options?: DataWriteOptions,
+  ): Promise<void> {
+    const current = new Uint8Array(await this.readBinary(file));
+    const appended = new Uint8Array(current.byteLength + content.byteLength);
+    appended.set(current);
+    appended.set(new Uint8Array(content), current.byteLength);
+    await this.modifyBinary(file, appended.buffer);
+  }
+
+  async process(
+    file: TFile,
+    callback: (content: string) => string,
+    _options?: DataWriteOptions,
+  ): Promise<string> {
+    const next = callback(await this.read(file));
+    await this.modify(file, next);
+    return next;
+  }
+
+  async copy<T extends TAbstractFile>(file: T, newPath: string): Promise<T> {
+    if (!this.#writer) {
+      throw new Error(
+        "Plugin file copies are not available in the read-only compatibility runtime.",
+      );
+    }
+    if (file.vault !== this) {
+      throw new Error("Plugin copies require a file from the active compatibility vault.");
+    }
+    const targetPath = normalizePath(newPath);
+    if (this.getAbstractFileByPath(targetPath)) {
+      throw new Error(`Plugin copy refused to overwrite ${targetPath}.`);
+    }
+
+    if (file instanceof TFile) {
+      return (await this.createBinary(targetPath, await this.readBinary(file))) as unknown as T;
+    }
+    if (!(file instanceof TFolder)) {
+      throw new Error(
+        "Plugin copies require a file or folder from the active compatibility vault.",
+      );
+    }
+
+    const sourcePath = file.path;
+    const allEntries = this.getAllLoadedFiles().filter((entry) => {
+      if (entry.path === sourcePath) {
+        return false;
+      }
+      const prefix = sourcePath ? `${sourcePath}/` : "";
+      return entry.path.startsWith(prefix);
+    });
+    const targetFor = (entryPath: string): string => {
+      const relative = sourcePath ? entryPath.slice(sourcePath.length + 1) : entryPath;
+      return normalizePath(path.posix.join(targetPath, relative));
+    };
+    const targetEntries = allEntries.map((entry) => ({ entry, target: targetFor(entry.path) }));
+    for (const { target } of targetEntries) {
+      if (this.getAbstractFileByPath(target)) {
+        throw new Error(`Plugin copy refused to overwrite ${target}.`);
+      }
+    }
+
+    const createdRoot = await this.createFolder(targetPath);
+    for (const { target } of targetEntries
+      .filter(({ entry }) => entry instanceof TFolder)
+      .sort((left, right) => left.target.localeCompare(right.target))) {
+      const created = await this.createFolder(target);
+      if (!created || !this.getFolderByPath(target)) {
+        throw new Error(`Plugin folder copy did not create ${target}.`);
+      }
+    }
+    for (const { entry, target } of targetEntries
+      .filter(({ entry }) => entry instanceof TFile)
+      .sort((left, right) => left.target.localeCompare(right.target))) {
+      await this.createBinary(target, await this.readBinary(entry as TFile));
+    }
+    return createdRoot as unknown as T;
+  }
+
   async modify(file: TFile, content: string): Promise<void> {
     if (!this.#writer) {
       throw new Error(

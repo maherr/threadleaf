@@ -4,73 +4,73 @@
     {
       "id": "obsidian-runtime.api-version.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 49,
+      "line": 50,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.app-context.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 314,
+      "line": 315,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.base-component.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 45,
+      "line": 46,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.binary-dom-utilities.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 640,
+      "line": 641,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.component.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 46,
+      "line": 47,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.core-events-files-vault.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1424,
+      "line": 1645,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.editor-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1426,
+      "line": 1647,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.frontmatter-document-functions.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 781,
+      "line": 782,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.frontmatter-utilities.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 716,
+      "line": 717,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.icon-utilities.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1045,
+      "line": 1046,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.markdown-render-family.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 862,
+      "line": 863,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.markdown-view-family.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1773,
+      "line": 1994,
       "status": "positive"
     },
     {
@@ -88,67 +88,67 @@
     {
       "id": "obsidian-runtime.modal-notice-keymap.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1268,
+      "line": 1269,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.normalize-path.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 50,
+      "line": 51,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.platform.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 48,
+      "line": 49,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.plugin-surface.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 170,
+      "line": 171,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.plugin.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 47,
+      "line": 48,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.property-id.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 519,
+      "line": 520,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.reference-search-utilities.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 517,
+      "line": 518,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.render-search-utilities.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 518,
+      "line": 519,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.render-views.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1772,
+      "line": 1993,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.setting-tabs.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2454,
+      "line": 2675,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.settings-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2147,
+      "line": 2368,
       "status": "positive"
     },
     {
@@ -160,37 +160,43 @@
     {
       "id": "obsidian-runtime.suggest-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2563,
+      "line": 2784,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.ui-interaction-classes.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1115,
+      "line": 1116,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.utility-behaviors.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 960,
+      "line": 961,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.utility-functions.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 516,
+      "line": 517,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.vault-mutations.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 1425,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.view-lifecycle.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2000,
+      "line": 2221,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.workspace-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1425,
+      "line": 1646,
       "status": "positive"
     },
     {
@@ -202,7 +208,7 @@
     {
       "id": "obsidian-runtime.workspace-parents.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 428,
+      "line": 429,
       "status": "positive"
     }
   ]

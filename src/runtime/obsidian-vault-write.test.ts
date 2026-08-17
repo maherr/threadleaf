@@ -326,6 +326,121 @@ describe("Obsidian compatibility vault writes", () => {
     expect(modified).toHaveBeenCalledOnce();
   });
 
+  it("appends and processes text and binary files through revision-aware writes", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-vault-append-"));
+    temporaryDirectories.push(rootPath);
+    const textPath = "Notes/Journal.md";
+    const binaryPath = "Assets/Blob.bin";
+    await fs.mkdir(path.join(rootPath, "Notes"));
+    await fs.mkdir(path.join(rootPath, "Assets"));
+    await fs.writeFile(path.join(rootPath, textPath), "first", "utf8");
+    const initialBinary = Uint8Array.from([0, 0xff, 1]);
+    await fs.writeFile(path.join(rootPath, binaryPath), initialBinary);
+    const writeText = vi.fn(async (filePath: string, content: string) => {
+      await fs.writeFile(path.join(rootPath, filePath), content, "utf8");
+      return {
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(Buffer.from(content, "utf8")),
+        transactionId: `append-text-${content}`,
+      };
+    });
+    const writeBinary = vi.fn(async (filePath: string, content: Uint8Array) => {
+      await fs.writeFile(path.join(rootPath, filePath), content);
+      return {
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(content),
+        transactionId: "append-binary",
+      };
+    });
+    const vault = new Vault(rootPath, undefined, { writeText, writeBinary });
+    const textFile = vault.getFileByPath(textPath);
+    const binaryFile = vault.getFileByPath(binaryPath);
+    if (!textFile || !binaryFile) {
+      throw new Error("Append fixtures were not discovered.");
+    }
+
+    await vault.append(textFile, "\nsecond");
+    await expect(
+      vault.process(textFile, (content) => content.replace("first", "updated")),
+    ).resolves.toBe("updated\nsecond");
+    await vault.appendBinary(binaryFile, Uint8Array.from([2, 3]).buffer);
+
+    expect(writeText).toHaveBeenNthCalledWith(
+      1,
+      textPath,
+      "first\nsecond",
+      revisionOf(Buffer.from("first", "utf8")),
+    );
+    expect(writeText).toHaveBeenNthCalledWith(
+      2,
+      textPath,
+      "updated\nsecond",
+      revisionOf(Buffer.from("first\nsecond", "utf8")),
+    );
+    expect(writeBinary).toHaveBeenCalledWith(
+      binaryPath,
+      Uint8Array.from([0, 0xff, 1, 2, 3]),
+      revisionOf(initialBinary),
+    );
+    await expect(fs.readFile(path.join(rootPath, textPath), "utf8")).resolves.toBe(
+      "updated\nsecond",
+    );
+    await expect(fs.readFile(path.join(rootPath, binaryPath))).resolves.toEqual(
+      Buffer.from([0, 0xff, 1, 2, 3]),
+    );
+  });
+
+  it("copies files and folders without clobbering existing paths", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-vault-copy-"));
+    temporaryDirectories.push(rootPath);
+    await fs.mkdir(path.join(rootPath, "Source", "Nested"), { recursive: true });
+    const sourceBytes = Uint8Array.from([0, 0xff, 4, 5]);
+    await fs.writeFile(path.join(rootPath, "Source", "Nested", "Blob.bin"), sourceBytes);
+    await fs.writeFile(path.join(rootPath, "Source", "Note.md"), "copied", "utf8");
+    const createFolder = vi.fn(async (folderPath: string) => {
+      await fs.mkdir(path.join(rootPath, folderPath), { recursive: true });
+      return { path: folderPath, created: true };
+    });
+    const createBinary = vi.fn(async (filePath: string, content: Uint8Array) => {
+      await fs.writeFile(path.join(rootPath, filePath), content, { flag: "wx" });
+      return {
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(content),
+        transactionId: `copy-${filePath}`,
+      };
+    });
+    const vault = new Vault(rootPath, undefined, {
+      createFolder,
+      createBinary,
+      writeText: vi.fn(),
+    });
+    const source = vault.getFolderByPath("Source");
+    const note = vault.getFileByPath("Source/Note.md");
+    if (!source || !note) {
+      throw new Error("Copy fixtures were not discovered.");
+    }
+
+    const copiedFolder = await vault.copy(source, "Copies/Source");
+    const copiedFile = await vault.copy(note, "Copies/Note.md");
+
+    expect(copiedFolder.path).toBe("Copies/Source");
+    expect(copiedFile.path).toBe("Copies/Note.md");
+    await expect(fs.readFile(path.join(rootPath, "Copies/Source/Note.md"), "utf8")).resolves.toBe(
+      "copied",
+    );
+    await expect(
+      fs.readFile(path.join(rootPath, "Copies/Source/Nested/Blob.bin")),
+    ).resolves.toEqual(Buffer.from(sourceBytes));
+    await expect(fs.readFile(path.join(rootPath, "Copies/Note.md"), "utf8")).resolves.toBe(
+      "copied",
+    );
+    await expect(vault.copy(note, "Copies/Note.md")).rejects.toThrow("refused to overwrite");
+    expect(createBinary).toHaveBeenCalledTimes(3);
+  });
+
   it("renames binary files through FileManager without changing bytes or leaving stale paths", async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-binary-rename-"));
     temporaryDirectories.push(rootPath);
