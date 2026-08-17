@@ -3442,6 +3442,15 @@
             ]
           },
           {
+            "signatureHash": "c4b2d550ca778c64f84ae51fe289081d7e43f52f86e3689d32f8564074d772cd",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.render-views.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
             "signatureHash": "ef3d4a4067e6afb73c9c92f1fd98454611578732548eb2a53a45c98796d3c4c4",
             "evidence": [
               {
@@ -3987,6 +3996,15 @@
           },
           {
             "signatureHash": "ef3d4a4067e6afb73c9c92f1fd98454611578732548eb2a53a45c98796d3c4c4",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.render-views.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "c04aee799a46218e9240833b40d17c3894173e48a2b8e613e24538d8ace95393",
             "evidence": [
               {
                 "id": "obsidian-runtime.render-views.v1",

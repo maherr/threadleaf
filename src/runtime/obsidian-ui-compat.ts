@@ -1813,6 +1813,10 @@ export class FileView extends ItemView {
   file: TFile | null = null;
   override navigation = true;
 
+  constructor(leaf: WorkspaceLeaf) {
+    super(leaf);
+  }
+
   get headerEl(): HTMLElement {
     return this.viewHeaderEl;
   }
@@ -1820,6 +1824,8 @@ export class FileView extends ItemView {
   override getDisplayText(): string {
     return this.file?.basename ?? "No file";
   }
+
+  override onload(): void {}
 
   override getState(): Record<string, unknown> {
     return this.file ? { file: this.file.path } : {};
@@ -1856,6 +1862,10 @@ export class FileView extends ItemView {
 export class TextFileView extends FileView {
   data = "";
   requestSave = (): void => {};
+
+  constructor(leaf: WorkspaceLeaf) {
+    super(leaf);
+  }
 
   override async onLoadFile(file: TFile): Promise<void> {
     this.file = file;
