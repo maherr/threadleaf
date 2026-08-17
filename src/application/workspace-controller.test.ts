@@ -956,6 +956,32 @@ const fixtureVaultPath = "/fixtures/basic";
 const stateRoot = new FixedStateRoot("/state");
 
 describe("WorkspaceController", () => {
+  it("keeps the bundled bootstrap free of plugin runtime work when no vault is selected", async () => {
+    const store = new MemorySelectionStore();
+    const harness = runtimeHarness();
+    const pluginRuntimeFactory: PluginRuntimeFactory = async () => {
+      throw new Error("The bundled bootstrap must not create a plugin runtime.");
+    };
+
+    const controller = await WorkspaceController.open({
+      stateRoot,
+      selectionStore: store,
+      fixtureVaultPath,
+      deferInitialVault: true,
+      pluginRuntimeFactory,
+      runtimeFactory: harness.runtimeFactory,
+    });
+
+    expect(harness.optionsSeen).toHaveLength(1);
+    expect(harness.optionsSeen[0]).toMatchObject({
+      vaultRoot: fixtureVaultPath,
+      selectionSource: "bundled",
+    });
+    expect(harness.optionsSeen[0]?.pluginConstructionRequest).toBeUndefined();
+    expect(harness.optionsSeen[0]?.pluginRuntimeFactory).toBeUndefined();
+    await controller.close();
+  });
+
   it("returns the bundled runtime before a configured vault begins its deferred open", async () => {
     const store = new MemorySelectionStore("/restored/vault");
     const harness = runtimeHarness();
