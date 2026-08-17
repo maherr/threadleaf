@@ -15,6 +15,7 @@ export { WorkspaceItem, WorkspaceParent } from "./obsidian-workspace-items";
 type EventCallback = (...args: unknown[]) => unknown;
 type PaneType = "split" | "tab" | "window";
 type SplitDirection = "horizontal" | "vertical";
+type Side = "left" | "right";
 type WorkspaceLeafFactory = (containerEl?: HTMLElement) => WorkspaceLeaf;
 type WorkspaceLinkResolver = (linktext: string, sourcePath: string) => TFile | null;
 
@@ -33,6 +34,7 @@ export interface OpenViewState {
 }
 
 interface WorkspaceLeafGroup {
+  id: string;
   readonly leaves: Set<WorkspaceLeaf>;
 }
 
@@ -130,7 +132,10 @@ export class Workspace extends Events {
   private readonly leaves = new Set<WorkspaceLeaf>();
   private readonly listeners = new Map<string, Set<EventCallback>>();
   private readonly leafParents = new Map<WorkspaceSplit, WorkspaceTabs>();
+  private readonly leftLeaves = new Set<WorkspaceLeaf>();
   private readonly rightLeaves = new Set<WorkspaceLeaf>();
+  private readonly recentLeaves: WorkspaceLeaf[] = [];
+  private readonly recentFiles: string[] = [];
   private leafFactory: WorkspaceLeafFactory | null = null;
   private linkResolver: WorkspaceLinkResolver | null = null;
   private layoutReadyCallbackActive = false;
@@ -138,6 +143,7 @@ export class Workspace extends Events {
   private layoutReadyState = false;
   private mostRecentFile: TFile | null = null;
   private pendingLeafGroup: WorkspaceLeafGroup | null = null;
+  private nextGroupId = 1;
 
   constructor() {
     super();
@@ -234,7 +240,12 @@ export class Workspace extends Events {
     }
     return () => {
       this.leaves.delete(leaf);
+      this.leftLeaves.delete(leaf);
       this.rightLeaves.delete(leaf);
+      const recentLeafIndex = this.recentLeaves.indexOf(leaf);
+      if (recentLeafIndex >= 0) {
+        this.recentLeaves.splice(recentLeafIndex, 1);
+      }
       const group = this.leafGroups.get(leaf);
       group?.leaves.delete(leaf);
       this.leafGroups.delete(leaf);
@@ -250,7 +261,13 @@ export class Workspace extends Events {
     };
   }
 
-  setActiveLeaf(leaf: WorkspaceLeaf, _params?: { focus?: boolean }): void {
+  setActiveLeaf(leaf: WorkspaceLeaf, _params?: { focus?: boolean }): void;
+  setActiveLeaf(leaf: WorkspaceLeaf, pushHistory: boolean, focus: boolean): void;
+  setActiveLeaf(
+    leaf: WorkspaceLeaf,
+    _paramsOrPushHistory?: { focus?: boolean } | boolean,
+    _focus?: boolean,
+  ): void {
     if (!this.leaves.has(leaf)) {
       return;
     }
@@ -263,7 +280,18 @@ export class Workspace extends Events {
     const activeFile = this.fileForLeaf(leaf);
     if (activeFile) {
       this.mostRecentFile = activeFile;
+      const recentFileIndex = this.recentFiles.indexOf(activeFile.path);
+      if (recentFileIndex >= 0) {
+        this.recentFiles.splice(recentFileIndex, 1);
+      }
+      this.recentFiles.unshift(activeFile.path);
+      this.recentFiles.splice(10);
     }
+    const recentLeafIndex = this.recentLeaves.indexOf(leaf);
+    if (recentLeafIndex >= 0) {
+      this.recentLeaves.splice(recentLeafIndex, 1);
+    }
+    this.recentLeaves.unshift(leaf);
     for (const candidate of this.leaves) {
       this.setLeafVisibility(candidate, candidate === leaf);
     }
@@ -324,8 +352,28 @@ export class Workspace extends Events {
     }
   }
 
-  getMostRecentLeaf(): WorkspaceLeaf | null {
-    return this.activeLeaf;
+  iterateRootLeaves(callback: (leaf: WorkspaceLeaf) => unknown): void {
+    for (const leaf of this.leaves) {
+      if (!this.leftLeaves.has(leaf) && !this.rightLeaves.has(leaf)) {
+        callback(leaf);
+      }
+    }
+  }
+
+  getMostRecentLeaf(root?: WorkspaceParent): WorkspaceLeaf | null {
+    const inRoot = (leaf: WorkspaceLeaf): boolean => {
+      if (!root) {
+        return !this.leftLeaves.has(leaf) && !this.rightLeaves.has(leaf);
+      }
+      if (root === this.rootSplit) {
+        return !this.leftLeaves.has(leaf) && !this.rightLeaves.has(leaf);
+      }
+      if (root instanceof WorkspaceSplit) {
+        return root.children.includes(leaf);
+      }
+      return leaf.parent === root;
+    };
+    return this.recentLeaves.find((leaf) => this.leaves.has(leaf) && inRoot(leaf)) ?? null;
   }
 
   getActiveFile(): TFile | null {
@@ -358,7 +406,10 @@ export class Workspace extends Events {
           };
         })
         .filter((leaf): leaf is WorkspaceLayoutLeaf => leaf !== null);
-    const mainLeaves = layoutLeaves([...this.leaves].filter((leaf) => !this.rightLeaves.has(leaf)));
+    const mainLeaves = layoutLeaves(
+      [...this.leaves].filter((leaf) => !this.leftLeaves.has(leaf) && !this.rightLeaves.has(leaf)),
+    );
+    const leftLeaves = layoutLeaves([...this.leftLeaves]);
     const rightLeaves = layoutLeaves([...this.rightLeaves]);
     const emptySplit = (): WorkspaceLayoutSplit => ({
       children: [],
@@ -367,7 +418,11 @@ export class Workspace extends Events {
     });
     return {
       floating: emptySplit(),
-      left: emptySplit(),
+      left: {
+        children: leftLeaves,
+        direction: "vertical",
+        type: "split",
+      },
       main: {
         children: mainLeaves,
         direction: this.rootSplit.direction,
@@ -409,6 +464,48 @@ export class Workspace extends Events {
     return this.getLeaf("split", direction);
   }
 
+  async duplicateLeaf(leaf: WorkspaceLeaf, direction?: SplitDirection): Promise<WorkspaceLeaf>;
+  async duplicateLeaf(
+    leaf: WorkspaceLeaf,
+    leafType: PaneType | boolean,
+    direction?: SplitDirection,
+  ): Promise<WorkspaceLeaf>;
+  async duplicateLeaf(
+    leaf: WorkspaceLeaf,
+    leafTypeOrDirection: PaneType | boolean | SplitDirection = "split",
+    direction?: SplitDirection,
+  ): Promise<WorkspaceLeaf> {
+    if (!this.leaves.has(leaf)) {
+      throw new Error("Workspace leaf duplication requires a leaf from the active workspace.");
+    }
+    const isDirection = leafTypeOrDirection === "horizontal" || leafTypeOrDirection === "vertical";
+    const leafType = isDirection ? "split" : leafTypeOrDirection;
+    const splitDirection = isDirection ? leafTypeOrDirection : direction;
+    const duplicate =
+      leafType === "split" ? this.createLeafBySplit(leaf, splitDirection) : this.getLeaf(leafType);
+    await duplicate.setViewState(leaf.getViewState());
+    const groupMember = this.getLeafGroupMember(leaf);
+    if (groupMember) {
+      this.setLeafGroup(duplicate, groupMember);
+    }
+    return duplicate;
+  }
+
+  getLeftLeaf(split: boolean): WorkspaceLeaf | null {
+    if (!split) {
+      const existingLeaf = [...this.leftLeaves].at(-1);
+      if (existingLeaf) {
+        return existingLeaf;
+      }
+      if (!this.leafFactory) {
+        return null;
+      }
+    }
+    const leaf = this.createLeafBySplit(this.activeLeaf ?? this.getLeaf(false));
+    this.leftLeaves.add(leaf);
+    return leaf;
+  }
+
   getRightLeaf(split: boolean): WorkspaceLeaf | null {
     if (!split) {
       const existingLeaf = [...this.rightLeaves].at(-1);
@@ -422,6 +519,57 @@ export class Workspace extends Events {
     const leaf = this.createLeafBySplit(this.activeLeaf ?? this.getLeaf(false));
     this.rightLeaves.add(leaf);
     return leaf;
+  }
+
+  ensureSideLeaf(
+    type: string,
+    side: Side,
+    options: {
+      active?: boolean;
+      split?: boolean;
+      reveal?: boolean;
+      state?: Record<string, unknown>;
+    } = {},
+  ): Promise<WorkspaceLeaf> {
+    if (side !== "left" && side !== "right") {
+      return Promise.reject(new Error(`Unsupported workspace side: ${side}.`));
+    }
+    const sideLeaves = side === "left" ? this.leftLeaves : this.rightLeaves;
+    let leaf = [...sideLeaves].find((candidate) => candidate.view?.getViewType() === type) ?? null;
+    const needsCreation = leaf === null;
+    if (!leaf) {
+      leaf =
+        side === "left"
+          ? this.getLeftLeaf(options.split === true)
+          : this.getRightLeaf(options.split === true);
+    }
+    if (!leaf) {
+      return Promise.reject(
+        new Error(
+          `Workspace ${side} side leaf creation requires an installed compatibility leaf factory.`,
+        ),
+      );
+    }
+    const nextLeaf = leaf;
+    const viewState = needsCreation
+      ? {
+          ...(options.active === undefined ? {} : { active: options.active }),
+          state: options.state ?? {},
+          type,
+        }
+      : null;
+    return (async () => {
+      if (viewState) {
+        await nextLeaf.setViewState(viewState);
+      }
+      if (options.active === true) {
+        this.setActiveLeaf(nextLeaf);
+      }
+      if (options.reveal !== false) {
+        await this.revealLeaf(nextLeaf);
+      }
+      return nextLeaf;
+    })();
   }
 
   async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
@@ -520,6 +668,39 @@ export class Workspace extends Events {
     }
   }
 
+  setLeafGroupId(leaf: WorkspaceLeaf, groupId: string): void {
+    if (!this.leaves.has(leaf)) {
+      throw new Error("Workspace leaf groups require leaves from the active workspace.");
+    }
+    const normalizedGroupId = groupId.trim();
+    if (!normalizedGroupId) {
+      throw new Error("Workspace leaf groups require a non-empty group id.");
+    }
+    const currentGroup = this.groupForLeaf(leaf);
+    if (!currentGroup) {
+      throw new Error("Workspace leaf group is unavailable.");
+    }
+    const destination = [...this.leafGroups.values()].find(
+      (group) => group.id === normalizedGroupId,
+    );
+    if (destination && destination !== currentGroup) {
+      for (const member of [...currentGroup.leaves]) {
+        this.assignLeafToGroup(member, destination);
+      }
+    } else {
+      currentGroup.id = normalizedGroupId;
+    }
+    this.trigger("layout-change");
+  }
+
+  getGroupLeaves(group: string): WorkspaceLeaf[] {
+    return [...this.leaves].filter((leaf) => this.groupForLeaf(leaf)?.id === group);
+  }
+
+  getLastOpenFiles(): string[] {
+    return [...this.recentFiles];
+  }
+
   getLeafGroupMember(leaf: WorkspaceLeaf): WorkspaceLeaf | null {
     const group = this.groupForLeaf(leaf);
     return [...(group?.leaves ?? [])].find((candidate) => candidate !== leaf) ?? null;
@@ -597,7 +778,10 @@ export class Workspace extends Events {
   }
 
   private createLeafGroup(): WorkspaceLeafGroup {
-    return { leaves: new Set<WorkspaceLeaf>() };
+    return {
+      id: `threadleaf-group-${this.nextGroupId++}`,
+      leaves: new Set<WorkspaceLeaf>(),
+    };
   }
 
   private tabsForSplit(split: WorkspaceSplit): WorkspaceTabs {

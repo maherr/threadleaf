@@ -138,6 +138,76 @@ describe("Obsidian workspace compatibility wedge", () => {
     });
   });
 
+  it("keeps side leaves, root iteration, group ids, duplicate state, and recent files coherent", async () => {
+    const vault = await createVault({
+      "Notes/One.md": "one",
+      "Notes/Two.md": "two",
+    });
+    await withDocument(async () => {
+      const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
+      app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));
+      const one = vault.getFileByPath("Notes/One.md");
+      const two = vault.getFileByPath("Notes/Two.md");
+      if (!one || !two) {
+        throw new Error("Recent-file fixtures were not discovered.");
+      }
+
+      const primary = app.workspace.getLeaf(false);
+      await primary.setViewState({ active: false, state: { seed: true }, type: "empty" });
+      const grouped = app.workspace.getLeaf("tab");
+      await grouped.setViewState({ active: false, state: { grouped: true }, type: "empty" });
+      grouped.setGroupMember(primary);
+      grouped.setGroup("shared");
+
+      const left = await app.workspace.ensureSideLeaf("markdown", "left", {
+        active: false,
+        reveal: false,
+        state: { file: one.path },
+      });
+      const right = await app.workspace.ensureSideLeaf("markdown", "right", {
+        active: false,
+        reveal: false,
+        state: { file: two.path },
+      });
+      const duplicate = await app.workspace.duplicateLeaf(primary, "tab");
+      const splitDuplicate = await app.workspace.duplicateLeaf(primary, "horizontal");
+
+      await primary.openFile(one);
+      await grouped.openFile(two);
+      app.workspace.setActiveLeaf(primary);
+      app.workspace.setActiveLeaf(grouped, false, false);
+
+      const rootLeaves: WorkspaceLeaf[] = [];
+      app.workspace.iterateRootLeaves((leaf) => rootLeaves.push(leaf));
+      const groupLeaves = app.workspace.getGroupLeaves("shared");
+      const layout = app.workspace.getLayout();
+
+      expect(app.workspace.getLeftLeaf(false)).toBe(left);
+      expect(app.workspace.getRightLeaf(false)).toBe(right);
+      expect(rootLeaves).toEqual(
+        expect.arrayContaining([primary, grouped, duplicate, splitDuplicate]),
+      );
+      expect(rootLeaves).not.toContain(left);
+      expect(rootLeaves).not.toContain(right);
+      expect(groupLeaves).toEqual(
+        expect.arrayContaining([primary, grouped, duplicate, splitDuplicate]),
+      );
+      expect(duplicate.getViewState()).toMatchObject({
+        state: { seed: true },
+        type: "empty",
+      });
+      expect(splitDuplicate.getViewState()).toMatchObject({
+        state: { seed: true },
+        type: "empty",
+      });
+      expect(app.workspace.getMostRecentLeaf(app.workspace.rootSplit)).toBe(grouped);
+      expect(app.workspace.getLastOpenFiles()).toEqual(["Notes/Two.md", "Notes/One.md"]);
+      expect(layout.left.children).toHaveLength(1);
+      expect(layout.right.children).toHaveLength(1);
+      expect(layout.main.children).toHaveLength(4);
+    });
+  });
+
   it("returns real TFile and MarkdownFileInfo shapes, and rejects plausible wrong-shaped active values", async () => {
     const vault = await createVault({
       "Notes/Active.md": "active",

@@ -1,4 +1,4 @@
-import { MarkdownPreviewView, type App, type Plugin, type TFile } from "./obsidian-compat";
+import { type App, MarkdownPreviewView, type Plugin, type TFile } from "./obsidian-compat";
 import { BaseComponent, type CompatibilityEventRef, Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
 import type { OpenViewState, WorkspaceTabs } from "./obsidian-workspace-compat";
@@ -1616,6 +1616,7 @@ export class WorkspaceLeaf extends WorkspaceItem {
   }
 
   setGroup(group: string): void {
+    this.app.workspace.setLeafGroupId(this, group);
     this.trigger("group-change", group);
   }
 

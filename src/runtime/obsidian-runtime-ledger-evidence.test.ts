@@ -1994,6 +1994,107 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.workspace-extended.v1 */
+  it('proves extended workspace navigation through require("obsidian")', async () => {
+    await withTestDocument(async () => {
+      const sandboxPath = await fs.mkdtemp(
+        path.join(os.tmpdir(), "threadleaf-runtime-ledger-workspace-extended-"),
+      );
+      const pluginPath = path.join(sandboxPath, "workspace-extended-ledger-fixture");
+      try {
+        await fs.mkdir(pluginPath, { recursive: true });
+        await fs.writeFile(
+          path.join(pluginPath, "manifest.json"),
+          JSON.stringify({
+            id: "workspace-extended-ledger-fixture",
+            name: "Workspace extended ledger fixture",
+            version: "1.0.0",
+          }),
+        );
+        await fs.writeFile(
+          path.join(pluginPath, "main.js"),
+          [
+            'const { MarkdownView, Plugin, WorkspaceLeaf } = require("obsidian");',
+            "class LedgerPlugin extends Plugin {",
+            "  async onload() {",
+            "    const workspace = this.app.workspace;",
+            '    const welcome = this.app.vault.getFileByPath("Welcome.md");',
+            '    const linked = this.app.vault.getFileByPath("Linked Note.md");',
+            "    const primary = workspace.getLeaf(false);",
+            '    await primary.setViewState({ active: false, state: { seed: true }, type: "empty" });',
+            '    const grouped = workspace.getLeaf("tab");',
+            '    await grouped.setViewState({ active: false, state: { grouped: true }, type: "empty" });',
+            "    grouped.setGroupMember(primary);",
+            '    grouped.setGroup("shared");',
+            '    const directSplit = workspace.createLeafBySplit(primary, "vertical", true);',
+            '    await directSplit.setViewState({ active: false, state: { direct: true }, type: "empty" });',
+            '    const duplicateTab = await workspace.duplicateLeaf(primary, "tab");',
+            '    const duplicateSplit = await workspace.duplicateLeaf(primary, "horizontal");',
+            '    const left = await workspace.ensureSideLeaf("markdown", "left", { active: false, reveal: false, state: { file: welcome.path } });',
+            '    const right = await workspace.ensureSideLeaf("markdown", "right", { active: false, reveal: false, state: { file: linked.path } });',
+            "    const rootLeaves = [];",
+            "    workspace.iterateRootLeaves((leaf) => rootLeaves.push(leaf.id));",
+            "    await primary.openFile(welcome);",
+            "    await grouped.openFile(linked);",
+            "    workspace.setActiveLeaf(primary);",
+            "    workspace.setActiveLeaf(grouped, false, false);",
+            '    const groupLeaves = workspace.getGroupLeaves("shared");',
+            "    globalThis.__threadleafRuntimeLedgerWorkspaceExtendedProbe = {",
+            "      activeOverload: workspace.activeLeaf === grouped,",
+            "      duplicateTabState: duplicateTab.getViewState().state.seed === true,",
+            "      duplicateSplitState: duplicateSplit.getViewState().state.seed === true,",
+            "      directSplitIsLeaf: directSplit instanceof WorkspaceLeaf,",
+            "      leftIsMarkdown: left.view instanceof MarkdownView,",
+            "      rightIsMarkdown: right.view instanceof MarkdownView,",
+            "      leftLookup: workspace.getLeftLeaf(false) === left,",
+            "      rightLookup: workspace.getRightLeaf(false) === right,",
+            "      rootLeaves,",
+            "      rootExcludesSides: !rootLeaves.includes(left.id) && !rootLeaves.includes(right.id),",
+            "      groupLeaves: groupLeaves.map((leaf) => leaf.id),",
+            "      groupIncludesDuplicates: groupLeaves.includes(duplicateTab) && groupLeaves.includes(duplicateSplit),",
+            "      mostRecentInRoot: workspace.getMostRecentLeaf(workspace.rootSplit) === grouped,",
+            "      idLookup: workspace.getLeafById(grouped.id) === grouped,",
+            "      lastOpenFiles: workspace.getLastOpenFiles(),",
+            "      layout: { left: workspace.getLayout().left.children.length, main: workspace.getLayout().main.children.length, right: workspace.getLayout().right.children.length },",
+            "    };",
+            "  }",
+            "}",
+            "module.exports = LedgerPlugin;",
+            "",
+          ].join("\n"),
+        );
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerWorkspaceExtendedProbe?: unknown })
+              .__threadleafRuntimeLedgerWorkspaceExtendedProbe,
+          ).toMatchObject({
+            activeOverload: true,
+            duplicateTabState: true,
+            duplicateSplitState: true,
+            directSplitIsLeaf: true,
+            leftIsMarkdown: true,
+            rightIsMarkdown: true,
+            leftLookup: true,
+            rightLookup: true,
+            rootExcludesSides: true,
+            groupIncludesDuplicates: true,
+            mostRecentInRoot: true,
+            idLookup: true,
+            lastOpenFiles: ["Linked Note.md", "Welcome.md"],
+            layout: { left: 1, main: 5, right: 1 },
+          });
+        } finally {
+          await host.close();
+        }
+      } finally {
+        Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerWorkspaceExtendedProbe");
+        await fs.rm(sandboxPath, { recursive: true, force: true });
+      }
+    });
+  });
+
   /** @compatibility-test-id obsidian-runtime.render-views.v1 */
   /** @compatibility-test-id obsidian-runtime.markdown-view-family.v1 */
   it('proves real workspace leaf and file-view bindings through require("obsidian")', async () => {
