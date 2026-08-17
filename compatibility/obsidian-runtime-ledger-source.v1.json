@@ -9225,9 +9225,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.PopoverState"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.PopoverState"],
         "behaviors": [
           {
             "id": "obsidian.next.PopoverState",
@@ -9304,9 +9302,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.editorEditorField"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.editorEditorField"],
         "behaviors": [
           {
             "id": "obsidian.next.editorEditorField",
@@ -9332,9 +9328,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.editorInfoField"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.editorInfoField"],
         "behaviors": [
           {
             "id": "obsidian.next.editorInfoField",
@@ -9360,9 +9354,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.editorLivePreviewField"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.editorLivePreviewField"],
         "behaviors": [
           {
             "id": "obsidian.next.editorLivePreviewField",
@@ -9388,9 +9380,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.editorViewField"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.editorViewField"],
         "behaviors": [
           {
             "id": "obsidian.next.editorViewField",
@@ -9416,9 +9406,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.livePreviewState"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.livePreviewState"],
         "behaviors": [
           {
             "id": "obsidian.next.livePreviewState",
@@ -9492,9 +9480,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.request"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.request"],
         "behaviors": [
           {
             "id": "obsidian.next.request",
@@ -9520,9 +9506,7 @@
         }
       ],
       "coverage": {
-        "requiredBehaviorIds": [
-          "obsidian.next.requestUrl"
-        ],
+        "requiredBehaviorIds": ["obsidian.next.requestUrl"],
         "behaviors": [
           {
             "id": "obsidian.next.requestUrl",
