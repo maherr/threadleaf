@@ -14,8 +14,8 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 137,
-    "partial": 16,
+    "implemented": 150,
+    "partial": 3,
     "unsupported": 5,
     "missing": 0,
     "ownMembers": 700,
@@ -1609,7 +1609,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:EditableFileView:c32178dc1207763babbc23c9b42adb5b3cae749751d8d6997ae7a3bd9d2a5c9e",
       "name": "EditableFileView",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "c32178dc1207763babbc23c9b42adb5b3cae749751d8d6997ae7a3bd9d2a5c9e",
       "location": {
         "line": 2394,
@@ -1632,8 +1632,12 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "view.editable-inheritance"
+      ],
+      "coveredBehaviorIds": [
+        "view.editable-inheritance"
+      ]
     },
     {
       "exportId": "export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff",
@@ -2309,7 +2313,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:finishRenderMath:58b4e9583b344203c37a7acc1376ab339641d34ebc60f5f75e9ae18e0a022d14",
       "name": "finishRenderMath",
       "kind": "function",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "58b4e9583b344203c37a7acc1376ab339641d34ebc60f5f75e9ae18e0a022d14",
       "location": {
         "line": 3193,
@@ -2330,8 +2334,12 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "math.finish-render"
+      ],
+      "coveredBehaviorIds": [
+        "math.finish-render"
+      ]
     },
     {
       "exportId": "export:class:FuzzySuggestModal:042ca80827cde1a885feff3a22ac82bd926601e91c5ffc20111e2520fe5a94d6",
@@ -2720,7 +2728,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
       "name": "HTMLValue",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
       "location": {
         "line": 3530,
@@ -2743,14 +2751,18 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "value.html-string"
+      ],
+      "coveredBehaviorIds": [
+        "value.html-string"
+      ]
     },
     {
       "exportId": "export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
       "name": "IconValue",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
       "location": {
         "line": 3539,
@@ -2773,14 +2785,18 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "value.icon-string"
+      ],
+      "coveredBehaviorIds": [
+        "value.icon-string"
+      ]
     },
     {
       "exportId": "export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
       "name": "ImageValue",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
       "location": {
         "line": 3548,
@@ -2803,8 +2819,12 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "value.image-string"
+      ],
+      "coveredBehaviorIds": [
+        "value.image-string"
+      ]
     },
     {
       "exportId": "export:class:ItemView:eed72ec50d5d3f3c1c5a7476c20e9a29370acd3eac1a764fcf5b818b062a9cf8",
@@ -3648,7 +3668,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:MenuSeparator:8d76cd93d0b4b14a3dc3d33f1be30d916578ae91e14c4cdde1788cd2592a3ef0",
       "name": "MenuSeparator",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "8d76cd93d0b4b14a3dc3d33f1be30d916578ae91e14c4cdde1788cd2592a3ef0",
       "location": {
         "line": 4392,
@@ -3669,8 +3689,12 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "menu.separator-render"
+      ],
+      "coveredBehaviorIds": [
+        "menu.separator-render"
+      ]
     },
     {
       "exportId": "export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
@@ -3987,7 +4011,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:NotNullValue:c1ea1665f928693fb9c893089a4014dc3009931e6301c7f7b906a3608848b47c",
       "name": "NotNullValue",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "c1ea1665f928693fb9c893089a4014dc3009931e6301c7f7b906a3608848b47c",
       "location": {
         "line": 4657,
@@ -4010,8 +4034,12 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "value.not-null-instance"
+      ],
+      "coveredBehaviorIds": [
+        "value.not-null-instance"
+      ]
     },
     {
       "exportId": "export:class:NullValue:1324bf65b03915a3f0cd328a8925569783bb7e24715cc6529560f4eed3522a40",
@@ -4812,7 +4840,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:QueryController:8687a7aa105e69dd9d978c7cf0f28d78f2b5b0f1bf94fdd7051510ddb41fe791",
       "name": "QueryController",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "8687a7aa105e69dd9d978c7cf0f28d78f2b5b0f1bf94fdd7051510ddb41fe791",
       "location": {
         "line": 5315,
@@ -4835,8 +4863,12 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "bases.query-controller-data"
+      ],
+      "coveredBehaviorIds": [
+        "bases.query-controller-data"
+      ]
     },
     {
       "exportId": "export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00",
@@ -4881,7 +4913,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
       "name": "RelativeDateValue",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
       "location": {
         "line": 5387,
@@ -4904,8 +4936,12 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "value.relative-date-instance"
+      ],
+      "coveredBehaviorIds": [
+        "value.relative-date-instance"
+      ]
     },
     {
       "exportId": "export:function:removeIcon:1b1690db3c4ed09269009e335421b253baf9f45c71ea581550ccc18eaee92dbc",
@@ -5015,7 +5051,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:renderMath:bdf8f2074b169c02d315058a5198110b8130966c7c21a80753d11360b4fef8ff",
       "name": "renderMath",
       "kind": "function",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "bdf8f2074b169c02d315058a5198110b8130966c7c21a80753d11360b4fef8ff",
       "location": {
         "line": 5423,
@@ -5036,8 +5072,12 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "math.render-elements"
+      ],
+      "coveredBehaviorIds": [
+        "math.render-elements"
+      ]
     },
     {
       "exportId": "export:function:renderResults:4dfb992b9bec08fd958205c8a120551194177a33c1dd4a97c4021b4ad165068a",
@@ -6466,7 +6506,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
       "name": "UrlValue",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
       "location": {
         "line": 7246,
@@ -6489,8 +6529,12 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "value.url-string"
+      ],
+      "coveredBehaviorIds": [
+        "value.url-string"
+      ]
     },
     {
       "exportId": "export:class:Value:7c58c01f8b9556273522a291722247cb44e052c15e968eee987d97cdf2240def",
@@ -7278,7 +7322,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:WorkspaceParent:1fb7060d911d26037de04d4c0dedda3c4c72e57e68725d70cf211963039ecee0",
       "name": "WorkspaceParent",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "1fb7060d911d26037de04d4c0dedda3c4c72e57e68725d70cf211963039ecee0",
       "location": {
         "line": 8385,
@@ -7301,14 +7345,18 @@ export const obsidianRuntimeLedger = {
       ],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "workspace.parent-instance"
+      ],
+      "coveredBehaviorIds": [
+        "workspace.parent-instance"
+      ]
     },
     {
       "exportId": "export:class:WorkspaceRibbon:ffebe640f57faebeb55a9df3fcc091e2abe8d66c19ae2a67a2eb83b7a3e13541",
       "name": "WorkspaceRibbon",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "ffebe640f57faebeb55a9df3fcc091e2abe8d66c19ae2a67a2eb83b7a3e13541",
       "location": {
         "line": 8392,
@@ -7329,8 +7377,12 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "workspace.ribbon-instance"
+      ],
+      "coveredBehaviorIds": [
+        "workspace.ribbon-instance"
+      ]
     },
     {
       "exportId": "export:class:WorkspaceRoot:cbd16d72040e24ecf7e56810a5a9f6c6193383c2e9809fe754c0ba2437947f6d",
@@ -10344,7 +10396,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:EditableFileView:c32178dc1207763babbc23c9b42adb5b3cae749751d8d6997ae7a3bd9d2a5c9e",
       "name": "EditableFileView",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -12378,7 +12430,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
       "name": "HTMLValue",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -12398,7 +12450,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
       "name": "IconValue",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -12418,7 +12470,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
       "name": "ImageValue",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -14077,7 +14129,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:MenuSeparator:8d76cd93d0b4b14a3dc3d33f1be30d916578ae91e14c4cdde1788cd2592a3ef0",
       "name": "MenuSeparator",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [],
       "coveredObligationIds": [],
@@ -14796,7 +14848,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:NotNullValue:c1ea1665f928693fb9c893089a4014dc3009931e6301c7f7b906a3608848b47c",
       "name": "NotNullValue",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -15870,7 +15922,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:QueryController:8687a7aa105e69dd9d978c7cf0f28d78f2b5b0f1bf94fdd7051510ddb41fe791",
       "name": "QueryController",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -15947,7 +15999,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
       "name": "RelativeDateValue",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -18558,7 +18610,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
       "name": "UrlValue",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -21392,7 +21444,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:WorkspaceParent:1fb7060d911d26037de04d4c0dedda3c4c72e57e68725d70cf211963039ecee0",
       "name": "WorkspaceParent",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [
         {
@@ -21412,7 +21464,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:WorkspaceRibbon:ffebe640f57faebeb55a9df3fcc091e2abe8d66c19ae2a67a2eb83b7a3e13541",
       "name": "WorkspaceRibbon",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [],
       "heritageEdges": [],
       "coveredObligationIds": [],

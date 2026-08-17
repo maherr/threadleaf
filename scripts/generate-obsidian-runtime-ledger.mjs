@@ -617,6 +617,14 @@ export function deriveStatus(declared, entry, factoryKeys, implementationMap, ma
   if (declared.kind !== binding.kind) return "missing";
   const coverage = entry.coverage ?? {};
   if (declared.kind === "class") {
+    if (declared.obligations.length === 0) {
+      const requiredBehaviors = coverage.requiredBehaviorIds ?? [];
+      const coveredBehaviors = new Set((coverage.behaviors ?? []).map((behavior) => behavior.id));
+      if (requiredBehaviors.length === 0) return "partial";
+      return requiredBehaviors.every((behaviorId) => coveredBehaviors.has(behaviorId))
+        ? "implemented"
+        : "partial";
+    }
     const covered = new Set(
       (coverage.obligations ?? []).map((obligation) => obligation.signatureHash),
     );

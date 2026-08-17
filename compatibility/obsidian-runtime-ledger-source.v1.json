@@ -1063,7 +1063,21 @@
           "id": "obsidian-runtime.value-core.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["value.not-null-instance"],
+        "behaviors": [
+          {
+            "id": "value.not-null-instance",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "NullValue": {
       "implementation": {
@@ -1451,7 +1465,21 @@
           "id": "obsidian-runtime.value-extended.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["value.relative-date-instance"],
+        "behaviors": [
+          {
+            "id": "value.relative-date-instance",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "HTMLValue": {
       "implementation": {
@@ -1463,7 +1491,21 @@
           "id": "obsidian-runtime.value-extended.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["value.html-string"],
+        "behaviors": [
+          {
+            "id": "value.html-string",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "IconValue": {
       "implementation": {
@@ -1475,7 +1517,21 @@
           "id": "obsidian-runtime.value-extended.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["value.icon-string"],
+        "behaviors": [
+          {
+            "id": "value.icon-string",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "ImageValue": {
       "implementation": {
@@ -1487,7 +1543,21 @@
           "id": "obsidian-runtime.value-extended.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["value.image-string"],
+        "behaviors": [
+          {
+            "id": "value.image-string",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "UrlValue": {
       "implementation": {
@@ -1499,7 +1569,21 @@
           "id": "obsidian-runtime.value-extended.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["value.url-string"],
+        "behaviors": [
+          {
+            "id": "value.url-string",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "Tasks": {
       "implementation": {
@@ -2543,7 +2627,20 @@
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
-      "coverage": {}
+      "coverage": {
+        "requiredBehaviorIds": ["workspace.parent-instance"],
+        "behaviors": [
+          {
+            "id": "workspace.parent-instance",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "WorkspaceContainer": {
       "implementation": {
@@ -2651,7 +2748,20 @@
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
-      "coverage": {}
+      "coverage": {
+        "requiredBehaviorIds": ["workspace.ribbon-instance"],
+        "behaviors": [
+          {
+            "id": "workspace.ribbon-instance",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-hierarchy.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "WorkspaceRoot": {
       "implementation": {
@@ -7164,7 +7274,20 @@
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
-      "coverage": {}
+      "coverage": {
+        "requiredBehaviorIds": ["menu.separator-render"],
+        "behaviors": [
+          {
+            "id": "menu.separator-render",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.ui-interaction-classes.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "Scope": {
       "implementation": {
@@ -8370,7 +8493,21 @@
           "id": "obsidian-runtime.utility-extended.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["math.finish-render"],
+        "behaviors": [
+          {
+            "id": "math.finish-render",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "renderMath": {
       "implementation": {
@@ -8382,7 +8519,21 @@
           "id": "obsidian-runtime.utility-extended.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["math.render-elements"],
+        "behaviors": [
+          {
+            "id": "math.render-elements",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "resolveSubpath": {
       "implementation": {
@@ -8994,7 +9145,21 @@
           "id": "obsidian-runtime.next-public-surface.v1",
           "path": "src/runtime/obsidian-runtime-ledger-next-slice.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["view.editable-inheritance"],
+        "behaviors": [
+          {
+            "id": "view.editable-inheritance",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.next-public-surface.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-next-slice.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "HoverPopover": {
       "implementation": {
@@ -9077,7 +9242,21 @@
           "id": "obsidian-runtime.next-public-surface.v1",
           "path": "src/runtime/obsidian-runtime-ledger-next-slice.test.ts"
         }
-      ]
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["bases.query-controller-data"],
+        "behaviors": [
+          {
+            "id": "bases.query-controller-data",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.next-public-surface.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-next-slice.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "WorkspaceFloating": {
       "implementation": {
