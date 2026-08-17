@@ -13,15 +13,15 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 27,
-    "partial": 15,
+    "implemented": 29,
+    "partial": 13,
     "unsupported": 0,
     "missing": 116,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 287
+    "implementedObligations": 296
   },
   "factory": {
     "keys": [
@@ -432,7 +432,7 @@
       "exportId": "export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb",
       "name": "BaseComponent",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb",
       "location": {
         "line": 497,
@@ -457,10 +457,12 @@
       "heritageEdgeIds": [],
       "coveredObligationIds": [
         "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:e876a92b66fa873277f5c10814a541ae73544309a062a1f3e5ad17ac4c296ba9",
         "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
       ],
       "coveredObligationSignatureHashes": [
         "6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "e876a92b66fa873277f5c10814a541ae73544309a062a1f3e5ad17ac4c296ba9",
         "1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
       ],
       "requiredBehaviorIds": [],
@@ -803,7 +805,7 @@
       "exportId": "export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7",
       "name": "Component",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7",
       "location": {
         "line": 1835,
@@ -839,13 +841,29 @@
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
-        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:c4b2d550ca778c64f84ae51fe289081d7e43f52f86e3689d32f8564074d772cd",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:3d1e6ca0a547557dfb51484dbb31dfb5bd036bfeeb09c0c56b742c45ddadb001",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:0c528b581e9688b5a5cc42b6ed2f7f787454e9feacc6af28f685a2a98c5a1f5e",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e1e12f8611dbbdec6688589365d8c32ad19a610607fdf1f891a8663a8eb32149",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:4198bd93b6590536a50919b6274245190c89dbcf8694a27b0c68f36ced88dcc2",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:980c3e6f110956276876349e3b7851f6aba6611d7daf2112f5a1c1506668bd05",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:7d48aaee27340ba0cb02af90749473ebb4f87296d49a5274ca514f3d4b015cd0",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ad1741746d6d2c06d595a1a3216e6f1f249eedf082c7b00ef7a0dee3320aa2a9"
       ],
       "coveredObligationSignatureHashes": [
         "ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
         "49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
         "565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
-        "e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+        "e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a",
+        "c4b2d550ca778c64f84ae51fe289081d7e43f52f86e3689d32f8564074d772cd",
+        "3d1e6ca0a547557dfb51484dbb31dfb5bd036bfeeb09c0c56b742c45ddadb001",
+        "0c528b581e9688b5a5cc42b6ed2f7f787454e9feacc6af28f685a2a98c5a1f5e",
+        "e1e12f8611dbbdec6688589365d8c32ad19a610607fdf1f891a8663a8eb32149",
+        "4198bd93b6590536a50919b6274245190c89dbcf8694a27b0c68f36ced88dcc2",
+        "980c3e6f110956276876349e3b7851f6aba6611d7daf2112f5a1c1506668bd05",
+        "7d48aaee27340ba0cb02af90749473ebb4f87296d49a5274ca514f3d4b015cd0",
+        "ad1741746d6d2c06d595a1a3216e6f1f249eedf082c7b00ef7a0dee3320aa2a9"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -5834,7 +5852,7 @@
     {
       "exportId": "export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb",
       "name": "BaseComponent",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
@@ -5885,10 +5903,12 @@
       "heritageEdges": [],
       "coveredObligationIds": [
         "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:e876a92b66fa873277f5c10814a541ae73544309a062a1f3e5ad17ac4c296ba9",
         "obligation:export:class:BaseComponent:d5ca1a2d7335232a8777cb01872b6b9edff7e8c51dca90d0a91b2ded94ff6deb:1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
       ],
       "coveredObligationSignatureHashes": [
         "6335ba0220f902b73530ea59c424316dd72466d31618c2b3e68a9099952e6414",
+        "e876a92b66fa873277f5c10814a541ae73544309a062a1f3e5ad17ac4c296ba9",
         "1e29d73246df26c604abd27b827cb473cfc98e8461eab39cb52a779690253080"
       ]
     },
@@ -7127,7 +7147,7 @@
     {
       "exportId": "export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7",
       "name": "Component",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
@@ -7315,13 +7335,29 @@
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
         "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
-        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:c4b2d550ca778c64f84ae51fe289081d7e43f52f86e3689d32f8564074d772cd",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:3d1e6ca0a547557dfb51484dbb31dfb5bd036bfeeb09c0c56b742c45ddadb001",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:0c528b581e9688b5a5cc42b6ed2f7f787454e9feacc6af28f685a2a98c5a1f5e",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:e1e12f8611dbbdec6688589365d8c32ad19a610607fdf1f891a8663a8eb32149",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:4198bd93b6590536a50919b6274245190c89dbcf8694a27b0c68f36ced88dcc2",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:980c3e6f110956276876349e3b7851f6aba6611d7daf2112f5a1c1506668bd05",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:7d48aaee27340ba0cb02af90749473ebb4f87296d49a5274ca514f3d4b015cd0",
+        "obligation:export:class:Component:66c65c8e55598f6c987e31f7a684f683723a3263ca8d5d48ccc47f76bb539df7:ad1741746d6d2c06d595a1a3216e6f1f249eedf082c7b00ef7a0dee3320aa2a9"
       ],
       "coveredObligationSignatureHashes": [
         "ef3cc1c88200cc48638ea2604d52f6c2590c3bf40a55152e90ced68baddc49fa",
         "49611713e06e77644eef921847a0b0b9b556c6f04f9f8ed5a421197e04a0f529",
         "565486cc345889d31ec926dea7521d869218030a3ceeea461c05112efb934ad8",
-        "e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a"
+        "e8d9ba79eb974dc8b04c041956b4da6f634cca2cb2c1a1355ffc257cdf1d7a5a",
+        "c4b2d550ca778c64f84ae51fe289081d7e43f52f86e3689d32f8564074d772cd",
+        "3d1e6ca0a547557dfb51484dbb31dfb5bd036bfeeb09c0c56b742c45ddadb001",
+        "0c528b581e9688b5a5cc42b6ed2f7f787454e9feacc6af28f685a2a98c5a1f5e",
+        "e1e12f8611dbbdec6688589365d8c32ad19a610607fdf1f891a8663a8eb32149",
+        "4198bd93b6590536a50919b6274245190c89dbcf8694a27b0c68f36ced88dcc2",
+        "980c3e6f110956276876349e3b7851f6aba6611d7daf2112f5a1c1506668bd05",
+        "7d48aaee27340ba0cb02af90749473ebb4f87296d49a5274ca514f3d4b015cd0",
+        "ad1741746d6d2c06d595a1a3216e6f1f249eedf082c7b00ef7a0dee3320aa2a9"
       ]
     },
     {

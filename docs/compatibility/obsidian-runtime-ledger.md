@@ -24,7 +24,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | arrayBufferToBase64 | function | missing | 6d32d259293c66cd |
 | arrayBufferToHex | function | missing | b08fc77997d83ccd |
 | base64ToArrayBuffer | function | missing | 62e0d860d41c4011 |
-| BaseComponent | class | partial | d5ca1a2d7335232a |
+| BaseComponent | class | implemented | d5ca1a2d7335232a |
 | BasesEntry | class | missing | c2adff844b8f99f5 |
 | BasesEntryGroup | class | missing | 1593d0338da949ce |
 | BasesQueryResult | class | missing | b2e46230415278ba |
@@ -34,7 +34,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ButtonComponent | class | implemented | 3329c8e457d23c16 |
 | CapacitorAdapter | class | missing | b468049f7adeaf0c |
 | ColorComponent | class | implemented | aa471211ee3a3891 |
-| Component | class | partial | 66c65c8e55598f6c |
+| Component | class | implemented | 66c65c8e55598f6c |
 | ConfirmationButton | class | missing | b3100e2fe15dddf0 |
 | ConfirmationModal | class | missing | 16d786038936266a |
 | DateValue | class | missing | 45dce24b565b761c |

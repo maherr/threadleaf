@@ -31,15 +31,15 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 27,
-  partial: 15,
+  implemented: 29,
+  partial: 13,
   unsupported: 0,
   missing: 116,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 287,
+  implementedObligations: 296,
 });
 assert.equal(ledger.factory.keys.length, 76);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -57,10 +57,10 @@ assert.deepEqual(
   [
     ["AbstractInputSuggest", "implemented"],
     ["AbstractTextComponent", "implemented"],
-    ["BaseComponent", "partial"],
+    ["BaseComponent", "implemented"],
     ["ButtonComponent", "implemented"],
     ["ColorComponent", "implemented"],
-    ["Component", "partial"],
+    ["Component", "implemented"],
     ["DisplayValueComponent", "implemented"],
     ["DropdownComponent", "implemented"],
     ["Editor", "implemented"],
