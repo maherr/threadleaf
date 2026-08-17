@@ -22,7 +22,7 @@ export const obsidianRuntimeLedger = {
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 279
+    "implementedObligations": 287
   },
   "factory": {
     "keys": [
@@ -4744,7 +4744,15 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
-        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:d9fc5fdb40ee2e1a0817ed87f00983e7604cfad00967796f935d3ce96394070f",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:f83f54edb1ff0591afd6d548b16047c61026f961d17488419228199c012327af",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:2e0471258d29a0100e77e948501730a065ea0f9f1a9636359a9d6f8de94711f2",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9afa68829fb22d18064df9eeb23a83a17238697e7c90a578144b18167bd6005f",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:7c6a71aad9f4363cd782681fa59a95b44b7e3dd775eb957399f45c909b2448a8",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:bf4cf9e7a3378ecdfd27dff775b3960f13a09ad09336543faf4cb32c23875ee0",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9e7d7822ef3dab59b9ea5253cc173ed568085ff2b60c08683b055c93af697272",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:f6ed0e9fd513f9c99b81cd6db037a68a3f63795fb5bb3b22c893998a3313829d"
       ],
       "coveredObligationSignatureHashes": [
         "2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
@@ -4758,7 +4766,15 @@ export const obsidianRuntimeLedger = {
         "109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
         "31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
         "3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
-        "9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+        "9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742",
+        "d9fc5fdb40ee2e1a0817ed87f00983e7604cfad00967796f935d3ce96394070f",
+        "f83f54edb1ff0591afd6d548b16047c61026f961d17488419228199c012327af",
+        "2e0471258d29a0100e77e948501730a065ea0f9f1a9636359a9d6f8de94711f2",
+        "9afa68829fb22d18064df9eeb23a83a17238697e7c90a578144b18167bd6005f",
+        "7c6a71aad9f4363cd782681fa59a95b44b7e3dd775eb957399f45c909b2448a8",
+        "bf4cf9e7a3378ecdfd27dff775b3960f13a09ad09336543faf4cb32c23875ee0",
+        "9e7d7822ef3dab59b9ea5253cc173ed568085ff2b60c08683b055c93af697272",
+        "f6ed0e9fd513f9c99b81cd6db037a68a3f63795fb5bb3b22c893998a3313829d"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -16418,7 +16434,15 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
-        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:d9fc5fdb40ee2e1a0817ed87f00983e7604cfad00967796f935d3ce96394070f",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:f83f54edb1ff0591afd6d548b16047c61026f961d17488419228199c012327af",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:2e0471258d29a0100e77e948501730a065ea0f9f1a9636359a9d6f8de94711f2",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9afa68829fb22d18064df9eeb23a83a17238697e7c90a578144b18167bd6005f",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:7c6a71aad9f4363cd782681fa59a95b44b7e3dd775eb957399f45c909b2448a8",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:bf4cf9e7a3378ecdfd27dff775b3960f13a09ad09336543faf4cb32c23875ee0",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9e7d7822ef3dab59b9ea5253cc173ed568085ff2b60c08683b055c93af697272",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:f6ed0e9fd513f9c99b81cd6db037a68a3f63795fb5bb3b22c893998a3313829d"
       ],
       "coveredObligationSignatureHashes": [
         "2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
@@ -16432,7 +16456,15 @@ export const obsidianRuntimeLedger = {
         "109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
         "31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
         "3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
-        "9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+        "9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742",
+        "d9fc5fdb40ee2e1a0817ed87f00983e7604cfad00967796f935d3ce96394070f",
+        "f83f54edb1ff0591afd6d548b16047c61026f961d17488419228199c012327af",
+        "2e0471258d29a0100e77e948501730a065ea0f9f1a9636359a9d6f8de94711f2",
+        "9afa68829fb22d18064df9eeb23a83a17238697e7c90a578144b18167bd6005f",
+        "7c6a71aad9f4363cd782681fa59a95b44b7e3dd775eb957399f45c909b2448a8",
+        "bf4cf9e7a3378ecdfd27dff775b3960f13a09ad09336543faf4cb32c23875ee0",
+        "9e7d7822ef3dab59b9ea5253cc173ed568085ff2b60c08683b055c93af697272",
+        "f6ed0e9fd513f9c99b81cd6db037a68a3f63795fb5bb3b22c893998a3313829d"
       ]
     },
     {

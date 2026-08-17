@@ -571,6 +571,15 @@ export class Vault extends Events {
     return folders.sort((left, right) => left.path.localeCompare(right.path));
   }
 
+  static recurseChildren(root: TFolder, callback: (file: TAbstractFile) => unknown): void {
+    for (const child of root.children) {
+      callback(child);
+      if (child instanceof TFolder) {
+        Vault.recurseChildren(child, callback);
+      }
+    }
+  }
+
   getAvailablePath(basePath: string, extension: string): string {
     const portableBase = basePath.replaceAll("\\", "/");
     if (path.posix.isAbsolute(portableBase) || path.win32.isAbsolute(basePath)) {
