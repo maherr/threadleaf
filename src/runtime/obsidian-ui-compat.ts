@@ -1,5 +1,6 @@
 import type { App, Plugin, TFile } from "./obsidian-compat";
-import { BaseComponent, Component } from "./obsidian-components";
+import { BaseComponent, type CompatibilityEventRef, Component } from "./obsidian-components";
+import { Events } from "./obsidian-events";
 import { createCompatibleIcon } from "./obsidian-icons";
 import type { OpenViewState } from "./obsidian-workspace-compat";
 
@@ -1175,14 +1176,16 @@ export function isConstructedWorkspaceLeaf(leaf: WorkspaceLeaf): boolean {
   return constructedWorkspaceLeaves.has(leaf);
 }
 
-export class WorkspaceLeaf {
+export class WorkspaceLeaf extends Events {
   readonly app: App;
   readonly containerEl: HTMLElement;
   readonly id: string;
   readonly tabHeaderInnerIconEl: HTMLElement;
   readonly tabHeaderInnerTitleEl: HTMLElement;
   view: View | null = null;
+  hoverPopover: null = null;
   private pinned = false;
+  private ephemeralState: Record<string, unknown> = {};
   private readonly releaseWorkspaceRegistration: () => void;
   private viewState: { type: string; state: Record<string, unknown> } = {
     type: "empty",
@@ -1192,6 +1195,7 @@ export class WorkspaceLeaf {
   private static nextId = 1;
 
   constructor(app: App, containerEl?: HTMLElement) {
+    super();
     constructedWorkspaceLeaves.add(this);
     this.app = app;
     this.containerEl = containerEl ?? currentDocument().createElement("div");
@@ -1224,6 +1228,7 @@ export class WorkspaceLeaf {
       type: viewState.type,
       state: structuredClone(viewState.state ?? {}),
     };
+    this.ephemeralState = {};
     if (viewState.type === "empty") {
       return;
     }
@@ -1277,12 +1282,62 @@ export class WorkspaceLeaf {
       ...(openState.group ? { group: openState.group } : {}),
     });
     if (openState.eState) {
-      this.view?.setEphemeralState(structuredClone(openState.eState));
+      this.setEphemeralState(openState.eState);
+    }
+  }
+
+  async open(view: View): Promise<View> {
+    if (view.leaf !== this) {
+      throw new Error("Workspace leaf can only open a view constructed for itself.");
+    }
+    const previousView = this.view === view ? null : this.view;
+    this.view = null;
+    if (previousView) {
+      await this.releaseViewInstance(previousView);
+    }
+    this.containerEl.replaceChildren();
+    this.view = view;
+    this.ephemeralState = {};
+    try {
+      view.load();
+      await view.openCompatibilityView();
+      const state = structuredClone(view.getState());
+      await view.setState(state, {});
+      this.viewState = { type: view.getViewType(), state };
+      this.tabHeaderInnerTitleEl.textContent = view.getDisplayText();
+      if (view instanceof ItemView) {
+        const filePath = view instanceof FileView ? view.file?.path : null;
+        view.setHeaderTitle(filePath ?? view.getDisplayText());
+      }
+      this.app.workspace.setActiveLeaf(this);
+      this.app.workspace.trigger("active-leaf-change", this);
+      this.app.workspace.trigger("layout-change");
+      return view;
+    } catch (error) {
+      this.view = null;
+      await this.releaseViewInstance(view).catch(() => undefined);
+      throw error;
     }
   }
 
   async rebuildView(): Promise<void> {
     await this.setViewState(this.getViewState());
+  }
+
+  get isDeferred(): boolean {
+    return false;
+  }
+
+  async loadIfDeferred(): Promise<void> {}
+
+  getEphemeralState(): Record<string, unknown> {
+    return structuredClone(this.ephemeralState);
+  }
+
+  setEphemeralState(state: unknown): void {
+    this.ephemeralState =
+      state && typeof state === "object" ? structuredClone(state as Record<string, unknown>) : {};
+    this.view?.setEphemeralState(structuredClone(this.ephemeralState));
   }
 
   async detach(): Promise<void> {
@@ -1296,6 +1351,7 @@ export class WorkspaceLeaf {
 
   setPinned(pinned: boolean): void {
     this.pinned = pinned;
+    this.trigger("pinned-change", pinned);
     this.app.workspace.trigger("layout-change");
   }
 
@@ -1307,12 +1363,50 @@ export class WorkspaceLeaf {
     this.app.workspace.setLeafGroup(this, other);
   }
 
+  setGroup(group: string): void {
+    this.trigger("group-change", group);
+  }
+
+  getIcon(): string {
+    return this.view?.getIcon() ?? "document";
+  }
+
+  getDisplayText(): string {
+    return this.view?.getDisplayText() ?? "Untitled";
+  }
+
+  onResize(): void {
+    this.view?.onResize();
+  }
+
+  on(
+    name: "pinned-change",
+    callback: (pinned: boolean) => unknown,
+    context?: unknown,
+  ): CompatibilityEventRef;
+  on(
+    name: "group-change",
+    callback: (group: string) => unknown,
+    context?: unknown,
+  ): CompatibilityEventRef;
+  override on(
+    name: string,
+    callback: (...args: never[]) => unknown,
+    context?: unknown,
+  ): CompatibilityEventRef {
+    return super.on(name, callback as (...args: unknown[]) => unknown, context);
+  }
+
   private async releaseView(): Promise<void> {
     const view = this.view;
     this.view = null;
     if (!view) {
       return;
     }
+    await this.releaseViewInstance(view);
+  }
+
+  private async releaseViewInstance(view: View): Promise<void> {
     let failure: unknown = null;
     if (view instanceof FileView && view.file) {
       try {

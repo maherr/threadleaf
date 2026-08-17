@@ -72,6 +72,12 @@
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
       "line": 112,
       "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.workspace-leaf-open.v1",
+      "path": "src/runtime/obsidian-workspace-compat.test.ts",
+      "line": 210,
+      "status": "positive"
     }
   ]
 }

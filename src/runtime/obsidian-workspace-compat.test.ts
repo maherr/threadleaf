@@ -207,6 +207,68 @@ describe("Obsidian compatibility workspace lifecycle", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.workspace-leaf-open.v1 */
+  it("opens a preconstructed view in its owning leaf and publishes its state", async () => {
+    const dom = new JSDOM("<!doctype html><body><main></main></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousDocument = globalThis.document;
+    try {
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: dom.window.document,
+        writable: true,
+      });
+      const workspace = new Workspace();
+      const compatibility = new CompatibilityIntegrationRegistry();
+      const app = { compatibility, workspace } as unknown as App;
+      class OpenView extends ItemView {
+        override getViewType(): string {
+          return "open-fixture";
+        }
+
+        override getDisplayText(): string {
+          return "Open fixture";
+        }
+
+        override getState(): Record<string, unknown> {
+          return { opened: true };
+        }
+      }
+      const container = dom.window.document.querySelector<HTMLElement>("main");
+      expect(container).not.toBeNull();
+      if (!container) {
+        return;
+      }
+      const leaf = new WorkspaceLeaf(app, container);
+      const view = new OpenView(leaf);
+
+      await expect(leaf.open(view)).resolves.toBe(view);
+      expect(leaf.view).toBe(view);
+      expect(leaf.getViewState()).toEqual({
+        type: "open-fixture",
+        state: { opened: true },
+      });
+      expect(leaf.getDisplayText()).toBe("Open fixture");
+      expect(leaf.getIcon()).toBe("document");
+      expect(workspace.activeLeaf).toBe(leaf);
+
+      await leaf.detach();
+      expect(container.isConnected).toBe(false);
+    } finally {
+      if (previousDocument === undefined) {
+        Reflect.deleteProperty(globalThis, "document");
+      } else {
+        Object.defineProperty(globalThis, "document", {
+          configurable: true,
+          value: previousDocument,
+          writable: true,
+        });
+      }
+      dom.window.close();
+    }
+  });
+
   it("still unloads and detaches a view when its close hook fails", async () => {
     const dom = new JSDOM("<!doctype html><body><main></main></body>", {
       url: "https://threadleaf.invalid/",

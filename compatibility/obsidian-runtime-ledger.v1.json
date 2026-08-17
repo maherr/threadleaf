@@ -21,7 +21,7 @@
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 111
+    "implementedObligations": 123
   },
   "factory": {
     "keys": [
@@ -1359,6 +1359,10 @@
         {
           "id": "obsidian-runtime.render-views.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        },
+        {
+          "id": "obsidian-runtime.workspace-leaf-open.v1",
+          "path": "src/runtime/obsidian-workspace-compat.test.ts"
         }
       ],
       "negativeEvidence": [],
@@ -4478,6 +4482,10 @@
         {
           "id": "obsidian-runtime.render-views.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        },
+        {
+          "id": "obsidian-runtime.workspace-leaf-open.v1",
+          "path": "src/runtime/obsidian-workspace-compat.test.ts"
         }
       ],
       "negativeEvidence": [],
@@ -4515,14 +4523,38 @@
       "coveredObligationIds": [
         "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:1bdb6c07678e8f29e39defd801cc4ed87d82912bd12c77874686412c2ff6c6e1",
         "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:b254a4e2c528350a27e24df457aae0161a941887ccc5107266c65873c29e9dae",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:a7b748c9dcfa2f7d2fb53ec3cce29c7445fe36c871a03bb0efee879e15ddeb92",
         "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:8f84a6fffc1bcf2e98a01d080ea9ec97ce785320049c450e8b6d2ca3f41458d4",
-        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e"
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:304a9fa224606ca31a19544dd05a8449543ea088dc403692d6663d563e4ce549",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:4793cdaae5cf147f1d783d8c28dec7f9f55437b7dcf59273f7ef366beb85a987",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:c089b7ed849cf63d9cd31f0255149e57df42944c47323a80fa66f34d5ac5d0a9",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:b7f28bac0e224dcea8aa8516bd51d1d9012ccca968d8773790f183bb97879d70",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:693db99b856a3574b0d81e3af639c16ebc9f26787a7a0094c03bac00f0a1a28c",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:510c245eb0c5c768807ba3454b9e30339880a5ffc5487c76b0d1fd4c5fee804d",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:292978d345fd7f1e654798af55c5a16028b945a2a76276c429de7406bc8a572e",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:3caea35e04c0bc4591e576196ab6d5ca577b028dfc523e7e61e52933d75d0ea1",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:1f37bb2a06ecb094423b34a318479413aa4229dabcf8a7753fd927f3db81c23b"
       ],
       "coveredObligationSignatureHashes": [
         "1bdb6c07678e8f29e39defd801cc4ed87d82912bd12c77874686412c2ff6c6e1",
         "b254a4e2c528350a27e24df457aae0161a941887ccc5107266c65873c29e9dae",
+        "a7b748c9dcfa2f7d2fb53ec3cce29c7445fe36c871a03bb0efee879e15ddeb92",
         "8f84a6fffc1bcf2e98a01d080ea9ec97ce785320049c450e8b6d2ca3f41458d4",
-        "2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e"
+        "2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e",
+        "304a9fa224606ca31a19544dd05a8449543ea088dc403692d6663d563e4ce549",
+        "4793cdaae5cf147f1d783d8c28dec7f9f55437b7dcf59273f7ef366beb85a987",
+        "c089b7ed849cf63d9cd31f0255149e57df42944c47323a80fa66f34d5ac5d0a9",
+        "b7f28bac0e224dcea8aa8516bd51d1d9012ccca968d8773790f183bb97879d70",
+        "693db99b856a3574b0d81e3af639c16ebc9f26787a7a0094c03bac00f0a1a28c",
+        "510c245eb0c5c768807ba3454b9e30339880a5ffc5487c76b0d1fd4c5fee804d",
+        "d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
+        "292978d345fd7f1e654798af55c5a16028b945a2a76276c429de7406bc8a572e",
+        "a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
+        "3caea35e04c0bc4591e576196ab6d5ca577b028dfc523e7e61e52933d75d0ea1",
+        "1f37bb2a06ecb094423b34a318479413aa4229dabcf8a7753fd927f3db81c23b"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -17242,14 +17274,38 @@
       "coveredObligationIds": [
         "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:1bdb6c07678e8f29e39defd801cc4ed87d82912bd12c77874686412c2ff6c6e1",
         "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:b254a4e2c528350a27e24df457aae0161a941887ccc5107266c65873c29e9dae",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:a7b748c9dcfa2f7d2fb53ec3cce29c7445fe36c871a03bb0efee879e15ddeb92",
         "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:8f84a6fffc1bcf2e98a01d080ea9ec97ce785320049c450e8b6d2ca3f41458d4",
-        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e"
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:304a9fa224606ca31a19544dd05a8449543ea088dc403692d6663d563e4ce549",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:4793cdaae5cf147f1d783d8c28dec7f9f55437b7dcf59273f7ef366beb85a987",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:c089b7ed849cf63d9cd31f0255149e57df42944c47323a80fa66f34d5ac5d0a9",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:b7f28bac0e224dcea8aa8516bd51d1d9012ccca968d8773790f183bb97879d70",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:693db99b856a3574b0d81e3af639c16ebc9f26787a7a0094c03bac00f0a1a28c",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:510c245eb0c5c768807ba3454b9e30339880a5ffc5487c76b0d1fd4c5fee804d",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:292978d345fd7f1e654798af55c5a16028b945a2a76276c429de7406bc8a572e",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:3caea35e04c0bc4591e576196ab6d5ca577b028dfc523e7e61e52933d75d0ea1",
+        "obligation:export:class:WorkspaceLeaf:ba2f830d93cd9670f0a75053fbeae86fd53c90c4c38d5c34851581bd78d48194:1f37bb2a06ecb094423b34a318479413aa4229dabcf8a7753fd927f3db81c23b"
       ],
       "coveredObligationSignatureHashes": [
         "1bdb6c07678e8f29e39defd801cc4ed87d82912bd12c77874686412c2ff6c6e1",
         "b254a4e2c528350a27e24df457aae0161a941887ccc5107266c65873c29e9dae",
+        "a7b748c9dcfa2f7d2fb53ec3cce29c7445fe36c871a03bb0efee879e15ddeb92",
         "8f84a6fffc1bcf2e98a01d080ea9ec97ce785320049c450e8b6d2ca3f41458d4",
-        "2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e"
+        "2e81c4806d92b0223933c27c34544690de0167bb31775d32d5698f6092e9396e",
+        "304a9fa224606ca31a19544dd05a8449543ea088dc403692d6663d563e4ce549",
+        "4793cdaae5cf147f1d783d8c28dec7f9f55437b7dcf59273f7ef366beb85a987",
+        "c089b7ed849cf63d9cd31f0255149e57df42944c47323a80fa66f34d5ac5d0a9",
+        "b7f28bac0e224dcea8aa8516bd51d1d9012ccca968d8773790f183bb97879d70",
+        "693db99b856a3574b0d81e3af639c16ebc9f26787a7a0094c03bac00f0a1a28c",
+        "510c245eb0c5c768807ba3454b9e30339880a5ffc5487c76b0d1fd4c5fee804d",
+        "d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
+        "292978d345fd7f1e654798af55c5a16028b945a2a76276c429de7406bc8a572e",
+        "a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
+        "3caea35e04c0bc4591e576196ab6d5ca577b028dfc523e7e61e52933d75d0ea1",
+        "1f37bb2a06ecb094423b34a318479413aa4229dabcf8a7753fd927f3db81c23b"
       ]
     },
     {
