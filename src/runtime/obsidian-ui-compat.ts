@@ -1,4 +1,4 @@
-import type { App, Plugin, TFile } from "./obsidian-compat";
+import { MarkdownPreviewView, type App, type Plugin, type TFile } from "./obsidian-compat";
 import { BaseComponent, type CompatibilityEventRef, Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
 import type { OpenViewState, WorkspaceTabs } from "./obsidian-workspace-compat";
@@ -2339,13 +2339,28 @@ export class Editor {
 
 export class MarkdownView extends TextFileView {
   readonly editor: Editor;
+  readonly previewMode: MarkdownPreviewView;
+  currentMode: MarkdownEditView | MarkdownPreviewView;
   hoverPopover: null = null;
+  private mode: "source" | "preview" = "source";
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.editor = new Editor((value) => {
       this.data = value;
     });
+    this.previewMode = new MarkdownPreviewView(this.contentEl, this.app, this.file);
+    this.currentMode = new MarkdownEditView(this);
+  }
+
+  override async onLoadFile(file: TFile): Promise<void> {
+    await super.onLoadFile(file);
+    this.previewMode.setFile(file);
+  }
+
+  override async onUnloadFile(file: TFile): Promise<void> {
+    await super.onUnloadFile(file);
+    this.previewMode.setFile(this.app.createFile(""));
   }
 
   override getViewData(): string {
@@ -2364,6 +2379,19 @@ export class MarkdownView extends TextFileView {
 
   override getViewType(): string {
     return "markdown";
+  }
+
+  getMode(): "source" | "preview" {
+    return this.mode;
+  }
+
+  setMode(mode: "source" | "preview"): void {
+    this.mode = mode;
+    this.currentMode = mode === "preview" ? this.previewMode : new MarkdownEditView(this);
+  }
+
+  showSearch(replace = false): void {
+    this.contentEl.dataset.searchMode = replace ? "replace" : "search";
   }
 
   override setEphemeralState(state: unknown): void {
@@ -2397,6 +2425,45 @@ export class MarkdownView extends TextFileView {
       Number.isFinite(ch)
       ? { ch, line }
       : null;
+  }
+}
+
+export class MarkdownEditView {
+  readonly app: App;
+  hoverPopover: null = null;
+
+  constructor(private readonly view: MarkdownView) {
+    this.app = view.app;
+  }
+
+  clear(): void {
+    this.view.clear();
+  }
+
+  get(): string {
+    return this.view.getViewData();
+  }
+
+  set(data: string, clear: boolean): void {
+    this.view.setViewData(data, clear);
+  }
+
+  get file(): TFile {
+    return this.view.file ?? this.app.createFile("");
+  }
+
+  getSelection(): string {
+    return this.view.editor.getSelection();
+  }
+
+  getScroll(): number {
+    return this.view.editor.getScrollInfo().top;
+  }
+
+  applyScroll(scroll: number): void {
+    if (Number.isFinite(scroll)) {
+      this.view.editor.scrollTo(null, Math.max(0, scroll));
+    }
   }
 }
 

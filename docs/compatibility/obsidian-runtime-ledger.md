@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 88 (87 public, 1 internal extra)
+- Factory keys: 90 (89 public, 1 internal extra)
 
 ## Export status
 
@@ -82,12 +82,12 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | loadMermaid | function | missing | b7baf683b29b12b1 |
 | loadPdfJs | function | missing | 2cba001982743bde |
 | loadPrism | function | missing | fe01ee67b414289a |
-| MarkdownEditView | class | missing | b641199f259b1459 |
+| MarkdownEditView | class | implemented | b641199f259b1459 |
 | MarkdownPreviewRenderer | class | implemented | c2230cc5f92f968f |
-| MarkdownPreviewView | class | missing | d2b4b65cecca9dfd |
+| MarkdownPreviewView | class | implemented | d2b4b65cecca9dfd |
 | MarkdownRenderChild | class | implemented | 96bd6907c45bbddb |
 | MarkdownRenderer | class | implemented | b1aa10784da3ab86 |
-| MarkdownView | class | partial | dae51444710c4853 |
+| MarkdownView | class | implemented | dae51444710c4853 |
 | Menu | class | implemented | 0a7cec2e1715d55b |
 | MenuItem | class | implemented | 4b0f05262839c353 |
 | MenuSeparator | class | partial | 8d76cd93d0b4b14a |

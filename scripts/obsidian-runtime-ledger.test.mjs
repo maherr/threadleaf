@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 66,
-  partial: 13,
+  implemented: 69,
+  partial: 12,
   unsupported: 0,
-  missing: 79,
+  missing: 77,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 409,
+  implementedObligations: 431,
 });
-assert.equal(ledger.factory.keys.length, 88);
+assert.equal(ledger.factory.keys.length, 90);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -83,10 +83,12 @@ assert.deepEqual(
     ["htmlToMarkdown", "implemented"],
     ["ItemView", "implemented"],
     ["Keymap", "implemented"],
+    ["MarkdownEditView", "implemented"],
     ["MarkdownPreviewRenderer", "implemented"],
+    ["MarkdownPreviewView", "implemented"],
     ["MarkdownRenderChild", "implemented"],
     ["MarkdownRenderer", "implemented"],
-    ["MarkdownView", "partial"],
+    ["MarkdownView", "implemented"],
     ["Menu", "implemented"],
     ["MenuItem", "implemented"],
     ["MenuSeparator", "partial"],

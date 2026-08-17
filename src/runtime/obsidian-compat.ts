@@ -46,6 +46,7 @@ import {
   FuzzySuggestModal,
   ItemView,
   MarkdownView,
+  MarkdownEditView,
   Modal,
   type Modifier,
   MomentFormatComponent,
@@ -2277,6 +2278,67 @@ export abstract class MarkdownRenderer extends MarkdownRenderChild {
   }
 }
 
+export class MarkdownPreviewView extends MarkdownRenderer {
+  declare readonly containerEl: HTMLElement;
+  private currentFile: TFile;
+  private data = "";
+
+  constructor(
+    containerEl: HTMLElement,
+    app: App | null = activeCompatibilityApp,
+    file: TFile | null = null,
+  ) {
+    super(containerEl, app);
+    this.currentFile = file ?? this.app.createFile("");
+  }
+
+  get file(): TFile {
+    return this.currentFile;
+  }
+
+  setFile(file: TFile): void {
+    this.currentFile = file;
+  }
+
+  get(): string {
+    return this.data;
+  }
+
+  set(data: string, _clear: boolean): void {
+    this.data = data;
+    this.containerEl.replaceChildren();
+    this.rerender();
+  }
+
+  clear(): void {
+    this.data = "";
+    this.containerEl.replaceChildren();
+  }
+
+  rerender(_full = false): void {
+    this.containerEl.replaceChildren();
+    void MarkdownRenderer.render(
+      this.app,
+      this.data,
+      this.containerEl,
+      this.currentFile.path,
+      this,
+    ).catch((error: unknown) => {
+      this.containerEl.dataset.renderError = error instanceof Error ? error.message : String(error);
+    });
+  }
+
+  getScroll(): number {
+    return this.containerEl.scrollTop;
+  }
+
+  applyScroll(scroll: number): void {
+    if (Number.isFinite(scroll)) {
+      this.containerEl.scrollTop = Math.max(0, scroll);
+    }
+  }
+}
+
 export class PluginManager {
   readonly enabledPlugins = new Set<string>();
   readonly manifests: Record<string, PluginManifest> = Object.create(null);
@@ -2834,6 +2896,8 @@ export interface ObsidianCompatibilityModule {
   ItemView: typeof ItemView;
   Keymap: typeof Keymap;
   MarkdownView: typeof MarkdownView;
+  MarkdownEditView: typeof MarkdownEditView;
+  MarkdownPreviewView: typeof MarkdownPreviewView;
   MarkdownPreviewRenderer: typeof MarkdownPreviewRenderer;
   MarkdownRenderer: typeof MarkdownRenderer;
   MarkdownRenderChild: typeof MarkdownRenderChild;
@@ -3335,6 +3399,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     ItemView,
     Keymap,
     MarkdownView,
+    MarkdownEditView,
+    MarkdownPreviewView,
     MarkdownPreviewRenderer,
     MarkdownRenderer,
     MarkdownRenderChild,
