@@ -45,8 +45,8 @@ import {
   FileView,
   FuzzySuggestModal,
   ItemView,
-  MarkdownView,
   MarkdownEditView,
+  MarkdownView,
   Modal,
   type Modifier,
   MomentFormatComponent,
@@ -2940,6 +2940,7 @@ export interface ObsidianCompatibilityModule {
   addIcon(id: string, svgContent: string): void;
   debounce: typeof debounce;
   getIcon(id: string): SVGSVGElement | null;
+  getIconIds(): string[];
   normalizePath(filePath: string): string;
   parseFrontMatterAliases: typeof parseFrontMatterAliases;
   parseFrontMatterEntry: typeof parseFrontMatterEntry;
@@ -2951,6 +2952,7 @@ export interface ObsidianCompatibilityModule {
   prepareFuzzySearch: typeof prepareFuzzySearch;
   prepareSimpleSearch: typeof prepareSimpleSearch;
   requireApiVersion(version: string): boolean;
+  removeIcon(id: string): void;
   sanitizeHTMLToDom(html: string): DocumentFragment;
   setIcon(parent: HTMLElement, iconId: string): void;
   setTooltip: typeof setTooltip;
@@ -3099,6 +3101,40 @@ export function setTooltip(
   }
   if (!element.getAttribute("aria-label") && !element.textContent?.trim()) {
     element.setAttribute("aria-label", tooltip);
+  }
+}
+
+function requireActiveCompatibilityApp(): App {
+  if (!activeCompatibilityApp) {
+    throw new Error("Obsidian UI compatibility requires an active app.");
+  }
+  return activeCompatibilityApp;
+}
+
+export function addIcon(id: string, svgContent: string): void {
+  requireActiveCompatibilityApp().compatibility.addIcon(id, svgContent);
+}
+
+export function getIcon(id: string): SVGSVGElement | null {
+  const app = requireActiveCompatibilityApp();
+  return createCompatibleIcon(requireCompatibilityDocument(), id, app.compatibility.getIcon(id));
+}
+
+export function getIconIds(): string[] {
+  return requireActiveCompatibilityApp().compatibility.getIconIds();
+}
+
+export function removeIcon(id: string): void {
+  requireActiveCompatibilityApp().compatibility.removeIcon(id);
+}
+
+export function setIcon(parent: HTMLElement, iconId: string): void {
+  parent.replaceChildren();
+  const icon = getIcon(iconId);
+  if (icon) {
+    parent.append(icon);
+  } else {
+    parent.dataset.icon = iconId;
   }
 }
 
@@ -3363,6 +3399,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
       parent.dataset.icon = iconId;
     }
   };
+  const getIconIds = (): string[] => app.compatibility.getIconIds();
+  const removeIcon = (id: string): void => app.compatibility.removeIcon(id);
   class BoundMenu extends Menu {
     constructor() {
       super((iconId) => app.compatibility.getIcon(iconId));
@@ -3447,6 +3485,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     WorkspaceTabs,
     addIcon,
     getIcon,
+    getIconIds,
     getLanguage,
     htmlToMarkdown,
     normalizePath,
@@ -3455,6 +3494,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     prepareFuzzySearch,
     prepareSimpleSearch,
     requireApiVersion: () => true,
+    removeIcon,
     sanitizeHTMLToDom,
     setIcon,
     setTooltip,

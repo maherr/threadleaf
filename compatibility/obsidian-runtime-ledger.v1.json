@@ -13,10 +13,10 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 71,
+    "implemented": 76,
     "partial": 10,
     "unsupported": 0,
-    "missing": 77,
+    "missing": 72,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -102,6 +102,7 @@
       "WorkspaceTabs",
       "addIcon",
       "getIcon",
+      "getIconIds",
       "getLanguage",
       "htmlToMarkdown",
       "normalizePath",
@@ -110,6 +111,7 @@
       "prepareFuzzySearch",
       "prepareSimpleSearch",
       "requireApiVersion",
+      "removeIcon",
       "sanitizeHTMLToDom",
       "setIcon",
       "setTooltip",
@@ -194,6 +196,7 @@
       "WorkspaceTabs",
       "addIcon",
       "getIcon",
+      "getIconIds",
       "getLanguage",
       "htmlToMarkdown",
       "normalizePath",
@@ -202,6 +205,7 @@
       "prepareFuzzySearch",
       "prepareSimpleSearch",
       "requireApiVersion",
+      "removeIcon",
       "sanitizeHTMLToDom",
       "setIcon",
       "setTooltip",
@@ -327,21 +331,33 @@
       "exportId": "export:function:addIcon:ec68d56929fc1f6da55f51b57487eda8d3038aa3dbd9597104e3d3244b489424",
       "name": "addIcon",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "ec68d56929fc1f6da55f51b57487eda8d3038aa3dbd9597104e3d3244b489424",
       "location": {
         "line": 393,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "addIcon"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "icons.register-and-render"
+      ],
+      "coveredBehaviorIds": [
+        "icons.register-and-render"
+      ]
     },
     {
       "exportId": "export:variable:apiVersion:9939efa4020032ad99680f2ee8412eb6f938d8ed68b122c5e19cf198ea4e86dd",
@@ -1959,41 +1975,65 @@
       "exportId": "export:function:getIcon:68c885a5426e9933891079d730cbedc0b2f8af7fd52d92e8ef66d9bca852fa51",
       "name": "getIcon",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "68c885a5426e9933891079d730cbedc0b2f8af7fd52d92e8ef66d9bca852fa51",
       "location": {
         "line": 3351,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getIcon"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "icons.register-and-render"
+      ],
+      "coveredBehaviorIds": [
+        "icons.register-and-render"
+      ]
     },
     {
       "exportId": "export:function:getIconIds:1d6f1c811f777079aeb4fed0274ad1a0707b933e95e5be73b056ab934d4542db",
       "name": "getIconIds",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "1d6f1c811f777079aeb4fed0274ad1a0707b933e95e5be73b056ab934d4542db",
       "location": {
         "line": 3357,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getIconIds"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "icons.list-registered"
+      ],
+      "coveredBehaviorIds": [
+        "icons.list-registered"
+      ]
     },
     {
       "exportId": "export:function:getLanguage:bb51d9b13d4bc56fbcd5006df57e830739674f94c923b3e14eaec963e60e9b45",
@@ -4021,21 +4061,33 @@
       "exportId": "export:function:removeIcon:1b1690db3c4ed09269009e335421b253baf9f45c71ea581550ccc18eaee92dbc",
       "name": "removeIcon",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "1b1690db3c4ed09269009e335421b253baf9f45c71ea581550ccc18eaee92dbc",
       "location": {
         "line": 5396,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "removeIcon"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "icons.remove-custom"
+      ],
+      "coveredBehaviorIds": [
+        "icons.remove-custom"
+      ]
     },
     {
       "exportId": "export:class:RenderContext:beb981213ad00fafecd3b74138e0de3fb842cb6765ee285ae17b0bd6f20b90f5",
@@ -4401,21 +4453,35 @@
       "exportId": "export:function:setIcon:74dab0a196e4515a7020a0d9a41a72c499c80d737f21f1739f9c1119c89f7b53",
       "name": "setIcon",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "74dab0a196e4515a7020a0d9a41a72c499c80d737f21f1739f9c1119c89f7b53",
       "location": {
         "line": 5689,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "setIcon"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "icons.set-parent",
+        "icons.missing-fallback"
+      ],
+      "coveredBehaviorIds": [
+        "icons.set-parent",
+        "icons.missing-fallback"
+      ]
     },
     {
       "exportId": "export:class:Setting:28f9e763ee1bc0e3c932e94f388d8b8023edf525be550f7a633320a1d30e61c6",

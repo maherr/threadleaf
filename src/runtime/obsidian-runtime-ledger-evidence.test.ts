@@ -835,6 +835,76 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.icon-utilities.v1 */
+  it('proves icon registration, lookup, rendering, listing, and removal through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-icon-utilities-"),
+    );
+    const pluginPath = path.join(sandboxPath, "icon-utilities-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "icon-utilities-ledger-fixture",
+          name: "Icon utilities ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, addIcon, getIcon, getIconIds, removeIcon, setIcon } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    addIcon("ledger-custom", "<path d=\\"M0 0h2v2z\\"/>");',
+          '    const custom = getIcon("ledger-custom");',
+          '    const builtIn = getIcon("check");',
+          '    const parent = document.createElement("span");',
+          '    setIcon(parent, "ledger-custom");',
+          '    const missing = document.createElement("span");',
+          '    setIcon(missing, "does-not-exist");',
+          "    const ids = getIconIds();",
+          '    removeIcon("ledger-custom");',
+          "    globalThis.__threadleafRuntimeLedgerIconUtilitiesProbe = {",
+          '      custom: { tag: custom?.tagName, dataIcon: custom?.dataset.icon, path: custom?.querySelector("path")?.getAttribute("d") },',
+          '      builtIn: { tag: builtIn?.tagName, dataIcon: builtIn?.dataset.icon, hasPath: builtIn?.querySelector("path") !== null },',
+          "      parent: { childTag: parent.firstElementChild?.tagName, dataIcon: parent.firstElementChild?.dataset.icon },",
+          "      missing: { childCount: missing.childElementCount, dataIcon: missing.dataset.icon },",
+          '      idsIncludeCustom: ids.includes("ledger-custom"),',
+          '      removed: getIcon("ledger-custom") === null,',
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerIconUtilitiesProbe?: unknown })
+              .__threadleafRuntimeLedgerIconUtilitiesProbe,
+          ).toEqual({
+            custom: { tag: "svg", dataIcon: "ledger-custom", path: "M0 0h2v2z" },
+            builtIn: { tag: "svg", dataIcon: "check", hasPath: true },
+            parent: { childTag: "svg", dataIcon: "ledger-custom" },
+            missing: { childCount: 0, dataIcon: "does-not-exist" },
+            idsIncludeCustom: true,
+            removed: true,
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerIconUtilitiesProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.ui-interaction-classes.v1 */
   it('proves scope, menu, editor-suggest, fuzzy-modal, and render-child classes through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(

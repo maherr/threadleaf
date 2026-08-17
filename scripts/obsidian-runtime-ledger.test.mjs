@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 71,
+  implemented: 76,
   partial: 10,
   unsupported: 0,
-  missing: 77,
+  missing: 72,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
   implementedObligations: 433,
 });
-assert.equal(ledger.factory.keys.length, 90);
+assert.equal(ledger.factory.keys.length, 92);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -57,6 +57,7 @@ assert.deepEqual(
   [
     ["AbstractInputSuggest", "implemented"],
     ["AbstractTextComponent", "implemented"],
+    ["addIcon", "implemented"],
     ["App", "implemented"],
     ["arrayBufferToBase64", "implemented"],
     ["arrayBufferToHex", "implemented"],
@@ -77,6 +78,8 @@ assert.deepEqual(
     ["getAllTags", "implemented"],
     ["getBlobArrayBuffer", "implemented"],
     ["getFrontMatterInfo", "implemented"],
+    ["getIcon", "implemented"],
+    ["getIconIds", "implemented"],
     ["getLanguage", "implemented"],
     ["getLinkpath", "implemented"],
     ["hexToArrayBuffer", "implemented"],
@@ -110,11 +113,13 @@ assert.deepEqual(
     ["prepareFuzzySearch", "implemented"],
     ["prepareSimpleSearch", "implemented"],
     ["ProgressBarComponent", "implemented"],
+    ["removeIcon", "implemented"],
     ["RenderContext", "implemented"],
     ["sanitizeHTMLToDom", "implemented"],
     ["Scope", "implemented"],
     ["SearchComponent", "partial"],
     ["SecretStorage", "implemented"],
+    ["setIcon", "implemented"],
     ["Setting", "implemented"],
     ["SettingTab", "partial"],
     ["setTooltip", "implemented"],

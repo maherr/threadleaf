@@ -5270,6 +5270,32 @@
         ]
       }
     },
+    "addIcon": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "addIcon"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["icons.register-and-render"],
+        "behaviors": [
+          {
+            "id": "icons.register-and-render",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.icon-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "getLinkpath": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
@@ -5289,6 +5315,119 @@
             "evidence": [
               {
                 "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "getIcon": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getIcon"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["icons.register-and-render"],
+        "behaviors": [
+          {
+            "id": "icons.register-and-render",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.icon-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "getIconIds": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getIconIds"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["icons.list-registered"],
+        "behaviors": [
+          {
+            "id": "icons.list-registered",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.icon-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "removeIcon": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "removeIcon"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["icons.remove-custom"],
+        "behaviors": [
+          {
+            "id": "icons.remove-custom",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.icon-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "setIcon": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "setIcon"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.icon-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["icons.set-parent", "icons.missing-fallback"],
+        "behaviors": [
+          {
+            "id": "icons.set-parent",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.icon-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "icons.missing-fallback",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.icon-utilities.v1",
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]

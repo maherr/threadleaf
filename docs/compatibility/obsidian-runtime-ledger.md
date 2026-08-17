@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 90 (89 public, 1 internal extra)
+- Factory keys: 92 (91 public, 1 internal extra)
 
 ## Export status
 
@@ -18,7 +18,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | --- | --- | --- | --- |
 | AbstractInputSuggest | class | implemented | 1961df74c7585fcf |
 | AbstractTextComponent | class | implemented | d3e7b4b7f2ccfbae |
-| addIcon | function | missing | ec68d56929fc1f6d |
+| addIcon | function | implemented | ec68d56929fc1f6d |
 | apiVersion | variable | missing | 9939efa4020032ad |
 | App | class | implemented | b71058fef0a041bf |
 | arrayBufferToBase64 | function | implemented | 6d32d259293c66cd |
@@ -61,8 +61,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | getAllTags | function | implemented | c253ffb6b75bcc9e |
 | getBlobArrayBuffer | function | implemented | 36e0f8e9725fc3ae |
 | getFrontMatterInfo | function | implemented | bc0a1032b37fb45b |
-| getIcon | function | missing | 68c885a5426e9933 |
-| getIconIds | function | missing | 1d6f1c811f777079 |
+| getIcon | function | implemented | 68c885a5426e9933 |
+| getIconIds | function | implemented | 1d6f1c811f777079 |
 | getLanguage | function | implemented | bb51d9b13d4bc56f |
 | getLinkpath | function | implemented | a0344dabcbd756f0 |
 | hexToArrayBuffer | function | implemented | dd08182366ea08da |
@@ -120,7 +120,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | QueryController | class | missing | 8687a7aa105e69dd |
 | RegExpValue | class | missing | edb0177eb288015b |
 | RelativeDateValue | class | missing | 3d0594b4e5ab24e2 |
-| removeIcon | function | missing | 1b1690db3c4ed092 |
+| removeIcon | function | implemented | 1b1690db3c4ed092 |
 | RenderContext | class | implemented | beb981213ad00faf |
 | renderMatches | function | missing | f868e63e141ad46b |
 | renderMath | function | missing | bdf8f2074b169c02 |
@@ -134,7 +134,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | SearchComponent | class | partial | 72938e4f2898847d |
 | SecretComponent | class | missing | f3133f6f9328e3cb |
 | SecretStorage | class | implemented | cd03c227b70ca8e0 |
-| setIcon | function | missing | 74dab0a196e4515a |
+| setIcon | function | implemented | 74dab0a196e4515a |
 | Setting | class | implemented | 28f9e763ee1bc0e3 |
 | SettingGroup | class | missing | c78bde6786f4650c |
 | SettingPage | class | missing | 731418280376fc92 |

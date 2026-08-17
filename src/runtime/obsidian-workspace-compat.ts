@@ -1051,6 +1051,14 @@ export class CompatibilityIntegrationRegistry {
     return this.icons.get(id) ?? null;
   }
 
+  getIconIds(): string[] {
+    return [...this.icons.keys()].sort((left, right) => left.localeCompare(right));
+  }
+
+  removeIcon(id: string): void {
+    this.icons.delete(id);
+  }
+
   createView(type: string, leaf: unknown): unknown {
     const registration = this.views.get(type);
     if (!registration) {
