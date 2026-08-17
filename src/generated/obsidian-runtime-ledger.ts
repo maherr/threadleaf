@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 99,
+    "implemented": 101,
     "partial": 7,
     "unsupported": 0,
-    "missing": 52,
+    "missing": 50,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 577
+    "implementedObligations": 588
   },
   "factory": {
     "keys": [
@@ -35,6 +35,8 @@ export const obsidianRuntimeLedger = {
       "BaseComponent",
       "base64ToArrayBuffer",
       "ButtonComponent",
+      "ConfirmationButton",
+      "ConfirmationModal",
       "ColorComponent",
       "Component",
       "debounce",
@@ -145,6 +147,8 @@ export const obsidianRuntimeLedger = {
       "BaseComponent",
       "base64ToArrayBuffer",
       "ButtonComponent",
+      "ConfirmationButton",
+      "ConfirmationModal",
       "ColorComponent",
       "Component",
       "debounce",
@@ -1031,15 +1035,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2",
       "name": "ConfirmationButton",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2",
       "location": {
         "line": 1922,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.confirmation-modal.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "ConfirmationButton"
+      },
       "obligationIds": [
         "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
         "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:be784c9a1c609aa5a579d52f80f21f2b7f966be0c9a6c4872a2399a60cfb2055",
@@ -1050,8 +1062,20 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:1a303e64b8cf2ec1f9a57e9cd0a02227907b4373709aa9ebcfcbe002135c791e"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:be784c9a1c609aa5a579d52f80f21f2b7f966be0c9a6c4872a2399a60cfb2055",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:9d5bd284384e0b702d0cd52b7ccc1e2e02174e6a2285217da6214fafba27c515",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:475eba7c8f85984394dcbc9c162e1090e13ae380f7aadc1230494da16d96ae9c",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:d6c9ac0e9c1ed22a8b8d5da33573a3fbdc5d25e77d216ccfb5cf9cf0ed9914d2"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
+        "be784c9a1c609aa5a579d52f80f21f2b7f966be0c9a6c4872a2399a60cfb2055",
+        "9d5bd284384e0b702d0cd52b7ccc1e2e02174e6a2285217da6214fafba27c515",
+        "475eba7c8f85984394dcbc9c162e1090e13ae380f7aadc1230494da16d96ae9c",
+        "d6c9ac0e9c1ed22a8b8d5da33573a3fbdc5d25e77d216ccfb5cf9cf0ed9914d2"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -1059,15 +1083,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9",
       "name": "ConfirmationModal",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9",
       "location": {
         "line": 1963,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.confirmation-modal.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "ConfirmationModal"
+      },
       "obligationIds": [
         "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
         "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:ddbc5278186dc2d9af025da7a59a9dc47db8ccb7b6e8b6ad53205021427b2fc3",
@@ -1079,8 +1111,22 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:18093cad26441ad13739840b68cb4dc6b379831aa2742a41f054b83091129924"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:ddbc5278186dc2d9af025da7a59a9dc47db8ccb7b6e8b6ad53205021427b2fc3",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:5e06f51e1e5b190d2ece898a4e60b7c151b7639810971632469abdbc5388e8b5",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:e812c913d0e16d3ba720a1ae5280f4ef10eb180c72e09f9b1efb10434abd6e83",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:90e126cab04c0c1062065443fb147ee20c6908f7746d90ddbd8f05af5ad07396",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:129f771d87b4c64a0e0d7270fb2a492ab274dd6fcbdebba117e407ec848b6450"
+      ],
+      "coveredObligationSignatureHashes": [
+        "c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
+        "ddbc5278186dc2d9af025da7a59a9dc47db8ccb7b6e8b6ad53205021427b2fc3",
+        "5e06f51e1e5b190d2ece898a4e60b7c151b7639810971632469abdbc5388e8b5",
+        "e812c913d0e16d3ba720a1ae5280f4ef10eb180c72e09f9b1efb10434abd6e83",
+        "90e126cab04c0c1062065443fb147ee20c6908f7746d90ddbd8f05af5ad07396",
+        "129f771d87b4c64a0e0d7270fb2a492ab274dd6fcbdebba117e407ec848b6450"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -8763,7 +8809,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2",
       "name": "ConfirmationButton",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
@@ -8855,13 +8901,25 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:be784c9a1c609aa5a579d52f80f21f2b7f966be0c9a6c4872a2399a60cfb2055",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:9d5bd284384e0b702d0cd52b7ccc1e2e02174e6a2285217da6214fafba27c515",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:475eba7c8f85984394dcbc9c162e1090e13ae380f7aadc1230494da16d96ae9c",
+        "obligation:export:class:ConfirmationButton:b3100e2fe15dddf069bed2f4413a03c28444cf12eaac0e5dc5340607f4e718e2:d6c9ac0e9c1ed22a8b8d5da33573a3fbdc5d25e77d216ccfb5cf9cf0ed9914d2"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
+        "be784c9a1c609aa5a579d52f80f21f2b7f966be0c9a6c4872a2399a60cfb2055",
+        "9d5bd284384e0b702d0cd52b7ccc1e2e02174e6a2285217da6214fafba27c515",
+        "475eba7c8f85984394dcbc9c162e1090e13ae380f7aadc1230494da16d96ae9c",
+        "d6c9ac0e9c1ed22a8b8d5da33573a3fbdc5d25e77d216ccfb5cf9cf0ed9914d2"
+      ]
     },
     {
       "exportId": "export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9",
       "name": "ConfirmationModal",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
@@ -8966,8 +9024,22 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:ddbc5278186dc2d9af025da7a59a9dc47db8ccb7b6e8b6ad53205021427b2fc3",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:5e06f51e1e5b190d2ece898a4e60b7c151b7639810971632469abdbc5388e8b5",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:e812c913d0e16d3ba720a1ae5280f4ef10eb180c72e09f9b1efb10434abd6e83",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:90e126cab04c0c1062065443fb147ee20c6908f7746d90ddbd8f05af5ad07396",
+        "obligation:export:class:ConfirmationModal:16d786038936266ab4b020fbdd3e5d3a93860cf90ce2f9c8fe6cc3469e2737f9:129f771d87b4c64a0e0d7270fb2a492ab274dd6fcbdebba117e407ec848b6450"
+      ],
+      "coveredObligationSignatureHashes": [
+        "c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
+        "ddbc5278186dc2d9af025da7a59a9dc47db8ccb7b6e8b6ad53205021427b2fc3",
+        "5e06f51e1e5b190d2ece898a4e60b7c151b7639810971632469abdbc5388e8b5",
+        "e812c913d0e16d3ba720a1ae5280f4ef10eb180c72e09f9b1efb10434abd6e83",
+        "90e126cab04c0c1062065443fb147ee20c6908f7746d90ddbd8f05af5ad07396",
+        "129f771d87b4c64a0e0d7270fb2a492ab274dd6fcbdebba117e407ec848b6450"
+      ]
     },
     {
       "exportId": "export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202",

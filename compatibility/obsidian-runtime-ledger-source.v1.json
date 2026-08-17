@@ -3162,6 +3162,137 @@
         ]
       }
     },
+    "ConfirmationButton": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "ConfirmationButton"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.confirmation-modal.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "d09152d4b88119d841e9be03193d13c437500b3cab2866b2462ae14242710892",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "be784c9a1c609aa5a579d52f80f21f2b7f966be0c9a6c4872a2399a60cfb2055",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "9d5bd284384e0b702d0cd52b7ccc1e2e02174e6a2285217da6214fafba27c515",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "475eba7c8f85984394dcbc9c162e1090e13ae380f7aadc1230494da16d96ae9c",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "d6c9ac0e9c1ed22a8b8d5da33573a3fbdc5d25e77d216ccfb5cf9cf0ed9914d2",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "ConfirmationModal": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "ConfirmationModal"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.confirmation-modal.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "c7b53a4205e4015ca3146984c219ddc77c0c5c0e837b1086feb4a64d17e9d59c",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "ddbc5278186dc2d9af025da7a59a9dc47db8ccb7b6e8b6ad53205021427b2fc3",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "5e06f51e1e5b190d2ece898a4e60b7c151b7639810971632469abdbc5388e8b5",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "e812c913d0e16d3ba720a1ae5280f4ef10eb180c72e09f9b1efb10434abd6e83",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "90e126cab04c0c1062065443fb147ee20c6908f7746d90ddbd8f05af5ad07396",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "129f771d87b4c64a0e0d7270fb2a492ab274dd6fcbdebba117e407ec848b6450",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.confirmation-modal.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "ButtonComponent": {
       "implementation": {
         "source": "src/runtime/obsidian-ui-compat.ts",

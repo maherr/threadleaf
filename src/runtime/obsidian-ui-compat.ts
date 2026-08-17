@@ -1278,6 +1278,110 @@ export class Modal {
   }
 }
 
+export class ConfirmationButton extends ButtonComponent {
+  private readonly owner: ConfirmationModal;
+
+  private constructor(containerEl: HTMLElement, owner: ConfirmationModal) {
+    super(containerEl);
+    this.owner = owner;
+  }
+
+  static create(containerEl: HTMLElement, owner: ConfirmationModal): ConfirmationButton {
+    return new ConfirmationButton(containerEl, owner);
+  }
+
+  override onClick(handler: (event: MouseEvent) => unknown | Promise<unknown>): this {
+    super.onClick(async (event) => {
+      const result = await handler(event);
+      if (!result) {
+        this.owner.closeFromButton();
+      }
+    });
+    return this;
+  }
+
+  setInitialFocus(): this {
+    this.owner.setInitialFocusButton(this);
+    return this;
+  }
+
+  setSecondary(): this {
+    this.owner.moveButtonToSecondary(this);
+    return this;
+  }
+
+  setCancel(): this {
+    this.buttonEl.classList.add("mod-warning");
+    return this;
+  }
+}
+
+export class ConfirmationModal extends Modal {
+  readonly buttonContainerEl: HTMLElement;
+  private readonly secondaryButtonContainerEl: HTMLElement;
+  private initialFocusButton: ConfirmationButton | null = null;
+
+  constructor(app: App) {
+    super(app);
+    const doc = this.modalEl.ownerDocument;
+    this.buttonContainerEl = doc.createElement("div");
+    this.buttonContainerEl.className = "modal-button-container";
+    this.secondaryButtonContainerEl = doc.createElement("div");
+    this.secondaryButtonContainerEl.className = "modal-button-container mod-secondary";
+    this.modalEl.append(this.buttonContainerEl, this.secondaryButtonContainerEl);
+  }
+
+  addClass(className: string): this {
+    this.modalEl.classList.add(...className.split(/\s+/u).filter(Boolean));
+    return this;
+  }
+
+  addCheckbox(label: string, callback: (value: boolean) => unknown | Promise<unknown>): this {
+    const labelEl = this.contentEl.ownerDocument.createElement("label");
+    const checkbox = this.contentEl.ownerDocument.createElement("input");
+    checkbox.type = "checkbox";
+    const text = this.contentEl.ownerDocument.createElement("span");
+    text.textContent = label;
+    labelEl.append(checkbox, text);
+    checkbox.addEventListener("change", () => {
+      void callback(checkbox.checked);
+    });
+    this.contentEl.append(labelEl);
+    return this;
+  }
+
+  addButton(callback: (button: ConfirmationButton) => unknown): this {
+    const button = ConfirmationButton.create(this.buttonContainerEl, this);
+    callback(button);
+    return this;
+  }
+
+  addCancelButton(text = "Cancel"): this {
+    return this.addButton((button) => {
+      button
+        .setButtonText(text)
+        .setCancel()
+        .onClick(() => undefined);
+    });
+  }
+
+  setInitialFocusButton(button: ConfirmationButton): void {
+    this.initialFocusButton = button;
+  }
+
+  moveButtonToSecondary(button: ConfirmationButton): void {
+    this.secondaryButtonContainerEl.append(button.buttonEl);
+  }
+
+  closeFromButton(): void {
+    this.close();
+  }
+
+  override onOpen(): void {
+    this.initialFocusButton?.buttonEl.focus();
+  }
+}
+
 export class SuggestModal<T> extends Modal {
   limit = 100;
   emptyStateText = "No matches found.";

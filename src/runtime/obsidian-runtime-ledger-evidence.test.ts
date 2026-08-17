@@ -3149,6 +3149,96 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.confirmation-modal.v1 */
+  it('proves ConfirmationModal and ConfirmationButton through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-confirmation-modal-"),
+    );
+    const pluginPath = path.join(sandboxPath, "confirmation-modal-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "confirmation-modal-ledger-fixture",
+          name: "Confirmation modal ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { ConfirmationButton, ConfirmationModal, Plugin } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const modal = new ConfirmationModal(this.app).setTitle("Confirm action").setContent("Body").addClass("fixture-modal");',
+          "    const checkboxValues = [];",
+          "    let primary, hold;",
+          '    modal.addCheckbox("Remember choice", (value) => checkboxValues.push(value));',
+          '    modal.addButton((button) => { primary = button.setButtonText("Proceed").setInitialFocus().onClick(() => undefined); });',
+          '    modal.addButton((button) => { hold = button.setButtonText("Hold").setSecondary().onClick(() => true); });',
+          '    modal.addCancelButton("Cancel");',
+          "    modal.open();",
+          '    const checkbox = modal.contentEl.querySelector("input");',
+          "    checkbox.checked = true;",
+          '    checkbox.dispatchEvent(new checkbox.ownerDocument.defaultView.Event("change", { bubbles: true }));',
+          "    hold.buttonEl.click();",
+          "    await new Promise((resolve) => setTimeout(resolve, 0));",
+          "    const stayedOpen = modal.containerEl.isConnected;",
+          "    const focusedPrimary = document.activeElement === primary.buttonEl;",
+          "    primary.buttonEl.click();",
+          "    await new Promise((resolve) => setTimeout(resolve, 0));",
+          "    globalThis.__threadleafRuntimeLedgerConfirmationModalProbe = {",
+          "      modalIsModal: modal instanceof ConfirmationModal,",
+          "      primaryIsButton: primary instanceof ConfirmationButton,",
+          "      modalClass: modal.modalEl.className,",
+          "      title: modal.titleEl.textContent,",
+          "      content: modal.contentEl.textContent,",
+          "      focusedPrimary,",
+          "      holdParentClass: hold.buttonEl.parentElement.className,",
+          "      primaryText: primary.buttonEl.textContent,",
+          '      cancelClass: modal.buttonContainerEl.querySelectorAll("button")[1].className,',
+          "      checkboxValues,",
+          "      stayedOpen,",
+          "      closedAfterPrimary: !modal.containerEl.isConnected,",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerConfirmationModalProbe?: unknown })
+              .__threadleafRuntimeLedgerConfirmationModalProbe,
+          ).toEqual({
+            modalIsModal: true,
+            primaryIsButton: true,
+            modalClass: "modal fixture-modal",
+            title: "Confirm action",
+            content: "BodyRemember choice",
+            focusedPrimary: true,
+            holdParentClass: "modal-button-container mod-secondary",
+            primaryText: "Proceed",
+            cancelClass: "mod-warning",
+            checkboxValues: [true],
+            stayedOpen: true,
+            closedAfterPrimary: true,
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerConfirmationModalProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.setting-tabs.v1 */
   it('proves setting-tab definition and plugin-settings behavior through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-tabs-"));

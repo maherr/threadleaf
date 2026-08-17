@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 99,
+  implemented: 101,
   partial: 7,
   unsupported: 0,
-  missing: 52,
+  missing: 50,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 577,
+  implementedObligations: 588,
 });
-assert.equal(ledger.factory.keys.length, 108);
+assert.equal(ledger.factory.keys.length, 110);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -67,6 +67,8 @@ assert.deepEqual(
     ["ButtonComponent", "implemented"],
     ["ColorComponent", "implemented"],
     ["Component", "implemented"],
+    ["ConfirmationButton", "implemented"],
+    ["ConfirmationModal", "implemented"],
     ["debounce", "implemented"],
     ["DisplayValueComponent", "implemented"],
     ["DropdownComponent", "implemented"],

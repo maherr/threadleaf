@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 108 (107 public, 1 internal extra)
+- Factory keys: 110 (109 public, 1 internal extra)
 
 ## Export status
 
@@ -35,8 +35,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | CapacitorAdapter | class | missing | b468049f7adeaf0c |
 | ColorComponent | class | implemented | aa471211ee3a3891 |
 | Component | class | implemented | 66c65c8e55598f6c |
-| ConfirmationButton | class | missing | b3100e2fe15dddf0 |
-| ConfirmationModal | class | missing | 16d786038936266a |
+| ConfirmationButton | class | implemented | b3100e2fe15dddf0 |
+| ConfirmationModal | class | implemented | 16d786038936266a |
 | DateValue | class | missing | 45dce24b565b761c |
 | debounce | function | implemented | a72e0eb10fc8a651 |
 | displayTooltip | function | missing | dee2b380f1fef0a9 |

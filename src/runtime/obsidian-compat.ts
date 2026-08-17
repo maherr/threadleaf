@@ -37,6 +37,8 @@ import {
   UiKeymap as BaseKeymap,
   ButtonComponent,
   ColorComponent,
+  ConfirmationButton,
+  ConfirmationModal,
   DisplayValueComponent,
   DropdownComponent,
   Editor,
@@ -3244,6 +3246,8 @@ export interface ObsidianCompatibilityModule {
   BaseComponent: typeof BaseComponent;
   base64ToArrayBuffer: typeof base64ToArrayBuffer;
   ButtonComponent: typeof ButtonComponent;
+  ConfirmationButton: typeof ConfirmationButton;
+  ConfirmationModal: typeof ConfirmationModal;
   ColorComponent: typeof ColorComponent;
   Component: typeof Component;
   DropdownComponent: typeof DropdownComponent;
@@ -3905,6 +3909,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     BaseComponent,
     base64ToArrayBuffer,
     ButtonComponent,
+    ConfirmationButton,
+    ConfirmationModal,
     ColorComponent,
     Component,
     debounce,

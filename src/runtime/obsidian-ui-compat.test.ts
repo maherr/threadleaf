@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AbstractInputSuggest,
   type ButtonComponent,
+  type ConfirmationButton,
+  ConfirmationModal,
   type DropdownComponent,
   Editor,
   SecretComponent,
@@ -308,6 +310,74 @@ describe("Obsidian settings compatibility", () => {
     component.inputEl.dispatchEvent(new dom.window.Event("input"));
     expect(changes).toEqual(["opaque", null]);
     dom.window.close();
+  });
+});
+
+describe("Obsidian confirmation modal compatibility", () => {
+  it("supports confirmation buttons, focus, secondary placement, and cancellation", async () => {
+    const dom = new JSDOM("<!doctype html><body></body></html>", {
+      url: "https://threadleaf.invalid/",
+    });
+    vi.stubGlobal("document", dom.window.document);
+    let modal: ConfirmationModal | null = null;
+    try {
+      const app = {
+        registerPluginModal: vi.fn(() => () => undefined),
+      } as never;
+      modal = new ConfirmationModal(app)
+        .setTitle("Confirm action")
+        .setContent("Body")
+        .addClass("fixture-modal");
+      const checkboxValues: boolean[] = [];
+      let primary!: ConfirmationButton;
+      let hold!: ConfirmationButton;
+      modal.addCheckbox("Remember choice", (value) => checkboxValues.push(value));
+      modal.addButton((button) => {
+        primary = button
+          .setButtonText("Proceed")
+          .setInitialFocus()
+          .onClick(() => undefined);
+      });
+      modal.addButton((button) => {
+        hold = button
+          .setButtonText("Hold")
+          .setSecondary()
+          .onClick(() => true);
+      });
+      modal.addCancelButton("Cancel");
+
+      modal.open();
+      const checkbox = modal.contentEl.querySelector("input");
+      expect(checkbox).not.toBeNull();
+      if (!checkbox) {
+        return;
+      }
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new dom.window.Event("change"));
+
+      expect(modal.modalEl.classList.contains("fixture-modal")).toBe(true);
+      expect(document.activeElement).toBe(primary.buttonEl);
+      expect(hold.buttonEl.parentElement).toBe(
+        modal.modalEl.querySelector(".modal-button-container.mod-secondary"),
+      );
+      expect(modal.buttonContainerEl.querySelector("button")?.textContent).toBe("Proceed");
+      expect(modal.buttonContainerEl.querySelectorAll("button")[1]?.textContent).toBe("Cancel");
+      expect(modal.buttonContainerEl.querySelectorAll("button")[1]?.className).toBe("mod-warning");
+      expect(checkboxValues).toEqual([true]);
+
+      hold.buttonEl.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(modal.containerEl.isConnected).toBe(true);
+      primary.buttonEl.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(modal.containerEl.isConnected).toBe(false);
+    } finally {
+      if (modal?.containerEl.isConnected) {
+        modal.close();
+      }
+      vi.unstubAllGlobals();
+      dom.window.close();
+    }
   });
 });
 
