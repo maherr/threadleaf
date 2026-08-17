@@ -58,7 +58,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | FileView | class | partial | 1a7d777aaddc3cb1 |
 | finishRenderMath | function | missing | 58b4e9583b344203 |
 | FuzzySuggestModal | class | missing | 042ca80827cde1a8 |
-| getAllTags | function | missing | c253ffb6b75bcc9e |
+| getAllTags | function | implemented | c253ffb6b75bcc9e |
 | getBlobArrayBuffer | function | missing | 36e0f8e9725fc3ae |
 | getFrontMatterInfo | function | missing | bc0a1032b37fb45b |
 | getIcon | function | missing | 68c885a5426e9933 |
@@ -102,9 +102,9 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | NumberValue | class | missing | fd1c8c04fc04ea95 |
 | ObjectValue | class | missing | f4b04ddccfe69cc4 |
 | parseFrontMatterAliases | function | missing | 6591b6101b4100ac |
-| parseFrontMatterEntry | function | missing | 208d94491e23b5b6 |
+| parseFrontMatterEntry | function | implemented | 208d94491e23b5b6 |
 | parseFrontMatterStringArray | function | missing | deb327a55cd9c91f |
-| parseFrontMatterTags | function | missing | c9dcb6788b1937d3 |
+| parseFrontMatterTags | function | implemented | c9dcb6788b1937d3 |
 | parseLinktext | function | implemented | fd10e8b7ba73e829 |
 | parsePropertyId | function | missing | 260ec28552701cc8 |
 | parseYaml | function | missing | 48af828ae472e2e3 |

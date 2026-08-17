@@ -13,10 +13,10 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 43,
+    "implemented": 46,
     "partial": 12,
     "unsupported": 0,
-    "missing": 103,
+    "missing": 100,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -1781,21 +1781,35 @@
       "exportId": "export:function:getAllTags:c253ffb6b75bcc9ead69db03d6cc079a831a61ef65bdf67640f510e4883d9900",
       "name": "getAllTags",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "c253ffb6b75bcc9ead69db03d6cc079a831a61ef65bdf67640f510e4883d9900",
       "location": {
         "line": 3332,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getAllTags"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "tags.frontmatter-and-inline",
+        "tags.no-tags-null"
+      ],
+      "coveredBehaviorIds": [
+        "tags.frontmatter-and-inline",
+        "tags.no-tags-null"
+      ]
     },
     {
       "exportId": "export:function:getBlobArrayBuffer:36e0f8e9725fc3ae5e627b96750f801560fc36a4783b0b81f41f196ae2e3f733",
@@ -3000,21 +3014,37 @@
       "exportId": "export:function:parseFrontMatterEntry:208d94491e23b5b6485b849a2a6068b7518159088a45956c0371e48a872bbdf1",
       "name": "parseFrontMatterEntry",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "208d94491e23b5b6485b849a2a6068b7518159088a45956c0371e48a872bbdf1",
       "location": {
         "line": 4780,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterEntry"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "frontmatter.string-key",
+        "frontmatter.regex-key",
+        "frontmatter.missing-null"
+      ],
+      "coveredBehaviorIds": [
+        "frontmatter.string-key",
+        "frontmatter.regex-key",
+        "frontmatter.missing-null"
+      ]
     },
     {
       "exportId": "export:function:parseFrontMatterStringArray:deb327a55cd9c91fa2fe75eb17b4e8b85308491594ff58bce0496f45703bd712",
@@ -3040,21 +3070,37 @@
       "exportId": "export:function:parseFrontMatterTags:c9dcb6788b1937d3d38d0f695dcb60f57892603175b9c2d39b6f4ac1536ebcff",
       "name": "parseFrontMatterTags",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "c9dcb6788b1937d3d38d0f695dcb60f57892603175b9c2d39b6f4ac1536ebcff",
       "location": {
         "line": 4790,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterTags"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "tags.normalize-array",
+        "tags.normalize-string",
+        "tags.missing-null"
+      ],
+      "coveredBehaviorIds": [
+        "tags.normalize-array",
+        "tags.normalize-string",
+        "tags.missing-null"
+      ]
     },
     {
       "exportId": "export:function:parseLinktext:fd10e8b7ba73e829355a39b5b63d2ad04869fc7e3ad68075d8ec04b7b5e7cf97",

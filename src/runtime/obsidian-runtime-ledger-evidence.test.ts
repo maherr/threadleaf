@@ -506,6 +506,71 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.frontmatter-utilities.v1 */
+  it('proves frontmatter entry and tag utilities through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-frontmatter-utilities-"),
+    );
+    const pluginPath = path.join(sandboxPath, "frontmatter-utilities-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "frontmatter-utilities-ledger-fixture",
+          name: "Frontmatter utilities ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, getAllTags, parseFrontMatterEntry, parseFrontMatterTags } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const frontmatter = { title: "Draft", status: "in-progress", tags: ["#Project/One", " invalid tag ", "##two/"] };',
+          '    const cache = { frontmatter, tags: [{ tag: "#inline" }] };',
+          "    globalThis.__threadleafRuntimeLedgerFrontmatterUtilitiesProbe = {",
+          '      stringEntry: parseFrontMatterEntry(frontmatter, "title"),',
+          "      regexEntry: parseFrontMatterEntry(frontmatter, /STATUS/i),",
+          '      missingEntry: parseFrontMatterEntry(frontmatter, "missing"),',
+          "      tagsFromArray: parseFrontMatterTags(frontmatter),",
+          '      tagsFromString: parseFrontMatterTags({ tags: "one,two/" }),',
+          '      tagsMissing: parseFrontMatterTags({ title: "Draft" }),',
+          "      allTags: getAllTags(cache),",
+          "      allTagsMissing: getAllTags({}),",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      const host = new PluginHost(fixtureVault);
+      try {
+        await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+        expect(
+          (globalThis as { __threadleafRuntimeLedgerFrontmatterUtilitiesProbe?: unknown })
+            .__threadleafRuntimeLedgerFrontmatterUtilitiesProbe,
+        ).toEqual({
+          stringEntry: "Draft",
+          regexEntry: "in-progress",
+          missingEntry: null,
+          tagsFromArray: ["#Project/One", "#two"],
+          tagsFromString: ["#one", "#two"],
+          tagsMissing: null,
+          allTags: ["#Project/One", "#two", "#inline"],
+          allTagsMissing: null,
+        });
+      } finally {
+        await host.close();
+      }
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerFrontmatterUtilitiesProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
   /** @compatibility-test-id obsidian-runtime.workspace-core.v1 */
   /** @compatibility-test-id obsidian-runtime.editor-core.v1 */

@@ -3800,6 +3800,41 @@
         ]
       }
     },
+    "getAllTags": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getAllTags"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["tags.frontmatter-and-inline", "tags.no-tags-null"],
+        "behaviors": [
+          {
+            "id": "tags.frontmatter-and-inline",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "tags.no-tags-null",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "getLanguage": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
@@ -3845,6 +3880,102 @@
             "evidence": [
               {
                 "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "parseFrontMatterEntry": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterEntry"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "frontmatter.string-key",
+          "frontmatter.regex-key",
+          "frontmatter.missing-null"
+        ],
+        "behaviors": [
+          {
+            "id": "frontmatter.string-key",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "frontmatter.regex-key",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "frontmatter.missing-null",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "parseFrontMatterTags": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterTags"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "tags.normalize-array",
+          "tags.normalize-string",
+          "tags.missing-null"
+        ],
+        "behaviors": [
+          {
+            "id": "tags.normalize-array",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "tags.normalize-string",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "tags.missing-null",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-utilities.v1",
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
